@@ -15,13 +15,7 @@ Este repositório contém a fundação técnica da R0. O primeiro fluxo editoria
 
 ## Pré-requisitos
 
-O Design System é instalado a partir de um repositório privado. Antes da instalação, confirme que a chave SSH ativa tem acesso à organização no GitHub:
-
-```bash
-ssh -T git@github.com
-```
-
-Se a chave estiver registrada com um alias no `~/.ssh/config`, carregue-a no agente SSH ou associe a identidade ao host `github.com` antes de executar o `pnpm install`.
+O Design System é instalado diretamente do repositório oficial em um commit fixado no lockfile. Nenhuma credencial adicional é necessária.
 
 ## Desenvolvimento local
 

@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@content-ventures/design-system':
-        specifier: github:content-ventures/design-system#main
-        version: git+https://git@github.com:content-ventures/design-system.git#41c3d6d4e1720d42ce8c44142718fa8473918f84(lucide-react@1.52.0(@types/react@19.3.0)(react@19.2.8))(next@16.3.8(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: https://github.com/content-ventures/design-system/archive/41c3d6d4e1720d42ce8c44142718fa8473918f84.tar.gz
+        version: https://github.com/content-ventures/design-system/archive/41c3d6d4e1720d42ce8c44142718fa8473918f84.tar.gz(lucide-react@1.52.0(@types/react@19.3.0)(react@19.2.8))(next@16.3.8(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       next:
         specifier: 16.3.8
         version: 16.3.8(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -109,8 +109,8 @@ packages:
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
 
-  '@content-ventures/design-system@git+https://git@github.com:content-ventures/design-system.git#41c3d6d4e1720d42ce8c44142718fa8473918f84':
-    resolution: {commit: 41c3d6d4e1720d42ce8c44142718fa8473918f84, repo: git@github.com:content-ventures/design-system.git, type: git}
+  '@content-ventures/design-system@https://github.com/content-ventures/design-system/archive/41c3d6d4e1720d42ce8c44142718fa8473918f84.tar.gz':
+    resolution: {integrity: sha512-POSyPldpbLEAS/TEMquHDBxtvPdLpmbE8zYpC3a0FRSIi/E3X+kfWlLkzGQOAaDGjnrjnWu7ayPd3paXiVA63Q==, tarball: https://github.com/content-ventures/design-system/archive/41c3d6d4e1720d42ce8c44142718fa8473918f84.tar.gz}
     version: 0.1.0
     engines: {node: '>=20.9.0'}
     peerDependencies:
@@ -1931,7 +1931,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@content-ventures/design-system@git+https://git@github.com:content-ventures/design-system.git#41c3d6d4e1720d42ce8c44142718fa8473918f84(lucide-react@1.52.0(@types/react@19.3.0)(react@19.2.8))(next@16.3.8(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@content-ventures/design-system@https://github.com/content-ventures/design-system/archive/41c3d6d4e1720d42ce8c44142718fa8473918f84.tar.gz(lucide-react@1.52.0(@types/react@19.3.0)(react@19.2.8))(next@16.3.8(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       lucide-react: 1.52.0(@types/react@19.3.0)(react@19.2.8)
       next: 16.3.8(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -2749,7 +2749,7 @@ snapshots:
       eslint: 9.39.5
       eslint-import-resolver-node: 0.3.10
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5))(eslint@9.39.5)
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5))(eslint@9.39.5))(eslint@9.39.5)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5)
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.5)
       eslint-plugin-react: 7.37.5(eslint@9.39.5)
       eslint-plugin-react-hooks: 7.1.1(eslint@9.39.5)
@@ -2782,7 +2782,7 @@ snapshots:
       tinyglobby: 0.2.17
       unrs-resolver: 1.12.2
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5))(eslint@9.39.5))(eslint@9.39.5)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5)
     transitivePeerDependencies:
       - supports-color
 
@@ -2797,7 +2797,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5))(eslint@9.39.5))(eslint@9.39.5):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.71.1(eslint@9.39.5)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.2.0

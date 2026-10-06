@@ -34,19 +34,6 @@ jobs:
           node-version: 20.9.0
           cache: pnpm
 
-      - name: Configure private Design System access
-        env:
-          DESIGN_SYSTEM_SSH_KEY: ${{ secrets.DESIGN_SYSTEM_SSH_KEY }}
-        run: |
-          if [ -z "$DESIGN_SYSTEM_SSH_KEY" ]; then
-            echo "::error::Configure the DESIGN_SYSTEM_SSH_KEY repository secret with read access to content-ventures/design-system."
-            exit 1
-          fi
-          install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$DESIGN_SYSTEM_SSH_KEY" > "$HOME/.ssh/id_ed25519"
-          chmod 600 "$HOME/.ssh/id_ed25519"
-          ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts"
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
