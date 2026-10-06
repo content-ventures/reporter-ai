@@ -36,10 +36,12 @@ A aplicação estará disponível em [http://localhost:3000](http://localhost:30
 ## Verificação
 
 ```bash
-pnpm check
+pnpm gate
 ```
 
-Esse comando executa lint, verificação de tipos e build de produção.
+Esse comando executa as políticas do repositório, lint, verificação de tipos, testes e build de produção. O `pnpm install` ativa os hooks versionados automaticamente.
+
+As regras de branches, commits médios, PRs, Design System, releases e deploys estão em [docs/DEVELOPMENT_HARNESS.md](docs/DEVELOPMENT_HARNESS.md).
 
 ## Design System
 
