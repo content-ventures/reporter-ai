@@ -33,6 +33,18 @@ This document defines the mandatory workflow for human and AI-assisted developme
 - Product components may compose public Design System components without recreating their visual behavior.
 - Local CSS is rejected by default. A future exception requires explicit technical review and must use only public Design System tokens.
 
+## Content density
+
+- Start with the shortest complete interface. A title, label, or value stands alone unless supporting copy is necessary.
+- Add text only when it enables a decision or action, communicates a relevant state or consequence, or resolves an ambiguity the interface cannot resolve visually.
+- Do not add an eyebrow, subtitle, metadata row, hint, notice, or explanatory section merely to fill space or make a page appear complete.
+- A page header may use at most one supporting layer: `eyebrow`, `description`, or `meta`. Status is separate and must represent a real state.
+- Alerts are reserved for actionable, exceptional, or time-sensitive information. They must not explain the page or repeat adjacent content.
+- Metric hints clarify period, unit, source, or exception. They must not restate the metric label or value.
+- Avoid nested framing such as title → subtitle → notice → section title when one clear heading is enough.
+- Release summaries and change descriptions remain required because they provide the audit trail, but each change should be stated once.
+- During review, remove supporting copy first. Restore only the text whose absence creates a concrete comprehension or action problem.
+
 ## Quality gates
 
 The hooks are installed by `pnpm install` and can be restored with `pnpm harness:setup`.
@@ -40,7 +52,7 @@ The hooks are installed by `pnpm install` and can be restored with `pnpm harness
 - `commit-msg` validates commit structure and English phrasing.
 - `pre-commit` validates commit size and Design System boundaries.
 - `pre-push` blocks direct `main` pushes, validates the branch, and runs the complete gate.
-- `pnpm gate:quick` runs the policy check, lint, types, and tests.
+- `pnpm gate:quick` runs Design System, content-density and version policies, lint, types, and tests.
 - `pnpm gate` adds a production build and is the required release and CI gate.
 
 The gate is intentionally compact. It must stay fast enough for every push while covering repository policy, static correctness, automated tests, and production compilation.

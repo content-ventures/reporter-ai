@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Alert,
   Badge,
   DescriptionList,
   MetricStrip,
@@ -16,22 +15,14 @@ const releaseMetrics = [
   {
     label: "Release atual",
     value: "R0",
-    hint: "Fundação do projeto",
   },
   {
     label: "Próximo marco",
     value: "R1",
-    hint: "Primeiro entregável",
-  },
-  {
-    label: "Releases planejadas",
-    value: "8",
-    hint: "R0 a R7",
   },
   {
     label: "Base visual",
     value: "V3",
-    hint: "Design System oficial",
   },
 ];
 
@@ -70,12 +61,7 @@ export function FoundationDashboard() {
               Em desenvolvimento
             </Badge>
           }
-          meta={["R0 · Fundação do projeto", "App Router", "Design System V3"]}
         />
-
-        <Alert tone="info" title="Escopo da R0">
-          Esta etapa prepara a base do produto. Os fluxos editoriais começam na R1.
-        </Alert>
 
         <MetricStrip
           label="Resumo da fundação"

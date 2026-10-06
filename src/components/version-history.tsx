@@ -1,14 +1,12 @@
 "use client";
 
 import {
-  Alert,
   Badge,
   DescriptionList,
   MetricStrip,
   PageHeader,
   PageStack,
   Panel,
-  Section,
   Timeline,
   type TimelineEntry,
 } from "@content-ventures/design-system/v3";
@@ -72,34 +70,19 @@ export function VersionHistory() {
     <ReporterShell active="versions" breadcrumb="Versões">
       <PageStack>
         <PageHeader
-          eyebrow="Governança de releases"
           title="Versões do Reporter IA"
-          description="Histórico público do produto e contrato de evolução das releases."
+          description="Histórico e política de versionamento."
           status={
             <Badge tone="blue" variant="text">
               v{releaseHistory.currentVersion}
             </Badge>
           }
-          meta={[
-            `${releaseHistory.currentRoadmapRelease} · Fundação`,
-            "Semantic Versioning",
-            "Release manual controlada",
-          ]}
         />
-
-        <Alert tone="info" title="Versionamento ligado ao deploy">
-          Toda release de produção deve atualizar o número, a descrição, o changelog e este histórico antes do deploy.
-        </Alert>
 
         <MetricStrip label="Política de versionamento semântico" items={versionPolicy} columns={3} />
 
         <Panel label="Histórico de versões" padding="lg">
-          <Section
-            title="Histórico publicado"
-            meta={`${releaseHistory.releases.length} versão publicada`}
-          >
-            <Timeline label="Versões publicadas" items={releaseItems} variant="steps" />
-          </Section>
+          <Timeline label="Versões publicadas" items={releaseItems} variant="steps" />
         </Panel>
       </PageStack>
     </ReporterShell>
