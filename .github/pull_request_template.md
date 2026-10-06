@@ -8,6 +8,7 @@
 - [ ] Commits are cohesive, medium-sized, and use Conventional Commits in English.
 - [ ] The branch name describes the work in English and contains no tool or agent identity.
 - [ ] UI uses only public Content Ventures Design System components, tokens, fonts, and icons.
+- [ ] Design System structural composition and spacing wrappers are preserved.
 - [ ] Every supporting text is necessary; the UI contains no redundant subtitle, metadata, hint, or informational notice.
 - [ ] Release impact is documented below.
 

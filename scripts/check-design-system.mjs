@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
+import { designSystemCompositionViolations } from "./lib/design-system-composition.mjs";
 import { fail } from "./lib/command.mjs";
 
 const sourceRoot = join(process.cwd(), "src");
@@ -75,6 +76,8 @@ for (const path of sourceFiles) {
         violations.push(`${projectPath}: local <${element}> markup is not permitted; use a public Design System component`);
       }
     }
+
+    violations.push(...designSystemCompositionViolations(content, projectPath));
   }
 }
 
