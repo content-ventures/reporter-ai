@@ -1,0 +1,83 @@
+name: Quality gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.9.0
+          cache: pnpm
+
+      - name: Configure private Design System access
+        env:
+          DESIGN_SYSTEM_SSH_KEY: ${{ secrets.DESIGN_SYSTEM_SSH_KEY }}
+        run: |
+          if [ -z "$DESIGN_SYSTEM_SSH_KEY" ]; then
+            echo "::error::Configure the DESIGN_SYSTEM_SSH_KEY repository secret with read access to content-ventures/design-system."
+            exit 1
+          fi
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DESIGN_SYSTEM_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate branch and PR title
+        if: github.event_name == 'pull_request'
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          node scripts/validate-branch-name.mjs "$BRANCH_NAME"
+          node scripts/validate-commit-message.mjs "$PR_TITLE"
+
+      - name: Validate commit messages and sizes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            exit 0
+          fi
+          if printf '%s' "$BASE_SHA" | grep -Eq '^0+$'; then
+            RANGE="$HEAD_SHA^..$HEAD_SHA"
+          else
+            RANGE="$BASE_SHA..$HEAD_SHA"
+          fi
+          for commit in $(git rev-list --reverse "$RANGE"); do
+            subject=$(git show -s --format=%s "$commit")
+            node scripts/validate-commit-message.mjs "$subject"
+          done
+          node scripts/check-change-size.mjs --range "$RANGE"
+
+      - name: Run complete gate
+        run: pnpm gate

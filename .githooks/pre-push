@@ -1,0 +1,3 @@
+#!/bin/sh
+branch_name="$(git branch --show-current)"
+node scripts/validate-branch-name.mjs --push "$branch_name" && pnpm gate

@@ -8,7 +8,17 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm lint && pnpm typecheck && pnpm build"
+    "test": "node --test",
+    "harness:setup": "node scripts/setup-git-hooks.mjs",
+    "harness:branch": "node scripts/validate-branch-name.mjs",
+    "harness:commit": "node scripts/validate-commit-message.mjs",
+    "harness:size": "node scripts/check-change-size.mjs",
+    "harness:design": "node scripts/check-design-system.mjs",
+    "gate:commit": "pnpm harness:size && pnpm harness:design",
+    "gate:quick": "pnpm harness:design && pnpm lint && pnpm typecheck && pnpm test",
+    "gate": "pnpm gate:quick && pnpm build",
+    "check": "pnpm gate",
+    "prepare": "pnpm harness:setup"
   },
   "dependencies": {
     "@content-ventures/design-system": "github:content-ventures/design-system#main",
