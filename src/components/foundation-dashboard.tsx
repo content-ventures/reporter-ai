@@ -2,64 +2,15 @@
 
 import {
   Alert,
-  AppShell,
   Badge,
   DescriptionList,
   MetricStrip,
   PageHeader,
   PageStack,
   Panel,
-  ProductMark,
   Section,
-  Sidebar,
-  TopBar,
-  type NavGroup,
 } from "@content-ventures/design-system/v3";
-import {
-  Database,
-  LayoutDashboard,
-  ListChecks,
-  Palette,
-} from "@content-ventures/design-system/v3/icons";
-
-const navigation: NavGroup[] = [
-  {
-    id: "produto",
-    label: "Produto",
-    items: [
-      {
-        id: "overview",
-        label: "Visão geral",
-        icon: LayoutDashboard,
-        href: "#overview",
-      },
-      {
-        id: "roadmap",
-        label: "Sequência aprovada",
-        icon: ListChecks,
-        href: "#roadmap",
-      },
-    ],
-  },
-  {
-    id: "fundacao",
-    label: "Fundação",
-    items: [
-      {
-        id: "technical-base",
-        label: "Base técnica",
-        icon: Database,
-        href: "#technical-base",
-      },
-      {
-        id: "design-system",
-        label: "Design System",
-        icon: Palette,
-        href: "#design-system",
-      },
-    ],
-  },
-];
+import { ReporterShell } from "@/components/reporter-shell";
 
 const releaseMetrics = [
   {
@@ -109,26 +60,7 @@ const approvedSequence = [
 
 export function FoundationDashboard() {
   return (
-    <AppShell
-      sidebar={
-        <Sidebar
-          label="Navegação do Reporter IA"
-          product={<ProductMark name="Reporter IA" caption="Content Ventures" />}
-          groups={navigation}
-          active="overview"
-          footer="R0 · Fundação"
-        />
-      }
-      topbar={
-        <TopBar
-          breadcrumb={[
-            { label: "Content Ventures" },
-            { label: "Reporter IA" },
-            { label: "Visão geral" },
-          ]}
-        />
-      }
-    >
+    <ReporterShell active="overview" breadcrumb="Visão geral">
       <PageStack id="overview">
         <PageHeader
           title="Reporter IA"
@@ -195,6 +127,6 @@ export function FoundationDashboard() {
           </Section>
         </Panel>
       </PageStack>
-    </AppShell>
+    </ReporterShell>
   );
 }

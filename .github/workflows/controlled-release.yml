@@ -1,0 +1,104 @@
+name: Controlled release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semantic version increment
+        required: true
+        type: choice
+        options: [patch, minor, major]
+      roadmap_release:
+        description: Product roadmap release
+        required: true
+        type: choice
+        options: [R0, R1, R2, R3, R4, R5, R6, R7]
+      summary:
+        description: Clear English description of the completed release
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+
+    steps:
+      - name: Check out approved main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.9.0
+          cache: pnpm
+
+      - name: Configure private Design System access
+        env:
+          DESIGN_SYSTEM_SSH_KEY: ${{ secrets.DESIGN_SYSTEM_SSH_KEY }}
+        run: |
+          if [ -z "$DESIGN_SYSTEM_SSH_KEY" ]; then
+            echo "::error::Configure the DESIGN_SYSTEM_SSH_KEY repository secret with read access to content-ventures/design-system."
+            exit 1
+          fi
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DESIGN_SYSTEM_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts"
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate approved source
+        run: pnpm gate
+
+      - name: Prepare version and release descriptions
+        id: release
+        env:
+          BUMP: ${{ inputs.bump }}
+          ROADMAP_RELEASE: ${{ inputs.roadmap_release }}
+          RELEASE_SUMMARY: ${{ inputs.summary }}
+        run: pnpm release:prepare -- --bump "$BUMP" --roadmap "$ROADMAP_RELEASE" --summary "$RELEASE_SUMMARY"
+
+      - name: Validate prepared release
+        run: pnpm gate
+
+      - name: Commit and tag release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          git config user.name "Content Ventures Release"
+          git config user.email "release@contentventures.com.br"
+          git add package.json CHANGELOG.md src/data/release-history.json
+          git commit -m "chore(release): v$VERSION"
+          git tag -a "$TAG" -m "Reporter IA $TAG"
+          git push origin HEAD:main "$TAG"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_SUMMARY: ${{ inputs.summary }}
+        run: gh release create "$TAG" --verify-tag --title "Reporter IA $TAG" --notes "$RELEASE_SUMMARY"
+
+      - name: Record deployment status
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          echo "### $TAG is ready for controlled deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "No production provider is configured in this repository. Deployment remains intentionally disabled until its provider-specific step is approved." >> "$GITHUB_STEP_SUMMARY"

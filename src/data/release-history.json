@@ -1,0 +1,28 @@
+{
+  "currentVersion": "0.1.0",
+  "currentRoadmapRelease": "R0",
+  "releases": [
+    {
+      "version": "0.1.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-06",
+      "title": "Technical foundation",
+      "summary": "Established the application foundation and the official Content Ventures Design System integration.",
+      "commit": "6aaa5f83ec8486db546f70d909a0b9327e02b2a6",
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Initialized Next.js 16, React 19, TypeScript, App Router, pnpm 10, and the Node.js runtime contract."
+        },
+        {
+          "type": "Added",
+          "description": "Connected the public Design System V3 API, theme, typography, components, and icons."
+        },
+        {
+          "type": "Added",
+          "description": "Published the R0 foundation dashboard without introducing R1 editorial features."
+        }
+      ]
+    }
+  ]
+}
