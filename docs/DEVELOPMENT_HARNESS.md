@@ -23,6 +23,7 @@ This document defines the mandatory workflow for human and AI-assisted developme
 - Do not open a PR for every edit or intermediate commit.
 - An earlier PR is acceptable only when collaboration, an architectural decision, or an urgent review genuinely requires it.
 - Use a Conventional Commit title in English. The PR body must explain the outcome, validation, Design System usage, release impact, and any deployment consideration.
+- Configure GitHub to allow squash merges only, using the validated PR title as the resulting commit subject.
 
 ## Design System
 
@@ -53,3 +54,31 @@ The gate is intentionally compact. It must stay fast enough for every push while
 - Do not open an automatic release PR for each change. Unreleased commits remain grouped until the delivery is ready.
 
 The release automation and SemVer mapping are documented with the version-history implementation.
+
+## Semantic versioning
+
+- `X` is the commercial roadmap release: R1 ships as v1.0.0, R2 as v2.0.0, through R7 as v7.0.0.
+- `Y` increments when a significant, independently valuable feature is delivered inside the current roadmap release.
+- `Z` increments for bug fixes, corrections, and small maintenance improvements.
+- R0 uses the pre-commercial `0.Y.Z` range while the product foundation is being established.
+
+`pnpm release:prepare -- --bump <major|minor|patch> --roadmap <R0-R7> --summary "English summary"` updates `package.json`, `CHANGELOG.md`, and `src/data/release-history.json` together. It derives detailed changes from validated commits since the previous version.
+
+## Controlled release workflow
+
+The `Controlled release` GitHub Action is manual, runs only from `main`, uses the protected `production` environment, and does the following in order:
+
+1. Runs the complete quality gate on the approved source.
+2. Calculates the next valid SemVer and generates release descriptions from commits.
+3. Runs the complete gate again against the prepared release.
+4. Creates one release commit, an annotated version tag, and a GitHub release.
+5. Hands the tagged artifact to the future production-deployment step.
+
+The repository currently has no production provider configuration. Production deployment is intentionally disabled until a provider is selected and its step is reviewed. When added, it must run after release preparation and deploy only the version tag created by this workflow.
+
+Repository setup requirements:
+
+- Add a `DESIGN_SYSTEM_SSH_KEY` Actions secret with read access to the private Design System repository.
+- Protect `main`, require the `Quality gate` check, and allow only squash merges.
+- Protect the `production` environment with the desired human approval rule.
+- Permit the controlled-release workflow to write the release commit and version tag.

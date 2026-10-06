@@ -33,6 +33,8 @@ pnpm dev
 
 A aplicação estará disponível em [http://localhost:3000](http://localhost:3000).
 
+O histórico e a política de versões ficam em [http://localhost:3000/versions](http://localhost:3000/versions).
+
 ## Verificação
 
 ```bash

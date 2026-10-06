@@ -14,10 +14,12 @@
     "harness:commit": "node scripts/validate-commit-message.mjs",
     "harness:size": "node scripts/check-change-size.mjs",
     "harness:design": "node scripts/check-design-system.mjs",
+    "harness:version": "node scripts/check-versioning.mjs",
     "gate:commit": "pnpm harness:size && pnpm harness:design",
-    "gate:quick": "pnpm harness:design && pnpm lint && pnpm typecheck && pnpm test",
+    "gate:quick": "pnpm harness:design && pnpm harness:version && pnpm lint && pnpm typecheck && pnpm test",
     "gate": "pnpm gate:quick && pnpm build",
     "check": "pnpm gate",
+    "release:prepare": "node scripts/prepare-release.mjs",
     "prepare": "pnpm harness:setup"
   },
   "dependencies": {
