@@ -6,7 +6,7 @@ import {
   MetricStrip,
   PageHeader,
   PageStack,
-  Panel,
+  Section,
   Timeline,
   type TimelineEntry,
 } from "@content-ventures/design-system/v3";
@@ -81,9 +81,9 @@ export function VersionHistory() {
 
         <MetricStrip label="Política de versionamento semântico" items={versionPolicy} columns={3} />
 
-        <Panel label="Histórico de versões" padding="lg">
+        <Section title="Histórico" variant="panel">
           <Timeline label="Versões publicadas" items={releaseItems} variant="steps" />
-        </Panel>
+        </Section>
       </PageStack>
     </ReporterShell>
   );

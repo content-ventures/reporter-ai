@@ -32,6 +32,8 @@ This document defines the mandatory workflow for human and AI-assisted developme
 - Do not create local visual primitives, tokens, fonts, icons, themes, color values, or substitute UI-library components.
 - Product components may compose public Design System components without recreating their visual behavior.
 - Local CSS is rejected by default. A future exception requires explicit technical review and must use only public Design System tokens.
+- Preserve the documented component composition because structural components own spacing. Use `Panel → Section → content`, or a standalone `Section variant="panel"`; never place visual content directly inside `Panel`.
+- Removing copy must remove only content props or text. Do not remove a Design System wrapper until its layout role has been checked in the public component contract.
 
 ## Content density
 
@@ -44,6 +46,7 @@ This document defines the mandatory workflow for human and AI-assisted developme
 - Avoid nested framing such as title → subtitle → notice → section title when one clear heading is enough.
 - Release summaries and change descriptions remain required because they provide the audit trail, but each change should be stated once.
 - During review, remove supporting copy first. Restore only the text whose absence creates a concrete comprehension or action problem.
+- Copy reduction must not change spacing, padding, hierarchy, or responsive behavior.
 
 ## Quality gates
 
