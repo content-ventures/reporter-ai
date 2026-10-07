@@ -2,7 +2,13 @@
 
 Produto da Content Ventures para automatizar fluxos de produção editorial.
 
-Este repositório contém a fundação técnica da R0. O primeiro fluxo editorial — transcrição → artigo → aprovação → carrossel — começa na R1 e ainda não faz parte desta entrega.
+This repository contains the R0 foundation and an interactive R1 interface preview: transcription → article → approval → carousel → export.
+
+The preview uses fictional content and in-memory React state. Reloading the page resets edits and new productions. Text files are read locally; article generation and carousel composition are demonstrations. Articles can be downloaded as formatted HTML or plain TXT; slide copy is exported as TXT. No backend, database, authentication, or external AI service is connected.
+
+The writing studio in `src/components/editor/` uses Tiptap 3 with Design System V3 controls and tokens. It combines a navigable block outline with Design System reordering, contextual selection actions, a writing assistant, searchable source excerpts and session versions. Blocks can be inserted, reordered, duplicated and deleted; rich formatting, images, reading preview, focus mode and HTML export remain available.
+
+Assistant responses are explicitly labeled local simulations. Presets and prompt intent choose deterministic example transformations; no AI model is called. Suggestions are editable, can replace the target or be inserted as a new block, and are rejected if the document changed after generation. Applying a suggestion or restoring a version records a snapshot first. Structured content and snapshots survive navigation within the current session; edits invalidate downstream approvals. Local images stay in memory and are embedded in the HTML export. The studio composes public Design System components for its layout, controls, lists and menus. Document node views also compose public DS components. There is no local editor stylesheet; only user-authored document formatting is passed through from Tiptap.
 
 ## Stack
 

@@ -1,5 +1,5 @@
-import { FoundationDashboard } from "@/components/foundation-dashboard";
+import { EditorialDashboard } from "@/components/editorial-dashboard";
 
 export default function Home() {
-  return <FoundationDashboard />;
+  return <EditorialDashboard />;
 }
