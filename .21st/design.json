@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "project": {
+    "name": "reporter-ai",
+    "productType": "editorial workflow SaaS",
+    "stack": ["nextjs", "react"]
+  },
+  "sources": {
+    "tokens": [
+      "@content-ventures/design-system/v3 ThemeV3",
+      "@content-ventures/design-system/v3 interV3"
+    ],
+    "components": ["@content-ventures/design-system/v3"],
+    "assets": [],
+    "instructions": ["AGENTS.md", "docs/DEVELOPMENT_HARNESS.md"]
+  },
+  "design": {
+    "colorMode": "light",
+    "colors": {},
+    "typography": { "family": "Inter via interV3" },
+    "spacing": {},
+    "radius": {},
+    "shadows": {},
+    "motion": {},
+    "density": "compact"
+  },
+  "components": {
+    "installed": ["@content-ventures/design-system/v3"],
+    "preferredPrimitives": [
+      "AppShell",
+      "Sidebar",
+      "TopBar",
+      "PageHeader",
+      "PageStack",
+      "Panel",
+      "Section"
+    ],
+    "patterns": [
+      "AppShell → Sidebar + TopBar + content",
+      "Panel → Section → content"
+    ]
+  },
+  "constraints": {
+    "must": [
+      "Use only public exports from @content-ventures/design-system/v3 and /icons for visual UI",
+      "Search the Design System before composing product components",
+      "Preserve structural component spacing and responsive behavior"
+    ],
+    "avoid": [
+      "Local visual primitives, tokens, fonts, icons, themes or substitute UI libraries",
+      "Local CSS modules",
+      "Adjacent open Section components inside PageStack"
+    ]
+  },
+  "decisions": [
+    "The product shell uses the complete DS navigation pattern",
+    "The visible menu contains only routes available to the user in the current release"
+  ],
+  "evidence": [
+    {
+      "fact": "design-system-policy",
+      "source": "docs/DEVELOPMENT_HARNESS.md"
+    },
+    {
+      "fact": "navigation-components",
+      "source": "node_modules/@content-ventures/design-system/src/components/ds-v3/app-shell.tsx"
+    }
+  ],
+  "generatedAt": "2026-10-06T20:52:26.721Z"
+}

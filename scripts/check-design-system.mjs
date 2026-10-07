@@ -1,10 +1,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 import { designSystemCompositionViolations } from "./lib/design-system-composition.mjs";
+import ts from "typescript";
 import { fail } from "./lib/command.mjs";
 
 const sourceRoot = join(process.cwd(), "src");
 const sourceFiles = [];
+
 
 function walk(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -69,7 +71,16 @@ for (const path of sourceFiles) {
 
   if (extension === ".tsx") {
     const allowedElements = projectPath === "src/app/layout.tsx" ? new Set(["html", "body"]) : new Set();
-    const elements = [...content.matchAll(/<([a-z][a-z0-9-]*)(?:\s|>)/g)].map((match) => match[1]);
+    const elements = [];
+    const sourceFile = ts.createSourceFile(projectPath, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    function collectElements(node) {
+      if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+        const name = node.tagName.getText(sourceFile);
+        if (/^[a-z]/.test(name)) elements.push(name);
+      }
+      ts.forEachChild(node, collectElements);
+    }
+    collectElements(sourceFile);
 
     for (const element of new Set(elements)) {
       if (!allowedElements.has(element)) {

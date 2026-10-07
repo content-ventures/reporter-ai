@@ -32,6 +32,8 @@ This document defines the mandatory workflow for human and AI-assisted developme
 - Do not create local visual primitives, tokens, fonts, icons, themes, color values, or substitute UI-library components.
 - Product components may compose public Design System components without recreating their visual behavior.
 - Local CSS is rejected by default. A future exception requires explicit technical review and must use only public Design System tokens.
+- Writing studio correction (October 6, 2026): the user requires the Design System contract for every product component. The earlier editor exceptions are revoked: no local CSS Modules or native JSX UI exceptions. Editor actions, fields, source excerpts, suggestions, block lists, reordering, menus and page layout compose public V3 components without custom skins. Tiptap document node views also compose public DS components; serialized user formatting remains document data. Do not introduce decorative colored side borders or per-paragraph frames. AI actions remain labeled simulations in the frontend-only R1 preview.
+- A page `PageStack` must not contain adjacent open `Section` components. Both own vertical rhythm, causing additive gaps. Compact sidebar groups use `Panel → Section`; related controls use `FieldGroup`, and actions stay within their section.
 - Preserve the documented component composition because structural components own spacing. Use `Panel → Section → content`, or a standalone `Section variant="panel"`; never place visual content directly inside `Panel`.
 - Removing copy must remove only content props or text. Do not remove a Design System wrapper until its layout role has been checked in the public component contract.
 
