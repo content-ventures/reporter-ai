@@ -4,6 +4,7 @@ import {
   ThemeV3,
 } from "@content-ventures/design-system/v3";
 import "./globals.css";
+import { EditorialProvider } from "@/components/editorial-provider";
 
 export const metadata: Metadata = {
   title: "Reporter IA",
@@ -14,7 +15,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="pt-BR" className={interV3.variable}>
       <body>
-        <ThemeV3>{children}</ThemeV3>
+        <ThemeV3><EditorialProvider>{children}</EditorialProvider></ThemeV3>
       </body>
     </html>
   );
