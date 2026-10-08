@@ -1,4 +1,4 @@
-import { blockText, findBlock, hasInlines, markBlocksReviewed, normalizeInlines, replaceTextRange, sliceText } from './article.ts';
+import { blockText, findBlock, hasInlines, markBlocksUnreviewed, normalizeInlines, replaceTextRange, sliceText } from './article.ts';
 import type { ArticleBlock, ArticleBody, Inline } from './article.ts';
 import type { CarouselBody, SlideAssistAction } from './carousel.ts';
 import type { BlockId, IsoDateTime, PersonId, PieceId, RunId, SlideId, SuggestionId } from './ids.ts';
@@ -84,7 +84,7 @@ export function isSuggestionStale(body: ArticleBody, suggestion: Suggestion): bo
 
 export type ApplySuggestionRefusal = 'stale' | 'not_pending' | 'unsupported' | 'invalid_target';
 
-/** Applies an article suggestion as one change; touched blocks count as reviewed. */
+/** Applies an article suggestion as one change; the AI text it brings is unreviewed (the whole-text review reopens). */
 export function applySuggestion(body: ArticleBody, suggestion: Suggestion): Result<ArticleBody, ApplySuggestionRefusal> {
   if (suggestion.state !== 'ready') return refuse('not_pending', 'Esta sugestão não está mais disponível.');
   const { proposal } = suggestion;
@@ -100,7 +100,7 @@ export function applySuggestion(body: ArticleBody, suggestion: Suggestion): Resu
     if (proposal.kind === 'replace-text') {
       const replaced = replaceTextRange(body, range, proposal.text);
       if (!replaced.ok) return refuse('invalid_target', replaced.refusal.message);
-      return ok(markBlocksReviewed(replaced.value, [range.blockId]));
+      return ok(markBlocksUnreviewed(replaced.value, [range.blockId]));
     }
     return addLink(body, range, proposal.href);
   }
@@ -111,7 +111,7 @@ export function applySuggestion(body: ArticleBody, suggestion: Suggestion): Resu
   if (positions.some((position) => position < 0) || !contiguous) {
     return refuse('invalid_target', 'Os blocos da sugestão precisam ser vizinhos.');
   }
-  const replacement = proposal.blocks.map((block) => (block.ai ? { ...block, ai: 'reviewed' as const } : block));
+  const replacement = proposal.blocks.map((block) => (block.ai ? { ...block, ai: 'unreviewed' as const } : block));
   const blocks = [
     ...body.blocks.slice(0, positions[0]),
     ...replacement,

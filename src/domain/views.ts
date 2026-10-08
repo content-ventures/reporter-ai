@@ -1,4 +1,4 @@
-import { articleStats, unreviewedAiBlockIds } from './article.ts';
+import { articleCharacters, articleStats, unreviewedAiBlockIds } from './article.ts';
 import type { AssetLookup } from './asset.ts';
 import type { CarouselTemplate } from './carousel.ts';
 import { ARTICLE_CHECKS, CAROUSEL_CHECKS, readiness, runChecks } from './checks.ts';
@@ -35,9 +35,12 @@ import { currentStep, isRunActive, RUN_KIND_LABELS, runDurationMs, stepProgress 
 import type { GenerationRun, RunStep } from './run.ts';
 import { currentSourceVersion } from './source.ts';
 import type { Source, SourceKind, SourceOrigin, Speaker } from './source.ts';
+import { situationOf } from './situation.ts';
+import type { Situation } from './situation.ts';
 import { stageState } from './stage.ts';
 import type { FlowDefinition, StageView } from './stage.ts';
 import { shortHash } from './text/hash.ts';
+import { countCharacters } from './text/stats.ts';
 import { analyzeTranscript } from './text/transcript-parse.ts';
 
 /**
@@ -51,6 +54,10 @@ export type ViewOptions = {
   flow?: FlowDefinition;
   /** Image metadata for the image checks (credit, rights). */
   assets?: AssetLookup;
+  /** Characters of the longest article the material supports, when the adapter knows ("Tamanho"). */
+  materialChars?: number;
+  /** First name of a person ("Pedro"), for "Com Pedro" and "Aguardando aprovação de Pedro". */
+  nameOf?: (id: PersonId) => string;
 };
 
 export type VersionView = {
@@ -65,6 +72,8 @@ export type VersionView = {
   runId?: RunId;
   interrupted: boolean;
   words: number;
+  /** Lauda count of the body (characters with spaces; slide texts for a carousel). */
+  characters: number;
   inputs: VersionRef[];
   restoredFrom?: VersionId;
   /** Latest decision on this exact version. */
@@ -89,7 +98,7 @@ export type PieceView = {
   status: PieceStatus;
   statusLabel: string;
   freshness: Freshness;
-  /** Amber alert text when stale ("O artigo aprovado mudou para a versão 5."). */
+  /** Amber alert text when stale ("O artigo aprovado mudou."). */
   staleMessage?: string;
   draft: {
     revision: number;
@@ -99,6 +108,8 @@ export type PieceView = {
     /** Draft differs from the latest version (unsaved as a version, still autosaved). */
     dirty: boolean;
     words: number;
+    /** Lauda count of the body (characters with spaces; slide texts for a carousel). */
+    characters: number;
     unreviewedAiBlocks: number;
   };
   versions: VersionView[];
@@ -144,6 +155,8 @@ export type ProductionView = {
   stages: StageView[];
   currentStageId: string;
   nextAction: NextAction;
+  /** "Artigo · Aguardando aprovação de Pedro": the same line for every viewer (next steps are per viewer, in the ports). */
+  situation: Situation;
   pieces: PieceView[];
   sources: SourceSummary[];
   brief: Brief;
@@ -171,6 +184,11 @@ function bodyWords(body: PieceBody): number {
   return body.slides.reduce((total, slide) => total + Object.values(slide.slots).join(' ').split(/\s+/).filter(Boolean).length, 0);
 }
 
+function bodyCharacters(body: PieceBody): number {
+  if (body.type === 'article') return articleCharacters(body);
+  return body.slides.reduce((total, slide) => total + Object.values(slide.slots).reduce((sum, text) => sum + countCharacters(text), 0), 0);
+}
+
 export function toVersionView(record: ProductionRecord, version: Version): VersionView {
   const all = versionsOf(record, version.pieceId);
   const ref = toVersionRef(version);
@@ -186,6 +204,7 @@ export function toVersionView(record: ProductionRecord, version: Version): Versi
     createdBy: version.createdBy,
     interrupted: version.interrupted === true,
     words: bodyWords(version.body),
+    characters: bodyCharacters(version.body),
     inputs: version.inputs,
     isLatest: all[all.length - 1]?.id === version.id,
     isCurrentApproved: approved?.version.id === version.id,
@@ -211,10 +230,18 @@ export function evaluatePieceChecks(
   body: PieceBody = piece.draft.body,
   templates: readonly CarouselTemplate[] = [],
   assets?: AssetLookup,
+  materialChars?: number,
 ): CheckResult[] {
   const generation = generationStateFor(record, piece, body);
   if (body.type === 'article') {
-    return runChecks(ARTICLE_CHECKS, { body, brief: record.production.brief, sources: record.sources, generation, ...(assets ? { assets } : {}) });
+    return runChecks(ARTICLE_CHECKS, {
+      body,
+      brief: record.production.brief,
+      sources: record.sources,
+      generation,
+      ...(assets ? { assets } : {}),
+      ...(materialChars !== undefined ? { materialChars } : {}),
+    });
   }
   const template = templates.find((candidate) => candidate.id === body.templateId);
   const article = pieceOfKind(record, 'article');
@@ -243,7 +270,7 @@ export function buildPieceView(record: ProductionRecord, kind: PieceKind, option
   const status = pieceStatus(record, kind);
   const freshness = pieceFreshness(record, piece.id);
   const decisions = pieceDecisions(record, piece.id);
-  const checks = evaluatePieceChecks(record, piece, piece.draft.body, options.templates, options.assets);
+  const checks = evaluatePieceChecks(record, piece, piece.draft.body, options.templates, options.assets, options.materialChars);
   const view: PieceView = {
     id: piece.id,
     kind,
@@ -258,6 +285,7 @@ export function buildPieceView(record: ProductionRecord, kind: PieceKind, option
       updatedBy: piece.draft.updatedBy,
       dirty: latest ? bodyHash(piece.draft.body) !== latest.hash : bodyWords(piece.draft.body) > 0,
       words: bodyWords(piece.draft.body),
+      characters: bodyCharacters(piece.draft.body),
       unreviewedAiBlocks: piece.draft.body.type === 'article' ? unreviewedAiBlockIds(piece.draft.body).length : 0,
     },
     versions,
@@ -336,6 +364,8 @@ export function nextAction(record: ProductionRecord, pieces: readonly PieceView[
         return { kind: 'fix', label: `Ajustar ${label}`, stageId, pieceKind: kind };
       case 'stale':
         return { kind: 'update', label: `Atualizar ${label}`, stageId, pieceKind: kind };
+      case 'approval_outdated':
+        return { kind: 'continue', label: 'Reenviar para aprovação', stageId, pieceKind: kind };
       case 'approved':
         continue;
     }
@@ -345,13 +375,16 @@ export function nextAction(record: ProductionRecord, pieces: readonly PieceView[
   return { kind: 'done', label: 'Concluída', stageId: delivery?.id ?? 'delivery' };
 }
 
+/** Without names (tests, old callers) a person reads by id; the store passes first names. */
+const idAsName = (id: PersonId): string => id;
+
 export function buildProductionView(record: ProductionRecord, options: ViewOptions): ProductionView {
-  const journey = stageState(record, options.flow);
+  const journey = stageState(record, options.flow, options.nameOf ? { nameOf: options.nameOf } : {});
   const pieces = record.production.plan
     .map((kind) => buildPieceView(record, kind, options))
     .filter((view): view is PieceView => view !== undefined);
   const runs = runsOf(record).map((run) => toRunView(run, options.now));
-  const view: ProductionView = {
+  const view: Omit<ProductionView, 'situation'> = {
     id: record.production.id,
     title: record.production.title,
     flowId: record.production.flowId,
@@ -373,5 +406,5 @@ export function buildProductionView(record: ProductionRecord, options: ViewOptio
   };
   const delivery = latestDelivery(record);
   if (delivery) view.latestDelivery = delivery;
-  return view;
+  return { ...view, situation: situationOf({ record, view, nameOf: options.nameOf ?? idAsName, now: options.now }) };
 }

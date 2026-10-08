@@ -141,7 +141,7 @@ export function baseRecord(kit: TestKit, options: { plan?: PieceKind[]; authoriz
     flowId: 'transcript-article',
     title: 'Entrevista Ateliê Sul',
     sourceIds: [source.id],
-    brief: { sections: 3, length: 'short', revision: 1 },
+    brief: { sections: 3, size: 'standard', revision: 1 },
     plan: options.plan ?? ['article', 'carousel'],
     relations: [],
     ownerId: JOAO,

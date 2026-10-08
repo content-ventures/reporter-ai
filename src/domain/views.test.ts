@@ -32,7 +32,7 @@ describe('ProductionView', () => {
     const view = buildProductionView(record, { now: kit.now(), templates: [TEMPLATE] });
     assert.equal(view.status, 'in_review');
     assert.equal(view.statusLabel, 'Aguardando aprovação');
-    assert.equal(view.currentStageId, 'article');
+    assert.equal(view.currentStageId, 'approval', 'sent: Artigo is done, Aprovação is where it stands');
     assert.deepEqual(view.nextAction, { kind: 'review', label: 'Aprovar artigo', stageId: 'article', pieceKind: 'article' });
     const [article] = view.pieces;
     assert.equal(article.status, 'in_review');
@@ -57,7 +57,7 @@ describe('ProductionView', () => {
     assert.deepEqual(articleView.versions.map((version) => version.isCurrentApproved), [false, true]);
     assert.equal(articleView.versions[0].decision?.kind, 'approved');
     assert.equal(carouselView.status, 'stale');
-    assert.equal(carouselView.staleMessage, 'O artigo aprovado mudou para a versão 2.');
+    assert.equal(carouselView.staleMessage, 'O artigo aprovado mudou.');
     assert.deepEqual(view.nextAction, { kind: 'update', label: 'Atualizar carrossel', stageId: 'carousel', pieceKind: 'carousel' });
     const versionCheck = carouselView.checks.find((check) => check.id === 'carousel.article-version');
     assert.equal(versionCheck?.status, 'warn');
@@ -154,6 +154,11 @@ describe('delivery package', () => {
     assert.equal(manifest.items[1].versionId, carousel.id);
     assert.deepEqual(manifest.items[0].files, ['artigo-v1.md', 'artigo-v1.html']);
     assert.equal(manifest.items[0].sourceVersions[0].version, 1);
+    // The size travels with the package: the brief's size and the article's lauda count.
+    assert.equal(manifest.production.size, record.production.brief.size);
+    assert.equal(manifest.items[0].characters, 192);
+    assert.equal(manifest.items[0].laudas, 0.1);
+    assert.equal(manifest.items[1].characters, undefined, 'carousels are not measured in laudas');
   });
 
   test('file names and idempotency keys are deterministic', () => {

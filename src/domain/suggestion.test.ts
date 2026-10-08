@@ -44,11 +44,11 @@ describe('suggestion targets', () => {
 });
 
 describe('applying suggestions', () => {
-  test('replace-text changes only the range and marks the block reviewed', () => {
+  test('replace-text changes only the range and leaves the block as AI text to review', () => {
     const result = applySuggestion(body(), suggestion({ kind: 'replace-text', text: 'exposição' }));
     assert.ok(result.ok);
     assert.equal(blockText(result.value.blocks[0]), 'A exposição mudou tudo para o ateliê.');
-    assert.equal(result.value.blocks[0].ai, 'reviewed');
+    assert.equal(result.value.blocks[0].ai, 'unreviewed');
     assert.equal(result.value.blocks[1].ai, 'unreviewed');
   });
 
@@ -62,7 +62,7 @@ describe('applying suggestions', () => {
     const result = applySuggestion(body(), suggestion(proposal, targets, anchors));
     assert.ok(result.ok);
     assert.deepEqual(result.value.blocks.map((block) => [block.id, block.ai]), [
-      ['n1', 'reviewed'],
+      ['n1', 'unreviewed'],
       ['h1', undefined],
     ]);
     const gap = applySuggestion(body(), suggestion(proposal, [targets[0], { blockId: 'h1', from: 0, to: 15 }], [anchors[0], 'Próximos passos']));

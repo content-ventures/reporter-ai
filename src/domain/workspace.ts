@@ -23,6 +23,11 @@ export type Person = {
   avatarUrl?: string;
 };
 
+/** "Pedro" from "Pedro Alves": notices, refusals and situation lines name people by their first name. */
+export function firstName(name: string | null | undefined): string {
+  return (name ?? '').trim().split(/\s+/)[0] ?? '';
+}
+
 /** Masculine heads of organisation names ("do Grupo Horizonte", "do Ateliê Sul"); the rest take "da". */
 const MASCULINE_HEAD = /^(?:grupo|estúdio|studio|ateliê|atelier|instituto|banco|centro|sindicato|escritório|laboratório|curtume|coletivo|clube|hospital|museu|jornal|portal|site|canal|podcast|programa|projeto|núcleo|conselho|ministério|governo|tribunal|sistema|pátio|polo|parque|shopping|mercado|time|clube)$/i;
 
