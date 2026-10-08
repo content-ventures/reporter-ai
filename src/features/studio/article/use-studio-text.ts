@@ -35,12 +35,18 @@ export function useStudioText({
   draft,
   generation,
   showText,
+  locked,
 }: {
   production: ProductionDetail;
   piece: PieceView;
   draft: DraftView;
   generation: StudioGeneration;
   showText: () => void;
+  /**
+   * Nothing may change the text here: it waits for approval (D8, "Retirar envio para editar") or
+   * the viewer reads only. The editor is not editable before the first keystroke.
+   */
+  locked: boolean;
 }) {
   const pieceId = piece.id;
   const productionId = production.id;
@@ -54,7 +60,7 @@ export function useStudioText({
 
   // ——— Images (cover and figures): display data and paste/drop, handed to the editor ———
   const editorRef = useRef<Editor | null>(null);
-  const images = useArticleImages({ productionId, body, editorRef, showText, locked: generation.active });
+  const images = useArticleImages({ productionId, body, editorRef, showText, locked: generation.active || locked });
   /** Another tab of this browser saves this workspace now: the text is read-only here (A10). */
   const { readOnly } = useTabSync();
 
@@ -62,11 +68,11 @@ export function useStudioText({
     initialBody: draft.body as ArticleBody,
     title,
     label: 'Texto do artigo',
-    readOnly,
+    readOnly: readOnly || locked,
     // The proposal read in the paragraph and the AI marker in the gutter come from the DS factory.
     widgets: proseWidgets,
-    // An empty draft shows "Gerar rascunho / Escrever do zero" (or the generation writing): no
-    // second call to action inside the text.
+    // An empty draft says "Ainda não há texto" under it (or the generation writes): no second
+    // call to action inside the text.
     placeholder: { document: () => '' },
     onChange: (next) => {
       setBody(next);

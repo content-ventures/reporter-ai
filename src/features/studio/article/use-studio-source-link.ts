@@ -6,7 +6,6 @@ import { quoteBlock, segmentRef, type ArticleBody, type BlockId, type TextRange 
 import { blockIdOf, createBlockIdFactory, findBlockEntry, insertBlocks, setArticleDecorations, textRangeToPositions } from '@/editor';
 import type { PersonSummary, SourceDetail } from '@/ports';
 import { blockSegmentIds, blocksCitingSegment, viewerSegments, type ViewerSegment } from './studio-model';
-import type { SourceTab } from './studio-types';
 import type { StudioText } from './use-studio-text';
 
 export type SourceLink = { blockIds: BlockId[]; segmentId: string | null; from: 'text' | 'transcript' };
@@ -23,14 +22,14 @@ export function useStudioSourceLink({
   text,
   factsBody,
   setView,
-  showSource,
+  showMaterial,
 }: {
   source: SourceDetail | undefined;
   people: PersonSummary[];
   text: StudioText;
   factsBody: ArticleBody;
   setView: Dispatch<SetStateAction<WorkspaceView>>;
-  showSource: (tab: SourceTab) => void;
+  showMaterial: () => void;
 }) {
   const { editor, scrollToBlock, caretWasPlaced } = text;
   const [quoteIds] = useState(() => createBlockIdFactory({ prefix: 'cit' }));
@@ -113,13 +112,13 @@ export function useStudioSourceLink({
     [factsBody, scrollToBlock, setView],
   );
 
-  /** "Ver na transcrição": the Fonte pane on the segment, lit. */
+  /** "Ver na transcrição": the panel's Material tab on the segment, lit. */
   const showInTranscript = useCallback(
     (segmentId: string) => {
       setLink({ blockIds: blocksCitingSegment(factsBody, segmentId), segmentId, from: 'transcript' });
-      showSource('transcript');
+      showMaterial();
     },
-    [factsBody, showSource],
+    [factsBody, showMaterial],
   );
 
   /** "Usar texto da fonte": the quotation takes the transcript's words (one undo reverts it). */
