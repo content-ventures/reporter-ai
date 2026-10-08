@@ -8,6 +8,8 @@ import type { CommandContext } from '../../../domain/result.ts';
 import type { FlowDefinition } from '../../../domain/stage.ts';
 import { buildProductionView } from '../../../domain/views.ts';
 import type { ProductionView } from '../../../domain/views.ts';
+import { charsAvailable } from '../generation/outlook.ts';
+import { firstNameOf } from './people.ts';
 import { assembleRecord } from './state.ts';
 import type { ProductionState, StoreState } from './state.ts';
 
@@ -30,7 +32,8 @@ export function probeContext(ctx: Pick<ReadContext, 'now' | 'state'>): CommandCo
   return { now: ctx.now, newId: (prefix) => `${prefix}-probe-${(counter += 1)}`, actorId: ctx.state.sessionPersonId };
 }
 
-type CachedView = { sources: ProductionRecord['sources']; assetsRevision: number; view: ProductionView };
+/** `people`: the situation line names people ("Aguardando aprovação de Pedro"); a rename rebuilds it. */
+type CachedView = { sources: ProductionRecord['sources']; people: StoreState['people']; assetsRevision: number; view: ProductionView };
 
 /**
  * State is immutable, so a production view can be reused while the production object and its
@@ -42,14 +45,27 @@ export function recordOf(ctx: Pick<ReadContext, 'state'>, production: Production
   return assembleRecord(ctx.state, production);
 }
 
+/** Characters of the longest article the record's material supports ("Tamanho" tells a short material). */
+export function materialCharsOf(record: ProductionRecord): number | undefined {
+  return record.sources.length > 0 ? charsAvailable(record.sources) : undefined;
+}
+
 export function viewOf(ctx: ReadContext, production: ProductionState, record = recordOf(ctx, production)): ProductionView {
   const cached = viewCache.get(production);
   const sameSources =
     cached !== undefined &&
     cached.sources.length === record.sources.length &&
     cached.sources.every((source, index) => source === record.sources[index]);
-  if (cached && sameSources && cached.assetsRevision === ctx.assetsRevision && cached.view.activeRuns.length === 0) return cached.view;
-  const view = buildProductionView(record, { now: ctx.now, templates: ctx.templates, flow: ctx.flow, assets: ctx.assets });
-  viewCache.set(production, { sources: record.sources, assetsRevision: ctx.assetsRevision, view });
+  if (cached && sameSources && cached.people === ctx.state.people && cached.assetsRevision === ctx.assetsRevision && cached.view.activeRuns.length === 0) return cached.view;
+  const materialChars = materialCharsOf(record);
+  const view = buildProductionView(record, {
+    now: ctx.now,
+    templates: ctx.templates,
+    flow: ctx.flow,
+    assets: ctx.assets,
+    nameOf: (id) => firstNameOf(ctx.state, id),
+    ...(materialChars !== undefined ? { materialChars } : {}),
+  });
+  viewCache.set(production, { sources: record.sources, people: ctx.state.people, assetsRevision: ctx.assetsRevision, view });
   return view;
 }

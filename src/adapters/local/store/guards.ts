@@ -1,6 +1,7 @@
+import { approvalStateOf } from '../../../domain/approval.ts';
 import { bodyHash, PIECE_LABELS, toVersionRef } from '../../../domain/piece.ts';
 import type { Piece, PieceKind, Version } from '../../../domain/piece.ts';
-import { activeRun, findVersion, isApproved, latestApproved, latestVersion, pendingReview, pendingSuggestions, pieceOfKind } from '../../../domain/record.ts';
+import { activeRun, findVersion, isApproved, latestApproved, latestVersion, pendingReview, pieceOfKind } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
 import { sameRefSet } from '../../../domain/refs.ts';
 import type { VersionRef } from '../../../domain/refs.ts';
@@ -17,7 +18,7 @@ import { evaluatePieceChecks } from '../../../domain/views.ts';
 import { ALLOWED, blocked, guardFrom } from '../../../ports/common.ts';
 import type { Guard } from '../../../ports/common.ts';
 import type { PieceGuards, ProductionGuards } from '../../../ports/production-queries.ts';
-import { requestBlocker } from './commands-piece.ts';
+import { alreadyRequestedMessage, gateMembers } from './send-check.ts';
 import { currentMember } from './people.ts';
 import { probeContext } from './read-context.ts';
 import type { ReadContext } from './read-context.ts';
@@ -27,7 +28,7 @@ import type { ReadContext } from './read-context.ts';
  * Each disabled action carries the pt-BR reason shown in its Tooltip.
  */
 
-const RUNNING = blocked('run_in_progress', 'Aguarde a geração terminar.');
+const RUNNING = blocked('run_in_progress', 'Aguarde a IA terminar.');
 
 function decideState(ctx: ReadContext, record: ProductionRecord): DecideState {
   const member = currentMember(ctx.state);
@@ -57,22 +58,27 @@ export function decisionGuard(ctx: ReadContext, record: ProductionRecord, piece:
   );
 }
 
+/**
+ * "Enviar para aprovação" is blocked only when sending is impossible: the AI is writing, the text
+ * already waits for a decision, there is no text, nobody else can approve, or it is approved as is.
+ * "Falta" items do not block the button: the pre-send dialog lists them (and the command refuses).
+ */
 function requestReviewGuard(ctx: ReadContext, record: ProductionRecord, piece: Piece): Guard {
-  if (!gateForPiece(piece.kind, ctx.gates)) return blocked('no_gate', 'Esta peça não passa por aprovação.');
+  const gate = gateForPiece(piece.kind, ctx.gates);
+  if (!gate) return blocked('no_gate', 'Esta peça não passa por aprovação.');
   if (activeRun(record, piece.id)) return RUNNING;
-  const open = pendingSuggestions(record, piece.id).length;
-  if (open > 0) return blocked('suggestion_pending', open === 1 ? 'Decida a sugestão aberta antes de enviar.' : `Decida as ${open} sugestões abertas antes de enviar.`);
-  const saved = saveVersion(piece, record.versions, probeContext(ctx));
-  if (!saved.ok && saved.refusal.code === 'empty') return blocked('empty', saved.refusal.message);
-  const blocker = requestBlocker(record, piece, ctx);
-  if (blocker) return blocked('checks_blocking', blocker);
   const request = pendingReview(record, piece.id);
+  if (request) return blocked('already_requested', alreadyRequestedMessage(ctx.state, request));
+  const saved = saveVersion(piece, record.versions, probeContext(ctx));
+  if (!saved.ok && saved.refusal.code === 'empty') return blocked('empty', 'O texto está vazio.');
+  if (gateMembers(ctx.state, gate, ctx.state.sessionPersonId).length === 0) {
+    return blocked('no_approver', 'Ninguém pode aprovar ainda. Peça a um admin o papel de aprovador.');
+  }
   const latest = latestVersion(record, piece.id);
   const unchanged = latest !== undefined && bodyHash(piece.draft.body) === latest.hash;
-  if (unchanged && request && request.subject.versionId === latest.id) {
-    return blocked('already_requested', `A v${latest.number} já está aguardando aprovação.`);
+  if (approvalStateOf(record, piece.id) === 'approved' || (unchanged && isApproved(record, toVersionRef(latest)))) {
+    return blocked('already_approved', 'Este texto já está aprovado.');
   }
-  if (unchanged && isApproved(record, toVersionRef(latest))) return blocked('already_approved', `A v${latest.number} já está aprovada.`);
   return ALLOWED;
 }
 
@@ -106,7 +112,7 @@ export function deriveGuard(record: ProductionRecord, kind: PieceKind): Guard & 
   if (!derivable.ok) return guardFrom(derivable);
   const existing = pieceOfKind(record, kind);
   if (existing && sameRefSet(existing.draft.inputs, [approved.ref])) {
-    return { ...blocked('already_derived', `O ${PIECE_LABELS[kind].toLowerCase()} já usa a v${approved.ref.number}.`), from: approved.ref };
+    return { ...blocked('already_derived', `O ${PIECE_LABELS[kind].toLowerCase()} já usa o ${PIECE_LABELS[parentKind].toLowerCase()} aprovado.`), from: approved.ref };
   }
   return { allowed: true, from: approved.ref };
 }

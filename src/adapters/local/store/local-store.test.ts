@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 import { CONTRACT_TRANSCRIPT, newProductionInput } from '../../../ports/contracts/fixture.ts';
 import type { ArticleBody } from '../../../domain/article.ts';
 import { paragraphBlock } from '../../../domain/article.ts';
+import type { PersonSummary } from '../../../ports/common.ts';
+import { activitySummary } from './activity-text.ts';
 import { DRAFT_SLOT_KEY, SNAPSHOT_KEY } from './snapshot.ts';
 import { memoryStorage } from './storage.ts';
 import { createTestPorts } from './testing.ts';
@@ -178,5 +180,48 @@ describe('local store persistence', () => {
     const source = await ports.queries.source(first.sourceId);
     assert.ok(source.ok);
     assert.equal(source.value.productions.length, 2);
+  });
+});
+
+describe('the review of the whole text in the activity feed', () => {
+  const aiArticle = (state: 'unreviewed' | 'reviewed', second = 'Dois.'): ArticleBody => ({
+    type: 'article',
+    title: 'Rascunho',
+    blocks: [paragraphBlock('b-1', 'Um.', { ai: state }), paragraphBlock('b-2', second, { ai: state })],
+  });
+
+  it('logs it when a save flips the AI blocks, never for typing, and persists it with the snapshot', async () => {
+    const storage = memoryStorage();
+    const ports = createTestPorts({ storage });
+    const { pieces } = await created(ports);
+    const pieceId = pieces[0].pieceId;
+    const reviewTypes = () => ports.store.state.activity.map((event) => event.type).filter((type) => type.startsWith('text.'));
+    const save = async (body: ArticleBody) => {
+      const saved = await ports.commands.saveDraft(pieceId, body, await revisionOf(ports, pieceId));
+      assert.ok(saved.ok);
+    };
+
+    await save(aiArticle('unreviewed'));
+    await save(aiArticle('unreviewed', 'Dois, com mais texto.'));
+    assert.deepEqual(reviewTypes(), [], 'typing and AI text are not a click on the review');
+
+    await save(aiArticle('reviewed', 'Dois, com mais texto.'));
+    assert.deepEqual(reviewTypes(), ['text.reviewed']);
+    await save(aiArticle('reviewed', 'Dois, ainda mais texto.'));
+    assert.deepEqual(reviewTypes(), ['text.reviewed'], 'typing in a reviewed text keeps it reviewed and logs nothing');
+
+    await save(aiArticle('unreviewed', 'Dois, ainda mais texto.'));
+    assert.deepEqual(reviewTypes(), ['text.reviewed', 'text.review_reopened']);
+
+    const reloaded = createTestPorts({ storage });
+    assert.deepEqual(
+      reloaded.store.state.activity.map((event) => event.type).filter((type) => type.startsWith('text.')),
+      ['text.reviewed', 'text.review_reopened'],
+      'the activity survives a reload',
+    );
+    const ana = { id: 'p-ana', name: 'Ana Prado' } as PersonSummary;
+    const [marked, reopened] = ports.store.state.activity.filter((event) => event.type.startsWith('text.'));
+    assert.equal(activitySummary(marked, ana), 'Ana Prado marcou o texto como revisado');
+    assert.equal(activitySummary(reopened, ana), 'Ana Prado desfez a revisão do texto');
   });
 });

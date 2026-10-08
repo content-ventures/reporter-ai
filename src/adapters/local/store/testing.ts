@@ -20,6 +20,7 @@ export const TEST_PEOPLE = {
   editor: 'person-editor',
   approver: 'person-approver',
   editorOnly: 'person-writer',
+  creativeReviewer: 'person-creative',
 } as const;
 
 export const TEST_TEMPLATE: CarouselTemplate = {
@@ -47,11 +48,13 @@ export function testSeed(): StoreSeed {
       { id: TEST_PEOPLE.editor, name: 'Clara Nogueira', title: 'editora' },
       { id: TEST_PEOPLE.approver, name: 'Rafael Moura', title: 'aprovador' },
       { id: TEST_PEOPLE.editorOnly, name: 'Bianca Teles', title: 'redatora' },
+      { id: TEST_PEOPLE.creativeReviewer, name: 'Lívia Campos', title: 'revisora de criativos' },
     ],
     members: [
       { workspaceId, personId: TEST_PEOPLE.editor, roles: ['editor', 'admin'] },
       { workspaceId, personId: TEST_PEOPLE.approver, roles: ['approver'] },
       { workspaceId, personId: TEST_PEOPLE.editorOnly, roles: ['editor'] },
+      { workspaceId, personId: TEST_PEOPLE.creativeReviewer, roles: ['editor', 'creative_reviewer'] },
     ],
     sessionPersonId: TEST_PEOPLE.editor,
   };

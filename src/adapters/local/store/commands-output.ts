@@ -19,6 +19,7 @@ import type {
 } from '../../../ports/production-commands.ts';
 import type { ActivityDraft, LocalStore, Tx } from './local-store.ts';
 import { detach } from './queries.ts';
+import { lockedMessage, lockOf } from './send-check.ts';
 import { assembleRecord, findProduction, locatePiece, withPiece, withProduction } from './state.ts';
 import type { ProductionState, StoreState } from './state.ts';
 
@@ -178,6 +179,13 @@ export function createOutputCommands(store: LocalStore, feedback: FeedbackPort):
         const found = findSuggestion(state, suggestionId);
         if (!found) return refuse('not_found', 'Sugestão não encontrada.');
         const { suggestion } = found;
+        // Accepting or reopening touches the text, which is locked while it waits for a decision (D8);
+        // discarding a suggestion leaves the text as it is.
+        if (decision !== 'discard') {
+          const owner = locatePiece(state, suggestion.pieceId);
+          const lock = owner ? lockOf(assembleRecord(state, owner.production), owner.piece) : undefined;
+          if (lock) return refuse('locked', lockedMessage(state, lock));
+        }
         if (decision === 'restore') {
           // "Desfazer": a discarded suggestion is open again, as it was (its target is located anew).
           if (suggestion.state !== 'discarded') return refuse('not_discarded', 'Só uma sugestão descartada volta.');

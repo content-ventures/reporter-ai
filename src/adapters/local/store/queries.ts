@@ -18,6 +18,7 @@ import { deliveryView } from './views-delivery.ts';
 import { listProductions, toDetail } from './views-list.ts';
 import { activityPage, overviewData } from './views-overview.ts';
 import { compareVersions, draftView, reviewView, sourceDetail, versionDetail } from './views-piece.ts';
+import { approvalsPage } from './views-queue.ts';
 
 /** Registry data the read side needs (registries agent provides the real lists). */
 export type ReadOptions = {
@@ -114,6 +115,7 @@ export function createLocalQueries(store: LocalStore, options: ReadOptions = {})
     source: (sourceId, version) => run('source', (ctx) => sourceDetail(ctx, sourceId, version)),
     review: (pieceId, versionId) => run('review', (ctx) => reviewView(ctx, pieceId, versionId)),
     delivery: (productionId, query) => run('delivery', (ctx) => deliveryView(ctx, productionId, query)),
+    approvals: (tab) => run('approvals', (ctx) => approvalsPage(ctx, tab)),
     subscribe: (listener) => store.subscribe(listener),
   };
 }

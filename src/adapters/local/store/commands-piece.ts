@@ -1,13 +1,14 @@
+import { approvalStateOf, isValidDue, requestRound } from '../../../domain/approval.ts';
 import type { AssetLookup } from '../../../domain/asset.ts';
 import type { CarouselTemplate } from '../../../domain/carousel.ts';
 import { gateForPiece } from '../../../domain/decision.ts';
 import type { Decision, GateDefinition, ReviewRequest } from '../../../domain/decision.ts';
-import { articleImageRights, emptyArticle } from '../../../domain/article.ts';
+import { articleImageRights, emptyArticle, reviewFlips } from '../../../domain/article.ts';
 import type { Piece, PieceBody, PieceKind, Version } from '../../../domain/piece.ts';
-import { toVersionRef } from '../../../domain/piece.ts';
-import { activeRun, currentSourceRefs, findPiece, findVersion, isApproved, pendingReview, pendingSuggestions } from '../../../domain/record.ts';
+import { bodyHash, toVersionRef } from '../../../domain/piece.ts';
+import { activeRun, currentSourceRefs, findPiece, findVersion, isApproved, pendingReview } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
-import { readiness } from '../../../domain/checks.ts';
+import { hasAnyRole } from '../../../domain/workspace.ts';
 import { ok, refuse } from '../../../domain/result.ts';
 import { decide } from '../../../domain/rules/decide.ts';
 import { canDerive } from '../../../domain/rules/derive.ts';
@@ -25,9 +26,12 @@ import type {
   SavedVersion,
   SaveDraftRefusal,
   VersionRefusal,
+  WithdrawnReview,
+  WithdrawReviewRefusal,
 } from '../../../ports/production-commands.ts';
 import type { ActivityDraft, LocalStore, Tx } from './local-store.ts';
-import { currentMember } from './people.ts';
+import { currentMember, firstNameOf } from './people.ts';
+import { alreadyRequestedMessage, lockedMessage, lockOf, sendItemsOf, sendRefusal, suggestedAssignee } from './send-check.ts';
 import { assembleRecord, findProduction, locatePiece, withPiece, withProduction } from './state.ts';
 import type { ProductionState, StoreState } from './state.ts';
 
@@ -41,7 +45,7 @@ export type PieceCommandOptions = {
 };
 
 const NOT_FOUND = refuse('not_found', 'Não encontramos esta peça.');
-const RUNNING = refuse('run_in_progress', 'Aguarde a geração terminar.');
+const RUNNING = refuse('run_in_progress', 'Aguarde a IA terminar.');
 
 function versionActivity(production: ProductionState, piece: Piece, version: Version, type: ActivityDraft['type'], extra: ActivityDraft['data'] = {}): ActivityDraft {
   return {
@@ -50,6 +54,19 @@ function versionActivity(production: ProductionState, piece: Piece, version: Ver
     subject: toVersionRef(version),
     data: { piece: piece.kind, number: version.number, origin: version.origin, ...extra },
   };
+}
+
+/**
+ * "marcou o texto como revisado" / "desfez a revisão do texto": the person's click on the review of
+ * the whole text reaches the store as a save of the draft whose AI blocks flipped their flag (the
+ * review lives in the blocks), so the save is where it is told. Typing, deleting and AI text never
+ * flip a flag on the same text, so they never log one.
+ */
+function reviewActivity(production: ProductionState, piece: Piece, before: PieceBody, after: PieceBody): ActivityDraft[] {
+  if (before.type !== 'article' || after.type !== 'article') return [];
+  const { marked, reopened } = reviewFlips(before, after);
+  if ((marked > 0) === (reopened > 0)) return [];
+  return [{ type: marked > 0 ? 'text.reviewed' : 'text.review_reopened', productionId: production.production.id, data: { piece: piece.kind } }];
 }
 
 function withVersions(production: ProductionState, piece: Piece, versions: readonly Version[]): ProductionState {
@@ -66,15 +83,7 @@ function emptyBody(kind: PieceKind, templateId: string): PieceBody | undefined {
   return undefined;
 }
 
-/** The first blocking check that fails on the draft (what "Enviar para aprovação" waits for), as a sentence. */
-export function requestBlocker(record: ProductionRecord, piece: Piece, options: Pick<PieceCommandOptions, 'templates' | 'assets'>): string | undefined {
-  const [blocker] = readiness(evaluatePieceChecks(record, piece, piece.draft.body, options.templates, options.assets)).blockers;
-  if (!blocker) return undefined;
-  const detail = (blocker.detail ?? `${blocker.label} pendente`).trim();
-  return /[.!?…]$/.test(detail) ? detail : `${detail}.`;
-}
-
-type PieceCommands = Pick<ProductionCommands, 'saveDraft' | 'createVersion' | 'restoreVersion' | 'requestReview' | 'decide' | 'derive'>;
+type PieceCommands = Pick<ProductionCommands, 'saveDraft' | 'createVersion' | 'restoreVersion' | 'requestReview' | 'withdrawReview' | 'decide' | 'derive'>;
 
 export function createPieceCommands(store: LocalStore, options: PieceCommandOptions): PieceCommands {
   return {
@@ -82,14 +91,18 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
       const result = store.transact((state, ctx): Tx<Omit<SavedDraft, 'persisted'>, SaveDraftRefusal> => {
         const location = locatePiece(state, pieceId);
         if (!location) return NOT_FOUND;
+        // Locked while it waits for a decision (D8): an autosave of the same text still goes through.
+        const lock = lockOf(assembleRecord(state, location.production), location.piece);
+        if (lock && bodyHash(body) !== bodyHash(location.piece.draft.body)) return refuse('locked', lockedMessage(state, lock));
         const updated = updateDraft(location.piece, structuredClone(body), baseRevision, ctx);
         if (!updated.ok) return updated;
         const { draft } = updated.value;
+        const activity = reviewActivity(location.production, location.piece, location.piece.draft.body, body);
         return ok({
           state: withProduction(state, withPiece(location.production, updated.value)),
           value: { pieceId, revision: draft.revision, updatedAt: draft.updatedAt },
           productionIds: [location.production.production.id],
-          persist: { draft: pieceId },
+          ...(activity.length > 0 ? { activity, persist: 'full' as const } : { persist: { draft: pieceId } }),
         });
       });
       // Not saved when the write failed, or while another tab owns the workspace (read-only tab).
@@ -102,6 +115,8 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
         if (!location) return NOT_FOUND;
         const record = assembleRecord(state, location.production);
         if (activeRun(record, pieceId)) return RUNNING;
+        const lock = lockOf(record, location.piece);
+        if (lock) return refuse('locked', lockedMessage(state, lock));
         const saved = saveVersion(location.piece, record.versions, ctx);
         if (!saved.ok) return saved;
         const production = withVersions(location.production, saved.value.piece, [saved.value.version]);
@@ -121,6 +136,8 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
         if (!location) return NOT_FOUND;
         const record = assembleRecord(state, location.production);
         if (activeRun(record, pieceId)) return RUNNING;
+        const lock = lockOf(record, location.piece);
+        if (lock) return refuse('locked', lockedMessage(state, lock));
         const restored = restoreVersion(location.piece, record.versions, versionId, ctx);
         if (!restored.ok) return restored;
         const from = findVersion(record, versionId);
@@ -135,30 +152,38 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
       });
     },
 
-    async requestReview(pieceId, note) {
+    async requestReview(pieceId, input = {}) {
       return store.transact((state, ctx): Tx<RequestedReview, RequestReviewRefusal> => {
         const location = locatePiece(state, pieceId);
         if (!location) return NOT_FOUND;
         const gate = gateForPiece(location.piece.kind, options.gates);
         if (!gate) return refuse('no_gate', 'Esta peça não passa por aprovação.');
         const record = assembleRecord(state, location.production);
-        if (activeRun(record, pieceId)) return RUNNING;
-        // The approver decides on a settled text: open AI suggestions are decided first.
-        const open = pendingSuggestions(record, pieceId).length;
-        if (open > 0) return refuse('suggestion_pending', open === 1 ? 'Decida a sugestão aberta antes de enviar.' : `Decida as ${open} sugestões abertas antes de enviar.`);
-        // Nor a text a blocking check stops (an interrupted generation): it could never be approved.
-        const blocker = requestBlocker(record, location.piece, options);
-        if (blocker) return refuse('checks_blocking', blocker);
-        const ensured = ensureVersion(location.piece, record.versions, ctx);
-        if (!ensured.ok) return ensured;
-        const { version, created } = ensured.value;
+        // The text is locked while a send waits: nothing changed since, so it is the same send.
         const pending = pendingReview(record, pieceId);
-        if (!created && pending?.subject.versionId === version.id) {
-          return refuse('already_requested', `A v${version.number} já está aguardando aprovação.`);
+        if (pending) return refuse('already_requested', alreadyRequestedMessage(state, pending));
+        if (activeRun(record, pieceId)) return RUNNING;
+        // "Falta" items block the send (the dialog lists them; "Aviso" items never block).
+        const refusal = sendRefusal(sendItemsOf(record, location.piece, options));
+        if (refusal) return refuse(refusal.code, refusal.message);
+
+        const assigneeId = input.assigneeId ?? suggestedAssignee(state, record, location.piece, gate, ctx.actorId);
+        if (assigneeId !== undefined) {
+          const assignee = state.people.find((person) => person.id === assigneeId);
+          const member = state.members.find((entry) => entry.personId === assigneeId);
+          if (!assignee || !member) return refuse('unknown_assignee', 'Pessoa não encontrada.');
+          if (assigneeId === ctx.actorId) return refuse('self_assign', 'Escolha outra pessoa para aprovar.');
+          if (!hasAnyRole(member, gate.roles)) return refuse('assignee_cannot_approve', `${firstNameOf(state, assigneeId)} não aprova esta peça.`);
         }
-        if (!created && isApproved(record, toVersionRef(version))) {
-          return refuse('already_approved', `A v${version.number} já está aprovada.`);
-        }
+        const dueOn = input.dueOn?.trim() || undefined;
+        if (dueOn !== undefined && !isValidDue(dueOn, ctx.now)) return refuse('invalid_due', 'Escolha hoje ou uma data futura.');
+
+        // The approved text as it is (also after "Desfazer mudanças" restored it as a new version).
+        if (approvalStateOf(record, pieceId) === 'approved') return refuse('already_approved', 'Este texto já está aprovado.');
+        const ensured = ensureVersion(location.piece, record.versions, ctx);
+        if (!ensured.ok) return refuse('empty', 'O texto está vazio.');
+        const { version, created } = ensured.value;
+        if (!created && isApproved(record, toVersionRef(version))) return refuse('already_approved', 'Este texto já está aprovado.');
         const request: ReviewRequest = {
           id: ctx.newId('rev'),
           gate: gate.id,
@@ -166,18 +191,53 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
           requestedBy: ctx.actorId,
           requestedAt: ctx.now,
         };
-        if (note?.trim()) request.note = note.trim();
+        const note = input.note?.trim();
+        if (note) request.note = note;
+        if (assigneeId) request.assigneeId = assigneeId;
+        if (dueOn) request.dueOn = dueOn;
         const withVersion = created ? withVersions(location.production, ensured.value.piece, [version]) : location.production;
         const production: ProductionState = { ...withVersion, reviewRequests: [...withVersion.reviewRequests, request] };
         const next = withProduction(state, production);
         const activity: ActivityDraft[] = [];
         if (created) activity.push(versionActivity(production, location.piece, version, 'version.created'));
-        activity.push(versionActivity(production, location.piece, version, 'review.requested'));
+        const sent: Record<string, string | number> = { round: requestRound(production, request) };
+        if (assigneeId) {
+          sent.assigneeId = assigneeId;
+          sent.assigneeName = state.people.find((person) => person.id === assigneeId)?.name ?? assigneeId;
+        }
+        if (dueOn) sent.dueOn = dueOn;
+        activity.push(versionActivity(production, location.piece, version, 'review.requested', sent));
         return ok({
           state: next,
           value: { request, version: toVersionView(recordAfter(next, production), version), created },
           productionIds: [production.production.id],
           activity,
+        });
+      });
+    },
+
+    /** "Retirar envio para editar": the sender (or an admin) takes the text back while it waits. */
+    async withdrawReview(pieceId) {
+      return store.transact((state, ctx): Tx<WithdrawnReview, WithdrawReviewRefusal> => {
+        const location = locatePiece(state, pieceId);
+        if (!location) return NOT_FOUND;
+        const record = assembleRecord(state, location.production);
+        const pending = pendingReview(record, pieceId);
+        if (!pending) return refuse('not_awaiting', 'Este texto não está aguardando aprovação.');
+        if (pending.requestedBy !== ctx.actorId && !hasAnyRole(currentMember(state), ['admin'])) {
+          return refuse('forbidden', 'Só quem enviou ou um admin retira o envio.');
+        }
+        const request: ReviewRequest = { ...pending, withdrawnAt: ctx.now, withdrawnBy: ctx.actorId };
+        const production: ProductionState = {
+          ...location.production,
+          reviewRequests: location.production.reviewRequests.map((entry) => (entry.id === pending.id ? request : entry)),
+        };
+        const version = findVersion(record, pending.subject.versionId);
+        return ok({
+          state: withProduction(state, production),
+          value: { pieceId, request },
+          productionIds: [production.production.id],
+          activity: version ? [versionActivity(production, location.piece, version, 'review.withdrawn')] : [],
         });
       });
     },

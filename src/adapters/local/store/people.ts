@@ -2,7 +2,7 @@ import type { ActorId, PersonId } from '../../../domain/ids.ts';
 import { SYSTEM_ACTOR } from '../../../domain/ids.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
 import { toSourceSummary } from '../../../domain/views.ts';
-import { initialsOf, personLine } from '../../../domain/workspace.ts';
+import { firstName, initialsOf, personLine } from '../../../domain/workspace.ts';
 import type { Member, Person } from '../../../domain/workspace.ts';
 import type { PersonSummary } from '../../../ports/common.ts';
 import type { Participant } from '../../../ports/production-queries.ts';
@@ -24,6 +24,11 @@ export function personOf(state: Pick<StoreState, 'people'>, id: ActorId | undefi
   if (!id || id === SYSTEM_ACTOR) return null;
   const person = state.people.find((candidate) => candidate.id === id);
   return person ? toPersonSummary(person) : { id, name: 'Pessoa removida', initials: '?' };
+}
+
+/** "Pedro" for "Com Pedro" and "Aguardando aprovação de Pedro" (the id when nobody has it). */
+export function firstNameOf(state: Pick<StoreState, 'people'>, id: PersonId): string {
+  return firstName(state.people.find((person) => person.id === id)?.name) || id;
 }
 
 export function currentMember(state: StoreState): Member | undefined {
