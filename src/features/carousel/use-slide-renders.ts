@@ -53,7 +53,7 @@ export function renderKey(body: CarouselBody, index: number, scale: number, arti
 }
 
 export type RenderOptions = {
-  /** 1 = 1080×1350 (stage, gallery) · 0.25 = strip thumbnails. */
+  /** 1 = the model's size, 1080×1350 or 1080×1080 (stage, gallery) · 0.25 = strip thumbnails. */
   scale: number;
   /** Only these slides (default: all). */
   slideIds?: readonly SlideId[];

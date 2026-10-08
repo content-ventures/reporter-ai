@@ -19,7 +19,7 @@ import {
   type SlideStripItem,
   type SlideStripOrientation,
 } from '@content-ventures/design-system/v3';
-import { ArrowLeftRight, GalleryHorizontal, Maximize2, Save, Send } from '@content-ventures/design-system/v3/icons';
+import { ArrowLeftRight, GalleryHorizontal, LayoutTemplate, Maximize2, Save, Send } from '@content-ventures/design-system/v3/icons';
 import {
   countWords,
   findLayout,
@@ -35,6 +35,9 @@ import {
 import type { PieceView, ProductionDetail, SlotFit } from '@/ports';
 import { useCommands, usePiece, useRun, useRuntime, useSaveStatus, useVersion } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
+import { rememberTemplate } from '@/features/library/last-template';
+import { switchSummary } from '@/features/library/library-model';
+import { TemplatePickerDrawer } from '@/features/library/template-drawers';
 import { plural } from '@/ui/format';
 import { pieceHref, reviewHref } from '@/ui/routes';
 import { RunTrace } from '@/ui/run-trace';
@@ -50,7 +53,7 @@ import {
 } from './carousel-actions';
 import { OutdatedNotice } from './outdated-notice';
 import { SlidePanel } from './slide-panel';
-import { SlideThumb } from './slide-media';
+import { slideRatio, SlideThumb } from './slide-media';
 import { applyProposal } from './slide-proposal';
 import { SlideStage, type StageView } from './slide-stage';
 import { StudioToolbar } from './studio-toolbar';
@@ -239,7 +242,38 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     });
     setSelected(id);
   };
-  const changeTemplate = (templateId: TemplateId) => draft.update((value) => ({ ...value, templateId }));
+
+  // ── Model: "Trocar modelo" opens the library; the switch keeps every text (slots by id and role),
+  // the strip marks what no longer fits (approximate), and "Desfazer" brings the previous model back.
+  // A text the new model has no place for is kept in a saved version first.
+  const [picking, setPicking] = useState(false);
+  const checkTemplate = (templateId: TemplateId) => {
+    if (!runtime || !draft.body) return undefined;
+    const switched = runtime.render.switchTemplate(draft.body, templateId);
+    return switched.ok ? switched.value : undefined;
+  };
+  const applyTemplate = async (templateId: TemplateId) => {
+    const before = draft.body;
+    if (!runtime || !before || running) return;
+    const switched = runtime.render.switchTemplate(before, templateId);
+    if (!switched.ok) {
+      toast('Não foi possível trocar o modelo', { tone: 'error', description: switched.refusal.message });
+      return;
+    }
+    const summary = switchSummary(switched.value.issues);
+    if (summary.dropped > 0) {
+      await draft.flush();
+      await commands.production.createVersion(carousel.id);
+    }
+    draft.update(() => switched.value.body);
+    rememberTemplate(templateId);
+    setPicking(false);
+    const name = templates.find((entry) => entry.id === templateId)?.name ?? 'novo';
+    toast(`Modelo ${name} aplicado`, {
+      ...(summary.tone === 'warning' ? { description: summary.dropped > 0 ? `${summary.text}. O texto anterior ficou salvo como versão.` : summary.text } : {}),
+      action: { label: 'Desfazer', onClick: () => draft.update(() => before) },
+    });
+  };
 
   // ── Proposal on stage: Atual | Proposta, with the renderer's fit of the proposal ────
   const proposal = current ? assist.pending[current.id] : undefined;
@@ -260,6 +294,8 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
   // ── Strip ───────────────────────────────────────────────────────────────────────────
   const articleCover = piece.data?.articleCover?.assetId;
   const thumbs = useSlideRenders(body, { scale: 0.25, articleCover });
+  // The carousel's own cover on every card of "Trocar modelo".
+  const coverSlots = slides[0] && slides[0].layout === (template?.coverLayoutId ?? 'cover') ? slides[0].slots : undefined;
   const states = slides.map((slide) => {
     const slideLayout = findLayout(template, slide.layout);
     const missing = slideLayout?.slots.find((slot) => slot.required && !slide.slots[slot.id]?.trim());
@@ -272,10 +308,11 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     if (update) return { state: 'warning' as const, issue: 'Atualização pendente' };
     return { state: 'ok' as const, issue: undefined };
   });
+  const ratio = slideRatio(template);
   const items: SlideStripItem[] = slides.map((slide, at) => ({
     id: slide.id,
     label: findLayout(template, slide.layout)?.label ?? 'Slide',
-    thumb: <SlideThumb render={thumbs[slide.id]} />,
+    thumb: <SlideThumb render={thumbs[slide.id]} ratio={ratio} />,
     state: states[at]?.state,
     issue: states[at]?.issue,
     meta: plural(slideWords(slide), 'palavra', 'palavras'),
@@ -307,7 +344,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
       onAdd={running || !template ? undefined : add}
       onDuplicate={running ? undefined : duplicate}
       onRemove={running ? undefined : remove}
-      ratio="4/5"
+      ratio={ratio}
       orientation={orientation}
       loading={!body && piece.status === 'loading'}
       disabled={running}
@@ -430,6 +467,16 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
         },
       },
       ...(warnings > 0 ? [{ id: 'carousel-next-warning', label: 'Próximo slide com aviso', icon: ArrowLeftRight, onSelect: jumpToWarning }] : []),
+      {
+        id: 'carousel-template',
+        label: 'Trocar modelo',
+        icon: LayoutTemplate,
+        ...(lockedReason ? { description: lockedReason } : {}),
+        onSelect: () => {
+          if (lockedReason) toast('Ainda não dá para trocar o modelo', { tone: 'info', description: lockedReason });
+          else setPicking(true);
+        },
+      },
       { id: 'carousel-toggle-view', label: view === 'slide' ? 'Ver sequência' : 'Ver slide', icon: GalleryHorizontal, onSelect: () => setView(view === 'slide' ? 'sequence' : 'slide') },
       { id: 'carousel-focus', label: focusMode.focus ? 'Sair do modo foco' : 'Modo foco', icon: Maximize2, onSelect: focusMode.toggle },
     ],
@@ -489,9 +536,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
           <StudioToolbar
             view={view}
             onView={setView}
-            templates={templates}
-            templateId={body?.templateId}
-            onTemplate={changeTemplate}
+            onTemplates={() => setPicking(true)}
             lockedReason={lockedReason}
             running={running}
             stopping={stopping}
@@ -520,6 +565,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
             label="Situação do carrossel"
             items={[
               plural(slides.length, 'slide', 'slides'),
+              template ? `Modelo ${template.name}` : null,
               warnings > 0 ? (
                 <LinkButton key="warnings" tone="quiet" size="inherit" onClick={jumpToWarning}>
                   {plural(warnings, 'aviso', 'avisos')}
@@ -629,6 +675,15 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
           {narrow ? strip('horizontal') : null}
         </PageStack>
       </WorkspaceLayout>
+      <TemplatePickerDrawer
+        open={picking}
+        onClose={() => setPicking(false)}
+        templates={templates}
+        current={body?.templateId}
+        cover={{ articleCover, slots: coverSlots }}
+        check={checkTemplate}
+        onApply={applyTemplate}
+      />
       <ConfirmDialog
         open={restoring !== null}
         onClose={() => setRestoring(null)}

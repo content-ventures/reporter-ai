@@ -24,7 +24,7 @@ import { blockText, diffWords, SIMULATED_MODEL, type ArticleBody, type CarouselB
 import type { RunView, SlotFit } from '@/ports';
 import { copilotToolsFor } from '@/registries';
 import { Provenance } from '@/ui/provenance';
-import { SlideThumb } from './slide-media';
+import { slideRatio, SlideThumb } from './slide-media';
 import { applyProposal } from './slide-proposal';
 import type { AssistRequest, PendingAssist } from './use-slide-assist';
 import { useSlideRenders } from './use-slide-renders';
@@ -41,6 +41,8 @@ const DIFF_TYPE: Record<SlotRole, DiffBlockType> = {
   quote: 'quote',
   attribution: 'caption',
   cta: 'caption',
+  stat: 'h3',
+  list: 'paragraph',
 };
 
 const TOOL_ICON = { rewrite: Sparkles, fit: Scissors, swap: ArrowLeftRight } as const;
@@ -224,7 +226,7 @@ function AssistSection({
           {assist.proposal && (assist.state === 'ready' || assist.state === 'stale') ? (
             <>
               <Grid columns="1:2" collapseBelow={false} gap="md">
-                <SlideThumb render={preview} />
+                <SlideThumb render={preview} ratio={slideRatio(template)} />
                 <DiffView blocks={proposalDiff(slide, layout, assist.proposal.slots)} size="compact" summary={false} label={`Proposta para o slide ${index + 1}`} />
               </Grid>
               {assistRun ? <Provenance run={assistRun} size="xs" /> : null}

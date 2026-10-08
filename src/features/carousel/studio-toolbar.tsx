@@ -1,24 +1,21 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Toolbar, ToolbarButton, ToolbarGroup, ToolbarMenu, ToolbarSeparator, ToolbarToggle } from '@content-ventures/design-system/v3';
+import { Toolbar, ToolbarButton, ToolbarGroup, ToolbarSeparator, ToolbarToggle } from '@content-ventures/design-system/v3';
 import { CircleStop, GalleryHorizontal, Image as ImageIcon, LayoutTemplate, Sparkles } from '@content-ventures/design-system/v3/icons';
-import type { TemplateId } from '@/domain';
-import type { TemplateInfo } from '@/ports';
 import type { StageView } from './slide-stage';
 
 /**
- * Strip on top of the slide canvas: Slide | Sequência and the template (creative data from the
- * render service). On a desktop `end` closes it with the document's state (save state and
- * versions) and the generation control lives in the header; a narrow frame has no header room,
- * so "Gerar nova versão" (or "Parar" while running) stays here (`generate`).
+ * Strip on top of the slide canvas: Slide | Sequência and "Trocar modelo", which opens the model
+ * library (the switch keeps the texts and says what no longer fits before applying). On a desktop
+ * `end` closes it with the document's state (save state and versions) and the generation control
+ * lives in the header; a narrow frame has no header room, so "Gerar nova versão" (or "Parar"
+ * while running) stays here (`generate`).
  */
 export function StudioToolbar({
   view,
   onView,
-  templates,
-  templateId,
-  onTemplate,
+  onTemplates,
   lockedReason,
   running,
   stopping,
@@ -30,9 +27,8 @@ export function StudioToolbar({
 }: {
   view: StageView;
   onView: (view: StageView) => void;
-  templates: readonly TemplateInfo[];
-  templateId: TemplateId | undefined;
-  onTemplate: (id: TemplateId) => void;
+  /** "Trocar modelo": opens the library. */
+  onTemplates: () => void;
   lockedReason?: string;
   running: boolean;
   stopping: boolean;
@@ -43,7 +39,6 @@ export function StudioToolbar({
   generate: boolean;
   end?: ReactNode;
 }) {
-  const current = templates.find((template) => template.id === templateId);
   return (
     <Toolbar label="Carrossel" overflow="menu" keepFocus={false} end={end}>
       <ToolbarGroup label="Visualização">
@@ -51,23 +46,14 @@ export function StudioToolbar({
         <ToolbarToggle label="Sequência" icon={GalleryHorizontal} showLabel keep pressed={view === 'sequence'} onPressedChange={() => onView('sequence')} />
       </ToolbarGroup>
       <ToolbarSeparator />
-      <ToolbarMenu
-        label="Modelo"
+      <ToolbarButton
+        label="Trocar modelo"
         icon={LayoutTemplate}
-        value={current?.name ?? 'Modelo'}
+        showLabel
+        keep
         disabled={Boolean(lockedReason)}
         disabledReason={lockedReason}
-        sections={[
-          {
-            label: 'Modelo do carrossel',
-            items: templates.map((template) => ({
-              label: template.name,
-              description: template.description,
-              checked: template.id === templateId,
-              onSelect: () => onTemplate(template.id),
-            })),
-          },
-        ]}
+        onClick={onTemplates}
       />
       {generate ? <ToolbarSeparator /> : null}
       {!generate ? null : running ? (
