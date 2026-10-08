@@ -7,29 +7,41 @@ import {
   diffWords,
   foldForMatch,
   formatTimestamp,
+  shortenToSizeLabel,
+  sizeOf,
+  textReviewOf,
   unreviewedAiBlockIds,
   words,
 } from '../../../domain/index.ts';
 import type {
   ArticleBlock,
+  ArticleSize,
   ArticleBody,
   BlockId,
   CheckResult,
+  DiffBlock,
+  DiffChange,
   DiffHunk,
   QuoteCheck,
+  SendItem,
+  SendItemId,
+  SendItemLevel,
+  SendTarget,
   Source,
   SourceRef,
   Speaker,
   Suggestion,
   SuggestionProposal,
   TextRange,
+  TextReview,
   TranscriptSegment,
 } from '../../../domain/index.ts';
 
 /**
- * Pure helpers of the article studio: what the status line counts, which transcript segments
- * the text uses, how a suggestion reads in a card, and how the transcript maps onto the Design
- * System `TranscriptViewer`. No React and no Design System here, so `node --test` covers them.
+ * Pure helpers of the article studio: what the footer and the Checagem say, which transcript
+ * segments the text uses, how a suggestion reads in a card, how a version compares with the text
+ * on screen, and how the transcript maps onto the Design System `TranscriptViewer`. No React and
+ * no Design System here, so `node --test` covers them.
  */
 
 // ——— Facts about the text (status line, Checagem, outline) ———
@@ -38,9 +50,13 @@ export type OutlineEntry = { blockId: BlockId; level: 2 | 3; text: string; numbe
 
 export type ArticleFacts = {
   words: number;
+  /** The lauda count of the body (characters with spaces, title and captions excluded). */
+  characters: number;
   minutes: number;
   /** AI blocks still marked `unreviewed`, in document order. */
   unreviewed: BlockId[];
+  /** The review of the whole text: `none` without AI text, `pending` while any AI block is unreviewed, else `reviewed`. */
+  review: TextReview;
   quotes: QuoteCheck[];
   verifiedQuotes: number;
   /** Quotes that do not match the material ("Falta"), in document order. */
@@ -52,8 +68,10 @@ export type ArticleFacts = {
 
 export const EMPTY_FACTS: ArticleFacts = {
   words: 0,
+  characters: 0,
   minutes: 0,
   unreviewed: [],
+  review: 'none',
   quotes: [],
   verifiedQuotes: 0,
   missingQuotes: [],
@@ -98,8 +116,10 @@ export function articleFacts(body: ArticleBody, sources: readonly Source[]): Art
   const quotes = sources.length > 0 ? checkQuotes(body, sources) : [];
   return {
     words: stats.words,
+    characters: stats.characters,
     minutes: stats.words > 0 ? stats.readingMinutes : 0,
     unreviewed: unreviewedAiBlockIds(body),
+    review: textReviewOf(body),
     quotes,
     verifiedQuotes: quotes.filter((quote) => quote.status === 'verified').length,
     missingQuotes: quotes.filter((quote) => quote.status === 'missing').map((quote) => quote.range),
@@ -141,14 +161,14 @@ export function mergeChecks(local: readonly CheckResult[], stored: readonly Chec
 
 /**
  * Article-wide tools with their label for this text: nothing on an empty draft; "Sugerir
- * intertítulos" only with headings; "Encurtar para 500 palavras" (the brief's length target)
- * only when the text is above it.
+ * intertítulos" only with headings; "Encurtar para 2 laudas" (the brief's size) only when the
+ * text passes the size's maximum.
  */
-export function documentTools(input: { empty: boolean; words: number; target: number; headings: number }): { id: string; label?: string }[] {
+export function documentTools(input: { empty: boolean; characters: number; size: ArticleSize; headings: number }): { id: string; label?: string }[] {
   if (input.empty) return [];
-  const tools: { id: string; label?: string }[] = [{ id: 'titles' }];
+  const tools: { id: string; label?: string }[] = [{ id: 'titles', label: 'Títulos alternativos' }];
   if (input.headings > 0) tools.push({ id: 'suggest-subheadings' });
-  if (input.words > input.target * 1.05) tools.push({ id: 'shorten-to-brief', label: `Encurtar para ${input.target.toLocaleString('pt-BR')} palavras` });
+  if (input.characters > sizeOf(input.size).maxChars) tools.push({ id: 'shorten-to-brief', label: shortenToSizeLabel(input.size) });
   return tools;
 }
 
@@ -356,12 +376,12 @@ function narrowToClause(excerpt: ClosestExcerpt, wanted: ReadonlySet<string>): C
   return { segmentId: excerpt.segmentId, text, from: excerpt.from + best.from, to: excerpt.from + best.to };
 }
 
-/** "§5" for the target block(s) of a suggestion (1-based positions in the current body). */
+/** "parágrafo 5" for the target block(s) of a suggestion (1-based positions in the current body). */
 export function targetLabel(body: ArticleBody, target: readonly TextRange[]): string | null {
   const numbers = [...new Set(target.map((range) => body.blocks.findIndex((block) => block.id === range.blockId) + 1).filter((n) => n > 0))].sort((a, b) => a - b);
   if (numbers.length === 0) return null;
-  if (numbers.length === 1) return `§${numbers[0]}`;
-  return `§${numbers[0]}–${numbers[numbers.length - 1]}`;
+  if (numbers.length === 1) return `parágrafo ${numbers[0]}`;
+  return `parágrafos ${numbers[0]}–${numbers[numbers.length - 1]}`;
 }
 
 // ——— Transcript ———
@@ -406,4 +426,121 @@ export function clip(text: string, max = 140): string {
   const cut = clean.slice(0, max);
   const space = cut.lastIndexOf(' ');
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+// ——— Footer: "Falta para enviar" (COPY §2.5) ———
+
+export type FooterPart = { id: SendItemId; level: SendItemLevel; text: string; count: number; target?: SendTarget };
+
+/**
+ * What the footer's "Falta para enviar" lists, from the pre-send checklist ("1 sugestão · 1
+ * citação"). The text review is not in it: it has its own control on the footer's right side, so
+ * its "Falta" only keeps `ready` false. `ready`: nothing blocks ("Pronto para enviar"); with only
+ * the review missing there is nothing to list and nothing to celebrate yet. `total` is the narrow
+ * footer's number ("Falta 5").
+ */
+export function footerNeeds(items: readonly SendItem[]): { ready: boolean; parts: FooterPart[]; total: number } {
+  const missing = items.filter((item) => item.level === 'missing');
+  const parts = missing
+    .filter((item) => item.id !== 'text-review')
+    .map((item) => ({
+      id: item.id,
+      level: item.level,
+      text: item.short ?? item.text,
+      count: item.count ?? 1,
+      ...(item.action ? { target: item.action.target } : {}),
+    }));
+  return { ready: missing.length === 0, parts, total: parts.reduce((sum, part) => sum + part.count, 0) };
+}
+
+// ——— Checagem (panel tab) ———
+
+/** Checks whose problem blocks "Enviar para aprovação" (CONTRACT override R1); the rest only warn. */
+const SEND_BLOCKING_CHECKS = new Set(['article.generation', 'article.quotes', 'article.title', 'article.ai-reviewed']);
+
+/**
+ * The Checagem tab: only what needs attention, grouped as "Falta para enviar" and "Avisos" (no
+ * passing rows, nothing that does not apply). Open AI suggestions are the first "Falta" row
+ * ("Sugestões da IA · 1 sem decisão"), pointing at the first one.
+ */
+export function checagemGroups(checks: readonly CheckResult[], open: readonly Pick<Suggestion, 'target'>[]): { missing: CheckResult[]; warnings: CheckResult[] } {
+  const pending = checks.filter((check) => check.status === 'warn' || check.status === 'fail');
+  const suggestions: CheckResult[] =
+    open.length > 0
+      ? [
+          {
+            id: 'article.suggestions',
+            label: 'Sugestões da IA',
+            status: 'fail',
+            blocking: false,
+            meta: `${open.length} sem decisão`,
+            targets: open.flatMap((suggestion) => suggestion.target.slice(0, 1)),
+          },
+        ]
+      : [];
+  return {
+    missing: [...suggestions, ...pending.filter((check) => SEND_BLOCKING_CHECKS.has(check.id))],
+    warnings: pending.filter((check) => !SEND_BLOCKING_CHECKS.has(check.id)),
+  };
+}
+
+// ——— Histórico de versões ———
+
+/** Mirrors the DS `DiffBlockType` (reading typography only). */
+export type HistoryDiffType = 'title' | 'lead' | 'h2' | 'h3' | 'paragraph' | 'quote' | 'item' | 'caption';
+/** Structurally the DS `DiffBlock`, built from the domain diff. */
+export type HistoryDiffBlock = { id: string; change: DiffChange; hunks: DiffHunk[]; type: HistoryDiffType };
+
+function historyDiffType(block: DiffBlock): HistoryDiffType {
+  switch (block.blockType) {
+    case 'title':
+      return 'title';
+    case 'cover':
+    case 'figure':
+      return 'caption';
+    case 'heading':
+      return block.level === 3 ? 'h3' : 'h2';
+    case 'quote':
+      return 'quote';
+    case 'list':
+      return 'item';
+    default:
+      return 'paragraph';
+  }
+}
+
+/** Domain `DiffBlock[]` → DS blocks; dividers and empty blocks carry no text to compare. */
+export function historyDiff(blocks: readonly DiffBlock[]): HistoryDiffBlock[] {
+  return blocks
+    .filter((block) => block.blockType !== 'divider' && block.hunks.some((hunk) => hunk.text.trim().length > 0))
+    .map((block) => ({ id: block.id, change: block.change, hunks: block.hunks, type: historyDiffType(block) }));
+}
+
+/** What a version of the history needs to be named by what happened to it. */
+export type HistoryVersion = {
+  id: string;
+  origin: 'generation' | 'edit' | 'suggestion' | 'restore';
+  createdAt: string;
+  createdBy: string;
+  restoredFrom?: string;
+  decision?: { kind: string; by: string; at: string };
+};
+
+/**
+ * A version of the history named by its event (COPY §2.7), never by its number: "Aprovado por
+ * Pedro", "Ajustes pedidos por Pedro", "Enviado a Pedro", "Texto da IA", "Restaurado de 06/10",
+ * "Editado por João". `sentTo`: who the version was sent to (a request that was not withdrawn).
+ */
+export function historyTitle(
+  version: HistoryVersion,
+  context: { nameOf: (id: string) => string; sentTo?: string; restoredFromDate?: string },
+): string {
+  const name = (id: string) => context.nameOf(id).trim().split(/\s+/)[0] ?? '';
+  if (version.decision?.kind === 'approved') return `Aprovado por ${name(version.decision.by)}`;
+  if (version.decision?.kind === 'changes_requested' || version.decision?.kind === 'rejected') return `Ajustes pedidos por ${name(version.decision.by)}`;
+  if (context.sentTo) return `Enviado a ${context.sentTo.trim().split(/\s+/)[0] ?? context.sentTo}`;
+  if (version.origin === 'generation') return 'Texto da IA';
+  if (version.origin === 'restore' && context.restoredFromDate) return `Restaurado de ${context.restoredFromDate}`;
+  const author = name(version.createdBy);
+  return author ? `Editado por ${author}` : 'Editado';
 }

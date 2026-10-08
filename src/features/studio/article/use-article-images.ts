@@ -2,13 +2,16 @@
 
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import { toast } from '@content-ventures/design-system/v3';
-import { articleAssetIds, IMAGE_LIMITS, type ArticleBody, type AssetId, type AssetLookup, type BlockId, type ProductionId } from '@/domain';
+import { articleAssetIds, COVER_BLOCK_ID, IMAGE_LIMITS, imageSlotDefaults, type ArticleBody, type AssetId, type AssetLookup, type BlockId, type ProductionId } from '@/domain';
 import {
   blockIdOf,
   coverOf,
+  dismissImageSlot,
   figurePlacementAt,
   figuresIn,
+  fillImageSlot,
   findFigure,
+  findImageSlot,
   insertFigure,
   removeFigure as removeFigureFromDoc,
   setArticleCover,
@@ -20,6 +23,7 @@ import {
   type ForeignFigure,
   type ImageInputOptions,
 } from '@/editor';
+import type { ImageSourceId } from '@/registries';
 import { useAssetLookup, useCommands } from '@/state';
 import { plural } from '@/ui/format';
 import { probeImage } from '@/ui/image-probe';
@@ -32,9 +36,11 @@ import { useFigureSources } from './use-figure-sources';
  * request ("Inserir imagem", "Imagem de destaque", "Legenda e crédito"), what a pasted or dropped
  * file does (opens the picker with it, at the drop position), images pasted from another page
  * (kept as "Link externo" assets once their address proves to be an image) and the actions of the
- * image bars, each with its way back ("Desfazer", "Remover"). Editor actions read the editor at
- * call time, so this runs before the editor exists (it hands it `figureSources` and the paste/drop
- * handlers).
+ * image bars, each with its way back ("Desfazer", "Remover"). Images the generation suggested
+ * (slots, and the cover's suggestion) are filled through the same picker — on the chosen source,
+ * alt text and caption started from the suggestion — or removed, with "Desfazer". Editor actions
+ * read the editor at call time, so this runs before the editor exists (it hands it
+ * `figureSources` and the paste/drop handlers).
  */
 
 export type CoverHandle = { reveal: (options?: { focus?: boolean }) => void };
@@ -136,6 +142,10 @@ export type ArticleImages = {
   makeCover: (blockId: BlockId) => void;
   openCover: (mode: PickerMode, options?: { file?: File; focus?: 'caption' }) => void;
   removeCover: () => void;
+  /** "Enviar imagem" / "Usar link" on a suggestion (a figure slot or `COVER_BLOCK_ID`): the picker on that source. */
+  fillSlot: (blockId: BlockId, options?: { tab?: ImageSourceId; file?: File }) => void;
+  /** "Remover sugestão": the suggestion leaves the text (one undoable step; the toast brings it back). */
+  dismissSlot: (blockId: BlockId) => void;
   bindCover: (handle: CoverHandle) => () => void;
   revealCover: () => void;
 };
@@ -307,6 +317,42 @@ export function useArticleImages({
     });
   }, [live]);
 
+  const fillSlot = useCallback(
+    (blockId: BlockId, options: { tab?: ImageSourceId; file?: File } = {}) => {
+      const editor = live();
+      const found = editor ? findImageSlot(editor.state.doc, blockId) : null;
+      if (!found) return;
+      open({
+        role: found.role,
+        mode: 'choose',
+        slot: { blockId, subject: found.slot.subject },
+        prefill: imageSlotDefaults(found.slot),
+        ...(options.tab ? { tab: options.tab } : {}),
+        ...(options.file ? { file: options.file } : {}),
+      });
+    },
+    [live, open],
+  );
+
+  /** The suggestion leaves; "Desfazer" undoes exactly that step while nothing else changed since. */
+  const dismissSlot = useCallback(
+    (blockId: BlockId) => {
+      const editor = live();
+      if (!editor || !dismissImageSlot(editor, blockId)) return;
+      const after = editor.state.doc;
+      toast(blockId === COVER_BLOCK_ID ? 'Sugestão de destaque removida' : 'Sugestão de imagem removida', {
+        action: {
+          label: 'Desfazer',
+          onClick: () => {
+            const current = live();
+            if (current && current.state.doc === after) current.commands.undo();
+          },
+        },
+      });
+    },
+    [live],
+  );
+
   const { display } = figures;
   const applyPicked = useCallback(
     async (request: PickerRequest, { asset, image }: PickedImage) => {
@@ -316,7 +362,17 @@ export function useArticleImages({
       const shown = await display(asset.id);
       setPicker(null);
       showText();
+      if (request.slot && request.role === 'figure') {
+        const { blockId } = request.slot;
+        if (!fillImageSlot(editor, blockId, { ...image, ...shown })) {
+          toast('A sugestão saiu do texto', { tone: 'info', description: 'Insira a imagem onde ela deve ficar.' });
+          return;
+        }
+        selectFigure(editor, blockId);
+        return;
+      }
       if (request.role === 'cover') {
+        // A cover answers the cover's suggestion too (it leaves with the same step).
         setArticleCover(editor, image);
         // After the slot re-renders with the image; the focus goes to it when its trigger is gone.
         window.requestAnimationFrame(() => cover.current?.reveal());
@@ -361,6 +417,20 @@ export function useArticleImages({
       if (rest.length > 0) toast(`${plural(rest.length, 'imagem ficou', 'imagens ficaram')} de fora`, { tone: 'info', description: 'Insira uma imagem por vez.' });
     },
     [insertImage, locked],
+  );
+  /** A file dropped on a suggestion (or pasted with it selected) answers it: the picker opens on that file. */
+  const onSlotFiles = useCallback(
+    (files: File[], blockId: BlockId) => {
+      const [file, ...rest] = files;
+      if (!file) return;
+      if (locked) {
+        toast('Imagem não inserida', { tone: 'info', description: 'Aguarde a geração terminar.' });
+        return;
+      }
+      fillSlot(blockId, { tab: 'upload', file });
+      if (rest.length > 0) toast(`${plural(rest.length, 'imagem ficou', 'imagens ficaram')} de fora`, { tone: 'info', description: 'Insira uma imagem por vez.' });
+    },
+    [fillSlot, locked],
   );
   const onRejectedFiles = useCallback((files: File[]) => {
     toast(files.length === 1 ? 'O arquivo não é uma imagem' : 'Os arquivos não são imagens', { tone: 'error', description: IMAGE_LIMITS.hint });
@@ -419,7 +489,12 @@ export function useArticleImages({
     },
     [commands, productionId, live, remember],
   );
-  const input = useMemo(() => ({ onImageFiles, onForeignImages, onRejectedFiles, onFigureCaption }), [onImageFiles, onForeignImages, onRejectedFiles, onFigureCaption]);
+  // Enter on a selected suggestion ("pressione Enter para escolher"): the picker on "Enviar imagem".
+  const onSlotOpen = useCallback((blockId: BlockId) => fillSlot(blockId, { tab: 'upload' }), [fillSlot]);
+  const input = useMemo(
+    () => ({ onImageFiles, onSlotFiles, onForeignImages, onRejectedFiles, onFigureCaption, onSlotOpen }),
+    [onImageFiles, onSlotFiles, onForeignImages, onRejectedFiles, onFigureCaption, onSlotOpen],
+  );
 
   return {
     sources: figures.sources,
@@ -436,6 +511,8 @@ export function useArticleImages({
     makeCover,
     openCover,
     removeCover,
+    fillSlot,
+    dismissSlot,
     bindCover,
     revealCover,
   };

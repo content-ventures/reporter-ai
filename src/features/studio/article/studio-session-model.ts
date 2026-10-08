@@ -1,6 +1,6 @@
-import { articleBodyFromRun, briefHash, PRODUCTION_STATUS_LABELS } from '../../../domain/index.ts';
-import type { ArticleBody, Brief, CheckResult, GenerationRun, PieceId, ProductionStatus, RunFold, Suggestion, TextRange } from '../../../domain/index.ts';
-import type { Guard, PieceView, RunView } from '../../../ports/index.ts';
+import { articleBodyFromRun, briefHash, firstName, PRODUCTION_STATUS_LABELS } from '../../../domain/index.ts';
+import type { ArticleBody, Brief, GenerationRun, PieceId, PieceStatus, ProductionStatus, RunFold, Suggestion, TextRange } from '../../../domain/index.ts';
+import type { PieceApproval, PieceView, RunView } from '../../../ports/index.ts';
 import { copilotTool } from '../../../registries/index.ts';
 import type { CopilotTool } from '../../../registries/index.ts';
 import { isBlankBody } from './studio-model.ts';
@@ -8,9 +8,9 @@ import type { ComposerChip, SessionTurn, StreamMode, SuggestionFocus } from './s
 
 /**
  * Pure rules of the article studio session (no editor, no React): which generation is on
- * screen, the text the checks read while it writes, the copilot thread rebuilt after a reload,
- * what a composer request carries, the suggestion the bar points at and why the piece cannot be
- * sent for approval yet.
+ * screen, the text the checks read while it writes, the assistant thread rebuilt after a reload,
+ * what a composer request carries, the suggestion the bar points at and the ONE primary of the
+ * header with the next step written on it (or none).
  */
 
 /** Runs whose suggestions read as turns of the copilot thread. */
@@ -88,86 +88,85 @@ export function focusedSuggestionOf<S extends Pick<Suggestion, 'id' | 'runId' | 
   return inText.find((suggestion) => suggestion.runId === focus.runId);
 }
 
-/**
- * The article's own status in the studio header (never the production's, which follows the
- * carousel once the article is approved): "Aprovado · v2" while the approved version is the text
- * on screen; "Em edição" once the text moves on from it (a new draft; the approval stays on v2).
- */
-export function articleStatusOf(piece: Pick<PieceView, 'status' | 'statusLabel' | 'approvedVersion' | 'latestVersion' | 'draft'>): {
-  status: PieceView['status'];
-  label: string;
-} {
-  const approved = piece.approvedVersion;
-  if (piece.status === 'approved' && approved) {
-    const onScreen = approved.id === piece.latestVersion?.id && !piece.draft.dirty;
-    return onScreen ? { status: 'approved', label: `Aprovado · v${approved.number}` } : { status: 'draft', label: 'Em edição' };
-  }
-  return { status: piece.status, label: piece.status === 'draft' ? 'Em edição' : piece.statusLabel };
-}
-
 export type StudioBadge = { kind: 'piece'; status: PieceView['status']; label: string } | { kind: 'production'; status: 'unauthorized'; label: string };
 
 /**
- * The studio header's badge: the article's own status, except while the material is not
+ * The studio header's badge: the article's own status in newsroom words (never the production's,
+ * which follows the carousel once the article is approved), except while the material is not
  * authorized and nothing was written — then it says why, as the list and Material do.
  */
-export function studioBadge(
-  piece: Pick<PieceView, 'status' | 'statusLabel' | 'approvedVersion' | 'latestVersion' | 'draft'>,
-  productionStatus: ProductionStatus | undefined,
-): StudioBadge {
+export function studioBadge(piece: Pick<PieceView, 'status' | 'statusLabel'>, productionStatus: ProductionStatus | undefined): StudioBadge {
   if (productionStatus === 'unauthorized' && (piece.status === 'not_started' || piece.status === 'locked')) {
     return { kind: 'production', status: 'unauthorized', label: PRODUCTION_STATUS_LABELS.unauthorized };
   }
-  return { kind: 'piece', ...articleStatusOf(piece) };
+  return { kind: 'piece', status: piece.status, label: piece.statusLabel };
 }
 
-/** The approved version is the text on screen: editing it starts a new draft (A05). */
-export function approvedOnScreen(piece: Pick<PieceView, 'approvedVersion' | 'latestVersion' | 'draft'>): PieceView['approvedVersion'] {
-  const approved = piece.approvedVersion;
-  return approved && approved.id === piece.latestVersion?.id && !piece.draft.dirty ? approved : undefined;
-}
-
-/** The brief changed after the run wrote the text on screen ("Gerar nova versão" would follow the new one). */
+/** The brief changed after the run wrote the text on screen ("Reescrever o artigo do zero" would follow the new one). */
 export function briefChangedSince(run: Pick<GenerationRun, 'inputs'> | undefined, brief: Brief): boolean {
   const used = run?.inputs.find((ref) => ref.kind === 'brief');
   return used?.kind === 'brief' && used.hash !== briefHash(brief);
 }
 
-/** A sentence for a tooltip: the detail of a check, ending with a period. */
-function sentence(text: string): string {
-  const trimmed = text.trim();
-  return /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
-/**
- * Why "Enviar para aprovação" is blocked, in the order the person can act on it (null: allowed).
- * A failing blocking check of the text on screen ("Geração concluída") blocks it too: the approver
- * would only find a request they cannot approve.
- */
-/** Why nothing changes in a tab another tab took over (A10); the same words as the store's refusal. */
+/** Why nothing changes in a tab another tab took over (A10); the same words as the store's refusal (COPY §2.1). */
 export const READ_ONLY_REASON = 'Aberta em outra aba: escolha “Usar esta aba” para editar aqui.';
 
-export function reviewRequestBlock(input: {
-  busy: boolean;
-  openCount: number;
-  conflict: boolean;
-  empty: boolean;
-  /** Blocking checks that fail (`readiness(checks).blockers`). */
-  blockers?: readonly Pick<CheckResult, 'label' | 'detail'>[];
-  guard?: Guard;
+/** The header primary of the studio (COPY §2.1), as data: the screen turns it into a button or a link. */
+export type StudioPrimaryKind = 'send' | 'resend' | 'review' | 'create_carousel' | 'open_carousel' | 'delivery' | 'structure';
+export type StudioPrimary = { kind: StudioPrimaryKind; label: string; blockedReason?: string };
+
+export type StudioPrimaryInput = {
+  /** The article's status. */
+  status: PieceStatus;
+  /** The AI writes the text right now (the banner carries "Parar"). */
+  generating: boolean;
+  approval?: Pick<PieceApproval, 'state' | 'viewer' | 'send' | 'decision'>;
+  /** The material is authorized (the AI may write the article). */
+  authorized: boolean;
+  /** The carousel of the plan, when there is one. */
+  carousel?: { status: PieceStatus };
   /** Another tab of this browser edits this production (A10). */
-  readOnly?: boolean;
-}): string | null {
-  const { busy, openCount, conflict, empty, blockers = [], guard, readOnly = false } = input;
-  if (readOnly) return READ_ONLY_REASON;
-  if (busy) return 'Aguarde a geração terminar.';
-  if (openCount > 0) return `Decida ${openCount === 1 ? 'a sugestão aberta' : `as ${openCount} sugestões abertas`} antes de enviar.`;
-  if (conflict) return 'O texto foi alterado em outra aba. Recarregue a página.';
-  if (empty) return 'Escreva ou gere o texto antes de enviar.';
-  const [blocker] = blockers;
-  if (blocker) return sentence(blocker.detail ?? `${blocker.label} pendente`);
-  if (guard && !guard.allowed && guard.code !== 'already_requested') return guard.reason;
-  return null;
+  tabReadOnly: boolean;
+};
+
+/**
+ * ONE primary with the next step on it (D2, P3, CONTRACT §3.8): "Enviar para aprovação" ·
+ * "Reenviar para Pedro" (adjustments) · "Reenviar para aprovação" (approved text changed) ·
+ * "Revisar artigo" (whoever decides, while it waits) · "Criar carrossel" / "Abrir o carrossel" /
+ * "Ir para entrega" (approved) · "Montar estrutura" (no text yet). None while the AI writes, after
+ * an error (the banner's "Tentar de novo"), while the author waits for the decision, or when the
+ * viewer cannot do the next step (P8). Sending is blocked with a visible reason only when it is
+ * impossible (another tab, nobody can approve); what is missing in the text shows in the dialog.
+ */
+export function studioPrimary(input: StudioPrimaryInput): StudioPrimary | null {
+  const { status, approval } = input;
+  if (input.generating || status === 'generating' || status === 'failed') return null;
+  const state = approval?.state ?? 'none';
+  const viewer = approval?.viewer;
+  if (state === 'awaiting') return viewer?.canDecide ? { kind: 'review', label: 'Revisar artigo' } : null;
+  if (status === 'not_started' || status === 'locked') {
+    return input.authorized && viewer?.canEdit !== false ? { kind: 'structure', label: 'Montar estrutura' } : null;
+  }
+  if (state === 'approved') {
+    const carousel = input.carousel;
+    if (carousel && carousel.status !== 'approved') {
+      if (viewer?.canEdit === false) return null;
+      return carousel.status === 'not_started' || carousel.status === 'locked'
+        ? { kind: 'create_carousel', label: 'Criar carrossel' }
+        : { kind: 'open_carousel', label: 'Abrir o carrossel' };
+    }
+    return { kind: 'delivery', label: 'Ir para entrega' };
+  }
+  if (!approval || !viewer?.canSend) return null;
+  const guard = approval.send.guard;
+  const blockedReason = input.tabReadOnly ? READ_ONLY_REASON : guard.allowed ? undefined : guard.reason;
+  const blocked = blockedReason ? { blockedReason } : {};
+  if (state === 'changes_requested') {
+    const name = firstName(approval.decision?.decider?.name);
+    return { kind: 'resend', label: name ? `Reenviar para ${name}` : 'Reenviar para aprovação', ...blocked };
+  }
+  if (state === 'approval_outdated') return { kind: 'resend', label: 'Reenviar para aprovação', ...blocked };
+  return { kind: 'send', label: 'Enviar para aprovação', ...blocked };
 }
 
 const LABEL_TOOLS: Record<string, string> = {

@@ -10,11 +10,10 @@ import {
   factsBodyOf,
   focusedSuggestionOf,
   generationRunsOf,
-  approvedOnScreen,
-  articleStatusOf,
+  READ_ONLY_REASON,
   studioBadge,
+  studioPrimary,
   briefChangedSince,
-  reviewRequestBlock,
   selectionTarget,
   toolForSuggestion,
   unpinnedRunIds,
@@ -144,22 +143,41 @@ describe('studio session model', () => {
     assert.equal(focusedSuggestionOf({ runId: 'run-b' }, open), undefined);
   });
 
-  it('blocks the approval request with the first reason the person can act on', () => {
-    const clear = { busy: false, openCount: 0, conflict: false, empty: false };
-    assert.equal(reviewRequestBlock({ ...clear, busy: true, openCount: 2 }), 'Aguarde a geração terminar.');
-    assert.equal(reviewRequestBlock({ ...clear, openCount: 1, conflict: true }), 'Decida a sugestão aberta antes de enviar.');
-    assert.equal(reviewRequestBlock({ ...clear, openCount: 3 }), 'Decida as 3 sugestões abertas antes de enviar.');
-    assert.equal(reviewRequestBlock({ ...clear, conflict: true, empty: true }), 'O texto foi alterado em outra aba. Recarregue a página.');
-    assert.equal(reviewRequestBlock({ ...clear, empty: true }), 'Escreva ou gere o texto antes de enviar.');
-    // A failing blocking check of the text on screen blocks the request, with its detail.
-    const interrupted = { label: 'Geração concluída', detail: 'Geração interrompida: continue ou edite o texto' };
-    assert.equal(reviewRequestBlock({ ...clear, blockers: [interrupted] }), 'Geração interrompida: continue ou edite o texto.');
-    assert.equal(reviewRequestBlock({ ...clear, blockers: [{ label: 'Geração concluída' }] }), 'Geração concluída pendente.');
-    assert.equal(reviewRequestBlock({ ...clear, openCount: 1, blockers: [interrupted] }), 'Decida a sugestão aberta antes de enviar.');
-    assert.equal(reviewRequestBlock({ ...clear, guard: { allowed: false, code: 'not_allowed', reason: 'Sem permissão.' } }), 'Sem permissão.');
-    assert.equal(reviewRequestBlock({ ...clear, guard: { allowed: false, code: 'already_requested', reason: 'Já enviada.' } }), null);
-    assert.equal(reviewRequestBlock({ ...clear, guard: { allowed: true } }), null);
-    assert.equal(reviewRequestBlock(clear), null);
+  it('puts ONE primary in the header with the next step written on it, or none', () => {
+    const viewer = { canEdit: true, canSend: true, canDecide: false, canWithdraw: false, isRequester: false, isAssignee: false };
+    const approval = (state: 'none' | 'awaiting' | 'changes_requested' | 'approved' | 'approval_outdated', patch: Record<string, unknown> = {}) =>
+      ({ state, viewer, send: { guard: { allowed: true } }, ...patch }) as never;
+    const base = { status: 'draft' as const, generating: false, authorized: true, tabReadOnly: false, approval: approval('none') };
+    assert.deepEqual(studioPrimary(base), { kind: 'send', label: 'Enviar para aprovação' });
+    // Never while the AI writes, after an error (the banner's verb) or while the author waits.
+    assert.equal(studioPrimary({ ...base, generating: true }), null);
+    assert.equal(studioPrimary({ ...base, status: 'failed' }), null);
+    assert.equal(studioPrimary({ ...base, status: 'in_review', approval: approval('awaiting') }), null);
+    // Whoever decides reviews it from here.
+    assert.deepEqual(studioPrimary({ ...base, status: 'in_review', approval: approval('awaiting', { viewer: { ...viewer, canEdit: false, canSend: false, canDecide: true } }) }), {
+      kind: 'review',
+      label: 'Revisar artigo',
+    });
+    assert.deepEqual(studioPrimary({ ...base, status: 'changes_requested', approval: approval('changes_requested', { decision: { decider: { name: 'Pedro Alves' } } }) }), {
+      kind: 'resend',
+      label: 'Reenviar para Pedro',
+    });
+    assert.deepEqual(studioPrimary({ ...base, status: 'approval_outdated', approval: approval('approval_outdated') }), { kind: 'resend', label: 'Reenviar para aprovação' });
+    // Approved: the derivative next, else the delivery.
+    const approved = { ...base, status: 'approved' as const, approval: approval('approved') };
+    assert.deepEqual(studioPrimary({ ...approved, carousel: { status: 'not_started' } }), { kind: 'create_carousel', label: 'Criar carrossel' });
+    assert.deepEqual(studioPrimary({ ...approved, carousel: { status: 'in_review' } }), { kind: 'open_carousel', label: 'Abrir o carrossel' });
+    assert.deepEqual(studioPrimary({ ...approved, carousel: { status: 'approved' } }), { kind: 'delivery', label: 'Ir para entrega' });
+    assert.deepEqual(studioPrimary(approved), { kind: 'delivery', label: 'Ir para entrega' });
+    // No text yet: the structure first (only with the material authorized).
+    assert.deepEqual(studioPrimary({ ...base, status: 'not_started' }), { kind: 'structure', label: 'Montar estrutura' });
+    assert.equal(studioPrimary({ ...base, status: 'not_started', authorized: false }), null);
+    // Blocked only when sending is impossible, with the reason in words.
+    assert.deepEqual(studioPrimary({ ...base, tabReadOnly: true }), { kind: 'send', label: 'Enviar para aprovação', blockedReason: READ_ONLY_REASON });
+    const nobody = approval('none', { send: { guard: { allowed: false, code: 'no_gate', reason: 'Ninguém pode aprovar ainda. Peça a um admin o papel de aprovador.' } } });
+    assert.equal(studioPrimary({ ...base, approval: nobody })?.blockedReason, 'Ninguém pode aprovar ainda. Peça a um admin o papel de aprovador.');
+    // Nobody sees a button for what they cannot do (P8).
+    assert.equal(studioPrimary({ ...base, approval: approval('none', { viewer: { ...viewer, canEdit: false, canSend: false } }) }), null);
   });
 
   it('finds the tool that produced a suggestion, to run it again', () => {
@@ -171,35 +189,21 @@ describe('studio session model', () => {
     assert.equal(toolForSuggestion({ proposal: { kind: 'replace-text', text: 'x' } }), undefined);
   });
 
-  it('reads the article status in its studio, never the production one', () => {
-    const v1 = { id: 'v1', number: 1 } as never;
-    const v2 = { id: 'v2', number: 2 } as never;
-    const piece = { status: 'approved' as const, statusLabel: 'Aprovado', approvedVersion: v2, latestVersion: v2, draft: { dirty: false } as never };
-    assert.deepEqual(articleStatusOf(piece), { status: 'approved', label: 'Aprovado · v2' });
-    assert.equal(approvedOnScreen(piece), v2);
-    // Edited after the approval: a new draft on screen (the approval stays on v2).
-    const edited = { ...piece, draft: { dirty: true } as never };
-    assert.deepEqual(articleStatusOf(edited), { status: 'draft', label: 'Em edição' });
-    assert.equal(approvedOnScreen(edited), undefined);
-    assert.deepEqual(articleStatusOf({ ...piece, approvedVersion: v1 }), { status: 'draft', label: 'Em edição' });
-    assert.deepEqual(articleStatusOf({ ...piece, status: 'in_review', statusLabel: 'Aguardando aprovação' }), { status: 'in_review', label: 'Aguardando aprovação' });
-    assert.deepEqual(articleStatusOf({ ...piece, status: 'draft', statusLabel: 'Rascunho', approvedVersion: undefined }), { status: 'draft', label: 'Em edição' });
-  });
-
   it('says "Falta autorização" in the studio header while nothing can be written, as the list does', () => {
-    const empty = { status: 'not_started' as const, statusLabel: 'Não iniciado', approvedVersion: undefined, latestVersion: undefined, draft: { dirty: false } as never };
+    const empty = { status: 'not_started' as const, statusLabel: 'Não iniciado' };
     assert.deepEqual(studioBadge(empty, 'unauthorized'), { kind: 'production', status: 'unauthorized', label: 'Falta autorização' });
     assert.deepEqual(studioBadge(empty, 'draft'), { kind: 'piece', status: 'not_started', label: 'Não iniciado' });
     const written = { ...empty, status: 'draft' as const, statusLabel: 'Rascunho' };
-    assert.deepEqual(studioBadge(written, 'unauthorized'), { kind: 'piece', status: 'draft', label: 'Em edição' }, 'a text already written keeps its own status');
+    assert.deepEqual(studioBadge(written, 'unauthorized'), { kind: 'piece', status: 'draft', label: 'Rascunho' }, 'a text already written keeps its own status');
   });
 
   it('knows when the brief changed after the text was generated', () => {
-    const brief = { sections: 3, length: 'medium' as const, revision: 2 };
+    const brief = { sections: 3, size: 'standard' as const, revision: 2 };
     const used = (hash: string) => ({ inputs: [{ kind: 'brief' as const, productionId: 'p', revision: 1, hash }] });
     const same = briefHash({ ...brief, revision: 1 });
     assert.equal(briefChangedSince(used(same), brief), false);
     assert.equal(briefChangedSince(used('outra'), brief), true);
+    assert.equal(briefChangedSince(used(same), { ...brief, size: 'short' }), true, 'a new size is a new brief');
     assert.equal(briefChangedSince({ inputs: [] }, brief), false);
     assert.equal(briefChangedSince(undefined, brief), false);
   });

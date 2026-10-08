@@ -28,8 +28,15 @@ export type SessionTurn = {
   at: number;
 };
 
-export type SourceTab = 'transcript' | 'structure' | 'versions';
-export type CopilotTab = 'ai' | 'checks';
+/**
+ * Tabs of the studio's one panel ("Painel", right, closed by default): the interview, the
+ * assistant, what is missing before sending, and the reviewer's comments (only after
+ * "Ajustes solicitados").
+ */
+export type PanelTab = 'material' | 'assistant' | 'checks' | 'comments';
+
+/** What opens over the studio from the header ⋯ and the primary (one at a time). */
+export type StudioDialog = 'send' | 'history' | 'structure' | 'trace' | 'rewrite' | 'brief';
 
 /**
  * Where the inline suggestion bar points: the run an inline action started, a chosen card, or the
@@ -37,7 +44,7 @@ export type CopilotTab = 'ai' | 'checks';
  */
 export type SuggestionFocus = { runId?: RunId; suggestionId?: string; target?: TextRange[]; via?: 'caret' } | null;
 
-/** How a generation reaches the text: after what is there, or in place of it ("Gerar nova versão"). */
+/** How a generation reaches the text: after what is there, or in place of it ("Reescrever o artigo do zero"). */
 export type StreamMode = 'append' | 'replace';
 
 export type GenerationState = {
@@ -46,9 +53,9 @@ export type GenerationState = {
   runId: RunId | null;
   live: RunState | undefined;
   active: boolean;
-  /** The run is known to this session, so "Tentar de novo a partir desta etapa" can reuse its steps. */
+  /** The run is known to this session, so "Tentar de novo" can continue from its steps. */
   retryable: boolean;
-  /** Version this run produced ("v1 · IA"), once settled. */
+  /** Version this run produced ("Texto da IA"), once settled. */
   version?: PieceView['versions'][number];
 };
 
@@ -57,6 +64,6 @@ export type StudioInputs = {
   piece: PieceView;
   draft: DraftView;
   source: SourceDetail | undefined;
-  /** The material could not be read: the Fonte pane shows the error with "Tentar de novo". */
+  /** The material could not be read: the Material tab shows the error with "Tentar de novo". */
   sourceError?: { code?: string; retry: () => void };
 };
