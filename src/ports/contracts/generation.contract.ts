@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { articleHash } from '../../domain/article.ts';
+import { articleHash, blockText } from '../../domain/article.ts';
 import type { PieceId, ProductionId, RunId } from '../../domain/ids.ts';
 import { toVersionRef } from '../../domain/piece.ts';
 import { checkQuotes } from '../../domain/quotes.ts';
 import { latestApproved, latestVersion, pieceOfKind } from '../../domain/record.ts';
 import type { ProductionRecord } from '../../domain/record.ts';
 import { sameVersionRef } from '../../domain/refs.ts';
-import { applyRunEvent, articleBodyFromRun, foldRun, hasUsableOutput } from '../../domain/run-events.ts';
+import { applyRunEvent, articleBodyFromRun, foldRun, hasUsableOutput, outlineProposalOf } from '../../domain/run-events.ts';
 import type { RunEvent, RunFold } from '../../domain/run-events.ts';
+import { sizeOf } from '../../domain/sizing.ts';
 import { resolveSourceRef } from '../../domain/source.ts';
-import type { GenerationInputs, GenerationKind, GenerationService, RunUpdate, StartOptions } from '../generation.ts';
+import type { GenerationInputs, GenerationKind, GenerationService, OutlineInput, RunUpdate, StartOptions } from '../generation.ts';
 
 /**
  * GenerationService contract. The local simulation runs it now; a provider adapter (AI SDK
@@ -27,6 +28,8 @@ export type GenerationUnderTest = {
   record(): ProductionRecord | Promise<ProductionRecord>;
   /** Approves the latest article version and makes sure the carousel piece exists. */
   approveArticleAndDerive(): Promise<{ carouselPieceId: PieceId }>;
+  /** Sends the latest version of a piece for approval ("Enviar para aprovação"); the lock case is skipped without it. */
+  requestReview?(pieceId: PieceId): Promise<void>;
   dispose?(): void | Promise<void>;
 };
 
@@ -260,6 +263,98 @@ export function generationContract(name: string, make: GenerationFactory): void 
         assert.equal(stored.length, run.fold.suggestions.length);
         assert.ok(stored.every((suggestion) => suggestion.state === 'ready'));
       }));
+
+    it('"Montar estrutura" proposes the structure without writing anything', () =>
+      using(make, async (sut) => {
+        const before = await sut.record();
+        const run = await runToEnd(sut.generation, 'article.outline', { productionId: sut.productionId, pieceId: sut.articlePieceId });
+        assertStreamShape(run.events);
+        assert.equal(run.fold.run.status, 'completed');
+        assert.equal(run.fold.run.kind, 'article.outline');
+        assert.equal(run.fold.blocks.length, 0, 'no text streamed');
+        const after = await sut.record();
+        assert.equal(after.versions.length, before.versions.length, 'no version');
+        const proposal = outlineProposalOf(run.fold);
+        assert.ok(proposal, 'the run proposes a structure');
+        const spec = sizeOf(after.production.brief.size);
+        assert.ok(proposal.title.trim().length > 0);
+        assert.ok(proposal.sections.length >= spec.sections.min && proposal.sections.length <= spec.sections.max);
+        assert.equal(proposal.size?.maxChars, spec.maxChars);
+        const quotes = [...proposal.intro.quotes, ...proposal.sections.flatMap((section) => section.quotes ?? [])];
+        assert.ok(proposal.sections.every((section) => (section.quotes?.length ?? 0) > 0 && (section.budget ?? 0) > 0));
+        for (const ref of [...quotes, ...proposal.candidates]) assert.ok(resolveSourceRef(after.sources, ref), 'quotes resolve in the current material');
+      }));
+
+    it('"Redigir artigo" writes the reviewed structure: its order, its titles, without the section removed', () =>
+      using(make, async (sut) => {
+        const outline = await runToEnd(sut.generation, 'article.outline', { productionId: sut.productionId, pieceId: sut.articlePieceId });
+        const proposal = outlineProposalOf(outline.fold);
+        assert.ok(proposal);
+        const spec = sizeOf((await sut.record()).production.brief.size);
+        const sections = [...proposal.sections].reverse().map((section, index) => ({
+          ...(section.blockId ? { blockId: section.blockId } : {}),
+          title: index === 0 ? 'Intertítulo escrito pela editora' : section.title,
+          quotes: section.quotes ?? [],
+        }));
+        if (sections.length > spec.sections.min) sections.splice(1, 1);
+        const reviewed: OutlineInput = { title: proposal.title, intro: { quotes: proposal.intro.quotes }, sections, fromRunId: outline.runId };
+        const run = await runToEnd(sut.generation, 'article.draft', { productionId: sut.productionId, pieceId: sut.articlePieceId, outline: reviewed });
+        assertStreamShape(run.events);
+        assert.equal(run.fold.run.status, 'completed');
+        assert.equal(run.fold.run.steps.filter((step) => step.id.startsWith('section-')).length, sections.length);
+        assert.deepEqual(run.fold.outline.map((section) => section.title), sections.map((section) => section.title));
+        const body = articleBodyFromRun(run.fold);
+        const headings = body.blocks.filter((block) => block.type === 'heading').map(blockText);
+        assert.deepEqual(headings, spec.headings ? sections.map((section) => section.title) : []);
+        const chars = body.blocks.reduce((sum, block) => sum + blockText(block).length, 0);
+        assert.ok(chars > 0);
+        const record = await sut.record();
+        assert.ok(checkQuotes(body, record.sources).every((quote) => quote.status === 'verified'));
+      }));
+
+    it('refuses a structure the size does not allow, before any run starts', () =>
+      using(make, async (sut) => {
+        const outline = await runToEnd(sut.generation, 'article.outline', { productionId: sut.productionId, pieceId: sut.articlePieceId });
+        const proposal = outlineProposalOf(outline.fold);
+        assert.ok(proposal);
+        const spec = sizeOf((await sut.record()).production.brief.size);
+        const one = proposal.sections[0];
+        const tooMany = Array.from({ length: spec.sections.max + 1 }, (_, index) => ({ title: `Seção ${index + 1}`, quotes: [proposal.candidates[index % proposal.candidates.length]] }));
+        const refused = await sut.generation.start('article.draft', {
+          productionId: sut.productionId,
+          pieceId: sut.articlePieceId,
+          outline: { title: proposal.title, sections: tooMany },
+        });
+        assert.equal(!refused.ok && refused.refusal.code, 'invalid_outline');
+        const twice = await sut.generation.start('article.draft', {
+          productionId: sut.productionId,
+          pieceId: sut.articlePieceId,
+          outline: {
+            title: proposal.title,
+            intro: { quotes: one.quotes ?? [] },
+            sections: proposal.sections.map((section) => ({ ...(section.blockId ? { blockId: section.blockId } : {}), title: section.title, quotes: section.quotes ?? [] })),
+          },
+        });
+        assert.equal(!twice.ok && twice.refusal.code, 'invalid_outline', 'a quote belongs to one section only');
+      }));
+
+    it('locks a text waiting for approval: no generation may change it', async (context) => {
+      const probe = await make();
+      const supported = typeof probe.requestReview === 'function';
+      await probe.dispose?.();
+      if (!supported) {
+        context.skip('the backend under test cannot send for approval here');
+        return;
+      }
+      await using(make, async (sut) => {
+        await runToEnd(sut.generation, 'article.draft', { productionId: sut.productionId, pieceId: sut.articlePieceId });
+        await sut.requestReview?.(sut.articlePieceId);
+        const draft = await sut.generation.start('article.draft', { productionId: sut.productionId, pieceId: sut.articlePieceId });
+        assert.equal(!draft.ok && draft.refusal.code, 'locked');
+        const outline = await sut.generation.start('article.outline', { productionId: sut.productionId, pieceId: sut.articlePieceId });
+        assert.equal(!outline.ok && outline.refusal.code, 'locked');
+      });
+    });
 
     it('writes carousel copy only from the approved article version, and records it as input', () =>
       using(make, async (sut) => {

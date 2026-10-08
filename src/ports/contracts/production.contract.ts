@@ -4,6 +4,7 @@ import type { ChangeNotice } from '../common.ts';
 import {
   CONTRACT_TRANSCRIPT,
   createSample,
+  firstNameOf,
   newProductionInput,
   sampleArticle,
   sampleCarousel,
@@ -55,7 +56,9 @@ export function productionPortsContract(name: string, make: PortsFactory): void 
         const attempts = [
           [newProductionInput({ title: '   ' }), 'empty_title'],
           [newProductionInput({ plan: ['carousel'] }), 'article_required'],
-          [newProductionInput({ brief: { sections: 9, length: 'short' } }), 'sections_out_of_range'],
+          [newProductionInput({ brief: { sections: 9, size: 'standard' } }), 'sections_out_of_range'],
+          [newProductionInput({ brief: { sections: 4, size: 'short' } }), 'sections_out_of_range'],
+          [newProductionInput({ brief: { sections: 3, size: 'long' as never } }), 'unknown_size'],
           [newProductionInput({ material: { text: ' \n ', origin: 'interview', authorized: true } }), 'empty_material'],
         ] as const;
         for (const [input, code] of attempts) {
@@ -164,6 +167,51 @@ export function productionPortsContract(name: string, make: PortsFactory): void 
         const review = await ports.queries.list({ tab: 'in_review' });
         assert.equal(review.total, 0);
         assert.equal(review.counts.all, 3);
+      }));
+
+    it('sorts by urgency and says where each production stands ("Situação") and what the viewer does next', () =>
+      withPorts(make, async (ports) => {
+        const approverName = await firstNameOf(ports, ports.people.approver);
+        const fresh = await createSample(ports, { title: 'Alfa: sem texto' });
+        await ports.advance(60_000);
+        const draft = await createSample(ports, { title: 'Beta: rascunho' });
+        await writeDraft(ports, draft.articleId, await sampleArticle(ports, draft.sourceId));
+        await ports.advance(60_000);
+        const sent = await createSample(ports, { title: 'Gama: enviada' });
+        await writeDraft(ports, sent.articleId, await sampleArticle(ports, sent.sourceId));
+        unwrap(await ports.commands.requestReview(sent.articleId, { assigneeId: ports.people.approver }));
+        await ports.advance(60_000);
+        const returned = await createSample(ports, { title: 'Delta: devolvida' });
+        await writeDraft(ports, returned.articleId, await sampleArticle(ports, returned.sourceId));
+        const { version } = unwrap(await ports.commands.requestReview(returned.articleId, { assigneeId: ports.people.approver }));
+        await ports.actAs(ports.people.approver);
+        unwrap(await ports.commands.decide({ pieceId: returned.articleId, subject: version.ref, decision: 'changes_requested', note: 'Cite a fonte do número.' }));
+        await ports.actAs(ports.people.editor);
+        await ports.advance(60_000);
+        const unauthorized = await createSample(ports, { title: 'Épsilon: sem autorização', material: { text: CONTRACT_TRANSCRIPT, origin: 'interview', authorized: false } });
+
+        const byUrgency = await ports.queries.list({ sort: 'urgency' });
+        assert.deepEqual(
+          byUrgency.items.map((item) => [item.title.split(':')[0], item.situation.line, item.nextStep?.label ?? null, item.urgency]),
+          [
+            ['Delta', `Artigo · Ajustes solicitados por ${approverName}`, 'Ajustar', 1],
+            ['Gama', `Artigo · Aguardando aprovação de ${approverName}`, null, 2],
+            ['Épsilon', 'Material · Falta autorização', 'Autorizar', 3],
+            ['Beta', 'Artigo · Rascunho', 'Continuar', 6],
+            ['Alfa', 'Artigo · Não iniciado', 'Montar estrutura', 6],
+          ],
+        );
+        assert.deepEqual(byUrgency.items.find((item) => item.id === fresh.productionId)?.nextStep?.target, { kind: 'structure' });
+        assert.deepEqual(byUrgency.items.find((item) => item.id === unauthorized.productionId)?.situation.status, 'unauthorized');
+        assert.equal(byUrgency.items.find((item) => item.id === sent.productionId)?.situation.withPersonId, ports.people.approver);
+        assert.equal((await ports.queries.list()).items[0].id, unauthorized.productionId, 'the default order is still the latest activity');
+
+        await ports.actAs(ports.people.approver);
+        const approverView = await ports.queries.list({ sort: 'urgency' });
+        const step = (productionId: string) => approverView.items.find((item) => item.id === productionId)?.nextStep;
+        assert.deepEqual(step(sent.productionId), { kind: 'review', label: 'Revisar', target: { kind: 'review', pieceKind: 'article' }, mine: true });
+        assert.equal(step(draft.productionId)?.kind, 'open', 'an approver reads drafts, never edits them');
+        assert.equal(step(returned.productionId)?.kind, 'open');
       }));
 
     it('logs only semantic activity, newest first, with readable lines', () =>

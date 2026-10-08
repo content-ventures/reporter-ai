@@ -1,9 +1,10 @@
 import type { ArticleBody } from '../domain/article.ts';
 import type { CarouselBody, SlideAssistAction } from '../domain/carousel.ts';
 import type { BlockId, PieceId, ProductionId, RunId, SlideId, StepId, TemplateId } from '../domain/ids.ts';
-import type { TextRange, VersionRef } from '../domain/refs.ts';
+import type { SourceRef, TextRange, VersionRef } from '../domain/refs.ts';
 import type { Result } from '../domain/result.ts';
 import type { RunEvent, RunFold } from '../domain/run-events.ts';
+import type { ArticleSize } from '../domain/sizing.ts';
 import type { ModelInfo, RunKind } from '../domain/run.ts';
 import type { GenerateRefusal } from '../domain/rules/generate.ts';
 import type { Unsubscribe } from './common.ts';
@@ -17,6 +18,7 @@ import type { Unsubscribe } from './common.ts';
 
 /** What can be requested. Each maps onto a domain `RunKind` for provenance. */
 export type GenerationKind =
+  | 'article.outline'
   | 'article.draft'
   | 'article.rewrite'
   | 'article.shorten'
@@ -30,6 +32,7 @@ export type GenerationKind =
   | 'carousel.assist';
 
 export const GENERATION_KINDS: readonly GenerationKind[] = [
+  'article.outline',
   'article.draft',
   'article.rewrite',
   'article.shorten',
@@ -45,6 +48,7 @@ export const GENERATION_KINDS: readonly GenerationKind[] = [
 
 /** pt-BR action labels (menu items, run titles, suggestion cards). */
 export const GENERATION_LABELS: Record<GenerationKind, string> = {
+  'article.outline': 'Montar estrutura',
   'article.draft': 'Gerar artigo',
   'article.rewrite': 'Reescrever',
   'article.shorten': 'Encurtar',
@@ -67,6 +71,7 @@ export const SLIDE_ASSIST_LABELS: Record<SlideAssistAction, string> = {
 };
 
 export const RUN_KIND_OF: Record<GenerationKind, RunKind> = {
+  'article.outline': 'article.outline',
   'article.draft': 'article.generate',
   'article.rewrite': 'article.assist',
   'article.shorten': 'article.assist',
@@ -92,8 +97,62 @@ export const REWRITE_TONE_LABELS: Record<RewriteTone, string> = {
 
 // ── Requests ─────────────────────────────────────────────────────────────────────────────
 
-/** Full article draft from the production's material and brief (recipe "aqui pedrão"). */
-export type ArticleDraftInput = { productionId: ProductionId; pieceId: PieceId };
+/**
+ * "Montar estrutura" (Nova produção, step 3): proposes the article's structure from the material
+ * and the brief, without writing it. The run's outline (`outlineProposalOf(fold)`) holds the
+ * proposal; it creates no version and does not change the piece's state. Runs again on demand.
+ */
+export type ArticleOutlineInput = { productionId: ProductionId; pieceId: PieceId };
+
+/** A section of a reviewed structure; without `blockId` it was added by the person. */
+export type OutlineSectionInput = { blockId?: BlockId; title: string; quotes: SourceRef[] };
+
+/**
+ * The structure a person reviewed: the article's title, the lines the introduction opens with and
+ * the sections in order, each with its intertítulo and the lines of the interview it is written
+ * from. Sections may be renamed, reordered, removed or added; a quote belongs to one place only.
+ */
+export type OutlineInput = {
+  title: string;
+  intro?: { quotes: SourceRef[] };
+  sections: OutlineSectionInput[];
+  /** The outline run it came from (provenance only). */
+  fromRunId?: RunId;
+};
+
+/**
+ * Full article draft from the production's material and brief (recipe "aqui pedrão"). With
+ * `outline`, the sections are written in the given order from the given quotes ("Redigir artigo").
+ */
+export type ArticleDraftInput = { productionId: ProductionId; pieceId: PieceId; outline?: OutlineInput };
+
+/**
+ * The size contract of "Gerar artigo" (João's lauda rule), as data a provider adapter turns into
+ * its prompt and the simulated adapter follows: aim at `targetChars` (± `tolerance`), never above
+ * `maxChars`, and never pad. When the material gives less, the draft comes out shorter: no
+ * repeated facts or quotes, no context without a source in the material, no interviewer
+ * questions as text, no adjectives to fill space. Built from the brief by
+ * `draftSizeInstructions` (registries/sizing.ts).
+ */
+export type DraftSizeInstructions = {
+  size: ArticleSize;
+  laudas: number;
+  charsPerLauda: number;
+  minChars: number;
+  maxChars: number;
+  targetChars: number;
+  /** Share of the target a draft may land around; the maximum still holds. */
+  tolerance: number;
+  /** Sections become H2 intertítulos (Padrão); in a Curto they only guide the drafting. */
+  headings: boolean;
+  neverPad: true;
+  /** Character budget of the introduction. */
+  introChars: number;
+  /** Character budget per section, in order (`section-1`…, matching the recipe steps). */
+  sections: { stepId: StepId; budgetChars: number }[];
+  /** The sentence the model receives: "Escreva até 4.000 caracteres; se o material não sustentar, escreva menos e não complete." */
+  instruction: string;
+};
 
 /**
  * Inline action on a selection. `body` is the editor's draft at `baseRevision`; `target` holds
@@ -112,9 +171,10 @@ export type RewriteInput = SelectionInput & { tone: RewriteTone };
 
 /**
  * "Encurtar": a selection, or the whole document when `target` is empty (one suggestion per
- * paragraph, longest first, until the text reaches `targetWords`, e.g. "Encurtar para 600").
+ * paragraph, longest first, until the body reaches `targetCharacters`: "Encurtar para 2 laudas"
+ * asks for the size's maximum, 4.000 characters).
  */
-export type ShortenInput = Omit<SelectionInput, 'target'> & { target?: TextRange[]; targetWords?: number };
+export type ShortenInput = Omit<SelectionInput, 'target'> & { target?: TextRange[]; targetCharacters?: number };
 
 export type TitlesInput = { productionId: ProductionId; pieceId: PieceId; baseRevision: number; body: ArticleBody };
 
@@ -155,6 +215,7 @@ export type CarouselAssistInput = {
 };
 
 export type GenerationInputs = {
+  'article.outline': ArticleOutlineInput;
   'article.draft': ArticleDraftInput;
   'article.rewrite': RewriteInput;
   'article.shorten': ShortenInput;
@@ -191,7 +252,11 @@ export type StartRefusal =
   | 'no_source'
   | 'no_change'
   | 'material_too_short'
-  | 'empty_prompt';
+  | 'empty_prompt'
+  /** The reviewed structure cannot be written (section count, an empty intertítulo, a quote twice…). */
+  | 'invalid_outline'
+  /** The piece waits for approval: its text is locked until the request is withdrawn or decided. */
+  | 'locked';
 
 // ── Runs ─────────────────────────────────────────────────────────────────────────────────
 
@@ -243,8 +308,16 @@ export type RetryRefusal = 'unknown_run' | 'still_running' | 'nothing_to_retry' 
 /** `awaiting_input` request kind for the outline review pause. */
 export const OUTLINE_REVIEW = 'outline-review';
 
-/** `resume()` input for `OUTLINE_REVIEW`: rename sections (same count) and/or the title. */
-export type OutlineReviewInput = { title?: string; sections: { blockId?: BlockId; title: string }[] };
+/**
+ * `resume()` input for `OUTLINE_REVIEW` (the "Pausar para revisar a estrutura" simulation): the
+ * `OutlineInput` shape, with the title and the quotes optional so the rename-only payload stays
+ * valid. The paused run renames its title and sections (same count); a structure with other
+ * sections or quotes is drafted with `start('article.draft', { outline })` instead.
+ */
+export type OutlineReviewInput = Omit<OutlineInput, 'title' | 'sections'> & {
+  title?: string;
+  sections: (Omit<OutlineSectionInput, 'quotes'> & { quotes?: SourceRef[] })[];
+};
 
 export type SimulationScenario = {
   id: string;

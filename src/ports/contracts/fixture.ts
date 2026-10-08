@@ -33,6 +33,8 @@ export type PortsUnderTest = {
     approver: PersonId;
     /** Role editor only (cannot decide at gates). */
     editorOnly?: PersonId;
+    /** Roles editor + creative_reviewer (decides carousels only). */
+    creativeReviewer?: PersonId;
   };
   /** Carousel template id the adapter accepts. */
   carouselTemplateId: string;
@@ -80,7 +82,7 @@ export function newProductionInput(overrides: Partial<NewProductionInput> = {}):
   return {
     title: 'Cooperativa Vale Verde',
     material: { text: CONTRACT_TRANSCRIPT, origin: 'interview', authorized: true },
-    brief: { sections: 3, length: 'short' },
+    brief: { sections: 3, size: 'standard' },
     plan: ['article', 'carousel'],
     ...overrides,
   };
@@ -150,4 +152,19 @@ export async function approvedArticle(ports: PortsUnderTest): Promise<SampleProd
   await writeDraft(ports, sample.articleId, await sampleArticle(ports, sample.sourceId));
   const article = await approvePiece(ports, sample.articleId);
   return { ...sample, article };
+}
+
+/** First name of a person as the adapter knows it ("Pedro" for "Com Pedro"). */
+export async function firstNameOf(ports: PortsUnderTest, personId: PersonId): Promise<string> {
+  const person = (await ports.queries.people()).find((entry) => entry.id === personId);
+  if (!person) throw new Error(`unknown person ${personId}`);
+  return person.name.trim().split(/\s+/)[0] ?? person.name;
+}
+
+/** `YYYY-MM-DD` of the adapter's "today", read from an instant it stamped (a request's `requestedAt`). */
+export function localDay(instant: string, offsetDays = 0): string {
+  const date = new Date(Date.parse(instant));
+  date.setDate(date.getDate() + offsetDays);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }

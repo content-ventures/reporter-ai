@@ -3,7 +3,8 @@ import type { Delivery, DeliveryFormat, DeliveryMode } from '../domain/delivery.
 import type { FeedbackEntry } from '../domain/feedback.ts';
 import type { IsoDateTime, PersonId, PieceId, ProductionId, SourceId, SuggestionId, TemplateId, VersionId } from '../domain/ids.ts';
 import type { PieceBody, PieceKind } from '../domain/piece.ts';
-import type { ArticleLength, Brief } from '../domain/production.ts';
+import type { Brief } from '../domain/production.ts';
+import type { ArticleSize } from '../domain/sizing.ts';
 import type { VersionRef } from '../domain/refs.ts';
 import type { Result } from '../domain/result.ts';
 import type { DecideRefusal } from '../domain/rules/decide.ts';
@@ -56,7 +57,7 @@ export type NewProductionInput = {
   /** Reuse a saved source instead of creating one (duplicate material, REQ-2.1 prep). */
   reuseSourceId?: SourceId;
   speakers?: SpeakerAssignment[];
-  brief: { angle?: string; sections: number; length: ArticleLength };
+  brief: { angle?: string; sections: number; size: ArticleSize };
   /** Article is mandatory; carousel optional. */
   plan: PieceKind[];
   ownerId?: PersonId;
@@ -66,7 +67,7 @@ export type CreateProductionRefusal =
   | 'empty_title'
   | 'empty_material'
   | 'sections_out_of_range'
-  | 'unknown_length'
+  | 'unknown_size'
   | 'article_required'
   | 'unknown_person'
   | 'unknown_source';
@@ -79,7 +80,8 @@ export type CreatedProduction = {
 
 // ── Estúdio ──────────────────────────────────────────────────────────────────────────────
 
-export type SaveDraftRefusal = NotFoundRefusal | 'conflict' | 'kind_mismatch';
+/** `locked`: the text waits for a decision ("O texto está com Pedro para aprovação. Retire o envio para editar."). */
+export type SaveDraftRefusal = NotFoundRefusal | 'conflict' | 'kind_mismatch' | 'locked';
 
 export type SavedDraft = {
   pieceId: PieceId;
@@ -89,13 +91,13 @@ export type SavedDraft = {
   persisted: boolean;
 };
 
-export type VersionRefusal = NotFoundRefusal | 'unchanged' | 'empty' | 'run_in_progress';
-export type RestoreRefusal = NotFoundRefusal | 'unknown_version' | 'nothing_to_restore' | 'run_in_progress';
+export type VersionRefusal = NotFoundRefusal | 'unchanged' | 'empty' | 'run_in_progress' | 'locked';
+export type RestoreRefusal = NotFoundRefusal | 'unknown_version' | 'nothing_to_restore' | 'run_in_progress' | 'locked';
 
 export type SavedVersion = { version: VersionView; revision: number };
 
-export type BriefInput = { angle?: string; sections: number; length: ArticleLength };
-export type BriefRefusal = NotFoundRefusal | 'conflict' | 'sections_out_of_range' | 'unknown_length';
+export type BriefInput = { angle?: string; sections: number; size: ArticleSize };
+export type BriefRefusal = NotFoundRefusal | 'conflict' | 'sections_out_of_range' | 'unknown_size';
 
 /** `personId: null` with `unattributed` is "Sem atribuição"; without it, the label is left undecided. */
 export type SpeakerMapping = { label: string; personId: PersonId | null; newPerson?: PersonDetails; unattributed?: true };
@@ -107,16 +109,35 @@ export type PersonRefusal = NotFoundRefusal | 'empty_name';
 
 // ── Revisão ──────────────────────────────────────────────────────────────────────────────
 
-/** `checks_blocking`: a blocking check fails on the text (an interrupted generation not yet continued or edited). */
+/**
+ * "Enviar para aprovação": who approves ("Quem aprova"; default `PieceApproval.send.suggestedAssigneeId`),
+ * the "Recado" and "Para quando" (local date `YYYY-MM-DD`, today or later).
+ */
+export type RequestReviewInput = { assigneeId?: PersonId; note?: string; dueOn?: string };
+
+/**
+ * `checks_blocking`: a blocking check fails on the text (an interrupted generation not yet continued or edited).
+ * `send_blocked`: a "Falta" item of the pre-send checklist (message = its text).
+ */
 export type RequestReviewRefusal =
   | NotFoundRefusal
   | 'empty'
   | 'run_in_progress'
   | 'suggestion_pending'
   | 'checks_blocking'
+  | 'send_blocked'
   | 'already_requested'
   | 'already_approved'
-  | 'no_gate';
+  | 'no_gate'
+  | 'unknown_assignee'
+  | 'assignee_cannot_approve'
+  | 'self_assign'
+  | 'invalid_due';
+
+/** "Retirar envio": only the sender or an admin, only while the request waits. */
+export type WithdrawReviewRefusal = NotFoundRefusal | 'not_awaiting' | 'forbidden';
+
+export type WithdrawnReview = { pieceId: PieceId; request: ReviewRequest };
 
 export type RequestedReview = { request: ReviewRequest; version: VersionView; created: boolean };
 
@@ -149,7 +170,7 @@ export type DeriveCommandRefusal = NotFoundRefusal | DeriveRefusal | 'not_planne
 /** `restore` undoes a discard ("Desfazer" right after "Descartar"): the suggestion is open again. */
 export type SuggestionDecision = 'accept' | 'discard' | 'restore';
 
-export type DecideSuggestionRefusal = NotFoundRefusal | 'not_pending' | 'not_discarded' | 'unsupported' | 'invalid_target';
+export type DecideSuggestionRefusal = NotFoundRefusal | 'not_pending' | 'not_discarded' | 'unsupported' | 'invalid_target' | 'locked';
 
 export type DecidedSuggestion = {
   suggestionId: SuggestionId;
@@ -201,7 +222,10 @@ export interface ProductionCommands {
   /** Creates a NEW version with the old body; decisions are never touched. */
   restoreVersion(pieceId: PieceId, versionId: VersionId): Promise<Result<SavedVersion, RestoreRefusal>>;
 
-  requestReview(pieceId: PieceId, note?: string): Promise<Result<RequestedReview, RequestReviewRefusal>>;
+  /** Locks the text until a decision or a withdrawal. Existing callers pass only `pieceId`. */
+  requestReview(pieceId: PieceId, input?: RequestReviewInput): Promise<Result<RequestedReview, RequestReviewRefusal>>;
+  /** "Retirar envio para editar": the pending request stops waiting and the text is editable again. */
+  withdrawReview(pieceId: PieceId): Promise<Result<WithdrawnReview, WithdrawReviewRefusal>>;
   decide(command: DecideCommand): Promise<Result<Decision, DecideCommandRefusal>>;
 
   derive(command: DeriveCommand): Promise<Result<{ pieceId: PieceId; created: boolean }, DeriveCommandRefusal>>;
