@@ -6,11 +6,11 @@ import { AddMarkStep, RemoveMarkStep } from '@tiptap/pm/transform';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { articleBodyFromRun, isRunActive } from '../domain/index.ts';
 import type { ArticleBlock, BlockId, RunEvent, RunFold, RunId, StreamBlock } from '../domain/index.ts';
-import { isFigureDisplayTransaction } from './figures.ts';
+import { coverOf, coverSlotOf, isFigureDisplayTransaction } from './figures.ts';
 import { blockNode } from './nodes.ts';
 import { blockIdOf, blockTextOf, findBlockEntry, inlineText } from './ranges.ts';
 import type { BlockEntry } from './ranges.ts';
-import { BLOCK_ATTR, NODE } from './schema.ts';
+import { BLOCK_ATTR, DOC_ATTR, NODE } from './schema.ts';
 import type { ViewLike } from './view.ts';
 
 /**
@@ -157,6 +157,9 @@ export function streamedBlock(block: StreamBlock): ArticleBlock {
       return { ...base, type: 'list', ordered: block.ordered ?? false, items: block.text.split('\n').map((text) => (text ? [{ text }] : [])) };
     case 'divider':
       return { id: block.id, type: 'divider' };
+    case 'figure':
+      // An image slot arrives whole with `block.completed`; until then an empty frame holds its place.
+      return { id: block.id, type: 'figure', slot: { subject: '' } };
     default:
       return { ...base, type: 'paragraph', inlines };
   }
@@ -299,6 +302,14 @@ export function streamTransaction(state: EditorState, fold: RunFold, options: St
 
   if (!sameRun && mode === 'replace') {
     tr.replaceWith(0, tr.doc.content.size, state.schema.nodes[NODE.paragraph].create());
+  }
+  // The outline's cover suggestion, once, when the stream begins on a text without a cover: it fills
+  // an empty place, and a new version ("replace") brings its own (or none), as the output will.
+  if (!sameRun && DOC_ATTR.coverSlot in tr.doc.attrs && !coverOf(tr.doc)) {
+    const current = coverSlotOf(tr.doc);
+    const next = fold.coverSlot ?? null;
+    const replace = mode === 'replace' && JSON.stringify(current) !== JSON.stringify(next);
+    if (replace || (!current && next)) tr.setDocAttribute(DOC_ATTR.coverSlot, next);
   }
   // `only` narrows the work per event; blocks still in flight and blocks missing from the
   // document are always compared, so a coalesced or missed event never leaves a block behind.

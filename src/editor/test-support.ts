@@ -63,7 +63,7 @@ export const FIGURE_BODY: ArticleBody = {
 
 export type StateOptions = { history?: boolean; extraPlugins?: Plugin[]; salt?: string; decorations?: ArticleDecorationsOptions };
 
-export function articleState(body: Pick<ArticleBody, 'blocks' | 'cover'>, options: StateOptions = {}): EditorState {
+export function articleState(body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>, options: StateOptions = {}): EditorState {
   const schema = articleSchema();
   const plugins: Plugin[] = [
     ...(options.history ? [history()] : []),

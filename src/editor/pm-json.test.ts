@@ -80,6 +80,7 @@ describe('images ⇄ ProseMirror JSON', () => {
         assetId: 'ast-1',
         alt: 'Ana na bancada',
         caption: 'Ana Prado corta o couro',
+        slot: null,
         credit: null,
         src: null,
         width: null,

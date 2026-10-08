@@ -14,7 +14,7 @@ import type { ViewLike } from './view.ts';
  * Suggestions against the live document. Location and staleness follow the domain rules
  * (`locateTargets`) on the editor's own text, without serialising the document; accepting
  * applies the domain `applySuggestion` result as ONE transaction: one ⌘Z reverts it, and the
- * touched AI blocks become `reviewed`.
+ * touched blocks are AI text to review (`unreviewed`: the review of the whole text reopens).
  */
 
 export const SUGGESTION_META = 'reporterSuggestion';

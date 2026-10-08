@@ -47,7 +47,7 @@ function suggestion(target: TextRange[], proposal: SuggestionProposal, overrides
 const REWRITE = suggestion([{ blockId: 'p1', from: 2, to: 8 }], { kind: 'replace-text', text: 'estúdio' });
 
 describe('accepting a suggestion', () => {
-  test('replace-text: the document ends equal to the domain applySuggestion, and the block is reviewed', () => {
+  test('replace-text: the document ends equal to the domain applySuggestion, and the block is unreviewed AI text', () => {
     const view = testView(articleState(BODY));
     const expected = applySuggestion(docBody(view.state.doc, { keepEmpty: true }), REWRITE);
     assert.ok(expected.ok);
@@ -55,7 +55,7 @@ describe('accepting a suggestion', () => {
     assert.ok(result.ok);
     assert.deepEqual(result.value, expected.value);
     assert.deepEqual(docBody(view.state.doc, { keepEmpty: true }), expected.value);
-    assert.equal(view.state.doc.child(0).attrs.ai, 'reviewed');
+    assert.equal(view.state.doc.child(0).attrs.ai, 'unreviewed');
     assert.equal(view.dispatched[0].getMeta(SUGGESTION_META), 'sug-1');
   });
 
@@ -111,7 +111,7 @@ describe('accepting a suggestion', () => {
       expected.value.blocks.map((block) => [block.id, block.ai]),
       [
         ['p1', 'unreviewed'],
-        ['n1', 'reviewed'],
+        ['n1', 'unreviewed'],
         ['p3', undefined],
       ],
     );

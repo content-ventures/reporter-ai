@@ -9,7 +9,7 @@ export function blockNode(schema: Schema, block: ArticleBlock, options?: BlockTo
   return schema.nodeFromJSON(blockToJSON(block, options));
 }
 
-export function articleDocNode(schema: Schema, body: Pick<ArticleBody, 'blocks' | 'cover'>, options?: ArticleToDocOptions): PMNode {
+export function articleDocNode(schema: Schema, body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>, options?: ArticleToDocOptions): PMNode {
   return schema.nodeFromJSON(articleToDoc(body, options));
 }
 

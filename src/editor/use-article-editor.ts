@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, useEditorState } from '@tiptap/react';
 import type { Editor } from '@tiptap/react';
 import type { Transaction } from '@tiptap/pm/state';
+import { isImageSlot } from '../domain/index.ts';
 import type { ArticleBody, BlockId, ImageRef, RunId, Suggestion } from '../domain/index.ts';
 import { useRun, useRunListener } from '../state/index.ts';
 import { createBlockIdFactory } from './block-ids.ts';
@@ -12,9 +13,9 @@ import type { BlockKind } from './commands.ts';
 import type { ProseWidgetFactory } from './decorations.ts';
 import { articleExtensions, setArticleWidgetHandlers, setImageInputHandlers } from './extensions.ts';
 import type { PlaceholderTexts } from './extensions.ts';
-import { coverOf, figureAt, figureRect, figureSourcesOf } from './figures.ts';
-import type { FigureInfo } from './figures.ts';
-import type { ForeignImagesHandler, ImageFilesHandler } from './image-input.ts';
+import { coverOf, figureAt, figureRect, figureSourcesOf, imageSlotAt, imageSlotsIn } from './figures.ts';
+import type { FigureInfo, ImageSlotInfo } from './figures.ts';
+import type { ForeignImagesHandler, ImageFilesHandler, SlotFilesHandler } from './image-input.ts';
 import { docBody } from './nodes.ts';
 import { articleToDoc } from './pm-json.ts';
 import type { FigureSources } from './pm-json.ts';
@@ -60,6 +61,8 @@ export type UseArticleEditorOptions = {
   figureSources?: FigureSources;
   /** Image files pasted or dropped (validate, store, then `insertFigure(editor, image, placement)`). */
   onImageFiles?: ImageFilesHandler;
+  /** Image files dropped on an open image slot, or pasted while it is selected: fill that slot. */
+  onSlotFiles?: SlotFilesHandler;
   /**
    * Images from another page pasted as HTML (adopt: `updateFigure(…, { assetId }, { history: false })`).
    * Without it, such images are left out of the paste.
@@ -69,13 +72,20 @@ export type UseArticleEditorOptions = {
   onRejectedFiles?: (files: File[]) => void;
   /** A click on a figure's caption: open "Legenda e crédito" on the caption. */
   onFigureCaption?: (blockId: BlockId) => void;
+  /** Enter on a selected image slot: choose its image. */
+  onSlotOpen?: (blockId: BlockId) => void;
   /**
    * The Design System `proseWidgets` (the proposal read in the paragraph, the AI gutter marker).
    * Read once, when the editor is created.
    */
   widgets?: ProseWidgetFactory;
-  /** The AI gutter marker of a block was clicked ("Revisar texto da IA"). */
+  /** The AI gutter marker of a block was clicked (a passive cue unless the host handles it). */
   onAiMarker?: (blockId: BlockId) => void;
+  /**
+   * The selection landed on an image slot (a click, the keyboard or a jump from "Imagens
+   * sugeridas"): offer "Escolher imagem" / "Dispensar". Called once per slot reached.
+   */
+  onImageSlotSelect?: (slot: ImageSlotInfo) => void;
 };
 
 export type ArticleEditorHandle = {
@@ -127,15 +137,16 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
   }, [editor, readOnly]);
 
   useFigureSources(editor, figureSources);
-  const { onImageFiles, onForeignImages, onRejectedFiles, onFigureCaption } = options;
+  const { onImageFiles, onSlotFiles, onForeignImages, onRejectedFiles, onFigureCaption, onSlotOpen } = options;
   useEffect(() => {
-    if (editor && !editor.isDestroyed) setImageInputHandlers(editor, { onImageFiles, onForeignImages, onRejectedFiles, onFigureCaption });
-  }, [editor, onImageFiles, onForeignImages, onRejectedFiles, onFigureCaption]);
+    if (editor && !editor.isDestroyed) setImageInputHandlers(editor, { onImageFiles, onSlotFiles, onForeignImages, onRejectedFiles, onFigureCaption, onSlotOpen });
+  }, [editor, onImageFiles, onSlotFiles, onForeignImages, onRejectedFiles, onFigureCaption, onSlotOpen]);
   const { onAiMarker } = options;
   useEffect(() => {
     // Only when given: a host may set the handlers itself (`setArticleWidgetHandlers`).
     if (editor && !editor.isDestroyed && onAiMarker) setArticleWidgetHandlers(editor, { onAiMarker });
   }, [editor, onAiMarker]);
+  useImageSlotSelect(editor, options.onImageSlotSelect);
 
   useEffect(() => {
     if (!editor) return undefined;
@@ -193,10 +204,43 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
 }
 
 export type UseArticleReaderOptions = {
-  body: Pick<ArticleBody, 'blocks' | 'cover'>;
+  body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>;
   /** What the figures show per asset (keep it memoised). */
   figureSources?: FigureSources;
+  /** Leave the open image slots out (the publishable text, as the exports show it). */
+  hideImageSlots?: boolean;
 };
+
+/** Calls `onSelect` when the selection reaches an image slot (once per slot reached). */
+function useImageSlotSelect(editor: Editor | null, onSelect: ((slot: ImageSlotInfo) => void) | undefined): void {
+  const latest = useRef(onSelect);
+  useEffect(() => {
+    latest.current = onSelect;
+  });
+  useEffect(() => {
+    if (!editor || !onSelect) return undefined;
+    let last: BlockId | null = null;
+    const onSelection = () => {
+      if (editor.isDestroyed) return;
+      const slot = imageSlotAt(editor.state.selection);
+      const id = slot?.blockId ?? null;
+      if (id === last) return;
+      last = id;
+      if (slot) latest.current?.(slot);
+    };
+    editor.on('selectionUpdate', onSelection);
+    return () => {
+      editor.off('selectionUpdate', onSelection);
+    };
+  }, [editor, onSelect]);
+}
+
+/** The body without open slots or the cover suggestion (what `hideImageSlots` shows). */
+function publishableView(body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>): Pick<ArticleBody, 'blocks' | 'cover'> {
+  const view: Pick<ArticleBody, 'blocks' | 'cover'> = { blocks: body.blocks.filter((block) => !isImageSlot(block)) };
+  if (body.cover) view.cover = body.cover;
+  return view;
+}
 
 /** Applies display data to the figures whenever the map changes. */
 function useFigureSources(editor: Editor | null, figureSources: FigureSources | undefined): void {
@@ -210,10 +254,10 @@ function useFigureSources(editor: Editor | null, figureSources: FigureSources | 
  * Read-only article (review, material and version previews) with the same schema and `data-*`
  * hooks, figures included. A new `body` object replaces the content outside any history.
  */
-export function useArticleReader({ body, figureSources }: UseArticleReaderOptions): Editor | null {
+export function useArticleReader({ body, figureSources, hideImageSlots = false }: UseArticleReaderOptions): Editor | null {
   const [setup] = useState(() => ({
     extensions: articleExtensions({ placeholder: false }),
-    content: articleToDoc(body, { figureSources }),
+    content: articleToDoc(hideImageSlots ? publishableView(body) : body, { figureSources }),
   }));
   const shown = useRef(body);
   const editor = useEditor({
@@ -227,8 +271,8 @@ export function useArticleReader({ body, figureSources }: UseArticleReaderOption
   useEffect(() => {
     if (!editor || shown.current === body) return;
     shown.current = body;
-    editor.commands.setContent(articleToDoc(body), { emitUpdate: false });
-  }, [editor, body]);
+    editor.commands.setContent(articleToDoc(hideImageSlots ? publishableView(body) : body), { emitUpdate: false });
+  }, [editor, body, hideImageSlots]);
   useFigureSources(editor, figureSources);
   return editor;
 }
@@ -349,6 +393,18 @@ export function useFigureAnchor(editor: Editor | null, blockId: BlockId | null |
 /** The cover the document holds now (set with `setArticleCover`). */
 export function useArticleCover(editor: Editor | null): ImageRef | null {
   return useEditorState({ editor, selector: ({ editor: current }) => (current ? coverOf(current.state.doc) : null) }) ?? null;
+}
+
+/** The selected image slot (clicked, or reached by "Imagens sugeridas"), for "Escolher imagem" / "Dispensar". */
+export function useSelectedImageSlot(editor: Editor | null): ImageSlotInfo | null {
+  return useEditorState({ editor, selector: ({ editor: current }) => (current ? imageSlotAt(current.state.selection) : null) }) ?? null;
+}
+
+const NO_SLOTS: ImageSlotInfo[] = [];
+
+/** Open image slots of the document in reading order (the cover suggestion first). */
+export function useImageSlots(editor: Editor | null): ImageSlotInfo[] {
+  return useEditorState({ editor, selector: ({ editor: current }) => (current ? imageSlotsIn(current.state.doc) : NO_SLOTS) }) ?? NO_SLOTS;
 }
 
 export type StreamingInfo = { active: boolean; runId: string | null; blockIds: readonly BlockId[]; edited: boolean };

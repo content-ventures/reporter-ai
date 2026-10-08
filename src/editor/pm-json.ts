@@ -1,5 +1,5 @@
-import { normalizeImageRef, normalizeInlines, normalizeLink } from '../domain/index.ts';
-import type { AiReviewState, ArticleBlock, ArticleBody, AssetId, BlockId, ImageRef, Inline, InlineMark, SourceRef } from '../domain/index.ts';
+import { IMAGE_ORIENTATIONS, normalizeImageRef, normalizeImageSlot, normalizeInlines, normalizeLink } from '../domain/index.ts';
+import type { AiReviewState, ArticleBlock, ArticleBody, AssetId, BlockId, ImageOrientation, ImageRef, ImageSlot, Inline, InlineMark, SourceRef } from '../domain/index.ts';
 import { BLOCK_ATTR, DOC_ATTR, FIGURE_ATTR, MARK, NODE } from './schema.ts';
 
 /**
@@ -13,9 +13,11 @@ import { BLOCK_ATTR, DOC_ATTR, FIGURE_ATTR, MARK, NODE } from './schema.ts';
  * - Block `id`, `sourceRefs` and `ai` travel as node attrs (`blockId`, `sourceRefs`, `ai`).
  * - Links keep only safe hrefs (`normalizeLink`); an unsafe link loses the link mark, not the text.
  * - figure ⇄ `figure` (atom) with the `ImageRef` as `assetId`/`alt`/`caption` attrs; `credit`,
- *   `src`, `width` and `height` are display only (from `figureSources`), never read back. A figure
- *   without an asset (an image pasted from another page, not adopted yet) is not content.
- * - `cover` ⇄ the `cover` attribute of the document node (not a node: it is not in the text flow).
+ *   `src`, `width` and `height` are display only (from `figureSources`), never read back. An image
+ *   slot (a figure the generation planned, no image yet) ⇄ `figure` with the `ImageSlot` in its
+ *   `slot` attr and no asset. A figure with neither (an image pasted from another page, not
+ *   adopted yet) is not content; an asset wins over a slot.
+ * - `cover` / `coverSlot` ⇄ the attributes of the document node (not nodes: not in the text flow).
  */
 
 export type PmMarkJSON = { type: string; attrs?: Record<string, unknown> };
@@ -64,13 +66,15 @@ export type FigureAttrs = {
   assetId: AssetId | null;
   alt: string | null;
   caption: string | null;
+  /** An image slot's suggestion; `null` on figures with an image. */
+  slot: ImageSlot | null;
   credit: string | null;
   src: string | null;
   width: number | null;
   height: number | null;
 };
 
-export const EMPTY_FIGURE_ATTRS: FigureAttrs = { assetId: null, alt: null, caption: null, credit: null, src: null, width: null, height: null };
+export const EMPTY_FIGURE_ATTRS: FigureAttrs = { assetId: null, alt: null, caption: null, slot: null, credit: null, src: null, width: null, height: null };
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
@@ -80,17 +84,37 @@ function size(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : null;
 }
 
-/** `ImageRef` (+ display data) → figure attributes; empty alt/caption become `null`. */
-export function figureAttrs(image: Partial<ImageRef>, display: FigureDisplay = {}): FigureAttrs {
+/**
+ * `ImageRef` (+ display data, + an image slot) → figure attributes; empty alt/caption become
+ * `null`. A slot only stands on a figure without an asset.
+ */
+export function figureAttrs(image: Partial<ImageRef>, display: FigureDisplay = {}, slot?: unknown): FigureAttrs {
+  const assetId = text(image.assetId);
   return {
-    assetId: text(image.assetId),
+    assetId,
     alt: text(image.alt),
     caption: text(image.caption),
+    slot: assetId ? null : readImageSlot(slot),
     credit: text(display.credit),
     src: text(display.src),
     width: size(display.width),
     height: size(display.height),
   };
+}
+
+/** A normalised `ImageSlot` read from a figure's `slot` attr or a stored cover suggestion; `null` without a subject. */
+export function readImageSlot(value: unknown): ImageSlot | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const subject = text(record.subject);
+  if (!subject) return null;
+  const orientation = IMAGE_ORIENTATIONS.find((entry) => entry === record.orientation) as ImageOrientation | undefined;
+  return normalizeImageSlot({
+    subject,
+    suggestedCaption: text(record.suggestedCaption) ?? undefined,
+    suggestedAlt: text(record.suggestedAlt) ?? undefined,
+    orientation,
+  });
 }
 
 /**
@@ -163,6 +187,7 @@ export function blockToJSON(block: ArticleBlock, options: BlockToJSONOptions = {
     case 'divider':
       return { type: NODE.divider, attrs };
     case 'figure':
+      if (!block.image) return { type: NODE.figure, attrs: { ...attrs, ...figureAttrs({}, {}, block.slot) } };
       return { type: NODE.figure, attrs: { ...attrs, ...figureAttrs(block.image, options.figureSources?.get(block.image.assetId)) } };
   }
 }
@@ -174,15 +199,19 @@ export type ArticleToDocOptions = BlockToJSONOptions & {
 
 /**
  * Domain body → ProseMirror document JSON (an empty body becomes one empty paragraph). The cover
- * travels as the document's `cover` attribute (present only when there is one).
+ * travels as the document's `cover` attribute, its suggestion as `coverSlot` (each present only
+ * when there is one; the suggestion only without a cover).
  */
-export function articleToDoc(body: Pick<ArticleBody, 'blocks' | 'cover'>, options: ArticleToDocOptions = {}): PmNodeJSON {
+export function articleToDoc(body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>, options: ArticleToDocOptions = {}): PmNodeJSON {
   const content =
     body.blocks.length > 0
       ? body.blocks.map((block) => blockToJSON(block, options))
       : [{ type: NODE.paragraph, attrs: { ...EMPTY_BLOCK_ATTRS, blockId: options.emptyBlockId ?? null } }];
   const cover = readImageRef(body.cover);
-  return cover ? { type: NODE.doc, attrs: { [DOC_ATTR.cover]: cover }, content } : { type: NODE.doc, content };
+  const coverSlot = cover ? null : readImageSlot(body.coverSlot);
+  if (cover) return { type: NODE.doc, attrs: { [DOC_ATTR.cover]: cover }, content };
+  if (coverSlot) return { type: NODE.doc, attrs: { [DOC_ATTR.coverSlot]: coverSlot }, content };
+  return { type: NODE.doc, content };
 }
 
 // ——— ProseMirror JSON → domain ———
@@ -299,7 +328,10 @@ export function jsonToBlock(node: PmNodeJSON, index: number, options: DocToArtic
       return { ...base, type: 'divider' };
     case NODE.figure: {
       const image = readImageRef(node.attrs);
-      return image ? { ...base, type: 'figure', image } : null;
+      if (image) return { ...base, type: 'figure', image };
+      const slot = readImageSlot(node.attrs?.[FIGURE_ATTR.slot]);
+      // A slot carries its evidence, never an AI review flag (it is filled or dismissed instead).
+      return slot ? { id, ...(base.sourceRefs ? { sourceRefs: base.sourceRefs } : {}), type: 'figure', slot } : null;
     }
     default: {
       const text = plainText(node);
@@ -309,7 +341,7 @@ export function jsonToBlock(node: PmNodeJSON, index: number, options: DocToArtic
   }
 }
 
-/** ProseMirror document JSON → domain body (the cover comes from the document attribute). */
+/** ProseMirror document JSON → domain body (the cover and its suggestion come from the document attributes). */
 export function docToArticle(doc: PmNodeJSON, options: DocToArticleOptions = {}): ArticleBody {
   const blocks: ArticleBlock[] = [];
   (doc.content ?? []).forEach((node, index) => {
@@ -319,5 +351,9 @@ export function docToArticle(doc: PmNodeJSON, options: DocToArticleOptions = {})
   const body: ArticleBody = { type: 'article', title: options.title ?? '', blocks };
   const cover = readImageRef(doc.attrs?.[DOC_ATTR.cover]);
   if (cover) body.cover = cover;
+  else {
+    const coverSlot = readImageSlot(doc.attrs?.[DOC_ATTR.coverSlot]);
+    if (coverSlot) body.coverSlot = coverSlot;
+  }
   return body;
 }
