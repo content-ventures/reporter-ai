@@ -10,7 +10,7 @@ import { useProduction } from './use-queries.ts';
 import { useCommands } from './use-runtime.ts';
 
 /**
- * A08 · the brief ("pauta": orientação editorial, seções, extensão) as an editable value, for
+ * A08 · the brief ("pauta": orientação editorial, seções, tamanho) as an editable value, for
  * Material and the studio's "Estrutura" tab. A form keeps the revision it was opened from and
  * saves over it: when another tab (or person) saved the brief meanwhile, the save is refused
  * (`conflict`) instead of overwriting it; `brief` already holds the newer one, so the form can
@@ -20,8 +20,8 @@ import { useCommands } from './use-runtime.ts';
 export type BriefEditor = {
   /** The saved brief (undefined while the production loads). */
   brief: Brief | undefined;
-  /** Words of the longest article the material supports, when known (`ProductionDetail.wordsAvailable`). */
-  wordsAvailable: number | undefined;
+  /** Characters of the longest article the material supports, when known (`ProductionDetail.charsAvailable`). */
+  charsAvailable: number | undefined;
   saving: boolean;
   /** The last save was refused because the brief changed after the form opened. */
   conflict: boolean;
@@ -50,5 +50,5 @@ export function useBrief(productionId: ProductionId | null | undefined): BriefEd
   );
 
   const clearConflict = useCallback(() => setConflict(false), []);
-  return { brief: production.data?.brief, wordsAvailable: production.data?.wordsAvailable, saving, conflict, save, clearConflict };
+  return { brief: production.data?.brief, charsAvailable: production.data?.charsAvailable, saving, conflict, save, clearConflict };
 }

@@ -25,7 +25,8 @@ export type Commands = {
   ingest: Pick<SourceIngest, 'read' | 'analyze'>;
   /** "Retorno do piloto" (`record`) and 👍/👎 on AI output (`vote`, one per person and target). */
   feedback: Pick<FeedbackPort, 'record' | 'vote'>;
-  render: Pick<RenderService, 'render'>;
+  /** Slides as PNG (`render`) and the template library's images: card covers (`thumbnail`) and every layout (`preview`). */
+  render: Pick<RenderService, 'render' | 'thumbnail' | 'preview'>;
   /**
    * Article images: "Inserir imagem" / "Definir como destaque" (`put`), credit and rights
    * (`update`), and "Liberar espaço" when the browser storage is full: `unused` says what no draft
@@ -57,6 +58,7 @@ const PRODUCTION_METHODS: Methods<ProductionCommands> = {
   createVersion: true,
   restoreVersion: true,
   requestReview: true,
+  withdrawReview: true,
   decide: true,
   derive: true,
   decideSuggestion: true,
@@ -105,7 +107,7 @@ export function createCommands(whenReady: () => Promise<Runtime>): Commands {
     export: deferred<Commands['export']>(whenReady, (runtime) => runtime.export, EXPORT_METHODS),
     ingest: deferred<Commands['ingest']>(whenReady, (runtime) => runtime.ingest, INGEST_METHODS),
     feedback: deferred<Commands['feedback']>(whenReady, (runtime) => runtime.feedback, { record: true, vote: true }, 'all'),
-    render: deferred<Commands['render']>(whenReady, (runtime) => runtime.render, { render: true }),
+    render: deferred<Commands['render']>(whenReady, (runtime) => runtime.render, { render: true, thumbnail: true, preview: true }),
     assets: {
       ...deferred<Pick<AssetStore, 'put' | 'update'>>(whenReady, (runtime) => runtime.assets, { put: true, update: true }),
       async unused(inUse = []) {

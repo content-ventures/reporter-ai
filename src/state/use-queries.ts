@@ -9,6 +9,8 @@ import type { FeedbackQuery } from '../ports/feedback.ts';
 import type {
   ActivityItem,
   ActivityQuery,
+  ApprovalsPage,
+  ApprovalsTab,
   CompareView,
   DeliveryView,
   DraftView,
@@ -23,6 +25,7 @@ import type {
 } from '../ports/production-queries.ts';
 import {
   activityQuery,
+  approvalsQuery,
   compareQuery,
   deliveryQuery,
   feedbackQuery,
@@ -118,6 +121,14 @@ export function useReview(pieceId: PieceId | Missing, versionId?: VersionId): Qu
 /** Entrega: the latest approved package, or another `selection`. */
 export function useDelivery(productionId: ProductionId | Missing, selection?: VersionRef[]): QueryState<DeliveryView> {
   return useQuery(when(productionId, (id) => deliveryQuery(id, selection)));
+}
+
+/**
+ * "Aprovações" for the acting member: one tab's items plus the counts of every tab (the menu's
+ * "Aprovações N" reads `counts.to_approve`). `null` stays loading (members who cannot approve).
+ */
+export function useApprovals(tab: ApprovalsTab | null): QueryState<ApprovalsPage> {
+  return useQuery(when(tab, approvalsQuery));
 }
 
 /** Newest first; semantic events only. */

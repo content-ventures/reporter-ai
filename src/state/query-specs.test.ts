@@ -1,20 +1,23 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import type { ChangeNotice } from '../ports/common.ts';
-import type { DraftView } from '../ports/production-queries.ts';
+import type { DraftView, ReviewView } from '../ports/production-queries.ts';
 import { createRuntime } from '../runtime/create-runtime.ts';
 import type { Runtime } from '../runtime/runtime.ts';
 import { pngFile } from '../ports/contracts/assets.contract.ts';
 import {
+  approvalsQuery,
   assetQuery,
   assetsQuery,
   assetUrlQuery,
   compareQuery,
   feedbackQuery,
+  overviewQuery,
   peopleQuery,
   pieceQuery,
   productionQuery,
   productionsQuery,
+  reviewQuery,
   sessionQuery,
   sourceQuery,
 } from './query-specs.ts';
@@ -33,11 +36,13 @@ describe('query specs: keys', () => {
 });
 
 describe('query specs: invalidation', () => {
-  it('a production refetches for its own changes, workspace-wide changes, sessions and resets', () => {
+  it('a production refetches for any production change (its approvals read other sends), sessions and resets', () => {
     const affects = productionQuery('prod-1').affectedBy;
     assert.equal(affects(notice({ productionIds: ['prod-1'] }), undefined), true);
-    assert.equal(affects(notice({ productionIds: ['prod-2'] }), undefined), false);
+    assert.equal(affects(notice({ productionIds: ['prod-2'] }), undefined), true);
+    assert.equal(affects(notice({ scope: 'runs', productionIds: ['prod-1'] }), undefined), true);
     assert.equal(affects(notice({ scope: 'runs', productionIds: ['prod-2'] }), undefined), false);
+    assert.equal(affects(notice({ scope: 'feedback', productionIds: ['prod-2'] }), undefined), false);
     assert.equal(affects(notice(), undefined), true);
     assert.equal(affects(notice({ scope: 'session', productionIds: ['prod-2'] }), undefined), true);
     assert.equal(affects(notice({ scope: 'reset' }), undefined), true);
@@ -49,6 +54,17 @@ describe('query specs: invalidation', () => {
     assert.equal(affects(notice({ productionIds: ['prod-2'] }), undefined), true, 'unknown production: refetch');
     assert.equal(affects(notice({ productionIds: ['prod-2'] }), draft), false);
     assert.equal(affects(notice({ scope: 'runs', productionIds: ['prod-1'] }), draft), true);
+  });
+
+  it('every read that shows approval data refetches on any production change (CONTRACT §2.4)', () => {
+    const review = { productionId: 'prod-1' } as ReviewView;
+    for (const affects of [approvalsQuery('to_approve').affectedBy, overviewQuery('7d').affectedBy, productionsQuery().affectedBy, productionQuery('prod-1').affectedBy]) {
+      assert.equal(affects(notice({ productionIds: ['prod-2'] }), undefined), true);
+      assert.equal(affects(notice({ scope: 'session' }), undefined), true);
+    }
+    assert.equal(reviewQuery('piece-1').affectedBy(notice({ productionIds: ['prod-2'] }), review), true, '"Próxima: …" comes from the queue');
+    assert.equal(approvalsQuery('returned').affectedBy(notice({ scope: 'feedback' }), undefined), false);
+    assert.notEqual(approvalsQuery('to_approve').key, approvalsQuery('returned').key);
   });
 
   it('comparisons of immutable versions change only on reset; feedback and session have their own scopes', () => {

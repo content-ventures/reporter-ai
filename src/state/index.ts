@@ -8,6 +8,7 @@ export { useCommands, useRuntime, useSaveStatus, useSimulation } from './use-run
 export type { RuntimeStatus, SimulationControls } from './use-runtime.ts';
 export {
   useActivity,
+  useApprovals,
   useCompare,
   useDelivery,
   useFeedback,

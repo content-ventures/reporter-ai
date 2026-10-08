@@ -11,6 +11,8 @@ import type { FeedbackQuery } from '../ports/feedback.ts';
 import type {
   ActivityItem,
   ActivityQuery,
+  ApprovalsPage,
+  ApprovalsTab,
   CompareView,
   DeliveryView,
   DraftView,
@@ -73,6 +75,9 @@ function scopedBy<T>(productionOf: (data: T) => ProductionId | undefined) {
 
 // ── Specs ────────────────────────────────────────────────────────────────────────────────
 
+/** Any change to a production's workflow (sends, decisions, edits): approval queues may move. */
+const changesProductions = (notice: ChangeNotice): boolean => isGlobal(notice) || notice.scope === 'productions';
+
 export function overviewQuery(range: OverviewRange): RuntimeQuery<OverviewData> {
   return { key: key('overview', range), fetch: (rt) => answer(rt.queries.overview(range)), affectedBy: always };
 }
@@ -85,8 +90,13 @@ export function productionsQuery(filter?: ProductionListFilter, page?: Partial<P
   };
 }
 
+/**
+ * A production with its approvals: its own changes, and any production change (who to send to
+ * comes from the viewer's sends elsewhere, CONTRACT §2.4).
+ */
 export function productionQuery(productionId: ProductionId): RuntimeQuery<ProductionDetail> {
-  return { key: key('production', productionId), fetch: (rt) => rt.queries.get(productionId), affectedBy: touchesProduction(productionId) };
+  const own = touchesProduction(productionId);
+  return { key: key('production', productionId), fetch: (rt) => rt.queries.get(productionId), affectedBy: (notice) => changesProductions(notice) || own(notice) };
 }
 
 /** The studio's working draft of a piece. */
@@ -119,12 +129,26 @@ export function sourceQuery(sourceId: SourceId, version?: number): RuntimeQuery<
   };
 }
 
-/** Review surface: the version under review by default. */
+
+/**
+ * Review surface: the version under review by default. Its own production's changes, and any
+ * production change (the "Próxima: …" item comes from the viewer's queue).
+ */
 export function reviewQuery(pieceId: PieceId, versionId?: VersionId): RuntimeQuery<ReviewView> {
+  const ownProduction = scopedBy<ReviewView>((review) => review.productionId);
   return {
     key: key('review', pieceId, versionId),
     fetch: (rt) => rt.queries.review(pieceId, versionId),
-    affectedBy: scopedBy((review) => review.productionId),
+    affectedBy: (notice, data) => changesProductions(notice) || ownProduction(notice, data),
+  };
+}
+
+/** "Aprovações": the acting member's queue per tab (every production change may move it). */
+export function approvalsQuery(tab: ApprovalsTab): RuntimeQuery<ApprovalsPage> {
+  return {
+    key: key('approvals', tab),
+    fetch: (rt) => answer(rt.queries.approvals(tab)),
+    affectedBy: changesProductions,
   };
 }
 
