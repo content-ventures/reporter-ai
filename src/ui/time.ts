@@ -1,7 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { formatRelative } from '@content-ventures/design-system/v3';
+import { formatAgo } from './approval-copy';
 
 /**
  * A shared minute clock for relative times ("há 2 h"). One interval for the whole page, started
@@ -45,11 +45,11 @@ export function useNow(): Date | undefined {
   return now === 0 ? undefined : new Date(now);
 }
 
-/** "agora", "há 2 min", "há 2 h", "ontem", "12 out" (DS `formatRelative`); "" before hydration. */
+/** "agora", "há 2 min", "há 2 h", "ontem", "08/10" (COPY §0.6, `formatAgo`); "" before hydration. */
 export function useRelativeTime(at: string | Date | undefined | null): string {
   const now = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   if (!at || now === 0) return '';
-  return formatRelative(at, new Date(now));
+  return formatAgo(at, new Date(now));
 }
 
 /** Inline relative time, for slots that take a ReactNode (meta, trailing). */
