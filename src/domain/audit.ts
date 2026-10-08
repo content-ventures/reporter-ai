@@ -39,6 +39,7 @@ export type AuditAction =
   | 'carousel.updated'
   | 'carousel.restored'
   | 'review.requested'
+  | 'review.withdrawn'
   | 'review.approved'
   | 'review.returned'
   | 'package.exported'
@@ -81,6 +82,7 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionEntry> = {
   'carousel.updated': { type: 'carousel', titles: { success: 'Carrossel atualizado', denied: 'Edição do carrossel negada', failure: 'Falha ao salvar o carrossel' } },
   'carousel.restored': { type: 'carousel', titles: { success: 'Versão do carrossel restaurada' } },
   'review.requested': { type: 'review', titles: { success: 'Aprovação solicitada' } },
+  'review.withdrawn': { type: 'review', titles: { success: 'Envio retirado', denied: 'Retirada do envio negada' } },
   'review.approved': { type: 'review', titles: { success: 'Aprovação registrada', denied: 'Aprovação negada' } },
   'review.returned': { type: 'review', titles: { success: 'Ajustes solicitados', denied: 'Devolução negada' } },
   'package.exported': { type: 'delivery', titles: { success: 'Pacote exportado', failure: 'Exportação falhou' } },

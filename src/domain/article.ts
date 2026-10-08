@@ -5,7 +5,7 @@ import type { SourceRef, TextRange } from './refs.ts';
 import { ok, refuse } from './result.ts';
 import type { Result } from './result.ts';
 import { contentHash } from './text/hash.ts';
-import { textStats } from './text/stats.ts';
+import { countCharacters, textStats } from './text/stats.ts';
 import type { TextStats } from './text/stats.ts';
 
 /**
@@ -27,7 +27,7 @@ type BlockBase = {
   id: BlockId;
   /** Evidence this block is based on (transcript segments now; URLs/quotes/media later). */
   sourceRefs?: SourceRef[];
-  /** Present on AI-written blocks until a person reviews them (check "Blocos da IA revisados"). */
+  /** Present on AI-written blocks until a person reviews them (check "Texto revisado"). */
   ai?: AiReviewState;
 };
 
@@ -36,11 +36,34 @@ export type HeadingBlock = BlockBase & { type: 'heading'; level: 2 | 3; inlines:
 export type QuoteBlock = BlockBase & { type: 'quote'; inlines: Inline[] };
 export type ListBlock = BlockBase & { type: 'list'; ordered: boolean; items: Inline[][] };
 export type DividerBlock = BlockBase & { type: 'divider' };
+/** How an image slot is framed: column-wide (the default), standing or square. */
+export type ImageOrientation = 'landscape' | 'portrait' | 'square';
+
+export const IMAGE_ORIENTATIONS: readonly ImageOrientation[] = ['landscape', 'portrait', 'square'];
+
+/**
+ * An image the generation planned for a spot of the article (an "image slot"): what the picture
+ * should show, grounded in the material (a speaker, a place, a product the transcript mentions;
+ * never an invented fact), with a caption and alt text to start from. The block's `sourceRefs`
+ * point at the excerpt that motivated it. A slot is not publishable: exports leave it out and the
+ * manifest lists it as a suggestion.
+ */
+export type ImageSlot = {
+  /** What the image should show ("Retrato de Marina Lopes no ateliê"). */
+  subject: string;
+  suggestedCaption?: string;
+  suggestedAlt?: string;
+  orientation?: ImageOrientation;
+};
+
 /**
  * An image inside the body, with its caption (credit lives on the asset). Figures are blocks for
  * ids, outline and diff, but have no text: word counts, quotes and text ranges ignore them.
  */
-export type FigureBlock = BlockBase & { type: 'figure'; image: ImageRef };
+export type ImageFigureBlock = BlockBase & { type: 'figure'; image: ImageRef; slot?: undefined };
+/** A figure the AI planned that has no image yet ("Sugestão de imagem"): filled or dismissed by a person. */
+export type ImageSlotBlock = BlockBase & { type: 'figure'; slot: ImageSlot; image?: undefined };
+export type FigureBlock = ImageFigureBlock | ImageSlotBlock;
 
 export type ArticleBlock = ParagraphBlock | HeadingBlock | QuoteBlock | ListBlock | DividerBlock | FigureBlock;
 export type ArticleBlockType = ArticleBlock['type'];
@@ -52,6 +75,8 @@ export type ArticleBody = {
   blocks: ArticleBlock[];
   /** "Imagem de destaque" (16:9, above the title). Absent on articles without one. */
   cover?: ImageRef;
+  /** The generation's suggestion for the cover while there is none (the cover stays optional, D04). */
+  coverSlot?: ImageSlot;
 };
 
 /**
@@ -86,9 +111,18 @@ export function articlePlainText(body: ArticleBody): string {
     .join('\n\n');
 }
 
-/** Word count and reading time of the body (title excluded, as editors count it). */
+/**
+ * Words, characters and reading time of the BODY, as editors count a lauda: paragraphs,
+ * intertítulos, quotes and lists. The title, the cover, captions, credits, alt text and image
+ * slots never count (figures have no block text); the blank lines between blocks neither.
+ */
 export function articleStats(body: ArticleBody): TextStats {
   return textStats(articlePlainText(body));
+}
+
+/** Characters of the body (the lauda count of "Tamanho"): `articleStats(body).characters`. */
+export function articleCharacters(body: ArticleBody): number {
+  return countCharacters(articlePlainText(body));
 }
 
 export function findBlock(body: ArticleBody, blockId: BlockId): ArticleBlock | undefined {
@@ -122,16 +156,33 @@ export function normalizeInlines(inlines: readonly Inline[]): Inline[] {
   return out;
 }
 
+function oneLine(text: string | undefined): string {
+  return text?.replace(/\s+/g, ' ').trim() ?? '';
+}
+
+/** Subject, caption and alt on one line each; empty fields and unknown orientations dropped. */
+export function normalizeImageSlot(slot: ImageSlot): ImageSlot {
+  const out: ImageSlot = { subject: oneLine(slot.subject) };
+  const caption = oneLine(slot.suggestedCaption);
+  const alt = oneLine(slot.suggestedAlt);
+  if (caption) out.suggestedCaption = caption;
+  if (alt) out.suggestedAlt = alt;
+  if (slot.orientation && IMAGE_ORIENTATIONS.includes(slot.orientation)) out.orientation = slot.orientation;
+  return out;
+}
+
 function normalizeBlock(block: ArticleBlock): ArticleBlock {
   if (hasInlines(block)) return { ...block, inlines: normalizeInlines(block.inlines) };
   if (block.type === 'list') return { ...block, items: block.items.map(normalizeInlines) };
-  if (block.type === 'figure') return { ...block, image: normalizeImageRef(block.image) };
+  if (block.type === 'figure') return block.image ? { ...block, image: normalizeImageRef(block.image) } : { ...block, slot: normalizeImageSlot(block.slot) };
   return block;
 }
 
+/** Canonical body. The cover suggestion only stands while there is no cover. */
 export function normalizeArticle(body: ArticleBody): ArticleBody {
   const out: ArticleBody = { type: 'article', title: body.title.trim(), blocks: body.blocks.map(normalizeBlock) };
   if (body.cover) out.cover = normalizeImageRef(body.cover);
+  else if (body.coverSlot) out.coverSlot = normalizeImageSlot(body.coverSlot);
   return out;
 }
 
@@ -139,11 +190,17 @@ function imageKey(image: ImageRef): [AssetId, string, string] {
   return [image.assetId, image.alt ?? '', image.caption ?? ''];
 }
 
+function slotKey(slot: ImageSlot): [string, string, string, string] {
+  return [slot.subject, slot.suggestedCaption ?? '', slot.suggestedAlt ?? '', slot.orientation ?? ''];
+}
+
 /**
- * Hash of the publishable content only: title, cover, block structure, text, marks, links and
- * images (asset, alt, caption). Block ids, AI review flags and source refs are provenance, so they
- * don't change the hash; restoring a version therefore reproduces the exact hash of the restored
- * content. The cover enters only when present, so articles without images keep their hashes.
+ * Hash of the content: title, cover, block structure, text, marks, links, images (asset, alt,
+ * caption) and the image slots the article still holds (filling or dismissing one is a change the
+ * comparison shows). Block ids, AI review flags and source refs are provenance, so they don't
+ * change the hash; restoring a version therefore reproduces the exact hash of the restored
+ * content. The cover and the slots enter only when present, so articles without them keep their
+ * hashes.
  */
 export function articleHash(body: ArticleBody): string {
   const normalized = normalizeArticle(body);
@@ -151,6 +208,7 @@ export function articleHash(body: ArticleBody): string {
   return contentHash({
     title: normalized.title,
     cover: normalized.cover ? imageKey(normalized.cover) : undefined,
+    coverSlot: normalized.coverSlot ? slotKey(normalized.coverSlot) : undefined,
     blocks: normalized.blocks.map((block) => {
       switch (block.type) {
         case 'heading':
@@ -163,7 +221,7 @@ export function articleHash(body: ArticleBody): string {
         case 'divider':
           return { type: block.type };
         case 'figure':
-          return { type: block.type, image: imageKey(block.image) };
+          return block.image ? { type: block.type, image: imageKey(block.image) } : { type: block.type, slot: slotKey(block.slot) };
       }
     }),
   });
@@ -276,6 +334,53 @@ export function markBlocksReviewed(body: ArticleBody, blockIds: readonly BlockId
   };
 }
 
+/** AI text arrived in these blocks (an accepted suggestion, a rewrite): they are unreviewed again. */
+export function markBlocksUnreviewed(body: ArticleBody, blockIds: readonly BlockId[]): ArticleBody {
+  const ids = new Set(blockIds);
+  return { ...body, blocks: body.blocks.map((block) => (ids.has(block.id) && block.ai !== 'unreviewed' ? { ...block, ai: 'unreviewed' } : block)) };
+}
+
+/**
+ * The review of the whole text ("Marcar como revisado", one for the draft): `none` while no AI
+ * wrote anything in it, `pending` while some AI block is still unreviewed, `reviewed` when every
+ * AI block is. The state lives in the blocks (`ai`), so new AI text reopens it by itself and a
+ * person typing never does.
+ */
+export type TextReview = 'none' | 'pending' | 'reviewed';
+
+export function textReviewOf(body: ArticleBody): TextReview {
+  if (aiBlockIds(body).length === 0) return 'none';
+  return unreviewedAiBlockIds(body).length > 0 ? 'pending' : 'reviewed';
+}
+
+/** "Marcar como revisado": every AI block of the draft at once. */
+export function markTextReviewed(body: ArticleBody): ArticleBody {
+  return markBlocksReviewed(body, unreviewedAiBlockIds(body));
+}
+
+/** "Desfazer": every reviewed AI block waits for review again. */
+export function reopenTextReview(body: ArticleBody): ArticleBody {
+  return { ...body, blocks: body.blocks.map((block) => (block.ai === 'reviewed' ? { ...block, ai: 'unreviewed' } : block)) };
+}
+
+/**
+ * What changed in the review between two saves of the draft: blocks that exist in both with the
+ * same text whose flag flipped (`marked`: unreviewed → reviewed, `reopened`: the other way). A
+ * block rewritten or deleted is not a flip, so only the person's own click on the review counts.
+ */
+export function reviewFlips(before: ArticleBody, after: ArticleBody): { marked: number; reopened: number } {
+  const earlier = new Map(before.blocks.map((block) => [block.id, block]));
+  let marked = 0;
+  let reopened = 0;
+  for (const block of after.blocks) {
+    const was = earlier.get(block.id);
+    if (!was?.ai || !block.ai || was.ai === block.ai || blockText(was) !== blockText(block)) continue;
+    if (block.ai === 'reviewed') marked += 1;
+    else reopened += 1;
+  }
+  return { marked, reopened };
+}
+
 /** Every link in the body, with the block it lives in. */
 export function articleLinks(body: ArticleBody): { blockId: BlockId; href: string; text: string }[] {
   const links: { blockId: BlockId; href: string; text: string }[] = [];
@@ -322,8 +427,17 @@ export function dividerBlock(id: BlockId): DividerBlock {
   return { id, type: 'divider' };
 }
 
-export function figureBlock(id: BlockId, image: ImageRef, options?: BlockOptions): FigureBlock {
+export function figureBlock(id: BlockId, image: ImageRef, options?: BlockOptions): ImageFigureBlock {
   return withOptions({ id, type: 'figure', image: normalizeImageRef(image) }, options);
+}
+
+/** A planned image without a file yet; `sourceRefs` = the excerpt that motivated it. */
+export function imageSlotBlock(id: BlockId, slot: ImageSlot, options?: Pick<BlockOptions, 'sourceRefs'>): ImageSlotBlock {
+  return withOptions({ id, type: 'figure', slot: normalizeImageSlot(slot) }, options);
+}
+
+export function isImageSlot(block: ArticleBlock): block is ImageSlotBlock {
+  return block.type === 'figure' && block.slot !== undefined && block.image === undefined;
 }
 
 /** True for blocks that carry text (everything but dividers and figures). */
@@ -338,12 +452,12 @@ export type ArticleImageUse = {
   image: ImageRef;
 };
 
-/** Every image the article uses, in reading order: the cover first, then the figures. */
+/** Every image the article uses, in reading order: the cover first, then the figures (slots have none yet). */
 export function articleImages(body: ArticleBody): ArticleImageUse[] {
   const uses: ArticleImageUse[] = [];
   if (body.cover) uses.push({ role: 'cover', blockId: COVER_BLOCK_ID, image: body.cover });
   for (const block of body.blocks) {
-    if (block.type === 'figure') uses.push({ role: 'figure', blockId: block.id, image: block.image });
+    if (block.type === 'figure' && block.image) uses.push({ role: 'figure', blockId: block.id, image: block.image });
   }
   return uses;
 }
@@ -361,11 +475,13 @@ export function articleImageRights(body: ArticleBody, assets: AssetLookup): Imag
   });
 }
 
-/** Sets or removes ("Remover imagem de destaque") the cover. */
+/** Sets or removes ("Remover imagem de destaque") the cover. A cover answers its suggestion. */
 export function setCover(body: ArticleBody, cover: ImageRef | undefined): ArticleBody {
   const next: ArticleBody = { ...body };
-  if (cover) next.cover = normalizeImageRef(cover);
-  else delete next.cover;
+  if (cover) {
+    next.cover = normalizeImageRef(cover);
+    delete next.coverSlot;
+  } else delete next.cover;
   return next;
 }
 

@@ -8,11 +8,16 @@ import {
   blockText,
   listBlock,
   markBlocksReviewed,
+  markBlocksUnreviewed,
+  markTextReviewed,
   normalizeInlines,
   paragraphBlock,
+  reopenTextReview,
   replaceTextRange,
+  reviewFlips,
   sliceText,
   spliceInlines,
+  textReviewOf,
   unreviewedAiBlockIds,
 } from './article.ts';
 import type { ArticleBody } from './article.ts';
@@ -105,5 +110,33 @@ describe('article body', () => {
     assert.deepEqual(unreviewedAiBlockIds(markBlocksReviewed(article, ['p1'])), []);
     const linked: ArticleBody = { ...article, blocks: [paragraphBlock('p2', [{ text: 'site', marks: ['link'], href: 'https://a.com' }])] };
     assert.deepEqual(articleLinks(linked), [{ blockId: 'p2', href: 'https://a.com', text: 'site' }]);
+  });
+
+  test('the review of the whole text: none without AI text, pending, reviewed, and reopened by new AI text', () => {
+    const human: ArticleBody = { ...body(), blocks: [paragraphBlock('h1', 'Texto de uma pessoa.')] };
+    assert.equal(textReviewOf(human), 'none');
+    const article: ArticleBody = { ...body(), blocks: [paragraphBlock('a1', 'Um.', { ai: 'unreviewed' }), paragraphBlock('a2', 'Dois.', { ai: 'unreviewed' }), paragraphBlock('h1', 'Três.')] };
+    assert.equal(textReviewOf(article), 'pending');
+    const reviewed = markTextReviewed(article);
+    assert.equal(textReviewOf(reviewed), 'reviewed');
+    assert.deepEqual(reviewed.blocks.map((block) => block.ai), ['reviewed', 'reviewed', undefined]);
+    // A person typing in a reviewed block keeps it reviewed; AI text arriving in any block reopens the review.
+    const typed = replaceTextRange(reviewed, { blockId: 'a1', from: 0, to: 2 }, 'Uno');
+    assert.ok(typed.ok);
+    assert.equal(textReviewOf(typed.value), 'reviewed');
+    assert.equal(textReviewOf(markBlocksUnreviewed(reviewed, ['h1'])), 'pending');
+    assert.equal(textReviewOf(reopenTextReview(reviewed)), 'pending');
+    assert.deepEqual(reopenTextReview(reviewed).blocks.map((block) => block.ai), ['unreviewed', 'unreviewed', undefined]);
+  });
+
+  test('reviewFlips counts only blocks whose flag flipped on the same text', () => {
+    const article: ArticleBody = { ...body(), blocks: [paragraphBlock('a1', 'Um.', { ai: 'unreviewed' }), paragraphBlock('a2', 'Dois.', { ai: 'unreviewed' })] };
+    assert.deepEqual(reviewFlips(article, markTextReviewed(article)), { marked: 2, reopened: 0 });
+    assert.deepEqual(reviewFlips(markTextReviewed(article), article), { marked: 0, reopened: 2 });
+    assert.deepEqual(reviewFlips(article, article), { marked: 0, reopened: 0 });
+    const rewritten: ArticleBody = { ...article, blocks: [paragraphBlock('a1', 'Outro texto.', { ai: 'reviewed' }), paragraphBlock('a2', 'Dois.', { ai: 'unreviewed' })] };
+    assert.deepEqual(reviewFlips(article, rewritten), { marked: 0, reopened: 0 }, 'a rewritten block is not a click on the review');
+    const deleted: ArticleBody = { ...article, blocks: [article.blocks[1]] };
+    assert.deepEqual(reviewFlips(article, deleted), { marked: 0, reopened: 0 });
   });
 });
