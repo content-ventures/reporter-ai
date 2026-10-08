@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createTranscriptSource, headingBlock, listBlock, paragraphBlock, parseTranscript, quoteBlock, segmentRef } from '../../../domain/index.ts';
-import type { ArticleBody, CheckResult, Suggestion } from '../../../domain/index.ts';
+import type { ArticleBody, CheckResult, SendItem, Suggestion } from '../../../domain/index.ts';
 import {
   articleFacts,
   articleOutline,
   blocksCitingSegment,
+  checagemGroups,
   clip,
   closestExcerpt,
   documentTools,
@@ -13,6 +14,7 @@ import {
   suggestionMarks,
   suggestionDelta,
   excerptLabel,
+  footerNeeds,
   isOpenSuggestion,
   mergeChecks,
   nextInOrder,
@@ -43,7 +45,35 @@ describe('studio model', () => {
     assert.equal(facts.words, 17);
     assert.equal(facts.minutes, 1);
     assert.deepEqual(facts.unreviewed, ['b1', 'b5']);
+    assert.equal(facts.review, 'pending');
     assert.deepEqual(facts.quotes, []);
+  });
+
+  it('the review of the whole text: reviewed when no AI block is left, none without AI text', () => {
+    const reviewed: ArticleBody = { ...body, blocks: body.blocks.map((block) => (block.ai === 'unreviewed' ? { ...block, ai: 'reviewed' as const } : block)) };
+    assert.equal(articleFacts(reviewed, []).review, 'reviewed');
+    const human: ArticleBody = { ...body, blocks: body.blocks.map(({ ai: _ai, ...block }) => block as typeof block) };
+    assert.equal(articleFacts(human, []).review, 'none');
+  });
+
+  it('footerNeeds lists what blocks sending without the text review, which has its own control', () => {
+    const item = (id: SendItem['id'], level: SendItem['level'], text: string, extra: Partial<SendItem> = {}): SendItem => ({ id, level, text, ...extra });
+    const review = item('text-review', 'missing', 'Texto não revisado', { action: { label: 'Marcar como revisado', target: { kind: 'mark-reviewed' } } });
+    const quote = item('quotes', 'missing', '1 citação não confere com a entrevista', { short: '1 citação', count: 1 });
+    const onlyReview = footerNeeds([review, item('summary', 'ok', '1,6 de 2 laudas')]);
+    assert.deepEqual(onlyReview, { ready: false, parts: [], total: 0 });
+    const both = footerNeeds([quote, review]);
+    assert.deepEqual(both.parts.map((part) => part.text), ['1 citação']);
+    assert.equal(both.ready, false);
+    assert.equal(both.total, 1);
+    assert.equal(footerNeeds([item('text-review', 'ok', 'Texto revisado')]).ready, true);
+  });
+
+  it('Checagem lists the text review among what is missing to send', () => {
+    const review: CheckResult = { id: 'article.ai-reviewed', label: 'Texto revisado', status: 'warn', blocking: false, progress: { current: 0, total: 2 } };
+    const groups = checagemGroups([review], []);
+    assert.deepEqual(groups.missing.map((check) => check.id), ['article.ai-reviewed']);
+    assert.deepEqual(groups.warnings, []);
   });
 
   it('knows which transcript segments the text uses and which blocks cite one', () => {
@@ -72,8 +102,8 @@ describe('studio model', () => {
       anchorText: ['Parágrafo revisado.'],
       proposal: { kind: 'replace-text', text: 'Parágrafo curto.' },
     };
-    assert.equal(targetLabel(body, suggestion.target), '§3');
-    assert.equal(targetLabel(body, [{ blockId: 'b1', from: 0, to: 1 }, { blockId: 'b3', from: 0, to: 1 }]), '§1–3');
+    assert.equal(targetLabel(body, suggestion.target), 'parágrafo 3');
+    assert.equal(targetLabel(body, [{ blockId: 'b1', from: 0, to: 1 }, { blockId: 'b3', from: 0, to: 1 }]), 'parágrafos 1–3');
     assert.equal(targetLabel(body, [{ blockId: 'gone', from: 0, to: 1 }]), null);
     const hunks = suggestionHunks(suggestion) ?? [];
     assert.ok(hunks.some((hunk) => hunk.kind === 'delete' && hunk.text.includes('revisado')));
@@ -192,11 +222,12 @@ describe('studio model · suggestions, tools and quotes', () => {
   });
 
   it('offers article-wide tools that fit the text and the brief', () => {
-    assert.deepEqual(documentTools({ empty: true, words: 0, target: 500, headings: 0 }), []);
-    assert.deepEqual(documentTools({ empty: false, words: 450, target: 500, headings: 0 }).map((tool) => tool.id), ['titles']);
-    const long = documentTools({ empty: false, words: 900, target: 500, headings: 2 });
+    assert.deepEqual(documentTools({ empty: true, characters: 0, size: 'standard', headings: 0 }), []);
+    assert.deepEqual(documentTools({ empty: false, characters: 4000, size: 'standard', headings: 0 }).map((tool) => tool.id), ['titles'], 'up to the maximum: nothing to shorten');
+    const long = documentTools({ empty: false, characters: 4001, size: 'standard', headings: 2 });
     assert.deepEqual(long.map((tool) => tool.id), ['titles', 'suggest-subheadings', 'shorten-to-brief']);
-    assert.equal(long[2]?.label, 'Encurtar para 500 palavras');
+    assert.equal(long[2]?.label, 'Encurtar para 2 laudas');
+    assert.equal(documentTools({ empty: false, characters: 2100, size: 'short', headings: 0 })[1]?.label, 'Encurtar para 1 lauda');
   });
 
   it('finds the transcript clause behind a misquote', () => {
