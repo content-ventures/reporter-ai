@@ -1,10 +1,13 @@
 import { assetOriginLabel, creditLine } from '../../domain/index.ts';
-import type { DeliveryAttempt, DeliveryFormat, DeliveryStatus, ExportImage, PieceKind, VersionRef } from '../../domain/index.ts';
+import type { Delivery, DeliveryAttempt, DeliveryFormat, DeliveryStatus, ExportImage, PieceKind, VersionRef } from '../../domain/index.ts';
+import { formatLaudas } from '../../domain/sizing.ts';
 import type { DeliveryFileOutcome, DeliveryItemView, PackageFile, PackageFormat, RunView } from '../../ports/index.ts';
+import { firstName, formatDayMonth, formatDayTime } from '../../ui/approval-copy.ts';
 
 /**
- * Pure helpers of the Entrega screen: how the package files group on screen, what each format
- * is called, which files a delivery attempt covers and how the delivery record reads.
+ * Pure helpers of the Entrega screen (D12, COPY §8): the sentences of its notices and cards, how
+ * the package files group under "Arquivos do pacote", the "Baixar só" formats, which files a
+ * delivery attempt covers and how the delivery record reads (admin "Detalhes técnicos").
  */
 
 /** Progress of one package file while the screen prepares it for download. */
@@ -23,23 +26,11 @@ export const FORMAT_LABELS: Record<PackageFormat, string> = {
   webp: 'WebP',
   gif: 'GIF',
   pdf: 'PDF',
-  json: 'JSON',
+  json: 'Dados',
   txt: 'Texto',
   docx: 'Word',
   zip: 'ZIP',
 };
-
-const KIND_LABELS: Partial<Record<PackageFile['kind'], string>> = {
-  article: 'Artigo',
-  carousel: 'Carrossel',
-  manifest: 'Manifesto',
-  package: 'Pacote',
-  image: 'Imagem',
-};
-
-export function kindLabel(kind: PackageFile['kind']): string {
-  return KIND_LABELS[kind] ?? kind;
-}
 
 /** Stable key of an exact package: production + exact versions. */
 export function selectionKey(productionId: string, selection: readonly VersionRef[]): string {
@@ -47,66 +38,68 @@ export function selectionKey(productionId: string, selection: readonly VersionRe
 }
 
 export type FileGroup = {
-  id: string;
-  /** "Artigo v4", "Carrossel v2", "Pacote". */
+  id: 'article' | 'carousel' | 'record';
+  /** "Artigo", "Carrossel (5 imagens)", "Dados do pacote". */
   label: string;
-  item?: DeliveryItemView;
   files: PackageFile[];
 };
 
-/** One group per exported piece version (plan order), then the package-wide files. */
-export function groupFiles(files: readonly PackageFile[], items: readonly DeliveryItemView[]): FileGroup[] {
-  const groups: FileGroup[] = items.map((item) => ({
-    id: item.version.versionId,
-    label: `${item.label} v${item.version.number}`,
-    item,
-    files: files.filter((file) => file.versionId === item.version.versionId),
-  }));
-  const rest = files.filter((file) => !groups.some((group) => group.files.includes(file)));
-  if (rest.length > 0) groups.push({ id: 'package', label: 'Pacote', files: rest });
-  return groups.filter((group) => group.files.length > 0);
+/**
+ * A file a person opens: the texts, the slides and every article image (a linked or missing
+ * image stays listed, with why it does not leave). Never the .zip, the JSON or a format this
+ * runtime cannot produce.
+ */
+function readable(file: PackageFile): boolean {
+  if (file.format === 'zip' || file.format === 'json') return false;
+  if (file.kind === 'image') return true;
+  return file.available && (file.kind === 'article' || file.kind === 'carousel');
 }
 
-/** A downloadable format of the package ("Artigo · Markdown", "Slides · PNG"), for the "Baixar" menu. */
-export type FormatChoice = {
-  id: string;
-  label: string;
-  files: PackageFile[];
-  available: boolean;
-  reason?: string;
-};
+/** Data that leaves with the package without being read: the carousel's JSON, then the manifest. */
+function dataFiles(files: readonly PackageFile[]): PackageFile[] {
+  const data = files.filter((file) => file.available && file.format === 'json');
+  return [...data.filter((file) => file.kind !== 'manifest'), ...data.filter((file) => file.kind === 'manifest')];
+}
 
-/** Article images leave as one choice ("Imagens do artigo"), whatever their formats. */
-const IMAGES_CHOICE = 'image';
+/**
+ * "Arquivos do pacote": the article (its texts, then its images), the carousel slides and, last,
+ * the data that leaves with them. Download links are the screen's only way to hand a file to the
+ * browser (no .zip yet), so every file that leaves keeps a row; the formats this runtime cannot
+ * produce are not listed.
+ */
+export function groupFiles(files: readonly PackageFile[]): FileGroup[] {
+  const shown = files.filter(readable);
+  const article = [...shown.filter((file) => file.kind === 'article'), ...shown.filter((file) => file.kind === 'image')];
+  const slides = shown.filter((file) => file.kind === 'carousel').sort((a, b) => (a.slideIndex ?? 0) - (b.slideIndex ?? 0));
+  const images = slides.filter((file) => file.slideIndex !== undefined).length;
+  const data = dataFiles(files);
+  const groups: FileGroup[] = [];
+  if (article.length > 0) groups.push({ id: 'article', label: 'Artigo', files: article });
+  if (slides.length > 0) groups.push({ id: 'carousel', label: `Carrossel (${images} ${images === 1 ? 'imagem' : 'imagens'})`, files: slides });
+  if (data.length > 0) groups.push({ id: 'record', label: 'Dados do pacote', files: data });
+  return groups;
+}
 
+/** A format of "Baixar só" ("Artigo em Markdown (.md)"). */
+export type FormatChoice = { id: string; label: string; files: PackageFile[] };
+
+const ONLY_CHOICES: readonly { id: string; label: string; match: (file: PackageFile) => boolean }[] = [
+  { id: 'article:md', label: 'Artigo em Markdown (.md)', match: (file) => file.kind === 'article' && file.format === 'md' },
+  { id: 'article:html', label: 'Artigo em HTML (.html)', match: (file) => file.kind === 'article' && file.format === 'html' },
+  { id: 'carousel:png', label: 'Slides em imagem (.png)', match: (file) => file.kind === 'carousel' && file.format === 'png' },
+  { id: 'carousel:pdf', label: 'Carrossel em PDF (.pdf)', match: (file) => file.kind === 'carousel' && file.format === 'pdf' },
+];
+
+/** "Baixar só": each format the package has available (the PDF only once the runtime makes it). */
 export function formatChoices(files: readonly PackageFile[]): FormatChoice[] {
-  const choices = new Map<string, FormatChoice>();
-  const images = files.filter((file) => file.kind === 'image');
-  for (const file of files) {
-    if (file.kind === 'image') {
-      if (choices.has(IMAGES_CHOICE)) continue;
-      // Linked images never leave (the browser cannot read them): only stored files count.
-      const stored = images.filter((image) => image.available);
-      const choice: FormatChoice = { id: IMAGES_CHOICE, label: 'Imagens do artigo', files: stored, available: stored.length > 0 };
-      const reason = images.find((image) => !image.available)?.unavailableReason;
-      if (!choice.available && reason) choice.reason = reason;
-      choices.set(IMAGES_CHOICE, choice);
-      continue;
-    }
-    const id = `${file.kind}:${file.format}`;
-    const label = file.kind === 'carousel' && file.format === 'png' ? 'Slides · PNG' : `${kindLabel(file.kind)} · ${FORMAT_LABELS[file.format]}`;
-    const choice = choices.get(id) ?? { id, label, files: [], available: file.available };
-    choice.files.push(file);
-    choice.available = choice.available && file.available;
-    if (!file.available && file.unavailableReason) choice.reason = file.unavailableReason;
-    choices.set(id, choice);
-  }
-  return [...choices.values()];
+  return ONLY_CHOICES.map((choice) => ({ id: choice.id, label: choice.label, files: files.filter((file) => file.available && choice.match(file)) })).filter(
+    (choice) => choice.files.length > 0,
+  );
 }
 
-/** "Slide 1 · PNG", "Markdown", "Versões, decisões e execuções" — the row's second line. */
+/** "Slide 1", "Markdown", "HTML": the row's second line. */
 export function fileCaption(file: PackageFile): string {
-  if (file.slideIndex !== undefined) return `Slide ${file.slideIndex + 1} · ${FORMAT_LABELS[file.format]}`;
+  if (file.slideIndex !== undefined) return `Slide ${file.slideIndex + 1}`;
   return FORMAT_LABELS[file.format];
 }
 
@@ -304,4 +297,70 @@ export function traceRuns(
     if (run && !runs.some((entry) => entry.id === run.id)) runs.push(run);
   }
   return runs;
+}
+
+// ── What the screen says (COPY §8) ───────────────────────────────────────────────────────
+
+/** The one notice of Entrega when the package is coherent and nothing left yet. */
+export const READY_NOTICE = 'Pronto para entregar.';
+
+/** A carousel made from an earlier article version than the one approved now. */
+export const OUTDATED_NOTICE = 'O carrossel foi feito a partir de uma versão anterior do artigo.';
+
+type Instant = Date | string;
+
+/** Distinct files that left in a successful attempt (the manifest included). */
+export function deliveredFiles(delivery: Pick<Delivery, 'attempts'>): number {
+  return new Set(delivery.attempts.filter((attempt) => attempt.status === 'succeeded').flatMap((attempt) => attempt.items ?? [])).size;
+}
+
+/** When the package fully left: the last successful attempt (else the delivery's own date). */
+export function deliveredAt(delivery: Pick<Delivery, 'attempts' | 'createdAt'>): string {
+  return [...delivery.attempts].reverse().find((attempt) => attempt.status === 'succeeded')?.at ?? delivery.createdAt;
+}
+
+/** "Entregue em 08/10, 14:20 · 9 arquivos." */
+export function deliveredNotice(delivery: Pick<Delivery, 'attempts' | 'createdAt'>, now?: Instant): string {
+  const files = deliveredFiles(delivery);
+  return `Entregue em ${formatDayTime(deliveredAt(delivery), now)} · ${files} ${files === 1 ? 'arquivo' : 'arquivos'}.`;
+}
+
+/** "aprovado por Pedro em 08/10" (no name: "aprovado em 08/10"; no date: "aprovado por Pedro"). */
+function approvedBy(name: string | null | undefined, at: Instant | undefined, now?: Instant): string {
+  const who = firstName(name);
+  return ['aprovado', who ? `por ${who}` : null, at ? `em ${formatDayMonth(at, now)}` : null].filter(Boolean).join(' ');
+}
+
+/** Article card: "1,6 lauda · aprovado por Pedro em 08/10". */
+export function articleLine(input: { characters?: number; approverName?: string | null; approvedAt?: Instant; now?: Instant }): string {
+  return [input.characters !== undefined ? formatLaudas(input.characters) : null, approvedBy(input.approverName, input.approvedAt, input.now)].filter(Boolean).join(' · ');
+}
+
+/** Carousel caption: "5 slides · aprovado por Juliana em 08/10". */
+export function carouselLine(input: { slides: number; approverName?: string | null; approvedAt?: Instant; now?: Instant }): string {
+  return [`${input.slides} ${input.slides === 1 ? 'slide' : 'slides'}`, approvedBy(input.approverName, input.approvedAt, input.now)].join(' · ');
+}
+
+/** "2 imagens sem arquivo." / "1 imagem sem arquivo." (suggested images nobody filled). */
+export function pendingImagesLine(count: number): string | undefined {
+  if (count <= 0) return undefined;
+  return count === 1 ? '1 imagem sem arquivo.' : `${count} imagens sem arquivo.`;
+}
+
+/** "9 arquivos · 489 KB": every file that leaves in the package; the size once it is prepared. */
+export function packageMeta(files: readonly PackageFile[], bytes: number, formatBytes: (bytes: number) => string): string {
+  const count = deliverableFiles(files).length;
+  return [`${count} ${count === 1 ? 'arquivo' : 'arquivos'}`, bytes > 0 ? formatBytes(bytes) : null].filter(Boolean).join(' · ');
+}
+
+/** Entrega before everything is approved: what is missing and the piece to open. */
+export function blockedCopy(kind: PieceKind): { title: string; description: string; action: string } {
+  const piece = kind === 'carousel' ? 'carrossel' : 'artigo';
+  return { title: 'A entrega abre quando tudo estiver aprovado', description: `Falta aprovar o ${piece}.`, action: `Abrir o ${piece}` };
+}
+
+/** "Pacote baixado · 9 arquivos", or "Baixamos 7 de 9 arquivos" when some failed. */
+export function downloadToast(saved: number, total: number): { title: string; partial: boolean } {
+  if (saved >= total) return { title: `Pacote baixado · ${total} ${total === 1 ? 'arquivo' : 'arquivos'}`, partial: false };
+  return { title: `Baixamos ${saved} de ${total} ${total === 1 ? 'arquivo' : 'arquivos'}`, partial: true };
 }

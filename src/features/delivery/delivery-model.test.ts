@@ -4,8 +4,12 @@ import { EXTERNAL_IMAGE_REASON } from '../../domain/index.ts';
 import type { ExportImage, ImageAsset } from '../../domain/index.ts';
 import type { DeliveryItemView, PackageFile, RunView } from '../../ports/index.ts';
 import {
+  blockedCopy,
   blockingPiece,
+  carouselLine,
+  deliveredFiles,
   downloadedOutcomes,
+  downloadToast,
   fileOutcomes,
   formatChoices,
   formatSpan,
@@ -16,7 +20,9 @@ import {
   imageWarningLine,
   imageWarnings,
   linkedImageAddress,
+  packageMeta,
   pendingFailures,
+  pendingImagesLine,
   selectionKey,
   traceRuns,
 } from './delivery-model.ts';
@@ -48,25 +54,44 @@ const item = (kind: 'article' | 'carousel', versionId: string, number: number): 
   }) as DeliveryItemView;
 
 describe('delivery model', () => {
-  it('groups files by approved version, then the package-wide files', () => {
-    const groups = groupFiles(FILES, [item('article', 'v-a4', 4), item('carousel', 'v-c2', 2)]);
+  it('groups the files a person opens, then the data that leaves with them; unavailable formats are not listed', () => {
+    const groups = groupFiles(FILES);
     assert.deepEqual(
-      groups.map((group) => [group.label, group.files.map((entry) => entry.fileName)]),
+      groups.map((group) => [group.id, group.label, group.files.map((entry) => entry.fileName)]),
       [
-        ['Artigo v4', ['artigo-v4.md', 'artigo-v4.html', 'artigo-v4.docx']],
-        ['Carrossel v2', ['carrossel-v2-slide-01.png', 'carrossel-v2-slide-02.png']],
-        ['Pacote', ['manifesto.json', 'pacote.zip']],
+        ['article', 'Artigo', ['artigo-v4.md', 'artigo-v4.html']],
+        ['carousel', 'Carrossel (2 imagens)', ['carrossel-v2-slide-01.png', 'carrossel-v2-slide-02.png']],
+        ['record', 'Dados do pacote', ['manifesto.json']],
       ],
+    );
+    assert.deepEqual(groupFiles([SLIDE_1]).map((group) => group.label), ['Carrossel (1 imagem)']);
+    assert.deepEqual(groupFiles([DOCX, ZIP]), []);
+  });
+
+  it('keeps the carousel data before the manifest, and every file that leaves keeps a row to download from', () => {
+    const data = file('carrossel-v2.json', { format: 'json', mimeType: 'application/json', kind: 'carousel', versionId: 'v-c2' });
+    const groups = groupFiles([MANIFEST, ARTICLE, data, SLIDE_1]);
+    assert.deepEqual(groups.at(-1)?.files.map((entry) => entry.fileName), ['carrossel-v2.json', 'manifesto.json']);
+    const listed = new Set(groups.flatMap((group) => group.files.map((entry) => entry.fileName)));
+    assert.deepEqual(
+      fileOutcomes([MANIFEST, ARTICLE, data, SLIDE_1], {}).filter((outcome) => !listed.has(outcome.fileName)),
+      [],
     );
   });
 
-  it('offers one download choice per kind and format, disabled formats with their reason', () => {
+  it('offers one "Baixar só" choice per format the package has available', () => {
     const choices = formatChoices(FILES);
-    const slides = choices.find((choice) => choice.label === 'Slides · PNG');
-    assert.equal(slides?.files.length, 2);
-    const zip = choices.find((choice) => choice.id === 'package:zip');
-    assert.equal(zip?.available, false);
-    assert.equal(zip?.reason, 'Disponível com a exportação no servidor.');
+    assert.deepEqual(
+      choices.map((choice) => [choice.id, choice.label, choice.files.length]),
+      [
+        ['article:md', 'Artigo em Markdown (.md)', 1],
+        ['article:html', 'Artigo em HTML (.html)', 1],
+        ['carousel:png', 'Slides em imagem (.png)', 2],
+      ],
+    );
+    const pdf = file('carrossel-v2.pdf', { format: 'pdf', mimeType: 'application/pdf', kind: 'carousel', versionId: 'v-c2' });
+    assert.equal(formatChoices([...FILES, pdf]).find((choice) => choice.id === 'carousel:pdf')?.label, 'Carrossel em PDF (.pdf)');
+    assert.deepEqual(formatChoices([DOCX, ZIP, MANIFEST]), []);
   });
 
   it('records every deliverable file: ready ones ok, failed ones with the error, never zip or disabled formats', () => {
@@ -159,6 +184,30 @@ describe('delivery model', () => {
     );
   });
 
+  it('says what the screen says (COPY §8)', () => {
+    assert.deepEqual(blockedCopy('carousel'), { title: 'A entrega abre quando tudo estiver aprovado', description: 'Falta aprovar o carrossel.', action: 'Abrir o carrossel' });
+    assert.equal(blockedCopy('article').action, 'Abrir o artigo');
+    assert.deepEqual(downloadToast(9, 9), { title: 'Pacote baixado · 9 arquivos', partial: false });
+    assert.deepEqual(downloadToast(1, 1), { title: 'Pacote baixado · 1 arquivo', partial: false });
+    assert.deepEqual(downloadToast(7, 9), { title: 'Baixamos 7 de 9 arquivos', partial: true });
+    assert.equal(pendingImagesLine(0), undefined);
+    assert.equal(pendingImagesLine(1), '1 imagem sem arquivo.');
+    assert.equal(pendingImagesLine(2), '2 imagens sem arquivo.');
+    assert.equal(carouselLine({ slides: 5, approverName: null }), '5 slides · aprovado');
+    assert.equal(carouselLine({ slides: 1, approverName: 'Juliana Prates' }), '1 slide · aprovado por Juliana');
+  });
+
+  it('counts the files that left and the ones the package carries, with its size once prepared', () => {
+    const attempts = [
+      { at: '2026-10-08T14:00:00.000Z', status: 'succeeded' as const, items: ['a', 'b'] },
+      { at: '2026-10-08T14:05:00.000Z', status: 'succeeded' as const, items: ['b', 'c'] },
+    ];
+    assert.equal(deliveredFiles({ attempts }), 3);
+    const size = (bytes: number) => `${bytes} B`;
+    assert.equal(packageMeta(FILES, 0, size), '5 arquivos');
+    assert.equal(packageMeta(FILES, 489, size), '5 arquivos · 489 B');
+  });
+
   describe('article images', () => {
     const asset = (id: string, patch: Partial<ImageAsset> = {}): ImageAsset => ({
       id,
@@ -190,9 +239,10 @@ describe('delivery model', () => {
     );
     const IMAGES = [COVER, FIGURE, LINK];
 
-    it('stays with the article version it belongs to', () => {
-      const [article] = groupFiles([ARTICLE, ...IMAGES, MANIFEST], [item('article', 'v-a4', 4)]);
+    it('follows the article texts; a linked image stays listed, with why it does not leave', () => {
+      const [article] = groupFiles([IMAGES[0]!, ARTICLE, ...IMAGES.slice(1), MANIFEST]);
       assert.deepEqual(article?.files.map((entry) => entry.fileName), ['artigo-v4.md', 'feira-1.jpg', 'feira-2.jpg', 'feira-3.jpg']);
+      assert.equal(article?.files.at(-1)?.unavailableReason, EXTERNAL_IMAGE_REASON);
     });
 
     it('describes each image by use, credit, rights and origin', () => {
@@ -203,16 +253,10 @@ describe('delivery model', () => {
       assert.equal(linkedImageAddress(COVER), undefined);
     });
 
-    it('offers the stored images as one download choice; linked ones never leave', () => {
+    it('never offers an image, least of all a linked one, in "Baixar só"', () => {
       const choices = formatChoices([ARTICLE, ...IMAGES]);
-      const images = choices.find((choice) => choice.id === 'image');
-      assert.equal(images?.label, 'Imagens do artigo');
-      assert.equal(images?.available, true);
-      assert.deepEqual(images?.files.map((entry) => entry.fileName), ['feira-1.jpg', 'feira-2.jpg']);
-      assert.equal(choices.filter((choice) => choice.id.startsWith('image')).length, 1);
-      const onlyLinks = formatChoices([LINK]).find((choice) => choice.id === 'image');
-      assert.equal(onlyLinks?.available, false);
-      assert.equal(onlyLinks?.reason, EXTERNAL_IMAGE_REASON);
+      assert.deepEqual(choices.map((choice) => choice.id), ['article:md']);
+      assert.equal(choices.some((choice) => choice.files.some((entry) => entry.kind === 'image')), false);
     });
 
     it('never records a linked image as a delivered file', () => {
