@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { compareVersions, parseVersion, roadmapMajor } from "./lib/versioning.mjs";
+import { buildReleaseViolations, compareVersions, parseVersion, roadmapMajor, upcomingViolations } from "./lib/versioning.mjs";
 import { fail } from "./lib/command.mjs";
 
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
@@ -36,8 +36,19 @@ for (const [index, release] of history.releases.entries()) {
   }
 }
 
+const upcoming = upcomingViolations(history);
+if (upcoming.length > 0) {
+  fail(`release-history "upcoming": ${upcoming.join("; ")}`);
+}
+
+const buildRelease = /export const CURRENT_RELEASE: ReleaseId = '(R[0-7])'/.exec(readFileSync("src/registries/release.ts", "utf8"))?.[1];
+const shown = buildReleaseViolations(history, buildRelease ?? "");
+if (shown.length > 0) {
+  fail(shown.join("; "));
+}
+
 if (!changelog.includes(`## [${history.currentVersion}]`)) {
   fail(`CHANGELOG.md does not contain v${history.currentVersion}`);
 }
 
-console.log(`Version policy passed: v${history.currentVersion} (${history.currentRoadmapRelease})`);
+console.log(`Version policy passed: v${history.currentVersion} (${history.currentRoadmapRelease})${history.upcoming ? `, preparing ${history.upcoming.roadmapRelease} · ${history.upcoming.title}` : ""}`);

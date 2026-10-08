@@ -1,26 +1,53 @@
 {
   "currentVersion": "0.1.0",
   "currentRoadmapRelease": "R0",
+  "upcoming": {
+    "roadmapRelease": "R1",
+    "title": "Experiência",
+    "summary": "Da transcrição ao carrossel exportado, com aprovação humana em cada peça, sobre a simulação local.",
+    "changes": [
+      {
+        "type": "Added",
+        "description": "Nova produção a partir da transcrição, com falantes, orientação e extensão do texto."
+      },
+      {
+        "type": "Added",
+        "description": "Estúdio do artigo com geração ao vivo, copiloto e citações conferidas na transcrição."
+      },
+      {
+        "type": "Added",
+        "description": "Revisão com comparação de versões e aprovação registrada por quem aprova."
+      },
+      {
+        "type": "Added",
+        "description": "Carrossel feito do artigo aprovado, com o texto de cada slide e a prévia no modelo."
+      },
+      {
+        "type": "Added",
+        "description": "Entrega do pacote com artigo, carrossel e a origem de cada peça."
+      },
+      {
+        "type": "Added",
+        "description": "Logs de logins, acessos negados e alterações, só para administradores."
+      }
+    ]
+  },
   "releases": [
     {
       "version": "0.1.0",
       "roadmapRelease": "R0",
       "date": "2026-10-06",
-      "title": "Technical foundation",
-      "summary": "Established the application foundation and the official Content Ventures Design System integration.",
+      "title": "Fundação técnica",
+      "summary": "Base do produto e integração com o Design System oficial da Content Ventures.",
       "commit": "6aaa5f83ec8486db546f70d909a0b9327e02b2a6",
       "changes": [
         {
           "type": "Added",
-          "description": "Initialized Next.js 16, React 19, TypeScript, App Router, pnpm 10, and the Node.js runtime contract."
+          "description": "Design System V3 ligado: tema, tipografia, componentes e ícones."
         },
         {
           "type": "Added",
-          "description": "Connected the public Design System V3 API, theme, typography, components, and icons."
-        },
-        {
-          "type": "Added",
-          "description": "Published the R0 foundation dashboard without introducing R1 editorial features."
+          "description": "Painel da fundação publicado, com a sequência de releases aprovada."
         }
       ]
     }

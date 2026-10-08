@@ -82,6 +82,10 @@ const title = bump === "major"
 packageJson.version = next;
 history.currentVersion = next;
 history.currentRoadmapRelease = requestedRoadmap;
+// The "Em preparação" block ships with its roadmap release (its notes become this entry's context).
+if (bump === "major" && history.upcoming?.roadmapRelease === requestedRoadmap) {
+  delete history.upcoming;
+}
 history.releases.unshift({
   version: next,
   roadmapRelease: requestedRoadmap,
