@@ -8,12 +8,12 @@ import { useRun, type Commands } from '@/state';
 import { takeArmedSimulation } from '@/ui/shell';
 import { isBlankBody } from './studio-model';
 import { continuationMode, generationRunsOf } from './studio-session-model';
-import type { CopilotTab, StreamMode } from './studio-types';
+import type { StreamMode } from './studio-types';
 
 /**
- * The article generation on screen (PLAN §3.5 "Geração ao vivo"): the live run of the piece, the
- * one this tab started ("Gerar rascunho", "Gerar nova versão", a retry) or the last one, and how
- * it reaches the text. Runs before the editor: the editor streams `runId` in `streamMode`.
+ * The article generation on screen: the live run of the piece, the one this tab started
+ * ("Reescrever o artigo do zero", a retry) or the last one, and how it reaches the text. Runs
+ * before the editor: the editor streams `runId` in `streamMode`.
  */
 export function useStudioGeneration({ production, piece }: { production: ProductionDetail; piece: PieceView }) {
   const pieceId = piece.id;
@@ -34,7 +34,7 @@ export function useStudioGeneration({ production, piece }: { production: Product
 
 export type StudioGeneration = ReturnType<typeof useStudioGeneration>;
 
-/** "Gerar rascunho" / "Gerar nova versão", "Parar" and "Tentar de novo" of the generation on screen. */
+/** "Reescrever o artigo do zero", "Parar" and "Tentar de novo" of the generation on screen. */
 export function useGenerationActions({
   commands,
   productionId,
@@ -42,7 +42,6 @@ export function useGenerationActions({
   generation,
   prepare,
   setLocalTitle,
-  setCopilotTab,
 }: {
   commands: Commands;
   productionId: ProductionDetail['id'];
@@ -50,7 +49,6 @@ export function useGenerationActions({
   generation: StudioGeneration;
   prepare: () => Promise<{ body: ArticleBody; baseRevision: number } | null>;
   setLocalTitle: Dispatch<SetStateAction<string | null>>;
-  setCopilotTab: Dispatch<SetStateAction<CopilotTab>>;
 }) {
   const { runId, streamMode, live, setStarted } = generation;
 
@@ -65,8 +63,7 @@ export function useGenerationActions({
       return;
     }
     setStarted({ runId: result.value.runId, mode: hasText ? 'replace' : 'append' });
-    setCopilotTab('ai');
-  }, [prepare, commands, productionId, pieceId, setLocalTitle, setStarted, setCopilotTab]);
+  }, [prepare, commands, productionId, pieceId, setLocalTitle, setStarted]);
 
   const stopGeneration = useCallback(async () => {
     if (!runId) return;

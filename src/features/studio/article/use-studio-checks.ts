@@ -2,8 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import type { WorkspaceView } from '@content-ventures/design-system/v3';
-import { COVER_BLOCK_ID, LENGTH_TARGETS, readiness, runChecks, type ArticleBody, type BlockId, type CheckResult, type Source, type TextRange } from '@/domain';
-import { focusBlock, markBlocksReviewed, setArticleDecorations, setArticleWidgetHandlers, textRangeToPositions } from '@/editor';
+import {
+  articleImageSlots,
+  COVER_BLOCK_ID,
+  readiness,
+  runChecks,
+  type ArticleBody,
+  type BlockId,
+  type CheckResult,
+  type ImageSlotUse,
+  type Source,
+  type TextRange,
+} from '@/domain';
+import { focusBlock, setArticleDecorations, setTextReview, textRangeToPositions } from '@/editor';
 import type { PieceView, ProductionDetail } from '@/ports';
 import { articleChecksFor } from '@/registries';
 import { imagesToCheck, type ImageToCheck } from './image-model';
@@ -14,8 +25,9 @@ import type { StudioText } from './use-studio-text';
 
 /**
  * What the studio knows about the text (status line, Checagem, outline, document tools) and the
- * jumps of the Checagem: the next AI block to review, the next quotation without a source, the
- * next image without credit, authorisation or file, and any passage the person points at.
+ * jumps of the Checagem: the review of the whole text, the next quotation without a source, the
+ * next image without credit, authorisation or file, the next suggested image to fill, and any
+ * passage the person points at.
  */
 export function useStudioChecks({
   production,
@@ -49,18 +61,24 @@ export function useStudioChecks({
       sources,
       generation: { running: generating, interrupted: false },
       assets: assetLookup,
+      ...(production.charsAvailable !== undefined ? { materialChars: production.charsAvailable } : {}),
     });
     return mergeChecks(local, piece.checks);
-  }, [factsBody, production.brief, sources, generating, piece.checks, assetLookup]);
+  }, [factsBody, production.brief, production.charsAvailable, sources, generating, piece.checks, assetLookup]);
   /** Images without credit, authorisation or file ("Imagens com crédito"), in reading order. */
   const imageIssues: ImageToCheck[] = useMemo(() => imagesToCheck(factsBody, assetLookup), [factsBody, assetLookup]);
+  /**
+   * Images the generation suggested and nobody filled yet ("Imagens sugeridas"), in reading order.
+   * Figures only: the cover's suggestion stays with "Imagem de destaque", which is optional (D04).
+   */
+  const imageSlots: ImageSlotUse[] = useMemo(() => articleImageSlots(factsBody).filter((use) => use.role === 'figure'), [factsBody]);
   const ready = useMemo(() => readiness(checks), [checks]);
   /** No text and no image in the flow (a cover alone still offers "Gerar rascunho"). */
   const empty = isBlankBody(body) && !generating && !streaming.active;
-  const lengthTarget = LENGTH_TARGETS[production.brief.length].words;
+  const size = production.brief.size;
   const tools = useMemo(
-    () => documentTools({ empty: isBlankBody(body), words: facts.words, target: lengthTarget, headings: facts.outline.filter((entry) => entry.level === 2).length }),
-    [body, facts.words, facts.outline, lengthTarget],
+    () => documentTools({ empty: isBlankBody(body), characters: facts.characters, size, headings: facts.outline.filter((entry) => entry.level === 2).length }),
+    [body, facts.characters, facts.outline, size],
   );
 
   // Quotations lit as used (found in the transcript) or missing.
@@ -89,43 +107,19 @@ export function useStudioChecks({
   );
 
   /**
-   * Reviewing the AI text block by block (status line, ⌘K, Checagem, the gutter marker): the block
-   * under review rises to the upper third and the status line offers "Marcar como revisado" and
-   * "Próximo" — below the text, so no bar ever covers it.
+   * The review of the AI text is ONE for the whole draft (footer "Marcar como revisado", the
+   * pre-send dialog, ⌘K): every AI block flips together, in one undoable step. The state is the
+   * blocks' own (`ai`), so new AI text (a run, an accepted suggestion) reopens it by itself and a
+   * person typing never does. The gutter marker of an AI block is only a cue.
    */
-  const [reviewBlockId, setReviewBlockId] = useState<BlockId | null>(null);
-  const nextAiBlock = useCallback(() => {
-    const next = nextInOrder(facts.unreviewed, reviewBlockId);
-    if (!next || !editor) return;
-    setView('main');
-    revealBlock(next, { caret: 'start' });
-    setReviewBlockId(next);
-  }, [facts.unreviewed, reviewBlockId, editor, setView, revealBlock]);
-  const markReviewed = useCallback(
-    (blockIds: readonly BlockId[]) => {
-      if (!editor || editor.isDestroyed) return;
-      markBlocksReviewed(editor, blockIds);
-      const remaining = facts.unreviewed.filter((id) => !blockIds.includes(id));
-      const next = nextInOrder(remaining, reviewBlockId);
-      setReviewBlockId(next && remaining.length > 0 ? next : null);
-      if (next && remaining.length > 0) revealBlock(next, { caret: 'start' });
-    },
-    [editor, facts.unreviewed, reviewBlockId, revealBlock],
-  );
-  const stopReview = useCallback(() => setReviewBlockId(null), []);
-
-  // The gutter marker of an AI block ("Revisar texto da IA") starts the review on that block; the
-  // block is already in view and the caret stays where it is.
-  const onAiMarker = useCallback(
-    (blockId: BlockId) => {
-      setView('main');
-      setReviewBlockId(blockId);
-    },
-    [setView],
-  );
-  useEffect(() => {
-    if (editor && !editor.isDestroyed) setArticleWidgetHandlers(editor, { onAiMarker });
-  }, [editor, onAiMarker]);
+  const markTextReviewed = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
+    setTextReview(editor, 'reviewed');
+  }, [editor]);
+  const unmarkTextReviewed = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
+    setTextReview(editor, 'unreviewed');
+  }, [editor]);
 
   /**
    * A quotation the material does not back: the caret goes into it (at its end), which opens its
@@ -178,25 +172,53 @@ export function useStudioChecks({
     showImage(next);
   }, [imageIssues, imageCursor, showImage]);
 
+  /**
+   * "Imagens sugeridas" → a suggested image: selected in the upper third of the pane, which opens
+   * its bar (Enviar imagem · Usar link · Remover sugestão); the cover's suggestion is brought into view.
+   */
+  const [slotCursor, setSlotCursor] = useState<BlockId | null>(null);
+  const showImageSlot = useCallback(
+    (blockId: BlockId) => {
+      if (blockId === COVER_BLOCK_ID) {
+        revealCover();
+        return;
+      }
+      if (!editor || editor.isDestroyed) return;
+      setView('main');
+      setFigureReveal((count) => count + 1);
+      revealBlock(blockId, { caret: 'start' });
+    },
+    [editor, revealCover, revealBlock, setView],
+  );
+  const nextImageSlot = useCallback(() => {
+    const next = nextInOrder(
+      imageSlots.map((use) => use.blockId),
+      slotCursor,
+    );
+    if (!next) return;
+    setSlotCursor(next);
+    showImageSlot(next);
+  }, [imageSlots, slotCursor, showImageSlot]);
+
   return {
     factsBody,
     facts,
     checks,
     imageIssues,
+    imageSlots,
     readiness: ready,
     empty,
     tools,
     figureReveal,
-    reviewBlockId,
-    setReviewBlockId,
-    stopReview,
     focusRange,
     showQuote,
-    nextAiBlock,
-    markReviewed,
+    markTextReviewed,
+    unmarkTextReviewed,
     nextMissingQuote,
     showImage,
     nextImageIssue,
+    showImageSlot,
+    nextImageSlot,
   };
 }
 

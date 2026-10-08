@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { toast } from '@content-ventures/design-system/v3';
-import { LENGTH_TARGETS, type RunId, type Suggestion, type TextRange } from '@/domain';
+import { sizeOf, type RunId, type Suggestion, type TextRange } from '@/domain';
 import { blockEntries, blockTextOf, type Editor } from '@/editor';
 import type { PieceView, ProductionDetail } from '@/ports';
 import { copilotTool, type CopilotTool } from '@/registries';
@@ -120,7 +120,7 @@ export function useStudioCopilot({
         case 'article.shorten':
           result = await commands.generation.start(
             'article.shorten',
-            target ? { ...base, target } : { ...base, ...(tool.toBriefLength ? { targetWords: LENGTH_TARGETS[production.brief.length].words } : {}) },
+            target ? { ...base, target } : { ...base, ...(tool.toBriefSize ? { targetCharacters: sizeOf(production.brief.size).maxChars } : {}) },
             startOptions,
           );
           break;
@@ -152,7 +152,7 @@ export function useStudioCopilot({
       updateTurn(turn.id, { runId: result.value.runId });
       if (target && target.length > 0) setSuggestionFocus({ runId: result.value.runId, target });
     },
-    [currentSelection, editor, prepare, productionId, pieceId, commands, updateTurn, production.brief.length, setSuggestionFocus],
+    [currentSelection, editor, prepare, productionId, pieceId, commands, updateTurn, production.brief.size, setSuggestionFocus],
   );
 
   /** "Gerar de novo": the same request again, on the passage as it is now. */
@@ -225,7 +225,7 @@ export function useStudioCopilot({
       const label = excerptLabel(segment);
       addChip({ id: `exc-${selected.segmentId}-${selected.text.length}`, kind: 'excerpt', label, segmentId: selected.segmentId, text: clip(selected.text, 400) });
       if (askNow) focusComposer();
-      else if (copilotHidden()) toast(`${label} no pedido ao copiloto`, { tone: 'info' });
+      else if (copilotHidden()) toast(`${label} no pedido ao Assistente`, { tone: 'info' });
     },
     [segments, addChip, focusComposer, copilotHidden],
   );

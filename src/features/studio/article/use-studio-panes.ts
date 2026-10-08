@@ -2,75 +2,90 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PromptComposerHandle, WorkspaceState, WorkspaceView } from '@content-ventures/design-system/v3';
-import type { CopilotTab, SourceTab } from './studio-types';
+import type { PanelTab, StudioDialog } from './studio-types';
 
 /**
- * The three regions of the studio (Fonte, Texto, Copiloto): the region on screen on a narrow
- * screen, the tab of each side pane, the workspace and composer handles bound by the screens, and
- * the moves that bring a pane (or the composer) into view, reopening a collapsed rail.
+ * What the studio shows around the text (D2, P5): ONE panel on the right ("Painel"), closed when
+ * the studio opens and never remembered between visits, with its tab (Material · Assistente ·
+ * Checagem · Comentários); on a narrow screen the panel is the second tab of the frame. Also the
+ * one drawer or dialog open over the studio (history, structure, how the AI wrote, send…).
  */
 export function useStudioPanes() {
   const [view, setView] = useState<WorkspaceView>('main');
   const showText = useCallback(() => setView('main'), []);
-  const [sourceTab, setSourceTab] = useState<SourceTab>('transcript');
-  const [copilotTab, setCopilotTab] = useState<CopilotTab>('ai');
+  const [panelTab, setPanelTab] = useState<PanelTab>('material');
+  const [panelOpen, setPanelOpen] = useState(false);
   const workspace = useRef<WorkspaceState | null>(null);
+  /** The frame is in tabs (≤1024 px): the panel is a tab, not a column. */
+  const [narrow, setNarrow] = useState(false);
   const bindWorkspace = useCallback((state: WorkspaceState | null) => {
     workspace.current = state;
+    setNarrow(state?.narrow ?? false);
   }, []);
   const composerRef = useRef<PromptComposerHandle | null>(null);
   const bindComposer = useCallback((handle: PromptComposerHandle | null) => {
     composerRef.current = handle;
   }, []);
 
-  const showCopilot = useCallback((tab: CopilotTab = 'ai') => {
-    setCopilotTab(tab);
-    setView('end');
-    const current = workspace.current;
-    if (current && !current.narrow && current.panes.end?.collapsed) current.setCollapsed('end', false);
+  /** The panel on `tab`: opened on a desktop, brought on screen on a narrow one. */
+  const showPanel = useCallback((tab: PanelTab) => {
+    setPanelTab(tab);
+    setPanelOpen(true);
+    if (workspace.current?.narrow) setView('end');
   }, []);
-  const showSource = useCallback((tab: SourceTab) => {
-    setSourceTab(tab);
-    setView('start');
-    const current = workspace.current;
-    if (current && !current.narrow && current.panes.start?.collapsed) current.setCollapsed('start', false);
+  const closePanel = useCallback(() => {
+    setPanelOpen(false);
+    setView('main');
   }, []);
+  /** The toolbar's "Material" / "Assistente": opens the panel on that tab, or closes it when it already shows it. */
+  const showing = narrow ? view === 'end' : panelOpen;
+  const togglePanel = useCallback(
+    (tab: PanelTab) => {
+      if (showing && panelTab === tab) closePanel();
+      else showPanel(tab);
+    },
+    [showing, panelTab, closePanel, showPanel],
+  );
+  /** The tab on screen, when the panel is (the toolbar marks its button as pressed). */
+  const visibleTab: PanelTab | null = showing ? panelTab : null;
+
   const focusTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(focusTimer.current), []);
   const focusComposer = useCallback(() => {
-    showCopilot('ai');
+    showPanel('assistant');
     window.clearTimeout(focusTimer.current);
-    // The pane may be opening (narrow tabs, collapsed rail): focus once it is on screen.
+    // The panel may be opening (narrow tabs, closed panel): focus once it is on screen.
     focusTimer.current = window.setTimeout(() => composerRef.current?.focus(), 60);
-  }, [showCopilot]);
+  }, [showPanel]);
 
-  /** "Alternar painéis": both side panes close when one is open, else both open. */
-  const togglePanels = useCallback(() => {
-    const current = workspace.current;
-    if (!current) return;
-    const open = !current.panes.start?.collapsed || !current.panes.end?.collapsed;
-    current.setCollapsed('start', open);
-    current.setCollapsed('end', open);
-  }, []);
+  /** The Assistente is off screen (closed panel, another tab, narrow text view): what joins it gets a toast. */
+  const assistantHidden = useCallback(() => !showing || panelTab !== 'assistant', [showing, panelTab]);
 
-  /** The Copiloto is off screen (narrow tabs or collapsed rail): what joins the composer gets a toast. */
-  const copilotHidden = useCallback(() => Boolean(workspace.current?.narrow || workspace.current?.panes.end?.collapsed), []);
+  // ——— The one dialog or drawer over the studio ———
+  const [dialog, setDialog] = useState<StudioDialog | null>(null);
+  const openDialog = useCallback((next: StudioDialog) => setDialog(next), []);
+  const closeDialog = useCallback(() => setDialog(null), []);
 
   return {
     view,
     setView,
     showText,
-    sourceTab,
-    setSourceTab,
-    copilotTab,
-    setCopilotTab,
+    panelTab,
+    setPanelTab,
+    panelOpen,
+    setPanelOpen,
+    visibleTab,
+    narrow,
     bindWorkspace,
     bindComposer,
-    showCopilot,
-    showSource,
+    showPanel,
+    closePanel,
+    togglePanel,
     focusComposer,
-    togglePanels,
-    copilotHidden,
+    assistantHidden,
+    dialog,
+    openDialog,
+    closeDialog,
   };
 }
 
