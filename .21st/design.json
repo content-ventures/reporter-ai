@@ -3,21 +3,31 @@
   "project": {
     "name": "reporter-ai",
     "productType": "editorial workflow SaaS",
-    "stack": ["nextjs", "react"]
+    "stack": [
+      "nextjs",
+      "react"
+    ]
   },
   "sources": {
     "tokens": [
       "@content-ventures/design-system/v3 ThemeV3",
       "@content-ventures/design-system/v3 interV3"
     ],
-    "components": ["@content-ventures/design-system/v3"],
+    "components": [
+      "@content-ventures/design-system/v3"
+    ],
     "assets": [],
-    "instructions": ["AGENTS.md", "docs/DEVELOPMENT_HARNESS.md"]
+    "instructions": [
+      "AGENTS.md",
+      "docs/DEVELOPMENT_HARNESS.md"
+    ]
   },
   "design": {
     "colorMode": "light",
     "colors": {},
-    "typography": { "family": "Inter via interV3" },
+    "typography": {
+      "family": "Inter via interV3"
+    },
     "spacing": {},
     "radius": {},
     "shadows": {},
@@ -25,7 +35,10 @@
     "density": "compact"
   },
   "components": {
-    "installed": ["@content-ventures/design-system/v3"],
+    "installed": [
+      "@content-ventures/design-system/v3",
+      "@content-ventures/design-system/v3/icons"
+    ],
     "preferredPrimitives": [
       "AppShell",
       "Sidebar",
@@ -33,28 +46,61 @@
       "PageHeader",
       "PageStack",
       "Panel",
-      "Section"
+      "Section",
+      "WorkspaceLayout",
+      "Prose",
+      "Toolbar",
+      "SaveIndicator",
+      "FloatingToolbar",
+      "TranscriptViewer",
+      "Stepper",
+      "FixedFrame",
+      "FormSection",
+      "FilterBar",
+      "DataTable",
+      "Pagination",
+      "MetricStrip",
+      "Drawer",
+      "ConfirmDialog",
+      "AccessState",
+      "Tooltip",
+      "AgentTrace"
     ],
     "patterns": [
       "AppShell → Sidebar + TopBar + content",
-      "Panel → Section → content"
+      "Panel → Section → content",
+      "PageHeader → FilterBar → DataTable → Pagination, details in a Drawer",
+      "Production stage: PageHeader variant=frame with title, status, Stepper and actions on one line",
+      "Studio: AppShell bleed → WorkspaceLayout docked → Toolbar (SaveIndicator at the end) + Prose",
+      "Creation page: FixedFrame with form, live preview aside and action footer"
     ]
   },
   "constraints": {
     "must": [
       "Use only public exports from @content-ventures/design-system/v3 and /icons for visual UI",
-      "Search the Design System before composing product components",
-      "Preserve structural component spacing and responsive behavior"
+      "Search the Design System before composing product components; add missing pieces to the DS with a specimen and a test",
+      "Preserve structural component spacing and responsive behavior",
+      "Use DS Tooltip for every hint; style in-document markers through Prose data-* hooks and DS proseWidgets",
+      "Write UI copy in Brazilian Portuguese; buttons start with a verb"
     ],
     "avoid": [
       "Local visual primitives, tokens, fonts, icons, themes or substitute UI libraries",
-      "Local CSS modules",
-      "Adjacent open Section components inside PageStack"
+      "Local CSS modules, class names, inline styles, lowercase markup, DOM creation or editor node views",
+      "Adjacent open Section components inside PageStack",
+      "Native title attributes",
+      "Decorative side borders or per-paragraph boxes",
+      "Filler copy: extra eyebrows, subtitles, hints or notices",
+      "Hover handlers that scroll the transcript"
     ]
   },
   "decisions": [
     "The product shell uses the complete DS navigation pattern",
-    "The visible menu contains only routes available to the user in the current release"
+    "The visible menu contains only routes available to the user in the current release; Logs shows only to admins",
+    "Studios use the full width with one line of chrome above the text",
+    "Every production stage shares one compact header line with the Stepper",
+    "Status colours are reserved for state; meters and sparklines are neutral by default",
+    "AI output carries the Simulação local label while the product runs on the local simulation",
+    "Reporter consumes DS 0.2.0 from the editorial-studio branch until the version is tagged and pinned"
   ],
   "evidence": [
     {
@@ -62,9 +108,21 @@
       "source": "docs/DEVELOPMENT_HARNESS.md"
     },
     {
+      "fact": "source-bans",
+      "source": "scripts/lib/source-bans.mjs"
+    },
+    {
       "fact": "navigation-components",
       "source": "node_modules/@content-ventures/design-system/src/components/ds-v3/app-shell.tsx"
+    },
+    {
+      "fact": "studio-layout",
+      "source": "src/features/studio/article/article-workspace.tsx"
+    },
+    {
+      "fact": "production-header",
+      "source": "src/features/production/production-header.tsx"
     }
   ],
-  "generatedAt": "2026-10-06T20:52:26.721Z"
+  "generatedAt": "2026-10-08T00:48:06.446Z"
 }
