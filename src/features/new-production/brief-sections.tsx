@@ -2,36 +2,39 @@
 
 import type { Ref } from 'react';
 import {
+  Alert,
   ChoiceCard,
   DatePicker,
+  Disclosure,
   FormRow,
   FormSection,
   Grid,
   Input,
   Segmented,
   Select,
-  Switch,
   Textarea,
-  type SectionState,
-  type SegmentOption,
+  useNotice,
   type SelectOption,
 } from '@content-ventures/design-system/v3';
-import { expectedDraftWords, LENGTH_TARGETS, type ArticleLength, type SourceOrigin } from '@/domain';
+import { SIZE_RULE, sizeOf, type ArticleSize, type SourceOrigin } from '@/domain';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
-import { formatCount } from '@/ui/format';
+import { SIZE_OPTIONS } from '@/ui/format';
 import {
   MAX_ANGLE_LENGTH,
   MAX_TITLE_LENGTH,
-  SECTION_OPTIONS,
-  structureLabel,
+  sectionOptions,
+  shortfallSentence,
+  structureChoiceLabel,
+  withSize,
   type DeliveryPlan,
   type NewProductionDraft,
 } from './form';
 
 /**
- * "Contexto", "Artigo" and "Entregas" (PLAN §3.3): what the production is called and where the
- * material comes from, the editorial brief the generation follows, and which pieces it delivers.
- * "Material autorizado" is the gate of "Gerar artigo" (REQ-T.1).
+ * "Pauta" (step 2, CONTRACT §3.9, COPY §6.3): the size of the article, the sections, the angle,
+ * the pieces to deliver and the internal title, with "Origem" and "Data da entrevista" behind
+ * "Mais detalhes". Once the production exists (back from "Estrutura") only the pauta itself is
+ * editable: the pieces, the title and the details were fixed when it was created.
  */
 
 type Patch = (patch: Partial<NewProductionDraft>) => void;
@@ -41,73 +44,86 @@ const ORIGINS: SelectOption[] = (Object.keys(SOURCE_ORIGIN_LABELS) as SourceOrig
   label: SOURCE_ORIGIN_LABELS[origin],
 }));
 
-const SECTIONS: SegmentOption<(typeof SECTION_OPTIONS)[number]>[] = SECTION_OPTIONS.map((value) => ({ value, label: value }));
+const AUTOMATIC = 'auto';
+const CHOSEN = 'chosen';
 
-const LENGTHS: SegmentOption<ArticleLength>[] = (Object.keys(LENGTH_TARGETS) as ArticleLength[]).map((length) => ({
-  value: length,
-  label: LENGTH_TARGETS[length].label,
-}));
-
-export type ContextSectionProps = {
+export type BriefStepProps = {
   draft: NewProductionDraft;
   update: Patch;
-  titleError: string | undefined;
+  /** Characters of the longest article the material supports, when known. */
+  charsAvailable?: number;
+  /** The production already exists: only size, sections and angle can change. */
+  existing?: boolean;
+  titleError?: string;
   titleRef: Ref<HTMLInputElement>;
-  authorizationId: string;
-  /** Today (YYYY-MM-DD): the recording date cannot be in the future. */
-  /** Latest selectable date (after hydration). */
+  /** Today (YYYY-MM-DD, after hydration): the interview cannot be dated in the future. */
   today?: string;
 };
 
-export function ContextSection({ draft, update, titleError, titleRef, authorizationId, today }: ContextSectionProps) {
-  const state: SectionState = titleError ? 'error' : draft.title.trim() && draft.authorized ? 'done' : draft.title.trim() ? 'active' : 'empty';
-  return (
-    <FormSection title="Contexto" titleAs="h2" state={state} open>
-      <FormRow label="Título interno" required error={titleError}>
-        {({ id, describedBy, invalid }) => (
-          <Input
-            id={id}
-            ref={titleRef}
-            aria-describedby={describedBy}
-            invalid={invalid}
-            value={draft.title}
-            maxLength={MAX_TITLE_LENGTH}
-            placeholder="Ex.: Entrevista Ateliê Sul"
-            onChange={(event) => update({ title: event.target.value })}
-          />
-        )}
-      </FormRow>
-      <FormRow label="Origem">
-        {({ id, describedBy }) => (
-          <Select id={id} describedBy={describedBy} value={draft.origin} options={ORIGINS} onChange={(value) => update({ origin: value as SourceOrigin })} />
-        )}
-      </FormRow>
-      <FormRow label="Data" optional>
-        {({ id, describedBy }) => (
-          <DatePicker id={id} describedBy={describedBy} value={draft.recordedOn} max={today} editable onChange={(value) => update({ recordedOn: value })} />
-        )}
-      </FormRow>
-      <FormRow label="Material autorizado" description="Obrigatório para gerar">
-        <Switch
-          id={authorizationId}
-          label="Os falantes autorizaram o uso"
-          checked={draft.authorized}
-          onCheckedChange={(authorized) => update({ authorized })}
-        />
-      </FormRow>
-    </FormSection>
-  );
-}
+export function BriefStep({ draft, update, charsAvailable, existing = false, titleError, titleRef, today }: BriefStepProps) {
+  const [notice, showNotice] = useNotice();
+  const shortfall = shortfallSentence(draft.size, charsAvailable);
+  const automaticSections = sizeOf(draft.size).sections.default;
 
-export function ArticleSection({ draft, update, wordsAvailable }: { draft: NewProductionDraft; update: Patch; wordsAvailable?: number }) {
-  const target = LENGTH_TARGETS[draft.length];
-  // A short material gives all it has, never invented text: the field says so before generating (A09).
-  const expected = wordsAvailable !== undefined && wordsAvailable > 0 ? expectedDraftWords(draft.length, wordsAvailable) : undefined;
-  const short = expected && !expected.reachesTarget ? expected.words : undefined;
-  const lengthHint = short ? `O material rende ≈ ${formatCount(short)} palavras` : `${formatCount(target.min)}–${formatCount(target.max)} palavras`;
+  const chooseSize = (size: ArticleSize) => {
+    const next = withSize(draft, size);
+    update({ size: next.size, sections: next.sections });
+    showNotice(next.notice ?? null);
+  };
+  const chooseStructure = (value: string) => {
+    if (value === AUTOMATIC) update({ sections: automaticSections, sectionsCustom: false });
+  };
+  const structureOptions: SelectOption[] = [
+    { value: AUTOMATIC, label: structureChoiceLabel(draft.size, automaticSections, false) },
+    ...(draft.sectionsCustom ? [{ value: CHOSEN, label: structureChoiceLabel(draft.size, draft.sections, true) }] : []),
+  ];
+  const choosePlan = (value: string) => update({ plan: value as DeliveryPlan });
+
   return (
-    <FormSection title="Artigo" titleAs="h2" state="done" open meta={short ? `≈ ${formatCount(short)} de ${formatCount(target.words)} palavras` : `≈ ${formatCount(target.words)} palavras`}>
-      <FormRow label="Orientação editorial" optional>
+    <FormSection title="Pauta" titleAs="h2" state="active" open>
+      <FormRow label="Tamanho do artigo" hint={SIZE_RULE}>
+        <Grid columns="1:1" gap="sm" collapseBelow={480}>
+          {SIZE_OPTIONS.map((option) => (
+            <ChoiceCard
+              key={option.value}
+              name="article-size"
+              value={option.value}
+              checked={draft.size === option.value}
+              onChange={(value) => chooseSize(value as ArticleSize)}
+              title={option.label}
+              description={option.description}
+            />
+          ))}
+        </Grid>
+        {shortfall ? (
+          <Alert compact tone="info">
+            {shortfall}
+          </Alert>
+        ) : null}
+      </FormRow>
+      <FormRow label="Seções" hint={notice ?? undefined}>
+        {({ id, describedBy }) => (
+          <>
+            <Select
+              id={id}
+              describedBy={describedBy}
+              value={draft.sectionsCustom ? CHOSEN : AUTOMATIC}
+              options={structureOptions}
+              onChange={chooseStructure}
+            />
+            <Disclosure summary="Avançado" defaultOpen={draft.sectionsCustom}>
+              <Segmented
+                label="Número de seções"
+                options={sectionOptions(draft.size).map((value) => ({ value, label: value }))}
+                value={String(draft.sections)}
+                onChange={(value) => update({ sections: Number(value), sectionsCustom: true })}
+                size="sm"
+              />
+            </Disclosure>
+          </>
+        )}
+      </FormRow>
+      <FormRow label="Ângulo" optional>
         {({ id, describedBy }) => (
           <Textarea
             id={id}
@@ -115,51 +131,61 @@ export function ArticleSection({ draft, update, wordsAvailable }: { draft: NewPr
             autoSize={{ minRows: 3, maxRows: 8 }}
             maxLength={MAX_ANGLE_LENGTH}
             value={draft.angle}
-            placeholder="Ex.: foco no que muda para o lojista"
+            placeholder="Ex.: foco no custo para pequenas fábricas"
             onChange={(event) => update({ angle: event.target.value })}
           />
         )}
       </FormRow>
-      <FormRow label="Seções" hint={structureLabel(draft.sections)}>
-        <Segmented
-          label="Seções depois da introdução"
-          options={SECTIONS}
-          value={String(draft.sections) as (typeof SECTION_OPTIONS)[number]}
-          onChange={(value) => update({ sections: Number(value) })}
-          size="sm"
-        />
-      </FormRow>
-      <FormRow label="Extensão" hint={lengthHint}>
-        <Segmented label="Extensão do artigo" options={LENGTHS} value={draft.length} onChange={(length) => update({ length })} size="sm" />
-      </FormRow>
-    </FormSection>
-  );
-}
-
-export function DeliverySection({ draft, update }: { draft: NewProductionDraft; update: Patch }) {
-  const choose = (value: string) => update({ plan: value as DeliveryPlan });
-  return (
-    <FormSection title="Entregas" titleAs="h2" state="done" open>
-      <FormRow label="Peças">
-        <Grid columns="1:1" gap="sm" collapseBelow={480}>
-          <ChoiceCard
-            name="production-plan"
-            value="article"
-            checked={draft.plan === 'article'}
-            onChange={choose}
-            title="Artigo"
-            description="Texto aprovado e exportado"
-          />
-          <ChoiceCard
-            name="production-plan"
-            value="article-carousel"
-            checked={draft.plan === 'article-carousel'}
-            onChange={choose}
-            title="Artigo e carrossel"
-            description="Carrossel derivado do artigo aprovado"
-          />
-        </Grid>
-      </FormRow>
+      {existing ? null : (
+        <>
+          <FormRow label="Entregas">
+            <Grid columns="1:1" gap="sm" collapseBelow={480}>
+              <ChoiceCard
+                name="production-plan"
+                value="article"
+                checked={draft.plan === 'article'}
+                onChange={choosePlan}
+                title="Artigo"
+                description="Só o texto"
+              />
+              <ChoiceCard
+                name="production-plan"
+                value="article-carousel"
+                checked={draft.plan === 'article-carousel'}
+                onChange={choosePlan}
+                title="Artigo e carrossel"
+                description="Texto e slides para redes"
+              />
+            </Grid>
+          </FormRow>
+          <FormRow label="Título interno" required error={titleError}>
+            {({ id, describedBy, invalid }) => (
+              <Input
+                id={id}
+                ref={titleRef}
+                aria-describedby={describedBy}
+                invalid={invalid}
+                value={draft.title}
+                maxLength={MAX_TITLE_LENGTH}
+                placeholder="Ex.: Entrevista Ateliê Sul"
+                onChange={(event) => update({ title: event.target.value })}
+              />
+            )}
+          </FormRow>
+          <Disclosure summary="Mais detalhes">
+            <FormRow label="Origem">
+              {({ id, describedBy }) => (
+                <Select id={id} describedBy={describedBy} value={draft.origin} options={ORIGINS} onChange={(value) => update({ origin: value as SourceOrigin })} />
+              )}
+            </FormRow>
+            <FormRow label="Data da entrevista" optional>
+              {({ id, describedBy }) => (
+                <DatePicker id={id} describedBy={describedBy} value={draft.recordedOn} max={today} editable onChange={(value) => update({ recordedOn: value })} />
+              )}
+            </FormRow>
+          </Disclosure>
+        </>
+      )}
     </FormSection>
   );
 }
