@@ -574,44 +574,46 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
             size="panel"
             title="Não encontramos esta produção."
             description={production.error.message}
+            onRetry={production.retry}
+            actions={<LinkButton onClick={() => router.push(PRODUCTIONS_HREF)}>Ir para Produções</LinkButton>}
           />
-          <SpeakersSection
-            draft={draft}
-            analysis={analysis}
-            people={people}
-            peopleLoading={peopleQuery.status === 'loading'}
-            state={speakersState}
-            errors={speakerErrors}
-            onChange={setSpeaker}
-            nameRef={nameRef}
-            registerPicker={registerPicker}
+        ) : (
+          <StructureStep
+            run={runState}
+            onRetry={() => void outline.restart()}
+            retrying={runState.status === 'loading'}
+            outline={outlineDraft}
+            onChange={setOutlineDraft}
+            material={quotes}
+            facts={facts}
+            showErrors={triedStructure}
           />
-          <ContextSection
-            draft={draft}
-            update={update}
-            titleError={issueOf('title')}
-            titleRef={titleRef}
-            authorizationId={authorizationId}
-            today={today}
-          />
-          <ArticleSection draft={draft} update={update} wordsAvailable={analysis?.outlook?.wordsAvailable} />
-          <DeliverySection draft={draft} update={update} />
-        </PageStack>
+        )}
       </FixedFrame>
       <LiveRegion message={statusText} />
       <ConfirmDialog
         open={confirmExit}
         onClose={() => setConfirmExit(false)}
-        title="Descartar a nova produção?"
-        confirmLabel="Descartar"
-        cancelLabel="Continuar editando"
-        tone="danger"
+        title={activeId ? 'Sair sem redigir?' : 'Descartar a nova produção?'}
+        description={activeId ? 'A produção fica salva em Produções. Você pode redigir depois.' : 'O que você colou não fica salvo.'}
+        confirmLabel={activeId ? 'Sair' : 'Descartar'}
+        cancelLabel="Continuar aqui"
+        tone={activeId ? 'default' : 'danger'}
         onConfirm={() => {
-          leaving.current = true;
+          departing.current = true;
           setConfirmExit(false);
-          setDraft(EMPTY_DRAFT);
+          if (!activeId) setDraft(EMPTY_DRAFT);
           router.push(exitTo);
         }}
+      />
+      <ConfirmDialog
+        open={confirmRebuild}
+        onClose={() => setConfirmRebuild(false)}
+        title="Montar a estrutura de novo?"
+        description="A pauta mudou. A IA monta uma nova estrutura e as suas mudanças nesta se perdem."
+        confirmLabel="Montar de novo"
+        cancelLabel="Cancelar"
+        onConfirm={() => void rebuildStructure()}
       />
     </>
   );
