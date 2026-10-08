@@ -75,8 +75,8 @@ export type MaterialOutlook = {
   headline?: string;
   /** Questions (or passages) that can become sections. */
   sections: number;
-  /** Words of the longest article this material supports (the simulation never invents more). */
-  wordsAvailable: number;
+  /** Characters of the longest article this material supports (the simulation never invents more). */
+  charsAvailable: number;
   keyLines: { segmentId: string; speaker?: string; text: string }[];
 };
 

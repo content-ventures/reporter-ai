@@ -1,4 +1,4 @@
-import type { ArticleBlock } from '../domain/article.ts';
+import type { ArticleBlock, ImageSlot } from '../domain/article.ts';
 import type { BlockId, SourceId } from '../domain/ids.ts';
 import type { Brief } from '../domain/production.ts';
 import type { SourceRef } from '../domain/refs.ts';
@@ -25,17 +25,19 @@ export type ArticleDraftScript = {
   /** The script applies only while the source is at this version (a correction makes it stale). */
   sourceVersion: number;
   /**
-   * The brief it was written for. Once the production's brief is another one (sections, length or
+   * The brief it was written for. Once the production's brief is another one (sections, size or
    * angle edited), the script no longer applies and "Gerar nova versão" writes from the material.
    */
-  brief?: Pick<Brief, 'angle' | 'sections' | 'length'>;
+  brief?: Pick<Brief, 'angle' | 'sections' | 'size'>;
   title: string;
-  /** "Selecionando falas-chave" (`source.used`). */
+  /** "Organizando fontes e citações" (`source.used`). */
   keySegments: SourceRef[];
   /** "Montando estrutura" (`outline`): the section headings. */
   outline: OutlineSection[];
-  /** Introduction first, then one entry per section (its heading block first). */
+  /** Introduction first, then one entry per section (its heading block first); image slots are figure blocks. */
   sections: ScriptSection[];
+  /** "Montando estrutura" also suggests the cover (the article has none yet). */
+  coverSlot?: ImageSlot;
 };
 
 /** Slide text for one slide: layout id, slot texts and the article blocks it came from. */
