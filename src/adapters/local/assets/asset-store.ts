@@ -18,10 +18,14 @@ import { SNIFF_BYTES, sniffImage } from './image-sniff.ts';
  * and are served as one `blob:` URL per asset. Persistence failures are never silent: a refused
  * upload says why (`quota`), a failed credit change stays in this tab and turns the save status
  * into an error with "Tentar de novo"; when storage is blocked the images live in memory and the
- * save status says they last only in this tab.
+ * save status says they last only in this tab. The example workspace ships a few images of its own
+ * (`seed`): listed like any other, their bytes read from the app's files when asked, never stored.
  */
 
 export type ImageSize = { width: number; height: number };
+
+/** An image of the example workspace: its record, and where the app serves its bytes. */
+export type SeededAsset = { productionId: ProductionId; asset: ImageAsset; src: string };
 
 export type AssetStoreOptions = {
   backend: AssetBackend;
@@ -37,7 +41,34 @@ export type AssetStoreOptions = {
    * most images are never decoded); default `createImageBitmap` when the environment has it.
    */
   measure?: (blob: Blob) => Promise<ImageSize | undefined>;
+  /** Images of the example workspace (fixtures), present unless this browser stored a change to them. */
+  seed?: readonly SeededAsset[];
+  /** Reads a seeded image's bytes; default `fetch` of its address (undefined where that fails). */
+  fetchSeed?: (src: string) => Promise<Blob | undefined>;
 };
+
+/** An address the app serves, made absolute against the page (as stored when there is no page). */
+function servedUrl(src: string): string {
+  const origin = (globalThis as { location?: { origin?: string } }).location?.origin;
+  if (!origin || origin === 'null') return src;
+  try {
+    return new URL(src, origin).href;
+  } catch {
+    return src;
+  }
+}
+
+/** `fetch` of an address the app serves; undefined without `fetch` (Node) or on any failure. */
+async function fetchBlob(src: string): Promise<Blob | undefined> {
+  const run = (globalThis as { fetch?: (input: string) => Promise<{ ok: boolean; blob(): Promise<Blob> }> }).fetch;
+  if (!run) return undefined;
+  try {
+    const response = await run(src);
+    return response.ok ? await response.blob() : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export const ASSET_LIMITS: AssetLimits = {
   maxBytes: IMAGE_LIMITS.maxBytes,
@@ -104,6 +135,30 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
   let degraded = false;
   let health: AssetHealth = { status: 'ok' };
   let disposed = false;
+  const seeds = new Map<AssetId, SeededAsset>((options.seed ?? []).map((entry) => [entry.asset.id, entry]));
+  const seedBlobs = new Map<AssetId, Promise<Blob | undefined>>();
+  const fetchSeed = options.fetchSeed ?? fetchBlob;
+
+  /** The example's images, unless a stored record (a changed credit, say) already holds them. */
+  function plant(): void {
+    for (const entry of seeds.values()) {
+      if (!records.has(entry.asset.id)) records.set(entry.asset.id, { id: entry.asset.id, productionId: entry.productionId, asset: deepFreeze(structuredClone(entry.asset)) });
+    }
+  }
+
+  /** A seeded image's bytes, read once (a failed read is tried again next time). */
+  function seedBlob(assetId: AssetId): Promise<Blob | undefined> {
+    const entry = seeds.get(assetId);
+    if (!entry) return Promise.resolve(undefined);
+    const cached = seedBlobs.get(assetId);
+    if (cached) return cached;
+    const pending = fetchSeed(entry.src).catch(() => undefined);
+    seedBlobs.set(assetId, pending);
+    void pending.then((blob) => {
+      if (!blob && seedBlobs.get(assetId) === pending) seedBlobs.delete(assetId);
+    });
+    return pending;
+  }
 
   const urlApi = (): UrlApi => (globalThis as { URL?: UrlApi }).URL ?? {};
 
@@ -141,6 +196,9 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
     urls.clear();
   }
 
+  // Listed from the start (checks and the package read metadata synchronously); stored records win on load.
+  plant();
+
   async function open(): Promise<void> {
     try {
       if (options.reset) await backend.clear();
@@ -152,6 +210,7 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
       backend.close();
       backend = memoryBackend();
     }
+    plant();
     if (records.size > 0) emit({ kind: 'loaded', assetIds: [...records.keys()], productionIds: [...new Set([...records.values()].map((record) => record.productionId))] });
   }
 
@@ -255,8 +314,9 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
 
   /** Stored images outside `referenced`, oldest first, with the bytes they hold. */
   function unusedOf(referenced: ReadonlySet<AssetId>): UnusedAssets {
+    // The example's images take no room in this browser: "Liberar espaço" never lists them.
     const unused = [...records.values()]
-      .filter((record) => !referenced.has(record.id))
+      .filter((record) => !referenced.has(record.id) && !seeds.has(record.id))
       .sort((a, b) => a.asset.createdAt.localeCompare(b.asset.createdAt) || a.id.localeCompare(b.id));
     return {
       assetIds: unused.map((record) => record.id),
@@ -320,6 +380,9 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
       const record = records.get(assetId);
       if (!record) return undefined;
       if (record.asset.origin.type === 'url') return record.asset.origin.url;
+      // An example image is served by the app itself: its address (absolute in a page) is the URL.
+      const seeded = seeds.get(assetId);
+      if (seeded) return servedUrl(seeded.src);
       const cached = urls.get(assetId);
       if (cached) return cached;
       const created = (async () => {
@@ -344,6 +407,7 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
       await opened;
       const record = records.get(assetId);
       if (!record || record.asset.origin.type === 'url') return undefined;
+      if (seeds.has(assetId)) return seedBlob(assetId);
       return backend.readBlob(assetId).catch(() => undefined);
     },
     health: () => health,
@@ -411,6 +475,8 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
       } catch {
         // Memory is cleared regardless; the next write reports a storage problem if any.
       }
+      // The example's own images come back with it.
+      plant();
       settleHealth();
       emit({ kind: 'reset', assetIds: [], productionIds: [] });
     },

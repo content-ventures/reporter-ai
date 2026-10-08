@@ -27,7 +27,7 @@ export function createIndexedDbAssetStore(options: LocalAssetOptions & { indexed
 }
 
 export { ASSET_LIMITS, ASSET_SAVE_MESSAGES, bitmapSize, createAssetStore } from './asset-store.ts';
-export type { AssetStoreOptions, ImageSize } from './asset-store.ts';
+export type { AssetStoreOptions, ImageSize, SeededAsset } from './asset-store.ts';
 export { memoryBackend } from './backend.ts';
 export type { AssetBackend, MemoryBackend, MemoryBackendOptions, StoredAsset } from './backend.ts';
 export { ASSET_DB_NAME, ASSET_DB_VERSION, browserIndexedDb, indexedDbBackend } from './indexeddb.ts';

@@ -201,3 +201,64 @@ describe('sha256', () => {
     assert.equal(sha256Sync(new TextEncoder().encode('abc')), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   });
 });
+
+describe('seeded images (the example workspace)', () => {
+  const seeded = {
+    productionId: 'prod-exemplo',
+    src: '/samples/exemplo.jpg',
+    asset: {
+      id: 'img-exemplo',
+      workspaceId: 'ws-teste',
+      kind: 'image' as const,
+      origin: { type: 'upload' as const, fileName: 'exemplo.jpg' },
+      mime: 'image/jpeg',
+      width: 1200,
+      height: 800,
+      bytes: 4,
+      credit: 'Divulgação',
+      rights: { authorized: true },
+      createdAt: START,
+      createdBy: 'p-joao',
+    },
+  };
+
+  it('lists them at once, serves them from the app and reads their bytes only when asked', async () => {
+    const reads: string[] = [];
+    const backend = memoryBackend();
+    const store = createAssetStore({
+      ...options(),
+      backend,
+      seed: [seeded],
+      fetchSeed: async (src) => {
+        reads.push(src);
+        return new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
+      },
+    });
+    assert.equal(store.get('img-exemplo')?.credit, 'Divulgação', 'readable before the stored index opens');
+    await store.ready();
+    assert.deepEqual(store.list('prod-exemplo').map((asset) => asset.id), ['img-exemplo']);
+    assert.equal(await store.objectUrl('img-exemplo'), '/samples/exemplo.jpg');
+    assert.deepEqual(reads, []);
+    assert.equal((await store.blob('img-exemplo'))?.size, 4);
+    await store.blob('img-exemplo');
+    assert.deepEqual(reads, ['/samples/exemplo.jpg'], 'read once');
+    assert.equal(backend.records().size, 0, 'never stored');
+    assert.equal(store.unused(new Set()).count, 0, '"Liberar espaço" never lists them');
+    await store.reset();
+    assert.ok(store.get('img-exemplo'), 'the example comes back with "Restaurar exemplo"');
+    store.dispose();
+  });
+
+  it('a credit changed in this browser wins over the example on reload', async () => {
+    const backend = memoryBackend();
+    const first = createAssetStore({ ...options(), backend, seed: [seeded], fetchSeed: async () => undefined });
+    const updated = await first.update('img-exemplo', { credit: 'Ana Prado' });
+    assert.ok(updated.ok);
+    first.dispose();
+    const again = createAssetStore({ ...options(), backend, seed: [seeded], fetchSeed: async () => undefined });
+    await again.ready();
+    assert.equal(again.get('img-exemplo')?.credit, 'Ana Prado');
+    assert.equal(await again.blob('img-exemplo'), undefined, 'bytes it cannot read are missing, never invented');
+    again.dispose();
+  });
+});
