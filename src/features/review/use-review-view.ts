@@ -1,36 +1,32 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import type { CompareOption, CompareTarget, ResolvedView, ReviewMode } from './review-model';
-import { resolveView } from './review-model';
+import { resolveMode, type ReviewMode } from './review-model';
 
 /**
- * The review view lives in the URL (`?view=changes|final&compare=ai|approved`, PLAN §4.6), so a
- * link to "what changed since v3" opens exactly that. Replacing the entry keeps Back meaningful.
- * Callers render under a `Suspense` boundary (`useSearchParams`).
+ * The view of the review lives in the URL (`?ver=changes|final`), so a link opens exactly what it
+ * names. Without it the review's own default applies ("O que mudou" when a previous send was
+ * decided). Replacing the entry keeps Back meaningful. Callers render under a `Suspense` boundary
+ * (`useSearchParams`).
  */
-export function useReviewView(options: readonly CompareOption[]): ResolvedView & {
+export function useReviewView(review: { hasPrevious: boolean; defaultView: ReviewMode }): {
+  mode: ReviewMode;
   setMode: (mode: ReviewMode) => void;
-  setCompare: (target: CompareTarget) => void;
 } {
   const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const view = params.get('view');
-  const compare = params.get('compare');
-  const resolved = useMemo(() => resolveView(options, { view, compare }), [options, view, compare]);
+  const mode = resolveMode(params.get('ver'), review);
 
-  const replace = useCallback(
-    (patch: Record<string, string>) => {
-      const next = new URLSearchParams(params.toString());
-      for (const [key, value] of Object.entries(patch)) next.set(key, value);
-      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  const setMode = useCallback(
+    (next: ReviewMode) => {
+      const query = new URLSearchParams(params.toString());
+      query.set('ver', next);
+      router.replace(`${pathname}?${query.toString()}`, { scroll: false });
     },
     [params, pathname, router],
   );
 
-  const setMode = useCallback((mode: ReviewMode) => replace({ view: mode }), [replace]);
-  const setCompare = useCallback((target: CompareTarget) => replace({ view: 'changes', compare: target }), [replace]);
-  return { ...resolved, setMode, setCompare };
+  return { mode, setMode };
 }

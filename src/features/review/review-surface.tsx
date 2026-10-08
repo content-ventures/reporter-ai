@@ -1,58 +1,41 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { PageStack, WorkspaceLayout } from '@content-ventures/design-system/v3';
+import { WorkspaceLayout } from '@content-ventures/design-system/v3';
 import { ProductionHeader } from '@/features/production/production-frame';
-import { usePhone } from '@/ui/use-phone';
+import type { ProductionHeaderProps } from '@/features/production/production-header';
 
 /**
- * Generic gate surface (PLAN §3.6, REQ-T.6): the production header line, the subject's body, a
- * side pane with Checagem · Fonte · Histórico and the decision bar always at hand. It knows
- * nothing about the subject: the article and the carousel pass their own body; later gates
- * (pauta, ativos, cortes) reuse it as is.
+ * Surface of the guided review (COPY §4, REQ-T.6): the production header line, the document read
+ * in one column and the decision bar always at hand. No side pane: the checks are one line above
+ * the text, the history opens from the header's ⋯. It knows nothing about the subject: the article
+ * and the carousel pass their own body.
  *
- * One chrome row (B02): the version's status and the view switch ("Alterações / Texto final")
- * live in the production header line — the trail already ends in "Revisão". Studio frame
- * (`WorkspaceLayout docked`): body and pane scroll on their own, the decision bar stays in view
- * while reading a long piece; at ≤1024 px the regions become tabs and the bar stays. On a phone
- * the view switch scrolls with the text, so the reading area keeps the screen.
+ * Studio frame (`WorkspaceLayout docked`): the body scrolls on its own and the decision bar stays
+ * in view while reading a long piece; on a phone it keeps the bottom edge.
  */
 export type ReviewSurfaceProps = {
-  /** The version's status, in the header line instead of the production's. */
-  status?: ReactNode;
-  /** View switch (Segmented, "Comparar com"): header line on desktop, top of the text on a phone. */
-  view?: ReactNode;
-  /** Name of the main region and of its tab on narrow screens ("Texto", "Slides"). */
+  /** The header line: back link, status, the screen's ⋯ items. */
+  header: ProductionHeaderProps;
+  /** Name of the main region ("Texto", "Slides"). */
   mainLabel: string;
-  /** The subject: diff, read-only prose or rendered creatives (with alerts above). */
+  /** The subject: task card, toolbar and diff, read-only prose or rendered creatives. */
   children: ReactNode;
-  /** Side pane sections (Checagem · Fonte · Histórico). */
-  aside?: ReactNode;
-  asideLabel?: string;
-  /** Decision bar (`ActionBar position="static"`), or a function of the narrow layout. */
+  /** Decision bar (`ActionBar`), or a function of the narrow layout. */
   footer?: ReactNode | ((narrow: boolean) => ReactNode);
 };
 
-export function ReviewSurface({ status, view, mainLabel, children, aside, asideLabel = 'Detalhes', footer }: ReviewSurfaceProps) {
-  const phone = usePhone();
+export function ReviewSurface({ header, mainLabel, children, footer }: ReviewSurfaceProps) {
   return (
     <WorkspaceLayout
       docked
       storageKey="reporter:review"
-      header={<ProductionHeader status={status} actions={phone ? undefined : view} />}
+      header={<ProductionHeader {...header} />}
       mainLabel={mainLabel}
       viewsLabel="Revisão"
-      end={aside ? { label: asideLabel, content: aside, defaultSize: 352, min: 288, max: 480 } : undefined}
       footer={footer}
     >
-      {phone && view ? (
-        <PageStack>
-          {view}
-          {children}
-        </PageStack>
-      ) : (
-        children
-      )}
+      {children}
     </WorkspaceLayout>
   );
 }
