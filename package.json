@@ -26,7 +26,7 @@
     "prepare": "pnpm harness:setup"
   },
   "dependencies": {
-    "@content-ventures/design-system": "https://github.com/content-ventures/design-system/archive/41c3d6d4e1720d42ce8c44142718fa8473918f84.tar.gz",
+    "@content-ventures/design-system": "https://github.com/content-ventures/design-system/archive/63b5b8021ca512a6b9c2532d1457a65740477ee5.tar.gz",
     "@tiptap/extension-placeholder": "3.31.4",
     "@tiptap/pm": "3.31.4",
     "@tiptap/react": "3.31.4",
