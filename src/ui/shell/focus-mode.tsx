@@ -1,12 +1,9 @@
 'use client';
 
-import { createContext, use, useCallback, useMemo, useState, type ReactNode } from 'react';
-import { usePathname } from 'next/navigation';
-
 /**
- * Focus mode (PLAN §3.5): the shell menu turns into a drawer and the studio collapses its panes.
- * Studios read it with `useFocusMode()` and pass it to `WorkspaceLayout focus/onFocusChange`
- * (Esc leaves). It ends by itself when the route changes.
+ * Focus mode left the product (D2): inside a production the app menu is already gone and the
+ * studio is the document, with at most one panel, closed by default. `useFocusMode()` stays a
+ * no-op so screens that still read it keep compiling; the integrator removes the callers at I2.
  */
 
 export type FocusMode = {
@@ -15,21 +12,9 @@ export type FocusMode = {
   toggle: () => void;
 };
 
-const FocusContext = createContext<FocusMode | null>(null);
+const OFF: FocusMode = { focus: false, setFocus: () => undefined, toggle: () => undefined };
 
-export function FocusModeProvider({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const [state, setState] = useState<{ focus: boolean; path: string | null }>({ focus: false, path: pathname });
-  // Leaving the page leaves focus mode (derived during render, no effect).
-  const focus = state.focus && state.path === pathname;
-  const setFocus = useCallback((next: boolean) => setState({ focus: next, path: pathname }), [pathname]);
-  const toggle = useCallback(() => setState((previous) => ({ focus: !(previous.focus && previous.path === pathname), path: pathname })), [pathname]);
-  const value = useMemo(() => ({ focus, setFocus, toggle }), [focus, setFocus, toggle]);
-  return <FocusContext value={value}>{children}</FocusContext>;
-}
-
-const OUTSIDE: FocusMode = { focus: false, setFocus: () => undefined, toggle: () => undefined };
-
+/** @deprecated Always off (D2). Removed at I2. */
 export function useFocusMode(): FocusMode {
-  return use(FocusContext) ?? OUTSIDE;
+  return OFF;
 }

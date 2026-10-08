@@ -8,13 +8,16 @@ import {
   type AgentTraceStepState,
 } from '@content-ventures/design-system/v3';
 import { RUN_KIND_LABELS, type GenerationRun, type RunStatus, type RunStep, type StepState } from '@/domain';
+import { RECIPES } from '@/registries';
 import { formatDuration, plural } from './format';
 
 /**
  * A generation run (RunView, RunFold.run or RunState.fold.run) drawn as the DS AgentTrace:
  * visible steps, one spinner at a time, red only on failure, "Tentar de novo a partir desta
  * etapa" on the failed step. Everything comes from the run itself, so the studio, the overview
- * "Gerando agora" panel and the review history show the same trace.
+ * and the review history show the same trace. Writers read the steps and what each one did
+ * ("640 caracteres"); timings and the model label ("Simulação local") are for admins
+ * (`detail="admin"`, D11).
  */
 
 const STEP_STATES: Record<StepState, AgentTraceStepState> = {
@@ -34,9 +37,13 @@ const RUN_STATUS: Partial<Record<RunStatus, AgentTraceStatus>> = {
   cancelled: 'stopped',
 };
 
-export type TraceableRun = Pick<GenerationRun, 'kind' | 'status' | 'steps' | 'startedAt' | 'endedAt' | 'error'> & {
-  durationMs?: number;
-};
+export type TraceableRun = Pick<GenerationRun, 'kind' | 'status' | 'steps' | 'startedAt' | 'endedAt' | 'error'> &
+  Partial<Pick<GenerationRun, 'model'>> & {
+    durationMs?: number;
+  };
+
+/** `writer`: steps and what they did · `admin`: plus timings and the model. */
+export type TraceDetail = 'writer' | 'admin';
 
 /** Total duration of a run: the view's `durationMs`, else started → ended. */
 export function runDuration(run: TraceableRun): number | undefined {
@@ -51,15 +58,26 @@ function stepDuration(step: RunStep): string | undefined {
   return Number.isFinite(ms) && ms >= 0 ? formatDuration(ms) : undefined;
 }
 
-/** "Concluída em 38 s · 6 etapas", "Interrompida em 12 s". */
-export function runSummary(run: TraceableRun): string | undefined {
-  const duration = runDuration(run);
+/**
+ * Writers: "Concluída · 6 etapas · Próximo: revisar o texto e enviar para aprovação" (the recipe's
+ * `next`, when it has one), "Interrompida". Admins: "Simulação local · Concluída em 38 s ·
+ * 6 etapas", "Simulação local · Interrompida em 12 s".
+ */
+export function runSummary(run: TraceableRun, detail: TraceDetail = 'writer'): string | undefined {
+  const admin = detail === 'admin';
+  const duration = admin ? runDuration(run) : undefined;
   const done = run.steps.filter((step) => step.state === 'done').length;
+  const model = admin ? run.model?.label : undefined;
   if (run.status === 'completed') {
-    return [duration !== undefined ? `Concluída em ${formatDuration(duration)}` : 'Concluída', plural(done, 'etapa', 'etapas')].join(' · ');
+    // The recipe's closing line says what the person does next ("Próximo: revisar o texto e enviar
+    // para aprovação", DECISION §Generation 7): human review and approval stay mandatory.
+    const next = RECIPES.find((recipe) => recipe.kind === run.kind)?.next;
+    return [model, duration !== undefined ? `Concluída em ${formatDuration(duration)}` : 'Concluída', plural(done, 'etapa', 'etapas'), next]
+      .filter(Boolean)
+      .join(' · ');
   }
   if (run.status === 'cancelled') {
-    return duration !== undefined ? `Interrompida em ${formatDuration(duration)}` : 'Interrompida';
+    return [model, duration !== undefined ? `Interrompida em ${formatDuration(duration)}` : 'Interrompida'].filter(Boolean).join(' · ');
   }
   return undefined;
 }
@@ -67,7 +85,7 @@ export function runSummary(run: TraceableRun): string | undefined {
 /** Run steps → AgentTrace steps (meta: live detail or the step duration; error: the reason). */
 export function traceSteps(
   run: TraceableRun,
-  extra?: { detail?: (step: RunStep) => ReactNode; sources?: (step: RunStep) => ReactNode },
+  extra?: { detail?: (step: RunStep) => ReactNode; sources?: (step: RunStep) => ReactNode; timings?: boolean },
 ): AgentTraceStep[] {
   // An interrupted run never reached its remaining steps: they read as not done, not "skipped"
   // (the DS AgentTrace has no "interrompida" step state yet); the first one says where it stopped.
@@ -76,7 +94,7 @@ export function traceSteps(
     const interrupted = run.status === 'cancelled' && step.state === 'skipped';
     const item: AgentTraceStep = { id: step.id, label: step.label, state: interrupted ? 'upcoming' : STEP_STATES[step.state] };
     if (step.id === stoppedAt) item.meta = 'Interrompida aqui';
-    const meta = step.meta ?? (step.state === 'done' ? stepDuration(step) : undefined);
+    const meta = step.meta ?? (step.state === 'done' && extra?.timings ? stepDuration(step) : undefined);
     if (meta && !interrupted) item.meta = meta;
     const failure = step.state === 'error' && run.error && (!run.error.stepId || run.error.stepId === step.id) ? run.error.message : undefined;
     const detail = failure ?? (step.state === 'awaiting_input' ? 'Aguardando você' : extra?.detail?.(step));
@@ -112,6 +130,8 @@ export type RunTraceProps = {
   preview?: ReactNode;
   /** `compact`: action at the end of the line ("Abrir"). */
   action?: ReactNode;
+  /** `writer` (default): no timings, no model · `admin`: step durations and the model in the summary. */
+  detail?: TraceDetail;
 };
 
 export function RunTrace({
@@ -130,13 +150,14 @@ export function RunTrace({
   onCollapsedChange,
   preview,
   action,
+  detail = 'writer',
 }: RunTraceProps) {
   return (
     <AgentTrace
       label={label ?? RUN_KIND_LABELS[run.kind]}
-      steps={traceSteps(run, { detail: stepDetail, sources: stepSources })}
+      steps={traceSteps(run, { detail: stepDetail, sources: stepSources, timings: detail === 'admin' })}
       status={RUN_STATUS[run.status]}
-      summary={summary ?? runSummary(run)}
+      summary={summary ?? runSummary(run, detail)}
       variant={variant}
       onRetry={onRetry}
       retryLabel={retryLabel}

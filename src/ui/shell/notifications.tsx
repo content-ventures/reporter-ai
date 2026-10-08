@@ -2,11 +2,12 @@
 
 import { useMemo, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
-import { formatRelative, NotificationDot, NotificationsButton, type MenuSection } from '@content-ventures/design-system/v3';
+import { NotificationDot, NotificationsButton, type MenuSection } from '@content-ventures/design-system/v3';
 import { CheckCheck } from '@content-ventures/design-system/v3/icons';
 import { NOTIFYING_ACTIVITY, type ActivityType } from '@/domain';
 import type { ActivityItem } from '@/ports';
 import { useActivity } from '@/state';
+import { formatAgo } from '../approval-copy';
 import { PersonAvatar } from '../person-avatar';
 import { productionHref } from '../routes';
 import { useNow } from '../time';
@@ -81,7 +82,7 @@ export function ShellNotifications() {
   const sections = useMemo<MenuSection[]>(() => {
     const toItem = (item: ActivityItem) => ({
       label: item.summary,
-      description: [item.productionTitle, now ? formatRelative(item.at, now) : null].filter(Boolean).join(' · '),
+      description: [item.productionTitle, now ? formatAgo(item.at, now) : null].filter(Boolean).join(' · '),
       leading: item.actor ? (
         <PersonAvatar person={item.actor} size="xs" decorative />
       ) : (
