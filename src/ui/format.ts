@@ -1,3 +1,9 @@
+import { ARTICLE_SIZE_IDS, sizeLabel, sizeOf } from '../domain/sizing.ts';
+import type { ArticleSize } from '../domain/sizing.ts';
+
+/** Lauda formats live with the lauda rule (`src/domain/sizing.ts`); screens import them from here. */
+export { charactersAbove, formatCharacters, formatLaudas, formatLaudasOf } from '../domain/sizing.ts';
+
 /**
  * pt-BR formats of the DS contract (§11) that the DS `format.ts` does not cover. Pure functions:
  * no `Intl` (server and browser agree) and no clock reads.
@@ -62,3 +68,15 @@ export function formatCount(count: number): string {
 export function plural(count: number, one: string, many: string): string {
   return `${formatCount(count)} ${count === 1 ? one : many}`;
 }
+
+/** "Curto · 1 lauda", "Padrão · 2 laudas" (the option and the pauta summary). */
+export function formatSize(size: ArticleSize): string {
+  return sizeLabel(size);
+}
+
+/** Size options in display order, with the option text: "Curto · 1 lauda" — "Notícia direta: … Até 2.000 caracteres." */
+export const SIZE_OPTIONS: readonly { value: ArticleSize; label: string; description: string }[] = ARTICLE_SIZE_IDS.map((size) => ({
+  value: size,
+  label: sizeLabel(size),
+  description: sizeOf(size).description,
+}));
