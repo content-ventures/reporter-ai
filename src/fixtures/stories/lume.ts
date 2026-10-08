@@ -1,5 +1,6 @@
+import { localDateOf } from '../../domain/index.ts';
 import type { ArticleBody, CarouselBody, Source } from '../../domain/index.ts';
-import { applyEdits, buildDraftScript, h2, p, quote, reviewAll } from '../build/article.ts';
+import { applyEdits, buildDraftScript, h2, img, p, quote, reviewAll } from '../build/article.ts';
 import type { ArticleSpec } from '../build/article.ts';
 import { startScenario } from '../build/scenario.ts';
 import { buildTranscriptSource } from '../build/source.ts';
@@ -41,6 +42,7 @@ export const LUME_TRANSCRIPT = [
 
 export const LUME_ARTICLE: ArticleSpec = {
   title: 'Lume Acessórios leva bijuteria artesanal a 64 lojas europeias',
+  coverSlot: { subject: 'Renata Vidal com peças da coleção inspirada em azulejos', suggestedCaption: 'Renata Vidal, fundadora da Lume Acessórios', suggestedAlt: 'Renata Vidal segura bijuterias da Lume', orientation: 'landscape' },
   keyExcerpts: ['Por uma loja de museu em Lisboa.', 'Esse cartão vende mais do que qualquer vitrine.', 'Crescer devagar faz parte do produto.'],
   sections: [
     {
@@ -55,6 +57,11 @@ export const LUME_ARTICLE: ArticleSpec = {
           'São 64 lojas em sete países, a maioria independente.',
           'A exportação já representa 31% do faturamento da Lume',
           'Portugal e Espanha concentram mais da metade.',
+        ),
+        img(
+          'lu-img-1',
+          { subject: 'Peças da coleção inspirada em azulejos', suggestedCaption: 'A coleção inspirada em azulejos abriu a primeira loja europeia', suggestedAlt: 'Bijuterias da Lume inspiradas em azulejos', orientation: 'landscape' },
+          'encomendou trezentas unidades de uma coleção inspirada em azulejos',
         ),
       ],
     },
@@ -103,6 +110,11 @@ export const LUME_ARTICLE: ArticleSpec = {
           'o custo por envio pesa muito quando o pedido é pequeno',
           'Hoje embarcamos uma vez por mês para a Europa, com todos os pedidos consolidados',
           'O lojista espera um pouco mais, mas paga um frete muito menor.',
+        ),
+        img(
+          'lu-img-2',
+          { subject: 'Pedidos consolidados prontos para o embarque mensal à Europa', suggestedCaption: 'Uma vez por mês, todos os pedidos seguem juntos para a Europa', suggestedAlt: 'Caixas com pedidos da Lume prontas para embarque', orientation: 'landscape' },
+          'Hoje embarcamos uma vez por mês para a Europa, com todos os pedidos consolidados',
         ),
         p(
           'lu-s2-p2b',
@@ -191,7 +203,7 @@ export function lumeStory(ctx: StoryContext): Story {
     source,
     ownerId: PEOPLE.rafael,
     createdAt,
-    brief: { angle: 'Como uma marca artesanal cresce na Europa sem perder a identidade', sections: 2, length: 'short', revision: 1 },
+    brief: { angle: 'Como uma marca artesanal cresce na Europa sem perder a identidade', sections: 2, size: 'standard', revision: 1 },
     plan: ['article', 'carousel'],
     templates: ctx.templates,
   });
@@ -206,18 +218,19 @@ export function lumeStory(ctx: StoryContext): Story {
     ]),
   );
   builder.saveEdit('article', v2Body, ago(ctx.now, { days: 2, hours: 6 }), PEOPLE.rafael);
-  builder.requestReview('article', ago(ctx.now, { days: 2, hours: 5 }), PEOPLE.rafael);
+  builder.requestReview('article', ago(ctx.now, { days: 2, hours: 5 }), PEOPLE.rafael, { assigneeId: PEOPLE.pedro });
   builder.decide('article', 'approved', ago(ctx.now, { days: 1, hours: 20 }), PEOPLE.pedro);
 
   builder.startCarousel(NEUTRAL_DARK_TEMPLATE_ID, ago(ctx.now, { hours: 6 }), PEOPLE.rafael);
   const carousel: CarouselBody = { type: 'carousel', templateId: NEUTRAL_DARK_TEMPLATE_ID, slides: slidesFrom('lume', LUME_SLIDES) };
   builder.generate('carousel', { body: carousel, endedAt: ago(ctx.now, { hours: 5, minutes: 50 }), durationMs: 31_000, by: PEOPLE.rafael });
-  builder.requestReview('carousel', ago(ctx.now, { hours: 4 }), PEOPLE.rafael);
+  // Overdue: it was due yesterday ("atrasado · prazo era …"), no "Recado".
+  builder.requestReview('carousel', ago(ctx.now, { hours: 4 }), PEOPLE.rafael, { assigneeId: PEOPLE.pedro, dueOn: localDateOf(ago(ctx.now, { days: 1 })) });
   return {
     scenario: builder.scenario,
     script,
     expect: {
-      label: 'Artigo aprovado, carrossel aguardando aprovação',
+      label: 'Artigo aprovado, carrossel aguardando aprovação (atrasado)',
       productionStatus: 'in_review',
       pieces: { article: 'approved', carousel: 'in_review' },
       draftQuotes: { verified: 2, total: 2 },

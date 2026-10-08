@@ -1,5 +1,6 @@
 import type { CarouselTemplate, IsoDateTime, PieceKind, PieceStatus, ProductionStatus } from '../../domain/index.ts';
 import type { Scenario } from '../build/scenario.ts';
+import type { FixtureImage } from '../images.ts';
 import type { ScriptEntry } from '../script-book.ts';
 
 /** Inputs every fixture story receives: the injected clock instant and the creative templates. */
@@ -19,5 +20,7 @@ export type Story = {
   scenario: Scenario;
   /** Hand-written outputs for this story's source (absent: the extractive path applies). */
   script?: ScriptEntry;
+  /** Images the story's articles use (served from `public/samples/`). */
+  images?: FixtureImage[];
   expect: StoryExpectation;
 };

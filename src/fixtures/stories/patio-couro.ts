@@ -1,5 +1,5 @@
 import type { ArticleBody, CarouselBody, Source } from '../../domain/index.ts';
-import { applyEdits, buildDraftScript, h2, p, quote, reviewAll } from '../build/article.ts';
+import { applyEdits, buildDraftScript, h2, img, p, quote, reviewAll } from '../build/article.ts';
 import type { ArticleSpec } from '../build/article.ts';
 import { startScenario } from '../build/scenario.ts';
 import { buildTranscriptSource } from '../build/source.ts';
@@ -14,7 +14,9 @@ import type { Story, StoryContext } from './types.ts';
 /**
  * State: carousel outdated (amber). The carousel was made from article v2 and approved; later
  * the article was corrected and v3 approved, so the carousel is "Desatualizado" and the export
- * offers "Exportar com artigo v2" or "Atualizar carrossel". Nothing is ever deleted.
+ * offers "Exportar com artigo v2" or "Atualizar carrossel". Then Juliana edited the approved
+ * text (no new version): the article reads "Aprovação desatualizada" while the carousel and the
+ * delivery keep using v3. Nothing is ever deleted.
  */
 
 export const PATIO_COURO_TRANSCRIPT = [
@@ -44,6 +46,7 @@ export const PATIO_COURO_TRANSCRIPT = [
 
 export const PATIO_COURO_ARTICLE: ArticleSpec = {
   title: 'Pátio Couro transforma aparas descartadas em nova linha de produtos',
+  coverSlot: { subject: 'Aparas de couro separadas por cor e espessura', suggestedCaption: 'Aparas recolhidas nos clientes da Pátio Couro', suggestedAlt: 'Aparas de couro separadas por cor', orientation: 'landscape' },
   keyExcerpts: [
     'cerca de 40 toneladas de aparas por ano',
     'A linha de laminado já representa 4% do faturamento da Pátio Couro.',
@@ -59,6 +62,11 @@ export const PATIO_COURO_ARTICLE: ArticleSpec = {
           'Fizemos um levantamento com doze clientes',
           'cerca de 40 toneladas de aparas por ano',
           'Era couro bom, só que em pedaços pequenos demais para um sapato.',
+        ),
+        img(
+          'pc-img-1',
+          { subject: 'Chaveiros, porta-cartões e alças de bolsa feitos com as aparas', suggestedCaption: 'As aparas maiores viram acessórios; as menores, laminado de couro reconstituído', suggestedAlt: 'Acessórios de couro feitos com aparas reaproveitadas', orientation: 'landscape' },
+          'As peças maiores viram matéria-prima para acessórios, como chaveiros, porta-cartões e alças de bolsa.',
         ),
       ],
     },
@@ -100,6 +108,11 @@ export const PATIO_COURO_ARTICLE: ArticleSpec = {
           'Antes eles pagavam para descartar as aparas.',
           'devolve um certificado com o peso reaproveitado',
           'esse certificado virou argumento de venda com compradores de fora',
+        ),
+        img(
+          'pc-img-2',
+          { subject: 'Caminhão que entrega couro e volta com as aparas', suggestedCaption: 'O caminhão que entrega couro volta com as aparas', suggestedAlt: 'Caminhão da Pátio Couro carregado com sacos de aparas', orientation: 'landscape' },
+          'Hoje o caminhão que entrega couro volta com as aparas.',
         ),
         p(
           'pc-s2-p2',
@@ -197,20 +210,20 @@ export function patioCouroStory(ctx: StoryContext): Story {
     source,
     ownerId: PEOPLE.juliana,
     createdAt,
-    brief: { angle: 'Como um curtume transformou descarte em linha de produtos', sections: 2, length: 'short', revision: 1 },
+    brief: { angle: 'Como um curtume transformou descarte em linha de produtos', sections: 2, size: 'standard', revision: 1 },
     plan: ['article', 'carousel'],
     templates: ctx.templates,
   });
   const v1 = builder.generate('article', { body: scriptBody(script.draft), endedAt: after(createdAt, { minutes: 4 }), durationMs: 50_000, by: PEOPLE.juliana });
   const v2Body = reviewAll(v1.body as ArticleBody);
   builder.saveEdit('article', v2Body, ago(ctx.now, { days: 8, hours: 2 }), PEOPLE.juliana);
-  builder.requestReview('article', ago(ctx.now, { days: 8, hours: 1 }), PEOPLE.juliana);
+  builder.requestReview('article', ago(ctx.now, { days: 8, hours: 1 }), PEOPLE.juliana, { assigneeId: PEOPLE.pedro });
   builder.decide('article', 'approved', ago(ctx.now, { days: 7, hours: 3 }), PEOPLE.pedro);
 
   builder.startCarousel(NEUTRAL_LIGHT_TEMPLATE_ID, ago(ctx.now, { days: 6, hours: 6 }), PEOPLE.juliana);
   const carousel: CarouselBody = { type: 'carousel', templateId: NEUTRAL_LIGHT_TEMPLATE_ID, slides: slidesFrom('patio-couro', PATIO_COURO_SLIDES) };
   builder.generate('carousel', { body: carousel, endedAt: ago(ctx.now, { days: 6, hours: 5 }), durationMs: 29_000, by: PEOPLE.juliana });
-  builder.requestReview('carousel', ago(ctx.now, { days: 6, hours: 2 }), PEOPLE.juliana);
+  builder.requestReview('carousel', ago(ctx.now, { days: 6, hours: 2 }), PEOPLE.juliana, { assigneeId: PEOPLE.pedro });
   builder.decide('carousel', 'approved', ago(ctx.now, { days: 5, hours: 22 }), PEOPLE.pedro);
 
   // Caio asked for a correction after publication planning: the article gets v3, re-approved.
@@ -222,15 +235,32 @@ export function patioCouroStory(ctx: StoryContext): Story {
     },
   ]);
   builder.saveEdit('article', v3Body, ago(ctx.now, { hours: 6 }), PEOPLE.juliana);
-  builder.requestReview('article', ago(ctx.now, { hours: 5, minutes: 40 }), PEOPLE.juliana, 'Correção pedida pelo Caio: a coleta compartilhada ainda está em conversa.');
+  builder.requestReview('article', ago(ctx.now, { hours: 5, minutes: 40 }), PEOPLE.juliana, {
+    assigneeId: PEOPLE.pedro,
+    note: 'Correção pedida pelo Caio: a coleta compartilhada ainda está em conversa.',
+  });
   builder.decide('article', 'approved', ago(ctx.now, { hours: 3 }), PEOPLE.pedro);
+  // Juliana touched the approved text afterwards (autosave, no new version): "Aprovação
+  // desatualizada". Carousel and delivery keep using the approved v3.
+  builder.editDraft(
+    'article',
+    applyEdits(source, v3Body, [
+      {
+        type: 'text',
+        blockId: 'pc-s2-p2b',
+        text: 'O investimento inicial se resumiu a uma prensa usada e à adaptação de um galpão parado. O que mais pesou foi o tempo da equipe testando receitas de laminado. Se recomeçasse, Caio iria primeiro aos acessórios, que dão retorno mais rápido, e só depois ao laminado.',
+      },
+    ]),
+    ago(ctx.now, { hours: 1 }),
+    PEOPLE.juliana,
+  );
   return {
     scenario: builder.scenario,
     script,
     expect: {
-      label: 'Carrossel desatualizado (artigo reaprovado na v3)',
+      label: 'Aprovação desatualizada (artigo editado depois de aprovado) e carrossel desatualizado',
       productionStatus: 'stale',
-      pieces: { article: 'approved', carousel: 'stale' },
+      pieces: { article: 'approval_outdated', carousel: 'stale' },
       draftQuotes: { verified: 2, total: 2 },
     },
   };
