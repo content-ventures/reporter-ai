@@ -1,5 +1,6 @@
 import { blockText, COVER_BLOCK_ID } from './article.ts';
-import type { ArticleBlock, ArticleBlockType, ArticleBody, Inline } from './article.ts';
+import type { ArticleBlock, ArticleBlockType, ArticleBody, ImageSlot, Inline } from './article.ts';
+import { COVER_SLOT_LABEL, imageSlotText } from './article-slots.ts';
 import { creditLine } from './asset.ts';
 import type { AssetLookup, ImageRef } from './asset.ts';
 import { findLayout, slideText } from './carousel.ts';
@@ -29,6 +30,13 @@ export type DiffBlock = {
   image?: ImageRef;
   /** Modified figure or cover whose image itself was swapped: the image before. */
   previousImage?: ImageRef;
+  /**
+   * Figures and the cover waiting for an image: the suggestion after the change (before, for removed
+   * ones). An image that went back to its suggestion reads as `removed` with both `image` and `slot`.
+   */
+  slot?: ImageSlot;
+  /** A slot that got its image (reads as `added`: a new image where the suggestion was): the suggestion it answered. */
+  previousSlot?: ImageSlot;
 };
 
 export type ArticleDiffOptions = {
@@ -59,13 +67,22 @@ export function imageDiffText(image: ImageRef, assets?: AssetLookup, label = '[I
   return asset && !asset.rights.authorized ? `${text} · uso não autorizado` : text;
 }
 
-/** Text of a block as the comparison shows it (figures included). */
+/** Text of a block as the comparison shows it (figures and slots included). */
 function diffText(block: ArticleBlock, assets?: AssetLookup): string {
-  return block.type === 'figure' ? imageDiffText(block.image, assets) : blockText(block);
+  if (block.type !== 'figure') return blockText(block);
+  return block.image ? imageDiffText(block.image, assets) : imageSlotText(block.slot);
+}
+
+function slotSignature(slot: ImageSlot): (string | undefined)[] {
+  return [slot.subject, slot.suggestedCaption, slot.suggestedAlt, slot.orientation];
 }
 
 function signature(block: ArticleBlock, assets?: AssetLookup): string {
-  if (block.type === 'figure') return JSON.stringify([block.type, block.image.assetId, block.image.alt ?? '', diffText(block, assets)]);
+  if (block.type === 'figure') {
+    return block.image
+      ? JSON.stringify([block.type, block.image.assetId, block.image.alt ?? '', diffText(block, assets)])
+      : JSON.stringify([block.type, 'slot', ...slotSignature(block.slot)]);
+  }
   const runs = (inlines: Inline[]) => inlines.map((inline) => [inline.text, inline.marks ?? [], inline.href ?? '']);
   switch (block.type) {
     case 'heading':
@@ -80,9 +97,9 @@ function signature(block: ArticleBlock, assets?: AssetLookup): string {
   }
 }
 
-function base(block: ArticleBlock): Pick<DiffBlock, 'blockType' | 'level' | 'image'> {
+function base(block: ArticleBlock): Pick<DiffBlock, 'blockType' | 'level' | 'image' | 'slot'> {
   if (block.type === 'heading') return { blockType: block.type, level: block.level };
-  if (block.type === 'figure') return { blockType: block.type, image: block.image };
+  if (block.type === 'figure') return block.image ? { blockType: block.type, image: block.image } : { blockType: block.type, slot: block.slot };
   return { blockType: block.type };
 }
 
@@ -118,9 +135,17 @@ function emitters(after?: AssetLookup, before: AssetLookup | undefined = after):
     modified(older, newer) {
       const beforeText = textBefore(older);
       const afterText = text(newer);
+      if (older.type === 'figure' && older.slot && newer.type === 'figure' && newer.image) {
+        // A slot that got its image: for the reader, a new image where the suggestion was.
+        return { id: newer.id, change: 'added', hunks: afterText ? [{ kind: 'insert', text: afterText }] : [], ...base(newer), previousSlot: older.slot };
+      }
+      if (older.type === 'figure' && older.image && newer.type === 'figure' && newer.slot) {
+        // Back to a suggestion (a restored version): for the reader, the image left.
+        return { id: newer.id, change: 'removed', hunks: beforeText ? [{ kind: 'delete', text: beforeText }] : [], blockType: 'figure', image: older.image, slot: newer.slot };
+      }
       const block: DiffBlock = { id: newer.id, change: 'modified', hunks: diffWords(beforeText, afterText), ...base(newer) };
-      const swapped = older.type === 'figure' && (newer.type !== 'figure' || newer.image.assetId !== older.image.assetId);
-      if (swapped) block.previousImage = older.image;
+      const swapped = older.type === 'figure' && older.image !== undefined && (newer.type !== 'figure' || newer.image?.assetId !== older.image.assetId);
+      if (swapped && older.type === 'figure' && older.image) block.previousImage = older.image;
       if (beforeText === afterText && !swapped) block.formatOnly = true;
       return block;
     },
@@ -131,7 +156,8 @@ function emitters(after?: AssetLookup, before: AssetLookup | undefined = after):
       if (a.type === 'divider' || b.type === 'divider') return a.type === b.type ? 1 : 0;
       if (a.type === 'figure' || b.type === 'figure') {
         if (a.type !== b.type) return 0;
-        if (a.type === 'figure' && b.type === 'figure' && a.image.assetId === b.image.assetId) return 1;
+        if (a.type === 'figure' && b.type === 'figure' && a.image && b.image && a.image.assetId === b.image.assetId) return 1;
+        if (a.type === 'figure' && b.type === 'figure' && a.slot && b.slot && a.slot.subject === b.slot.subject) return 1;
       }
       return wordSimilarity(words(textBefore(a).toLowerCase()), words(text(b).toLowerCase()));
     },
@@ -162,19 +188,50 @@ function emitRun(deleted: ArticleBlock[], inserted: ArticleBlock[], out: DiffBlo
 }
 
 const COVER_LABEL = '[Imagem de destaque]';
+const COVER_SLOT_TEXT_LABEL = `[${COVER_SLOT_LABEL}]`;
 
-/** The cover as one comparison entry (id `cover`), when either version has one. */
-function diffCover(before: ImageRef | undefined, after: ImageRef | undefined, assets?: AssetLookup, beforeAssets: AssetLookup | undefined = assets): DiffBlock | undefined {
+/** The cover side of one version: its image, else its suggestion ("[Sugestão de imagem de destaque] …"). */
+type CoverSide = { image?: ImageRef; slot?: ImageSlot };
+
+function coverSide(body: Pick<ArticleBody, 'cover' | 'coverSlot'>): CoverSide | undefined {
+  if (body.cover) return { image: body.cover };
+  if (body.coverSlot) return { slot: body.coverSlot };
+  return undefined;
+}
+
+function coverText(side: CoverSide, assets?: AssetLookup): string {
+  if (side.image) return imageDiffText(side.image, assets, COVER_LABEL);
+  return side.slot ? imageSlotText(side.slot, COVER_SLOT_TEXT_LABEL) : '';
+}
+
+function coverShape(side: CoverSide): Pick<DiffBlock, 'image' | 'slot'> {
+  return side.image ? { image: side.image } : side.slot ? { slot: side.slot } : {};
+}
+
+/** The cover as one comparison entry (id `cover`), when either version has one (or its suggestion). */
+function diffCover(before: CoverSide | undefined, after: CoverSide | undefined, assets?: AssetLookup, beforeAssets: AssetLookup | undefined = assets): DiffBlock | undefined {
   if (!before && !after) return undefined;
-  const beforeText = before ? imageDiffText(before, beforeAssets, COVER_LABEL) : '';
-  const afterText = after ? imageDiffText(after, assets, COVER_LABEL) : '';
-  if (!before) return { id: COVER_BLOCK_ID, change: 'added', hunks: [{ kind: 'insert', text: afterText }], blockType: 'cover', image: after };
-  if (!after) return { id: COVER_BLOCK_ID, change: 'removed', hunks: [{ kind: 'delete', text: beforeText }], blockType: 'cover', image: before };
-  const swapped = before.assetId !== after.assetId;
-  const same = !swapped && beforeText === afterText && (before.alt ?? '') === (after.alt ?? '');
-  if (same) return { id: COVER_BLOCK_ID, change: 'unchanged', hunks: [{ kind: 'equal', text: afterText }], blockType: 'cover', image: after };
-  const block: DiffBlock = { id: COVER_BLOCK_ID, change: 'modified', hunks: diffWords(beforeText, afterText), blockType: 'cover', image: after };
-  if (swapped) block.previousImage = before;
+  const beforeText = before ? coverText(before, beforeAssets) : '';
+  const afterText = after ? coverText(after, assets) : '';
+  if (!before && after) return { id: COVER_BLOCK_ID, change: 'added', hunks: [{ kind: 'insert', text: afterText }], blockType: 'cover', ...coverShape(after) };
+  if (!after && before) return { id: COVER_BLOCK_ID, change: 'removed', hunks: [{ kind: 'delete', text: beforeText }], blockType: 'cover', ...coverShape(before) };
+  if (!before || !after) return undefined;
+  const swapped = Boolean(before.image && after.image && before.image.assetId !== after.image.assetId);
+  const sameSlot = Boolean(before.slot && after.slot && JSON.stringify(slotSignature(before.slot)) === JSON.stringify(slotSignature(after.slot)));
+  const sameImage = Boolean(before.image && after.image && !swapped && (before.image.alt ?? '') === (after.image.alt ?? ''));
+  if ((sameImage || sameSlot) && beforeText === afterText) {
+    return { id: COVER_BLOCK_ID, change: 'unchanged', hunks: [{ kind: 'equal', text: afterText }], blockType: 'cover', ...coverShape(after) };
+  }
+  if (before.slot && after.image) {
+    // The cover suggestion answered: for the reader, a new cover.
+    return { id: COVER_BLOCK_ID, change: 'added', hunks: [{ kind: 'insert', text: afterText }], blockType: 'cover', ...coverShape(after), previousSlot: before.slot };
+  }
+  if (before.image && after.slot) {
+    // Back to a suggestion (a restored version): for the reader, the cover left.
+    return { id: COVER_BLOCK_ID, change: 'removed', hunks: [{ kind: 'delete', text: beforeText }], blockType: 'cover', image: before.image, slot: after.slot };
+  }
+  const block: DiffBlock = { id: COVER_BLOCK_ID, change: 'modified', hunks: diffWords(beforeText, afterText), blockType: 'cover', ...coverShape(after) };
+  if (swapped && before.image) block.previousImage = before.image;
   else if (beforeText === afterText) block.formatOnly = true;
   return block;
 }
@@ -196,7 +253,7 @@ export function diffArticles(before: ArticleBody, after: ArticleBody, options: A
           },
     );
   }
-  const cover = diffCover(before.cover, after.cover, options.assets, options.beforeAssets ?? options.assets);
+  const cover = diffCover(coverSide(before), coverSide(after), options.assets, options.beforeAssets ?? options.assets);
   if (cover) out.push(cover);
 
   const ops = diffSequence(before.blocks, after.blocks, (a, b) => a.id === b.id);

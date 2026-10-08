@@ -3,41 +3,21 @@ import type { PieceKind } from './piece.ts';
 import type { BriefRef, VersionRef } from './refs.ts';
 import { ok, refuse } from './result.ts';
 import type { Result } from './result.ts';
+import { ARTICLE_SIZES, DEFAULT_ARTICLE_SIZE, isArticleSize } from './sizing.ts';
+import type { ArticleSize } from './sizing.ts';
 import { contentHash } from './text/hash.ts';
 
-export type ArticleLength = 'short' | 'medium' | 'long';
-
-/** Word targets per length; "Extensão no alvo" passes inside [min, max]. */
-export const LENGTH_TARGETS: Record<ArticleLength, { label: string; words: number; min: number; max: number }> = {
-  short: { label: 'Curta', words: 500, min: 400, max: 650 },
-  medium: { label: 'Média', words: 800, min: 650, max: 1000 },
-  long: { label: 'Longa', words: 1200, min: 1000, max: 1600 },
-};
-
-/** D10: a generated draft lands within this share of its length target when the material allows. */
-export const LENGTH_TOLERANCE = 0.1;
-
-/**
- * What a draft of this length will have, given the longest draft the material supports: the
- * target when the material reaches it (within the tolerance), else everything the material gives.
- */
-export function expectedDraftWords(length: ArticleLength, wordsAvailable: number): { words: number; reachesTarget: boolean } {
-  const target = LENGTH_TARGETS[length].words;
-  const reachesTarget = wordsAvailable >= target * (1 - LENGTH_TOLERANCE);
-  return { words: reachesTarget ? target : wordsAvailable, reachesTarget };
-}
-
-export const MIN_SECTIONS = 2;
-export const MAX_SECTIONS = 5;
-export const DEFAULT_SECTIONS = 3;
+/** Sections after the introduction of a new production (the default size's default). */
+export const DEFAULT_SECTIONS = ARTICLE_SIZES[DEFAULT_ARTICLE_SIZE].sections.default;
 
 /** The editorial brief (pauta): seed of the R2 writing guide (F2.5). */
 export type Brief = {
   /** "Orientação editorial", optional. */
   angle?: string;
-  /** Sections after the introduction (2–5, default 3). */
+  /** Sections after the introduction, inside the size's range (Curto 1–3, Padrão 2–5). */
   sections: number;
-  length: ArticleLength;
+  /** "Tamanho do artigo": Curto (1 lauda) or Padrão (2 laudas). */
+  size: ArticleSize;
   /** Bumps on every change, so runs can record the exact brief they used. */
   revision: number;
 };
@@ -87,22 +67,24 @@ export function canOpenProduction(
 }
 
 export function briefHash(brief: Brief): string {
-  return contentHash({ angle: brief.angle?.trim() || undefined, sections: brief.sections, length: brief.length });
+  return contentHash({ angle: brief.angle?.trim() || undefined, sections: brief.sections, size: brief.size });
 }
 
 export function toBriefRef(production: Production): BriefRef {
   return { kind: 'brief', productionId: production.id, revision: production.brief.revision, hash: briefHash(production.brief) };
 }
 
-export type BriefRefusal = 'sections_out_of_range' | 'unknown_length';
+export type BriefRefusal = 'sections_out_of_range' | 'unknown_size';
 
+/** The size first (it sets the section range), then the sections: "Curto aceita de 1 a 3 seções." */
 export function validateBrief(brief: Brief): Result<Brief, BriefRefusal> {
-  if (!Number.isInteger(brief.sections) || brief.sections < MIN_SECTIONS || brief.sections > MAX_SECTIONS) {
-    return refuse('sections_out_of_range', `Escolha entre ${MIN_SECTIONS} e ${MAX_SECTIONS} seções.`);
+  if (!isArticleSize(brief.size)) return refuse('unknown_size', 'Tamanho desconhecido.');
+  const { label, sections } = ARTICLE_SIZES[brief.size];
+  if (!Number.isInteger(brief.sections) || brief.sections < sections.min || brief.sections > sections.max) {
+    return refuse('sections_out_of_range', `${label} aceita de ${sections.min} a ${sections.max} seções.`);
   }
-  if (!(brief.length in LENGTH_TARGETS)) return refuse('unknown_length', 'Extensão desconhecida.');
   const angle = brief.angle?.trim();
-  return ok(angle ? { ...brief, angle } : { sections: brief.sections, length: brief.length, revision: brief.revision });
+  return ok(angle ? { ...brief, angle } : { sections: brief.sections, size: brief.size, revision: brief.revision });
 }
 
 export type PlanRefusal = 'article_required';

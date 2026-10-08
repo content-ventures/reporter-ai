@@ -55,7 +55,7 @@ describe('versions', () => {
     const v1 = commitVersion(record, kit, 'article', sampleArticle(record.sources[0]));
     const unchanged = saveVersion(pieceIn(record, 'article'), record.versions, kit.ctx());
     assert.equal(!unchanged.ok && unchanged.refusal.code, 'unchanged');
-    assert.equal(!unchanged.ok && unchanged.refusal.message, 'Nenhuma alteração desde a v1.');
+    assert.equal(!unchanged.ok && unchanged.refusal.message, 'Nenhuma alteração desde a última versão.');
     const review = ensureVersion(pieceIn(record, 'article'), record.versions, kit.ctx());
     assert.ok(review.ok);
     assert.equal(review.value.created, false);

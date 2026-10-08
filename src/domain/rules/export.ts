@@ -40,7 +40,7 @@ export function canExport(record: ExportRecord, selection: readonly VersionRef[]
     }
     const decision = latestDecisionOn(record, ref);
     if (decision?.decision !== 'approved') {
-      return refuse('not_approved', `${PIECE_LABELS[piece.kind]} v${ref.number} não está aprovado.`, { version: ref });
+      return refuse('not_approved', `Falta aprovar o ${PIECE_LABELS[piece.kind].toLowerCase()}.`, { version: ref });
     }
     items.push({ kind: piece.kind, version: ref, decisionId: decision.id });
   }
@@ -62,7 +62,7 @@ export function canExport(record: ExportRecord, selection: readonly VersionRef[]
       }
       return refuse(
         'mixed_versions',
-        `${PIECE_LABELS[item.kind]} foi feito a partir da v${input.number} de ${PIECE_LABELS[parent.kind].toLowerCase()}, mas o pacote usa a v${parent.version.number}.`,
+        `O ${PIECE_LABELS[item.kind].toLowerCase()} foi feito a partir de uma versão anterior do ${PIECE_LABELS[parent.kind].toLowerCase()}.`,
         details,
       );
     }

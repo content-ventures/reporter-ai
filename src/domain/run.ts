@@ -8,6 +8,7 @@ import type { Ref, VersionRef } from './refs.ts';
  */
 
 export type RunKind =
+  | 'article.outline'
   | 'article.generate'
   | 'article.section'
   | 'article.assist'
@@ -16,6 +17,7 @@ export type RunKind =
   | 'carousel.assist';
 
 export const RUN_KIND_LABELS: Record<RunKind, string> = {
+  'article.outline': 'Estrutura do artigo',
   'article.generate': 'Geração do artigo',
   'article.section': 'Escrita de seção',
   'article.assist': 'Assistente de texto',
@@ -28,7 +30,7 @@ export type RunStatus = 'queued' | 'running' | 'awaiting_input' | 'completed' | 
 
 export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   queued: 'Na fila',
-  running: 'Gerando',
+  running: 'A IA está escrevendo',
   awaiting_input: 'Aguardando você',
   completed: 'Concluída',
   failed: 'Falhou',
@@ -90,6 +92,15 @@ export type GenerationRun = {
   startedAt?: IsoDateTime;
   endedAt?: IsoDateTime;
 };
+
+/**
+ * "Montar estrutura" (Nova produção, step 3): a run that only PROPOSES the article's structure.
+ * It writes no version and is not the piece's state: a piece whose last run is an outline is
+ * still "Não iniciado", and an outline that failed or was interrupted is not an "Erro".
+ */
+export function isPlanningRun(run: Pick<GenerationRun, 'kind'>): boolean {
+  return run.kind === 'article.outline';
+}
 
 export function isRunActive(run: Pick<GenerationRun, 'status'>): boolean {
   return run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_input';

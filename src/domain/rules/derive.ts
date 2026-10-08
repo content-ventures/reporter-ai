@@ -26,11 +26,11 @@ export function canDerive(
   }
   const decision = latestDecisionOn(record, parent);
   if (decision?.decision !== 'approved') {
-    return refuse('parent_not_approved', `Disponível após aprovar a versão ${parent.number}.`);
+    return refuse('parent_not_approved', `Disponível após aprovar ${version.body.type === 'carousel' ? 'o carrossel' : 'o artigo'}.`);
   }
   const latest = latestApproved(record, parent.pieceId);
   if (latest && latest.version.id !== parent.versionId) {
-    return refuse('superseded', `Existe uma versão aprovada mais recente (v${latest.version.number}).`, {
+    return refuse('superseded', 'Existe uma versão aprovada mais recente.', {
       latestVersionId: latest.version.id,
       latestNumber: latest.version.number,
     });

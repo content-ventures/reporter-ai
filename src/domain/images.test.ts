@@ -103,7 +103,7 @@ describe('article images', () => {
     (trimmed.blocks[1] as { image: { caption?: string } }).image.caption = 'A oficina';
     assert.equal(articleHash(trimmed), articleHash(body), 'caption whitespace is normalised');
     const normalizedFigure = normalizeArticle(body).blocks[1];
-    assert.equal(normalizedFigure.type === 'figure' && normalizedFigure.image.caption, 'A oficina');
+    assert.equal(normalizedFigure.type === 'figure' && normalizedFigure.image?.caption, 'A oficina');
     // Provenance stays out of the hash for figures too.
     const reviewed = structuredClone(body);
     reviewed.blocks[1] = { ...reviewed.blocks[1], ai: 'reviewed' };
@@ -382,7 +382,7 @@ describe('images in use, alt text and the carousel cover', () => {
     const check = (body: ArticleBody) =>
       runChecks(
         ARTICLE_CHECKS.filter((definition) => definition.id === 'article.image-alt'),
-        { body, brief: { sections: [], length: 'medium' } as never, sources: [], generation: { running: false, interrupted: false } },
+        { body, brief: { sections: 3, size: 'standard', revision: 1 }, sources: [], generation: { running: false, interrupted: false } },
       )[0];
     assert.equal(check(plain)?.status, 'na');
     const missing = check(illustrated());

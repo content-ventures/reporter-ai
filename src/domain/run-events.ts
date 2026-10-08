@@ -1,5 +1,5 @@
 import { blockText, normalizeInlines } from './article.ts';
-import type { ArticleBlock, ArticleBody } from './article.ts';
+import type { ArticleBlock, ArticleBody, ImageSlot } from './article.ts';
 import type { Slide } from './carousel.ts';
 import type { ActorId, BlockId, IsoDateTime, PieceId, ProductionId, RunId, StepId, SuggestionId } from './ids.ts';
 import { dedupeRefs } from './refs.ts';
@@ -40,7 +40,26 @@ export type RunEvent =
   | (EventBase & { type: 'step.failed'; stepId: StepId; error: RunError })
   | (EventBase & { type: 'step.awaiting_input'; stepId: StepId; request: AwaitingInputRequest })
   | (EventBase & { type: 'source.used'; ref: SourceRef })
-  | (EventBase & { type: 'outline'; title?: string; sections: OutlineSection[] })
+  /**
+   * "Montando estrutura" (the first step after reading): the title, the introduction and the
+   * sections with their character budget and the quotes each one is written from, the size the
+   * draft aims at and, when the material cannot fill it, the shortfall; what the material gives
+   * at most and the quotable lines a person may add ("Citações da entrevista"); for an article
+   * without a cover, the cover suggestion. `edited`: the structure a person reviewed in Nova
+   * produção, which the draft follows as given.
+   */
+  | (EventBase & {
+      type: 'outline';
+      title?: string;
+      sections: OutlineSection[];
+      intro?: OutlineIntro;
+      cover?: ImageSlot;
+      size?: OutlineSize;
+      shortfall?: OutlineShortfall;
+      materialChars?: number;
+      candidates?: SourceRef[];
+      edited?: OutlineEdited;
+    })
   | (EventBase & { type: 'block.started'; block: StreamBlockShape })
   | (EventBase & { type: 'text.delta'; blockId: BlockId; delta: string })
   | (EventBase & { type: 'block.completed'; block: ArticleBlock })
@@ -66,7 +85,27 @@ export function stampRunEvent(payload: RunEventPayload, runId: RunId, seq: numbe
 /** Human-in-the-loop pause (R3 outline review, R4 segment picking); `resume(runId, input)` continues. */
 export type AwaitingInputRequest = { kind: string; message: string; payload?: unknown };
 
-export type OutlineSection = { blockId?: BlockId; title: string };
+export type OutlineSection = {
+  /** The section's identity: its intertítulo block in a Padrão (a Curto writes no heading). */
+  blockId?: BlockId;
+  title: string;
+  /** Characters this section is written to (`sectionBudget`); absent on runs before the lauda rule. */
+  budget?: number;
+  /** The lines of the interview the section is written from (its "citações"); absent on older runs. */
+  quotes?: SourceRef[];
+};
+
+/** The introduction of a structure: its character budget and the lines it opens with (the lead). */
+export type OutlineIntro = { budget: number; quotes: SourceRef[] };
+
+/** The structure came from a person (Nova produção, "Estrutura"), proposed by an outline run. */
+export type OutlineEdited = { fromRunId?: RunId };
+
+/** The size a draft aims at, as the outline announced it (`ArticleSizeSpec` numbers). */
+export type OutlineSize = { laudas: number; minChars: number; maxChars: number; targetChars: number };
+
+/** The material cannot fill the size: the draft comes out with what it gives, never padded. */
+export type OutlineShortfall = { reason: 'material'; expectedChars: number };
 
 /** A block as seen by the stream: text grows by deltas; `final` arrives with `block.completed`. */
 export type StreamBlock = StreamBlockShape & { text: string; complete: boolean; final?: ArticleBlock };
@@ -80,11 +119,25 @@ export type RunFold = {
   seq: number;
   title?: string;
   outline: OutlineSection[];
+  /** The cover suggestion the outline announced (`ArticleBody.coverSlot` of the output). */
+  coverSlot?: ImageSlot;
+  /** The size the outline announced (absent on runs before the lauda rule and on other run kinds). */
+  size?: OutlineSize;
+  /** The outline said the material cannot fill the size. */
+  shortfall?: OutlineShortfall;
+  /** The introduction the outline announced (absent on runs before the outline-first rule). */
+  intro?: OutlineIntro;
+  /** Characters of the longest text the material supports ("O material rende ≈ 2,3 laudas"). */
+  materialChars?: number;
+  /** Quotable lines of the interview the structure may add. */
+  candidates?: SourceRef[];
+  /** The draft follows a structure a person reviewed. */
+  edited?: OutlineEdited;
   blocks: StreamBlock[];
   slides: Slide[];
   sourcesUsed: SourceRef[];
   /**
-   * What the run announced itself (`source.used`: the key excerpts of "Selecionando falas-chave"),
+   * What the run announced itself (`source.used`: the key excerpts of "Organizando fontes e citações"),
    * without the evidence of the blocks it wrote. Absent in snapshots saved before it existed.
    */
   keyRefs?: SourceRef[];
@@ -166,6 +219,13 @@ export function applyRunEvent(fold: RunFold, event: RunEvent): RunFold {
     case 'outline':
       next.outline = event.sections;
       if (event.title !== undefined) next.title = event.title;
+      if (event.cover) next.coverSlot = event.cover;
+      if (event.size) next.size = event.size;
+      if (event.shortfall) next.shortfall = event.shortfall;
+      if (event.intro) next.intro = event.intro;
+      if (event.materialChars !== undefined) next.materialChars = event.materialChars;
+      if (event.candidates) next.candidates = event.candidates;
+      if (event.edited) next.edited = event.edited;
       break;
     case 'block.started':
       if (fold.blocks.some((block) => block.id === event.block.id)) break;
@@ -257,6 +317,45 @@ export function foldRun(events: readonly RunEvent[], initial?: RunFold): RunFold
   return fold;
 }
 
+/**
+ * The structure a run proposed (Nova produção, "Estrutura"; "Ver estrutura" in the studio): the
+ * probable title, the introduction and the sections with their budgets and quotes, the size and
+ * what the material gives. A person edits it and sends it back as the draft's `outline`.
+ */
+export type OutlineProposal = {
+  title: string;
+  intro: OutlineIntro;
+  sections: OutlineSection[];
+  size?: OutlineSize;
+  shortfall?: OutlineShortfall;
+  materialChars?: number;
+  candidates: SourceRef[];
+};
+
+/**
+ * The proposal a run's outline announced, or undefined before "Montando estrutura" ends. Runs
+ * from before the outline-first rule carry no introduction: its budget is what the size's
+ * target leaves after the sections' budgets.
+ */
+export function outlineProposalOf(fold: RunFold): OutlineProposal | undefined {
+  if (fold.outline.length === 0 && fold.title === undefined) return undefined;
+  const sectionBudgets = fold.outline.map((section) => section.budget);
+  const derived =
+    fold.size && sectionBudgets.every((budget): budget is number => budget !== undefined)
+      ? Math.max(0, fold.size.targetChars - sectionBudgets.reduce((sum, budget) => sum + budget, 0))
+      : 0;
+  const proposal: OutlineProposal = {
+    title: fold.title ?? '',
+    intro: fold.intro ? { budget: fold.intro.budget, quotes: [...fold.intro.quotes] } : { budget: derived, quotes: [] },
+    sections: fold.outline.map((section) => ({ ...section, ...(section.quotes ? { quotes: [...section.quotes] } : {}) })),
+    candidates: [...(fold.candidates ?? [])],
+  };
+  if (fold.size) proposal.size = fold.size;
+  if (fold.shortfall) proposal.shortfall = fold.shortfall;
+  if (fold.materialChars !== undefined) proposal.materialChars = fold.materialChars;
+  return proposal;
+}
+
 /** Drops a trailing partial word so an interrupted block never ends mid-word. */
 export function trimToWordBoundary(text: string): string {
   if (!text || /[\s.,;:!?…)"”»]$/.test(text)) return text.trimEnd();
@@ -273,7 +372,7 @@ function partialToBlock(block: StreamBlock): ArticleBlock | undefined {
   if (block.type === 'list') {
     return { id: block.id, type: 'list', ordered: block.ordered ?? false, items: text.split('\n').map((item) => normalizeInlines([{ text: item }])), ai: 'unreviewed' };
   }
-  if (block.type === 'divider') return undefined;
+  if (block.type === 'divider' || block.type === 'figure') return undefined;
   return { id: block.id, type: 'paragraph', inlines, ai: 'unreviewed' };
 }
 
@@ -290,7 +389,9 @@ export function articleBodyFromRun(fold: RunFold, options: { title?: string; inc
       if (partial) blocks.push(partial);
     }
   }
-  return { type: 'article', title: (options.title ?? fold.title ?? '').trim(), blocks };
+  const body: ArticleBody = { type: 'article', title: (options.title ?? fold.title ?? '').trim(), blocks };
+  if (fold.coverSlot) body.coverSlot = fold.coverSlot;
+  return body;
 }
 
 /** True when the run produced at least one complete block or slide worth keeping. */

@@ -116,7 +116,7 @@ export function saveVersion(
   const latest = versionsOfPiece(versions, piece.id).pop();
   if (!bodyHasContent(piece.draft.body)) return refuse('empty', 'Não há conteúdo para salvar.');
   if (latest && bodyHash(piece.draft.body) === latest.hash) {
-    return refuse('unchanged', `Nenhuma alteração desde a v${latest.number}.`, { versionId: latest.id });
+    return refuse('unchanged', 'Nenhuma alteração desde a última versão.', { versionId: latest.id, number: latest.number });
   }
   const version = createVersion({ piece, versions, origin, basedOn: latest?.id }, ctx);
   return ok({ version, piece: draftFromVersion(piece, version, ctx) });

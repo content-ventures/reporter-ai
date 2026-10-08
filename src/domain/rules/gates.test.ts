@@ -13,10 +13,11 @@ import {
   MEMBERS,
   PEDRO,
   recordDecision,
+  requestReview,
   sampleArticle,
 } from '../testing/scenario.ts';
 import type { CheckResult } from '../checks.ts';
-import { canDecide, decide } from './decide.ts';
+import { canDecide, decide, REQUESTER_MAY_DECIDE } from './decide.ts';
 import { canDerive } from './derive.ts';
 
 function articleInReview() {
@@ -41,6 +42,19 @@ const runningRun = (pieceId: string): GenerationRun => ({
 });
 
 describe('canDecide', () => {
+  test('never lets the sender decide on their own pending send, admins included (R3)', () => {
+    const { kit, record, v1, ref } = articleInReview();
+    requestReview(record, kit, v1);
+    const own = canDecide({ ...record, member: MEMBERS[JOAO] }, { gate: ARTICLE_GATE, subject: ref, decision: 'approved' });
+    assert.equal(!own.ok && own.refusal.code, 'self_decision');
+    assert.equal(!own.ok && own.refusal.message, 'Quem enviou não aprova o próprio envio.');
+    assert.equal(REQUESTER_MAY_DECIDE, false, 'a named policy, so it can be relaxed later');
+    assert.equal(canDecide({ ...record, member: MEMBERS[PEDRO] }, { gate: ARTICLE_GATE, subject: ref, decision: 'approved' }).ok, true);
+    // Once decided, the send no longer waits: nothing to refuse.
+    recordDecision(record, kit, v1, 'changes_requested', { note: 'Rever o título.' });
+    assert.equal(canDecide({ ...record, member: MEMBERS[JOAO] }, { gate: ARTICLE_GATE, subject: ref }).ok, true);
+  });
+
   test('allows the approver (and admin self-approval) on the exact version', () => {
     const { record, ref } = articleInReview();
     assert.deepEqual(canDecide({ ...record, member: MEMBERS[PEDRO] }, { gate: ARTICLE_GATE, subject: ref, decision: 'approved' }), { ok: true, value: true });
@@ -187,7 +201,7 @@ describe('canDerive (REQ-1.3 / REQ-T.6)', () => {
     recordDecision(record, kit, v2, 'approved');
     const old = canDerive(record, ref);
     assert.equal(!old.ok && old.refusal.code, 'superseded');
-    assert.equal(!old.ok && old.refusal.message, 'Existe uma versão aprovada mais recente (v2).');
+    assert.equal(!old.ok && old.refusal.message, 'Existe uma versão aprovada mais recente.');
     assert.equal(canDerive(record, toVersionRef(v2)).ok, true);
   });
 });

@@ -2,7 +2,7 @@ import type { ImageRightsRecord } from '../asset.ts';
 import { readiness } from '../checks.ts';
 import type { CheckResult } from '../checks.ts';
 import type { Decision, DecisionAnchor, DecisionKind, GateDefinition } from '../decision.ts';
-import { activeRun, findVersion, latestDecisionOn, pendingSuggestions } from '../record.ts';
+import { activeRun, findVersion, latestDecisionOn, pendingReview, pendingSuggestions } from '../record.ts';
 import type { ProductionRecord } from '../record.ts';
 import type { VersionRef } from '../refs.ts';
 import { ok, refuse } from '../result.ts';
@@ -24,11 +24,21 @@ export type DecideRefusal =
   | 'decision_not_allowed'
   | 'blocking_checks'
   | 'already_decided'
-  | 'note_required';
+  | 'note_required'
+  /** The person who sent the request never decides on it (two-person gate, admins included). */
+  | 'self_decision';
+
+/**
+ * Two-person gate (R3): whoever sent a piece for approval does not approve or return it. A named
+ * policy so it can be relaxed later (e.g. one-person newsrooms) without hunting for the rule.
+ */
+export const REQUESTER_MAY_DECIDE = false;
 
 export type DecideState = Pick<ProductionRecord, 'versions' | 'decisions' | 'runs' | 'suggestions'> & {
   /** The acting member; undefined means not a member of the workspace. */
   member?: Member;
+  /** Sends of the record: whoever sent the pending one does not decide on it (`self_decision`). */
+  reviewRequests?: ProductionRecord['reviewRequests'];
 };
 
 export type DecisionRequest = {
@@ -54,18 +64,22 @@ export function canDecide(state: DecideState, request: DecisionRequest): Result<
   if (!hasAnyRole(state.member, request.gate.roles)) {
     return refuse('forbidden_role', forbiddenRoleMessage(request.gate.roles));
   }
+  const pending = state.reviewRequests ? pendingReview({ reviewRequests: state.reviewRequests, decisions: state.decisions }, request.subject.pieceId) : undefined;
+  if (!REQUESTER_MAY_DECIDE && pending && state.member && pending.requestedBy === state.member.personId) {
+    return refuse('self_decision', 'Quem enviou não aprova o próprio envio.');
+  }
   const version = findVersion(state, request.subject.versionId);
   if (!version || version.pieceId !== request.subject.pieceId) {
     return refuse('unknown_version', 'Versão não encontrada.');
   }
   const hashes = [request.subject.hash, request.displayedHash].filter((hash): hash is string => hash !== undefined);
   if (hashes.some((hash) => hash !== version.hash)) {
-    return refuse('hash_mismatch', 'A versão na tela é diferente da versão enviada para aprovação.', {
+    return refuse('hash_mismatch', 'O texto mudou depois do envio. Recarregue para ver a versão enviada.', {
       expected: version.hash,
     });
   }
   if (activeRun(state, version.pieceId)) {
-    return refuse('run_in_progress', 'Aguarde a geração terminar.');
+    return refuse('run_in_progress', 'Aguarde a IA terminar.');
   }
   if (pendingSuggestions(state, version.pieceId).length > 0) {
     return refuse('suggestion_pending', 'Aceite ou descarte as sugestões pendentes.');
@@ -85,7 +99,7 @@ export function canDecide(state: DecideState, request: DecisionRequest): Result<
   }
   const latest = latestDecisionOn(state, request.subject);
   if (latest?.decision === request.decision) {
-    return refuse('already_decided', `A versão ${request.subject.number} já tem esta decisão.`, { decisionId: latest.id });
+    return refuse('already_decided', 'Este texto já tem esta decisão.', { decisionId: latest.id });
   }
   return ok(true);
 }
@@ -104,7 +118,7 @@ export function decide(state: DecideState, input: DecideInput, ctx: CommandConte
   if (!allowed.ok) return allowed;
   const note = input.note?.trim();
   if (input.gate.requiresNote.includes(input.decision) && !note) {
-    return refuse('note_required', 'Escreva uma nota explicando o que ajustar.');
+    return refuse('note_required', 'Escreva o que ajustar.');
   }
   const decision: Decision = {
     id: ctx.newId('dec'),

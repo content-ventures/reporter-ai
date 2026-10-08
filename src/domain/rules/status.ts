@@ -32,18 +32,21 @@ export type PieceStatus =
   | 'in_review'
   | 'changes_requested'
   | 'approved'
-  | 'stale';
+  | 'stale'
+  /** Approved, then the draft changed: carousel and delivery keep using the approved version. */
+  | 'approval_outdated';
 
 export const PIECE_STATUS_LABELS: Record<PieceStatus, string> = {
   locked: 'Bloqueado',
   not_started: 'Não iniciado',
-  generating: 'Gerando',
+  generating: 'A IA está escrevendo',
   failed: 'Erro',
   draft: 'Rascunho',
   in_review: 'Aguardando aprovação',
   changes_requested: 'Ajustes solicitados',
   approved: 'Aprovado',
   stale: 'Desatualizado',
+  approval_outdated: 'Aprovação desatualizada',
 };
 
 export type ProductionStatus =
@@ -59,9 +62,9 @@ export type ProductionStatus =
   | 'archived';
 
 export const PRODUCTION_STATUS_LABELS: Record<ProductionStatus, string> = {
-  draft: 'Em edição',
+  draft: 'Rascunho',
   unauthorized: 'Falta autorização',
-  generating: 'Gerando',
+  generating: 'A IA está escrevendo',
   failed: 'Erro',
   in_review: 'Aguardando aprovação',
   changes_requested: 'Ajustes solicitados',
@@ -69,6 +72,23 @@ export const PRODUCTION_STATUS_LABELS: Record<ProductionStatus, string> = {
   approved: 'Aprovada',
   completed: 'Concluída',
   archived: 'Arquivada',
+};
+
+/**
+ * Default order of "Produções" and of the queues (lower = more urgent): what stopped or waits for
+ * a person first, finished work last.
+ */
+export const STATUS_URGENCY: Record<ProductionStatus, number> = {
+  failed: 0,
+  changes_requested: 1,
+  in_review: 2,
+  unauthorized: 3,
+  stale: 4,
+  generating: 5,
+  draft: 6,
+  approved: 7,
+  completed: 8,
+  archived: 9,
 };
 
 /** List tabs: Todas · Em edição · Aguardando aprovação · Ajustes solicitados · Aprovadas · Concluídas. */
@@ -140,8 +160,11 @@ export function pieceStatus(record: ProductionRecord, kind: PieceKind): PieceSta
   const last = decisions[decisions.length - 1];
   if (last?.decision === 'changes_requested' || last?.decision === 'rejected') return 'changes_requested';
   if (stale) return 'stale';
-  if (latestApproved(record, piece.id)) return 'approved';
-  return 'draft';
+  const approved = latestApproved(record, piece.id);
+  if (!approved) return 'draft';
+  // Edited after the approval: the approval stays (carousel and delivery use it) but asks to resend.
+  if (last?.decision === 'approved' && bodyHash(piece.draft.body) !== approved.version.hash) return 'approval_outdated';
+  return 'approved';
 }
 
 /** True when the latest completed delivery shipped exactly the current approved versions. */
@@ -167,6 +190,8 @@ export function productionStatus(record: ProductionRecord): ProductionStatus {
     case 'failed':
     case 'stale':
       return current;
+    case 'approval_outdated':
+      return 'stale';
     default:
       return 'draft';
   }

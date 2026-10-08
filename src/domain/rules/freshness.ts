@@ -63,15 +63,13 @@ export function pieceFreshness(record: ProductionRecord, pieceId: PieceId): Fres
   return versionFreshness(content, freshnessLookup(record));
 }
 
-/** pt-BR explanation for the amber Alert ("O artigo aprovado mudou para a versão 5"). */
+/**
+ * pt-BR explanation for the amber notice ("O artigo aprovado mudou."). Never a version number
+ * (D11): screens that need dates read them from the approvals ("… mudou em 08/10").
+ */
 export function freshnessMessage(freshness: Freshness, parentLabel = 'artigo'): string | undefined {
   const input = freshness.staleInputs[0];
-  if (input) {
-    return input.latest
-      ? `O ${parentLabel} aprovado mudou para a versão ${input.latest.number}.`
-      : `A versão ${input.input.number} do ${parentLabel} não está mais aprovada.`;
-  }
-  const source = freshness.staleSources[0];
-  if (source) return `O material foi corrigido (versão ${source.latest.sourceVersion}).`;
+  if (input) return input.latest ? `O ${parentLabel} aprovado mudou.` : `O ${parentLabel} usado não está mais aprovado.`;
+  if (freshness.staleSources[0]) return 'O material foi corrigido.';
   return undefined;
 }

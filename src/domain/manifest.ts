@@ -1,5 +1,6 @@
-import { articleImages } from './article.ts';
-import type { ArticleBody } from './article.ts';
+import { articleCharacters, articleImages } from './article.ts';
+import type { ArticleBody, ImageOrientation } from './article.ts';
+import { articleImageSlots } from './article-slots.ts';
 import { imageExtension, NO_ASSETS, sameRights } from './asset.ts';
 import type { AssetLookup, AssetOrigin, AssetRights, ImageAsset, ImageRightsRecord } from './asset.ts';
 import type { AssetId, BlockId, DecisionId, IsoDateTime, PersonId, PieceId, ProductionId, RunId, SourceId, VersionId } from './ids.ts';
@@ -10,6 +11,8 @@ import { decidedImageRights, findVersion } from './record.ts';
 import type { ProductionRecord } from './record.ts';
 import type { ExportItem } from './rules/export.ts';
 import type { ModelInfo, PromptRef, RunKind } from './run.ts';
+import { laudas } from './sizing.ts';
+import type { ArticleSize } from './sizing.ts';
 import { currentSourceVersion } from './source.ts';
 import { slugify } from './text/normalize.ts';
 
@@ -166,7 +169,8 @@ export function plannedExportFiles(
 export type DeliveryManifest = {
   schema: 'reporter.delivery/v1';
   generatedAt: IsoDateTime;
-  production: { id: ProductionId; title: string };
+  /** `size`: the brief's "Tamanho do artigo" (Curto · 1 lauda, Padrão · 2 laudas). */
+  production: { id: ProductionId; title: string; size: ArticleSize };
   sources: { id: SourceId; title: string; version: number; hash: string; authorized: boolean }[];
   items: {
     kind: PieceKind;
@@ -180,12 +184,50 @@ export type DeliveryManifest = {
     derivedFrom: { pieceId: PieceId; version: number; hash: string }[];
     sourceVersions: { sourceId: SourceId; version: number; hash: string }[];
     runId?: RunId;
+    /** Articles: the body's lauda count (characters with spaces, title and captions excluded). */
+    characters?: number;
+    /** Articles: laudas of the body, rounded up to one decimal. */
+    laudas?: number;
     files: string[];
   }[];
   runs: { id: RunId; kind: RunKind; prompt: PromptRef; model: ModelInfo; startedAt?: IsoDateTime; endedAt?: IsoDateTime }[];
   /** Every image of the exported article: origin, credit, rights, size and digest (R2 REQ-2.9). */
   assets: ManifestAsset[];
+  /**
+   * Image slots the approved version still holds ("Sugestões de imagem" nobody filled): left out
+   * of the .md/.html, listed here so the CMS team can place a picture. Absent when there are none.
+   */
+  imageSuggestions?: ManifestImageSuggestion[];
 };
+
+export type ManifestImageSuggestion = {
+  versionId: VersionId;
+  role: 'cover' | 'figure';
+  /** The slot block, or `cover`. */
+  blockId: BlockId;
+  /** Where the image would go: the block right before the slot (figures). */
+  afterBlockId?: BlockId;
+  subject: string;
+  suggestedCaption?: string;
+  suggestedAlt?: string;
+  orientation?: ImageOrientation;
+};
+
+/** The open image slots of an article version, in reading order (cover suggestion first). */
+export function manifestImageSuggestions(body: ArticleBody, versionId: VersionId): ManifestImageSuggestion[] {
+  return articleImageSlots(body).map((use) => {
+    const entry: ManifestImageSuggestion = { versionId, role: use.role, blockId: use.blockId, subject: use.slot.subject };
+    if (use.role === 'figure') {
+      const index = body.blocks.findIndex((block) => block.id === use.blockId);
+      const before = index > 0 ? body.blocks[index - 1] : undefined;
+      if (before) entry.afterBlockId = before.id;
+    }
+    if (use.slot.suggestedCaption) entry.suggestedCaption = use.slot.suggestedCaption;
+    if (use.slot.suggestedAlt) entry.suggestedAlt = use.slot.suggestedAlt;
+    if (use.slot.orientation) entry.orientation = use.slot.orientation;
+    return entry;
+  });
+}
 
 export type ManifestAsset = {
   id: AssetId;
@@ -254,10 +296,12 @@ export function buildManifest(
   digests: AssetDigests = {},
 ): DeliveryManifest {
   const runIds = new Set<RunId>();
+  const imageSuggestions: ManifestImageSuggestion[] = [];
   const manifestItems = items.map((item) => {
     const version = findVersion(record, item.version.versionId);
     const decision = record.decisions.find((entry) => entry.id === item.decisionId);
     if (version?.runId) runIds.add(version.runId);
+    if (item.kind === 'article' && version?.body.type === 'article') imageSuggestions.push(...manifestImageSuggestions(version.body, version.id));
     const entry: DeliveryManifest['items'][number] = {
       kind: item.kind,
       pieceId: item.version.pieceId,
@@ -272,12 +316,16 @@ export function buildManifest(
       files: files.filter((file) => file.versionId === item.version.versionId && file.available).map((file) => file.fileName),
     };
     if (version?.runId) entry.runId = version.runId;
+    if (item.kind === 'article' && version?.body.type === 'article') {
+      entry.characters = articleCharacters(version.body);
+      entry.laudas = laudas(entry.characters);
+    }
     return entry;
   });
-  return {
+  const manifest: DeliveryManifest = {
     schema: 'reporter.delivery/v1',
     generatedAt,
-    production: { id: record.production.id, title: record.production.title },
+    production: { id: record.production.id, title: record.production.title, size: record.production.brief.size },
     sources: record.sources.map((source) => {
       const version = currentSourceVersion(source);
       return { id: source.id, title: source.title, version: version.number, hash: version.hash, authorized: source.rights.authorized };
@@ -293,4 +341,6 @@ export function buildManifest(
       }),
     assets: files.filter((file): file is ExportFile & { image: ExportImage } => file.image !== undefined).map((file) => manifestAsset(file, digests)),
   };
+  if (imageSuggestions.length > 0) manifest.imageSuggestions = imageSuggestions;
+  return manifest;
 }

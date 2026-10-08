@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { paragraphBlock } from './article.ts';
 import { segmentRef } from './refs.ts';
-import { applyRunEvent, articleBodyFromRun, foldRun, hasUsableOutput, stampRunEvent, trimToWordBoundary } from './run-events.ts';
+import { applyRunEvent, articleBodyFromRun, foldRun, hasUsableOutput, outlineProposalOf, stampRunEvent, trimToWordBoundary } from './run-events.ts';
 import type { RunEvent, RunEventPayload } from './run-events.ts';
-import { currentStep, isRunActive, runDurationMs, SIMULATED_MODEL, stepProgress } from './run.ts';
+import { currentStep, isPlanningRun, isRunActive, RUN_KIND_LABELS, runDurationMs, SIMULATED_MODEL, stepProgress } from './run.ts';
 
 const RUN = 'run-1';
 let seq = 0;
@@ -57,6 +57,90 @@ function streamToSecondBlock(): RunEvent[] {
 }
 
 describe('foldRun', () => {
+  test('the outline announces the size, a budget per section and a material shortfall', () => {
+    const fold = foldRun([
+      started(),
+      event({
+        type: 'outline',
+        title: 'Da garagem à feira',
+        sections: [{ title: 'O começo', budget: 540 }, { title: 'A feira', budget: 540 }],
+        size: { laudas: 1, minChars: 1000, maxChars: 2000, targetChars: 1800 },
+        shortfall: { reason: 'material', expectedChars: 900 },
+      }),
+    ]);
+    assert.deepEqual(fold?.size, { laudas: 1, minChars: 1000, maxChars: 2000, targetChars: 1800 });
+    assert.deepEqual(fold?.shortfall, { reason: 'material', expectedChars: 900 });
+    assert.deepEqual(fold?.outline.map((section) => section.budget), [540, 540]);
+    const before = foldRun([started(), event({ type: 'outline', sections: [{ title: 'O começo' }] })]);
+    assert.equal(before?.size, undefined, 'runs before the lauda rule have no size');
+    assert.equal(before?.shortfall, undefined);
+  });
+
+  test('the outline carries the structure a person reviews: intro, quotes per section, candidates, what the material gives', () => {
+    const lead = segmentRef('src-1', 1, 'seg-002', { from: 0, to: 40 });
+    const quote = segmentRef('src-1', 1, 'seg-004', { from: 10, to: 60 });
+    const spare = segmentRef('src-1', 1, 'seg-006', { from: 0, to: 30 });
+    const fold = foldRun([
+      started(),
+      event({
+        type: 'outline',
+        title: 'Da garagem à feira',
+        intro: { budget: 900, quotes: [lead] },
+        sections: [
+          { blockId: 'h1', title: 'O começo', budget: 900, quotes: [quote] },
+          { blockId: 'h2', title: 'A feira', budget: 900, quotes: [] },
+        ],
+        size: { laudas: 2, minChars: 2001, maxChars: 4000, targetChars: 3600 },
+        materialChars: 4600,
+        candidates: [lead, quote, spare],
+        edited: { fromRunId: 'run-0' },
+      }),
+    ]);
+    assert.ok(fold);
+    assert.deepEqual(fold.intro, { budget: 900, quotes: [lead] });
+    assert.equal(fold.materialChars, 4600);
+    assert.deepEqual(fold.candidates, [lead, quote, spare]);
+    assert.deepEqual(fold.edited, { fromRunId: 'run-0' });
+    const proposal = outlineProposalOf(fold);
+    assert.deepEqual(proposal, {
+      title: 'Da garagem à feira',
+      intro: { budget: 900, quotes: [lead] },
+      sections: [
+        { blockId: 'h1', title: 'O começo', budget: 900, quotes: [quote] },
+        { blockId: 'h2', title: 'A feira', budget: 900, quotes: [] },
+      ],
+      size: { laudas: 2, minChars: 2001, maxChars: 4000, targetChars: 3600 },
+      materialChars: 4600,
+      candidates: [lead, quote, spare],
+    });
+    // A later outline (the review scenario renames) keeps what it does not repeat.
+    const renamed = applyRunEvent(fold, event({ type: 'outline', title: 'Novo título', sections: [{ blockId: 'h1', title: 'Começo' }, { blockId: 'h2', title: 'Feira' }] }));
+    assert.deepEqual(renamed.intro, fold.intro);
+    assert.equal(outlineProposalOf(renamed)?.title, 'Novo título');
+  });
+
+  test('a proposal of a run before the outline-first rule derives the introduction budget from the size', () => {
+    const fold = foldRun([
+      started(),
+      event({
+        type: 'outline',
+        title: 'Da garagem à feira',
+        sections: [{ title: 'O começo', budget: 900 }, { title: 'A feira', budget: 900 }, { title: 'O futuro', budget: 900 }],
+        size: { laudas: 2, minChars: 2001, maxChars: 4000, targetChars: 3600 },
+      }),
+    ]);
+    assert.ok(fold);
+    assert.deepEqual(outlineProposalOf(fold)?.intro, { budget: 900, quotes: [] });
+    assert.deepEqual(outlineProposalOf(fold)?.candidates, []);
+    assert.equal(outlineProposalOf(foldRun([started()]) ?? fold), undefined, 'nothing proposed before "Montando estrutura"');
+  });
+
+  test('"Montar estrutura" is a planning run: labelled, never the piece\'s state', () => {
+    assert.equal(RUN_KIND_LABELS['article.outline'], 'Estrutura do artigo');
+    assert.ok(isPlanningRun({ kind: 'article.outline' }));
+    assert.ok(!isPlanningRun({ kind: 'article.generate' }));
+  });
+
   test('interprets steps, outline, sources and streaming blocks', () => {
     const fold = foldRun(streamToSecondBlock());
     assert.ok(fold);

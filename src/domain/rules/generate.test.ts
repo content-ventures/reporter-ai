@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { ArticleBody } from '../article.ts';
 import { toVersionRef } from '../piece.ts';
+import { activeRun, lastRun } from '../record.ts';
+import type { ProductionRecord } from '../record.ts';
 import { stageState } from '../stage.ts';
 import {
   approvedPackage,
@@ -13,6 +15,7 @@ import {
   sampleArticle,
 } from '../testing/scenario.ts';
 import { canGenerate } from './generate.ts';
+import { pieceStatus } from './status.ts';
 
 describe('canGenerate', () => {
   test('article generation records source version and brief snapshot as run inputs', () => {
@@ -71,6 +74,38 @@ describe('canGenerate', () => {
     ];
     const busy = canGenerate(record, 'article');
     assert.equal(!busy.ok && busy.refusal.code, 'run_in_progress');
+  });
+
+  test('an outline proposal is not the article\'s state, but still holds the piece for other runs', () => {
+    const kit = createKit();
+    const record = baseRecord(kit, { plan: ['article'] });
+    const outline = (status: 'running' | 'failed' | 'cancelled'): ProductionRecord['runs'][number] => ({
+      id: `run-outline-${status}`,
+      kind: 'article.outline',
+      productionId: record.production.id,
+      pieceId: record.pieces[0].id,
+      prompt: { key: 'k', version: '1', hash: 'h' },
+      model: { alias: 'local-simulation', label: 'Simulação local', engine: 'simulated' },
+      inputs: [],
+      status,
+      steps: [],
+      createdBy: JOAO,
+      createdAt: kit.now(),
+    });
+    record.runs = [outline('running')];
+    // "Montar estrutura" running: the article is not "A IA está escrevendo"…
+    assert.equal(pieceStatus(record, 'article'), 'not_started');
+    assert.equal(activeRun(record, record.pieces[0].id), undefined);
+    // …but a draft cannot start on top of it.
+    const busy = canGenerate(record, 'article');
+    assert.equal(!busy.ok && busy.refusal.code, 'run_in_progress');
+    // A failed or interrupted outline is not an "Erro": the article stays "Não iniciado".
+    for (const status of ['failed', 'cancelled'] as const) {
+      record.runs = [outline(status)];
+      assert.equal(pieceStatus(record, 'article'), 'not_started');
+      assert.equal(lastRun(record, record.pieces[0].id), undefined);
+      assert.ok(canGenerate(record, 'article').ok);
+    }
   });
 });
 

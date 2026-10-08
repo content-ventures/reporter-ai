@@ -1,7 +1,7 @@
 import type { PieceKind } from '../piece.ts';
 import { PIECE_LABELS } from '../piece.ts';
 import { toBriefRef } from '../production.ts';
-import { activeRun, currentSourceRefs, latestApproved, pieceOfKind } from '../record.ts';
+import { anyRunActive, currentSourceRefs, latestApproved, pieceOfKind } from '../record.ts';
 import type { ProductionRecord } from '../record.ts';
 import type { Ref, VersionRef } from '../refs.ts';
 import { ok, refuse } from '../result.ts';
@@ -33,7 +33,7 @@ export function canGenerate(record: ProductionRecord, kind: PieceKind): Result<G
     return refuse('source_not_authorized', 'Confirme que o material está autorizado para gerar.');
   }
   const piece = pieceOfKind(record, kind);
-  if (piece && activeRun(record, piece.id)) return refuse('run_in_progress', 'Já existe uma geração em andamento.');
+  if (piece && anyRunActive(record, piece.id)) return refuse('run_in_progress', 'Já existe uma geração em andamento.');
 
   const parents: VersionRef[] = [];
   for (const parentKind of PIECE_PARENTS[kind] ?? []) {

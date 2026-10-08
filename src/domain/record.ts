@@ -8,7 +8,7 @@ import { toVersionRef } from './piece.ts';
 import type { Production } from './production.ts';
 import { sameVersionRef } from './refs.ts';
 import type { SourceVersionRef, VersionRef } from './refs.ts';
-import { isRunActive } from './run.ts';
+import { isPlanningRun, isRunActive } from './run.ts';
 import type { GenerationRun } from './run.ts';
 import { currentSourceVersion, toSourceVersionRef } from './source.ts';
 import type { Source } from './source.ts';
@@ -128,10 +128,13 @@ export function latestApproved(record: Pick<ProductionRecord, 'versions' | 'deci
   return best;
 }
 
-/** Latest review request of the piece that has no decision on that exact version after it. */
+/**
+ * Latest review request of the piece that has no decision on that exact version after it.
+ * A withdrawn request ("Retirar envio") no longer waits for anyone.
+ */
 export function pendingReview(record: Pick<ProductionRecord, 'reviewRequests' | 'decisions'>, pieceId: PieceId): ReviewRequest | undefined {
   const requests = record.reviewRequests
-    .filter((request) => request.subject.pieceId === pieceId)
+    .filter((request) => request.subject.pieceId === pieceId && request.withdrawnAt === undefined)
     .sort(byTime((request) => request.requestedAt));
   const latest = requests[requests.length - 1];
   if (!latest) return undefined;
@@ -155,12 +158,28 @@ export function topLevelRuns(record: Pick<ProductionRecord, 'runs'>, pieceId?: P
   return runsOf(record, pieceId).filter((run) => !run.parentRunId);
 }
 
-export function activeRun(record: Pick<ProductionRecord, 'runs'>, pieceId?: PieceId): GenerationRun | undefined {
-  return topLevelRuns(record, pieceId).filter(isRunActive).pop();
+/**
+ * Top-level runs that write the piece. An outline proposal ("Montar estrutura", `isPlanningRun`)
+ * is not the piece's state: while it runs the article is not "A IA está escrevendo", and when it
+ * fails the article stays "Não iniciado" (not "Erro").
+ */
+function writingRuns(record: Pick<ProductionRecord, 'runs'>, pieceId?: PieceId): GenerationRun[] {
+  return topLevelRuns(record, pieceId).filter((run) => !isPlanningRun(run));
 }
 
+/** The writing run in progress (outline proposals excluded; see `anyRunActive` for concurrency). */
+export function activeRun(record: Pick<ProductionRecord, 'runs'>, pieceId?: PieceId): GenerationRun | undefined {
+  return writingRuns(record, pieceId).filter(isRunActive).pop();
+}
+
+/** The latest writing run (outline proposals excluded). */
 export function lastRun(record: Pick<ProductionRecord, 'runs'>, pieceId?: PieceId): GenerationRun | undefined {
-  return topLevelRuns(record, pieceId).pop();
+  return writingRuns(record, pieceId).pop();
+}
+
+/** Any top-level run in progress, outline proposals included: a piece runs one generation at a time. */
+export function anyRunActive(record: Pick<ProductionRecord, 'runs'>, pieceId?: PieceId): boolean {
+  return topLevelRuns(record, pieceId).some(isRunActive);
 }
 
 export function pendingSuggestions(record: Pick<ProductionRecord, 'suggestions'>, pieceId: PieceId): Suggestion[] {

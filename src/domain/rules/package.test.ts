@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { ArticleBody } from '../article.ts';
 import { toVersionRef } from '../piece.ts';
+import { latestApproved } from '../record.ts';
 import type { ProductionRecord } from '../record.ts';
 import { reviseSource } from '../source.ts';
 import { stageState } from '../stage.ts';
@@ -66,14 +67,14 @@ describe('canExport (REQ-1.6)', () => {
     assert.ok(result.value.every((item) => record.decisions.some((decision) => decision.id === item.decisionId)));
   });
 
-  test('refuses mixed versions (article v2 with a carousel made from v1) and offers "Exportar com artigo v1"', () => {
+  test('refuses mixed versions (article v2 with a carousel made from v1) and offers the package it was made from', () => {
     const kit = createKit();
     const { record, article, carousel } = reapprovedArticle(kit);
     const resolution = resolveExport(record);
     assert.equal(resolution.result.ok, false);
     assert.ok(!resolution.result.ok);
     assert.equal(resolution.result.refusal.code, 'mixed_versions');
-    assert.equal(resolution.result.refusal.message, 'Carrossel foi feito a partir da v1 de artigo, mas o pacote usa a v2.');
+    assert.equal(resolution.result.refusal.message, 'O carrossel foi feito a partir de uma versão anterior do artigo.');
     const details = resolution.result.refusal.details as MixedVersionsDetails;
     assert.equal(details.derivedFrom.versionId, article.id);
     assert.deepEqual(details.exportWithParent, [toVersionRef(article), toVersionRef(carousel)]);
@@ -110,7 +111,7 @@ describe('staleness ("Desatualizado")', () => {
     const freshness = pieceFreshness(record, carouselPiece.id);
     assert.equal(freshness.state, 'stale');
     assert.equal(freshness.staleInputs[0].latest?.versionId, v2.id);
-    assert.equal(freshnessMessage(freshness), 'O artigo aprovado mudou para a versão 2.');
+    assert.equal(freshnessMessage(freshness), 'O artigo aprovado mudou.');
     assert.equal(pieceStatus(record, 'carousel'), 'stale');
     assert.ok(record.versions.some((version) => version.id === carousel.id), 'the stale carousel version still exists');
     assert.equal(productionStatus(record), 'stale');
@@ -123,7 +124,9 @@ describe('staleness ("Desatualizado")', () => {
     const carouselPiece = record.pieces.find((piece) => piece.kind === 'carousel');
     assert.ok(carouselPiece);
     assert.equal(pieceFreshness(record, carouselPiece.id).state, 'fresh');
-    assert.equal(pieceStatus(record, 'article'), 'approved', 'the approval stays on vN while a new draft exists');
+    assert.equal(pieceStatus(record, 'article'), 'approval_outdated', 'the approval stays (derivatives use it) but asks to resend');
+    assert.equal(latestApproved(record, article.pieceId)?.version.id, article.id, 'carousel and delivery keep the approved version');
+    assert.equal(productionStatus(record), 'stale');
   });
 
   test('a corrected source version makes the content built from it stale', () => {
@@ -137,7 +140,7 @@ describe('staleness ("Desatualizado")', () => {
     const freshness = pieceFreshness(record, articlePiece.id);
     assert.equal(freshness.state, 'stale');
     assert.equal(freshness.staleSources[0].latest.sourceVersion, 2);
-    assert.equal(freshnessMessage(freshness), 'O material foi corrigido (versão 2).');
+    assert.equal(freshnessMessage(freshness), 'O material foi corrigido.');
   });
 });
 
@@ -150,13 +153,15 @@ describe('derived status and journey', () => {
       [
         ['source', 'done'],
         ['article', 'current'],
+        ['approval', 'upcoming'],
         ['carousel', 'blocked'],
         ['delivery', 'blocked'],
       ],
     );
-    assert.equal(journey.stages[2].blockedReason, 'Disponível após aprovar o artigo.');
-    assert.equal(journey.stages[3].blockedReason, 'Disponível após aprovar o artigo e o carrossel.');
-    assert.equal(journey.stages[2].selectable, false);
+    assert.equal(journey.stages[2].detail, undefined, 'no detail before the first send');
+    assert.equal(journey.stages[3].blockedReason, 'Disponível após aprovar o artigo.');
+    assert.equal(journey.stages[4].blockedReason, 'Disponível após aprovar o artigo e o carrossel.');
+    assert.equal(journey.stages[3].selectable, false);
     assert.equal(journey.status, 'draft');
     assert.equal(pieceStatus(record, 'article'), 'not_started');
     assert.equal(pieceStatus(record, 'carousel'), 'locked');
@@ -190,7 +195,8 @@ describe('derived status and journey', () => {
     assert.equal(pieceStatus(record, 'article'), 'approved');
     assert.equal(pieceStatus(record, 'carousel'), 'not_started');
     const journey = stageState(record);
-    assert.deepEqual(journey.stages.map((stage) => stage.state), ['done', 'done', 'current', 'blocked']);
+    assert.deepEqual(journey.stages.map((stage) => stage.state), ['done', 'done', 'done', 'current', 'blocked']);
+    assert.equal(journey.stages[2].detail, 'Aprovado');
     assert.equal(journey.status, 'draft');
   });
 
@@ -199,12 +205,12 @@ describe('derived status and journey', () => {
     const { record, article } = approvedPackage(kit);
     assert.equal(productionStatus(record), 'approved');
     assert.equal(stageState(record).currentStageId, 'delivery');
-    assert.equal(stageState(record).stages[3].status, 'ready');
+    assert.equal(stageState(record).stages[4].status, 'ready');
     deliver(record, kit);
     assert.equal(isDelivered(record), true);
     assert.equal(productionStatus(record), 'completed');
-    assert.equal(stageState(record).stages[3].state, 'current');
-    assert.equal(stageState(record).stages[3].status, 'completed');
+    assert.equal(stageState(record).stages[4].state, 'current');
+    assert.equal(stageState(record).stages[4].status, 'completed');
     const v2 = commitVersion(record, kit, 'article', { ...(article.body as ArticleBody), title: 'Pós-entrega' });
     recordDecision(record, kit, v2, 'approved');
     assert.equal(isDelivered(record), false);
@@ -239,7 +245,7 @@ describe('derived status and journey', () => {
   test('archived productions and plans without carousel', () => {
     const kit = createKit();
     const record = baseRecord(kit, { plan: ['article'] });
-    assert.deepEqual(stageState(record).stages.map((stage) => stage.id), ['source', 'article', 'delivery']);
+    assert.deepEqual(stageState(record).stages.map((stage) => stage.id), ['source', 'article', 'approval', 'delivery']);
     record.production = { ...record.production, archivedAt: kit.now() };
     assert.equal(productionStatus(record), 'archived');
   });
