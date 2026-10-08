@@ -18,9 +18,12 @@ export type ActivityType =
   | 'version.created'
   | 'version.restored'
   | 'review.requested'
+  | 'review.withdrawn'
   | 'decision.recorded'
   | 'suggestion.applied'
   | 'suggestion.discarded'
+  | 'text.reviewed'
+  | 'text.review_reopened'
   | 'delivery.completed'
   | 'delivery.failed'
   | 'feedback.recorded';
