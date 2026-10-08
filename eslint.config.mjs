@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Smoke e2e output (Playwright).
+    "test-results/**",
+    "playwright-report/**",
   ]),
 ]);
 

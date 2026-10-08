@@ -68,3 +68,71 @@ jobs:
 
       - name: Run complete gate
         run: pnpm gate
+
+      # The smoke runs on this same production build instead of building again.
+      - name: Keep the production build for the smoke
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build
+          path: |
+            .next
+            !.next/cache
+          include-hidden-files: true
+          retention-days: 1
+
+  smoke:
+    name: Smoke e2e
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore the production build
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build
+          path: .next
+
+      # Browsers change only with the Playwright version (pinned in the lockfile).
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Chromium system packages
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Run smoke on the production build
+        env:
+          SMOKE_PREBUILT: "1"
+        run: pnpm smoke
+
+      - name: Keep traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-traces
+          path: test-results/
+          retention-days: 7
