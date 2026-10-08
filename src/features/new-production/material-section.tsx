@@ -11,6 +11,7 @@ import {
   Segmented,
   TextLink,
   Textarea,
+  formatTimestamp,
   type RejectedFile,
   type SectionState,
   type SegmentOption,
@@ -18,16 +19,17 @@ import {
 import { ClipboardList, FileUp } from '@content-ventures/design-system/v3/icons';
 import type { SourceAnalysis } from '@/ports';
 import type { SourceIntake } from '@/registries';
-import { formatCount, plural } from '@/ui/format';
+import { formatCount } from '@/ui/format';
 import { productionHref } from '@/ui/routes';
-import { FORMAT_LABELS, type MaterialMode, type NewProductionDraft } from './form';
+import { analysisLine, type MaterialMode, type NewProductionDraft } from './form';
 import type { FileReadState } from './use-file-reader';
 import type { MaterialAnalysis } from './use-material-analysis';
 
 /**
- * "Material" (PLAN §3.3): paste or send the transcript, see what was understood (format, words,
- * speakers) and the two warnings that matter before saving: the same material already lives in
- * another production (amber, with the link) and a material too short for a full article.
+ * "Material" (step 1, CONTRACT §3.9): paste or send the transcript, see what was understood
+ * ("36 falas · 2 falantes · 16:48") and the two warnings that matter before going on: the same
+ * material already lives in another production (amber, with the link) and a material too short
+ * for a full article.
  */
 
 const MODES: SegmentOption<MaterialMode>[] = [
@@ -35,18 +37,12 @@ const MODES: SegmentOption<MaterialMode>[] = [
   { value: 'file', label: 'Enviar arquivo', icon: FileUp },
 ];
 
-const PLACEHOLDER = 'Clara Souto: Bom dia, Marina. Pra começar, conta pra quem não conhece…';
+const PLACEHOLDER = 'Cole aqui a transcrição da entrevista';
 
-/** "Falas com nome · 1.042 palavras · 3 falantes". */
-export function analysisLine(analysis: SourceAnalysis): string {
-  const speakers = analysis.speakers.length;
-  return [
-    FORMAT_LABELS[analysis.format],
-    plural(analysis.stats.words, 'palavra', 'palavras'),
-    speakers > 0 ? plural(speakers, 'falante', 'falantes') : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+/** "36 falas · 2 falantes · 16:48" (the duration only when the material has timestamps). */
+function readLine(analysis: SourceAnalysis): string {
+  const { durationMs } = analysis.stats;
+  return analysisLine(analysis, durationMs !== undefined ? formatTimestamp(durationMs) : undefined);
 }
 
 function specOf(intake: SourceIntake): string {
@@ -110,7 +106,7 @@ export function MaterialSection({
   ) : material.status === 'analyzing' && !analysis ? (
     'Lendo material…'
   ) : draft.mode === 'paste' && analysis && material.status !== 'error' ? (
-    analysisLine(analysis)
+    readLine(analysis)
   ) : undefined;
   const rowError = error ?? (material.status === 'error' ? material.message : undefined);
 
@@ -119,7 +115,7 @@ export function MaterialSection({
       <FormRow label="Transcrição" required hint={hint} error={rowError}>
         {({ id, describedBy, invalid }) => (
           <>
-            <Segmented label="Forma de envio" options={MODES} value={draft.mode} onChange={onModeChange} size="sm" />
+            <Segmented label="Como trazer o material" options={MODES} value={draft.mode} onChange={onModeChange} size="sm" />
             {draft.mode === 'paste' ? (
               <Textarea
                 id={id}
@@ -149,7 +145,7 @@ export function MaterialSection({
                 name={draft.file.name}
                 size={draft.file.size}
                 status="done"
-                message={ready ? analysisLine(ready) : undefined}
+                message={ready ? readLine(ready) : undefined}
                 onRemove={onRemoveFile}
               />
             ) : (
@@ -158,7 +154,7 @@ export function MaterialSection({
                 describedBy={describedBy}
                 accept={intake.extensions.join(',')}
                 maxSize={intake.maxBytes}
-                title="Arraste a transcrição aqui ou escolha um arquivo"
+                title="Solte o arquivo aqui ou escolha"
                 spec={specOf(intake)}
                 invalid={invalid}
                 error={rowError}
@@ -183,7 +179,7 @@ export function MaterialSection({
             ) : null}
             {ready?.short ? (
               <Alert tone="warning" compact title="Material curto">
-                {`${formatCount(ready.stats.words)} palavras`}
+                {`${formatCount(ready.stats.words)} palavras: o texto deve sair com menos de 1 lauda.`}
               </Alert>
             ) : null}
           </>
