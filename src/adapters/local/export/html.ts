@@ -64,7 +64,8 @@ function blockHtml(block: ArticleBlock, sources: ImageSources): string {
     case 'divider':
       return '<hr>';
     case 'figure':
-      return imageHtml(block.image, sources);
+      // An image slot ("Sugestão de imagem") is not publishable: the manifest lists it.
+      return block.image ? imageHtml(block.image, sources) : '';
   }
 }
 

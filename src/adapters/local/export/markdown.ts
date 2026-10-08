@@ -86,11 +86,12 @@ function blockMarkdown(block: ArticleBlock, sources: ImageSources): string {
     case 'divider':
       return '---';
     case 'figure':
-      return imageMarkdown(block.image, sources);
+      // An image slot ("Sugestão de imagem") is not publishable: the manifest lists it.
+      return block.image ? imageMarkdown(block.image, sources) : '';
   }
 }
 
-/** The cover follows the title (featured image), then the body in order. */
+/** The cover follows the title (featured image), then the body in order; open image slots are left out. */
 export function articleToMarkdown(body: ArticleBody, sources: ImageSources = NO_IMAGES): string {
   const parts = [
     `# ${escapeLineStart(escapeMarkdown(body.title.trim()))}`,
