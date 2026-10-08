@@ -14,7 +14,7 @@ import {
   List,
   ListItem,
   ListItemSkeleton,
-  MetaList,
+  Menu,
   PageHeader,
   PageStack,
   Pagination,
@@ -28,36 +28,37 @@ import {
   type Column,
   type TabItem,
 } from '@content-ventures/design-system/v3';
-import { Archive, ArrowUpRight, LayoutList, ListFilter, Plus, SearchX } from '@content-ventures/design-system/v3/icons';
-import type { StageView } from '@/domain';
+import { Archive, ArrowUpRight, ChevronDown, LayoutList, ListFilter, Plus, SearchX } from '@content-ventures/design-system/v3/icons';
 import type { ListTab, ProductionListItem, ProductionListPage } from '@/ports';
 import { useCommands, useProductions, useSession, useSimulation, type QueryState } from '@/state';
 import { plural } from '@/ui/format';
-import { NEW_PRODUCTION_HREF, productionHref, stageHref } from '@/ui/routes';
+import { NEW_PRODUCTION_HREF } from '@/ui/routes';
 import { useCommandGroup } from '@/ui/shell';
-import { PersonAvatar } from '@/ui/person-avatar';
-import { StatusBadge } from '@/ui/status-badge';
 import { RelativeTime } from '@/ui/time';
 import { usePhone } from '@/ui/use-phone';
+import { SORT_LABELS, sortAfterHeaderClick, tableSort, visibleTabs } from './list-model';
 import {
   DEFAULT_LIST_PARAMS,
   activeFilterCount,
   hasSearch,
+  LIST_SORTS,
   listFilter,
   serializeListParams,
   type ListParams,
+  type ListSort,
 } from './list-params';
-import { generatingLabel, OwnerCell, ProductionCell, ReadinessCell, StageCell, StatusCell } from './production-cells';
+import { NextStepButton, NextStepCell, OwnerCell, ProductionCell, rowHref, SituationCell } from './production-cells';
 import { FILTER_BAND_ID, ProductionActiveFilters, ProductionFilterBand } from './production-filters';
 import { useListParams, type SetListParams } from './use-list-params';
 
 /**
- * Produções (`/productions`, PLAN §3.2, reference 2): tabs with counts, search, "Filtros" band
- * with chips, a DataTable with the journey stage, status, readiness and owner of each
- * production, pagination, bulk "Arquivar". The whole state lives in the URL
- * (`?status&q&owner&origin&from&to&sort&page&size`). Live runs update their row in place
- * ("Gerando · seção 2 de 3"); a refetch never flashes a skeleton (the last page stays until
- * the new one arrives and the body crossfades).
+ * Produções (`/productions`, D12): status tabs (empty ones hidden), search, "Filtros" band with
+ * chips, and a table that answers two questions per production — where it stands ("Situação":
+ * "Artigo · Aguardando aprovação de Pedro") and what the person looking does next ("Próximo
+ * passo": "Revisar", "Continuar") — most urgent first. "Abrir" and "Arquivar" live in the row's ⋯.
+ * The whole state lives in the URL (`?status&q&owner&origin&from&to&sort&page&size`). Live runs
+ * update their row in place; a refetch never flashes a skeleton (the last page stays until the new
+ * one arrives and the body crossfades).
  */
 
 type TabDefinition = { value: ListTab; label: string; /** "Nenhuma produção …" */ phrase: string; command?: string };
@@ -91,15 +92,8 @@ function ProductionsFromUrl() {
   return <ProductionsList params={params} setParams={setParams} />;
 }
 
-function currentStage(item: ProductionListItem): StageView | undefined {
-  return item.stages.find((stage) => stage.id === item.currentStageId);
-}
-
-/** Where a row opens: the stage the journey is on (no hop through the redirect page). */
-function openHref(item: ProductionListItem): string {
-  const stage = currentStage(item);
-  return stage ? stageHref(item.id, stage) : productionHref(item.id);
-}
+/** While the AI writes a production it cannot be archived (COPY §9). */
+const ARCHIVE_REASON = 'Disponível quando a IA terminar.';
 
 type Shown = { page: ProductionListPage; key: string };
 
@@ -154,7 +148,6 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
   const query = useProductions(filter, { page: params.page, size: params.size });
 
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [openStage, setOpenStage] = useState<string | null>(null);
   const [exiting, setExiting] = useState<{ ids: ReadonlySet<string>; done: boolean }>({ ids: EMPTY_IDS, done: false });
   const [selection, setSelection] = useState<{ key: string; ids: ReadonlySet<string> }>({ key: listKey, ids: EMPTY_IDS });
   const [confirm, setConfirm] = useState<ProductionListItem[] | null>(null);
@@ -187,7 +180,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
   const setSelected = (ids: ReadonlySet<string>) => setSelection({ key: listKey, ids });
   const exitingIds = exiting.ids.size > 0 ? new Set([...exiting.ids].filter((id) => rowIds.has(id))) : EMPTY_IDS;
 
-  const open = (item: ProductionListItem) => router.push(openHref(item));
+  const open = (item: ProductionListItem) => router.push(rowHref(item));
   const toggleOwner = (ownerId: string) => setParams({ owner: params.owner === ownerId ? null : ownerId });
   const clearAll = () => setParams({ q: '', owner: null, origin: null, from: null, to: null });
 
@@ -205,7 +198,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
       return;
     }
     setExiting({ ids: new Set(ids), done: true });
-    toast(plural(result.value.archived, 'produção arquivada', 'produções arquivadas'), {
+    toast(result.value.archived === 1 ? 'Produção arquivada' : `${result.value.archived} produções arquivadas`, {
       action: { label: 'Ver arquivadas', onClick: () => setParams({ tab: 'archived' }, { history: 'push' }) },
     });
   }
@@ -224,7 +217,13 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
     ],
   });
 
-  const tabItems: TabItem<ListTab>[] = TABS.filter((tab) => tab.value !== 'archived' || archivedTab || (counts?.archived ?? 0) > 0).map((tab) => ({
+  // Empty tabs stay out ("Aprovadas 0"), except "Todas" and the one on screen.
+  const shownTabs = visibleTabs(
+    TABS.map((tab) => tab.value),
+    counts,
+    params.tab,
+  );
+  const tabItems: TabItem<ListTab>[] = TABS.filter((tab) => shownTabs.includes(tab.value)).map((tab) => ({
     value: tab.value,
     label: tab.label,
     // While the first page loads, a pulsing count keeps the bar's width (no jump when numbers land).
@@ -237,36 +236,14 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
       header: 'Produção',
       pinned: true,
       skeleton: 'lines',
-      render: (item) => <ProductionCell item={item} href={openHref(item)} query={params.q} />,
+      render: (item) => <ProductionCell item={item} href={rowHref(item)} query={params.q} />,
     },
-    {
-      key: 'stage',
-      header: 'Etapa',
-      width: 140,
-      skeleton: 'control',
-      render: (item) => (
-        <StageCell
-          item={item}
-          open={openStage === item.id}
-          onOpenChange={(next) => setOpenStage(next ? item.id : null)}
-          onSelectStage={(stage) => router.push(stageHref(item.id, stage))}
-        />
-      ),
-    },
-    { key: 'status', header: 'Status', width: 184, render: (item) => <StatusCell item={item} /> },
-    {
-      key: 'readiness',
-      header: 'Prontidão',
-      hint: 'Conferências da peça em andamento que já passam',
-      width: 116,
-      skeleton: 'short',
-      fallback: '—',
-      render: (item) => <ReadinessCell item={item} />,
-    },
+    { key: 'situation', header: 'Situação', width: 216, render: (item) => <SituationCell item={item} /> },
+    { key: 'next', header: 'Próximo passo', width: 144, skeleton: 'short', render: (item) => <NextStepCell item={item} /> },
     {
       key: 'owner',
       header: 'Responsável',
-      width: 160,
+      width: 152,
       skeleton: 'control',
       render: (item) => <OwnerCell owner={item.owner} active={params.owner === item.owner.id} onToggle={() => toggleOwner(item.owner.id)} />,
     },
@@ -283,11 +260,12 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
       header: <VisuallyHidden>Ações</VisuallyHidden>,
       name: 'Ações',
       align: 'end',
-      width: 84,
+      width: 48,
       skeleton: 'none',
       render: (item) => (
         <RowActions
           label={`Ações de ${item.title}`}
+          compact
           actions={[
             { id: 'open', label: 'Abrir', icon: ArrowUpRight, onSelect: () => open(item) },
             {
@@ -296,7 +274,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
               icon: Archive,
               hidden: item.archived,
               disabled: Boolean(item.liveRun),
-              hint: item.liveRun ? 'Disponível quando a geração terminar' : undefined,
+              hint: item.liveRun ? ARCHIVE_REASON : undefined,
               onSelect: () => setConfirm([item]),
             },
           ]}
@@ -327,7 +305,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
           label: 'Arquivar',
           icon: Archive,
           disabled: selectedItems.length > 0 && archivable.length === 0,
-          hint: archivable.length === 0 ? 'Disponível quando a geração terminar' : undefined,
+          hint: archivable.length === 0 ? ARCHIVE_REASON : undefined,
           onSelect: () => setConfirm(selectedItems),
         },
       ];
@@ -350,13 +328,9 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
       selectable={!archivedTab}
       selected={selected}
       onSelectedChange={setSelected}
-      sort={{ key: 'updated', direction: params.sort === 'updated_asc' ? 'asc' : 'desc' }}
-      onSort={(next) => setParams({ sort: next.direction === 'asc' ? 'updated_asc' : 'updated_desc' })}
-      onRowClick={(item) => {
-        // A click inside the row's open journey popover (portaled, but React bubbles it here) is not "open the production".
-        if (openStage === item.id) return;
-        open(item);
-      }}
+      sort={tableSort(params.sort)}
+      onSort={() => setParams({ sort: sortAfterHeaderClick(params.sort) })}
+      onRowClick={open}
       loading={mode === 'loading'}
       loadingRows={params.size > 10 ? 10 : 8}
       error={mode === 'error' ? errorBlock : undefined}
@@ -378,8 +352,8 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
     />
   );
   const showChips = !filtersOpen && filterCount > 0;
-  // On a phone each production is one row (title, status, stage and when) instead of a stacked
-  // card with every column.
+  // On a phone each production is one row (title, where it stands, the next step) instead of a
+  // stacked card with every column.
   const list = phone ? (
     <PhoneList
       rows={rows}
@@ -429,6 +403,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
         onFiltersOpenChange={setFiltersOpen}
         filterCount={filterCount}
         bandId={FILTER_BAND_ID}
+        actions={<SortMenu sort={params.sort} onChange={(sort) => setParams({ sort })} />}
       />
       <PageStack>
         <ProductionFilterBand open={filtersOpen} params={params} setParams={setParams} owners={members} viewerId={viewerId} />
@@ -457,7 +432,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
         title={confirmTitle}
         description={
           confirmSkipped > 0
-            ? `${plural(confirmSkipped, 'produção gerando agora fica', 'produções gerando agora ficam')} de fora.`
+            ? `${plural(confirmSkipped, 'produção com a IA escrevendo fica', 'produções com a IA escrevendo ficam')} de fora.`
             : 'Fica em Arquivadas, com versões, aprovações e entregas.'
         }
         confirmLabel={confirmArchivable.length > 1 ? `Arquivar ${confirmArchivable.length}` : 'Arquivar'}
@@ -471,30 +446,30 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
   );
 }
 
-/** "Artigo · 2 de 4": the stage the journey is on. */
-function stageLine(item: ProductionListItem): string | undefined {
-  const index = item.stages.findIndex((stage) => stage.id === item.currentStageId);
-  const stage = item.stages[index];
-  return stage ? `${stage.label} · ${index + 1} de ${item.stages.length}` : undefined;
+/** "Ordenar": most urgent first (default), or by the last activity. */
+function SortMenu({ sort, onChange }: { sort: ListSort; onChange: (sort: ListSort) => void }) {
+  return (
+    <Menu
+      label="Ordenar produções"
+      align="end"
+      sections={[{ items: LIST_SORTS.map((value) => ({ label: SORT_LABELS[value], checked: value === sort, onSelect: () => onChange(value) })) }]}
+      trigger={(props) => (
+        <Button {...props} variant="ghost" size="sm" trailingIcon={ChevronDown}>
+          {SORT_LABELS[sort]}
+        </Button>
+      )}
+    />
+  );
 }
 
 function PhoneRow({ item }: { item: ProductionListItem }) {
-  const label = item.status === 'generating' ? generatingLabel(item) : undefined;
   return (
     <ListItem
-      leading={<PersonAvatar person={item.owner} size="sm" decorative />}
       title={item.title}
-      href={openHref(item)}
-      description={
-        <MetaList
-          size="sm"
-          items={[
-            <StatusBadge key="status" kind="production" status={item.status} label={label} variant="text" size="sm" />,
-            stageLine(item),
-            <RelativeTime key="at" at={item.updatedAt} />,
-          ]}
-        />
-      }
+      titleLines={2}
+      href={rowHref(item)}
+      description={<SituationCell item={item} size="sm" />}
+      actions={<NextStepButton item={item} />}
     />
   );
 }
@@ -560,7 +535,7 @@ function emptyState({ params, counts, searching, filterCount, setParams, clearAl
     return (
       <EmptyState
         icon={SearchX}
-        title={`Nada encontrado para “${params.q.trim()}”`}
+        title="Nenhuma produção encontrada"
         actions={
           <Button size="sm" onClick={() => setParams({ q: '' })}>
             Limpar busca

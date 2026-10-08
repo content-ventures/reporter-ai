@@ -45,7 +45,15 @@ describe('Produções URL state', () => {
     assert.equal(params.origin, null);
     assert.equal(params.from, null);
     assert.equal(params.owner, null);
-    assert.equal(params.sort, 'updated_desc');
+    assert.equal(params.sort, 'urgency');
+  });
+
+  it('sorts by urgency by default; the last activity is an explicit choice', () => {
+    assert.equal(parse('').sort, 'urgency');
+    assert.equal(parse('sort=urgency').sort, 'urgency');
+    assert.equal(parse('sort=updated_desc').sort, 'updated_desc');
+    assert.equal(serializeListParams({ ...DEFAULT_LIST_PARAMS, sort: 'urgency' }), '');
+    assert.equal(serializeListParams({ ...DEFAULT_LIST_PARAMS, sort: 'updated_desc' }), 'sort=updated_desc');
   });
 
   it('swaps a reversed period', () => {
@@ -67,7 +75,7 @@ describe('Produções URL state', () => {
     const filter = listFilter({ ...DEFAULT_LIST_PARAMS, q: '  bella  ', owner: 'p-joao', origin: 'podcast', from: '2026-10-01', to: '2026-10-07' });
     assert.deepEqual(filter, {
       tab: 'all',
-      sort: 'updated_desc',
+      sort: 'urgency',
       search: 'bella',
       ownerIds: ['p-joao'],
       origins: ['podcast'],
@@ -75,7 +83,7 @@ describe('Produções URL state', () => {
       updatedTo: dayBoundary('2026-10-07', 'end'),
     });
     assert.ok(Date.parse(filter.updatedTo ?? '') > Date.parse(filter.updatedFrom ?? ''));
-    assert.deepEqual(listFilter(DEFAULT_LIST_PARAMS), { tab: 'all', sort: 'updated_desc' });
+    assert.deepEqual(listFilter(DEFAULT_LIST_PARAMS), { tab: 'all', sort: 'urgency' });
   });
 
   it('counts the band filters, not the tab or the search', () => {

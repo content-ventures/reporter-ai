@@ -11,7 +11,8 @@ export { localDay, periodLabel, shortDay };
  * and the filter handed to `useProductions`.
  *
  * URL: `?status=in_review&q=lume&owner=p-clara&origin=interview&from=2026-10-01&to=2026-10-07
- *       &sort=updated_asc&page=2&size=25`. Defaults are omitted, so a clean list is `/productions`.
+ *       &sort=updated_asc&page=2&size=25`. Defaults are omitted, so a clean list is `/productions`
+ * (most urgent first: what waits for a person, then the latest activity).
  */
 
 export const LIST_TABS = ['all', 'editing', 'in_review', 'changes_requested', 'approved', 'completed', 'archived'] as const satisfies readonly ListTab[];
@@ -22,7 +23,10 @@ export const PAGE_SIZES = [10, 25, 50] as const;
 
 export const LIST_DEFAULT_PAGE_SIZE = 10;
 
-export type ListSort = 'updated_desc' | 'updated_asc';
+/** `urgency` ("Mais urgentes", the default) or the last activity, newest or oldest first. */
+export type ListSort = 'urgency' | 'updated_desc' | 'updated_asc';
+
+export const LIST_SORTS = ['urgency', 'updated_desc', 'updated_asc'] as const satisfies readonly ListSort[];
 
 export type ListParams = {
   tab: ListTab;
@@ -48,7 +52,7 @@ export const DEFAULT_LIST_PARAMS: ListParams = Object.freeze({
   origin: null,
   from: null,
   to: null,
-  sort: 'updated_desc',
+  sort: 'urgency',
 });
 
 /** Anything with `get(name)`: `URLSearchParams` or Next's `ReadonlyURLSearchParams`. */
@@ -80,6 +84,7 @@ export function parseListParams(search: SearchParamsLike): ListParams {
   const size = positiveInt(search.get('size'), LIST_DEFAULT_PAGE_SIZE);
   const owner = search.get('owner');
   const origin = search.get('origin');
+  const sort = search.get('sort');
   let from = validDay(search.get('from'));
   let to = validDay(search.get('to'));
   if (from && to && from > to) [from, to] = [to, from];
@@ -92,7 +97,7 @@ export function parseListParams(search: SearchParamsLike): ListParams {
     origin: isOneOf(LIST_ORIGINS, origin) ? origin : null,
     from,
     to,
-    sort: search.get('sort') === 'updated_asc' ? 'updated_asc' : 'updated_desc',
+    sort: isOneOf(LIST_SORTS, sort) ? sort : 'urgency',
   };
 }
 
@@ -105,7 +110,7 @@ export function serializeListParams(params: ListParams): string {
   if (params.origin) out.set('origin', params.origin);
   if (params.from) out.set('from', params.from);
   if (params.to) out.set('to', params.to);
-  if (params.sort !== 'updated_desc') out.set('sort', params.sort);
+  if (params.sort !== 'urgency') out.set('sort', params.sort);
   if (params.page > 1) out.set('page', String(params.page));
   if (params.size !== LIST_DEFAULT_PAGE_SIZE) out.set('size', String(params.size));
   return out.toString();

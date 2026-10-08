@@ -1,30 +1,32 @@
 'use client';
 
-import {
-  Avatar,
-  Button,
-  CardHeader,
-  Count,
-  Highlight,
-  Meter,
-  Popover,
-  PopoverHeader,
-  StepList,
-  TextLink,
-  Tooltip,
-  type StepItem,
-} from '@content-ventures/design-system/v3';
-import { ChevronDown } from '@content-ventures/design-system/v3/icons';
-import { PIECE_STATUS_LABELS, type PieceStatus, type StageView } from '@/domain';
+import { Avatar, Badge, Button, ButtonLink, CardHeader, Highlight, TextLink, Tooltip } from '@content-ventures/design-system/v3';
 import type { PersonSummary, ProductionListItem } from '@/ports';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
-import { plural } from '@/ui/format';
-import { StatusBadge } from '@/ui/status-badge';
+import { productionHref, stageHref, stepTargetHref } from '@/ui/routes';
+import { statusPresentation, StatusBadge } from '@/ui/status-badge';
+import { situationStatus } from './list-model';
 
 /**
- * Cells of the "Produções" table (PLAN §3.2). Each one reads only the list item, so the table
- * re-renders a row when the runtime refreshes it (live "Gerando · seção 2 de 3").
+ * Cells of the "Produções" table (D12): the production, where it stands in one newsroom line
+ * ("Artigo · Aguardando aprovação de Pedro") and the next step for the person looking ("Revisar",
+ * "Continuar"). Each cell reads only the list item, so a live run updates its row in place.
  */
+
+/** Where the next step lands ("Revisar" → the review, "Montar estrutura" → Nova produção step 3). */
+export function nextStepHref(item: Pick<ProductionListItem, 'id' | 'nextStep'>): string {
+  return item.nextStep ? stepTargetHref(item.id, item.nextStep.target) : productionHref(item.id);
+}
+
+/**
+ * Where a row opens: where the person's next step is (a decider lands on the review), else the
+ * stage the journey is on (the author waiting for a decision reads the piece in its studio).
+ */
+export function rowHref(item: ProductionListItem): string {
+  if (item.nextStep) return stepTargetHref(item.id, item.nextStep.target);
+  const stage = item.stages.find((entry) => entry.id === item.currentStageId);
+  return stage ? stageHref(item.id, stage) : productionHref(item.id);
+}
 
 /** "Entrevista · Marina Lopes +2": origin and who speaks in the material. */
 export function productionMeta(item: ProductionListItem): string {
@@ -32,14 +34,6 @@ export function productionMeta(item: ProductionListItem): string {
   const names = item.participants.map((participant) => participant.person?.name ?? participant.label);
   const people = names.length === 0 ? null : names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
   return [origin, people].filter(Boolean).join(' · ');
-}
-
-/** "Gerando · seção 2 de 3" while a run writes the piece; `undefined` otherwise. */
-export function generatingLabel(item: ProductionListItem): string | undefined {
-  const run = item.liveRun;
-  if (!run) return undefined;
-  const step = run.step?.trim();
-  return step ? `Gerando · ${step.charAt(0).toLocaleLowerCase('pt-BR')}${step.slice(1)}` : 'Gerando';
 }
 
 export function ProductionCell({ item, href, query }: { item: ProductionListItem; href: string; query: string }) {
@@ -56,32 +50,42 @@ export function ProductionCell({ item, href, query }: { item: ProductionListItem
   );
 }
 
-export function StatusCell({ item }: { item: ProductionListItem }) {
-  const label = item.status === 'generating' ? generatingLabel(item) : undefined;
-  return <StatusBadge kind="production" status={item.status} label={label} variant="text" wrap />;
+/**
+ * "Situação": the line in the tone of its status. Live work (the AI writing) keeps a pulsing dot in
+ * the cell instead of the spinner badge, so the whole line wraps inside the column like the others.
+ */
+export function SituationCell({ item, size }: { item: ProductionListItem; size?: 'sm' | 'md' }) {
+  const ref = situationStatus(item.situation);
+  const look = statusPresentation(ref);
+  if (look.spinner) {
+    return (
+      <Badge tone={look.tone} variant="text" size={size} dot live wrap>
+        {item.situation.line}
+      </Badge>
+    );
+  }
+  return <StatusBadge {...ref} label={item.situation.line} variant="text" size={size} wrap />;
 }
 
-/** Readiness of the piece the journey is on; nothing while a run is still writing it. */
-export function ReadinessCell({ item }: { item: ProductionListItem }) {
-  const readiness = item.readiness;
-  if (!readiness || readiness.total === 0 || item.status === 'generating') return null;
-  const blockers = readiness.blockers.length;
-  const summary = [
-    `${readiness.passed} de ${plural(readiness.total, 'conferência', 'conferências')}`,
-    blockers > 0 ? `${plural(blockers, 'bloqueia', 'bloqueiam')} a aprovação` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+/** "Próximo passo": the verb for the person looking; nothing when the move is someone else's. */
+export function NextStepCell({ item }: { item: ProductionListItem }) {
+  const step = item.nextStep;
+  if (!step) return null;
   return (
-    <Tooltip content={summary}>
-      <Meter
-        inline
-        value={readiness.passed}
-        max={readiness.total}
-        tone={blockers > 0 ? 'amber' : 'neutral'}
-        label={`Prontidão: ${summary}`}
-      />
-    </Tooltip>
+    <TextLink href={nextStepHref(item)} size="sm">
+      {step.label}
+    </TextLink>
+  );
+}
+
+/** The next step as the row's button on a phone (the row is a link; its control sits beside it). */
+export function NextStepButton({ item }: { item: ProductionListItem }) {
+  const step = item.nextStep;
+  if (!step) return null;
+  return (
+    <ButtonLink href={nextStepHref(item)} size="sm">
+      {step.label}
+    </ButtonLink>
   );
 }
 
@@ -97,88 +101,5 @@ export function OwnerCell({ owner, active, onToggle }: { owner: PersonSummary; a
         {owner.name}
       </Button>
     </Tooltip>
-  );
-}
-
-/** One line under each journey stage: its status, or why it is not open yet. */
-export function stageDetail(stage: StageView, item: ProductionListItem): string | undefined {
-  if (stage.state === 'blocked' && stage.blockedReason) return stage.blockedReason.replace(/\.$/, '');
-  if (stage.kind === 'source') {
-    if (!item.material) return 'Sem material';
-    return item.material.authorized ? 'Material autorizado' : 'Falta autorizar o material';
-  }
-  if (stage.kind === 'delivery') {
-    if (stage.status === 'completed') return 'Concluída';
-    // An approved piece that went out of date (a newer article) must be settled before exporting.
-    const stale = item.stages.find((entry) => entry.kind === 'piece' && entry.status === 'stale');
-    if (stage.status === 'ready' && stale) return `${stale.label} desatualizado`;
-    return stage.status === 'ready' ? 'Pronta para exportar' : 'Aguardando aprovações';
-  }
-  if (stage.status === 'generating' && item.liveRun?.pieceKind === stage.pieceKind) return generatingLabel(item);
-  return stage.status in PIECE_STATUS_LABELS ? PIECE_STATUS_LABELS[stage.status as PieceStatus] : undefined;
-}
-
-/** Journey stages → StepList steps; the production's current stage is the list's current one. */
-export function stageSteps(item: ProductionListItem, currentIndex: number): StepItem[] {
-  return item.stages.map((stage, index) => {
-    const step: StepItem = { id: stage.id, label: stage.label };
-    const detail = stageDetail(stage, item);
-    if (detail) step.description = detail;
-    if (index !== currentIndex) step.state = stage.state === 'current' ? 'upcoming' : stage.state;
-    return step;
-  });
-}
-
-export type StageCellProps = {
-  item: ProductionListItem;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  /** Opens a stage of the production (done, flagged or upcoming; never a blocked one). */
-  onSelectStage: (stage: StageView) => void;
-};
-
-/**
- * "Artigo 2/4": the current stage, opening the whole journey (status of each stage, why a
- * stage is still blocked) with a jump to any reachable stage. Compact on purpose: the full
- * pipeline strip does not fit a table row next to the other columns.
- */
-export function StageCell({ item, open, onOpenChange, onSelectStage }: StageCellProps) {
-  const found = item.stages.findIndex((stage) => stage.id === item.currentStageId);
-  const index = Math.max(0, found);
-  const stage = item.stages[index];
-  if (!stage) return null;
-  const total = item.stages.length;
-  return (
-    <Popover
-      label={`Etapas de ${item.title}`}
-      width={320}
-      open={open}
-      onOpenChange={onOpenChange}
-      trigger={(props) => (
-        <Button {...props} variant="ghost" size="sm" trailingIcon={ChevronDown} aria-label={`Etapa ${index + 1} de ${total}: ${stage.label}`}>
-          {stage.label}
-          <Count>{`${index + 1}/${total}`}</Count>
-        </Button>
-      )}
-    >
-      {({ close }) => (
-        <>
-          <PopoverHeader title={item.title} meta={`${index + 1} de ${total}`} />
-          <StepList
-            label={`Jornada de ${item.title}`}
-            tone="plain"
-            steps={stageSteps(item, index)}
-            current={index}
-            canSelect={(position, state) => state !== 'blocked' && Boolean(item.stages[position]?.selectable)}
-            onStepSelect={(position) => {
-              const target = item.stages[position];
-              if (!target) return;
-              close();
-              onSelectStage(target);
-            }}
-          />
-        </>
-      )}
-    </Popover>
   );
 }
