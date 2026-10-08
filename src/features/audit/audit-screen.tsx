@@ -155,7 +155,7 @@ function AuditView({ params, setParams }: { params: AuditParams; setParams: SetA
         meta={member ? `${member.name} · ${memberDetail(member)}` : undefined}
         actions={
           <ButtonLink href={OVERVIEW_HREF} variant="primary">
-            Ir para a visão geral
+            Ir para o Início
           </ButtonLink>
         }
       />

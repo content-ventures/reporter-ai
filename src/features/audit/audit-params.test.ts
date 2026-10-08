@@ -69,7 +69,7 @@ describe('Logs text', () => {
   it('says why a denial or failure happened, else which fields changed', () => {
     assert.equal(actionDetail({ result: 'denied', reason: 'Somente administradores consultam os logs.' }), 'Somente administradores consultam os logs.');
     assert.equal(
-      actionDetail({ result: 'success', changes: [{ field: 'Título', before: 'a', after: 'b' }, { field: 'Seções', before: '3', after: '2' }, { field: 'Extensão', before: 'x', after: 'y' }] }),
+      actionDetail({ result: 'success', changes: [{ field: 'Título', before: 'a', after: 'b' }, { field: 'Seções', before: '3', after: '2' }, { field: 'Tamanho do artigo', before: 'x', after: 'y' }] }),
       'Título · Seções +1',
     );
     assert.equal(actionDetail({ result: 'success' }), undefined);
