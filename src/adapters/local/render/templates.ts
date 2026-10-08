@@ -1,91 +1,38 @@
 import type { CarouselTemplate, SlotSpec } from '../../../domain/carousel.ts';
-import type { TemplateId } from '../../../domain/ids.ts';
+import type { SlotStyle, TemplateRender } from '../../../ports/render-template.ts';
 
 /**
- * Template DATA the local renderer draws: background, accent and one text box per slot, in
- * canvas pixels. The values (colours included) are creative content and live with the fixtures
- * (`src/fixtures/templates/`, PLAN §4.1); Marketing's templates (D07) replace them as data.
- * These types are structural, so the fixtures' `TemplateRender` plugs in as is.
+ * Template DATA the local renderer draws: background, colour blocks, marks and one text box per
+ * slot, in canvas pixels. The values (colours and typefaces included) are creative content and
+ * live with the fixtures (`src/fixtures/templates/`, PLAN §4.1); Marketing's templates (D07)
+ * replace them as data. The data types are shared through `ports/render-template.ts`.
  */
 
-export type SlotStyle = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  fontFamily: string;
-  fontWeight: number;
-  fontSize: number;
-  lineHeight: number;
-  color: string;
-  align: 'left' | 'center';
-  italic?: boolean;
-};
-
-/** A flat colour block of the creative (bleed band, panel), in canvas pixels. */
-export type ShapeStyle = { x: number; y: number; width: number; height: number; color: string };
-
-/** A typographic mark of the creative (the big “ of the quote slide). */
-export type MarkStyle = { text: string; x: number; y: number; fontSize: number; fontWeight: number; color: string; fontFamily?: string };
-
-/** The slide number set large ("02"), as part of the layout. */
-export type NumberStyle = { x: number; y: number; fontSize: number; fontWeight: number; color: string; align?: 'left' | 'right' };
-
-/** A flat colour block drawn with transparency over a background image (legibility scrim). */
-export type ScrimStyle = ShapeStyle & { opacity: number };
-
-/**
- * Template data asking for an image under the text. `background: 'article-cover'` draws the
- * cover of the article version the carousel was made from, cover-fit (scaled to fill the box,
- * centred, cropped), then the scrim; text fit never depends on it. Without a cover the layout is
- * drawn as usual (colours and shapes).
- */
-export type LayoutImage = {
-  background: 'article-cover';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  /** Legibility scrim over the image, under the text (template colours). */
-  scrim: ScrimStyle[];
-  /** Slot colours while the image is drawn (text set on the photo). */
-  slotColors?: Record<string, string>;
-  /** Colour of the "2/5" counter while the image is drawn. */
-  counterColor?: string;
-  /** Where the photo's credit line ("Foto: Ana Prado") is set while the image is drawn. */
-  credit?: CreditStyle;
-};
-
-/** A one-line text over the image (the credit), ellipsized to `width`; `x` is its anchor for `align`. */
-export type CreditStyle = { x: number; y: number; width: number; fontSize: number; fontWeight: number; color: string; align: 'left' | 'right' };
-
-export type LayoutRender = {
-  background: string;
-  accent: string;
-  slots: Record<string, SlotStyle>;
-  /** Background image under the text (template data decides; see `LayoutImage`). */
-  image?: LayoutImage;
-  /** Colour blocks under the text. */
-  shapes?: ShapeStyle[];
-  /** Typographic marks under the text. */
-  marks?: MarkStyle[];
-  /** Large slide number. */
-  number?: NumberStyle;
-  /** The short accent rule at the top (default shown). */
-  rule?: boolean;
-  /** Colour of the "2/5" counter (default: accent). */
-  counterColor?: string;
-};
-
-export type TemplateRender = {
-  templateId: TemplateId;
-  /** Placeholder until Marketing's templates arrive (D07). */
-  provisional: boolean;
-  layouts: Record<string, LayoutRender>;
-};
+export type {
+  CounterStyle,
+  CreditStyle,
+  LayoutImage,
+  LayoutRender,
+  ListStyle,
+  MarkStyle,
+  NumberStyle,
+  ScrimStyle,
+  ShapeStyle,
+  SlotStyle,
+  TemplateRender,
+} from '../../../ports/render-template.ts';
 
 /** Generic sans-serif fallbacks after the template font (the canvas may not have it loaded). */
 export const FONT_FALLBACK = '"Helvetica Neue", Arial, sans-serif';
+
+/** Serif typefaces a template may name (system faces); they fall back to a serif, not a sans. */
+const SERIF_FAMILIES = new Set(['Georgia', 'Times New Roman', 'Charter', 'Iowan Old Style', 'Palatino']);
+const SERIF_FALLBACK = '"Times New Roman", serif';
+
+/** The generic fallback that keeps a typeface's genre when the face is missing. */
+export function fallbackFor(family: string): string {
+  return SERIF_FAMILIES.has(family) ? SERIF_FALLBACK : FONT_FALLBACK;
+}
 
 /** Side margin used by fallback boxes and decorations (canvas pixels at template size). */
 export const MARGIN = 96;
@@ -102,8 +49,8 @@ export type Typefaces = Readonly<Record<string, string>>;
 
 export function cssFont(style: Pick<SlotStyle, 'fontFamily' | 'fontWeight' | 'fontSize' | 'italic'>, scale = 1, typefaces?: Typefaces): string {
   const size = Math.max(1, Math.round(style.fontSize * scale));
-  const family = typefaces?.[style.fontFamily] ?? style.fontFamily;
-  return `${style.italic ? 'italic ' : ''}${style.fontWeight} ${size}px ${family}, ${FONT_FALLBACK}`;
+  const family = typefaces?.[style.fontFamily] ?? (/[\s"]/.test(style.fontFamily) ? `"${style.fontFamily.replace(/"/g, '')}"` : style.fontFamily);
+  return `${style.italic ? 'italic ' : ''}${style.fontWeight} ${size}px ${family}, ${fallbackFor(style.fontFamily)}`;
 }
 
 /** Every face a template's data draws with (weight, style), as CSS fonts to load before drawing. */
@@ -112,10 +59,14 @@ export function templateFonts(render: TemplateRender | undefined, typefaces?: Ty
   const fonts = new Set<string>();
   const add = (style: Pick<SlotStyle, 'fontFamily' | 'fontWeight' | 'italic'>) => fonts.add(cssFont({ ...style, fontSize: 16 }, 1, typefaces));
   for (const layout of Object.values(render.layouts)) {
-    for (const slot of Object.values(layout.slots)) add(slot);
-    for (const mark of layout.marks ?? []) add({ fontFamily: mark.fontFamily ?? BASE_FAMILY, fontWeight: mark.fontWeight });
-    if (layout.number) add({ fontFamily: BASE_FAMILY, fontWeight: layout.number.fontWeight });
+    for (const slot of Object.values(layout.slots)) {
+      add(slot);
+      if (slot.list) add({ fontFamily: slot.list.fontFamily ?? slot.fontFamily, fontWeight: slot.list.fontWeight });
+    }
+    for (const mark of layout.marks ?? []) add({ fontFamily: mark.fontFamily ?? BASE_FAMILY, fontWeight: mark.fontWeight, ...(mark.italic ? { italic: true } : {}) });
+    if (layout.number) add({ fontFamily: layout.number.fontFamily ?? BASE_FAMILY, fontWeight: layout.number.fontWeight });
     if (layout.image?.credit) add({ fontFamily: BASE_FAMILY, fontWeight: layout.image.credit.fontWeight });
+    if (layout.counter) add({ fontFamily: layout.counter.fontFamily ?? BASE_FAMILY, fontWeight: layout.counter.fontWeight });
   }
   add({ fontFamily: BASE_FAMILY, fontWeight: 600 });
   return [...fonts];
@@ -129,7 +80,7 @@ export function templateFonts(render: TemplateRender | undefined, typefaces?: Ty
 export function slotStyle(template: CarouselTemplate, render: TemplateRender | undefined, layoutId: string, slot: SlotSpec, index: number): SlotStyle {
   const styled = render?.layouts[layoutId]?.slots[slot.id];
   if (styled) return styled;
-  const fontSize = slot.role === 'title' ? 72 : slot.role === 'kicker' || slot.role === 'cta' || slot.role === 'attribution' ? 34 : 46;
+  const fontSize = slot.role === 'title' ? 72 : slot.role === 'stat' ? 160 : slot.role === 'kicker' || slot.role === 'cta' || slot.role === 'attribution' ? 34 : 46;
   const lineHeight = Math.round(fontSize * 1.2);
   const lines = slot.maxLines ?? 4;
   return {
@@ -138,7 +89,7 @@ export function slotStyle(template: CarouselTemplate, render: TemplateRender | u
     width: template.width - MARGIN * 2,
     height: lineHeight * lines,
     fontFamily: BASE_FAMILY,
-    fontWeight: slot.role === 'title' ? 700 : 400,
+    fontWeight: slot.role === 'title' || slot.role === 'stat' ? 600 : 400,
     fontSize,
     lineHeight,
     color: render?.layouts[layoutId]?.accent ?? '',

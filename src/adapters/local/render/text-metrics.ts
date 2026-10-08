@@ -5,7 +5,7 @@
  */
 
 /** Measures the width of `text` in pixels for a given CSS font size and weight. */
-export type MeasureText = (text: string, font: { family?: string; size: number; weight: number; italic?: boolean }) => number;
+export type MeasureText = (text: string, font: { family?: string; size: number; weight: number; italic?: boolean; tracking?: number }) => number;
 
 const NARROW = new Set([...`iljtfIJ.,;:!'|·’‘ `]);
 const SEMI_NARROW = new Set([...'rs()[]{}-"“”/']);
@@ -23,12 +23,16 @@ function charEm(char: string): number {
   return 0.54;
 }
 
-/** Estimated width (no canvas): sum of character proportions × size, heavier weights a bit wider. */
+/** Estimated width (no canvas): sum of character proportions × size, heavier weights a bit wider, plus letter spacing. */
 export const estimateText: MeasureText = (text, font) => {
   let em = 0;
-  for (const char of text) em += charEm(char);
+  let count = 0;
+  for (const char of text) {
+    em += charEm(char);
+    count += 1;
+  }
   const weight = font.weight >= 700 ? 1.06 : font.weight >= 600 ? 1.04 : font.weight >= 500 ? 1.02 : 1;
-  return em * font.size * weight;
+  return em * font.size * weight + (font.tracking ?? 0) * count;
 };
 
 /**
