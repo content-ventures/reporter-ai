@@ -1,10 +1,11 @@
 import { blockText } from '../../../domain/article.ts';
 import type { ArticleBlock, ArticleBody } from '../../../domain/article.ts';
-import { findLayout } from '../../../domain/carousel.ts';
+import { findLayout, listItems } from '../../../domain/carousel.ts';
 import type { CarouselBody, CarouselTemplate, Slide, SlideAssistAction, SlideLayout, SlotSpec } from '../../../domain/carousel.ts';
 import type { BlockId, SlideId } from '../../../domain/ids.ts';
 import { extractQuotes } from '../../../domain/quotes.ts';
 import { fitSentences, overlap, sameText, sentences, standalone, titleCandidates, titlePhrase, wordCuts } from '../../../domain/text/slide-text.ts';
+import { findFigure } from './carousel-features.ts';
 
 /**
  * Plans of the "carousel.assist" run ("Reescrever", "Encurtar para caber", "Trocar ponto") and the
@@ -106,6 +107,7 @@ export function rewriteSlide({ slide, template, article }: AssistContext): Assis
     const next = pool.find((sentence) => sentence.length <= quote.maxChars && !sameText(sentence, slide.slots[quote.id] ?? ''));
     return next ? propose('rewrite', slide, { [quote.id]: next }) : refuse('A citação é literal. Use “Trocar ponto” para outra fala.');
   }
+  if (slotOf(layout, 'stat')) return refuse('O texto acompanha o número. Use “Trocar ponto” para outro número.');
   const body = slotOf(layout, 'body');
   if (!body) return refuse('Este layout não tem texto corrido.');
   const pool = slide.sourceBlockIds
@@ -136,6 +138,13 @@ function shorterVersions(value: string, spec: SlotSpec): string[] {
     const clean = text.trim();
     if (clean && clean !== value.trim() && !steps.includes(clean)) steps.push(clean);
   };
+  if (spec.role === 'stat') return steps;
+  if (spec.role === 'list') {
+    // Fewer items first (a list keeps at least two), never a cut inside an item.
+    const items = listItems(value);
+    for (let keep = items.length - 1; keep >= 2; keep -= 1) push(items.slice(0, keep).join('\n'));
+    return steps;
+  }
   const prose = spec.role === 'body' || spec.role === 'quote';
   if (prose) {
     const parts = sentences(value);
@@ -196,6 +205,22 @@ export function swapPoint({ slide, template, article, slides }: AssistContext): 
   const title = slotOf(layout, 'title');
   if (!body) return refuse('Este layout não tem texto corrido.');
   const paragraphs = article.blocks.filter(isProse);
+  const stat = slotOf(layout, 'stat');
+  if (stat) {
+    // A data slide swaps to the next paragraph with a figure, and keeps figure, text and title together.
+    const from = Math.max(0, paragraphs.findIndex((block) => slide.sourceBlockIds.includes(block.id)));
+    for (let step = 1; step <= paragraphs.length; step += 1) {
+      const block = paragraphs[(from + step) % paragraphs.length];
+      if (!block || taken.has(block.id) || slide.sourceBlockIds.includes(block.id)) continue;
+      const figure = findFigure(blockText(block), stat.maxChars);
+      if (!figure || sameText(figure.stat, slide.slots[stat.id] ?? '')) continue;
+      const heading = headingBefore(article, block.id);
+      const slots: Record<string, string> = { [stat.id]: figure.stat, [body.id]: fitSentences(figure.body, body.maxChars) };
+      if (title && heading) slots[title.id] = titlePhrase(blockText(heading), title.maxChars);
+      return propose('swap', slide, slots, heading ? [heading.id, block.id] : [block.id]);
+    }
+    return refuse('Não há outro número livre no artigo.');
+  }
   const start = Math.max(0, paragraphs.findIndex((block) => slide.sourceBlockIds.includes(block.id)));
   for (let step = 1; step <= paragraphs.length; step += 1) {
     const block = paragraphs[(start + step) % paragraphs.length];

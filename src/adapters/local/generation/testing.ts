@@ -1,15 +1,17 @@
 /**
  * Test harness for the simulated generation (not used by the app): a fictional pt-BR interview,
  * the real local store wired like the runtime (`watch` → `records.apply(applyRunUpdate)`), a
- * manual clock that sleeps instantly, and helpers to approve the article and add the carousel.
+ * manual clock that sleeps instantly, and helpers to approve the article, add the carousel, send
+ * a piece for approval and start the service a reload would (runs reopened from their snapshots).
  */
 import type { CarouselTemplate } from '../../../domain/carousel.ts';
 import { ARTICLE_GATE } from '../../../domain/decision.ts';
-import type { Decision } from '../../../domain/decision.ts';
+import type { Decision, ReviewRequest } from '../../../domain/decision.ts';
 import type { ProductionId, RunId } from '../../../domain/ids.ts';
 import { toVersionRef } from '../../../domain/piece.ts';
 import type { Piece, PieceKind } from '../../../domain/piece.ts';
 import type { Production } from '../../../domain/production.ts';
+import type { ArticleSize } from '../../../domain/sizing.ts';
 import { latestVersion, pieceOfKind } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
 import { ok } from '../../../domain/result.ts';
@@ -85,7 +87,7 @@ export type HarnessOptions = {
   transcript?: string;
   authorized?: boolean;
   sections?: number;
-  length?: 'short' | 'medium' | 'long';
+  size?: ArticleSize;
   plan?: PieceKind[];
   scripts?: ScriptBook;
   /** Without the store sync the service only streams (nothing is settled). */
@@ -103,6 +105,13 @@ export type Harness = {
   approveLatestArticle(): Decision;
   /** Adds the carousel piece (what `derive` does) for the test template. */
   addCarouselPiece(): Piece;
+  /** "Enviar para aprovação" of the latest version of a piece (default the article), as the editor. */
+  requestReview(options?: { pieceId?: string; assigneeId?: string }): ReviewRequest;
+  /**
+   * The service a reload starts: same store, no live run, earlier runs reopened from their
+   * persisted stream snapshots (what the runtime wires as `persistedFold`).
+   */
+  reload(): GenerationService;
   /** Waits for the end of a run and returns every event and the final fold. */
   finish(runId: RunId): Promise<{ events: RunEvent[]; fold: RunFold }>;
 };
@@ -134,7 +143,7 @@ export function createHarness(options: HarnessOptions = {}): Harness {
     flowId: 'transcript-article',
     title: 'Padaria Fermento Vivo',
     sourceIds: [source.id],
-    brief: { sections: options.sections ?? 3, length: options.length ?? 'short', revision: 1 },
+    brief: { sections: options.sections ?? 3, size: options.size ?? 'standard', revision: 1 },
     plan: options.plan ?? ['article', 'carousel'],
     relations: [],
     ownerId: EDITOR,
@@ -174,26 +183,31 @@ export function createHarness(options: HarnessOptions = {}): Harness {
     if (!found) throw new Error('test production missing');
     return assembleRecord(store.state, found);
   };
-  const service = createLocalGenerationService({
-    clock,
-    ids,
-    getRecord: (productionId: ProductionId) => {
-      const found = findProduction(store.state, productionId);
-      return found ? assembleRecord(store.state, found) : undefined;
-    },
-    actorId: () => EDITOR,
-    templates: () => [TEST_TEMPLATE],
-    sleep: instantSleep(clock),
-    ...(options.scripts ? { scripts: options.scripts } : {}),
-    ...(options.measure ? { measure: options.measure } : {}),
-  });
-
-  if (options.sync !== false) {
+  const createService = (persisted: boolean) =>
+    createLocalGenerationService({
+      clock,
+      ids,
+      getRecord: (productionId: ProductionId) => {
+        const found = findProduction(store.state, productionId);
+        return found ? assembleRecord(store.state, found) : undefined;
+      },
+      actorId: () => EDITOR,
+      templates: () => [TEST_TEMPLATE],
+      people: () => store.state.people,
+      sleep: instantSleep(clock),
+      ...(options.scripts ? { scripts: options.scripts } : {}),
+      ...(options.measure ? { measure: options.measure } : {}),
+      ...(persisted ? { persistedFold: (runId: RunId) => store.state.runFolds[runId] } : {}),
+    });
+  const sync = (generation: GenerationService) => {
+    if (options.sync === false) return;
     const records = createRecordAccess(store);
-    service.watch((update) => {
+    generation.watch((update) => {
       records.apply(update.meta.productionId, (current, context) => applyRunUpdate(current, update, context), { runFold: update.fold });
     });
-  }
+  };
+  const service = createService(false);
+  sync(service);
 
   const mutate = (change: (production: NonNullable<ReturnType<typeof findProduction>>) => NonNullable<ReturnType<typeof findProduction>>) => {
     store.transact((state) => {
@@ -225,6 +239,29 @@ export function createHarness(options: HarnessOptions = {}): Harness {
       };
       mutate((production) => ({ ...production, decisions: [...production.decisions, decision] }));
       return decision;
+    },
+    requestReview(request = {}) {
+      const current = record();
+      const pieceId = request.pieceId ?? ARTICLE_PIECE;
+      const version = latestVersion(current, pieceId);
+      if (!version) throw new Error('no version to send');
+      clock.advance(60_000);
+      const piece = current.pieces.find((entry) => entry.id === pieceId);
+      const sent: ReviewRequest = {
+        id: `req-${version.id}`,
+        gate: piece?.kind === 'carousel' ? 'carousel.approval' : ARTICLE_GATE.id,
+        subject: toVersionRef(version),
+        requestedBy: EDITOR,
+        requestedAt: clock.now(),
+        ...(request.assigneeId ? { assigneeId: request.assigneeId } : {}),
+      };
+      mutate((production) => ({ ...production, reviewRequests: [...production.reviewRequests, sent] }));
+      return sent;
+    },
+    reload() {
+      const reloaded = createService(true);
+      sync(reloaded);
+      return reloaded;
     },
     addCarouselPiece() {
       const piece: Piece = {
