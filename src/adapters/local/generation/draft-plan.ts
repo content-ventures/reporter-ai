@@ -682,17 +682,114 @@ function capAtMax(plan: DraftPlan, maxChars: number): DraftPlan {
       next = { ...next, intro: next.intro.slice(0, -1) };
     } else break;
   }
+  return next;
+}
+
+function tooShort(material: Material): boolean {
+  return material.answerWords < MIN_ANSWER_WORDS || material.units.length === 0;
+}
+
+const SHORT_MATERIAL = `O material tem menos de ${MIN_ANSWER_WORDS} palavras de fala para um artigo.`;
+
+/**
+ * The extractive draft closest to the brief's size (`draftSizeInstructions`): each attempt
+ * replans with the same seed (same picks) and only the word budget changes.
+ */
+export function extractivePlan(input: ExtractiveInput): Result<DraftPlan, DraftPlanRefusal> {
+  const material = readMaterial(input.sources);
+  if (tooShort(material)) return refuse('material_too_short', SHORT_MATERIAL);
+  const sizing = draftSizeInstructions({ size: input.brief.size, sections: Math.min(input.brief.sections, material.units.length) });
+  const ceiling = Math.max(MIN_ANSWER_WORDS, Math.floor(material.answerWords * MAX_MATERIAL_SHARE));
+  const seed = `${input.rng.next()}`;
+  const layout = materialLayout(input, material, createRng(seed));
+  const scratch: NewId = (prefix) => `${prefix}-draft`;
+  const words = searchBudget(sizing, ceiling, (budget) => planChars(writeDraft({ ...input, newId: scratch }, material, layout, budget, sizing.headings)));
+  const plan = capAtMax(writeDraft(input, material, layout, words, sizing.headings), sizing.maxChars);
+  if (input.images === false) return ok(plan);
+  return ok(withImageSlots(plan, { material, speakers: input.speakers, newId: input.newId, options: input.images }));
+}
+
+/** A structure ready to write: quotes resolved, ids set, titles trimmed (see `outline.ts`). */
+export type PlannedOutline = {
+  title: string;
+  intro: SourceRef[];
+  sections: { blockId: string; title: string; quotes: SourceRef[] }[];
+};
+
+/**
+ * The draft of a structure a person reviewed: the sections in the given order, each written only
+ * from the answer lines of its own quotes (a line quoted in two places belongs to the first), with
+ * its first quotable quote lifted into a quote block; the introduction opens with its quotes. The
+ * size works as in `extractivePlan`: the target at most, never above the maximum, and a structure
+ * whose quotes give less comes out shorter, never padded.
+ */
+export function extractivePlanFromOutline(input: ExtractiveInput, outline: PlannedOutline): Result<DraftPlan, DraftPlanRefusal> {
+  const material = readMaterial(input.sources);
+  if (tooShort(material)) return refuse('material_too_short', SHORT_MATERIAL);
+  const angle = new Set(input.brief.angle ? keywords(input.brief.angle) : []);
+  const resolve = (refs: readonly SourceRef[]) => refs.map((ref) => answerSentence(material, ref)).filter((sentence): sentence is Sentence => sentence !== undefined);
+  const introLines = resolve(outline.intro);
+  const lead = introLines[0];
+  const anchors = outline.sections.map((section) => resolve(section.quotes));
+  // Each answer line belongs to the first section that quotes it.
+  const owner = new Map<string, number>();
+  anchors.forEach((lines, index) => {
+    for (const line of lines) if (!owner.has(line.line.segmentId)) owner.set(line.line.segmentId, index);
+  });
+  const units: QaUnit[] = [...(material.preamble.length > 0 ? [{ answers: material.preamble, words: 0 }] : []), ...material.units];
+  const poolOf = (index: number): QaUnit[] =>
+    units
+      .map((unit) => {
+        const answers = unit.answers.filter((line) => owner.get(line.segmentId) === index);
+        const pooled: QaUnit = { answers, words: answers.reduce((sum, line) => sum + line.words, 0) };
+        if (unit.question) pooled.question = unit.question;
+        return pooled;
+      })
+      .filter((unit) => unit.answers.length > 0);
+  const quotable = (sentence: Sentence) => Number.isFinite(quoteScore(sentence, angle)) && sentence.line.segmentId !== lead?.line.segmentId;
+  const sections: SectionLayout[] = outline.sections.map((section, index) => {
+    const lines = anchors[index];
+    const quote = lines.find(quotable);
+    const layout: SectionLayout = { pool: poolOf(index), title: section.title, blockId: section.blockId, quotes: section.quotes };
+    if (quote) layout.quote = quote;
+    const fallback = lines.find((line) => line !== quote) ?? quote;
+    if (fallback) layout.fallback = fallback;
+    return layout;
+  });
+  const pooled = new Set(sections.flatMap((section) => section.pool.flatMap((unit) => unit.answers)));
+  // The answers before the first question no section quotes still introduce the interviewee.
+  const preamble = material.preamble.filter((line) => !pooled.has(line));
+  const layout: Layout = { headed: new Set(), introExtra: introLines.slice(1), introQuotes: outline.intro, sections, title: outline.title, preamble };
+  if (lead) layout.lead = lead;
+  const available = [...pooled, ...introLines.map((line) => line.line)].reduce((sum, line) => sum + line.words, 0);
+  const preambleWords = preamble.reduce((sum, line) => sum + line.words, 0);
+  const ceiling = Math.max(MIN_PARAGRAPH_WORDS, Math.floor((available + Math.min(PREAMBLE_MAX_WORDS, preambleWords)) * MAX_MATERIAL_SHARE));
+  const sizing = draftSizeInstructions({ size: input.brief.size, sections: outline.sections.length });
+  const scratch: NewId = (prefix) => `${prefix}-draft`;
+  const words = searchBudget(sizing, ceiling, (budget) => planChars(writeDraft({ ...input, newId: scratch }, material, layout, budget, sizing.headings)));
+  const plan = capAtMax(writeDraft(input, material, layout, words, sizing.headings), sizing.maxChars);
+  if (input.images === false) return ok(plan);
+  return ok(withImageSlots(plan, { material, speakers: input.speakers, newId: input.newId, options: input.images }));
+}
+
+/**
+ * Characters of the most a material supports (every answer drawn), for "Como o artigo nasce" in
+ * Nova produção and the pauta: the preview promises the target only when the draft can reach it.
+ */
+export function longestPlanChars(material: Material, sections: number): number {
+  if (tooShort(material)) return 0;
   const input: ExtractiveInput = {
     sources: [],
-    brief: { sections, length: 'long', revision: 0 },
+    brief: { sections, size: 'standard', revision: 0 },
     fallbackTitle: '',
     rng: createRng('outlook'),
     newId: (prefix) => `${prefix}-outlook`,
   };
-  return planWords(planWithBudget(input, material, Math.floor(material.answerWords * MAX_MATERIAL_SHARE)));
+  const layout = materialLayout(input, material, input.rng);
+  return planChars(writeDraft(input, material, layout, Math.floor(material.answerWords * MAX_MATERIAL_SHARE), true));
 }
 
 /** All blocks of a plan in document order (the "v1 · IA" the run will stream). */
 export function planBlocks(plan: Pick<DraftPlan, 'intro' | 'sections'>): ArticleBlock[] {
-  return [...plan.intro, ...plan.sections.flatMap((section) => [section.heading, ...section.blocks])];
+  return [...plan.intro, ...plan.sections.flatMap(draftSectionBlocks)];
 }
