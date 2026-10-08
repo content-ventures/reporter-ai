@@ -2,38 +2,25 @@
 
 import { Suspense, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import {
-  Button,
-  ButtonLink,
-  EmptyState,
-  ErrorState,
-  Grid,
-  PageHeader,
-  PageStack,
-  Panel,
-  Segmented,
-} from '@content-ventures/design-system/v3';
-import { LayoutDashboard, Plus } from '@content-ventures/design-system/v3/icons';
+import { Button, ButtonLink, EmptyState, ErrorState, PageHeader, PageStack } from '@content-ventures/design-system/v3';
+import { Inbox, Plus } from '@content-ventures/design-system/v3/icons';
 import type { OverviewData } from '@/ports';
 import { dashboardWidgetsFor } from '@/registries';
-import { useOverview, useSimulation } from '@/state';
+import { useOverview, useSession, useSimulation } from '@/state';
 import { NEW_PRODUCTION_HREF } from '@/ui/routes';
-import { ActivityPanel } from './activity-panel';
-import { AwaitingSection } from './awaiting-section';
-import { ContinuePanel } from './continue-panel';
-import { GeneratingSection } from './generating-section';
-import { OverviewMetrics } from './overview-metrics';
-import { parseRange, RANGE_OPTIONS, type OverviewRangeKey } from './overview-format';
-import { RhythmChart } from './rhythm-chart';
+import { useNow } from '@/ui/time';
+import { deskSummary } from './desk-copy';
+import { InProgressPanel } from './in-progress-panel';
+import { NeedsYouPanel } from './needs-you-panel';
+import { parseRange, type OverviewRangeKey } from './overview-format';
+import { WeekLine } from './week-line';
 
 /**
- * Visão geral (`/`, PLAN §3.1, references 4 and 1). Indicators of the window (7 or 30 days, in
- * the URL as `?range=30d`), what waits for the viewer with the generations running right now
- * under it, the production to continue beside them, then the editorial rhythm and the latest
- * activity. Everything the viewer acts on sits above the fold at 1280×720; on a phone the order is
- * indicators → Aguardando → Gerando → Continue. Everything is live: the page re-reads the runtime
- * when anything changes, so approving elsewhere moves the numbers and the flagship generation
- * progresses in "Gerando agora".
+ * Início (`/`, D1 "Minha mesa"): the one sentence that says what waits for the viewer, then the
+ * queue itself ("Precisa de você", grouped by urgency and role, a verb on every row; "Equipe"
+ * shows the same area by stage), what is in progress, and one quiet line with the week's numbers
+ * (7 or 30 days, `?range=30d`). "Nova produção" is the only primary. Everything is live: the
+ * page re-reads the runtime when anything changes, so approving elsewhere moves the queue.
  */
 
 type BodyProps = { range: OverviewRangeKey; onRangeChange: (range: OverviewRangeKey) => void };
@@ -41,6 +28,8 @@ type BodyProps = { range: OverviewRangeKey; onRangeChange: (range: OverviewRange
 /** Widgets of the current release (dashboard registry): later releases plug in by adding entries. */
 const WIDGETS = new Set(dashboardWidgetsFor().map((widget) => widget.id));
 const shows = (id: string) => WIDGETS.has(id);
+
+const TITLE = 'Início';
 
 function NewProductionButton() {
   return (
@@ -50,6 +39,14 @@ function NewProductionButton() {
   );
 }
 
+/** "Bom dia, Pedro. 2 peças esperam sua aprovação." once the desk, the viewer and the clock exist. */
+function useSummary(data: OverviewData | undefined): string | undefined {
+  const session = useSession();
+  const now = useNow();
+  if (!data || !now || session.status === 'loading') return undefined;
+  return deskSummary({ hour: now.getHours(), name: session.data?.current?.name, groups: data.desk.groups });
+}
+
 function OverviewBody({ range, onRangeChange }: BodyProps) {
   const query = useOverview(range);
   const simulation = useSimulation();
@@ -57,20 +54,15 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
   const [last, setLast] = useState<OverviewData | undefined>(undefined);
   if (query.status === 'ready' && query.data !== last) setLast(query.data);
   const data = query.status === 'ready' ? query.data : last;
-  const loading = data === undefined;
-  // Labels follow the data on screen ("nos 7 dias anteriores") until the new window arrives.
+  const summary = useSummary(data);
+  // The week line names the window of the data on screen until the new window arrives.
   const shownRange = data?.range ?? range;
 
   if (query.status === 'error' && data === undefined) {
     return (
       <PageStack>
-        <PageHeader title="Visão geral" actions={<NewProductionButton />} />
-        <ErrorState
-          size="page"
-          title="Não foi possível carregar a visão geral"
-          description={query.error?.message}
-          onRetry={query.retry}
-        />
+        <PageHeader title={TITLE} actions={<NewProductionButton />} />
+        <ErrorState size="panel" title="Não foi possível carregar o Início" description={query.error?.message} onRetry={query.retry} />
       </PageStack>
     );
   }
@@ -78,11 +70,12 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
   if (data?.empty) {
     return (
       <PageStack>
-        <PageHeader title="Visão geral" />
+        <PageHeader title={TITLE} />
         <EmptyState
           size="page"
-          icon={LayoutDashboard}
+          icon={Inbox}
           title="Nenhuma produção ainda"
+          description="Comece pela transcrição de uma entrevista."
           actions={
             <>
               <NewProductionButton />
@@ -96,32 +89,11 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
 
   return (
     <PageStack>
-      <PageHeader
-        title="Visão geral"
-        actions={
-          <>
-            <NewProductionButton />
-            <Segmented label="Período dos indicadores" options={RANGE_OPTIONS} value={range} onChange={onRangeChange} />
-          </>
-        }
-      />
-      <OverviewMetrics data={data} range={shownRange} loading={loading} />
-      {/* What waits for the viewer comes first in reading order (and first on a phone), with the
-          generations running anywhere under it; the production to continue beside them. */}
-      <Grid columns="1:2">
-        {(shows('awaiting-you') || shows('generating-now')) && (
-          <Panel>
-            {shows('awaiting-you') && <AwaitingSection items={data?.awaitingYou} loading={loading} />}
-            {shows('generating-now') && <GeneratingSection data={data} loading={loading} />}
-          </Panel>
-        )}
-        {shows('continue') && <ContinuePanel data={data} loading={loading} />}
-      </Grid>
-      {/* Same columns as above: the feeds on the left (activity), the production's numbers on the right. */}
-      <Grid columns="1:2">
-        {shows('activity') && <ActivityPanel items={data?.activity} loading={loading} />}
-        <RhythmChart data={data} range={shownRange} loading={loading} />
-      </Grid>
+      {/* A non-breaking space keeps the sentence's line while it loads (no jump under the title). */}
+      <PageHeader title={TITLE} description={summary ?? ' '} actions={<NewProductionButton />} />
+      {shows('needs-you') && <NeedsYouPanel desk={data?.desk} team={shows('team')} />}
+      {shows('in-progress') && <InProgressPanel desk={data?.desk} />}
+      {shows('week') && data && <WeekLine week={data.desk.week} shownRange={shownRange} range={range} onRangeChange={onRangeChange} />}
     </PageStack>
   );
 }
