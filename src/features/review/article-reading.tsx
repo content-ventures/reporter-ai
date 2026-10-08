@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { EditableTitle, FloatingToolbar, MediaFrame, PageStack, Prose, ToolbarButton } from '@content-ventures/design-system/v3';
+import { EditableTitle, FloatingToolbar, MediaFrame, MetaList, PageStack, Prose, ToolbarButton } from '@content-ventures/design-system/v3';
 import { CornerDownLeft, Highlighter } from '@content-ventures/design-system/v3/icons';
-import { articleAssetIds, imageAlt, type ArticleBody, type DecisionAnchor } from '@/domain';
+import { articleAssetIds, COVER_SLOT_LABEL, imageAlt, type ArticleBody, type DecisionAnchor } from '@/domain';
 import {
   EditorContent,
   focusBlock,
@@ -21,22 +21,26 @@ import { useImageSources, type ImageSources } from './use-image-sources';
  * the studio). The reviewer may select passages and point at them: they become marks in the text
  * and the list in "Devolver com nota". Passages pointed at by an earlier return stay marked.
  * Images read as the reader will see them: the cover (16:9) above the title, figures in the text,
- * each with its caption and credit ("Foto: …").
+ * each with its caption and credit ("Foto: …"). Images the generation planned and nobody filled
+ * read as what they are: suggestion frames with what to show (DS `Prose` `figure[data-slot]`), and
+ * the cover's suggestion as one quiet line above the title — never as pictures.
  */
 
 export type BlockFocus = { blockId: string; nonce: number };
 
+const NO_BLOCKS: readonly string[] = [];
+
 export type ArticleReadingProps = {
   body: ArticleBody;
-  /** "Texto da v4". */
+  /** "Texto do artigo". */
   label: string;
   /** Passages the reviewer is pointing at now (not sent yet). */
   anchors: readonly DecisionAnchor[];
   /** Passages of the last return on this version (already recorded). */
   recorded?: readonly DecisionAnchor[];
-  /** Blocks lit from the side pane (source chip hovered or opened). */
-  litBlockIds: readonly string[];
-  /** Scroll to a block (source chip "Mostrar no texto"). */
+  /** Blocks lit by a source chip (hovered or opened), when the screen has one. */
+  litBlockIds?: readonly string[];
+  /** Scroll to a block. */
   focus?: BlockFocus | null;
   /** Pointing at passages is possible (the version can still be returned). */
   canPoint: boolean;
@@ -45,7 +49,7 @@ export type ArticleReadingProps = {
   onReturnWith: (anchors: DecisionAnchor[]) => void;
 };
 
-export function ArticleReading({ body, label, anchors, recorded = [], litBlockIds, focus, canPoint, onPoint, onReturnWith }: ArticleReadingProps) {
+export function ArticleReading({ body, label, anchors, recorded = [], litBlockIds = NO_BLOCKS, focus, canPoint, onPoint, onReturnWith }: ArticleReadingProps) {
   const assetIds = useMemo(() => articleAssetIds(body), [body]);
   const images = useImageSources(assetIds);
   const editor = useArticleReader({ body, figureSources: images.figures });
@@ -90,7 +94,11 @@ export function ArticleReading({ body, label, anchors, recorded = [], litBlockId
       label={label}
       header={
         <PageStack>
-          {body.cover ? <CoverImage cover={body.cover} images={images} /> : null}
+          {body.cover ? (
+            <CoverImage cover={body.cover} images={images} />
+          ) : body.coverSlot ? (
+            <MetaList size="sm" items={[`${COVER_SLOT_LABEL}: ${body.coverSlot.subject}`]} />
+          ) : null}
           <EditableTitle value={body.title} label="Título do artigo" size="document" as="h2" readOnly onCommit={() => undefined} />
         </PageStack>
       }
@@ -112,7 +120,7 @@ export function ArticleReading({ body, label, anchors, recorded = [], litBlockId
           }}
         />
         <ToolbarButton
-          label="Devolver com este trecho"
+          label="Pedir ajustes neste trecho"
           icon={CornerDownLeft}
           showLabel
           onClick={() => {
@@ -126,7 +134,7 @@ export function ArticleReading({ body, label, anchors, recorded = [], litBlockId
 }
 
 /** The article's cover (imagem de destaque) as published: 16:9, caption and credit below. */
-function CoverImage({ cover, images }: { cover: NonNullable<ArticleBody['cover']>; images: ImageSources }) {
+export function CoverImage({ cover, images }: { cover: NonNullable<ArticleBody['cover']>; images: ImageSources }) {
   const src = images.url(cover.assetId);
   return (
     <MediaFrame

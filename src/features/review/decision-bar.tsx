@@ -1,69 +1,51 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { ActionBar, Button, ButtonLink, Tooltip, type ButtonProps } from '@content-ventures/design-system/v3';
-import { ArrowRight, Check, CornerDownLeft, PenLine } from '@content-ventures/design-system/v3/icons';
+import { useId } from 'react';
+import { ActionBar, Button, MetaList } from '@content-ventures/design-system/v3';
+import { Check, CornerDownLeft } from '@content-ventures/design-system/v3/icons';
+import type { PieceKind } from '@/domain';
 import type { Guard } from '@/ports';
+import { approveLabel } from './review-model';
 
 /**
- * Decision bar of the gate (PLAN §3.6): "Devolver com nota" and "Aprovar versão N", always in
- * view at the foot of the review. A blocked decision stays focusable with the reason in a Tooltip
- * (a run in progress, pending suggestions, a blocking check, another version on screen, a role
- * that cannot decide). Once decided, the bar offers the next step instead.
+ * Decision bar of the guided review (COPY §4.4): the facts of the piece at the start ("Artigo · 1,4
+ * de 2 laudas · enviado por Juliana"), the visible reason when a decision is blocked (never only a
+ * tooltip), "Pedir ajustes" (secondary) and "Aprovar artigo" / "Aprovar carrossel" (primary). A
+ * blocked button stays focusable (`aria-disabled`) and points at the reason. No version numbers.
  */
+export type DecisionBarProps = {
+  kind: PieceKind;
+  /** "Artigo", "1,4 de 2 laudas", "enviado por Juliana": one fact each. */
+  facts: readonly string[];
+  approve: Guard;
+  requestChanges: Guard;
+  onApprove: () => void;
+  onReturn: () => void;
+};
 
-function Guarded({ guard, children, ...props }: ButtonProps & { guard: Guard }) {
-  const button = (
-    <Button {...props} aria-disabled={guard.allowed ? undefined : true}>
-      {children}
-    </Button>
-  );
-  return guard.allowed ? button : <Tooltip content={guard.reason}>{button}</Tooltip>;
-}
-
-export type DecisionBarProps =
-  | {
-      state: 'open';
-      versionNumber: number;
-      /** Facts at the start of the bar (who sent it, pointed passages, why it is blocked). */
-      start?: ReactNode;
-      approve: Guard;
-      requestChanges: Guard;
-      onApprove: () => void;
-      onReturn: () => void;
-    }
-  | { state: 'approved'; start?: ReactNode; next?: { label: string; href: string } }
-  | { state: 'returned'; start?: ReactNode; studioHref: string };
-
-export function DecisionBar(props: DecisionBarProps) {
-  if (props.state === 'approved') {
-    return (
-      <ActionBar position="static" start={props.start}>
-        {props.next ? (
-          <ButtonLink href={props.next.href} variant="primary" trailingIcon={ArrowRight}>
-            {props.next.label}
-          </ButtonLink>
-        ) : null}
-      </ActionBar>
-    );
-  }
-  if (props.state === 'returned') {
-    return (
-      <ActionBar position="static" start={props.start}>
-        <ButtonLink href={props.studioHref} variant="primary" icon={PenLine}>
-          Abrir estúdio
-        </ButtonLink>
-      </ActionBar>
-    );
-  }
+export function DecisionBar({ kind, facts, approve, requestChanges, onApprove, onReturn }: DecisionBarProps) {
+  const reasonId = useId();
+  const reason = !approve.allowed ? approve.reason : !requestChanges.allowed ? requestChanges.reason : undefined;
   return (
-    <ActionBar position="static" start={props.start}>
-      <Guarded guard={props.requestChanges} icon={CornerDownLeft} onClick={props.onReturn}>
-        Devolver com nota
-      </Guarded>
-      <Guarded guard={props.approve} variant="primary" icon={Check} onClick={props.onApprove}>
-        Aprovar versão {props.versionNumber}
-      </Guarded>
+    <ActionBar position="static" start={<MetaList size="sm" items={[...facts]} />} detail={reason} detailId={reasonId}>
+      <Button
+        variant="secondary"
+        icon={CornerDownLeft}
+        aria-disabled={requestChanges.allowed ? undefined : true}
+        aria-describedby={requestChanges.allowed ? undefined : reasonId}
+        onClick={requestChanges.allowed ? onReturn : undefined}
+      >
+        Pedir ajustes
+      </Button>
+      <Button
+        variant="primary"
+        icon={Check}
+        aria-disabled={approve.allowed ? undefined : true}
+        aria-describedby={approve.allowed ? undefined : reasonId}
+        onClick={approve.allowed ? onApprove : undefined}
+      >
+        {approveLabel(kind)}
+      </Button>
     </ActionBar>
   );
 }

@@ -5,25 +5,27 @@ import { DiffView, ErrorState, Grid, MediaFrame, MetaList, Section } from '@cont
 import { imageAlt, type AssetId, type ImageRef, type PieceId, type VersionId } from '@/domain';
 import { useCompare } from '@/state';
 import { plural } from '@/ui/format';
-import { IMAGE_CHANGE_LABELS, IMAGE_ROLE_LABELS, imageCaption, imageChanges, toReviewDiff, type ImageChange } from './review-model';
+import { changedCount, changedSummary, IMAGE_CHANGE_LABELS, IMAGE_ROLE_LABELS, imageCaption, imageChanges, toReviewDiff, type ImageChange } from './review-model';
 import { useImageSources, type ImageSources } from './use-image-sources';
 
 /**
- * "Alterações": the version under review against the chosen base (v1 · IA or the last approved
- * one), compared block by block in the domain and drawn by the DS `DiffView` with neutral diff
- * roles. Unchanged runs collapse around each change; the summary counts words and blocks.
- * Images read in the text as "[Imagem] Legenda — Foto: Crédito" (the base reads its credit and
- * rights as they were approved); the pictures that changed (new, removed, swapped, caption,
- * credit or alt text) follow the text, a swap as before and after, figures whole.
+ * "O que mudou" (COPY §4.3): the text of this send against the one decided before it, compared
+ * block by block in the domain and drawn by the DS `DiffView` (inline, reading size) with neutral
+ * diff roles. Unchanged runs collapse around each change; the summary counts the passages that
+ * changed ("3 trechos mudaram desde o envio anterior"). Images read in the text as "[Imagem]
+ * Legenda — Foto: Crédito"; the pictures that changed (new, removed, swapped, caption, credit or alt
+ * text) follow the text, a swap as before and after, figures whole. No version numbers.
  */
 export type ReviewChangesProps = {
   pieceId: PieceId;
-  from: { id: VersionId; label: string };
-  to: { id: VersionId; label: string };
+  /** The version decided before this send. */
+  from: VersionId;
+  /** The version under review. */
+  to: VersionId;
 };
 
 export function ReviewChanges({ pieceId, from, to }: ReviewChangesProps) {
-  const compare = useCompare(pieceId, from.id, to.id);
+  const compare = useCompare(pieceId, from, to);
   const blocks = useMemo(() => (compare.data ? toReviewDiff(compare.data.blocks) : []), [compare.data]);
   const changes = useMemo(() => (compare.data ? imageChanges(compare.data.blocks) : []), [compare.data]);
   const assetIds = useMemo<AssetId[]>(
@@ -33,22 +35,24 @@ export function ReviewChanges({ pieceId, from, to }: ReviewChangesProps) {
   const images = useImageSources(assetIds);
 
   if (compare.status === 'error') {
-    return <ErrorState title="Não foi possível comparar as versões" onRetry={compare.retry} />;
+    return <ErrorState title="Não foi possível comparar os textos" onRetry={compare.retry} />;
   }
 
   return (
     <>
       <DiffView
         blocks={blocks}
-        before={{ label: from.label }}
-        after={{ label: to.label }}
+        mode="inline"
+        size="reading"
         collapseUnchanged
         context={1}
+        summary={compare.status === 'ready' ? changedSummary(changedCount(blocks)) : undefined}
+        label="O que mudou desde o envio anterior"
         loading={compare.status === 'loading'}
       />
       {changes.length > 0 ? (
         <Section title="Imagens" titleAs="h3" meta={plural(changes.length, 'alteração', 'alterações')}>
-          <Grid as="ul" columns="auto" min={160} label={`Imagens alteradas desde ${from.label}`}>
+          <Grid as="ul" columns="auto" min={160} label="Imagens alteradas desde o envio anterior">
             {changes.flatMap((change) =>
               change.previous
                 ? [

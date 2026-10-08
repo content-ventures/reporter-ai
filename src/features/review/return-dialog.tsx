@@ -13,30 +13,30 @@ import {
   Tooltip,
 } from '@content-ventures/design-system/v3';
 import { X } from '@content-ventures/design-system/v3/icons';
-import type { ArticleBody, DecisionAnchor } from '@/domain';
-import { anchorKey, sectionMark, shortExcerpt } from './review-model';
+import type { DecisionAnchor } from '@/domain';
+import { anchorKey, anchorsLabel, returnDescription, shortExcerpt } from './review-model';
 
 /**
- * "Devolver com nota" (PLAN §3.6): the note is required; the passages the reviewer pointed at in
- * the text travel with it as anchors and become the first turn of the studio copilot. The note
+ * "Pedir ajustes" (COPY §4.4): the note is required; the passages the reviewer pointed at in the
+ * text travel with it as anchors and become the first turn of the studio assistant. The note
  * survives closing the dialog until it is sent.
  */
 export type ReturnDialogProps = {
   open: boolean;
   onClose: () => void;
-  versionNumber: number;
+  /** Whoever sent the piece: "Juliana recebe a nota e os trechos apontados." */
+  requesterName?: string | null;
   note: string;
   onNoteChange: (note: string) => void;
   anchors: readonly DecisionAnchor[];
   onRemoveAnchor: (anchor: DecisionAnchor) => void;
-  body?: Pick<ArticleBody, 'blocks'>;
-  /** Resolves with the refusal message, or `null` when the version was returned. */
+  /** Resolves with the refusal message, or `null` when the adjustments were requested. */
   onSubmit: () => Promise<string | null>;
 };
 
 const NOTE_LIMIT = 1200;
 
-export function ReturnDialog({ open, onClose, versionNumber, note, onNoteChange, anchors, onRemoveAnchor, body, onSubmit }: ReturnDialogProps) {
+export function ReturnDialog({ open, onClose, requesterName, note, onNoteChange, anchors, onRemoveAnchor, onSubmit }: ReturnDialogProps) {
   const [error, setError] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
   const [session, setSession] = useState(open);
@@ -60,7 +60,8 @@ export function ReturnDialog({ open, onClose, versionNumber, note, onNoteChange,
     <ResponsiveDialog
       open={open}
       onClose={sending ? () => undefined : onClose}
-      title={`Devolver a versão ${versionNumber}`}
+      title="Pedir ajustes"
+      description={returnDescription(requesterName)}
       size="md"
       dirty={note.trim().length > 0}
       footer={
@@ -69,7 +70,7 @@ export function ReturnDialog({ open, onClose, versionNumber, note, onNoteChange,
             Cancelar
           </Button>
           <Button variant="primary" loading={sending} onClick={() => void submit()}>
-            Devolver com nota
+            Pedir ajustes
           </Button>
         </>
       }
@@ -93,14 +94,13 @@ export function ReturnDialog({ open, onClose, versionNumber, note, onNoteChange,
         )}
       </Field>
       {anchors.length > 0 ? (
-        <Section title="Trechos apontados" titleAs="h3" meta={String(anchors.length)}>
+        <Section title="Trechos apontados" titleAs="h3" meta={anchorsLabel(anchors.length)}>
           <List label="Trechos apontados">
             {anchors.map((anchor) => (
               <ListItem
                 key={anchorKey(anchor)}
                 density="sm"
                 title={`“${shortExcerpt(anchor.excerpt ?? '', 120)}”`}
-                meta={body ? sectionMark(body, anchor.blockId) : undefined}
                 actions={
                   <Tooltip content="Remover trecho">
                     <IconButton

@@ -9,7 +9,8 @@ import { formatCount } from '@/ui/format';
 
 /**
  * The carousel under review as the creatives themselves (PLAN §3.7): every slide rasterised by
- * the RenderService from the template data (PNG 1080×1350), shown in the DS `Gallery` — the
+ * the RenderService from the template data (PNG at the model's size: 1080×1350 Feed, 1080×1080
+ * Quadrado; each piece keeps its proportion), shown in the DS `Gallery` — the
  * DS only frames them. Renders are cached per version hash (and article cover), so switching
  * views is instant. Layouts whose template data asks for it draw the article's cover behind the
  * text; without one (or with a linked cover) they keep the template colours.
@@ -117,7 +118,7 @@ export function CarouselSlides({ body, hash, versionNumber, articleCover }: Caro
         items={items}
         index={Math.min(index, Math.max(0, items.length - 1))}
         onIndexChange={setIndex}
-        label={`Slides da versão ${versionNumber}`}
+        label="Slides do carrossel"
         stageRatio={narrow ? '1/1' : '16/10'}
         fitHeight={!narrow}
         onDownload={(item) => {
