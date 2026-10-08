@@ -48,7 +48,9 @@ import { IMAGE_SOURCE_PANELS, type SourceRefusal } from './image-sources';
  * the image; credit and rights belong to the asset (every use shows them), alt and caption to this
  * use. Esc, the X and "Cancelar" ask before discarding what was typed. Every refusal shows where it
  * happened: on the file, on the address, or as an Alert when the browser storage fails — a full
- * storage offers to delete the images no text uses any more.
+ * storage offers to delete the images no text uses any more. Filling an image the generation
+ * suggested ("Enviar imagem", "Usar link" on a slot) opens on that source, says what the image
+ * should show and starts alt text and caption from the suggestion (the person confirms them).
  */
 
 export type PickerRequest = {
@@ -65,6 +67,12 @@ export type PickerRequest = {
   file?: File;
   /** "Legenda e crédito" opened from the caption: the caption takes the focus. */
   focus?: 'caption';
+  /** The image fills a suggestion of the generation: the figure slot, or `COVER_BLOCK_ID`. */
+  slot?: { blockId: BlockId; subject: string };
+  /** Source the picker opens on ("Usar link" opens on Link). */
+  tab?: ImageSourceId;
+  /** Alt text and caption to start from (a suggestion's; the person confirms them). */
+  prefill?: Pick<ImageRef, 'alt' | 'caption'>;
 };
 
 export type PickedImage = { asset: ImageAsset; image: ImageRef };
@@ -102,10 +110,13 @@ function initialDrafts(file?: File): Drafts {
 
 function formFor(request: PickerRequest, asset: ImageAsset | undefined): Form {
   const editing = request.mode === 'edit';
-  const fields = fieldsOf(request.current, editing ? asset : undefined);
+  const fields = fieldsOf(request.current ?? request.prefill, editing ? asset : undefined);
   const sources = pickerSources();
-  // A pasted or dropped file opens the tab that takes files.
-  const tab = (request.file ? sources.find((source) => IMAGE_SOURCE_PANELS[source.id]?.takesFiles) : undefined) ?? sources[0];
+  // A pasted or dropped file opens the tab that takes files; a request may name its source.
+  const tab =
+    (request.file ? sources.find((source) => IMAGE_SOURCE_PANELS[source.id]?.takesFiles) : undefined) ??
+    (request.tab ? sources.find((source) => source.id === request.tab) : undefined) ??
+    sources[0];
   return { mode: request.mode, tab: tab?.id ?? 'upload', drafts: initialDrafts(request.file), fields, initial: fields };
 }
 
@@ -276,7 +287,9 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
         open={open}
         onClose={dismiss}
         title={copy.title}
-        description={form.mode === 'edit' && currentAsset ? assetOriginLabel(currentAsset.origin) : undefined}
+        description={
+          form.mode === 'edit' && currentAsset ? assetOriginLabel(currentAsset.origin) : active?.slot ? `Sugestão: ${active.slot.subject}` : undefined
+        }
         dismissible={!dirty && !saving}
         footer={
           <>

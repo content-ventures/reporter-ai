@@ -12,9 +12,9 @@ import {
   ToolbarSeparator,
   Tooltip,
 } from '@content-ventures/design-system/v3';
-import { Image as ImageIcon, Pencil, RefreshCw, Trash2 } from '@content-ventures/design-system/v3/icons';
-import { creditLine, IMAGE_ISSUE_LABELS, IMAGE_LIMITS, imageAlt, type ImageRef } from '@/domain';
-import { useArticleCover } from '@/editor';
+import { Image as ImageIcon, ImagePlus, Pencil, RefreshCw, Trash2, X } from '@content-ventures/design-system/v3/icons';
+import { COVER_BLOCK_ID, creditLine, IMAGE_ISSUE_LABELS, IMAGE_LIMITS, imageAlt, type ImageRef } from '@/domain';
+import { useArticleCover, useImageSlots } from '@/editor';
 import { useAsset, useAssetUrl } from '@/state';
 import { usePhone } from '@/ui/use-phone';
 import { useStudio } from './studio-context';
@@ -25,7 +25,8 @@ import { useStudio } from './studio-context';
  * caption and credit in one line, as everywhere ("Legenda — Foto: Crédito"; a click on the caption
  * edits it) — "Sem crédito" in red when it has none — and Trocar · Editar legenda e crédito ·
  * Remover (larger on phones). The cover lives in the document (one ⌘Z step), so it autosaves with
- * the text.
+ * the text. When the generation suggested a cover, the empty slot says what it should show
+ * ("Sugestão: Retrato de …"): adding one starts from the suggestion, and the suggestion can go.
  */
 export function CoverSlot() {
   const studio = useStudio();
@@ -53,7 +54,9 @@ export function CoverSlot() {
     root.current = node;
   }, []);
 
-  return cover ? <CoverImage cover={cover} rootRef={setRoot} /> : <EmptyCover rootRef={setRoot} />;
+  const suggestion = useImageSlots(studio.editor).find((slot) => slot.role === 'cover');
+  if (cover) return <CoverImage cover={cover} rootRef={setRoot} />;
+  return suggestion ? <SuggestedCover subject={suggestion.slot.subject} rootRef={setRoot} /> : <EmptyCover rootRef={setRoot} />;
 }
 
 const LOCKED = 'Aguarde a geração terminar.';
@@ -93,6 +96,63 @@ function EmptyCover({ rootRef }: { rootRef: (node: HTMLElement | null) => void }
         Adicionar imagem de destaque
       </Button>
     </Tooltip>
+  );
+}
+
+/**
+ * No cover yet, but the generation suggested one: "Adicionar imagem de destaque" (the picker starts
+ * from the suggestion; a dropped image file opens it with the file), what to show, and "Remover
+ * sugestão" (the toast brings it back). The cover stays optional (D04).
+ */
+function SuggestedCover({ subject, rootRef }: { subject: string; rootRef: (node: HTMLElement | null) => void }) {
+  const studio = useStudio();
+  const phone = usePhone();
+  const locked = studio.generation.active;
+  const readOnly = studio.readOnly;
+  const reason = readOnly ? 'Aberta em outra aba' : LOCKED;
+  const add = (file?: File) => {
+    if (!locked && !readOnly) studio.images.fillSlot(COVER_BLOCK_ID, file ? { file } : { tab: 'upload' });
+  };
+  // One line on a desktop; on a phone what to show goes under the actions, whole.
+  const suggestion = <MetaList size="sm" items={[`Sugestão: ${subject}`]} />;
+  const toolbar = (
+    <Toolbar ref={rootRef} label="Imagem de destaque" size={phone ? 'md' : 'sm'}>
+      <ToolbarButton
+        label="Adicionar imagem de destaque"
+        icon={ImagePlus}
+        showLabel
+        disabled={locked || readOnly}
+        disabledReason={reason}
+        onClick={() => add()}
+        onDragOver={(event) => {
+          if (locked || readOnly || !hasFiles(event)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }}
+        onDrop={(event) => {
+          if (locked || readOnly || !hasFiles(event)) return;
+          event.preventDefault();
+          const files = Array.from(event.dataTransfer.files);
+          add(files.find((file) => file.type.startsWith('image/')) ?? files[0]);
+        }}
+      />
+      {phone ? null : suggestion}
+      <ToolbarButton
+        label="Remover sugestão"
+        icon={X}
+        disabled={locked || readOnly}
+        disabledReason={reason}
+        onClick={() => studio.images.dismissSlot(COVER_BLOCK_ID)}
+      />
+    </Toolbar>
+  );
+  return phone ? (
+    <>
+      {toolbar}
+      {suggestion}
+    </>
+  ) : (
+    toolbar
   );
 }
 

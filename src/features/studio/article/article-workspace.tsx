@@ -2,90 +2,67 @@
 
 import { useEffect, useState } from 'react';
 import { useWorkspace, WorkspaceLayout } from '@content-ventures/design-system/v3';
-import { ProductionHeader } from '@/features/production/production-frame';
 import { StatusBadge } from '@/ui/status-badge';
-import { CopilotPane, CopilotTabs } from './copilot-pane';
+import { PanelPane, PanelTabs } from './copilot-pane';
 import { EditorCanvas } from './editor-canvas';
 import { EditorToolbar } from './editor-toolbar';
 import { FloatingBars, LinkDialog } from './floating-bars';
 import { ImagePicker } from './image-picker';
-import { SourcePane, SourceTabs } from './source-pane';
-import { StatusLine } from './status-line';
 import { StudioContext, useStudio } from './studio-context';
-import { StudioFooter, StudioHeaderActions } from './studio-footer';
-import { useArticleStudio, type StudioInputs } from './use-article-studio';
+import { StudioDialogs } from './studio-dialogs';
+import { StudioFooter } from './studio-footer';
+import { StudioHeader, StudioPrimaryBar } from './studio-header';
 import type { StudioBadge } from './studio-session-model';
-
-/** Pane sizes are kept per browser; v2 since the panes got narrower defaults. */
-export const STUDIO_STORAGE_KEY = 'reporter:studio:article:v2';
-
-/** Below this window width the Fonte pane starts collapsed, so the text keeps ≈68 characters. */
-const ROOMY_WIDTH = 1360;
+import { useArticleStudio, type StudioInputs } from './use-article-studio';
 
 /**
- * The article studio frame (PLAN §3.5): DS `WorkspaceLayout docked` with the production header
- * on one line, "Fonte" (280, collapsible; collapsed on narrower desktops) · "Texto" · "Copiloto"
- * (340, collapsible). The shell menu is a rail here, so the text is the widest region. At
- * 1024 px or less it turns into tabs Fonte · Texto · Copiloto without unmounting the editor;
- * focus mode collapses both panes and Esc leaves it.
+ * The article studio frame (CONTRACT §3.8): DS `WorkspaceLayout docked` with the production header
+ * on one line (and the one task notice under it), the text in the middle with its toolbar above and
+ * the two-item footer below, and ONE panel on the right ("Painel": Material · Assistente ·
+ * Checagem · Comentários), closed when the studio opens. At 1024 px or less the panel is the second
+ * tab of the frame ("Painel") without unmounting the editor, the footer moves into the bottom bar
+ * with the primary.
  */
 export function ArticleWorkspace(inputs: StudioInputs) {
   const studio = useArticleStudio(inputs);
+  const { panes } = studio;
   const [linking, setLinking] = useState(false);
-  // Rendered only on the client (the studio waits for the runtime), so the window is known here.
-  const [roomy] = useState(() => typeof window === 'undefined' || window.innerWidth >= ROOMY_WIDTH);
-  const transcript = studio.sourceTab === 'transcript';
-  const conversation = studio.copilotTab === 'ai';
+  const tab = panes.panelTab;
+  // The interview and the conversation own their scroll (and touch the pane's edges).
+  const owned = tab === 'material' || tab === 'assistant' || (tab === 'comments' && Boolean(studio.reviewNote));
 
   return (
     <StudioContext value={studio}>
       <WorkspaceLayout
         docked
-        storageKey={STUDIO_STORAGE_KEY}
-        header={(narrow) => (
-          <ProductionHeader
-            // The article's own status ("Aprovado · v2"), not the production's (which follows the carousel).
-            status={<StudioStatusBadge badge={studio.articleStatus} />}
-            actions={narrow ? undefined : <StudioHeaderActions />}
-          />
-        )}
-        // Desktop: actions in the header line, save state and version in the status line, so the
-        // text keeps the height. Narrow (tabs, phone): the header has no room — the footer returns.
-        footer={(narrow) => (narrow ? <StudioFooter /> : null)}
+        header={(narrow) => <StudioHeader withPrimary={!narrow} />}
+        // Narrow (tabs, phone): the header has no room for the primary — the bottom bar holds it
+        // with the footer's short facts ("1,5 de 2 laudas · Falta 5").
+        footer={(narrow) => (narrow ? <StudioPrimaryBar detail={<StudioFooter narrow />} /> : null)}
         mainLabel="Texto"
         mainFlush
         mainHeader={<EditorToolbar onLink={() => setLinking(true)} />}
-        mainFooter={<StatusLine />}
-        start={{
-          label: 'Fonte',
-          defaultSize: 280,
-          defaultCollapsed: !roomy,
-          min: 240,
-          max: 480,
-          header: <SourceTabs />,
-          content: <SourcePane />,
-          scroll: !transcript,
-          flush: transcript,
-        }}
+        mainFooter={<MainFooter />}
         end={{
-          label: 'Copiloto',
-          defaultSize: 340,
+          label: 'Painel',
+          defaultSize: 360,
           min: 300,
           max: 520,
-          header: <CopilotTabs />,
-          content: <CopilotPane />,
-          scroll: !conversation,
-          flush: conversation,
+          collapsed: !panes.panelOpen,
+          onCollapsedChange: (collapsed) => panes.setPanelOpen(!collapsed),
+          header: <PanelTabs />,
+          content: <PanelPane />,
+          scroll: !owned,
+          flush: owned,
         }}
-        view={studio.view}
-        onViewChange={studio.setView}
-        focus={studio.focusMode.focus}
-        onFocusChange={studio.focusMode.setFocus}
+        view={panes.view}
+        onViewChange={panes.setView}
       >
         <WorkspaceBridge />
         <EditorCanvas />
         <FloatingBars onLink={() => setLinking(true)} />
       </WorkspaceLayout>
+      <StudioDialogs />
       <LinkDialog open={linking} onClose={() => setLinking(false)} />
       <ImagePicker
         request={studio.images.picker}
@@ -98,10 +75,17 @@ export function ArticleWorkspace(inputs: StudioInputs) {
   );
 }
 
-/** Lets studio actions open a collapsed pane (the layout state lives inside the frame). */
+/** Under the text: the footer on a desktop; on a phone it moves into the bottom bar. */
+function MainFooter() {
+  const narrow = useWorkspace()?.narrow ?? false;
+  return narrow ? null : <StudioFooter />;
+}
+
+/** Lets studio actions open the panel (the layout state lives inside the frame). */
 function WorkspaceBridge() {
   const workspace = useWorkspace();
-  const { bindWorkspace } = useStudio();
+  const { panes } = useStudio();
+  const { bindWorkspace } = panes;
   useEffect(() => bindWorkspace(workspace));
   return null;
 }

@@ -16,7 +16,7 @@ import { ProductionHeader, useProductionFrame } from '@/features/production/prod
 import { usePiece, useSource } from '@/state';
 import type { PieceView } from '@/ports';
 import { materialHref } from '@/ui/routes';
-import { ArticleWorkspace, STUDIO_STORAGE_KEY, StudioStatusBadge } from './article-workspace';
+import { ArticleWorkspace, StudioStatusBadge } from './article-workspace';
 import { studioBadge } from './studio-session-model';
 
 /**
@@ -79,12 +79,10 @@ function StudioSkeleton({ piece, productionStatus }: { piece: PieceView | undefi
   return (
     <WorkspaceLayout
       docked
-      storageKey={STUDIO_STORAGE_KEY}
       header={<ProductionHeader {...(status ? { status: <StudioStatusBadge badge={status} /> } : {})} />}
       mainLabel="Texto"
       mainFlush
-      start={{ label: 'Fonte', defaultSize: 280, content: <ListItemSkeleton lines={2} /> }}
-      end={{ label: 'Copiloto', defaultSize: 340, content: <SkeletonText lines={4} /> }}
+      end={{ label: 'Painel', defaultSize: 360, defaultCollapsed: true, content: <ListItemSkeleton lines={2} /> }}
     >
       <Prose variant="edit" label="Texto do artigo" header={<SkeletonText lines={1} barHeight={22} lastWidth="70%" lineHeight={36} />}>
         <PageStack>

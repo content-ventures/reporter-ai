@@ -16,9 +16,9 @@ import {
   Tooltip,
 } from '@content-ventures/design-system/v3';
 import { FileText, RotateCcw, Sparkles } from '@content-ventures/design-system/v3/icons';
-import { LENGTH_TARGETS } from '@/domain';
+import { sizeOf } from '@/domain';
 import { EditorContent } from '@/editor';
-import { formatCount, plural } from '@/ui/format';
+import { formatCharacters, formatLaudas, plural } from '@/ui/format';
 import { materialHref } from '@/ui/routes';
 import { CoverSlot } from './cover-slot';
 import { useStudio } from './studio-context';
@@ -105,14 +105,14 @@ function EmptyDraft() {
   const { generation } = studio;
   const guard = studio.production.guards.pieces.article?.generate;
   const source = studio.production.sources[0];
-  const target = LENGTH_TARGETS[studio.production.brief.length];
+  const spec = sizeOf(studio.production.brief.size);
   const run = generation.run;
   const stopped = run && (run.status === 'failed' || run.status === 'cancelled') ? run : undefined;
   const failedStep = stopped?.steps.find((step) => step.state === 'error');
   const resume = stopped && generation.retryable;
   const meta = [
     source ? `Material v${source.version} · ${plural(source.words, 'palavra', 'palavras')}` : null,
-    `${target.label} · ≈${formatCount(target.words)} palavras`,
+    `${spec.label}: até ${formatLaudas(spec.maxChars)} (${formatCharacters(spec.maxChars)})`,
   ]
     .filter(Boolean)
     .join(' · ');

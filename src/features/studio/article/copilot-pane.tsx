@@ -6,56 +6,77 @@ import {
   Conversation,
   EmptyState,
   LinkButton,
+  List,
+  ListItem,
   MetaList,
   PageStack,
   PromptComposer,
-  PromptModelMenu,
   Section,
   Tabs,
   type ConversationHandle,
   type PromptPreset,
 } from '@content-ventures/design-system/v3';
-import { Sparkles } from '@content-ventures/design-system/v3/icons';
-import { assetOriginLabel, SIMULATED_MODEL, type CheckResult, type QuoteCheck } from '@/domain';
+import { ImagePlus, Sparkles } from '@content-ventures/design-system/v3/icons';
+import { assetOriginLabel, IMAGE_ORIENTATION_LABELS, type CheckResult, type ImageSlotUse, type QuoteCheck } from '@/domain';
 import { copilotPresets } from '@/registries';
 import { ChecksList } from '@/ui/checks-list';
 import { formatCount } from '@/ui/format';
 import { SourceChipFor } from '@/ui/source-chip-for';
 import { issueLine, type ImageToCheck } from './image-model';
-import { clip, closestExcerpt } from './studio-model';
+import { checagemGroups, clip, closestExcerpt } from './studio-model';
 import { useStudio } from './studio-context';
+import { MaterialTab } from './source-pane';
 import { ContextChips, GenerationTurn, RequestTurn, ReviewNoteTurn } from './copilot-turns';
-import type { CopilotTab } from './use-article-studio';
+import type { PanelTab } from './use-article-studio';
 
 /**
- * "Copiloto" (PLAN §3.5): IA — the conversation grounded on the material (review note, the
- * generation trace, requests with their suggestions) with the PromptComposer docked below
- * (context chips, presets from the registry, model "Simulação local", Enviar/Parar) — and
- * Checagem, the readiness checks of the text on screen with "Ir para o próximo".
+ * The studio's one panel ("Painel", CONTRACT §3.8) and its tabs: Material (the interview) ·
+ * Assistente (the conversation grounded on the material: the generation trace, requests with their
+ * suggestions, the PromptComposer docked below with its context chips and presets) · Checagem
+ * (what is missing before sending and the warnings, with "Ir ao trecho", then what to fix one by
+ * one: images to check, suggested images to fill, quotations that do not match) · Comentários
+ * (the reviewer's note, only after "Ajustes solicitados").
  */
 
 const PRESET_TOOLS = copilotPresets('article');
-const MODEL_OPTIONS = [{ value: SIMULATED_MODEL.alias, label: SIMULATED_MODEL.label, meta: 'Padrão' }];
 
-export function CopilotTabs() {
+/** The tab on screen: "Comentários" only exists while adjustments are requested. */
+function usePanelTab(): PanelTab {
+  const { panes, reviewNote } = useStudio();
+  return panes.panelTab === 'comments' && !reviewNote ? 'assistant' : panes.panelTab;
+}
+
+export function PanelTabs() {
   const studio = useStudio();
-  const failing = studio.checks.filter((check) => check.status === 'warn' || check.status === 'fail').length;
-  const items: { value: CopilotTab; label: string; count?: number }[] = [
-    { value: 'ai', label: 'IA' },
-    { value: 'checks', label: 'Checagem', ...(failing > 0 ? { count: failing } : {}) },
+  const tab = usePanelTab();
+  const groups = useMemo(() => checagemGroups(studio.checks, studio.openSuggestions), [studio.checks, studio.openSuggestions]);
+  const pending = groups.missing.length + groups.warnings.length;
+  const items: { value: PanelTab; label: string; count?: number }[] = [
+    { value: 'material', label: 'Material' },
+    { value: 'assistant', label: 'Assistente' },
+    { value: 'checks', label: 'Checagem', ...(pending > 0 ? { count: pending } : {}) },
+    ...(studio.reviewNote ? [{ value: 'comments' as const, label: 'Comentários', count: 1 }] : []),
   ];
-  return <Tabs label="Copiloto" size="sm" items={items} value={studio.copilotTab} onChange={studio.setCopilotTab} />;
+  return <Tabs label="Painel" size="sm" items={items} value={tab} onChange={studio.panes.setPanelTab} />;
 }
 
-export function CopilotPane() {
-  const studio = useStudio();
-  return studio.copilotTab === 'ai' ? <CopilotConversation /> : <ChecksTab />;
+export function PanelPane() {
+  switch (usePanelTab()) {
+    case 'material':
+      return <MaterialTab />;
+    case 'assistant':
+      return <AssistantTab />;
+    case 'checks':
+      return <ChecksTab />;
+    case 'comments':
+      return <CommentsTab />;
+  }
 }
 
-function CopilotConversation() {
+function AssistantTab() {
   const studio = useStudio();
   const conversation = useRef<ConversationHandle | null>(null);
-  const hasTurns = Boolean(studio.reviewNote) || Boolean(studio.generation.run) || studio.thread.length > 0;
+  const hasTurns = Boolean(studio.generation.run) || studio.thread.length > 0;
   const requests = studio.thread.length;
   // A new request of the person (from the text or the composer) brings the thread to its end.
   useEffect(() => {
@@ -64,15 +85,23 @@ function CopilotConversation() {
   return (
     <Conversation
       ref={conversation}
-      label="Conversa com o copiloto"
-      empty={hasTurns ? undefined : <EmptyState icon={Sparkles} title="Nenhum pedido ainda" meta={SIMULATED_MODEL.label} />}
+      label="Conversa com o Assistente"
+      empty={hasTurns ? undefined : <EmptyState icon={Sparkles} title="Pergunte sobre a entrevista ou peça uma mudança no texto." />}
       footer={<Composer />}
     >
       {studio.generation.run ? <GenerationTurn key="generation" /> : null}
-      {studio.reviewNote ? <ReviewNoteTurn key="review" /> : null}
       {studio.thread.map((turn) => (
         <RequestTurn key={turn.id} turn={turn} />
       ))}
+    </Conversation>
+  );
+}
+
+/** The reviewer's note and the passages it points at, with "Aplicar nota com IA". */
+function CommentsTab() {
+  return (
+    <Conversation label="Comentários da revisão">
+      <ReviewNoteTurn />
     </Conversation>
   );
 }
@@ -96,7 +125,7 @@ function usePresets(): PromptPreset[] {
 function Composer() {
   const { bindComposer, composer, setComposer, chips, removeChip, generation, activeAssist, actions, readOnly } = useStudio();
   const presets = usePresets();
-  // The article generation has its own "Parar geração" in the footer: here Enviar just waits.
+  // The article generation has its own "Parar" in the header banner: here Enviar just waits.
   const busy = generation.active || Boolean(activeAssist);
   const context = chips.length > 0 ? <ContextChips chips={chips} onRemove={removeChip} /> : undefined;
   return (
@@ -113,11 +142,10 @@ function Composer() {
       context={context}
       presets={presets}
       presetAction="submit"
-      model={<PromptModelMenu value={SIMULATED_MODEL.alias} options={MODEL_OPTIONS} onChange={() => undefined} />}
       // A tab another tab took over asks nothing (A10): the banner above says how to edit here.
       disabled={readOnly}
-      placeholder={readOnly ? 'Aberta em outra aba' : 'Peça uma mudança ou pergunte sobre a entrevista…'}
-      inputLabel="Pedido ao copiloto"
+      placeholder={readOnly ? 'Aberta em outra aba' : 'Pergunte sobre a entrevista ou peça uma mudança no texto'}
+      inputLabel="Pedir ao Assistente"
       maxLength={2000}
       minRows={2}
       maxRows={8}
@@ -127,26 +155,31 @@ function Composer() {
 
 function ChecksTab() {
   const studio = useStudio();
-  const { readiness } = studio;
+  const groups = useMemo(() => checagemGroups(studio.checks, studio.openSuggestions), [studio.checks, studio.openSuggestions]);
   const missing = studio.facts.quotes.filter((quote) => quote.status === 'missing');
   const jump = (check: CheckResult) => {
-    if (check.id === 'article.ai-reviewed') studio.actions.nextAiBlock();
+    if (check.id === 'article.suggestions') studio.actions.nextSuggestion();
     else if (check.id === 'article.quotes') studio.actions.nextMissingQuote();
     else if (check.id === 'article.cover') studio.images.revealCover();
     else if (check.id === 'article.image-credits') studio.actions.nextImageIssue();
     else if (check.id === 'article.image-alt' && check.targets?.[0]) studio.actions.showImage(check.targets[0].blockId);
+    else if (check.id === 'article.image-slots') studio.actions.nextImageSlot();
     else if (check.targets?.[0]) studio.actions.focusRange(check.targets[0]);
   };
+  const allClear = groups.missing.length === 0 && groups.warnings.length === 0;
   return (
     <>
-      <Section
-        title="Prontidão"
-        titleAs="h3"
-        meta={readiness.ready ? `${readiness.passed}/${readiness.total}` : 'Bloqueia a aprovação'}
-        metaTone={readiness.ready ? 'muted' : 'missing'}
-      >
-        <ChecksList checks={studio.checks} onJump={jump} />
-      </Section>
+      {allClear ? <Alert tone="success" title="Tudo certo para enviar" /> : null}
+      {groups.missing.length > 0 ? (
+        <Section title="Falta para enviar" titleAs="h3" meta={formatCount(groups.missing.length)} metaTone="missing">
+          <ChecksList checks={groups.missing} onJump={jump} />
+        </Section>
+      ) : null}
+      {groups.warnings.length > 0 ? (
+        <Section title="Avisos" titleAs="h3" meta={formatCount(groups.warnings.length)}>
+          <ChecksList checks={groups.warnings} onJump={jump} defaultOpen={[]} />
+        </Section>
+      ) : null}
       {studio.imageIssues.length > 0 ? (
         <Section title="Imagens a conferir" titleAs="h3" meta={formatCount(studio.imageIssues.length)} metaTone="missing">
           <PageStack>
@@ -154,6 +187,15 @@ function ChecksTab() {
               <ImageToFix key={entry.blockId} entry={entry} />
             ))}
           </PageStack>
+        </Section>
+      ) : null}
+      {studio.imageSlots.length > 0 && !studio.generation.active ? (
+        <Section title="Imagens a preencher" titleAs="h3" meta={formatCount(studio.imageSlots.length)}>
+          <List label="Imagens sugeridas a preencher" framed={false} dividers={false} bleed>
+            {studio.imageSlots.map((use) => (
+              <SlotToFill key={use.blockId} use={use} />
+            ))}
+          </List>
         </Section>
       ) : null}
       {missing.length > 0 ? (
@@ -197,6 +239,31 @@ function ImageToFix({ entry }: { entry: ImageToCheck }) {
     >
       <MetaList size="sm" items={[issueLine(entry.issues), entry.asset ? assetOriginLabel(entry.asset.origin) : null]} />
     </Alert>
+  );
+}
+
+/**
+ * A suggested image nobody filled yet: what it should show (jumps to its frame in the text, which
+ * opens its bar), its orientation when it is not the column's, and "Enviar imagem" right here.
+ */
+function SlotToFill({ use }: { use: ImageSlotUse }) {
+  const studio = useStudio();
+  const orientation = use.slot.orientation && use.slot.orientation !== 'landscape' ? IMAGE_ORIENTATION_LABELS[use.slot.orientation] : undefined;
+  return (
+    <ListItem
+      icon={ImagePlus}
+      title={use.slot.subject}
+      titleLines={2}
+      description={orientation}
+      onClick={() => studio.actions.showImageSlot(use.blockId)}
+      actions={
+        studio.readOnly ? undefined : (
+          <LinkButton size="sm" onClick={() => studio.images.fillSlot(use.blockId, { tab: 'upload' })}>
+            Enviar imagem
+          </LinkButton>
+        )
+      }
+    />
   );
 }
 

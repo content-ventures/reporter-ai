@@ -27,7 +27,7 @@ import {
 } from '@/domain';
 import { EditorContent, useArticleReader } from '@/editor';
 import type { RunView } from '@/ports';
-import { useRun, useVote } from '@/state';
+import { useRun } from '@/state';
 import { formatDuration, plural } from '@/ui/format';
 import { usePerson } from '@/ui/person-avatar';
 import { Provenance } from '@/ui/provenance';
@@ -39,11 +39,11 @@ import { clip, isOpenSuggestion, proposalText, suggestionHunks, targetLabel } fr
 import type { ComposerChip, SessionTurn } from './use-article-studio';
 
 /**
- * Copilot turns (PLAN §3.5 "Copiloto"): the reviewer's note after "Ajustes solicitados", the
+ * Assistant turns (CONTRACT §3.8, tab "Assistente"): the reviewer's note after "Ajustes solicitados" (tab "Comentários"), the
  * article generation (AgentTrace with the key excerpts, Parar, retry per step, the "v1 · IA"
  * artifact) and each request of this session (the person's turn, then the AI with its trace,
- * reply and SuggestionCards). The model ("Simulação local") is said once in the pane, by the
- * composer's model menu, and in each run's "Ver detalhes"; the turns carry how long they took.
+ * reply and SuggestionCards). The model is said in each run's "Ver detalhes"; the turns carry how long
+ * they took. No thumbs: the turns do not ask for a vote.
  */
 
 type TraceRun = GenerationRun | RunView;
@@ -158,8 +158,8 @@ export function ReviewNoteTurn() {
 }
 
 /**
- * An AI version older than the approved one: the copilot does not offer to restore it over the
- * approval (the Versões tab still does, with its confirmation).
+ * An AI version older than the approved one: the assistant does not offer to restore it over the
+ * approval (the history drawer still does, with its confirmation).
  */
 function olderThanApproved(number: number, approved: number | undefined): boolean {
   return approved !== undefined && number < approved;
@@ -173,8 +173,6 @@ export function GenerationTurn() {
   const [expanded, setExpanded] = useState<{ runId: string; open: boolean } | null>(null);
   const [restoring, setRestoring] = useState(false);
   const run = generation.run;
-  // 👍/👎 saved per person and run (REQ-T.8): a reload shows the vote again; switching replaces it.
-  const vote = useVote(run ? { kind: 'run', runId: run.id } : null);
   if (!run) return null;
   const fold = generation.live?.fold;
   // "Selecionando falas-chave" shows the key excerpts it picked (its own count), not the evidence of every block.
@@ -191,8 +189,6 @@ export function GenerationTurn() {
       // Once the run ends, its provenance line (model · duration · Ver detalhes) closes the turn.
       meta={active ? modelMeta(run) : undefined}
       status={active ? 'streaming' : 'done'}
-      feedback={vote.value}
-      onFeedback={active || failed ? undefined : (value, note) => void vote.vote(value, note)}
     >
       <RunTrace
         run={run}
@@ -228,10 +224,7 @@ export function GenerationTurn() {
         <ConversationArtifact
           title={version.label}
           meta={plural(version.words, 'palavra', 'palavras')}
-          onOpen={() => {
-            studio.setHighlightVersionId(version.id);
-            studio.showSource('versions');
-          }}
+          onOpen={() => studio.panes.openDialog('history')}
           actions={
             cancelled ? (
               <Button
@@ -353,7 +346,6 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
   const fold = live.status === 'ready' ? live.data?.fold : undefined;
   const view = turn.runId ? studio.production.runs.find((run) => run.id === turn.runId) : undefined;
   const run: TraceRun | undefined = fold?.run ?? view;
-  const vote = useVote(turn.runId ? { kind: 'run', runId: turn.runId } : null);
   const suggestions = useMemo(() => studio.suggestions.filter((suggestion) => suggestion.runId === turn.runId), [studio.suggestions, turn.runId]);
   // Streamed blocks are the reply or the preview of a proposal (same id as its suggestion). A
   // finished preview is AI text to review (`ai: 'unreviewed'`); a reply is not. While a block is
@@ -402,7 +394,6 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
               : undefined
         }
         onContinue={runId && cancelled ? () => void (fold ? studio.actions.retryRun(runId) : studio.actions.repeatTurn(turn)) : undefined}
-        feedback={vote.value}
         actions={
           !active && quotable.length > 0 ? (
             <Button size="sm" variant="ghost" icon={Quote} onClick={() => quotable.forEach((excerpt) => studio.actions.insertQuote(excerpt))}>
@@ -410,7 +401,6 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
             </Button>
           ) : undefined
         }
-        onFeedback={runId && !active && !failed ? (value, note) => void vote.vote(value, note) : undefined}
       >
         {turn.reply ? turn.reply : null}
         {active && run ? <RunTrace run={run} label={turn.prompt} variant="compact" announce={false} /> : null}

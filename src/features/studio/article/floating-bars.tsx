@@ -17,7 +17,6 @@ import {
 import {
   Bold,
   Check,
-  CheckCheck,
   CircleStop,
   Italic,
   Link2,
@@ -32,6 +31,7 @@ import {
   Sparkles,
   TextQuote,
   Trash2,
+  Upload,
   X,
 } from '@content-ventures/design-system/v3/icons';
 import { imageIssues, LINK_REFUSAL_MESSAGES, type QuoteCheck, type Suggestion, type TextRange } from '@/domain';
@@ -52,6 +52,8 @@ import {
   type FigureInfo,
   type SelectionInfo,
 } from '@/editor';
+import { arrivalOf, imageSource, type ImageSourceEntry } from '@/registries';
+import { ICONS } from '@/ui/icons';
 import { useMediaQuery } from '@/ui/use-media-query';
 import { aiMenuItems } from './editor-toolbar';
 import { issueLine } from './image-model';
@@ -65,12 +67,14 @@ import { clip, closestExcerpt, suggestionDelta } from './studio-model';
  *    or the caret entering the passage) — Aceitar (⌘↵) · Descartar (Esc) · Tentar de novo,
  *    "Simulação local" in its label; the proposal reads in the paragraph itself;
  * 3. the image bar on a selected figure — Trocar · Editar legenda e crédito · Remover, with
- *    "Sem crédito" in red when the image has none;
+ *    "Sem crédito" in red when the image has none; on a suggested image nobody filled (a slot),
+ *    the slot bar instead — Enviar imagem · Usar link · Acervo and Gerar com IA "Em breve" ·
+ *    Remover sugestão;
  * 4. the quotation bar with the caret in a quotation the material does not back — what the
  *    source says · Usar texto da fonte · Ver na transcrição.
  * They anchor to rectangles of the document and never take the focus from the text. The suggestion
  * and quotation bars sit under their block, and the block opens room for them (`data-bar-space`):
- * they never cover a line. (Reviewing the AI text block by block lives in the status line.)
+ * they never cover a line. (The review of the AI text is one for the whole text, in the footer.)
  */
 export function FloatingBars({ onLink }: { onLink: () => void }) {
   const studio = useStudio();
@@ -93,7 +97,10 @@ export function FloatingBars({ onLink }: { onLink: () => void }) {
   // Focusing a card (or a new inline request) is a new focus, which brings a dismissed bar back.
   const suggestionOpen = !selectionOpen && suggestionKey !== null && !studio.suggestionBarHidden;
 
-  const figure = useSelectedFigure(editor);
+  const selected = useSelectedFigure(editor);
+  // A suggested image nobody filled (an image slot) has its own bar.
+  const slot = selected && !selected.assetId && selected.slot ? selected : null;
+  const figure = slot ? null : selected;
   // Like the selection bar: dismissed for this image until another one (or the text) is selected.
   const [dismissedFigure, setDismissedFigure] = useState<string | null>(null);
   const figureKey = figure ? `${figure.blockId}:${figure.pos}:${studio.figureReveal}` : null;
@@ -104,6 +111,23 @@ export function FloatingBars({ onLink }: { onLink: () => void }) {
   }
   const figureOpen =
     !selectionOpen && !suggestionOpen && figure !== null && dismissedFigure !== figureKey && !studio.generation.active && studio.images.picker === null;
+
+  const [dismissedSlot, setDismissedSlot] = useState<string | null>(null);
+  const slotKey = slot ? `${slot.blockId}:${slot.pos}:${studio.figureReveal}` : null;
+  const [seenSlot, setSeenSlot] = useState(slotKey);
+  if (seenSlot !== slotKey) {
+    setSeenSlot(slotKey);
+    if (dismissedSlot !== null) setDismissedSlot(null);
+  }
+  // Filling waits for the generation; a read-only tab (A10) fills nothing.
+  const slotOpen =
+    !selectionOpen &&
+    !suggestionOpen &&
+    slot !== null &&
+    dismissedSlot !== slotKey &&
+    !studio.generation.active &&
+    !studio.readOnly &&
+    studio.images.picker === null;
 
   // The caret in a quotation the material does not back ("Falta"): what the source says, at hand.
   const caret = selection.empty ? selection.ranges[0] : undefined;
@@ -117,7 +141,7 @@ export function FloatingBars({ onLink }: { onLink: () => void }) {
     setSeenQuote(quoteKey);
     if (dismissedQuote !== null) setDismissedQuote(null);
   }
-  const quoteOpen = !selectionOpen && !suggestionOpen && !figureOpen && quote !== undefined && dismissedQuote !== quoteKey && !studio.generation.active;
+  const quoteOpen = !selectionOpen && !suggestionOpen && !figureOpen && !slotOpen && quote !== undefined && dismissedQuote !== quoteKey && !studio.generation.active;
 
   // The block under a bar opens room for it, so the bar never covers the next line (A06.3).
   const suggestionBlock = suggestionOpen ? suggestionBarBlock(editor, suggestion, studio.suggestionFocus?.target) : null;
@@ -132,6 +156,7 @@ export function FloatingBars({ onLink }: { onLink: () => void }) {
       <SelectionBar open={selectionOpen} selection={selection} onDismiss={() => setDismissedSelection(selectionKey)} onLink={onLink} />
       <SuggestionNearText open={suggestionOpen} onDismiss={studio.hideSuggestionBar} />
       <FigureBar open={figureOpen} figure={figure} onDismiss={() => setDismissedFigure(figureKey)} />
+      <SlotBar open={slotOpen} slot={slot} onDismiss={() => setDismissedSlot(slotKey)} />
       <QuoteBar open={quoteOpen} quote={quote} onDismiss={() => setDismissedQuote(quoteKey)} />
     </>
   );
@@ -142,13 +167,11 @@ function SelectionBar({ open, selection, onDismiss, onLink }: { open: boolean; s
   const { editor } = studio;
   const anchor = useSelectionAnchor(editor);
   const state = useArticleToolbarState(editor);
-  const unreviewed = selection.blockIds.filter((id) => studio.facts.unreviewed.includes(id));
   const run = (toolId: string) => {
     onDismiss();
     studio.actions.runTool(toolId, { target: selection.ranges });
   };
-  const [passage] = aiMenuItems(run);
-  const [rewrite, ...more] = passage ?? [];
+  const { rewrite } = aiMenuItems(run);
 
   return (
     <FloatingToolbar open={open} anchor={anchor} label="Ações do trecho selecionado" onDismiss={onDismiss}>
@@ -156,16 +179,11 @@ function SelectionBar({ open, selection, onDismiss, onLink }: { open: boolean; s
       <ToolbarToggle label="Itálico" icon={Italic} shortcut="⌘I" pressed={state.italic} onPressedChange={() => editor && toggleMark(editor, 'italic')} />
       <ToolbarButton label={state.link ? 'Editar link' : 'Link'} icon={Link2} pressed={state.link} onClick={onLink} />
       <ToolbarSeparator />
-      <ToolbarMenu
-        label="Reescrever"
-        icon={Sparkles}
-        showLabel
-        keep
-        sections={[{ items: rewrite?.items ?? [] }, { items: more.filter((item) => item.label !== 'Encurtar') }]}
-      />
+      <ToolbarButton label="Mais direto" icon={Sparkles} showLabel onClick={() => run('rewrite.direct')} />
       <ToolbarButton label="Encurtar" icon={Scissors} showLabel onClick={() => run('shorten')} />
+      <ToolbarMenu label="Reescrever" icon={Pencil} showLabel keep sections={[{ items: rewrite }]} />
       <ToolbarButton
-        label="Perguntar à IA"
+        label="Pedir…"
         icon={MessageSquareText}
         showLabel
         onClick={() => {
@@ -173,12 +191,6 @@ function SelectionBar({ open, selection, onDismiss, onLink }: { open: boolean; s
           studio.actions.askAboutSelection();
         }}
       />
-      {unreviewed.length > 0 ? (
-        <>
-          <ToolbarSeparator />
-          <ToolbarButton label="Marcar como revisado" icon={CheckCheck} onClick={() => studio.actions.markReviewed(unreviewed)} />
-        </>
-      ) : null}
     </FloatingToolbar>
   );
 }
@@ -215,7 +227,7 @@ function SuggestionNearText({ open, onDismiss }: { open: boolean; onDismiss: () 
   const change = state === 'stale' ? 'Trecho mudou' : delta && (delta.removed > 0 || delta.added > 0) ? `−${delta.removed} +${delta.added} palavras` : null;
   // On a phone the decision keeps its place: a short label, and the secondary actions as icons.
   const narrow = useMediaQuery('(max-width: 640px)');
-  // The model is said in the copilot (composer and "Ver detalhes"), not again on the bar.
+  // The model is said in the assistant (the run's "Ver detalhes"), not again on the bar.
   const label = (narrow ? [suggestion?.label ?? 'Gerando sugestão', state === 'stale' ? change : null] : [suggestion?.label ?? 'Gerando sugestão', change])
     .filter(Boolean)
     .join(' · ');
@@ -270,7 +282,7 @@ function SuggestionNearText({ open, onDismiss }: { open: boolean; onDismiss: () 
           />
         </>
       )}
-      <ToolbarButton label="Ver no copiloto" icon={PanelRightOpen} onClick={() => studio.showCopilot('ai')} />
+      <ToolbarButton label="Ver no Assistente" icon={PanelRightOpen} onClick={() => studio.panes.showPanel('assistant')} />
     </FloatingToolbar>
   );
 }
@@ -327,6 +339,45 @@ function FigureBar({ open, figure, onDismiss }: { open: boolean; figure: FigureI
       />
       <ToolbarSeparator />
       <ToolbarButton label="Remover" icon={Trash2} tone="danger" onClick={act(images.removeFigure)} />
+    </FloatingToolbar>
+  );
+}
+
+/** Image sources of later releases, offered on a suggestion as "Em breve" (R2 Acervo, R6 Gerar com IA). */
+const SOON_SOURCES: readonly ImageSourceEntry[] = (['archive', 'generate'] as const)
+  .map((id) => imageSource(id))
+  .filter((entry): entry is ImageSourceEntry => entry !== undefined);
+
+/**
+ * A suggested image nobody filled yet (an image slot) selected: its frame already says what to
+ * show. "Enviar imagem" and "Usar link" open the picker on that source, alt text and caption
+ * started from the suggestion; "Acervo" (R2) and "Gerar com IA" (R6) wait as "Em breve" (reachable,
+ * the reason in their tip); "Remover sugestão" takes it out of the text ("Desfazer" in the toast).
+ * Anchored above the frame like the image bar; keeps showing its slot while it fades out.
+ */
+function SlotBar({ open, slot, onDismiss }: { open: boolean; slot: FigureInfo | null; onDismiss: () => void }) {
+  const studio = useStudio();
+  const { editor, images } = studio;
+  const [last, setLast] = useState(slot);
+  if (slot && slot !== last) setLast(slot);
+  const shown = slot ?? last;
+  const anchor = useFigureAnchor(editor, shown?.blockId);
+  // On a phone the bar keeps "Enviar imagem" written; the rest as icons with their tips.
+  const narrow = useMediaQuery('(max-width: 640px)');
+  const act = (run: (blockId: string) => void) => () => {
+    if (shown) run(shown.blockId);
+  };
+
+  return (
+    <FloatingToolbar open={open && shown !== null} anchor={anchor} placement="top" label="Imagem sugerida" onDismiss={(reason) => (reason === 'escape' ? onDismiss() : undefined)}>
+      <ToolbarButton label="Enviar imagem" icon={Upload} showLabel keep onClick={act((blockId) => images.fillSlot(blockId, { tab: 'upload' }))} />
+      <ToolbarButton label="Usar link" icon={Link2} showLabel={!narrow} onClick={act((blockId) => images.fillSlot(blockId, { tab: 'link' }))} />
+      <ToolbarSeparator />
+      {SOON_SOURCES.map((source) => (
+        <ToolbarButton key={source.id} label={source.label} icon={ICONS[source.icon]} disabled disabledReason={`${source.label} · Em breve. ${arrivalOf(source.since)}`} />
+      ))}
+      <ToolbarSeparator />
+      <ToolbarButton label="Remover sugestão" icon={Trash2} tone="danger" onClick={act(images.dismissSlot)} />
     </FloatingToolbar>
   );
 }
