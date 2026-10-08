@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { getEventListeners } from 'node:events';
 import { describe, it } from 'node:test';
-import { blockText, paragraphBlock } from '../../../domain/article.ts';
+import { articleCharacters, blockText, paragraphBlock } from '../../../domain/article.ts';
 import type { ArticleBody } from '../../../domain/article.ts';
 import { articleBodyFromRun } from '../../../domain/run-events.ts';
 import { generationContract, runToEnd } from '../../../ports/contracts/generation.contract.ts';
 import { OUTLINE_REVIEW } from '../../../ports/generation.ts';
 import type { ScriptBook } from '../../../ports/script-book.ts';
 import { recoverOrphanRuns } from './record-sync.ts';
-import { ARTICLE_PIECE, CAROUSEL_PIECE, createHarness, PRODUCTION_ID } from './testing.ts';
+import { ARTICLE_PIECE, CAROUSEL_PIECE, createHarness, PRODUCTION_ID, TEST_TEMPLATE } from './testing.ts';
 import type { Harness } from './testing.ts';
 
 generationContract('local simulation', () => {
@@ -22,6 +22,9 @@ generationContract('local simulation', () => {
       harness.approveLatestArticle();
       harness.addCarouselPiece();
       return { carouselPieceId: CAROUSEL_PIECE };
+    },
+    async requestReview(pieceId) {
+      harness.requestReview({ pieceId });
     },
   };
 });
@@ -55,15 +58,21 @@ describe('local generation · finished runs', () => {
 });
 
 describe('local generation · article draft', () => {
-  it('follows the registry recipe: material → key quotes → outline → intro → sections → quote check', async () => {
+  it('follows the registry recipe: material → outline → sources and quotes → intro → sections → quote and size check', async () => {
     const harness = createHarness();
     const run = await runToEnd(harness.service, 'article.draft', DRAFT);
     assert.deepEqual(
       run.fold.run.steps.map((step) => step.id),
-      ['read', 'select', 'outline', 'intro', 'section-1', 'section-2', 'section-3', 'quotes'],
+      ['read', 'outline', 'select', 'intro', 'section-1', 'section-2', 'section-3', 'quotes'],
     );
     assert.match(run.fold.run.steps[0].meta ?? '', /^\d+ falas · 3 falantes$/);
-    assert.match(run.fold.run.steps[7].meta ?? '', /^(\d+) de \1 conferidas$/);
+    // The structure announces the size; this interview gives less than 2 laudas, and says so.
+    assert.match(run.fold.run.steps[1].meta ?? '', /^3 seções · (alvo 2 laudas|o material rende ≈ \d+(,\d)? laudas?)$/);
+    for (const step of run.fold.run.steps.filter((entry) => entry.id === 'intro' || entry.id.startsWith('section-'))) {
+      assert.match(step.meta ?? '', /^\d{1,3}(\.\d{3})* caracteres$/, `${step.id} meta in characters, never words`);
+    }
+    assert.match(run.fold.run.steps[7].meta ?? '', /^(\d+) de \1 conferidas · \d+(,\d)? laudas?$/);
+    assert.ok(run.fold.size && run.fold.outline.every((section) => (section.budget ?? 0) > 0 && (section.quotes?.length ?? 0) > 0));
     assert.equal(run.fold.outline.length, 3);
     assert.ok(run.fold.sourcesUsed.length >= 3, 'key quotes are announced as SourceChips');
     const children = harness.record().runs.filter((entry) => entry.parentRunId === run.runId);
@@ -81,7 +90,8 @@ describe('local generation · article draft', () => {
     const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
     // D10: as much of the material as the length asks, never more than it holds (questions are never copied).
     assert.ok(words(body.blocks.map(blockText).join(' ')) < words(material));
-    assert.ok(body.blocks.every((block) => block.ai === 'unreviewed'));
+    // Text blocks start unreviewed; image slots are filled or dismissed instead.
+    assert.ok(body.blocks.every((block) => (block.type === 'figure' ? block.ai === undefined && block.slot !== undefined : block.ai === 'unreviewed')));
     const paragraphs = body.blocks.filter((block) => block.type === 'paragraph').map(blockText);
     assert.ok(paragraphs.every((text) => !/^[^“]+: /.test(text)), 'no transcript-style "Nome:" prefixes');
     assert.ok(paragraphs.some((text) => /”, (diz|afirma|conta|explica|observa|completa) /.test(text)), 'answers are reported speech with the speaker named');
@@ -138,7 +148,7 @@ describe('local generation · article draft', () => {
     assert.equal(run.fold.run.status, 'completed');
     assert.equal(run.fold.run.retryOfRunId, failed.runId);
     const reused = run.fold.run.steps.filter((step) => step.meta === 'Reaproveitado da tentativa anterior').map((step) => step.id);
-    assert.deepEqual(reused, ['read', 'select', 'outline', 'intro', 'section-1']);
+    assert.deepEqual(reused, ['read', 'outline', 'select', 'intro', 'section-1']);
     const children = harness.record().runs.filter((entry) => entry.parentRunId === retried.value.runId);
     assert.deepEqual(children.length, 2, 'only section 2 and section 3 run again');
     const versions = harness.record().versions.filter((version) => version.runId === retried.value.runId);
@@ -224,7 +234,7 @@ describe('local generation · article draft', () => {
     const body = articleBodyFromRun(run.fold);
     assert.equal(body.title, 'Fermento Vivo: a padaria que virou cooperativa');
     assert.deepEqual(body.blocks.map((block) => block.id), ['fx-intro', 'fx-h1', 'fx-p1']);
-    assert.deepEqual(run.fold.run.steps.map((step) => step.id), ['read', 'select', 'outline', 'intro', 'section-1', 'quotes']);
+    assert.deepEqual(run.fold.run.steps.map((step) => step.id), ['read', 'outline', 'select', 'intro', 'section-1', 'quotes']);
 
     const piece = scripted.record().pieces.find((entry) => entry.id === ARTICLE_PIECE);
     assert.ok(piece && piece.draft.body.type === 'article');
@@ -288,12 +298,13 @@ describe('local generation · inline actions', () => {
     assert.equal(!empty.ok && empty.refusal.code, 'empty_prompt');
   });
 
-  it('a whole-document "Encurtar para 600" proposes one suggestion per paragraph', async () => {
-    const harness = createHarness({ length: 'medium' });
+  it('a whole-document "Encurtar para 2 laudas" proposes one suggestion per paragraph, measured in characters', async () => {
+    const harness = createHarness({ size: 'standard' });
     const { body, revision } = await draftOf(harness);
-    const total = body.blocks.reduce((sum, block) => sum + blockText(block).split(/\s+/).filter(Boolean).length, 0);
-    const run = await runToEnd(harness.service, 'article.shorten', { ...DRAFT, baseRevision: revision, body, targetWords: Math.floor(total * 0.8) });
+    const total = articleCharacters(body);
+    const run = await runToEnd(harness.service, 'article.shorten', { ...DRAFT, baseRevision: revision, body, targetCharacters: Math.floor(total * 0.8) });
     assert.ok(run.fold.suggestions.length >= 1);
+    assert.match(run.fold.run.steps.at(-1)?.meta ?? '', /caracteres$/);
     assert.ok(run.fold.suggestions.every((suggestion) => suggestion.proposal.kind === 'replace-text' && suggestion.target.length === 1));
   });
 
@@ -335,6 +346,30 @@ describe('local generation · carousel copy', () => {
     assert.ok(quote.slots.quote && quote.slots.attribution, 'quote slide carries the speaker');
     const other = await harness.service.start('carousel.copy', { productionId: PRODUCTION_ID, pieceId: CAROUSEL_PIECE, templateId: 'outro' });
     assert.equal(!other.ok && other.refusal.code, 'unknown_template');
+  });
+});
+
+describe('local generation · Curto (1 lauda, no intertítulos)', () => {
+  it('writes the parts without H2 within 2.000 characters, and its carousel still fills every required slot', async () => {
+    const harness = createHarness({ size: 'short', sections: 2 });
+    const run = await runToEnd(harness.service, 'article.draft', DRAFT);
+    const body = articleBodyFromRun(run.fold);
+    assert.equal(body.blocks.filter((block) => block.type === 'heading').length, 0, 'sections guide the drafting but never become H2');
+    assert.ok(articleCharacters(body) <= 2000, `${articleCharacters(body)} caracteres`);
+    assert.match(run.fold.run.steps.find((step) => step.id === 'outline')?.meta ?? '', /^2 partes · /);
+    assert.equal(run.fold.outline.length, 2, 'the structure still has its parts');
+    harness.addCarouselPiece();
+    harness.approveLatestArticle();
+    const carousel = await runToEnd(harness.service, 'carousel.copy', { productionId: PRODUCTION_ID, pieceId: CAROUSEL_PIECE });
+    assert.equal(carousel.fold.run.status, 'completed');
+    for (const slide of carousel.fold.slides) {
+      const layout = TEST_TEMPLATE.layouts.find((entry) => entry.id === slide.layout);
+      assert.ok(layout);
+      for (const slot of layout.slots) {
+        if (slot.required) assert.ok(slide.slots[slot.id]?.trim(), `${slide.layout}.${slot.id} is filled`);
+      }
+    }
+    assert.match(carousel.fold.run.steps[0].meta ?? '', /^Artigo aprovado · \d+(,\d)? laudas?$/);
   });
 });
 

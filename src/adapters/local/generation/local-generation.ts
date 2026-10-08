@@ -4,9 +4,10 @@ import type { ActorId, ProductionId, RunId, StepId } from '../../../domain/ids.t
 import { isRunActive, RUN_KIND_LABELS, SIMULATED_MODEL } from '../../../domain/run.ts';
 import type { GenerationRun, ModelInfo, PromptRef, RunKind } from '../../../domain/run.ts';
 import type { RunEventPayload, RunFold } from '../../../domain/run-events.ts';
-import { findVersion, latestApproved, pieceOfKind } from '../../../domain/record.ts';
+import { lockedMessage } from '../../../domain/approval.ts';
+import { findVersion, latestApproved, pendingReview, pieceOfKind } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
-import { personLine } from '../../../domain/workspace.ts';
+import { firstName, personLine } from '../../../domain/workspace.ts';
 import type { Person } from '../../../domain/workspace.ts';
 import { dedupeRefs, sameVersionRef } from '../../../domain/refs.ts';
 import type { Ref, VersionRef } from '../../../domain/refs.ts';
@@ -24,6 +25,7 @@ import type {
   GenerationKind,
   GenerationRequest,
   GenerationService,
+  OutlineInput,
   RunAttachment,
   RunMeta,
   RunSnapshot,
@@ -38,8 +40,11 @@ import { planApplyNote, planAsk, planExpand, planRewrite, planShorten, planSubhe
 import type { AssistContext, AssistPlan } from './assist-plan.ts';
 import { extractiveCarouselPlan, planFromCarouselScript } from './carousel-plan.ts';
 import type { CarouselPlan } from './carousel-plan.ts';
-import { extractivePlan, planFromScript } from './draft-plan.ts';
+import { extractivePlan, extractivePlanFromOutline, planFromScript } from './draft-plan.ts';
 import type { DraftPlan } from './draft-plan.ts';
+import { readMaterial } from './material.ts';
+import { normalizeOutline, outlineEvent, outlineInputOf, outlineKey, sameOutline } from './outline.ts';
+import { charsAvailable } from './outlook.ts';
 import type { SpeakerInfo } from './editorial.ts';
 import { CHILD_STEP, createRegistry, createRunApi, isTerminal, liveEvents } from './engine.ts';
 import type { ChildOpener, Reuse, RunApi, RunChannel } from './engine.ts';
@@ -47,17 +52,24 @@ import { createPacing, realtimeSleep } from './pacing.ts';
 import type { Sleep } from './pacing.ts';
 import { createRng } from './random.ts';
 import { planMatchesFold, settledFold, stepOutputsFromFold } from './rehydrate.ts';
+import type { ReplayablePlan } from './rehydrate.ts';
 import { failingStep, LOCAL_SCENARIOS, promptRef, recipeSteps, sectionPromptRef } from './recipes.ts';
 import type { ConcreteStep } from './recipes.ts';
 import { runAssist } from './run-assist.ts';
 import { runCarousel } from './run-carousel.ts';
 import { runDraft } from './run-draft.ts';
+import { runOutline } from './run-outline.ts';
+import type { OutlinePlan } from './run-outline.ts';
 
 /**
  * Local simulated GenerationService ("Simulação local"). Runs live in this browser session;
  * outputs are deterministic (seeded), never invent facts and never carry usage or cost.
  * The store records runs and settles their outputs by applying every `watch` update with
  * `applyRunUpdate` (record-sync.ts); this service never writes the record itself.
+ *
+ * "Montar estrutura" (`article.outline`) proposes the draft's structure and writes nothing;
+ * "Redigir artigo" (`article.draft` with `outline`) writes the structure a person reviewed. A
+ * piece waiting for approval is locked: every generation that would change it is refused.
  */
 
 export type LocalGenerationDeps = {
@@ -103,7 +115,7 @@ export type LocalGenerationService = GenerationService & {
 };
 
 type Prepared = {
-  plan: DraftPlan | AssistPlan | CarouselPlan;
+  plan: DraftPlan | AssistPlan | CarouselPlan | OutlinePlan;
   steps: ConcreteStep[];
   inputs: Ref[];
   promptVariant?: string;
@@ -111,13 +123,14 @@ type Prepared = {
   execute: (api: RunApi) => Promise<void>;
 };
 
-const BLOCKING_KINDS = new Set<GenerationKind>(['article.draft', 'carousel.copy']);
+const BLOCKING_KINDS = new Set<GenerationKind>(['article.outline', 'article.draft', 'carousel.copy']);
 
 type RunStartedPayload = Extract<RunEventPayload, { type: 'run.started' }>;
 
 function labelOf(request: GenerationRequest): string {
   if (request.kind === 'article.rewrite') return REWRITE_TONE_LABELS[request.input.tone];
   if (request.kind === 'article.draft') return RUN_KIND_LABELS['article.generate'];
+  if (request.kind === 'article.outline') return RUN_KIND_LABELS['article.outline'];
   if (request.kind === 'carousel.assist') return SLIDE_ASSIST_LABELS[request.input.action];
   return GENERATION_LABELS[request.kind];
 }
@@ -146,7 +159,7 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
       case 'article.rewrite':
         return planRewrite(body, request.input.target, request.input.tone, context);
       case 'article.shorten':
-        return planShorten(body, request.input.target, request.input.targetWords, context);
+        return planShorten(body, request.input.target, request.input.targetCharacters, context);
       case 'article.expand-from-source':
         return planExpand(body, request.input.target, context);
       case 'article.to-list':
@@ -193,6 +206,19 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
   };
 
   /** Organisation of the people linked to the speakers, weighted by how much each one speaks. */
+  const sourceKeyOf = (record: ProductionRecord): string => record.sources.map((source) => source.versions[source.versions.length - 1].hash).join(',');
+
+  /**
+   * While a piece waits for approval its text is locked (D8): no generation may change it. The
+   * message names who has it ("O texto está com Pedro para aprovação…").
+   */
+  const lockRefusal = (record: ProductionRecord, request: GenerationRequest): string | undefined => {
+    const pending = pendingReview(record, request.input.pieceId);
+    if (!pending) return undefined;
+    const assignee = pending.assigneeId ? deps.people?.().find((person) => person.id === pending.assigneeId) : undefined;
+    return lockedMessage(request.kind.startsWith('carousel.') ? 'carousel' : 'article', firstName(assignee?.name) || undefined);
+  };
+
   const brandOf = (record: ProductionRecord): string | undefined => {
     const people = deps.people?.() ?? [];
     return mainOrganization(
@@ -206,31 +232,81 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
     );
   };
 
-  const prepareDraft = (record: ProductionRecord, pieceId: string, options: StartOptions): Result<Prepared, StartRefusal> => {
-    const inputs = generationInputs(record, 'article');
-    if (!inputs.ok) return inputs;
-    let plan: DraftPlan | undefined;
+  /**
+   * The plan the material and the brief give (a hand-written script first, else the extractive
+   * path), for "Gerar artigo" and for the structure "Montar estrutura" proposes. Each new attempt
+   * of a run kind plans with another seed ("Reescrever o artigo do zero", "Montar de novo").
+   */
+  const materialPlan = (record: ProductionRecord, pieceId: string, runKind: 'article.generate' | 'article.outline'): Result<DraftPlan, StartRefusal> => {
     for (const source of record.sources) {
       const script = deps.scripts?.draft(source.id);
-      plan = script ? planFromScript(script, record.sources, newId, record.production.brief) : undefined;
-      if (plan) break;
+      const plan = script ? planFromScript(script, record.sources, newId, record.production.brief) : undefined;
+      if (plan) return ok(plan);
     }
-    if (!plan) {
-      const attempt = record.runs.filter((run) => run.kind === 'article.generate' && run.pieceId === pieceId && !run.retryOfRunId).length;
-      const sourceKey = record.sources.map((source) => source.versions[source.versions.length - 1].hash).join(',');
-      const planKey = `${seed}:${sourceKey}:${briefHash(record.production.brief)}:${attempt}`;
-      const extracted = extractivePlan({
+    const attempt = record.runs.filter((run) => run.kind === runKind && run.pieceId === pieceId && !run.retryOfRunId).length;
+    const planKey = `${seed}:${sourceKeyOf(record)}:${briefHash(record.production.brief)}:${attempt}`;
+    const prefix = runKind === 'article.outline' ? 'outline' : 'article';
+    return extractivePlan({
+      sources: record.sources,
+      brief: record.production.brief,
+      fallbackTitle: record.production.title,
+      speakers: speakerInfo(record),
+      rng: createRng(planKey),
+      newId: planIds(`${prefix}:${pieceId}:${planKey}`),
+      ...(runKind === 'article.outline' ? { images: false as const } : {}),
+    });
+  };
+
+  /**
+   * The draft of a structure a person reviewed: its own script when the structure is exactly the
+   * one the script proposes, else the extractive path following the structure as given.
+   */
+  const outlinePlan = (record: ProductionRecord, pieceId: string, outline: OutlineInput): Result<DraftPlan, StartRefusal> => {
+    const { brief } = record.production;
+    const material = readMaterial(record.sources);
+    const normalized = normalizeOutline(outline, {
+      size: brief.size,
+      material,
+      defaultTitle: () => {
+        const proposed = materialPlan(record, pieceId, 'article.outline');
+        return proposed.ok ? proposed.value.title : record.production.title;
+      },
+    });
+    if (!normalized.ok) return normalized;
+    const planned = normalized.value;
+    for (const source of record.sources) {
+      const script = deps.scripts?.draft(source.id);
+      const plan = script ? planFromScript(script, record.sources, newId, brief) : undefined;
+      if (plan && sameOutline(plan, planned)) return ok(plan);
+    }
+    const attempt = record.runs.filter((run) => run.kind === 'article.generate' && run.pieceId === pieceId && !run.retryOfRunId).length;
+    const planKey = `${seed}:${sourceKeyOf(record)}:${briefHash(brief)}:${attempt}:${outlineKey(planned)}`;
+    return extractivePlanFromOutline(
+      {
         sources: record.sources,
-        brief: record.production.brief,
+        brief,
         fallbackTitle: record.production.title,
         speakers: speakerInfo(record),
         rng: createRng(planKey),
         newId: planIds(`article:${pieceId}:${planKey}`),
-      });
-      if (!extracted.ok) return extracted;
-      plan = extracted.value;
-    }
-    const draft = plan;
+      },
+      planned,
+    );
+  };
+
+  const prepareDraft = (record: ProductionRecord, pieceId: string, options: StartOptions, outline?: OutlineInput): Result<Prepared, StartRefusal> => {
+    const inputs = generationInputs(record, 'article');
+    if (!inputs.ok) return inputs;
+    const planned = outline ? outlinePlan(record, pieceId, outline) : materialPlan(record, pieceId, 'article.generate');
+    if (!planned.ok) return planned;
+    const draft = planned.value;
+    const { size } = record.production.brief;
+    const announced = outlineEvent(draft, {
+      size,
+      materialChars: charsAvailable(record.sources),
+      ...(draft.coverSlot ? { cover: draft.coverSlot } : {}),
+      ...(outline ? { edited: outline.fromRunId ? { fromRunId: outline.fromRunId } : {} } : {}),
+    });
     const steps = recipeSteps('article.draft', draft.sections.length);
     const reviewOutline = options.reviewOutline === true || options.simulation === 'review-outline';
     return ok({
@@ -238,8 +314,24 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
       steps,
       inputs: inputs.value,
       label: RUN_KIND_LABELS['article.generate'],
-      execute: (api) => runDraft({ api, plan: draft, steps, sources: record.sources, inputs: inputs.value, reviewOutline }),
+      execute: (api) => runDraft({ api, plan: draft, steps, sources: record.sources, inputs: inputs.value, reviewOutline, outline: announced, size }),
     });
+  };
+
+  /** "Montar estrutura": the structure the draft would follow, proposed for review (nothing written). */
+  const prepareOutline = (record: ProductionRecord, pieceId: string): Result<Prepared, StartRefusal> => {
+    const inputs = generationInputs(record, 'article');
+    if (!inputs.ok) return inputs;
+    const planned = materialPlan(record, pieceId, 'article.outline');
+    if (!planned.ok) return planned;
+    const { size } = record.production.brief;
+    const plan: OutlinePlan = {
+      origin: 'outline',
+      material: planned.value.material,
+      outline: outlineEvent(planned.value, { size, materialChars: charsAvailable(record.sources) }),
+    };
+    const steps = recipeSteps('article.outline');
+    return ok({ plan, steps, inputs: inputs.value, label: RUN_KIND_LABELS['article.outline'], execute: (api) => runOutline({ api, plan, size }) });
   };
 
   const prepareCarousel = (record: ProductionRecord, request: Extract<GenerationRequest, { kind: 'carousel.copy' }>): Result<Prepared, StartRefusal> => {
@@ -258,7 +350,7 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
     if (!approved) return refuse('parent_not_ready', 'Disponível após aprovar o artigo.');
     const from: VersionRef = request.input.from ?? approved.ref;
     if (!sameVersionRef(from, approved.ref)) {
-      return refuse('parent_not_ready', `Use a versão aprovada mais recente do artigo (v${approved.ref.number}).`);
+      return refuse('parent_not_ready', 'Use a versão aprovada mais recente do artigo.');
     }
     const version = findVersion(record, from.versionId);
     if (!version || version.body.type !== 'article') return refuse('parent_not_ready', 'Versão do artigo não encontrada.');
@@ -320,7 +412,8 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
     const piece = record.pieces.find((candidate) => candidate.id === request.input.pieceId);
     const wantedKind = request.kind === 'carousel.copy' || request.kind === 'carousel.assist' ? 'carousel' : 'article';
     if (!piece || piece.kind !== wantedKind) return refuse('unknown_piece', 'Peça não encontrada nesta produção.');
-    if (request.kind === 'article.draft') return prepareDraft(record, piece.id, options);
+    if (request.kind === 'article.outline') return prepareOutline(record, piece.id);
+    if (request.kind === 'article.draft') return prepareDraft(record, piece.id, options, request.input.outline);
     if (request.kind === 'carousel.copy') return prepareCarousel(record, request);
     if (request.kind === 'carousel.assist') return prepareCarouselAssist(record, request);
 
@@ -378,6 +471,8 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
     }
     const record = deps.getRecord(request.input.productionId);
     if (!record) return refuse('unknown_production', 'Produção não encontrada.');
+    const locked = lockRefusal(record, request);
+    if (locked) return refuse('locked', locked);
     if (busy(request.input.pieceId)) return refuse('run_in_progress', 'Já existe uma geração em andamento.');
     let prepared: Prepared;
     if (retry) {
@@ -451,13 +546,8 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
     if (!isRunActive(run)) return refuse('not_running', 'A geração já terminou.');
     if (registry.runs.has(run.id)) return ok({ runId: run.id });
     if (run.parentRunId || !run.pieceId) return refuse('unsupported', 'Seções são retomadas pela geração principal.');
-    const request: GenerationRequest | undefined =
-      run.kind === 'article.generate'
-        ? { kind: 'article.draft', input: { productionId: run.productionId, pieceId: run.pieceId } }
-        : run.kind === 'carousel.generate'
-          ? { kind: 'carousel.copy', input: { productionId: run.productionId, pieceId: run.pieceId } }
-          : undefined;
-    if (!request) return refuse('unsupported', 'Só gerações de artigo e de carrossel são retomadas.');
+    const request = requestOf(run, fold);
+    if (!request) return refuse('unsupported', 'Só gerações de artigo, de estrutura e de carrossel são retomadas.');
     const record = deps.getRecord(run.productionId);
     if (!record) return refuse('unknown_production', 'Produção não encontrada.');
     // The run itself is the "run in progress" the rules would refuse; plan as if it were not there.
@@ -465,7 +555,7 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
     const prepared = prepare(options.strict ? recordBefore(record, run) : others, request, {});
     if (!prepared.ok) return prepared;
     if (options.strict) {
-      const plan = prepared.value.plan as DraftPlan | CarouselPlan;
+      const plan = prepared.value.plan as ReplayablePlan;
       if (!planMatchesFold(plan, prepared.value.steps.map((step) => step.id), fold)) {
         return refuse('plan_changed', 'O material ou a pauta mudaram desde esta geração.');
       }
@@ -474,6 +564,20 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
     const channel = registry.adopt(meta, fold, { ...prepared.value, inputs: run.inputs });
     drive(channel, { ...prepared.value, inputs: run.inputs }, run.createdBy, {});
     return ok({ runId: run.id });
+  };
+
+  /**
+   * The request a run of an earlier session answered: its kind, and for a draft that followed a
+   * reviewed structure, that structure read back from the run's outline.
+   */
+  const requestOf = (run: GenerationRun, fold: RunFold): GenerationRequest | undefined => {
+    if (!run.pieceId) return undefined;
+    const input = { productionId: run.productionId, pieceId: run.pieceId };
+    if (run.kind === 'article.outline') return { kind: 'article.outline', input };
+    if (run.kind === 'carousel.generate') return { kind: 'carousel.copy', input };
+    if (run.kind !== 'article.generate') return undefined;
+    const outline = outlineInputOf(fold);
+    return { kind: 'article.draft', input: outline ? { ...input, outline } : input };
   };
 
   /** The record as it was when `run` was planned: only the runs before its first attempt. */
@@ -511,15 +615,10 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
       const meta: RunMeta = { ...parent.meta, runId, label, child: { parentRunId: parent.meta.runId, stepId } };
       return registry.adopt(meta, fold, undefined);
     }
-    const request: GenerationRequest | undefined =
-      run.kind === 'article.generate'
-        ? { kind: 'article.draft', input: { productionId: run.productionId, pieceId: run.pieceId } }
-        : run.kind === 'carousel.generate'
-          ? { kind: 'carousel.copy', input: { productionId: run.productionId, pieceId: run.pieceId } }
-          : undefined;
+    const request = requestOf(run, fold);
     if (!request) return undefined;
     const prepared = prepare(recordBefore(record, run), request, {});
-    const plan = prepared.ok ? (prepared.value.plan as DraftPlan | CarouselPlan) : undefined;
+    const plan = prepared.ok ? (prepared.value.plan as ReplayablePlan) : undefined;
     const usable = prepared.ok && plan !== undefined && planMatchesFold(plan, prepared.value.steps.map((step) => step.id), fold);
     const meta: RunMeta = { runId, productionId: run.productionId, pieceId: run.pieceId, request, label: prepared.ok ? prepared.value.label : RUN_KIND_LABELS[run.kind] };
     if (!usable) meta.canRetry = false;
@@ -586,11 +685,11 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
       if (!found) return notInSession();
       const channel = parentOf(found);
       if (!isTerminal(channel)) return refuse('still_running', 'A geração ainda está em andamento.');
-      if (!channel.plan) return refuse('plan_changed', 'O material ou a pauta mudaram desde esta geração. Use “Gerar nova versão”.');
+      if (!channel.plan) return refuse('plan_changed', 'O material ou a pauta mudaram desde esta geração. Use “Reescrever o artigo do zero”.');
       const steps = channel.fold.run.steps;
       const firstUnfinished = steps.findIndex((step) => step.state !== 'done');
       const from = fromStepId ?? found.meta.child?.stepId;
-      if (firstUnfinished < 0) return refuse('nothing_to_retry', 'A geração terminou sem erros; use "Gerar nova versão".');
+      if (firstUnfinished < 0) return refuse('nothing_to_retry', 'A geração terminou sem erros; use “Reescrever o artigo do zero”.');
       const requested = from === undefined ? firstUnfinished : steps.findIndex((step) => step.id === from);
       if (requested < 0) return refuse('unknown_step', 'Etapa não encontrada nesta geração.');
       const startAt = Math.min(requested, firstUnfinished);
