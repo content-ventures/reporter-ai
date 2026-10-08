@@ -19,7 +19,7 @@ import { speakerChoice, speakersWithoutPerson, withoutPersonLabel, type NewProdu
  * "Falantes" (PLAN §3.3, REQ-1.1, REQ-T.7, wireframe R1·1 "Participantes"): each label found in
  * the material is linked to a person of the workspace, to a new person (name, role and
  * organisation, which the article uses after the name), or explicitly left "Sem atribuição".
- * A label nobody decided is "sem pessoa": "Gerar artigo" asks for it before writing.
+ * A label nobody decided is "sem pessoa": "Continuar" asks for it before the Pauta.
  */
 
 const NONE = 'none';
@@ -144,7 +144,7 @@ export function SpeakersSection({ draft, analysis, people, peopleLoading, state,
         return (
           <FormRow
             key={speaker.label}
-            label={speaker.label}
+            label={`Quem é ${speaker.label}?`}
             description={`${plural(speaker.segments, 'fala', 'falas')} · ${plural(speaker.words, 'palavra', 'palavras')}`}
             error={errors[speaker.label]}
           >

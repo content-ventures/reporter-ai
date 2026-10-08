@@ -1,4 +1,4 @@
-import type { ArticleLength, SourceOrigin } from '../../domain/index.ts';
+import type { ArticleSize, SourceOrigin } from '../../domain/index.ts';
 
 /**
  * "Usar exemplo": a fictional interview for demos of Nova produção. Three speakers in
@@ -15,7 +15,7 @@ export const SAMPLE_ANGLE = 'Foco no que muda para o lojista: reposição curta,
 
 export const SAMPLE_SECTIONS = 3;
 
-export const SAMPLE_LENGTH: ArticleLength = 'medium';
+export const SAMPLE_SIZE: ArticleSize = 'standard';
 
 /** Label that is not a workspace person yet ("Nova pessoa" in Falantes). */
 export const SAMPLE_NEW_SPEAKER = 'Lucas Ferraz';
