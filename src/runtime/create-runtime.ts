@@ -3,7 +3,7 @@ import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
 import { applyRunUpdate, createLocalGenerationService, keepLiveRun, recoverOrphanRuns } from '../adapters/local/generation/index.ts';
 import type { Sleep } from '../adapters/local/generation/index.ts';
-import { assetCoverLoader, createLocalRenderService } from '../adapters/local/render/index.ts';
+import { assetCoverLoader, createLocalRenderService, servedCoverLoader } from '../adapters/local/render/index.ts';
 import { browserLocalStorage, createIdGenerator, createLocalPorts, systemClock, WORKSPACE_KEYS } from '../adapters/local/store/index.ts';
 import type { LocalPorts } from '../adapters/local/store/index.ts';
 import { creditLine } from '../domain/asset.ts';
@@ -255,6 +255,8 @@ export function createRuntime(options: CreateRuntimeOptions = {}): Runtime {
     workspaceId: fixtures.workspace.id,
     actorId: () => ports.store.state.sessionPersonId,
     reset: freshWorkspace,
+    // The example's own images (served from public/samples/), listed like uploads.
+    seed: fixtures.images,
   };
   const ownsImages = typeof options.assets !== 'object';
   const imageStore: AssetStore =
@@ -278,8 +280,10 @@ export function createRuntime(options: CreateRuntimeOptions = {}): Runtime {
     templates,
     renders: fixtures.templateRenders,
     descriptions: fixtures.templateDescriptions,
+    library: fixtures.templateLibrary,
     loadCover: assetCoverLoader(imageStore),
     coverCredit: (assetId) => creditLine(imageStore.get(assetId)?.credit),
+    samplePhoto: { assetId: fixtures.samplePhoto.assetId, credit: fixtures.samplePhoto.credit, load: servedCoverLoader(fixtures.samplePhoto.src) },
     ...(options.typefaces ? { typefaces: options.typefaces } : {}),
   });
 

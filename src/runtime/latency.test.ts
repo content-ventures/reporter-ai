@@ -9,7 +9,7 @@ describe('withFirstLoadLatency', () => {
     const calls: string[] = [];
     const read = (name: string) => async (...args: unknown[]) => void calls.push([name, ...args.filter((arg) => arg !== undefined)].join(':'));
     const base = Object.fromEntries(
-      ['list', 'get', 'overview', 'activity', 'people', 'draft', 'version', 'compare', 'source', 'review', 'delivery'].map((name) => [name, read(name)]),
+      ['list', 'get', 'overview', 'activity', 'people', 'draft', 'version', 'compare', 'source', 'review', 'delivery', 'approvals'].map((name) => [name, read(name)]),
     );
     const queries = withFirstLoadLatency({ ...base, subscribe: () => () => {} } as unknown as ProductionQueries, { ...DEFAULT_LATENCY, random: () => 0.5, sleep: async (ms) => void waits.push(ms) });
     await queries.list();

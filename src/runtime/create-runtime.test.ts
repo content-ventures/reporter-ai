@@ -206,6 +206,23 @@ describe('createRuntime', () => {
     runtime.dispose();
   });
 
+  it('Entrega reads the approved article even while the package mixes versions, with its images listed', async () => {
+    const { runtime } = open();
+    const mixed = await runtime.queries.delivery('prod-patio-couro');
+    assert.ok(mixed.ok);
+    assert.equal(mixed.value.result.ok, false);
+    assert.equal(mixed.value.items.length, 0, 'no package to build');
+    assert.equal(mixed.value.article?.kind, 'article', '"Artigo final" still has its article');
+    const delivered = await runtime.queries.delivery('prod-bella-passo');
+    assert.ok(delivered.ok);
+    assert.equal(delivered.value.article?.versionView.number, 2);
+    // The example's images are listed like uploads, credited and authorised.
+    const images = runtime.assets.list('prod-bella-passo');
+    assert.equal(images.length, 3);
+    assert.ok(images.every((image) => image.credit && image.rights.authorized));
+    runtime.dispose();
+  });
+
   it('keeps the workspace in memory when storage is off and stops cleanly on dispose', async () => {
     const { runtime } = open({ storage: null });
     assert.equal(runtime.saveStatus.current().scope, 'memory');

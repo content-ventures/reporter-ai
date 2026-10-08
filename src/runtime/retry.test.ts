@@ -180,7 +180,7 @@ describe('retrying a generation from the failed step', () => {
 
     const second = open({ storage });
     const reopened = await detail(second, production.id);
-    const brief = await second.commands.updateBrief(production.id, { sections: 2, length: 'short' }, reopened.brief.revision);
+    const brief = await second.commands.updateBrief(production.id, { sections: 3, size: 'standard' }, reopened.brief.revision);
     assert.ok(brief.ok);
     const attached = await second.generation.attach(started.value.runId);
     assert.ok(attached.ok, 'the run still shows');

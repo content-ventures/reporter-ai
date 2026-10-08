@@ -22,7 +22,24 @@ const timerSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(res
 
 type QueryMethod = Exclude<keyof ProductionQueries, 'subscribe'>;
 
-const READS: readonly QueryMethod[] = ['list', 'get', 'overview', 'activity', 'people', 'draft', 'version', 'compare', 'source', 'review', 'delivery'];
+/**
+ * Every read of the port. A `Record` on purpose: a query added to `ProductionQueries` and not
+ * listed here is a compile error (a missing one left `approvals` undefined in the browser).
+ */
+const READS: Readonly<Record<QueryMethod, true>> = {
+  list: true,
+  get: true,
+  overview: true,
+  activity: true,
+  people: true,
+  draft: true,
+  version: true,
+  compare: true,
+  source: true,
+  review: true,
+  delivery: true,
+  approvals: true,
+};
 
 export function withFirstLoadLatency(queries: ProductionQueries, options: LatencyOptions = DEFAULT_LATENCY): ProductionQueries {
   const random = options.random ?? Math.random;
@@ -43,7 +60,7 @@ export function withFirstLoadLatency(queries: ProductionQueries, options: Latenc
     };
 
   const wrapped: Record<string, unknown> = { subscribe: queries.subscribe.bind(queries) };
-  for (const method of READS) {
+  for (const method of Object.keys(READS) as QueryMethod[]) {
     const read = queries[method] as (...args: unknown[]) => Promise<unknown>;
     wrapped[method] = delayed(method, read.bind(queries));
   }
