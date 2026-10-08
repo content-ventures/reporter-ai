@@ -1,15 +1,17 @@
 import { AUDIT_READER_ROLES } from '../domain/audit.ts';
 import type { Role } from '../domain/workspace.ts';
 import type { IconKey } from './icons.ts';
-import { availableIn, CURRENT_RELEASE, isReleased, RELEASE_NAMES } from './release.ts';
+import { availableIn, CURRENT_RELEASE, isReleased, RELEASE_NAMES, releaseIndex } from './release.ts';
 import type { ReleaseId } from './release.ts';
 
 /**
- * Menu registry (PLAN §2). The sidebar shows the whole product map, R1–R7 (`menuFor`): items of
- * the current release navigate, items of later releases show "Em breve" with no link, and their
- * routes keep answering 404 until the release ships. ⌘K, the active item and the trail use only
- * released items (`navigationFor`, `activeNavItem`). Role filtering comes first: nobody sees an
- * item they will not have access to, not even as "Em breve".
+ * Menu registry (PLAN §2, hierarchy D9). The sidebar (`menuFor`) puts what works today on top, in
+ * one unlabeled section (Início, Produções, Aprovações, Modelos, Logs), then ONE collapsed group
+ * "Em breve" with every item of a later release in release order (no link: their routes keep
+ * answering 404 until the release ships), and "Novidades" at the bottom. ⌘K, the active item and
+ * the trail use only released items (`navigationFor`, `activeNavItem`). Role filtering comes
+ * first: nobody sees an item they will not have access to, not even as "Em breve".
+ * `NAV_GROUPS` stays the product map (where an item belongs once its release ships; ⌘K keywords).
  * "Nova produção" is a primary action and a ⌘K command, never a menu item.
  */
 
@@ -23,8 +25,23 @@ export type NavGroup = {
   label: string;
   placement: NavPlacement;
   since: ReleaseId;
-  /** The label folds the group (open by default; the whole map shows on arrival). */
+  /** The label folds the group. */
   collapsible: boolean;
+  /** A collapsible group starts open unless this is `false`. */
+  defaultOpen?: boolean;
+};
+
+/** The sections the sidebar draws: released items, the "Em breve" group, the bottom utilities. */
+export type MenuGroupId = 'main' | 'soon' | 'utility';
+
+export type MenuGroup = {
+  id: MenuGroupId;
+  /** No label: the released items read as one list. */
+  label?: string;
+  placement: NavPlacement;
+  collapsible: boolean;
+  /** A collapsible group starts open unless this is `false`. */
+  defaultOpen?: boolean;
 };
 
 /** Live counters the shell may attach to an item (NavItem.count in the DS Sidebar). */
@@ -51,11 +68,13 @@ export type NavItem = {
 export type NavRedirect = { from: string; to: string; permanent: boolean };
 
 const ADMINS: readonly Role[] = ['admin'];
+/** Who decides at a gate (article: approver; carousel: creative reviewer; admin both). */
+const DECIDERS: readonly Role[] = ['approver', 'creative_reviewer', 'admin'];
 
 export const NAV_GROUPS: readonly NavGroup[] = [
   { id: 'production', label: 'Produção', placement: 'main', since: 'R1', collapsible: false },
   { id: 'intake', label: 'Entrada', placement: 'main', since: 'R2', collapsible: true },
-  { id: 'library', label: 'Biblioteca', placement: 'main', since: 'R2', collapsible: true },
+  { id: 'library', label: 'Biblioteca', placement: 'main', since: 'R1', collapsible: true },
   { id: 'distribution', label: 'Distribuição', placement: 'main', since: 'R4', collapsible: true },
   { id: 'settings', label: 'Configurações', placement: 'main', since: 'R2', collapsible: true },
   { id: 'administration', label: 'Administração', placement: 'main', since: 'R1', collapsible: true },
@@ -67,8 +86,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // Produção
   {
     id: 'overview',
-    label: 'Visão geral',
-    icon: 'LayoutDashboard',
+    label: 'Início',
+    icon: 'Inbox',
     href: '/',
     group: 'production',
     since: 'R1',
@@ -83,7 +102,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
     group: 'production',
     since: 'R1',
     match: 'prefix',
-    badge: 'awaiting-approval',
     // Stages and piece kinds open inside a production: research and dossier (F2.6, F3.7),
     // writing and checks (F2.7, F2.8, F2.13), outline (F3.8), facets (F3.9), cuts (F4.4–F4.6, F4.8),
     // script, audio and video (F5.8, F5.10), stories and Web Story (F6.3, F6.4).
@@ -91,6 +109,19 @@ export const NAV_ITEMS: readonly NavItem[] = [
       'F1.1', 'F1.2', 'F1.3', 'F1.4', 'F1.5', 'F1.6',
       'F2.6', 'F2.7', 'F2.8', 'F2.13', 'F3.7', 'F3.8', 'F3.9', 'F4.4', 'F4.5', 'F4.6', 'F4.8', 'F5.8', 'F5.10', 'F6.3', 'F6.4',
     ],
+  },
+  // The queue of whoever decides at a gate (D9, R5): its count is the viewer's "Para aprovar".
+  {
+    id: 'approvals',
+    label: 'Aprovações',
+    icon: 'BadgeCheck',
+    href: '/approvals',
+    group: 'production',
+    since: 'R1',
+    match: 'prefix',
+    features: ['F1.3', 'F1.6'],
+    badge: 'awaiting-approval',
+    roles: DECIDERS,
   },
   {
     id: 'batches',
@@ -148,7 +179,17 @@ export const NAV_ITEMS: readonly NavItem[] = [
     features: ['F7.1'],
     hint: 'Gravações do EventHub e do YouTube',
   },
-  // Biblioteca
+  // Biblioteca. Carousel models arrive with F1.5 (D07): the library the studio picks from.
+  {
+    id: 'templates',
+    label: 'Modelos',
+    icon: 'LayoutTemplate',
+    href: '/library/templates',
+    group: 'library',
+    since: 'R1',
+    match: 'prefix',
+    features: ['F1.5'],
+  },
   {
     id: 'archive',
     label: 'Acervo',
@@ -318,7 +359,14 @@ export type NavSection = { group: NavGroup; items: NavItem[] };
 /** A menu entry; `soon` is the "Em breve" reason of an item that ships after the release. */
 export type MenuItem = NavItem & { soon?: string };
 
-export type MenuSection = { group: NavGroup; items: MenuItem[] };
+export type MenuSection = { group: MenuGroup; items: MenuItem[] };
+
+/** The sidebar's sections (D9): "Em breve" is ONE group, collapsed on arrival. */
+export const MENU_GROUPS: Readonly<Record<MenuGroupId, MenuGroup>> = {
+  main: { id: 'main', placement: 'main', collapsible: false },
+  soon: { id: 'soon', label: 'Em breve', placement: 'main', collapsible: true, defaultOpen: false },
+  utility: { id: 'utility', placement: 'utility', collapsible: false },
+};
 
 /** Who is looking at the menu; without one, role-restricted items stay hidden. */
 export type NavViewer = { roles: readonly Role[] };
@@ -348,15 +396,30 @@ function sections<T extends NavItem>(groups: readonly NavGroup[], items: readonl
     .filter((section) => section.items.length > 0);
 }
 
+function placementOf(item: Pick<NavItem, 'group'>): NavPlacement {
+  return NAV_GROUPS.find((group) => group.id === item.group)?.placement ?? 'main';
+}
+
 /**
- * The sidebar: every group and item of R1–R7 the viewer may see, in registry order. Items released
- * in `release` navigate; later ones carry `soon` and never get a link.
+ * The sidebar for a viewer (D9): the released items in registry order (one unlabeled section),
+ * then "Em breve" with every later item the viewer may see in release order (registry order
+ * within a release; each keeps its reason and never gets a link), then the utilities (Novidades).
+ * Empty sections are left out.
  */
 export function menuFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer): MenuSection[] {
-  const items = NAV_ITEMS.filter((item) => isNavItemVisible(item, viewer)).map<MenuItem>((item) =>
-    isReleased(item.since, release) ? item : { ...item, soon: soonReason(item) },
-  );
-  return sections(NAV_GROUPS, items);
+  const visible = NAV_ITEMS.filter((item) => isNavItemVisible(item, viewer));
+  const released = visible.filter((item) => isReleased(item.since, release));
+  const soon = visible
+    .filter((item) => !isReleased(item.since, release))
+    .map((item, order) => ({ item, order }))
+    .sort((a, b) => releaseIndex(a.item.since) - releaseIndex(b.item.since) || a.order - b.order)
+    .map<MenuItem>(({ item }) => ({ ...item, soon: soonReason(item) }));
+  const result: MenuSection[] = [
+    { group: MENU_GROUPS.main, items: released.filter((item) => placementOf(item) === 'main') },
+    { group: MENU_GROUPS.soon, items: soon },
+    { group: MENU_GROUPS.utility, items: released.filter((item) => placementOf(item) === 'utility') },
+  ];
+  return result.filter((section) => section.items.length > 0);
 }
 
 /** Released destinations only (⌘K "Ir para"): groups with at least one visible item, in registry order. */

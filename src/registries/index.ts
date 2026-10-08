@@ -14,5 +14,7 @@ export * from './checks.ts';
 export * from './image-sources.ts';
 export * from './channels.ts';
 export * from './recipes.ts';
+export * from './sizing.ts';
 export * from './copilot.ts';
 export * from './dashboard.ts';
+export * from './status-vocabulary.ts';

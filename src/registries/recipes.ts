@@ -23,6 +23,11 @@ export type GenerationRecipe = {
   since: ReleaseId;
   prompt: PromptRef;
   steps: (options?: RecipeOptions) => RecipeStep[];
+  /**
+   * The line that closes the run's step trace once it completes ("Como a IA escreveu"): what the
+   * person does next. The human edit and approval stay mandatory after a generated text.
+   */
+  next?: string;
 };
 
 export const SIMULATED_PROMPT_VERSION = '0.1-simulado';
@@ -37,9 +42,15 @@ export function sectionStepId(index: number): StepId {
 }
 
 export function sectionStepLabel(index: number, total: number): string {
-  return `Seção ${index} de ${total}`;
+  return `Redigindo seção ${index} de ${total}`;
 }
 
+/**
+ * "Gerar artigo" follows the editorial order (João): the structure first, then the sources and
+ * quotes for each section, then the drafting by the brief's size and the outlet's guide, then a
+ * check of quotes and size; human editing and approval come after the run. Step ids never change
+ * (traceability, fixtures, simulation scenarios), only their order and labels.
+ */
 function articleSteps(options: RecipeOptions = {}): RecipeStep[] {
   const total = options.sections ?? 3;
   const sections = Array.from({ length: total }, (_, offset) => ({
@@ -48,16 +59,32 @@ function articleSteps(options: RecipeOptions = {}): RecipeStep[] {
   }));
   return [
     { id: 'read', label: 'Lendo material' },
-    { id: 'select', label: 'Selecionando falas-chave' },
     { id: 'outline', label: 'Montando estrutura' },
-    { id: 'intro', label: 'Introdução' },
+    // R2 adds internal links here (F2.13): "Organizando fontes, citações e links".
+    { id: 'select', label: 'Organizando fontes e citações' },
+    { id: 'intro', label: 'Redigindo introdução' },
     ...sections,
-    { id: 'quotes', label: 'Conferindo citações' },
+    { id: 'quotes', label: 'Conferindo citações e tamanho' },
+  ];
+}
+
+/** What follows the run, closing its step trace: the human edit and approval stay mandatory. */
+export const ARTICLE_RUN_NEXT = 'Próximo: revisar o texto e enviar para aprovação';
+
+/**
+ * "Montar estrutura" alone (Nova produção, step 3): the same first two steps as "Gerar artigo",
+ * ending with the proposed structure; the person reviews it before anything is written.
+ */
+function outlineSteps(): RecipeStep[] {
+  return [
+    { id: 'read', label: 'Lendo material' },
+    { id: 'outline', label: 'Montando estrutura' },
   ];
 }
 
 export const RECIPES: readonly GenerationRecipe[] = [
-  { kind: 'article.generate', label: 'Gerar artigo', since: 'R1', prompt: prompt('article.generate'), steps: articleSteps },
+  { kind: 'article.outline', label: 'Montar estrutura', since: 'R1', prompt: prompt('article.outline'), steps: outlineSteps },
+  { kind: 'article.generate', label: 'Gerar artigo', since: 'R1', prompt: prompt('article.generate'), steps: articleSteps, next: ARTICLE_RUN_NEXT },
   {
     kind: 'article.section',
     label: 'Reescrever seção',

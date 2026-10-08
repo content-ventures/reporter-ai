@@ -28,8 +28,8 @@ export type CopilotTool = {
   /** Shown as a preset chip in the PromptComposer. */
   preset: boolean;
   tone?: RewriteTone;
-  /** "Encurtar para 500 palavras": the whole text down to the brief's length target. */
-  toBriefLength?: boolean;
+  /** "Encurtar para 2 laudas": the whole text down to the maximum of the brief's size. */
+  toBriefSize?: boolean;
   /** "Gerar títulos alternativos" proposes this many SuggestionCards. */
   proposals?: number;
   /** Shown only after a reviewer returned the piece with a note. */
@@ -44,7 +44,7 @@ export const COPILOT_TOOLS: readonly CopilotTool[] = [
   { id: 'expand-with-source', label: 'Expandir com a fonte', group: 'length', pieceKind: 'article', target: 'selection', runKind: 'article.assist', request: 'article.expand-from-source', icon: 'Sparkles', since: 'R1', preset: false },
   { id: 'to-list', label: 'Virar lista', group: 'structure', pieceKind: 'article', target: 'block', runKind: 'article.assist', request: 'article.to-list', icon: 'Sparkles', since: 'R1', preset: false },
   { id: 'suggest-subheadings', label: 'Sugerir intertítulos', group: 'structure', pieceKind: 'article', target: 'document', runKind: 'article.assist', request: 'article.subheadings', icon: 'Sparkles', since: 'R1', preset: true },
-  { id: 'shorten-to-brief', label: 'Encurtar até a extensão da pauta', group: 'length', pieceKind: 'article', target: 'document', runKind: 'article.assist', request: 'article.shorten', icon: 'Sparkles', since: 'R1', preset: true, toBriefLength: true },
+  { id: 'shorten-to-brief', label: 'Encurtar até o tamanho da pauta', group: 'length', pieceKind: 'article', target: 'document', runKind: 'article.assist', request: 'article.shorten', icon: 'Sparkles', since: 'R1', preset: true, toBriefSize: true },
   { id: 'titles', label: 'Gerar títulos alternativos', group: 'titles', pieceKind: 'article', target: 'document', runKind: 'article.titles', request: 'article.titles', icon: 'Sparkles', since: 'R1', preset: true, proposals: 3 },
   { id: 'ask', label: 'Perguntar à IA', group: 'ask', pieceKind: 'article', target: 'selection', runKind: 'article.assist', request: 'article.ask', icon: 'Sparkles', since: 'R1', preset: false },
   { id: 'apply-review-note', label: 'Aplicar nota com IA', group: 'review', pieceKind: 'article', target: 'document', runKind: 'article.assist', request: 'article.apply-note', icon: 'Sparkles', since: 'R1', preset: false, requiresReviewNote: true },

@@ -3,12 +3,14 @@ import { availableIn, CURRENT_RELEASE } from './release.ts';
 import type { ReleaseId } from './release.ts';
 
 /**
- * "Visão geral" widgets (PLAN §3.1). The page lays out the widgets of the current release by
- * area; metrics read `OverviewView.metrics`. A widget that needs data only a real adapter
- * provides (cost, REQ-T.4) declares it and stays hidden while the runtime is simulated.
+ * Início widgets ("Minha mesa", D1). The page shows, top to bottom, what needs the viewer
+ * (`queue`, with the "Equipe" view of the same area), what is in progress (`progress`) and one
+ * quiet week line (`footer`). Management charts are not a writer's desk: they wait for the
+ * "Desempenho" page (`performance`, R6). A widget that needs data only a real adapter provides
+ * (cost, REQ-T.4) declares it and stays hidden while the runtime is simulated.
  */
 
-export type DashboardArea = 'metrics' | 'main' | 'side' | 'full';
+export type DashboardArea = 'queue' | 'progress' | 'footer' | 'performance';
 
 export type DashboardCapability = 'cost' | 'feedback';
 
@@ -18,7 +20,7 @@ export type DashboardWidget = {
   area: DashboardArea;
   icon: IconKey;
   since: ReleaseId;
-  /** `OverviewView` field the widget renders. */
+  /** `OverviewData` field the widget renders. */
   source: string;
   /** For metrics: a falling value is good (time to approval). */
   lowerIsBetter?: boolean;
@@ -29,29 +31,25 @@ export type DashboardWidget = {
 };
 
 export const DASHBOARD_WIDGETS: readonly DashboardWidget[] = [
-  { id: 'in-production', label: 'Em produção', area: 'metrics', icon: 'Loader2', since: 'R1', source: 'metrics.inProduction', enabled: true },
-  { id: 'awaiting-approval', label: 'Aguardando aprovação', area: 'metrics', icon: 'Inbox', since: 'R1', source: 'metrics.awaitingApproval', enabled: true },
-  { id: 'approved', label: 'Aprovações', area: 'metrics', icon: 'CheckCircle2', since: 'R1', source: 'metrics.approved', enabled: true },
+  { id: 'needs-you', label: 'Precisa de você', area: 'queue', icon: 'Inbox', since: 'R1', source: 'desk.groups', enabled: true },
+  { id: 'team', label: 'Equipe', area: 'queue', icon: 'UsersRound', since: 'R1', source: 'desk.team', enabled: true },
+  { id: 'in-progress', label: 'Em andamento', area: 'progress', icon: 'PenLine', since: 'R1', source: 'desk.inProgress', enabled: true },
+  { id: 'week', label: 'Esta semana', area: 'footer', icon: 'Clock', since: 'R1', source: 'desk.week', enabled: true },
+  { id: 'news-queue', label: 'Fila de notícias', area: 'queue', icon: 'Newspaper', since: 'R2', source: 'newsQueue', enabled: true },
+  // "Desempenho" (R6): the editorial rhythm, the cost of generation and the channels leave the desk.
+  { id: 'rhythm', label: 'Ritmo editorial', area: 'performance', icon: 'ChartNoAxesColumn', since: 'R6', source: 'rhythm', enabled: true },
   {
     id: 'time-to-approval',
     label: 'Tempo até aprovação',
-    area: 'metrics',
+    area: 'performance',
     icon: 'Clock',
-    since: 'R1',
+    since: 'R6',
     source: 'metrics.timeToApprovalMs',
     lowerIsBetter: true,
     enabled: true,
   },
-  { id: 'ai-retention', label: 'Aproveitamento da IA', area: 'metrics', icon: 'Gauge', since: 'R1', source: 'metrics.aiRetention', enabled: true },
-  { id: 'generation-cost', label: 'Custo de geração', area: 'metrics', icon: 'BarChart3', since: 'R1', source: 'metrics.cost', requires: 'cost', enabled: true },
-  { id: 'continue', label: 'Continue de onde parou', area: 'main', icon: 'PenLine', since: 'R1', source: 'continueWith', enabled: true },
-  { id: 'awaiting-you', label: 'Aguardando você', area: 'side', icon: 'Inbox', since: 'R1', source: 'awaitingYou', enabled: true },
-  { id: 'rhythm', label: 'Ritmo editorial', area: 'full', icon: 'ChartNoAxesColumn', since: 'R1', source: 'rhythm', enabled: true },
-  { id: 'activity', label: 'Atividade', area: 'full', icon: 'Activity', since: 'R1', source: 'activity', enabled: true },
-  // M5 brought into R1 (PO, 07/10): the live runs are the overview's immersion.
-  { id: 'generating-now', label: 'Gerando agora', area: 'side', icon: 'Sparkles', since: 'R1', source: 'activeRuns', enabled: true },
-  { id: 'news-queue', label: 'Fila de notícias', area: 'side', icon: 'Newspaper', since: 'R2', source: 'newsQueue', enabled: true },
-  { id: 'channel-performance', label: 'Desempenho nos canais', area: 'full', icon: 'BarChart3', since: 'R6', source: 'performance', enabled: true },
+  { id: 'generation-cost', label: 'Custo de geração', area: 'performance', icon: 'BarChart3', since: 'R6', source: 'metrics.cost', requires: 'cost', enabled: true },
+  { id: 'channel-performance', label: 'Desempenho nos canais', area: 'performance', icon: 'BarChart3', since: 'R6', source: 'performance', enabled: true },
 ];
 
 export type DashboardRuntime = { capabilities: readonly DashboardCapability[] };

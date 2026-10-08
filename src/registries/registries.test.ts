@@ -7,6 +7,7 @@ import { RUN_KIND_OF } from '../ports/index.ts';
 import {
   activeNavItem,
   arrivalOf,
+  ARTICLE_RUN_NEXT,
   articleChecksFor,
   availableIn,
   CHANNELS,
@@ -19,6 +20,7 @@ import {
   CURRENT_RELEASE,
   DASHBOARD_WIDGETS,
   dashboardWidgetsFor,
+  draftSizeInstructions,
   FLOWS,
   flowsFor,
   GATES,
@@ -42,10 +44,12 @@ import {
   RELEASES,
   releaseIndex,
   reservedAfter,
+  SIZING_POLICIES,
+  sizingPolicyFor,
   SOURCE_KINDS,
   sourceKindsFor,
 } from './index.ts';
-import type { IconKey, MenuSection, ReleaseId, Since } from './index.ts';
+import type { IconKey, ReleaseId, Since } from './index.ts';
 
 const R1: ReleaseId = 'R1';
 
@@ -101,47 +105,17 @@ describe('release gating', () => {
 
 const EVERYONE = ['editor', 'approver', 'creative_reviewer', 'admin'] as const;
 
-/** "Label" for an item that navigates, "Label · Em breve" for one that does not. */
-function outline(menu: readonly MenuSection[]): [string, string[]][] {
-  return menu.map((section) => [
-    section.group.label,
-    section.items.map((item) => (item.soon ? `${item.label} · Em breve` : `${item.label} ${item.href}`)),
-  ]);
-}
-
+// The menu's shape (released items, "Em breve", utilities; roles) is tested in `navigation.test.ts`.
 describe('navigation registry', () => {
-  test('R1 menu: the whole R1–R7 map; only Visão geral, Produções and Novidades navigate', () => {
-    assert.deepEqual(outline(menuFor(R1)), [
-      ['Produção', ['Visão geral /', 'Produções /productions', 'Lotes · Em breve']],
-      ['Entrada', ['Notícias · Em breve', 'Oportunidades · Em breve', 'Mídia · Em breve', 'Eventos · Em breve']],
-      ['Biblioteca', ['Acervo · Em breve', 'Citações · Em breve', 'Imagens · Em breve', 'Perfis · Em breve']],
-      ['Distribuição', ['Canais · Em breve', 'Newsletter · Em breve', 'Desempenho · Em breve']],
-      ['Configurações', ['Mapa editorial · Em breve', 'Guia de escrita · Em breve']],
-      ['Utilitário', ['Novidades /whats-new']],
-    ]);
-    const items = menuFor(R1).flatMap((section) => section.items);
-    assert.equal(items.length, 17);
-    assert.equal(items.filter((item) => !item.soon).length, 3);
+  test('R1 menu: 23 items for an admin, 6 of them navigate (Início, Produções, Aprovações, Modelos, Logs, Novidades)', () => {
+    const items = menuFor(R1, { roles: ['editor', 'admin'] }).flatMap((section) => section.items);
+    assert.equal(items.length, 23);
+    assert.deepEqual(
+      items.filter((item) => !item.soon).map((item) => item.id),
+      ['overview', 'productions', 'approvals', 'templates', 'audit', 'whats-new'],
+    );
     assert.equal(menuFor(R1).at(-1)?.group.placement, 'utility');
     assert.equal(items.find((item) => item.id === 'whats-new')?.icon, 'Megaphone');
-  });
-
-  test('R1 admins also see Administração: Logs navigates (F1.7), the rest is "Em breve"; nobody else sees it', () => {
-    const admin = menuFor(R1, { roles: ['editor', 'admin'] });
-    assert.deepEqual(outline(admin).find(([label]) => label === 'Administração'), [
-      'Administração',
-      ['Logs /admin/audit', 'Integrações · Em breve', 'Prompts · Em breve', 'Workspaces · Em breve'],
-    ]);
-    assert.equal(admin.flatMap((section) => section.items).length, 21);
-    assert.deepEqual(
-      admin.flatMap((section) => section.items).filter((item) => !item.soon).map((item) => item.id),
-      ['overview', 'productions', 'audit', 'whats-new'],
-    );
-    for (const roles of [['editor'], ['approver'], ['creative_reviewer']] as const) {
-      const menu = menuFor(R1, { roles });
-      assert.ok(!menu.some((section) => section.group.id === 'administration'), `${roles[0]} sees no Administração item, not even "Em breve"`);
-    }
-    assert.ok(!menuFor(R1).some((section) => section.group.id === 'administration'), 'unknown viewer: role items stay hidden');
     assert.equal(activeNavItem('/admin/audit')?.label, 'Logs', 'the trail names the page for everyone');
   });
 
@@ -163,20 +137,23 @@ describe('navigation registry', () => {
 
   test('⌘K, the active item and the trail use only released items', () => {
     const released = navigationFor(R1, { roles: EVERYONE }).flatMap((section) => section.items.map((item) => item.id));
-    assert.deepEqual(released, ['overview', 'productions', 'audit', 'whats-new']);
+    assert.deepEqual(released, ['overview', 'productions', 'approvals', 'templates', 'audit', 'whats-new']);
     for (const item of NAV_ITEMS.filter((entry) => !isReleased(entry.since, R1))) {
       assert.equal(activeNavItem(item.href), undefined, `${item.href} is not highlighted before ${item.since}`);
     }
     assert.deepEqual(
       navigationFor(R1, { roles: ['approver'] }).map((section) => section.group.id),
-      ['production', 'utility'],
+      ['production', 'library', 'utility'],
     );
   });
 
   test('every R1 item has a route; later items have none yet', () => {
     const app = new URL('../app/(workspace)/', import.meta.url);
     const page = (href: string) => new URL(`.${href === '/' ? '' : href}/page.tsx`, app);
+    // Wave 2 (track C2) adds `app/(workspace)/approvals/page.tsx`; the integrator drops this exception at I2.
+    const pendingRoutes = new Set(['/approvals']);
     for (const item of NAV_ITEMS) {
+      if (pendingRoutes.has(item.href) && !existsSync(page(item.href))) continue;
       assert.equal(existsSync(page(item.href)), isReleased(item.since, R1), `${item.href} page exists only once ${item.since} ships`);
     }
   });
@@ -194,12 +171,12 @@ describe('navigation registry', () => {
     assert.deepEqual(NAV_REDIRECTS, [{ from: '/versions', to: '/whats-new', permanent: true }]);
   });
 
-  test('shipping a release turns "Em breve" into links without moving anything', () => {
-    const order = (release: ReleaseId) => menuFor(release, { roles: EVERYONE }).flatMap((section) => section.items.map((item) => item.id));
-    for (const release of RELEASES) assert.deepEqual(order(release), order(R1), `${release} keeps the R1 order`);
+  test('shipping a release turns "Em breve" into links; every item stays in the menu', () => {
+    const all = (release: ReleaseId) => menuFor(release, { roles: EVERYONE }).flatMap((section) => section.items.map((item) => item.id)).sort();
+    for (const release of RELEASES) assert.deepEqual(all(release), all(R1), `${release} shows the same items`);
     const soon = (release: ReleaseId) =>
       menuFor(release, { roles: EVERYONE }).flatMap((section) => section.items.filter((item) => item.soon).map((item) => item.id));
-    assert.deepEqual(soon('R2'), ['batches', 'opportunities', 'media', 'events', 'profiles', 'channels', 'newsletter', 'performance', 'prompts', 'workspaces']);
+    assert.deepEqual(soon('R2'), ['opportunities', 'media', 'channels', 'profiles', 'newsletter', 'performance', 'batches', 'events', 'prompts', 'workspaces']);
     assert.deepEqual(soon('R7'), []);
     assert.deepEqual(
       navigationFor('R2').map((section) => section.group.id),
@@ -257,6 +234,8 @@ describe('navigation registry', () => {
     assert.equal(activeNavItem('/productions')?.id, 'productions');
     assert.equal(activeNavItem('/productions/prod-1/article?compare=v1')?.id, 'productions');
     assert.equal(activeNavItem('/whats-new')?.id, 'whats-new');
+    assert.equal(activeNavItem('/library/templates?model=tpl-aspas')?.id, 'templates');
+    assert.equal(activeNavItem('/approvals?aba=devolvidas')?.id, 'approvals');
     assert.equal(activeNavItem('/news'), undefined);
     assert.equal(activeNavItem('/news', 'R2')?.id, 'news');
   });
@@ -325,11 +304,11 @@ describe('content registries', () => {
 });
 
 describe('check registry', () => {
-  test('R1 readiness checks are the domain checks; only "Geração concluída" blocks', () => {
+  test('R1 readiness checks are the domain checks; only "Texto da IA" (generation finished) blocks', () => {
     assert.deepEqual(ids(articleChecksFor(R1)), ids(ARTICLE_CHECKS));
     assert.deepEqual(
       checksFor('article', 'readiness', R1).filter((entry) => entry.blocking).map((entry) => entry.label),
-      ['Geração concluída'],
+      ['Texto da IA'],
     );
     assert.deepEqual(ids(checksFor('carousel', 'readiness', R1)), ids(CAROUSEL_CHECKS));
     assert.ok(!ids(checksFor('article', 'readiness', R1)).includes('article.seo'));
@@ -356,28 +335,76 @@ describe('recipes', () => {
     }
   });
 
-  test('the article recipe mirrors the editorial steps with one step per section', () => {
-    const labels = recipeFor('article.generate').steps({ sections: 3 }).map((step) => step.label);
-    assert.deepEqual(labels, [
+  test('the article recipe follows the editorial order: structure, sources and quotes, drafting, checking', () => {
+    const steps = recipeFor('article.generate').steps({ sections: 3 });
+    assert.deepEqual(
+      steps.map((step) => step.id),
+      ['read', 'outline', 'select', 'intro', 'section-1', 'section-2', 'section-3', 'quotes'],
+      'step ids never change, only their order',
+    );
+    assert.deepEqual(steps.map((step) => step.label), [
       'Lendo material',
-      'Selecionando falas-chave',
       'Montando estrutura',
-      'Introdução',
-      'Seção 1 de 3',
-      'Seção 2 de 3',
-      'Seção 3 de 3',
-      'Conferindo citações',
+      'Organizando fontes e citações',
+      'Redigindo introdução',
+      'Redigindo seção 1 de 3',
+      'Redigindo seção 2 de 3',
+      'Redigindo seção 3 de 3',
+      'Conferindo citações e tamanho',
     ]);
+    assert.equal(ARTICLE_RUN_NEXT, 'Próximo: revisar o texto e enviar para aprovação');
+  });
+});
+
+describe('sizing', () => {
+  test('Hard News is sized in laudas (R1 and R2 flows); Evergreen follows search intent, as data (R3)', () => {
+    const flowIds = new Set(FLOWS.map((flow) => flow.id));
+    for (const policy of SIZING_POLICIES) {
+      assert.ok(policy.neverPad, `${policy.id} never pads`);
+      for (const flow of policy.flows) assert.ok(flowIds.has(flow), `${policy.id} → ${flow}`);
+    }
+    const hardNews = sizingPolicyFor('transcript-article');
+    assert.equal(hardNews.kind, 'laudas');
+    assert.equal(sizingPolicyFor('news-article').id, 'hard-news');
+    const evergreen = sizingPolicyFor('opportunity-article');
+    assert.equal(evergreen.kind, 'intent');
+    assert.equal(evergreen.kind === 'intent' && evergreen.cap, null);
+    assert.equal(evergreen.since, 'R3');
+  });
+
+  test('the size contract a provider receives: target, maximum, no padding, budgets per section', () => {
+    assert.deepEqual(draftSizeInstructions({ size: 'standard', sections: 3 }), {
+      size: 'standard',
+      laudas: 2,
+      charsPerLauda: 2000,
+      minChars: 2001,
+      maxChars: 4000,
+      targetChars: 3600,
+      tolerance: 0.1,
+      headings: true,
+      neverPad: true,
+      introChars: 900,
+      sections: [
+        { stepId: 'section-1', budgetChars: 900 },
+        { stepId: 'section-2', budgetChars: 900 },
+        { stepId: 'section-3', budgetChars: 900 },
+      ],
+      instruction: 'Escreva até 4.000 caracteres; se o material não sustentar, escreva menos e não complete.',
+    });
+    const curto = draftSizeInstructions({ size: 'short', sections: 2 });
+    assert.equal(curto.headings, false, 'a Curto has no intertítulos');
+    assert.deepEqual(curto.sections.map((section) => section.budgetChars), [540, 540]);
+    assert.equal(curto.instruction, 'Escreva até 2.000 caracteres; se o material não sustentar, escreva menos e não complete.');
   });
 });
 
 describe('copilot and dashboard', () => {
-  test('R1 presets: Mais direto, Sugerir intertítulos, Encurtar até a extensão da pauta, Gerar títulos alternativos', () => {
+  test('R1 presets: Mais direto, Sugerir intertítulos, Encurtar até o tamanho da pauta, Gerar títulos alternativos', () => {
     assert.deepEqual(
       copilotPresets('article', R1).map((tool) => tool.label),
-      ['Mais direto', 'Sugerir intertítulos', 'Encurtar até a extensão da pauta', 'Gerar títulos alternativos'],
+      ['Mais direto', 'Sugerir intertítulos', 'Encurtar até o tamanho da pauta', 'Gerar títulos alternativos'],
     );
-    assert.ok(copilotPresets('article', R1).find((tool) => tool.id === 'shorten-to-brief')?.toBriefLength);
+    assert.ok(copilotPresets('article', R1).find((tool) => tool.id === 'shorten-to-brief')?.toBriefSize);
     assert.equal(copilotPresets('article', R1).find((tool) => tool.id === 'titles')?.proposals, 3);
     assert.ok(!copilotToolsFor('article', R1).some((tool) => tool.id === 'suggest-links'));
     assert.deepEqual(
@@ -391,22 +418,17 @@ describe('copilot and dashboard', () => {
     assert.ok(copilotToolsFor('article', R1).every((tool) => tool.request), 'every R1 article tool starts a port request');
   });
 
-  test('simulated R1 dashboard hides cost and shows the live runs panel', () => {
-    const shown = ids(dashboardWidgetsFor({ capabilities: [] }, R1));
-    assert.deepEqual(shown, [
-      'in-production',
-      'awaiting-approval',
-      'approved',
-      'time-to-approval',
-      'ai-retention',
-      'continue',
-      'awaiting-you',
-      'rhythm',
-      'activity',
-      'generating-now',
-    ]);
-    assert.ok(ids(dashboardWidgetsFor({ capabilities: ['cost'] }, R1)).includes('generation-cost'));
+  test('R1 Início is a desk: what needs you, the team, what is in progress and one week line', () => {
+    assert.deepEqual(ids(dashboardWidgetsFor({ capabilities: [] }, R1)), ['needs-you', 'team', 'in-progress', 'week']);
+    assert.deepEqual(ids(dashboardWidgetsFor({ capabilities: ['cost'] }, R1)), ['needs-you', 'team', 'in-progress', 'week']);
+    // Management charts wait for "Desempenho" (R6); cost still needs a runtime that measures it.
+    const r6 = ids(dashboardWidgetsFor({ capabilities: [] }, 'R6'));
+    assert.ok(r6.includes('rhythm') && r6.includes('time-to-approval') && !r6.includes('generation-cost'));
+    assert.ok(ids(dashboardWidgetsFor({ capabilities: ['cost'] }, 'R6')).includes('generation-cost'));
     assert.equal(DASHBOARD_WIDGETS.find((widget) => widget.id === 'time-to-approval')?.lowerIsBetter, true);
+    for (const gone of ['ai-retention', 'activity', 'generating-now', 'continue', 'awaiting-you', 'awaiting-approval']) {
+      assert.ok(!DASHBOARD_WIDGETS.some((widget) => widget.id === gone), `${gone} left Início`);
+    }
   });
 });
 
