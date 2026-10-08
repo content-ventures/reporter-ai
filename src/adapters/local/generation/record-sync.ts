@@ -1,4 +1,4 @@
-import { sliceText } from '../../../domain/article.ts';
+import { setCover, sliceText } from '../../../domain/article.ts';
 import type { ArticleBody } from '../../../domain/article.ts';
 import type { CarouselBody } from '../../../domain/carousel.ts';
 import type { PieceId, RunId, TemplateId } from '../../../domain/ids.ts';
@@ -21,7 +21,8 @@ import type { RunUpdate } from '../../../ports/generation.ts';
  * How a production record absorbs generation (pure; the store persists the result through
  * `records.apply`). The rules are the domain's: a dirty draft is frozen before a regeneration,
  * "v1 · IA" is the pure run output (`settleGeneration`), a cancelled run keeps its partial, a
- * failed run keeps its finished blocks, and assist runs become `ready` suggestions.
+ * failed run keeps its finished blocks, and assist runs become `ready` suggestions. An outline
+ * run ("Montar estrutura") is only recorded: its proposal lives in its stream snapshot.
  * Re-applying the same update is idempotent.
  */
 
@@ -87,9 +88,10 @@ export function settleRun(record: ProductionRecord, fold: RunFold, ctx: CommandC
   const piece = record.pieces.find((candidate) => candidate.id === run.pieceId);
   const generated = outputOf(fold, templateId ?? (piece?.draft.body.type === 'carousel' ? piece.draft.body.templateId : undefined));
   if (!piece || !generated || generated.type !== piece.draft.body.type) return record;
-  // The cover is the person's choice, not model output: a regenerated text keeps it.
+  // The cover is the person's choice, not model output: a regenerated text keeps it (and the
+  // outline's cover suggestion is then moot).
   const cover = piece.draft.body.type === 'article' ? piece.draft.body.cover : undefined;
-  const output: PieceBody = generated.type === 'article' && cover && !generated.cover ? { ...generated, cover } : generated;
+  const output: PieceBody = generated.type === 'article' && cover && !generated.cover ? setCover(generated, cover) : generated;
   const { inputs, sources } = runInputs(run);
   const settled = settleGeneration(
     {
@@ -116,7 +118,8 @@ export function settleRun(record: ProductionRecord, fold: RunFold, ctx: CommandC
 function suggestionsOf(record: ProductionRecord, update: RunUpdate, ctx: CommandContext): Suggestion[] {
   const { fold, meta } = update;
   const request = meta.request;
-  if (request.kind === 'article.draft' || request.kind === 'carousel.copy') return [];
+  // Drafts and slides become versions; "Montar estrutura" only proposes a structure (no output).
+  if (request.kind === 'article.draft' || request.kind === 'carousel.copy' || request.kind === 'article.outline') return [];
   const baseBody = request.input.body;
   const piece = record.pieces.find((candidate) => candidate.id === meta.pieceId);
   const current = piece?.draft.body.type === 'article' ? piece.draft.body : undefined;

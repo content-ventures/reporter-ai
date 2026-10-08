@@ -1,5 +1,5 @@
 import { DEFAULT_SECTIONS } from '../../../domain/production.ts';
-import { longestPlanWords } from './draft-plan.ts';
+import { longestPlanChars } from './draft-plan.ts';
 import { createVoices, headlineLine } from './editorial.ts';
 import type { SpeakerInfo } from './editorial.ts';
 import { keywords, pickKeyQuotes, readMaterial, readSegments } from './material.ts';
@@ -28,8 +28,8 @@ export function materialOutlook(
   const title = top?.text ?? (quotes[0] ? headlineLine(material, new Set(), voices, { prefer: quotes[0] })?.text : undefined);
   const outlook: MaterialOutlook = {
     sections: material.mode === 'qa' ? material.units.length : Math.min(5, material.units.length),
-    // The longest draft this material supports: the preview promises a length only up to it.
-    wordsAvailable: longestPlanWords(material, DEFAULT_SECTIONS),
+    // The longest draft this material supports: the preview promises a size only up to it.
+    charsAvailable: longestPlanChars(material, DEFAULT_SECTIONS),
     keyLines: quotes.map((quote) => ({
       segmentId: quote.line.segmentId,
       text: quote.text,
@@ -43,16 +43,16 @@ export function materialOutlook(
 const supported = new Map<string, number>();
 
 /**
- * Words of the longest article these sources support (the extractive simulation never invents
- * more), remembered per material version: the brief's length field says when a target is out of
- * reach for the material already in the production.
+ * Characters of the longest article these sources support (the extractive simulation never
+ * invents more), remembered per material version: the brief's size field and the "Tamanho" check
+ * say when the material cannot fill the size of the production.
  */
-export function wordsAvailable(sources: readonly Source[]): number {
+export function charsAvailable(sources: readonly Source[]): number {
   const key = sources.map((source) => `${source.id}@${currentSourceVersion(source).hash}`).join('|');
   const known = supported.get(key);
   if (known !== undefined) return known;
-  const words = longestPlanWords(readMaterial(sources), DEFAULT_SECTIONS);
+  const chars = longestPlanChars(readMaterial(sources), DEFAULT_SECTIONS);
   if (supported.size > 64) supported.clear();
-  supported.set(key, words);
-  return words;
+  supported.set(key, chars);
+  return chars;
 }

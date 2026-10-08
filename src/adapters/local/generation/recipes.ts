@@ -8,8 +8,9 @@ import { recipeFor } from '../../../registries/recipes.ts';
  * Recipes are DATA owned by the registries (`src/registries/recipes.ts`): step ids, pt-BR labels
  * and the prompt key/version a run records. The simulation announces exactly those steps, so a
  * provider adapter that follows the same registry never changes AgentTrace or provenance.
- * The article recipe mirrors the Make scenario "aqui pedrão": material → key quotes → outline →
- * introduction → one child run per section → quote check.
+ * The article recipe follows the editorial order (DECISION §Generation): material → structure →
+ * sources and quotes → introduction → one child run per section → quote and size check; the
+ * outline recipe ("Montar estrutura") stops after the structure.
  */
 
 /** Step ids of the article recipe the executors rely on. */
@@ -58,11 +59,12 @@ const ASSIST_KINDS: GenerationKind[] = [
 /** ⌘K "Simulação" group (visible only when the runtime runs simulated). */
 export const LOCAL_SCENARIOS: readonly SimulationScenario[] = [
   { id: 'fail-section', label: 'Falhar ao escrever a seção 2', kinds: ['article.draft'] },
-  { id: 'fail-read', label: 'Falhar ao ler o material', kinds: ['article.draft'] },
+  { id: 'fail-read', label: 'Falhar ao ler o material', kinds: ['article.outline', 'article.draft'] },
+  { id: 'fail-outline', label: 'Falhar ao montar a estrutura', kinds: ['article.outline'] },
   { id: 'review-outline', label: 'Pausar para revisar a estrutura', kinds: ['article.draft'] },
   { id: 'fail-suggestion', label: 'Falhar na sugestão da IA', kinds: ASSIST_KINDS },
   { id: 'fail-slides', label: 'Falhar ao escrever os slides', kinds: ['carousel.copy'] },
-  { id: 'slow', label: 'Geração lenta', kinds: ['article.draft', 'carousel.copy', ...ASSIST_KINDS] },
+  { id: 'slow', label: 'Geração lenta', kinds: ['article.outline', 'article.draft', 'carousel.copy', ...ASSIST_KINDS] },
 ];
 
 /** Step where a scenario makes the run fail, if any. */
@@ -75,6 +77,8 @@ export function failingStep(scenario: string | undefined, steps: readonly Concre
     }
     case 'fail-read':
       return has('read') ? 'read' : undefined;
+    case 'fail-outline':
+      return has('outline') ? 'outline' : undefined;
     case 'fail-suggestion':
       return has('write') ? 'write' : undefined;
     case 'fail-slides':

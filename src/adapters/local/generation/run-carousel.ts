@@ -1,8 +1,9 @@
-import { articleStats } from '../../../domain/article.ts';
+import { articleCharacters } from '../../../domain/article.ts';
 import type { ArticleBody } from '../../../domain/article.ts';
 import { slotIssues } from '../../../domain/carousel.ts';
 import type { CarouselBody, CarouselTemplate, Slide } from '../../../domain/carousel.ts';
 import type { VersionRef } from '../../../domain/refs.ts';
+import { formatLaudas } from '../../../domain/sizing.ts';
 import type { SlotMeasure } from './carousel-assist.ts';
 import type { CarouselPlan } from './carousel-plan.ts';
 import type { RunApi } from './engine.ts';
@@ -104,7 +105,8 @@ export async function runCarousel(input: CarouselRunInput): Promise<void> {
   const [cover, ...rest] = plan.slides;
   const proceed =
     (await step(api, 'read', async () =>
-      (await api.wait(api.pacing.step())) ? `v${input.parent.number} · ${articleStats(input.article).words} palavras` : false,
+      // The approved article in laudas (never a version number or words on a writer's screen).
+      (await api.wait(api.pacing.step())) ? `Artigo aprovado · ${formatLaudas(articleCharacters(input.article))}` : false,
     )) &&
     (await step(api, 'points', async () => ((await api.wait(api.pacing.step())) ? `${plan.slides.length} slides` : false))) &&
     (await step(api, 'cover', async () => {
