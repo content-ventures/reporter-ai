@@ -1,41 +1,17 @@
-import type { StepItem } from '@content-ventures/design-system/v3';
-import type { StageView } from '../../domain/index.ts';
+import { PIECE_STATUS_LABELS } from '../../domain/index.ts';
+import type { PieceKind, PieceStatus, StageView } from '../../domain/index.ts';
+import type { PieceApproval } from '../../ports/index.ts';
 
 /**
- * The production journey as the header shows it (B04): the Stepper on a wide screen and the
- * "Ver etapas" menu next to the compact stepper on a phone. Pure, so it is tested without React.
+ * The production journey as the header shows it (D3, §2.6): one quiet menu button in the header
+ * line, "Artigo · 2 de 5 ▾", listing every stage with where it stands ("Concluída", "Com Pedro",
+ * "Aprovado") or why it is blocked. Pure, so it is tested without React.
  */
 
-type StageStepState = Exclude<StepItem['state'], undefined>;
-
-/** "Disponível após aprovar o artigo." → the DS reason: short, without the final period. */
+/** "Disponível após aprovar o artigo." → the menu's reason: short, without the final period. */
 export function stageReason(stage: Pick<StageView, 'state' | 'blockedReason'>): string | undefined {
   if (stage.state !== 'blocked' || !stage.blockedReason) return undefined;
   return stage.blockedReason.trim().replace(/\.$/, '');
-}
-
-/**
- * Journey stages → Stepper steps. The stage on screen is the Stepper's `current`; the journey's
- * own current stage, while another one is on screen, stays "em andamento" (`active`), never
- * "a seguir" nor "feita" by position. A delivered production has no open work: its last stage
- * reads as done. Blocked stages carry their reason (Tooltip and `aria-describedby`).
- */
-export function journeySteps(stages: readonly StageView[], viewedIndex: number, completed = false): StepItem[] {
-  return stages.map((stage, index) => {
-    const step: StepItem = { id: stage.id, label: stage.label };
-    // A blocked stage reached by its address still reads as blocked (lock and reason), never as current.
-    if (index === viewedIndex && stage.state !== 'blocked') return step;
-    if (stage.state === 'current') step.state = completed ? 'done' : 'active';
-    else step.state = stage.state as StageStepState;
-    const reason = stageReason(stage);
-    if (reason) step.reason = reason;
-    return step;
-  });
-}
-
-/** The Stepper's `current`: the stage on screen, unless it is blocked (then no stage is "here"). */
-export function stepperCurrent(stages: readonly Pick<StageView, 'state'>[], viewedIndex: number): number {
-  return stages[viewedIndex]?.state === 'blocked' ? -1 : viewedIndex;
 }
 
 /** Only reachable stages navigate; a blocked one explains why and stays put. */
@@ -43,37 +19,71 @@ export function stageNavigable(stage: Pick<StageView, 'selectable' | 'state'>): 
   return stage.selectable && stage.state !== 'blocked';
 }
 
-const STATE_LABELS: Record<StageStepState | 'current', string> = {
-  done: 'Concluída',
-  current: 'Em andamento',
-  active: 'Em andamento',
-  upcoming: 'A seguir',
-  warn: 'Com pendência',
-  error: 'Com erro',
-  blocked: 'Bloqueada',
-};
+/** The stage on screen: the one the route names, else the journey's current stage, else the first. */
+export function viewedStageIndex(stages: readonly Pick<StageView, 'id'>[], viewedId: string | undefined, currentStageId: string): number {
+  const byRoute = viewedId === undefined ? -1 : stages.findIndex((stage) => stage.id === viewedId);
+  if (byRoute >= 0) return byRoute;
+  return Math.max(0, stages.findIndex((stage) => stage.id === currentStageId));
+}
 
-export type StageMenuItem = {
+/** The menu trigger: "Artigo · 2 de 5" (stage on screen · its place in the journey). */
+export function journeyLabel(stages: readonly Pick<StageView, 'label'>[], viewedIndex: number): string {
+  const stage = stages[viewedIndex];
+  if (!stage) return '';
+  return `${stage.label} · ${viewedIndex + 1} de ${stages.length}`;
+}
+
+const PIECE_STATUSES = new Set<string>(Object.keys(PIECE_STATUS_LABELS));
+
+/**
+ * Where a stage stands, in the words of COPY §5.3: the blocked reason first, then the approval
+ * detail ("Com Pedro", "Aprovado", "Ajustes solicitados", "Aprovação desatualizada"), then
+ * "Concluída" / "Em andamento"; a flagged stage says its piece status ("Desatualizado", "Erro").
+ * A stage still ahead says nothing. A delivered production has no open work: "Concluída".
+ */
+export function stageDescription(stage: StageView, completed = false): string | undefined {
+  const reason = stageReason(stage);
+  if (reason) return reason;
+  if (stage.detail) return stage.detail;
+  switch (stage.state) {
+    case 'done':
+      return 'Concluída';
+    case 'current':
+      return completed ? 'Concluída' : 'Em andamento';
+    case 'warn':
+    case 'error':
+      return PIECE_STATUSES.has(stage.status) ? PIECE_STATUS_LABELS[stage.status as PieceStatus] : undefined;
+    default:
+      return undefined;
+  }
+}
+
+export type JourneyMenuItem = {
   id: string;
   label: string;
-  /** Where the journey is ("Em andamento", "Concluída") or why the stage is blocked. */
-  description: string;
+  /** Where the stage stands ("Concluída", "Com Pedro") or why it is blocked. */
+  description?: string;
   disabled: boolean;
   /** The stage on screen. */
   checked: boolean;
 };
 
-/** Rows of the phone "Ver etapas" menu, in journey order. */
-export function stageMenuItems(stages: readonly StageView[], viewedIndex: number, completed = false): StageMenuItem[] {
-  const steps = journeySteps(stages, -1, completed);
+/** Rows of the journey menu, in journey order. */
+export function journeyMenuItems(stages: readonly StageView[], viewedIndex: number, completed = false): JourneyMenuItem[] {
   return stages.map((stage, index) => {
-    const state = steps[index]?.state ?? 'upcoming';
-    return {
-      id: stage.id,
-      label: stage.label,
-      description: stageReason(stage) ?? STATE_LABELS[state],
-      disabled: !stageNavigable(stage),
-      checked: index === viewedIndex,
-    };
+    const item: JourneyMenuItem = { id: stage.id, label: stage.label, disabled: !stageNavigable(stage), checked: index === viewedIndex };
+    const description = stageDescription(stage, completed);
+    if (description) item.description = description;
+    return item;
   });
+}
+
+/**
+ * Whether the viewer opens the guided review at a piece's approval (`stageHref` `canDecide`):
+ * only someone who decides there (never the sender, R3) and only once something was sent. Before
+ * the first send, and for everyone else, the approval stage opens the piece's studio.
+ */
+export function decidesAt(approvals: Partial<Record<PieceKind, PieceApproval>> | undefined, kind: PieceKind | undefined): boolean {
+  const approval = kind ? approvals?.[kind] : undefined;
+  return Boolean(approval && approval.viewer.canDecide && approval.state !== 'none');
 }

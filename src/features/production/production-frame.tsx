@@ -2,27 +2,56 @@
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useSelectedLayoutSegments } from 'next/navigation';
-import { AccessState, ButtonLink, ErrorState, PageStack, WorkspaceLayout, type Crumb } from '@content-ventures/design-system/v3';
+import { AccessState, ButtonLink, ErrorState, PageStack, WorkspaceLayout } from '@content-ventures/design-system/v3';
 import type { ProductionId } from '@/domain';
 import type { ProductionDetail } from '@/ports';
 import { pieceKind } from '@/registries';
 import { useProduction } from '@/state';
-import { useBreadcrumb } from '@/ui/shell';
-import { pieceHref, productionHref, productionRoute, PRODUCTIONS_HREF, type ProductionRoute } from '@/ui/routes';
+import { productionRoute, PRODUCTIONS_HREF, type ProductionRoute } from '@/ui/routes';
 import { useDocumentTitle } from '@/ui/use-document-title';
 import { ProductionFrameContext, type ProductionFrameState } from './production-context';
-import { ProductionHeaderView } from './production-header';
+import { ProductionHeaderView, ProductionPrimaryBar, type HeaderPrimary } from './production-header';
 
 export { useProductionFrame, type ProductionFrameState } from './production-context';
-export { ProductionHeader } from './production-header';
+export {
+  ProductionHeader,
+  ProductionPrimaryBar,
+  useJourneyLabel,
+  type HeaderBack,
+  type HeaderPrimary,
+  type HeaderSecondary,
+  type ProductionHeaderProps,
+} from './production-header';
+
+/** Below this width a stage page moves its primary from the header line to the bottom bar. */
+const STAGE_PAGE_NARROW = 640;
 
 /**
  * A stage that is a page (Material, Entrega) in the studios' docked frame (B02): the header line at
  * the same place and size on every stage, the page scrolling under it with the frame's own margins.
+ * With `primary`, a phone (≤640) gets it in `ProductionPrimaryBar` at the bottom; pass `header` as a
+ * function of `narrow` to leave the primary out of the header line there.
  */
-export function StagePage({ header, label, children }: { header: ReactNode; label: string; children: ReactNode }) {
+export function StagePage({
+  header,
+  label,
+  primary,
+  children,
+}: {
+  header: ReactNode | ((narrow: boolean) => ReactNode);
+  label: string;
+  primary?: HeaderPrimary;
+  children: ReactNode;
+}) {
   return (
-    <WorkspaceLayout docked header={header} mainLabel={label}>
+    <WorkspaceLayout
+      docked
+      header={header}
+      mainLabel={label}
+      // Pages that hand over their primary switch at a phone's width; the others keep the default.
+      narrowBelow={primary ? STAGE_PAGE_NARROW : undefined}
+      footer={primary ? (narrow: boolean) => (narrow ? <ProductionPrimaryBar primary={primary} /> : null) : undefined}
+    >
       <PageStack>{children}</PageStack>
     </WorkspaceLayout>
   );
@@ -33,29 +62,16 @@ const ROUTE_LABEL: Partial<Record<ProductionRoute['kind'], string>> = {
   delivery: 'Entrega',
 };
 
-/** "Produções › Ateliê Sul › Artigo › Revisão". */
-function frameCrumbs(production: ProductionDetail | undefined, route: ProductionRoute): Crumb[] | null {
-  if (!production) return null;
-  const root: Crumb = { label: 'Produções', href: PRODUCTIONS_HREF };
-  const title: Crumb = { label: production.title, href: productionHref(production.id) };
-  if (route.kind === 'studio') return [root, title, { label: pieceKind(route.pieceKind)?.label ?? 'Peça' }];
-  if (route.kind === 'review') {
-    return [root, title, { label: pieceKind(route.pieceKind)?.label ?? 'Peça', href: pieceHref(production.id, route.pieceKind) }, { label: 'Revisão' }];
-  }
-  const label = ROUTE_LABEL[route.kind];
-  return label ? [root, title, { label }] : [root, { label: production.title }];
-}
-
 function documentTitle(production: ProductionDetail | undefined, route: ProductionRoute): string | null {
   if (!production) return null;
   const stage = route.kind === 'studio' || route.kind === 'review' ? pieceKind(route.pieceKind)?.label : ROUTE_LABEL[route.kind];
-  return [production.title, stage, route.kind === 'review' ? 'Revisão' : null].filter(Boolean).join(' · ');
+  return [production.title, stage, route.kind === 'review' ? 'Aprovação' : null].filter(Boolean).join(' · ');
 }
 
 /**
- * Persistent frame of `/productions/[id]/**` (PLAN §3.4): production header with the journey
- * Stepper above Material, Revisão and Entrega; studios host the same header inside their
- * docked `WorkspaceLayout` (no double scroll). Unknown id → AccessState not-found; a production
+ * Persistent frame of `/productions/[id]/**` (PLAN §3.4): an immersive area (no app menu, no top
+ * bar, no trail; the shell decides) where every stage hosts the one-line production header in its
+ * own docked layout (no double scroll). Unknown id → AccessState not-found; a production
  * restricted to another team (REQ-T.1, B06) → AccessState restricted with who to ask. Screens read
  * the production from `useProductionFrame()`.
  */
@@ -77,7 +93,6 @@ export function ProductionFrame({ productionId, children }: { productionId: Prod
 
   // A refusal may keep the last answer (another person just switched in): never show its title.
   const shown = production.status === 'error' ? undefined : production.data;
-  useBreadcrumb(frameCrumbs(shown, route), { priority: 1 });
   useDocumentTitle(documentTitle(shown, route));
 
   if (production.status === 'error') {
@@ -98,7 +113,15 @@ export function ProductionFrame({ productionId, children }: { productionId: Prod
         />
       );
     }
-    return <ErrorState title="Não foi possível abrir a produção" onRetry={production.retry} size="page" />;
+    // No app menu inside a production (immersive): the state offers the way back.
+    return (
+      <ErrorState
+        title="Não foi possível abrir a produção"
+        onRetry={production.retry}
+        size="page"
+        actions={<ButtonLink href={PRODUCTIONS_HREF}>Ver produções</ButtonLink>}
+      />
+    );
   }
 
   return (

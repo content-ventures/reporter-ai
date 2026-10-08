@@ -1,11 +1,23 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { StageView } from '../../domain/index.ts';
-import { journeySteps, stageMenuItems, stageNavigable, stageReason, stepperCurrent } from './journey.ts';
+import type { PieceApproval } from '../../ports/index.ts';
+import { decidesAt, journeyLabel, journeyMenuItems, stageDescription, stageNavigable, stageReason, viewedStageIndex } from './journey.ts';
 
+/** Aurora: the article was sent to Pedro; the carousel and the delivery wait for its approval. */
 const STAGES: StageView[] = [
   { id: 'source', label: 'Material', kind: 'source', state: 'done', status: 'ready', selectable: true },
-  { id: 'article', label: 'Artigo', kind: 'piece', pieceKind: 'article', state: 'current', status: 'draft', selectable: true },
+  { id: 'article', label: 'Artigo', kind: 'piece', pieceKind: 'article', state: 'done', status: 'in_review', selectable: true },
+  {
+    id: 'approval',
+    label: 'Aprovação',
+    kind: 'gate',
+    pieceKind: 'article',
+    state: 'current',
+    status: 'in_review',
+    detail: 'Com Pedro',
+    selectable: true,
+  },
   {
     id: 'carousel',
     label: 'Carrossel',
@@ -27,53 +39,77 @@ const STAGES: StageView[] = [
   },
 ];
 
-describe('journey header (B04)', () => {
-  it('on the journey stage: it is the current one, the rest keep their state and reason', () => {
-    const steps = journeySteps(STAGES, 1);
-    assert.deepEqual(
-      steps.map((step) => step.state),
-      ['done', undefined, 'blocked', 'blocked'],
-    );
-    assert.equal(steps[2]?.reason, 'Disponível após aprovar o artigo');
-    assert.equal(steps[1]?.reason, undefined);
+function approval(state: PieceApproval['state'], canDecide: boolean): PieceApproval {
+  return {
+    pieceId: 'piece-1',
+    kind: 'article',
+    gateId: 'article.approval',
+    state,
+    requests: [],
+    decisions: [],
+    locked: state === 'awaiting',
+    send: { guard: { allowed: true }, items: [], approvers: [], isResend: false },
+    viewer: { canEdit: true, canSend: true, canDecide, canWithdraw: false, isRequester: false, isAssignee: canDecide },
+  } as unknown as PieceApproval;
+}
+
+describe('journey menu (D3, COPY §5.3)', () => {
+  it('the trigger names the stage on screen and its place: "Artigo · 2 de 5", "Aprovação · 3 de 5"', () => {
+    assert.equal(journeyLabel(STAGES, 1), 'Artigo · 2 de 5');
+    assert.equal(journeyLabel(STAGES, 2), 'Aprovação · 3 de 5');
+    assert.equal(journeyLabel(STAGES.filter((stage) => stage.kind !== 'gate'), 3), 'Entrega · 4 de 4', 'a flow without the approval stage has 4');
+    assert.equal(journeyLabel([], 0), '');
   });
 
-  it('viewing another stage: the journey stage stays "em andamento", never "a seguir"', () => {
-    const steps = journeySteps(STAGES, 0);
-    assert.equal(steps[0]?.state, undefined);
-    assert.equal(steps[1]?.state, 'active');
+  it('the stage on screen: the route’s, else the journey’s current one', () => {
+    assert.equal(viewedStageIndex(STAGES, 'article', 'approval'), 1);
+    assert.equal(viewedStageIndex(STAGES, undefined, 'approval'), 2);
+    assert.equal(viewedStageIndex(STAGES, 'missing', 'approval'), 2);
+    assert.equal(viewedStageIndex(STAGES, undefined, 'missing'), 0);
   });
 
-  it('a blocked stage reached by its address reads as blocked, with its reason, and no stage is "here"', () => {
-    const steps = journeySteps(STAGES, 3);
-    assert.equal(steps[3]?.state, 'blocked');
-    assert.equal(steps[3]?.reason, 'Disponível após aprovar o artigo e o carrossel');
-    assert.equal(steps[1]?.state, 'active', 'the journey is still on the article');
-    assert.equal(stepperCurrent(STAGES, 3), -1);
-    assert.equal(stepperCurrent(STAGES, 1), 1);
-  });
-
-  it('a delivered production has no open work: its last stage reads as done', () => {
-    const delivered = STAGES.map((stage, index) => ({ ...stage, state: index === 3 ? ('current' as const) : ('done' as const) }));
-    assert.equal(journeySteps(delivered, 1, true)[3]?.state, 'done');
-  });
-
-  it('blocked stages do not navigate; their reason drops the final period', () => {
-    assert.equal(stageNavigable(STAGES[2] as StageView), false);
-    assert.equal(stageNavigable(STAGES[0] as StageView), true);
-    assert.equal(stageReason({ state: 'done', blockedReason: 'x.' }), undefined);
-  });
-
-  it('phone menu: state or reason per stage, the one on screen checked, blocked ones disabled', () => {
-    const items = stageMenuItems(STAGES, 0);
+  it('each stage says where it stands: done, the approval detail, blocked reasons without the final period', () => {
+    const items = journeyMenuItems(STAGES, 1);
     assert.deepEqual(
       items.map((item) => [item.label, item.description, item.disabled, item.checked]),
       [
-        ['Material', 'Concluída', false, true],
-        ['Artigo', 'Em andamento', false, false],
+        ['Material', 'Concluída', false, false],
+        ['Artigo', 'Concluída', false, true],
+        ['Aprovação', 'Com Pedro', false, false],
         ['Carrossel', 'Disponível após aprovar o artigo', true, false],
         ['Entrega', 'Disponível após aprovar o artigo e o carrossel', true, false],
       ],
     );
+  });
+
+  it('current stage without detail is "Em andamento"; a stage ahead says nothing; a delivered production is "Concluída"', () => {
+    const writing: StageView = { id: 'article', label: 'Artigo', kind: 'piece', pieceKind: 'article', state: 'current', status: 'generating', selectable: true };
+    const ahead: StageView = { id: 'approval', label: 'Aprovação', kind: 'gate', pieceKind: 'article', state: 'upcoming', status: 'draft', selectable: true };
+    assert.equal(stageDescription(writing), 'Em andamento');
+    assert.equal(stageDescription(ahead), undefined);
+    const delivery: StageView = { id: 'delivery', label: 'Entrega', kind: 'delivery', state: 'current', status: 'completed', selectable: true };
+    assert.equal(stageDescription(delivery, true), 'Concluída');
+  });
+
+  it('a flagged stage says its piece status; the approval detail wins over the flag', () => {
+    const stale: StageView = { id: 'carousel', label: 'Carrossel', kind: 'piece', pieceKind: 'carousel', state: 'warn', status: 'stale', selectable: true };
+    assert.ok(stageDescription(stale), 'the carousel says it is outdated');
+    const outdated: StageView = { ...stale, id: 'approval', kind: 'gate', pieceKind: 'article', status: 'approval_outdated', detail: 'Aprovação desatualizada' };
+    assert.equal(stageDescription(outdated), 'Aprovação desatualizada');
+  });
+
+  it('blocked stages do not navigate; their reason drops the final period', () => {
+    assert.equal(stageNavigable(STAGES[3] as StageView), false);
+    assert.equal(stageNavigable(STAGES[0] as StageView), true);
+    assert.equal(stageReason({ state: 'done', blockedReason: 'x.' }), undefined);
+  });
+
+  it('the approval opens the review only for whoever decides there, once something was sent', () => {
+    assert.equal(decidesAt({ article: approval('awaiting', true) }, 'article'), true);
+    assert.equal(decidesAt({ article: approval('approved', true) }, 'article'), true);
+    assert.equal(decidesAt({ article: approval('awaiting', false) }, 'article'), false, 'the sender waits in the studio');
+    assert.equal(decidesAt({ article: approval('none', true) }, 'article'), false, 'nothing sent yet: the studio');
+    assert.equal(decidesAt({}, 'article'), false);
+    assert.equal(decidesAt(undefined, undefined), false);
   });
 });
