@@ -12,7 +12,7 @@ export function NotFoundState() {
       title="Página não encontrada"
       actions={
         <ButtonLink href={OVERVIEW_HREF} variant="primary">
-          Ir para a visão geral
+          Ir para o Início
         </ButtonLink>
       }
     />
