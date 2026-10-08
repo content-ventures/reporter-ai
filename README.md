@@ -14,10 +14,11 @@ Fluxo: transcrição autorizada → artigo → aprovação → carrossel → apr
 | Produções | `/productions` | Lista com abas, busca, filtros na URL e ação em massa |
 | Nova produção | `/productions/new` | Colar ou enviar a transcrição (.txt .md .srt .vtt, até 2 MB), ligar falantes a pessoas, autorizar e gerar |
 | Material | `/productions/[id]/source` | Transcrição, falantes, participantes e pauta editável |
-| Estúdio do artigo | `/productions/[id]/article` | Geração ao vivo, edição, sugestões da IA, citações conferidas na fonte, versões |
-| Revisão | `/productions/[id]/[peça]/review` | Alterações ou texto final, devolver com nota, aprovar |
-| Carrossel | `/productions/[id]/carousel` | Textos dos slides derivados do artigo aprovado, prévia no modelo, limites conferidos |
-| Entrega | `/productions/[id]/delivery` | Pacote com .md, .html, .json do carrossel, manifesto e PNG por slide; rastreabilidade e retorno do piloto |
+| Estúdio do artigo | `/productions/[id]/article` | Geração ao vivo, edição, sugestões da IA, imagens sugeridas a preencher, citações conferidas na fonte, versões |
+| Revisão | `/productions/[id]/[peça]/review` | Alterações ou texto final numa coluna centralizada, checagem recolhível, devolver com nota, aprovar |
+| Carrossel | `/productions/[id]/carousel` | Modelo escolhido na biblioteca (a capa do artigo em cada modelo; `?model=` chega com um escolhido), textos dos slides derivados do artigo aprovado, "Trocar modelo" mostrando este carrossel no outro modelo e sem perder texto, limites conferidos |
+| Entrega | `/productions/[id]/delivery` | Pacote com .md, .html, .json do carrossel, imagens, manifesto e PNG por slide; artigo final, com as imagens, para ler antes de baixar (`?view=article`); rastreabilidade e retorno do piloto |
+| Modelos | `/library/templates` | Biblioteca de 10 modelos de carrossel, um formato por vez (Feed 4:5, Quadrado 1:1; Stories "Em breve") e busca; cada modelo com todos os layouts sobre a foto de exemplo, os limites e "Usar como padrão" |
 | Novidades | `/whats-new` | Histórico de versões e o bloco "Em preparação · R1 · Experiência" |
 | Logs | `/admin/audit` | Logins, acessos negados e alterações, só leitura e só para admin |
 
@@ -116,7 +117,7 @@ Abra [http://localhost:3000/?reset=1](http://localhost:3000/?reset=1). O `pnpm i
 |---|---|
 | `pnpm gate:quick` | Políticas de DS, arquitetura, densidade de conteúdo e versão; lint; tipos; testes (`node --test`) |
 | `pnpm gate` | `gate:quick` e o build de produção |
-| `pnpm smoke` | Playwright: o caminho principal (transcrição → falantes → autorização → geração → edição → envio → aprovação → carrossel → aprovação → pacote) e a varredura de rotas em 1440 e 390, sem erro de console e sem rolagem lateral |
+| `pnpm smoke` | Playwright: o caminho principal (transcrição → falantes → autorização → geração → edição → envio → aprovação → modelo do carrossel → carrossel → aprovação → pacote), a biblioteca de modelos (formato e busca, modelo aberto e definido como padrão, "Trocar modelo" mostrando este carrossel no outro modelo, com desfazer), imagens sugeridas preenchidas por envio e por arquivo solto sobre elas, a leitura centrada da revisão, o artigo final com as imagens e a varredura de rotas em 1440 e 390, sem erro de console e sem rolagem lateral |
 
 O `pnpm smoke` reaproveita o servidor que já estiver em `localhost:3000`, normalmente o `pnpm dev`. Sem servidor, ele faz o build e sobe o `next start`; no CI, sobe o build que o job `quality` já fez (`SMOKE_PREBUILT=1`). Cada rota também confere uma `h1` só e nenhum nível de título pulado. `SMOKE_BASE_URL=http://localhost:3001 pnpm smoke` roda contra um build já no ar. Na primeira vez, instale o navegador com `pnpm exec playwright install chromium`.
 
@@ -137,6 +138,6 @@ Use o build de produção, nunca o `pnpm dev`: o indicador do Next cobre a troca
 7. Horizonte: "Tentar de novo a partir desta etapa" continua a geração interrompida.
 8. Lume: revise e aprove o carrossel.
 9. Pátio Couro: escolha entre "Atualizar carrossel" e "Exportar com artigo v2".
-10. Bella Passo: baixe o pacote e confira a rastreabilidade e o retorno do piloto.
+10. Bella Passo: leia o "Artigo final" (capa e duas imagens preenchidas), baixe o pacote e confira a rastreabilidade e o retorno do piloto.
 11. Como João, abra Administração › Logs. Como Pedro, o item não aparece e a rota mostra acesso restrito.
 12. No celular, repita os passos 3, 5 e 10.
