@@ -8,11 +8,11 @@
     "changes": [
       {
         "type": "Added",
-        "description": "Nova produção a partir da transcrição, com falantes, orientação e extensão do texto."
+        "description": "Nova produção a partir da transcrição, com falantes, orientação e tamanho do artigo em laudas."
       },
       {
         "type": "Added",
-        "description": "Estúdio do artigo com geração ao vivo, copiloto e citações conferidas na transcrição."
+        "description": "Estúdio do artigo com geração ao vivo, copiloto, citações conferidas na transcrição e imagens sugeridas a preencher."
       },
       {
         "type": "Added",
@@ -21,6 +21,10 @@
       {
         "type": "Added",
         "description": "Carrossel feito do artigo aprovado, com o texto de cada slide e a prévia no modelo."
+      },
+      {
+        "type": "Added",
+        "description": "Biblioteca de modelos de carrossel, em feed e quadrado, com a prévia de cada layout e a troca de modelo sem perder os textos."
       },
       {
         "type": "Added",
