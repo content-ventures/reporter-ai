@@ -17,11 +17,12 @@ import type {
   OverviewRange,
 } from '../../../ports/production-queries.ts';
 import { activitySummary } from './activity-text.ts';
-import { currentMember, personOf } from './people.ts';
+import { currentMember, firstNameOf, personOf } from './people.ts';
 import { recordOf } from './read-context.ts';
 import type { ReadContext } from './read-context.ts';
 import { assembleRecord } from './state.ts';
 import { paginate } from './views-list.ts';
+import { deskView } from './views-desk.ts';
 
 /** Visão geral: metrics with deltas, rhythm, "Continue de onde parou", "Aguardando você", activity. */
 
@@ -115,26 +116,29 @@ export function overviewData(ctx: ReadContext, range: OverviewRange): OverviewDa
     templates: ctx.templates,
     flow: ctx.flow,
     assets: ctx.assets,
+    nameOf: (id) => firstNameOf(ctx.state, id),
     ...(viewer ? { viewer } : {}),
   });
   const { metrics } = view;
+  const withDeltas: OverviewData['metrics'] = {
+    inProduction: metrics.inProduction,
+    generatingNow: metrics.generatingNow,
+    awaitingApproval: metrics.awaitingApproval,
+    approved: withDelta(metrics.approved),
+    timeToApprovalMs: withDelta(metrics.timeToApprovalMs, true),
+    aiRetention: withDelta(metrics.aiRetention),
+  };
   const data: OverviewData = {
     rangeDays: view.rangeDays,
     rhythm: view.rhythm,
     trends: view.trends,
     activeRuns: view.activeRuns,
     range,
-    metrics: {
-      inProduction: metrics.inProduction,
-      generatingNow: metrics.generatingNow,
-      awaitingApproval: metrics.awaitingApproval,
-      approved: withDelta(metrics.approved),
-      timeToApprovalMs: withDelta(metrics.timeToApprovalMs, true),
-      aiRetention: withDelta(metrics.aiRetention),
-    },
+    metrics: withDeltas,
     awaitingYou: awaitingItems(ctx),
     activity: activityPage(ctx, { size: 20 }).items,
     empty: ctx.state.productions.every((production) => production.production.archivedAt !== undefined),
+    desk: deskView(ctx, { inProduction: withDeltas.inProduction, approved: withDeltas.approved.value, timeToApprovalMs: withDeltas.timeToApprovalMs.value }),
   };
   const next = view.continueWith;
   if (next) {

@@ -1,6 +1,9 @@
-import { productionTab } from '../../../domain/rules/status.ts';
+import { productionTab, STATUS_URGENCY } from '../../../domain/rules/status.ts';
 import { foldForMatch } from '../../../domain/text/normalize.ts';
 import type { ProductionView } from '../../../domain/views.ts';
+import type { ProductionRecord } from '../../../domain/record.ts';
+import { nextStepFor } from '../../../domain/situation.ts';
+import type { NextStep } from '../../../domain/situation.ts';
 import { DEFAULT_PAGE_SIZE } from '../../../ports/common.ts';
 import type { Page, PageRequest } from '../../../ports/common.ts';
 import type {
@@ -11,12 +14,13 @@ import type {
   ProductionListItem,
   ProductionListPage,
 } from '../../../ports/production-queries.ts';
-import { wordsAvailable } from '../generation/outlook.ts';
+import { charsAvailable } from '../generation/outlook.ts';
 import { productionGuards } from './guards.ts';
-import { participantsOf, personOf } from './people.ts';
+import { currentMember, firstNameOf, participantsOf, personOf } from './people.ts';
 import { recordOf, viewOf } from './read-context.ts';
 import type { ReadContext } from './read-context.ts';
 import type { ProductionState } from './state.ts';
+import { productionApprovals } from './views-approval.ts';
 
 /** "Produções": list items, filters, tab counts and pagination. */
 
@@ -41,6 +45,19 @@ function currentReadiness(view: ProductionView): ProductionListItem['readiness']
   return piece ? { ...piece.readiness, pieceKind: piece.kind } : undefined;
 }
 
+/** "Próximo passo" of the acting member on this production (null: nothing for them to do). */
+export function nextStepOf(ctx: ReadContext, record: ProductionRecord, view: ProductionView): NextStep | null {
+  const viewer = currentMember(ctx.state);
+  return nextStepFor({
+    record,
+    view,
+    gates: ctx.gates,
+    nameOf: (id) => firstNameOf(ctx.state, id),
+    now: ctx.now,
+    ...(viewer ? { viewer } : {}),
+  });
+}
+
 export function toListItem(ctx: ReadContext, production: ProductionState): ProductionListItem {
   const record = recordOf(ctx, production);
   const view = viewOf(ctx, production, record);
@@ -54,6 +71,9 @@ export function toListItem(ctx: ReadContext, production: ProductionState): Produ
     stages: view.stages,
     currentStageId: view.currentStageId,
     nextAction: view.nextAction,
+    situation: view.situation,
+    nextStep: nextStepOf(ctx, record, view),
+    urgency: STATUS_URGENCY[view.status],
     participants: participantsOf(ctx.state, record),
     owner,
     createdAt: view.createdAt,
@@ -75,13 +95,16 @@ export function toListItem(ctx: ReadContext, production: ProductionState): Produ
 export function toDetail(ctx: ReadContext, production: ProductionState): ProductionDetail {
   const record = recordOf(ctx, production);
   const view = viewOf(ctx, production, record);
+  const guards = productionGuards(ctx, record);
   const detail: ProductionDetail = {
     ...view,
     owner: personOf(ctx.state, view.ownerId) ?? { id: view.ownerId, name: 'Sistema', initials: 'S' },
     participants: participantsOf(ctx.state, record),
-    guards: productionGuards(ctx, record),
+    guards,
+    approvals: productionApprovals(ctx, record, view, guards),
+    nextStep: nextStepOf(ctx, record, view),
   };
-  if (record.sources.length > 0) detail.wordsAvailable = wordsAvailable(record.sources);
+  if (record.sources.length > 0) detail.charsAvailable = charsAvailable(record.sources);
   return detail;
 }
 
@@ -119,6 +142,8 @@ function compare(sort: ProductionListFilter['sort']): (a: ProductionListItem, b:
       return (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || byId(a, b);
     case 'title':
       return (a, b) => a.title.localeCompare(b.title, 'pt-BR') || byId(a, b);
+    case 'urgency':
+      return (a, b) => a.urgency - b.urgency || Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || byId(a, b);
     default:
       return (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || byId(a, b);
   }

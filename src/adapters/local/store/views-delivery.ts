@@ -2,7 +2,8 @@ import type { ProductionId } from '../../../domain/ids.ts';
 import { buildManifest, plannedExportFiles } from '../../../domain/manifest.ts';
 import { PIECE_LABELS } from '../../../domain/piece.ts';
 import type { Version } from '../../../domain/piece.ts';
-import { findVersion, latestDelivery, pieceDecisions, pieceOfKind } from '../../../domain/record.ts';
+import type { VersionRef } from '../../../domain/refs.ts';
+import { findVersion, latestDecisionOn, latestDelivery, pieceDecisions, pieceOfKind } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
 import { ok, refuse } from '../../../domain/result.ts';
 import { canExport, defaultExportSelection } from '../../../domain/rules/export.ts';
@@ -34,6 +35,16 @@ function itemView(ctx: ReadContext, record: ProductionRecord, item: ExportItem):
   if (decision) view.approvedAt = decision.at;
   if (version.body.type === 'carousel') view.templateId = version.body.templateId;
   return view;
+}
+
+/** The approved article of a selection, whether or not the package can be built with it. */
+function approvedArticle(ctx: ReadContext, record: ProductionRecord, selection: readonly VersionRef[]): DeliveryItemView | undefined {
+  const piece = pieceOfKind(record, 'article');
+  const ref = piece ? selection.find((entry) => entry.pieceId === piece.id) : undefined;
+  const version = ref ? findVersion(record, ref.versionId) : undefined;
+  const decision = ref ? latestDecisionOn(record, ref) : undefined;
+  if (!ref || !version || version.hash !== ref.hash || decision?.decision !== 'approved') return undefined;
+  return itemView(ctx, record, { kind: 'article', version: ref, decisionId: decision.id });
 }
 
 function firstApprovalAt(record: ProductionRecord, kind: 'article' | 'carousel'): number | undefined {
@@ -68,6 +79,7 @@ export function deliveryView(ctx: ReadContext, productionId: ProductionId, query
   const selection = query.selection ?? defaultExportSelection(record);
   const result = canExport(record, selection);
   const items = result.ok ? result.value.map((item) => itemView(ctx, record, item)) : [];
+  const article = items.find((item) => item.kind === 'article') ?? approvedArticle(ctx, record, selection);
   const files = result.ok ? plannedExportFiles(record, result.value, ctx.formatSupport, ctx.assets) : [];
   const view: DeliveryView = {
     productionId,
@@ -90,16 +102,15 @@ export function deliveryView(ctx: ReadContext, productionId: ProductionId, query
     delivered: isDelivered(record),
     stageDurations: stageDurations(record),
   };
+  if (article) view.article = article;
   if (stage) view.stage = stage;
   if (stage?.blockedReason) view.blockedReason = stage.blockedReason;
   if (result.ok) view.manifest = buildManifest(record, result.value, files, ctx.now);
   if (!result.ok && result.refusal.code === 'mixed_versions') {
     const details = result.refusal.details as MixedVersionsDetails | undefined;
     if (details?.exportWithParent) {
-      const parent = details.derivedFrom;
-      const parentPiece = record.pieces.find((piece) => piece.id === parent.pieceId);
-      const label = parentPiece ? PIECE_LABELS[parentPiece.kind].toLowerCase() : 'peça de origem';
-      view.alternatives.exportWithParent = { selection: details.exportWithParent, label: `Exportar com ${label} v${parent.number}` };
+      // COPY §8: deliver the package the carousel was made from ("Entregar assim mesmo").
+      view.alternatives.exportWithParent = { selection: details.exportWithParent, label: 'Entregar assim mesmo' };
     }
     const derivative = details ? record.pieces.find((piece) => piece.id === details.derivative.pieceId) : undefined;
     if (derivative) {

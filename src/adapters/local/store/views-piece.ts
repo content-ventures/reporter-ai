@@ -6,7 +6,7 @@ import { diffArticles, diffCarousels, diffSummary } from '../../../domain/diff.t
 import type { DiffBlock } from '../../../domain/diff.ts';
 import type { PieceId, SourceId, VersionId } from '../../../domain/ids.ts';
 import type { Version } from '../../../domain/piece.ts';
-import { carouselArticleCover, decidedImageRights, findPiece, latestApproved, latestVersion, pendingReview, pieceDecisions, runsOf, versionsOf } from '../../../domain/record.ts';
+import { carouselArticleCover, decidedImageRights, findPiece, findVersion, latestApproved, latestVersion, pendingReview, pieceDecisions, runsOf, versionsOf } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
 import { refKey } from '../../../domain/refs.ts';
 import type { SourceRef } from '../../../domain/refs.ts';
@@ -27,9 +27,11 @@ import type {
 } from '../../../ports/production-queries.ts';
 import { decisionGuard, reviewSubject } from './guards.ts';
 import { participantsOf, personOf } from './people.ts';
-import { recordOf } from './read-context.ts';
+import { materialCharsOf, recordOf, viewOf } from './read-context.ts';
 import type { ReadContext } from './read-context.ts';
 import { locatePiece, locateVersion, productionsUsingSource } from './state.ts';
+import { pieceApproval } from './views-approval.ts';
+import { toApproveItems } from './views-queue.ts';
 
 /** Studio, version history, comparison, material and review read models. */
 
@@ -157,13 +159,15 @@ export function reviewView(ctx: ReadContext, pieceId: PieceId, versionId?: Versi
   const version = versionId ? versionsOf(record, pieceId).find((entry) => entry.id === versionId) : reviewSubject(record, piece);
   if (!version) return NOT_FOUND;
   const gate = gateForPiece(piece.kind, ctx.gates);
-  const checks = evaluatePieceChecks(record, piece, version.body, ctx.templates, ctx.assets);
+  const checks = evaluatePieceChecks(record, piece, version.body, ctx.templates, ctx.assets, materialCharsOf(record));
   const status = pieceStatus(record, piece.kind);
   const all = versionsOf(record, pieceId);
   // The AI output this version descends from: the latest generation up to it ("Gerar nova versão"
   // starts a new lineage, so v1 · IA is not the baseline of a draft made from v3 · IA).
   const ai = all.filter((entry) => entry.origin === 'generation' && entry.number <= version.number).pop();
   const approved = latestApproved(record, pieceId);
+  const approval = pieceApproval(ctx, record, piece, viewOf(ctx, location.production, record));
+  if (!approval) return NOT_FOUND;
   const view: ReviewView = {
     productionId: record.production.id,
     productionTitle: record.production.title,
@@ -184,7 +188,27 @@ export function reviewView(ctx: ReadContext, pieceId: PieceId, versionId?: Versi
       approve: decisionGuard(ctx, record, piece, version, 'approved'),
       requestChanges: decisionGuard(ctx, record, piece, version, 'changes_requested'),
     },
+    approval,
+    defaultView: 'final',
   };
+  // "O que mudou": the version decided before this send (opens there when it exists).
+  const sentAt = record.reviewRequests
+    .filter((entry) => entry.subject.versionId === version.id && entry.withdrawnAt === undefined)
+    .map((entry) => entry.requestedAt)
+    .sort()
+    .pop();
+  const before = pieceDecisions(record, pieceId)
+    .filter((decision) => decision.subject.kind === 'version' && decision.subject.versionId !== version.id)
+    .filter((decision) => decision.decision === 'approved' || decision.decision === 'changes_requested')
+    .filter((decision) => Date.parse(decision.at) <= Date.parse(sentAt ?? version.createdAt))
+    .pop();
+  const beforeVersion = before?.subject.kind === 'version' ? findVersion(record, before.subject.versionId) : undefined;
+  if (before && beforeVersion && (before.decision === 'approved' || before.decision === 'changes_requested')) {
+    view.previous = { version: toVersionView(record, beforeVersion), decision: before.decision, at: before.at };
+    view.defaultView = 'changes';
+  }
+  const next = toApproveItems(ctx).find((item) => item.pieceId !== pieceId);
+  if (next) view.nextInQueue = next;
   if (ai && ai.id !== version.id) view.compareWith.ai = toVersionView(record, ai);
   if (approved && approved.version.id !== version.id) view.compareWith.lastApproved = toVersionView(record, approved.version);
   const request = pendingReview(record, pieceId);
