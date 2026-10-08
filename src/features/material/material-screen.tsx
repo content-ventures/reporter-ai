@@ -23,11 +23,11 @@ import {
   type TranscriptAction,
 } from '@content-ventures/design-system/v3';
 import { ArrowRight, Copy, Pencil, ScrollText, Sparkles } from '@content-ventures/design-system/v3/icons';
-import { LENGTH_TARGETS, shortHash, type Brief, type ProductionId } from '@/domain';
+import { shortHash, type Brief, type ProductionId } from '@/domain';
 import type { Participant, SourceDetail } from '@/ports';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
 import { useCommands, usePiece, useSource } from '@/state';
-import { formatCount, formatDate, formatDateTime, formatDuration, plural } from '@/ui/format';
+import { formatDate, formatDateTime, formatDuration, formatSize, plural } from '@/ui/format';
 import { PersonAvatar, usePerson } from '@/ui/person-avatar';
 import { materialHref, pieceHref } from '@/ui/routes';
 import { useCommandGroup } from '@/ui/shell';
@@ -107,11 +107,10 @@ function withoutPerson(detail: SourceDetail): number {
 }
 
 function briefFacts(brief: Brief): DescriptionItem[] {
-  const target = LENGTH_TARGETS[brief.length];
   return [
     { label: 'Orientação', value: brief.angle || undefined },
+    { label: 'Tamanho', value: formatSize(brief.size) },
     { label: 'Estrutura', value: `Introdução + ${plural(brief.sections, 'seção', 'seções')}` },
-    { label: 'Extensão', value: `${target.label} · ≈ ${formatCount(target.words)} palavras`, numeric: true },
   ];
 }
 

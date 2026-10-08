@@ -14,12 +14,12 @@ import {
   toast,
   type SegmentOption,
 } from '@content-ventures/design-system/v3';
-import { expectedDraftWords, LENGTH_TARGETS, MAX_SECTIONS, MIN_SECTIONS, type ArticleLength, type Brief, type ProductionId } from '@/domain';
+import { expectedDraftChars, fitSections, sizeOf, type ArticleSize, type Brief, type ProductionId } from '@/domain';
 import { useBrief } from '@/state';
-import { formatCount } from '@/ui/format';
+import { formatCharacters, formatLaudas, formatSize, SIZE_OPTIONS } from '@/ui/format';
 
 /**
- * "Editar pauta" (A08): orientação editorial, seções e extensão of the production. The form
+ * "Editar pauta" (A08): orientação editorial, seções e tamanho of the production. The form
  * saves over the revision it was opened with: if the brief changed meanwhile (another tab,
  * another person), nothing is overwritten silently: the person sees it and either loads the
  * current brief or saves over it. The next "Gerar nova versão" follows the saved brief.
@@ -27,21 +27,22 @@ import { formatCount } from '@/ui/format';
 
 const MAX_ANGLE_LENGTH = 600;
 
-const SECTIONS: SegmentOption<string>[] = Array.from({ length: MAX_SECTIONS - MIN_SECTIONS + 1 }, (_, index) => {
-  const value = String(MIN_SECTIONS + index);
-  return { value, label: value };
-});
+/** Section counts the size accepts (Curto 1–3, Padrão 2–5). */
+function sectionOptions(size: ArticleSize): SegmentOption<string>[] {
+  const { min, max } = sizeOf(size).sections;
+  return Array.from({ length: max - min + 1 }, (_, index) => {
+    const value = String(min + index);
+    return { value, label: value };
+  });
+}
 
-const LENGTHS: SegmentOption<ArticleLength>[] = (Object.keys(LENGTH_TARGETS) as ArticleLength[]).map((length) => ({
-  value: length,
-  label: LENGTH_TARGETS[length].label,
-}));
+const SIZES: SegmentOption<ArticleSize>[] = SIZE_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
 
-type Form = { angle: string; sections: number; length: ArticleLength; base: number };
+type Form = { angle: string; sections: number; size: ArticleSize; base: number };
 
-const formOf = (brief: Brief): Form => ({ angle: brief.angle ?? '', sections: brief.sections, length: brief.length, base: brief.revision });
+const formOf = (brief: Brief): Form => ({ angle: brief.angle ?? '', sections: brief.sections, size: brief.size, base: brief.revision });
 
-const changed = (form: Form, brief: Brief) => form.angle.trim() !== (brief.angle ?? '').trim() || form.sections !== brief.sections || form.length !== brief.length;
+const changed = (form: Form, brief: Brief) => form.angle.trim() !== (brief.angle ?? '').trim() || form.sections !== brief.sections || form.size !== brief.size;
 
 export function BriefDrawer({ productionId, open, onClose }: { productionId: ProductionId; open: boolean; onClose: () => void }) {
   const editor = useBrief(productionId);
@@ -58,17 +59,19 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
   const [discarding, setDiscarding] = useState(false);
 
   if (!brief || !current) return null;
-  const target = LENGTH_TARGETS[current.length];
-  // A material that cannot reach the length gives all it has (never invented text): said before saving.
-  const expected = editor.wordsAvailable ? expectedDraftWords(current.length, editor.wordsAvailable) : undefined;
-  const lengthHint =
-    expected && !expected.reachesTarget ? `O material rende ≈ ${formatCount(expected.words)} palavras` : `${formatCount(target.min)}–${formatCount(target.max)} palavras`;
+  const spec = sizeOf(current.size);
+  // A material that cannot fill the size gives all it has (never padded): said before saving.
+  const expected = editor.charsAvailable ? expectedDraftChars(current.size, editor.charsAvailable) : undefined;
+  const sizeHint =
+    expected && !expected.reachesRange
+      ? `O material rende ≈ ${formatLaudas(expected.chars)} (${formatCharacters(expected.chars)}). O texto sai com isso.`
+      : `Até ${formatCharacters(spec.maxChars)}`;
   const update = (patch: Partial<Form>) => setForm({ ...current, ...patch });
 
   async function save() {
     if (!current) return;
     const angle = current.angle.trim();
-    const result = await editor.save({ sections: current.sections, length: current.length, ...(angle ? { angle } : {}) }, current.base);
+    const result = await editor.save({ sections: current.sections, size: current.size, ...(angle ? { angle } : {}) }, current.base);
     if (result.ok) {
       onClose();
       toast('Pauta salva');
@@ -113,7 +116,7 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
                 </>
               }
             >
-              {`Atual: ${brief.sections} seções · ${LENGTH_TARGETS[brief.length].label}${brief.angle ? ` · ${brief.angle}` : ''}`}
+              {`Atual: ${formatSize(brief.size)} · ${brief.sections} seções${brief.angle ? ` · ${brief.angle}` : ''}`}
             </Alert>
           ) : null}
           <Field label="Orientação editorial" optional>
@@ -127,13 +130,27 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
               />
             )}
           </Field>
-          <Field label="Seções" hint={`Introdução + ${current.sections} seções`}>
+          <Field label="Tamanho do artigo" hint={sizeHint}>
             {() => (
-              <Segmented label="Seções depois da introdução" options={SECTIONS} value={String(current.sections)} onChange={(value) => update({ sections: Number(value) })} size="sm" />
+              <Segmented
+                label="Tamanho do artigo"
+                options={SIZES}
+                value={current.size}
+                onChange={(size) => update({ size, sections: fitSections(size, current.sections) })}
+                size="sm"
+              />
             )}
           </Field>
-          <Field label="Extensão" hint={lengthHint}>
-            {() => <Segmented label="Extensão do artigo" options={LENGTHS} value={current.length} onChange={(length) => update({ length })} size="sm" />}
+          <Field label="Seções" hint={`Introdução + ${current.sections} seções`}>
+            {() => (
+              <Segmented
+                label="Seções depois da introdução"
+                options={sectionOptions(current.size)}
+                value={String(current.sections)}
+                onChange={(value) => update({ sections: Number(value) })}
+                size="sm"
+              />
+            )}
           </Field>
         </PageStack>
       </Drawer>
