@@ -50,6 +50,43 @@ export const COVER_REASONS: Record<CoverRefusal, string> = {
   unreadable: 'Não foi possível desenhar a imagem de destaque neste navegador.',
 };
 
+/** `fetch` of an address the app serves; undefined without `fetch` (Node) or on any failure. */
+async function fetchServed(src: string): Promise<Blob | undefined> {
+  const run = (globalThis as { fetch?: (input: string) => Promise<{ ok: boolean; blob(): Promise<Blob> }> }).fetch;
+  if (!run) return undefined;
+  try {
+    const response = await run(src);
+    return response.ok ? await response.blob() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A picture the app itself serves (the library's sample photo), decoded once; a failed read is
+ * tried again on the next render.
+ */
+export function servedCoverLoader(
+  src: string,
+  { fetchBlob = fetchServed, decode = decodeBitmap }: { fetchBlob?: (src: string) => Promise<Blob | undefined>; decode?: Decode } = {},
+): () => Promise<Result<CoverImage, CoverRefusal>> {
+  let decoded: Promise<Result<CoverImage, CoverRefusal>> | undefined;
+  return () => {
+    if (decoded) return decoded;
+    const pending = (async (): Promise<Result<CoverImage, CoverRefusal>> => {
+      const blob = await fetchBlob(src);
+      if (!blob) return refuse('missing', COVER_REASONS.missing);
+      const image = await decode(blob);
+      return image ? ok(image) : refuse('unreadable', COVER_REASONS.unreadable);
+    })();
+    decoded = pending;
+    void pending.then((result) => {
+      if (!result.ok && decoded === pending) decoded = undefined;
+    });
+    return pending;
+  };
+}
+
 /** One decoded image per asset (bytes never change); failures are retried on the next render. */
 export function assetCoverLoader(assets: Pick<AssetStore, 'get' | 'blob' | 'ready'>, decode: Decode = decodeBitmap): CoverLoader {
   const decoded = new Map<AssetId, Promise<Result<CoverImage, CoverRefusal>>>();

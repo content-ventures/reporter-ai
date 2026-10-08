@@ -22,6 +22,8 @@ export type Canvas2D = {
   measureText(text: string): { width: number };
   /** Needed only for background images and their scrim. */
   globalAlpha?: number;
+  /** Letter spacing ("4px") where the canvas supports it; measuring sets it the same way. */
+  letterSpacing?: string;
   drawImage?(image: unknown, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number): void;
 };
 
@@ -98,13 +100,14 @@ export function drawSlide(
   const layout = render.layouts[slide.layout];
   if (!layout) return false;
   const px = (value: number) => Math.round(value * scale);
+  const fill = (shape: { x: number; y: number; width: number; height: number; color: string }) => {
+    context.fillStyle = shape.color;
+    context.fillRect(px(shape.x), px(shape.y), px(shape.width), px(shape.height));
+  };
 
   context.fillStyle = layout.background;
   context.fillRect(0, 0, px(template.width), px(template.height));
-  for (const shape of layout.shapes ?? []) {
-    context.fillStyle = shape.color;
-    context.fillRect(px(shape.x), px(shape.y), px(shape.width), px(shape.height));
-  }
+  for (const shape of layout.shapes ?? []) fill(shape);
   const image = layout.image;
   const withImage = Boolean(image && input.cover && input.cover.width > 0 && input.cover.height > 0 && canDrawImages(context));
   if (image && input.cover && withImage) {
@@ -118,20 +121,21 @@ export function drawSlide(
     }
     context.globalAlpha = 1;
   }
+  for (const shape of layout.overlays ?? []) fill(shape);
   if (layout.rule !== false) {
     context.fillStyle = layout.accent;
     context.fillRect(px(MARGIN), px(64), px(96), px(10));
   }
   context.textBaseline = 'top';
   for (const mark of layout.marks ?? []) {
-    context.font = cssFont({ fontFamily: mark.fontFamily ?? BASE_FAMILY, fontWeight: mark.fontWeight, fontSize: mark.fontSize }, scale, typefaces);
+    context.font = cssFont({ fontFamily: mark.fontFamily ?? BASE_FAMILY, fontWeight: mark.fontWeight, fontSize: mark.fontSize, ...(mark.italic ? { italic: true } : {}) }, scale, typefaces);
     context.fillStyle = mark.color;
-    context.textAlign = 'left';
+    context.textAlign = mark.align ?? 'left';
     context.fillText(mark.text, px(mark.x), px(mark.y));
   }
   if (layout.number) {
     const number = layout.number;
-    context.font = cssFont({ fontFamily: BASE_FAMILY, fontWeight: number.fontWeight, fontSize: number.fontSize }, scale, typefaces);
+    context.font = cssFont({ fontFamily: number.fontFamily ?? BASE_FAMILY, fontWeight: number.fontWeight, fontSize: number.fontSize }, scale, typefaces);
     context.fillStyle = number.color;
     context.textAlign = number.align ?? 'right';
     context.fillText(String(input.index + 1).padStart(2, '0'), px(number.x), px(number.y));
@@ -140,17 +144,27 @@ export function drawSlide(
   context.textBaseline = 'top';
   for (const slot of input.laid) {
     if (!slot.style.color) continue;
-    const font = cssFont(slot.style, scale, typefaces);
-    context.font = font;
-    context.fillStyle = (withImage ? image?.slotColors?.[slot.spec.id] : undefined) ?? slot.style.color;
-    context.textAlign = slot.style.align;
-    const x = slot.style.align === 'center' ? slot.style.x + slot.style.width / 2 : slot.style.x;
-    const visible = slot.lines.slice(0, slot.maxLines);
-    if (slot.lines.length > slot.maxLines && visible.length > 0) {
-      const measure = (text: string) => context.measureText(text).width / scale;
-      visible[visible.length - 1] = ellipsize(visible[visible.length - 1], slot.style.width, measure);
+    const { style } = slot;
+    context.font = cssFont(style, scale, typefaces);
+    context.fillStyle = (withImage ? image?.slotColors?.[slot.spec.id] : undefined) ?? style.color;
+    context.textAlign = style.align;
+    if (style.tracking) context.letterSpacing = `${style.tracking * scale}px`;
+    const visible = slot.rows.slice(0, slot.maxLines).map((row) => ({ ...row }));
+    const measure = (text: string) => context.measureText(text).width / scale;
+    const last = visible[visible.length - 1];
+    if (slot.rows.length > slot.maxLines && last) last.text = ellipsize(last.text, style.width - last.indent, measure);
+    const used = last ? last.top + style.lineHeight : 0;
+    const shift = style.valign === 'bottom' ? style.height - used : style.valign === 'middle' ? (style.height - used) / 2 : 0;
+    const x = (indent: number) => (style.align === 'center' ? style.x + indent + (style.width - indent) / 2 : style.align === 'right' ? style.x + style.width : style.x + indent);
+    for (const row of visible) context.fillText(row.text, px(x(row.indent)), px(style.y + shift + row.top));
+    if (style.tracking) context.letterSpacing = '0px';
+    const list = style.list;
+    if (list) {
+      context.font = cssFont({ fontFamily: list.fontFamily ?? style.fontFamily, fontWeight: list.fontWeight, fontSize: style.fontSize }, scale, typefaces);
+      context.fillStyle = list.color;
+      context.textAlign = 'left';
+      for (const row of visible) if (row.marker) context.fillText(row.marker, px(style.x), px(style.y + shift + row.top));
     }
-    visible.forEach((line, row) => context.fillText(line, px(x), px(slot.style.y + row * slot.style.lineHeight)));
   }
 
   const credit = withImage ? image?.credit : undefined;
@@ -163,9 +177,14 @@ export function drawSlide(
     context.fillText(line, px(credit.x), px(credit.y));
   }
 
-  context.font = cssFont({ fontFamily: BASE_FAMILY, fontWeight: 600, fontSize: 28 }, scale, typefaces);
-  context.fillStyle = (withImage ? image?.counterColor : undefined) ?? layout.counterColor ?? layout.accent;
-  context.textAlign = 'right';
-  context.fillText(`${input.index + 1}/${input.total}`, px(template.width - MARGIN), px(template.height - MARGIN));
+  if (layout.counter !== false) {
+    const counter = layout.counter;
+    context.font = cssFont({ fontFamily: counter?.fontFamily ?? BASE_FAMILY, fontWeight: counter?.fontWeight ?? 600, fontSize: counter?.fontSize ?? 28 }, scale, typefaces);
+    context.fillStyle = (withImage ? image?.counterColor : undefined) ?? counter?.color ?? layout.counterColor ?? layout.accent;
+    context.textAlign = counter?.align ?? 'right';
+    if (counter?.tracking) context.letterSpacing = `${counter.tracking * scale}px`;
+    context.fillText(`${input.index + 1}/${input.total}`, px(counter?.x ?? template.width - MARGIN), px(counter?.y ?? template.height - MARGIN));
+    if (counter?.tracking) context.letterSpacing = '0px';
+  }
   return withImage;
 }

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { CarouselBody } from '../../../domain/carousel.ts';
+import type { CarouselBody, CarouselTemplate } from '../../../domain/carousel.ts';
 import { PROVISIONAL_TEMPLATES, TEMPLATE_RENDERS } from '../../../fixtures/templates/provisional.ts';
+import type { SlotStyle, TemplateRender } from '../../../ports/render-template.ts';
 import { pngFile } from '../../../ports/contracts/assets.contract.ts';
 import { createMemoryAssetStore } from '../assets/index.ts';
 import { manualClock, sequentialIds } from '../store/system.ts';
@@ -143,7 +144,7 @@ describe('local render service', () => {
     assert.ok(fonts.every((font) => !/px Inter,/.test(font)), 'never the bare template name');
     const faces = requested.at(-1) ?? [];
     assert.ok(faces.some((font) => font.startsWith('italic 500 16px "interV3"')), 'the quote italic is loaded before drawing');
-    assert.ok(faces.some((font) => font.startsWith('700 16px "interV3"')));
+    assert.ok(faces.some((font) => font.startsWith('600 16px "interV3"')));
   });
 
   it('ellipsises an overflowing slot instead of drawing past its box', async () => {
@@ -280,3 +281,133 @@ describe('encoding', () => {
     assert.equal(dataUrl('text/plain', utf8('oi')), 'data:text/plain;base64,b2k=');
   });
 });
+
+describe('library render features', () => {
+  const LIST_TEMPLATE: CarouselTemplate = {
+    id: 'tpl-lista',
+    name: 'Lista',
+    width: 1080,
+    height: 1080,
+    minSlides: 1,
+    maxSlides: 10,
+    coverLayoutId: 'cover',
+    layouts: [
+      { id: 'cover', label: 'Capa', slots: [{ id: 'kicker', label: 'Chamada', role: 'kicker', maxChars: 32, maxLines: 1 }, { id: 'title', label: 'Título', role: 'title', maxChars: 70, maxLines: 3, required: true }] },
+      { id: 'list', label: 'Lista', slots: [{ id: 'items', label: 'Itens', role: 'list', maxChars: 180, maxLines: 4, required: true }] },
+    ],
+  };
+  const style = (y: number, height: number, extra: Partial<SlotStyle> = {}): SlotStyle => ({
+    x: 100,
+    y,
+    width: 800,
+    height,
+    fontFamily: 'Inter',
+    fontWeight: 400,
+    fontSize: 40,
+    lineHeight: 50,
+    color: '#111111',
+    align: 'left',
+    ...extra,
+  });
+  const RENDER: TemplateRender = {
+    templateId: 'tpl-lista',
+    layouts: {
+      cover: {
+        background: '#FFFFFF',
+        accent: '#111111',
+        rule: false,
+        counter: false,
+        slots: {
+          kicker: style(80, 50, { uppercase: true, tracking: 4 }),
+          title: style(400, 300, { valign: 'bottom', fontSize: 80, lineHeight: 100 }),
+        },
+      },
+      list: {
+        background: '#FFFFFF',
+        accent: '#111111',
+        rule: false,
+        counter: { x: 980, y: 1000, align: 'right', fontSize: 24, fontWeight: 500, color: '#555555', fontFamily: 'Georgia' },
+        slots: { items: style(200, 4 * 50 + 3 * 20, { list: { marker: 'number', indent: 80, gap: 20, color: '#C2511D', fontWeight: 600 } }) },
+      },
+    },
+  };
+  const body: CarouselBody = {
+    type: 'carousel',
+    templateId: 'tpl-lista',
+    slides: [
+      { id: 'c', layout: 'cover', slots: { kicker: 'Entrevista', title: 'Curto' }, sourceBlockIds: [] },
+      { id: 'l', layout: 'list', slots: { items: 'Torra própria\nProva de cada lote\n\nContrato direto' }, sourceBlockIds: [] },
+    ],
+  };
+
+  it('sets list items in a hanging indent with numbered markers, gaps between items', async () => {
+    const calls: Call[] = [];
+    const service = createLocalRenderService({ templates: [LIST_TEMPLATE], renders: { [RENDER.templateId]: RENDER }, createSurface: fakeSurfaces(calls), fontsReady: async () => undefined });
+    const rendered = await service.render({ body, slideIds: ['l'] });
+    assert.ok(rendered.ok);
+    const texts = calls.filter((call) => call.op === 'fillText').map((call) => [call.args[0], call.args[1], call.args[2], call.fill]);
+    assert.deepEqual(texts.slice(0, 6), [
+      ['Torra própria', 180, 200, '#111111'],
+      ['Prova de cada lote', 180, 270, '#111111'],
+      ['Contrato direto', 180, 340, '#111111'],
+      ['01', 100, 200, '#C2511D'],
+      ['02', 100, 270, '#C2511D'],
+      ['03', 100, 340, '#C2511D'],
+    ]);
+    assert.deepEqual(texts.at(-1), ['2/2', 980, 1000, '#555555'], 'counter where the layout sets it');
+    assert.ok(calls.some((call) => call.op === 'fillText' && call.args[0] === '2/2' && /Georgia, "Times New Roman", serif$/.test(call.font ?? '')), 'a serif keeps a serif fallback');
+    const fit = rendered.value.slides[0].fits[0];
+    assert.deepEqual([fit.lines, fit.maxLines, fit.overflow], [3, 4, false]);
+  });
+
+  it('a list over its rows overflows like any slot', () => {
+    const service = createLocalRenderService({ templates: [LIST_TEMPLATE], renders: { [RENDER.templateId]: RENDER }, createSurface: () => undefined });
+    const many = { ...body, slides: [{ id: 'l', layout: 'list', slots: { items: 'Um\nDois\nTrês\nQuatro\nCinco' }, sourceBlockIds: [] }] };
+    const measured = service.measure(many);
+    assert.ok(measured.ok);
+    assert.deepEqual([measured.value[0].lines, measured.value[0].maxLines, measured.value[0].overflow], [5, 4, true]);
+  });
+
+  it('sets capitals and letter spacing as drawn, bottom-aligns a title in its box, and leaves the counter out when asked', async () => {
+    const calls: Call[] = [];
+    const service = createLocalRenderService({ templates: [LIST_TEMPLATE], renders: { [RENDER.templateId]: RENDER }, createSurface: fakeSurfaces(calls), fontsReady: async () => undefined });
+    const rendered = await service.render({ body, slideIds: ['c'] });
+    assert.ok(rendered.ok);
+    const texts = calls.filter((call) => call.op === 'fillText').map((call) => [call.args[0], call.args[2]]);
+    assert.deepEqual(texts, [
+      ['ENTREVISTA', 80],
+      ['Curto', 600],
+    ]);
+    const narrow = estimateText('ENTREVISTA', { size: 40, weight: 400 });
+    assert.equal(estimateText('ENTREVISTA', { size: 40, weight: 400, tracking: 4 }), narrow + 40, 'tracking adds to every letter');
+  });
+
+  it('switching templates adds the measured line overflow to the structural report', () => {
+    const tight: TemplateRender = { ...TEMPLATE_RENDERS[TEMPLATE.id], templateId: 'tpl-apertado' };
+    const cover = tight.layouts.cover;
+    tight.layouts = { ...tight.layouts, cover: { ...cover, slots: { ...cover.slots, title: { ...cover.slots.title, height: cover.slots.title.lineHeight } } } };
+    const narrowTemplate: CarouselTemplate = { ...TEMPLATE, id: 'tpl-apertado', name: 'Apertado' };
+    const service = createLocalRenderService({ templates: [TEMPLATE, narrowTemplate], renders: { [TEMPLATE.id]: TEMPLATE_RENDERS[TEMPLATE.id], 'tpl-apertado': tight }, createSurface: () => undefined });
+    const switched = service.switchTemplate(body0(), 'tpl-apertado');
+    assert.ok(switched.ok);
+    assert.equal(switched.value.body.templateId, 'tpl-apertado');
+    assert.deepEqual(
+      switched.value.issues.map((issue) => [issue.kind, issue.slideId, issue.message]),
+      [['overflow', 's1', 'Slide 1: ≈ Título excede 1 linha']],
+    );
+    assert.ok(switched.value.fits.some((fit) => fit.overflow));
+    const missing = service.switchTemplate(body0(), 'nao-existe');
+    assert.equal(!missing.ok && missing.refusal.code, 'unknown_template');
+  });
+});
+
+function body0(): CarouselBody {
+  return {
+    type: 'carousel',
+    templateId: TEMPLATE.id,
+    slides: [
+      { id: 's1', layout: 'cover', slots: { kicker: 'Entrevista', title: 'Da garagem a onze países sem perder o ofício' }, sourceBlockIds: [] },
+      { id: 's2', layout: 'quote', slots: { quote: 'A feira mudou tudo.', attribution: 'Marina Lopes' }, sourceBlockIds: [] },
+    ],
+  };
+}
