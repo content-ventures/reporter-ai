@@ -70,7 +70,7 @@ describe('extractive helpers', () => {
     );
     const material = readMaterial([talk]);
     assert.equal(material.mode, 'flow');
-    const plan = extractivePlan({ sources: [talk], brief: { sections: 2, length: 'short', revision: 1 }, fallbackTitle: 'Palestra', rng: createRng('t'), newId });
+    const plan = extractivePlan({ sources: [talk], brief: { sections: 2, size: 'standard', revision: 1 }, fallbackTitle: 'Palestra', rng: createRng('t'), newId });
     assert.ok(plan.ok);
     assert.equal(plan.value.sections.length, 2);
   });
@@ -80,13 +80,13 @@ describe('extractive article plan', () => {
   const material = source();
   const plan = extractivePlan({
     sources: [material],
-    brief: { sections: 3, length: 'long', revision: 1 },
+    brief: { sections: 3, size: 'standard', revision: 1 },
     fallbackTitle: 'Padaria Fermento Vivo',
     rng: createRng('plan'),
     newId,
   });
 
-  it('never draws more than the material holds, even for a long brief', () => {
+  it('never draws more than the material holds, even for a Padrão brief', () => {
     assert.ok(plan.ok);
     // Material words only: what is inside quotation marks, or the whole block when nothing is quoted.
     const excerpts = planBlocks(plan.value)
@@ -148,7 +148,7 @@ describe('extractive article plan', () => {
     const material = readMaterial([pasted]);
     assert.equal(material.preamble.length, 1);
     assert.equal(material.units[0].question?.text, 'E de onde vem a lona?');
-    const result = extractivePlan({ sources: [pasted], brief: { sections: 2, length: 'short', revision: 1 }, fallbackTitle: 'x', rng: createRng('p'), newId });
+    const result = extractivePlan({ sources: [pasted], brief: { sections: 2, size: 'standard', revision: 1 }, fallbackTitle: 'x', rng: createRng('p'), newId });
     assert.ok(result.ok);
     const texts = planBlocks(result.value).map(blockText);
     assert.ok(texts.every((text) => !/bom dia|agradeço/i.test(text)), texts.join(' | '));
@@ -160,7 +160,7 @@ describe('extractive article plan', () => {
   it('writes reported speech with the person\'s name and role, and closes on a quote', () => {
     const named = extractivePlan({
       sources: [material],
-      brief: { sections: 3, length: 'medium', revision: 1 },
+      brief: { sections: 3, size: 'standard', revision: 1 },
       fallbackTitle: 'x',
       rng: createRng('voices'),
       newId,
@@ -172,14 +172,14 @@ describe('extractive article plan', () => {
     assert.equal(texts.join(' ').match(/fundadora da padaria/g)?.length, 1, 'the role is said once');
     const last = named.value.sections[named.value.sections.length - 1];
     assert.equal(last.blocks[last.blocks.length - 1]?.type, 'quote');
-    assert.ok(named.value.sections.every((section) => !blockText(section.heading).endsWith('?')));
+    assert.ok(named.value.sections.every((section) => section.heading && !blockText(section.heading).endsWith('?')));
   });
 
   it('caps sections at the number of question units and refuses tiny material', () => {
     const short = source('Entrevistadora: Como foi?\nLúcia Prado: Foi bom.\nEntrevistadora: E agora?\nLúcia Prado: Seguimos.');
-    const refused = extractivePlan({ sources: [short], brief: { sections: 3, length: 'short', revision: 1 }, fallbackTitle: 'x', rng: createRng('s'), newId });
+    const refused = extractivePlan({ sources: [short], brief: { sections: 3, size: 'standard', revision: 1 }, fallbackTitle: 'x', rng: createRng('s'), newId });
     assert.equal(!refused.ok && refused.refusal.code, 'material_too_short');
-    const five = extractivePlan({ sources: [material], brief: { sections: 5, length: 'short', revision: 1 }, fallbackTitle: 'x', rng: createRng('s'), newId });
+    const five = extractivePlan({ sources: [material], brief: { sections: 5, size: 'standard', revision: 1 }, fallbackTitle: 'x', rng: createRng('s'), newId });
     assert.ok(five.ok && five.value.sections.length <= 5);
   });
 });
@@ -223,7 +223,7 @@ describe('carousel copy plan', () => {
     assert.deepEqual(slideSequence(TEST_TEMPLATE, 3), ['cover', 'point', 'closing']);
     assert.equal(slideSequence(TEST_TEMPLATE, 7).filter((layout) => layout === 'point').length, 3);
     const material = source();
-    const plan = extractivePlan({ sources: [material], brief: { sections: 3, length: 'short', revision: 1 }, fallbackTitle: 'x', rng: createRng('c'), newId });
+    const plan = extractivePlan({ sources: [material], brief: { sections: 3, size: 'standard', revision: 1 }, fallbackTitle: 'x', rng: createRng('c'), newId });
     assert.ok(plan.ok);
     const article = { type: 'article' as const, title: plan.value.title, blocks: planBlocks(plan.value) };
     const carousel = extractiveCarouselPlan({ article, template: TEST_TEMPLATE, slides: 5, sources: [material], newId });

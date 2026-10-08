@@ -279,6 +279,12 @@ export function createRunApi(deps: RunApiDeps): RunApi {
       const existing = channel.fold.blocks.find((entry) => entry.id === block.id);
       if (existing?.complete) return 'done';
       const text = blockText(block);
+      if (!text && (block.type === 'figure' || block.type === 'divider')) {
+        // An atom (an image slot, a rule) has no text to stream: it arrives whole.
+        if (aborted()) return 'aborted';
+        emit({ type: 'block.completed', block }, child);
+        return 'done';
+      }
       if (existing) {
         if (child) registry.emit(child, { type: 'block.started', block: shapeOf(block) });
         if (!text.startsWith(existing.text)) {
