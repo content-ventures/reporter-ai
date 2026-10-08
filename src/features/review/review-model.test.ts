@@ -1,21 +1,29 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { assetLookupOf, diffArticles } from '../../domain/index.ts';
-import type { ArticleBody, DiffBlock, ImageAsset } from '../../domain/index.ts';
-import type { ReviewView, VersionView } from '../../ports/index.ts';
+import { assetLookupOf, diffArticles, formatLaudasOf } from '../../domain/index.ts';
+import type { ArticleBody, CheckResult, DiffBlock, ImageAsset } from '../../domain/index.ts';
+import type { ApprovalDecisionView, ApprovalRequestView, PersonSummary, VersionView } from '../../ports/index.ts';
 import {
   addAnchors,
   anchorsFromRanges,
-  compareOptions,
-  groupEvidence,
+  anchorsLabel,
+  approveLabel,
+  approveTitle,
+  changedCount,
+  changedSummary,
+  checksSummary,
+  decisionFactList,
+  decisionFacts,
+  finalLabel,
+  hasAiText,
+  historyEvents,
   imageCaption,
   imageChanges,
-  resolveView,
-  reviewHistory,
-  sectionMark,
+  originBody,
+  resolveMode,
+  returnDescription,
   shortExcerpt,
   toReviewDiff,
-  versionStatus,
 } from './review-model.ts';
 
 const body: ArticleBody = {
@@ -37,6 +45,7 @@ function version(partial: Partial<VersionView> & Pick<VersionView, 'id' | 'numbe
     createdBy: 'person-joao',
     interrupted: false,
     words: 100,
+    characters: 600,
     inputs: [],
     isLatest: false,
     isCurrentApproved: false,
@@ -44,46 +53,75 @@ function version(partial: Partial<VersionView> & Pick<VersionView, 'id' | 'numbe
   };
 }
 
-describe('compareOptions / resolveView', () => {
-  it('offers the last approved version first, then the pure AI output', () => {
-    const ai = version({ id: 'v1', number: 1, label: 'v1 · IA', origin: 'generation' });
-    const approved = version({ id: 'v3', number: 3 });
-    const options = compareOptions({ compareWith: { ai, lastApproved: approved } });
-    assert.deepEqual(
-      options.map((option) => option.label),
-      ['desde v3 · aprovada', 'desde v1 · IA'],
-    );
-    assert.equal(resolveView(options, {}).mode, 'changes');
-    assert.equal(resolveView(options, { compare: 'ai' }).option?.target, 'ai');
+describe('the view of the review', () => {
+  it('opens the review default when there was a previous send, unless the URL asks otherwise', () => {
+    assert.equal(resolveMode(undefined, { hasPrevious: true, defaultView: 'changes' }), 'changes');
+    assert.equal(resolveMode(null, { hasPrevious: true, defaultView: 'final' }), 'final');
+    assert.equal(resolveMode('final', { hasPrevious: true, defaultView: 'changes' }), 'final');
+    assert.equal(resolveMode('changes', { hasPrevious: true, defaultView: 'final' }), 'changes');
+    assert.equal(resolveMode('qualquer', { hasPrevious: true, defaultView: 'changes' }), 'changes');
   });
 
-  it('opens the final text on a first approval and when nothing compares', () => {
-    const ai = version({ id: 'v1', number: 1, label: 'v1 · IA', origin: 'generation' });
-    assert.equal(resolveView(compareOptions({ compareWith: { ai } }), {}).mode, 'final');
-    assert.deepEqual(resolveView([], { view: 'changes' }), { mode: 'final' });
-    assert.equal(resolveView(compareOptions({ compareWith: { ai } }), { view: 'changes' }).mode, 'changes');
+  it('is the final text when there is nothing to compare', () => {
+    assert.equal(resolveMode('changes', { hasPrevious: false, defaultView: 'changes' }), 'final');
+    assert.equal(resolveMode(undefined, { hasPrevious: false, defaultView: 'final' }), 'final');
+  });
+
+  it('names the final view by the piece and counts what changed since the previous send', () => {
+    assert.equal(finalLabel('article'), 'Texto final');
+    assert.equal(finalLabel('carousel'), 'Slides');
+    assert.equal(changedSummary(0), 'Nada mudou desde o envio anterior.');
+    assert.equal(changedSummary(1), '1 trecho mudou desde o envio anterior');
+    assert.equal(changedSummary(3), '3 trechos mudaram desde o envio anterior');
   });
 });
 
-describe('versionStatus', () => {
-  const base = {
-    version: { ...version({ id: 'v4', number: 4 }), pieceId: 'piece-1' } as ReviewView['version'],
-    freshness: { state: 'fresh', staleInputs: [], staleSources: [] } as ReviewView['freshness'],
-    status: 'draft' as const,
-  };
+describe('checksSummary', () => {
+  const check = (id: string, label: string, status: CheckResult['status'], extra: Partial<CheckResult> = {}): CheckResult =>
+    ({ id, label, status, blocking: false, ...extra }) as CheckResult;
+  const range = (blockId: string) => ({ blockId, from: 0, to: 1 });
 
-  it('follows the decision on the exact version', () => {
-    const approved = { ...base, version: { ...base.version, decision: { kind: 'approved' as const, by: 'p', at: 'x', id: 'd' } } };
-    assert.equal(versionStatus(approved), 'approved');
-    assert.equal(versionStatus({ ...approved, freshness: { ...base.freshness, state: 'stale' } }), 'stale');
-    const returned = { ...base, version: { ...base.version, decision: { kind: 'changes_requested' as const, by: 'p', at: 'x', id: 'd' } } };
-    assert.equal(versionStatus(returned), 'changes_requested');
+  it('says everything is checked when nothing is missing or in warning', () => {
+    assert.deepEqual(checksSummary({ kind: 'article', checks: [check('article.title', 'Título', 'pass')] }), { level: 'ok', text: 'Tudo conferido' });
+    assert.deepEqual(checksSummary({ kind: 'carousel', checks: [check('carousel.limits', 'Limites de texto', 'pass')] }), { level: 'ok', text: 'Tudo conferido' });
   });
 
-  it('is waiting when the request points at this version', () => {
-    const pendingReview = { subject: { versionId: 'v4' } } as ReviewView['pendingReview'];
-    assert.equal(versionStatus({ ...base, pendingReview }), 'in_review');
-    assert.equal(versionStatus(base), 'draft');
+  it('names what is missing first and the warnings otherwise (article)', () => {
+    const quotes = check('article.quotes', 'Citações', 'warn', { progress: { current: 2, total: 3 } });
+    const slots = check('article.image-slots', 'Imagens sugeridas', 'warn', { targets: [range('b1'), range('b2')] });
+    assert.deepEqual(checksSummary({ kind: 'article', checks: [slots, quotes] }), { level: 'missing', text: 'Falta: 1 citação não confere com a entrevista' });
+    assert.deepEqual(checksSummary({ kind: 'article', checks: [slots] }), { level: 'warning', text: 'Aviso: 2 imagens sugeridas sem arquivo' });
+  });
+
+  it('names the checks of a carousel as phrases', () => {
+    const limits = check('carousel.limits', 'Limites de texto', 'fail', { detail: '1 slide passa do limite' });
+    assert.deepEqual(checksSummary({ kind: 'carousel', checks: [limits] }), { level: 'missing', text: 'Falta: Limites de texto: 1 slide passa do limite' });
+    assert.deepEqual(checksSummary({ kind: 'carousel', checks: [{ ...limits, status: 'warn' }] }), { level: 'warning', text: 'Aviso: Limites de texto: 1 slide passa do limite' });
+  });
+});
+
+describe('the decision bar and its dialogs', () => {
+  it('names the verbs by the piece', () => {
+    assert.equal(approveLabel('article'), 'Aprovar artigo');
+    assert.equal(approveLabel('carousel'), 'Aprovar carrossel');
+    assert.equal(approveTitle('article'), 'Aprovar o artigo');
+    assert.equal(approveTitle('carousel'), 'Aprovar o carrossel');
+  });
+
+  it('reads the facts of the piece and who sent it, without a version number', () => {
+    assert.deepEqual(decisionFactList({ kind: 'article', characters: 2400, size: 'standard', requesterName: 'Juliana Prates' }), [
+      'Artigo',
+      formatLaudasOf(2400, 'standard'),
+      'enviado por Juliana',
+    ]);
+    assert.equal(decisionFacts({ kind: 'article', characters: 2400, size: 'standard', requesterName: 'Juliana Prates' }), `Artigo · ${formatLaudasOf(2400, 'standard')} · enviado por Juliana`);
+    assert.equal(decisionFacts({ kind: 'carousel', slides: 5, requesterName: 'Rafael' }), 'Carrossel · 5 slides · enviado por Rafael');
+    assert.equal(decisionFacts({ kind: 'carousel', slides: 1 }), 'Carrossel · 1 slide');
+  });
+
+  it('tells who receives the note', () => {
+    assert.equal(returnDescription('Juliana Prates'), 'Juliana recebe a nota e os trechos apontados.');
+    assert.equal(returnDescription(null), 'Quem enviou recebe a nota e os trechos apontados.');
   });
 });
 
@@ -103,6 +141,7 @@ describe('toReviewDiff', () => {
         ['l', 'item'],
       ],
     );
+    assert.equal(changedCount(toReviewDiff(blocks)), 2);
   });
 });
 
@@ -198,7 +237,8 @@ describe('anchors', () => {
       two.map((anchor) => anchor.blockId),
       ['b1', 'b3'],
     );
-    assert.equal(sectionMark(body, 'b3'), '§3');
+    assert.equal(anchorsLabel(1), '1 trecho apontado');
+    assert.equal(anchorsLabel(2), '2 trechos apontados');
   });
 
   it('shortens long excerpts on a word boundary', () => {
@@ -207,67 +247,77 @@ describe('anchors', () => {
   });
 });
 
-describe('reviewHistory', () => {
-  it('lists decisions, the pending request, versions and failed generations, newest first', () => {
-    const versions = [
-      version({ id: 'v1', number: 1, label: 'v1 · IA', origin: 'generation', runId: 'run-1', createdAt: '2026-10-01T10:00:00.000Z' }),
-      version({ id: 'v2', number: 2, createdAt: '2026-10-02T10:00:00.000Z' }),
-    ];
-    const review = {
-      decisions: [
-        {
-          id: 'd1',
-          gate: 'article.approval',
-          subject: versions[0]!.ref,
-          decision: 'changes_requested',
-          by: 'person-pedro',
-          at: '2026-10-01T12:00:00.000Z',
-          note: 'Encurte a abertura.',
-          anchors: [{ blockId: 'b1', from: 0, to: 5 }],
-          checks: [],
-          decider: null,
-        },
-      ],
-      pendingReview: {
-        id: 'r1',
-        gate: 'article.approval',
-        subject: versions[1]!.ref,
-        requestedBy: 'person-joao',
-        requestedAt: '2026-10-02T11:00:00.000Z',
-        requester: null,
-      },
-      runs: [
-        { id: 'run-1', kind: 'article.generate', status: 'completed', label: 'Geração do artigo', createdBy: 'person-joao', createdAt: '2026-10-01T09:59:00.000Z' },
-        { id: 'run-0', kind: 'article.generate', status: 'failed', label: 'Geração do artigo', createdBy: 'person-joao', createdAt: '2026-09-30T09:00:00.000Z', endedAt: '2026-09-30T09:01:00.000Z' },
-        { id: 'run-2', kind: 'article.assist', status: 'failed', label: 'Assistente de texto', createdBy: 'person-joao', createdAt: '2026-10-02T09:00:00.000Z' },
-      ],
-    } as unknown as ReviewView;
-    const history = reviewHistory(review, versions);
-    assert.deepEqual(
-      history.map((item) => item.action),
-      ['enviou a v2 para aprovação', 'salvou a v2', 'devolveu a v1', 'gerou a v1 · IA', 'Geração do artigo falhou'],
-    );
-    assert.equal(history[2]?.note, 'Encurte a abertura.');
-    assert.equal(history[3]?.runId, 'run-1');
-    assert.equal(history[4]?.standalone, true);
+describe('origin of the text', () => {
+  const withAi: ArticleBody = {
+    ...body,
+    blocks: [
+      { id: 'b1', type: 'paragraph', inlines: [{ text: 'Escrito pela IA.' }], ai: 'reviewed' },
+      { id: 'b2', type: 'paragraph', inlines: [{ text: 'Escrito por gente.' }] },
+    ],
+  };
+
+  it('marks every block the AI wrote, reviewed or not, and nothing else', () => {
+    assert.equal(hasAiText(body), false);
+    assert.equal(originBody(body), body);
+    assert.equal(hasAiText(withAi), true);
+    const marked = originBody(withAi);
+    assert.equal(marked.blocks[0]?.ai, 'unreviewed');
+    assert.equal(marked.blocks[1]?.ai, undefined);
   });
 });
 
-describe('groupEvidence', () => {
-  it('groups used passages by speaker and lists missing ones first, alone', () => {
-    const ref = { kind: 'source', sourceId: 's', sourceVersion: 1, locator: { type: 'segment', segmentId: 'g' } } as const;
-    const sergio = { label: 'Sérgio', segments: 3, words: 10, person: { id: 'person-sergio', name: 'Sérgio Lang', initials: 'SL' } };
-    const groups = groupEvidence([
-      { ref, blockIds: ['b1'], status: 'used', excerpt: 'um', speaker: sergio },
-      { ref, blockIds: ['b2', 'b1'], status: 'used', excerpt: 'dois', speaker: sergio },
-      { ref, blockIds: ['b3'], status: 'missing' },
-    ]);
+describe('historyEvents', () => {
+  const people = [
+    { id: 'person-joao', name: 'João Vitor' },
+    { id: 'person-pedro', name: 'Pedro Alves' },
+  ] as unknown as PersonSummary[];
+  const versions = [
+    version({ id: 'v1', number: 1, origin: 'generation', createdBy: 'system', createdAt: '2026-10-01T12:00:00.000Z' }),
+    version({ id: 'v2', number: 2, createdAt: '2026-10-02T12:00:00.000Z' }),
+    version({ id: 'v3', number: 3, origin: 'restore', restoredFrom: 'v1', createdAt: '2026-10-06T12:00:00.000Z' }),
+  ];
+  const requests = [
+    { id: 'r1', requester: people[0], assignee: people[1], requestedAt: '2026-10-02T15:00:00.000Z', note: ' Pedro, pode revisar hoje? ', due: 'none', round: 1, version: versions[1] },
+    { id: 'r0', requester: people[0], assignee: people[1], requestedAt: '2026-10-01T15:00:00.000Z', due: 'none', round: 1, version: versions[0], withdrawnAt: '2026-10-01T16:00:00.000Z' },
+  ] as unknown as ApprovalRequestView[];
+  const decisions = [
+    { kind: 'changes_requested', decider: people[1], at: '2026-10-03T12:00:00.000Z', note: 'Encurte a abertura.', anchors: [], version: versions[1] },
+  ] as unknown as ApprovalDecisionView[];
+
+  it('names each event by what happened, newest first, without version numbers', () => {
+    const events = historyEvents({ kind: 'article', versions, requests, decisions, people });
     assert.deepEqual(
-      groups.map((group) => [group.missing, group.entries.length, group.blockIds]),
-      [
-        [true, 1, ['b3']],
-        [false, 2, ['b1', 'b2']],
-      ],
+      events.map((event) => event.title),
+      ['Restaurado de 01/10', 'Ajustes pedidos por Pedro', 'Enviado a Pedro', 'Editado por João', 'Texto da IA'],
     );
+    assert.deepEqual(
+      events.map((event) => event.kind),
+      ['version', 'decision', 'request', 'version', 'version'],
+    );
+    assert.equal(
+      events.some((event) => /\bv\d/.test(event.title)),
+      false,
+    );
+  });
+
+  it('keeps the notes as written, who did it and the version each event is about', () => {
+    const events = historyEvents({ kind: 'article', versions, requests, decisions, people });
+    const send = events.find((event) => event.kind === 'request');
+    assert.equal(send?.note, 'Pedro, pode revisar hoje?');
+    assert.equal(send?.personId, 'person-joao');
+    assert.equal(send?.versionId, 'v2');
+    const decision = events.find((event) => event.kind === 'decision');
+    assert.equal(decision?.note, 'Encurte a abertura.');
+    assert.equal(decision?.decision, 'changes_requested');
+    assert.equal(decision?.personId, 'person-pedro');
+    assert.equal(events.find((event) => event.title === 'Texto da IA')?.personId, null);
+  });
+
+  it('leaves withdrawn sends out and shows the size only for an article', () => {
+    const events = historyEvents({ kind: 'article', versions, requests, decisions, people });
+    assert.equal(events.filter((event) => event.kind === 'request').length, 1);
+    assert.ok(events.filter((event) => event.kind === 'version').every((event) => event.meta.includes(' · ')));
+    const carousel = historyEvents({ kind: 'carousel', versions: [versions[0]!], requests: [], decisions: [], people });
+    assert.equal(carousel[0]?.meta.includes(' · '), false);
   });
 });

@@ -1,70 +1,151 @@
-import { blockText, creditLine, DECISION_LABELS, findBlock } from '../../domain/index.ts';
+import { blockText, creditLine, findBlock, firstName, formatLaudas, formatLaudasOf, PIECE_LABELS, sendChecklist } from '../../domain/index.ts';
 import type {
   ArticleBody,
-  ImageRef,
+  ArticleSize,
   CheckResult,
   DecisionAnchor,
-  DecisionKind,
   DiffBlock,
   DiffChange,
   DiffHunk,
-  PieceStatus,
+  ImageRef,
+  PieceKind,
   TextRange,
+  VersionView,
 } from '../../domain/index.ts';
-import type { EvidenceView, ReviewView, VersionView } from '../../ports/index.ts';
+import type { ApprovalDecisionView, ApprovalRequestView, PersonSummary } from '../../ports/index.ts';
+import { formatDayMonth, formatDayTime } from '../../ui/approval-copy.ts';
 
 /**
- * Pure rules of the review surface (PLAN §3.6): which comparisons exist, the status of the exact
- * version on screen, the diff blocks handed to the DS `DiffView`, the passages a reviewer points
- * at when returning a version, and the history lines. No React, no Design System: tested with
- * `node --test`.
+ * Pure rules of the guided review (D10, COPY §4): which view opens ("O que mudou" when there was a
+ * previous send), the checks in one line, the facts of the decision bar, the diff blocks handed to
+ * the DS `DiffView`, the passages a reviewer points at, the text's origin on demand and the
+ * history drawer's events. No React, no Design System: tested with `node --test`. No version
+ * numbers anywhere (D11): versions are named by what happened to them and when.
  */
 
-// ── Comparação ───────────────────────────────────────────────────────────────────────────
+// ── Ver: O que mudou | Texto final ──────────────────────────────────────────────────────
 
 export type ReviewMode = 'changes' | 'final';
-export type CompareTarget = 'ai' | 'approved';
-
-export type CompareOption = { target: CompareTarget; version: VersionView; label: string };
-
-/** "Comparar com": the last approved version first (re-approval), then the pure AI output. */
-export function compareOptions(review: Pick<ReviewView, 'compareWith'>): CompareOption[] {
-  const { lastApproved, ai } = review.compareWith;
-  const options: CompareOption[] = [];
-  if (lastApproved) options.push({ target: 'approved', version: lastApproved, label: `desde v${lastApproved.number} · aprovada` });
-  if (ai && ai.id !== lastApproved?.id) options.push({ target: 'ai', version: ai, label: `desde ${ai.label}` });
-  return options;
-}
-
-export type ResolvedView = { mode: ReviewMode; option?: CompareOption };
 
 const isMode = (value: unknown): value is ReviewMode => value === 'changes' || value === 'final';
 
 /**
- * The view on screen from the URL (`?view`, `?compare`) and what the version allows. Default:
- * "Alterações" since the last approval when there is one (what changed is the question), else
- * "Texto final" (a first approval reads the piece as the reader will).
+ * The view on screen: what the URL asks (`?ver=`), else the review's default ("O que mudou" when a
+ * previous send was decided). Without a previous send there is nothing to compare: the final text.
  */
-export function resolveView(options: readonly CompareOption[], requested: { view?: string | null; compare?: string | null }): ResolvedView {
-  if (options.length === 0) return { mode: 'final' };
-  const option = options.find((candidate) => candidate.target === requested.compare) ?? options[0];
-  const fallback: ReviewMode = options.some((candidate) => candidate.target === 'approved') ? 'changes' : 'final';
-  return { mode: isMode(requested.view) ? requested.view : fallback, option };
+export function resolveMode(requested: string | null | undefined, review: { hasPrevious: boolean; defaultView: ReviewMode }): ReviewMode {
+  if (!review.hasPrevious) return 'final';
+  return isMode(requested) ? requested : review.defaultView;
 }
 
-// ── Status da versão ─────────────────────────────────────────────────────────────────────
+/** "Texto final" for an article, "Slides" for a carousel (COPY §4.3). */
+export function finalLabel(kind: PieceKind): string {
+  return kind === 'carousel' ? 'Slides' : 'Texto final';
+}
+
+/** "3 trechos mudaram desde o envio anterior" / "Nada mudou desde o envio anterior." */
+export function changedSummary(changed: number): string {
+  if (changed <= 0) return 'Nada mudou desde o envio anterior.';
+  return changed === 1 ? '1 trecho mudou desde o envio anterior' : `${changed} trechos mudaram desde o envio anterior`;
+}
+
+// ── Checagem numa linha ──────────────────────────────────────────────────────────────────
+
+export type ChecksSummary = { level: 'ok' | 'warning' | 'missing'; text: string };
+
+export type ChecksSummaryInput = {
+  kind: PieceKind;
+  /** Checks of the version under review. */
+  checks: readonly CheckResult[];
+  size?: ArticleSize;
+  characters?: number;
+};
+
+const lower = (text: string) => text.charAt(0).toLocaleLowerCase('pt-BR') + text.slice(1);
+
+/** A carousel check as a phrase ("Limites de texto: 1 slide passa do limite"). */
+function checkPhrase(check: CheckResult): string {
+  return check.detail ? `${check.label}: ${lower(check.detail)}` : check.label;
+}
 
 /**
- * Status of the EXACT version on screen (plan tones): approved teal (amber when its inputs went
- * stale), returned orange, waiting violet; otherwise the piece status (Rascunho, Gerando…).
+ * The checks of the version in one line (COPY §4.3): "Tudo conferido", or what is missing first
+ * ("Falta: 1 citação não confere com a entrevista"), else the warnings ("Aviso: 2 imagens
+ * sugeridas sem arquivo"). The article reads the same items as the pre-send dialog, so the writer
+ * and the approver see the same words; the carousel names its checks.
  */
-export function versionStatus(review: Pick<ReviewView, 'version' | 'pendingReview' | 'freshness' | 'status'>): PieceStatus {
-  const decision = review.version.decision?.kind;
-  if (decision === 'approved') return review.freshness.state === 'stale' ? 'stale' : 'approved';
-  if (decision === 'changes_requested' || decision === 'rejected') return 'changes_requested';
-  if (review.pendingReview?.subject.versionId === review.version.id) return 'in_review';
-  if (review.status === 'generating' || review.status === 'failed') return review.status;
-  return review.freshness.state === 'stale' ? 'stale' : 'draft';
+export function checksSummary(input: ChecksSummaryInput): ChecksSummary {
+  let missing: string[];
+  let warnings: string[];
+  if (input.kind === 'article') {
+    const items = sendChecklist({
+      kind: 'article',
+      checks: input.checks,
+      openSuggestionIds: [],
+      running: false,
+      empty: false,
+      ...(input.size ? { size: input.size } : {}),
+      ...(input.characters !== undefined ? { characters: input.characters } : {}),
+    });
+    missing = items.filter((item) => item.level === 'missing').map((item) => item.text);
+    warnings = items.filter((item) => item.level === 'warning').map((item) => item.text);
+  } else {
+    missing = input.checks.filter((check) => check.status === 'fail').map(checkPhrase);
+    warnings = input.checks.filter((check) => check.status === 'warn').map(checkPhrase);
+  }
+  if (missing.length > 0) return { level: 'missing', text: `Falta: ${missing.join(' · ')}` };
+  if (warnings.length > 0) return { level: 'warning', text: `Aviso: ${warnings.join(' · ')}` };
+  return { level: 'ok', text: 'Tudo conferido' };
+}
+
+// ── Barra de decisão ─────────────────────────────────────────────────────────────────────
+
+/** "Aprovar artigo" / "Aprovar carrossel". */
+export function approveLabel(kind: PieceKind): string {
+  return `Aprovar ${PIECE_LABELS[kind].toLocaleLowerCase('pt-BR')}`;
+}
+
+/** "Aprovar o artigo" / "Aprovar o carrossel" (the approve popover's title). */
+export function approveTitle(kind: PieceKind): string {
+  return `Aprovar o ${PIECE_LABELS[kind].toLocaleLowerCase('pt-BR')}`;
+}
+
+/**
+ * The bar's facts (COPY §4.4): "Artigo · 1,4 de 2 laudas · enviado por Juliana" / "Carrossel ·
+ * 5 slides · enviado por Rafael". No version number.
+ */
+export function decisionFacts(input: DecisionFactsInput): string {
+  return decisionFactList(input).join(' · ');
+}
+
+export type DecisionFactsInput = {
+  kind: PieceKind;
+  characters?: number;
+  size?: ArticleSize;
+  slides?: number;
+  requesterName?: string | null;
+};
+
+/** The same facts one by one, for a `MetaList` (which draws the separators). */
+export function decisionFactList(input: DecisionFactsInput): string[] {
+  const size =
+    input.kind === 'carousel'
+      ? input.slides !== undefined
+        ? `${input.slides} ${input.slides === 1 ? 'slide' : 'slides'}`
+        : undefined
+      : input.characters !== undefined
+        ? input.size
+          ? formatLaudasOf(input.characters, input.size)
+          : formatLaudas(input.characters)
+        : undefined;
+  const who = firstName(input.requesterName);
+  return [PIECE_LABELS[input.kind], size, who ? `enviado por ${who}` : undefined].filter((fact): fact is string => Boolean(fact));
+}
+
+/** "Pedir ajustes" dialog: "Juliana recebe a nota e os trechos apontados." */
+export function returnDescription(requesterName?: string | null): string {
+  const who = firstName(requesterName);
+  return `${who || 'Quem enviou'} recebe a nota e os trechos apontados.`;
 }
 
 // ── Diferenças (DS DiffView) ─────────────────────────────────────────────────────────────
@@ -99,6 +180,11 @@ export function toReviewDiff(blocks: readonly DiffBlock[]): ReviewDiffBlock[] {
   return blocks
     .filter((block) => block.blockType !== 'divider' && block.hunks.some((hunk) => hunk.text.trim().length > 0))
     .map((block) => ({ id: block.id, change: block.change, hunks: block.hunks, type: diffType(block) }));
+}
+
+/** Passages that changed (the DS counts the same way): a block whose change or hunks are not "equal". */
+export function changedCount(blocks: readonly ReviewDiffBlock[]): number {
+  return blocks.filter((block) => block.change !== 'unchanged' || block.hunks.some((hunk) => hunk.kind !== 'equal')).length;
 }
 
 // ── Imagens ──────────────────────────────────────────────────────────────────────────────
@@ -150,7 +236,7 @@ export function imageChanges(blocks: readonly DiffBlock[]): ImageChange[] {
   });
 }
 
-// ── Trechos apontados (âncoras da devolução) ─────────────────────────────────────────────
+// ── Trechos apontados (âncoras de "Pedir ajustes") ───────────────────────────────────────
 
 const WORD = /[\p{L}\p{N}]/u;
 
@@ -199,10 +285,9 @@ export function anchorKey(anchor: TextRange): string {
   return `${anchor.blockId}:${anchor.from}-${anchor.to}`;
 }
 
-/** "§3": the block's position in the article (same numbering as the studio selection chip). */
-export function sectionMark(body: Pick<ArticleBody, 'blocks'>, blockId: string): string | undefined {
-  const index = body.blocks.findIndex((block) => block.id === blockId);
-  return index < 0 ? undefined : `§${index + 1}`;
+/** "1 trecho apontado" / "2 trechos apontados". */
+export function anchorsLabel(count: number): string {
+  return count === 1 ? '1 trecho apontado' : `${count} trechos apontados`;
 }
 
 /** Short quote for a list row: whole words, ellipsis past `max` characters. */
@@ -214,152 +299,116 @@ export function shortExcerpt(text: string, max = 96): string {
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,.;:!?–-]+$/, '')}…`;
 }
 
-// ── Fonte ────────────────────────────────────────────────────────────────────────────────
-
-export type EvidenceGroup = {
-  key: string;
-  /** Speaker of the passages (mapped person or transcript label). */
-  speaker?: EvidenceView['speaker'];
-  entries: EvidenceView[];
-  /** Blocks of the text standing on these passages, in order, without repeats. */
-  blockIds: string[];
-  /** A passage that does not match the material ("Falta"). */
-  missing: boolean;
-};
+// ── Origem do texto ──────────────────────────────────────────────────────────────────────
 
 /**
- * Passages the text stands on, one chip per speaker ("Sérgio Lang · 12 trechos"); each passage
- * that does not match the material stands alone and first, because it needs a look.
+ * "Ver origem do texto": every block the AI wrote carries the AI mark (reviewed or not), the rest
+ * reads as written by people. The reviewer sees authorship, not the writer's review progress.
  */
-export function groupEvidence(evidence: readonly EvidenceView[]): EvidenceGroup[] {
-  const missing: EvidenceGroup[] = [];
-  const bySpeaker = new Map<string, EvidenceGroup>();
-  evidence.forEach((entry, index) => {
-    if (entry.status === 'missing') {
-      missing.push({ key: `missing-${index}`, speaker: entry.speaker, entries: [entry], blockIds: [...entry.blockIds], missing: true });
-      return;
-    }
-    const key = entry.speaker?.person?.id ?? entry.speaker?.label ?? 'trecho';
-    const group = bySpeaker.get(key) ?? { key, speaker: entry.speaker, entries: [], blockIds: [], missing: false };
-    group.entries.push(entry);
-    for (const blockId of entry.blockIds) if (!group.blockIds.includes(blockId)) group.blockIds.push(blockId);
-    bySpeaker.set(key, group);
-  });
-  return [...missing, ...bySpeaker.values()];
+export function originBody(body: ArticleBody): ArticleBody {
+  if (!body.blocks.some((block) => block.ai !== undefined)) return body;
+  return { ...body, blocks: body.blocks.map((block) => (block.ai === undefined ? block : { ...block, ai: 'unreviewed' as const })) };
 }
 
-// ── Checagem ─────────────────────────────────────────────────────────────────────────────
-
-/** Checks that do not block but deserve a second look before approving. */
-export function checkWarnings(checks: readonly CheckResult[]): CheckResult[] {
-  return checks.filter((check) => check.status === 'warn' || (check.status === 'fail' && !check.blocking));
+/** Whether the AI wrote any of the text (the switch has something to show). */
+export function hasAiText(body: ArticleBody): boolean {
+  return body.blocks.some((block) => block.ai !== undefined);
 }
 
-// ── Histórico ────────────────────────────────────────────────────────────────────────────
+// ── Histórico de versões ─────────────────────────────────────────────────────────────────
 
-export type HistoryKind = 'decision' | 'request' | 'version' | 'run';
+export type HistoryEventKind = 'version' | 'request' | 'decision';
 
-export type HistoryItem = {
+export type HistoryEvent = {
   id: string;
-  kind: HistoryKind;
+  kind: HistoryEventKind;
   at: string;
-  /** Person (or `system`) who did it; the screen names them. */
-  actorId?: string;
-  /** Verb phrase after the name ("aprovou a v3", "gerou a v1 · IA"); whole line when `standalone`. */
-  action: string;
-  /** The line reads on its own ("Geração do artigo falhou"): the actor is only the marker. */
-  standalone?: boolean;
-  decision?: DecisionKind;
+  /** "Texto da IA", "Editado por Juliana", "Enviado a Pedro", "Aprovado por Pedro"… (COPY §2.7). */
+  title: string;
+  /** "08/10, 14:20 · 1,4 lauda". */
+  meta: string;
+  /** Who did it (marker); `null` for the AI. */
+  personId: string | null;
+  /** Recado or nota, as written. */
   note?: string;
-  anchors?: DecisionAnchor[];
-  /** Run whose provenance explains this line. */
-  runId?: string;
+  /** The version this event is about (comparison). */
+  versionId?: string;
+  decision?: 'approved' | 'changes_requested';
 };
 
-const DECISION_VERBS: Partial<Record<DecisionKind, string>> = {
-  approved: 'aprovou',
-  changes_requested: 'devolveu',
-  rejected: 'recusou',
+export type HistoryInput = {
+  kind: PieceKind;
+  versions: readonly VersionView[];
+  requests: readonly ApprovalRequestView[];
+  decisions: readonly ApprovalDecisionView[];
+  people?: readonly PersonSummary[];
+  now?: Date | string;
 };
 
-const VERSION_VERBS: Record<VersionView['origin'], string> = {
-  generation: 'gerou',
-  edit: 'salvou',
-  suggestion: 'salvou',
-  restore: 'criou',
-};
-
-const RUN_OUTCOMES: Partial<Record<ReviewView['runs'][number]['status'], string>> = {
-  running: 'em andamento',
-  queued: 'na fila',
-  awaiting_input: 'aguardando resposta',
-  failed: 'falhou',
-  cancelled: 'interrompida',
-};
+function nameOf(people: readonly PersonSummary[] | undefined, id: string | undefined): string {
+  if (!id || id === 'system') return '';
+  return firstName(people?.find((person) => person.id === id)?.name);
+}
 
 /**
- * Newest first: decisions (with note and anchors), the pending request, every version and the
- * top-level generations that produced no version (failed, interrupted, running).
+ * The piece's history, newest first, in the words of COPY §2.7: versions by what made them ("Texto
+ * da IA", "Editado por Juliana", "Restaurado de 06/10"), each send ("Enviado a Pedro") and each
+ * decision ("Ajustes pedidos por Pedro", "Aprovado por Pedro") with its note. Withdrawn sends stay
+ * out. Meta: when, and the text's size (an article's laudas).
  */
-export function reviewHistory(review: Pick<ReviewView, 'decisions' | 'pendingReview' | 'runs' | 'requests'>, versions: readonly VersionView[]): HistoryItem[] {
-  const items: HistoryItem[] = [];
-  for (const decision of review.decisions) {
-    const number = decision.subject.kind === 'version' ? decision.subject.number : undefined;
-    const verb = DECISION_VERBS[decision.decision] ?? DECISION_LABELS[decision.decision].toLowerCase();
-    const item: HistoryItem = {
-      id: `decision-${decision.id}`,
-      kind: 'decision',
-      at: decision.at,
-      actorId: decision.by,
-      action: number === undefined ? verb : `${verb} a v${number}`,
-      decision: decision.decision,
-    };
-    if (decision.note) item.note = decision.note;
-    if (decision.anchors && decision.anchors.length > 0) item.anchors = decision.anchors;
-    items.push(item);
-  }
-  // Every request stays in the history after it is decided ("Juliana enviou a v2 para aprovação").
-  const requests = review.requests ?? (review.pendingReview ? [review.pendingReview] : []);
-  for (const request of requests) {
-    const item: HistoryItem = {
-      id: `request-${request.id}`,
-      kind: 'request',
-      at: request.requestedAt,
-      actorId: request.requestedBy,
-      action: `enviou a v${request.subject.number} para aprovação`,
-    };
-    if (request.note) item.note = request.note;
-    items.push(item);
-  }
-  const produced = new Set<string>();
-  for (const version of versions) {
-    const item: HistoryItem = {
+export function historyEvents(input: HistoryInput): HistoryEvent[] {
+  const size = (version: Pick<VersionView, 'characters'>) => (input.kind === 'article' ? formatLaudas(version.characters) : undefined);
+  const meta = (at: string, version?: Pick<VersionView, 'characters'>) => [formatDayTime(at, input.now), version ? size(version) : undefined].filter(Boolean).join(' · ');
+  const events: HistoryEvent[] = [];
+  for (const version of input.versions) {
+    const who = nameOf(input.people, version.createdBy);
+    let title: string;
+    if (version.origin === 'generation') title = 'Texto da IA';
+    else if (version.origin === 'restore') {
+      const from = input.versions.find((candidate) => candidate.id === version.restoredFrom);
+      title = from ? `Restaurado de ${formatDayMonth(from.createdAt, input.now)}` : 'Restaurado';
+    } else title = who ? `Editado por ${who}` : 'Editado';
+    events.push({
       id: `version-${version.id}`,
       kind: 'version',
       at: version.createdAt,
-      actorId: version.createdBy,
-      action: `${VERSION_VERBS[version.origin]} a ${version.label}`,
-    };
-    if (version.runId) {
-      item.runId = version.runId;
-      produced.add(version.runId);
-    }
-    items.push(item);
-  }
-  for (const run of review.runs) {
-    if (run.parentRunId || produced.has(run.id) || !run.kind.endsWith('.generate')) continue;
-    const outcome = RUN_OUTCOMES[run.status];
-    if (!outcome) continue;
-    items.push({
-      id: `run-${run.id}`,
-      kind: 'run',
-      at: run.endedAt ?? run.startedAt ?? run.createdAt,
-      actorId: run.createdBy,
-      action: `${run.label} ${outcome}`,
-      standalone: true,
-      runId: run.id,
+      title,
+      meta: meta(version.createdAt, version),
+      personId: version.origin === 'generation' || version.createdBy === 'system' ? null : version.createdBy,
+      versionId: version.id,
     });
   }
-  const rank: Record<HistoryKind, number> = { decision: 0, request: 1, version: 2, run: 3 };
-  return items.sort((a, b) => b.at.localeCompare(a.at) || rank[a.kind] - rank[b.kind]);
+  for (const request of input.requests) {
+    if (request.withdrawnAt) continue;
+    const to = firstName(request.assignee?.name);
+    const event: HistoryEvent = {
+      id: `request-${request.id}`,
+      kind: 'request',
+      at: request.requestedAt,
+      title: to ? `Enviado a ${to}` : 'Enviado para aprovação',
+      meta: meta(request.requestedAt, request.version),
+      personId: request.requester?.id ?? null,
+      versionId: request.version.id,
+    };
+    if (request.note?.trim()) event.note = request.note.trim();
+    events.push(event);
+  }
+  for (const decision of input.decisions) {
+    const who = firstName(decision.decider?.name);
+    const verb = decision.kind === 'approved' ? 'Aprovado' : 'Ajustes pedidos';
+    const event: HistoryEvent = {
+      id: `decision-${decision.version.id}-${decision.at}`,
+      kind: 'decision',
+      at: decision.at,
+      title: who ? `${verb} por ${who}` : verb,
+      meta: meta(decision.at, decision.version),
+      personId: decision.decider?.id ?? null,
+      versionId: decision.version.id,
+      decision: decision.kind,
+    };
+    if (decision.note?.trim()) event.note = decision.note.trim();
+    events.push(event);
+  }
+  const rank: Record<HistoryEventKind, number> = { decision: 0, request: 1, version: 2 };
+  return events.sort((a, b) => b.at.localeCompare(a.at) || rank[a.kind] - rank[b.kind]);
 }
