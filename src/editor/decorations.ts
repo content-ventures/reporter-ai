@@ -16,7 +16,7 @@ import type { ViewLike } from './view.ts';
  * the gutter) come from the Design System factory (`proseWidgets`) the client hands in.
  *
  * - `data-ai="unreviewed"` (+ `aria-description`): derived from the `ai` attr of each block, with
- *   the factory's gutter marker ("Revisar texto da IA") at the start of the block. While a
+ *   the factory's gutter marker ("Texto da IA ainda não revisado") at the start of the block. While a
  *   generation writes, only the block being written is marked (`data-ai="writing"`).
  * - `data-source-active`: blocks linked to the transcript segment lit right now.
  * - `data-suggestion="delete"` (+ `data-stale`): what pending suggestions take out, followed by
@@ -164,11 +164,17 @@ function buildLayer(doc: PMNode, layer: RangeLayer, input: ArticleDecorationInpu
   return DecorationSet.create(doc, decorations);
 }
 
-/** The factory's gutter marker at the start of an unreviewed AI block ("Revisar texto da IA"). */
+/** What the marker says (name and hint): the review is one for the whole text, in the studio footer. */
+const AI_MARKER_LABEL = 'Texto da IA ainda não revisado';
+
+/**
+ * The factory's gutter marker at the start of an unreviewed AI block: a passive cue unless a host
+ * hands `onAiMarker` over (the studio does not — it reviews the whole text from its footer).
+ */
 function aiMarker(pos: number, blockId: BlockId, options: Resolved): Decoration | null {
   const { widgets, handlers } = options;
   if (!widgets) return null;
-  const toDOM = () => widgets.gutterMarker('ai', { onActivate: () => handlers?.()?.onAiMarker?.(blockId) });
+  const toDOM = () => widgets.gutterMarker('ai', { label: AI_MARKER_LABEL, onActivate: () => handlers?.()?.onAiMarker?.(blockId) });
   // The editor ignores the marker's own events (it keeps the caret and the selection).
   return Decoration.widget(pos + 1, toDOM, { side: -1, key: `ai:${blockId}`, ignoreSelection: true, stopEvent: () => true });
 }

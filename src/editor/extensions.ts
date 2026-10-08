@@ -91,7 +91,8 @@ export const ListItemNode = Node.create({
 
 /**
  * An image block (domain `FigureBlock`): an atom, selected and changed as a whole (alt, caption
- * and credit are edited outside the text). Plain HTML for `Prose`: `figure > img + figcaption`.
+ * and credit are edited outside the text). Plain HTML for `Prose`: `figure > img + figcaption`;
+ * an image slot is `figure[data-slot][data-missing]` with its subject as the figcaption.
  * Pasted figures and images are parsed (see `parseFigureElement`); no node view.
  */
 export const FigureNode = Node.create({
@@ -149,9 +150,13 @@ export const ArticleBlocks = Extension.create<ArticleBlocksOptions, ArticleBlock
         },
       },
       {
-        // The cover (`ArticleBody.cover`): body metadata kept with the text, so it saves and undoes with it.
+        // The cover (`ArticleBody.cover`) and its suggestion (`coverSlot`): body metadata kept with
+        // the text, so they save and undo with it.
         types: [NODE.doc],
-        attributes: { [DOC_ATTR.cover]: { default: null, rendered: false, parseHTML: () => null } },
+        attributes: {
+          [DOC_ATTR.cover]: { default: null, rendered: false, parseHTML: () => null },
+          [DOC_ATTR.coverSlot]: { default: null, rendered: false, parseHTML: () => null },
+        },
       },
     ];
   },
@@ -241,9 +246,11 @@ export function articleExtensions(options: ArticleExtensionsOptions = {}): AnyEx
       widgets: options.widgets,
       imageInput: {
         onImageFiles: options.onImageFiles,
+        onSlotFiles: options.onSlotFiles,
         onForeignImages: options.onForeignImages,
         onRejectedFiles: options.onRejectedFiles,
         onFigureCaption: options.onFigureCaption,
+        onSlotOpen: options.onSlotOpen,
       },
     }),
   ];

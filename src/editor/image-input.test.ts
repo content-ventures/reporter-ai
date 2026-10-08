@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { Fragment, Slice } from '@tiptap/pm/model';
 import type { Plugin } from '@tiptap/pm/state';
-import { TextSelection } from '@tiptap/pm/state';
+import { EditorState as PMEditorState, NodeSelection, TextSelection } from '@tiptap/pm/state';
 import type { EditorState } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
-import { figureBlock, paragraphBlock } from '../domain/index.ts';
+import { figureBlock, imageSlotBlock, paragraphBlock } from '../domain/index.ts';
 import { articleSchema } from './extensions.ts';
 import type { FigurePlacement, ForeignFigure } from './figures.ts';
 import { findFigure } from './figures.ts';
-import { dropPlacement, imageInputPlugin, pastedImageFiles, withoutForeignFigures } from './image-input.ts';
+import { dropPlacement, imageInputKey, imageInputPlugin, pastedImageFiles, selectedSlot, slotAtPoint, slotPosAtPoint, withoutForeignFigures } from './image-input.ts';
 import type { ImageInputOptions, TransferLike } from './image-input.ts';
 import { findBlockEntry, offsetToPos } from './ranges.ts';
 import { articleState } from './test-support.ts';
@@ -133,6 +133,51 @@ describe('drop', () => {
   });
 });
 
+describe('a file on an image slot', () => {
+  const SLOTTED = { blocks: [paragraphBlock('p1', 'Olá mundo'), imageSlotBlock('s1', { subject: 'Fachada da loja' }), figureBlock('f1', { assetId: 'ast-1' })] };
+
+  function slotSetup(state: EditorState) {
+    const calls = { files: [] as [File[], FigurePlacement][], slots: [] as [File[], string][] };
+    const plugin = imageInputPlugin({
+      onImageFiles: (files, placement) => calls.files.push([files, placement]),
+      onSlotFiles: (files, blockId) => calls.slots.push([files, blockId]),
+    });
+    // The pointer's y is the document position it lands inside (-1 between blocks).
+    const view = { state, posAtCoords: ({ top }: { left: number; top: number }) => ({ pos: top, inside: top }) } as unknown as EditorView;
+    return { plugin, view, calls };
+  }
+
+  test('dropped on the slot it fills that slot, never a new figure beside it; elsewhere it is placed as before', () => {
+    const state = articleState(SLOTTED);
+    const { plugin, view, calls } = slotSetup(state);
+    const slot = findFigure(state.doc, 's1');
+    const filled = findFigure(state.doc, 'f1');
+    assert.ok(slot && filled);
+    assert.equal(slotAtPoint(view, { clientX: 0, clientY: slot.pos }), 's1');
+    assert.equal(slotAtPoint(view, { clientX: 0, clientY: filled.pos }), null, 'a figure with its image is not a slot');
+    const image = png();
+    assert.equal(drop(plugin, view, [image], { y: slot.pos }), true);
+    assert.deepEqual(calls.slots, [[[image], 's1']]);
+    assert.equal(calls.files.length, 0);
+    assert.equal(drop(plugin, view, [image], { y: filled.pos }), true);
+    assert.equal(calls.files.length, 1);
+  });
+
+  test('pasted with the slot selected it fills it; without onSlotFiles it is placed as before', () => {
+    const state = articleState(SLOTTED);
+    const slot = findFigure(state.doc, 's1');
+    assert.ok(slot);
+    const selected = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, slot.pos)));
+    assert.equal(selectedSlot(selected), 's1');
+    const { plugin, view, calls } = slotSetup(selected);
+    assert.equal(paste(plugin, view, transfer([png()])), true);
+    assert.equal(calls.slots[0]?.[1], 's1');
+    const plain = setup({ state: selected });
+    assert.equal(paste(plain.plugin, plain.view, transfer([png()])), true);
+    assert.equal(plain.calls.files.length, 1);
+  });
+});
+
 describe('images pasted from another page', () => {
   const foreign = () => schema.nodes.figure.create({ src: 'https://example.com/a.jpg', alt: 'Praça' });
   const ours = () => schema.nodes.figure.create({ assetId: 'ast-1' });
@@ -187,5 +232,65 @@ describe('a click on a caption', () => {
     click(false);
     click(true, false);
     assert.deepEqual(edits, ['f1']);
+  });
+});
+
+describe('an image slot as a drop target', () => {
+  const SLOTTED = { blocks: [paragraphBlock('p1', 'Olá mundo'), imageSlotBlock('s1', { subject: 'Fachada da loja' }), figureBlock('f1', { assetId: 'ast-1' })] };
+
+  function live(handlers: ImageInputOptions) {
+    const plugin = imageInputPlugin(handlers);
+    let state = PMEditorState.create({ doc: articleState(SLOTTED).doc, plugins: [plugin] });
+    const view = {
+      get state() {
+        return state;
+      },
+      editable: true,
+      dom: { contains: () => false },
+      posAtCoords: ({ top }: { left: number; top: number }) => ({ pos: top, inside: top }),
+      dispatch: (tr: Parameters<typeof state.apply>[0]) => {
+        state = state.apply(tr);
+      },
+    } as unknown as EditorView;
+    return { plugin, view, state: () => state };
+  }
+
+  const dragEvent = (y: number, types = ['Files']) => ({ clientX: 0, clientY: y, dataTransfer: { types } }) as unknown as DragEvent;
+  const overAttr = (plugin: Plugin, state: EditorState) => {
+    const set = plugin.props.decorations?.call(plugin, state) as { find: () => { spec: unknown; type: { attrs?: Record<string, string> } }[] } | null | undefined;
+    return set ? set.find().map((decoration) => decoration.type.attrs) : [];
+  };
+
+  test('a file dragged over the slot marks it with data-over; leaving or dropping clears it', () => {
+    const { plugin, view, state } = live({ onSlotFiles: () => undefined });
+    const slot = findFigure(state().doc, 's1');
+    const filled = findFigure(state().doc, 'f1');
+    assert.ok(slot && filled);
+    assert.equal(slotPosAtPoint(view, { clientX: 0, clientY: slot.pos }), slot.pos);
+    plugin.props.handleDOMEvents?.dragover?.call(plugin, view, dragEvent(slot.pos));
+    assert.equal(imageInputKey.getState(state())?.over, slot.pos);
+    assert.deepEqual(overAttr(plugin, state()), [{ 'data-over': '' }]);
+    plugin.props.handleDOMEvents?.dragover?.call(plugin, view, dragEvent(filled.pos));
+    assert.equal(imageInputKey.getState(state())?.over, null, 'a figure with its image is not a target');
+    plugin.props.handleDOMEvents?.dragover?.call(plugin, view, dragEvent(slot.pos));
+    plugin.props.handleDOMEvents?.drop?.call(plugin, view, dragEvent(slot.pos));
+    assert.equal(imageInputKey.getState(state())?.over, null);
+    plugin.props.handleDOMEvents?.dragover?.call(plugin, view, dragEvent(slot.pos));
+    plugin.props.handleDOMEvents?.dragleave?.call(plugin, view, { relatedTarget: null } as unknown as DragEvent);
+    assert.equal(imageInputKey.getState(state())?.over, null);
+    plugin.props.handleDOMEvents?.dragover?.call(plugin, view, dragEvent(slot.pos, ['text/plain']));
+    assert.equal(imageInputKey.getState(state())?.over, null, 'text moved inside the editor is not a file');
+  });
+
+  test('Enter on a selected slot asks for its image; elsewhere Enter types as before', () => {
+    const opened: string[] = [];
+    const { plugin, view, state } = live({ onSlotOpen: (blockId) => opened.push(blockId) });
+    const slot = findFigure(state().doc, 's1');
+    assert.ok(slot);
+    const enter = { key: 'Enter', shiftKey: false, metaKey: false, ctrlKey: false, altKey: false } as KeyboardEvent;
+    assert.equal(plugin.props.handleKeyDown?.call(plugin, view, enter), false, 'the caret in a paragraph');
+    view.dispatch(state().tr.setSelection(NodeSelection.create(state().doc, slot.pos)));
+    assert.equal(plugin.props.handleKeyDown?.call(plugin, view, enter), true);
+    assert.deepEqual(opened, ['s1']);
   });
 });

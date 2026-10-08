@@ -4,7 +4,9 @@ import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { normalizeLink } from '../domain/index.ts';
 import type { ArticleBlock, ArticleBody, BlockId, ImageRef, LinkResult } from '../domain/index.ts';
 import {
+  dismissImageSlotTransaction,
   dispatchImageStep,
+  fillImageSlotTransaction,
   insertFigureTransaction,
   isFigureNode,
   removeFigureTransaction,
@@ -13,9 +15,9 @@ import {
   setFigureSourcesTransaction,
   updateFigureTransaction,
 } from './figures.ts';
-import type { FigureInput, FigurePatch, FigureWhere } from './figures.ts';
+import type { FigureInput, FigurePatch, FigureWhere, SlotFill } from './figures.ts';
 import { blockNode, articleDocNode } from './nodes.ts';
-import { readImageRef } from './pm-json.ts';
+import { readImageRef, readImageSlot } from './pm-json.ts';
 import type { FigureSources } from './pm-json.ts';
 import { findBlockEntry } from './ranges.ts';
 import { BLOCK_ATTR, DOC_ATTR, MARK, NODE } from './schema.ts';
@@ -167,7 +169,7 @@ export function insertBlocks(editor: Editor, blocks: readonly ArticleBlock[], wh
   return true;
 }
 
-/** Marks AI blocks as reviewed (one undoable step); the "Blocos da IA revisados" check reads it. */
+/** Marks AI blocks as reviewed (one undoable step); the "Texto revisado" check reads it. */
 export function markBlocksReviewed(editor: Editor, blockIds: readonly BlockId[]): boolean {
   const tr = editor.state.tr;
   for (const id of blockIds) {
@@ -180,15 +182,35 @@ export function markBlocksReviewed(editor: Editor, blockIds: readonly BlockId[])
 }
 
 /**
+ * The review of the whole text in one undoable step ("Marcar como revisado" / "Desfazer"): every
+ * AI block of the draft becomes `reviewed`, or goes back to `unreviewed`. Text, selection and
+ * scroll stay as they are, so typing is never part of it.
+ */
+export function setTextReview(editor: Editor, review: 'reviewed' | 'unreviewed'): boolean {
+  const from = review === 'reviewed' ? 'unreviewed' : 'reviewed';
+  const tr = editor.state.tr;
+  tr.doc.forEach((node, pos) => {
+    if (node.attrs[BLOCK_ATTR.ai] === from) tr.setNodeAttribute(pos, BLOCK_ATTR.ai, review);
+  });
+  if (!tr.docChanged) return false;
+  editor.view.dispatch(tr);
+  return true;
+}
+
+/**
  * Replaces the whole document, cover included (restore a version, reload after a save conflict).
  * Outside the undo history by default, and without an `update` (the store already holds this body).
  */
-export function setArticleBody(editor: Editor, body: Pick<ArticleBody, 'blocks' | 'cover'>, options: { history?: boolean; emitUpdate?: boolean } = {}): void {
+export function setArticleBody(editor: Editor, body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>, options: { history?: boolean; emitUpdate?: boolean } = {}): void {
   const { state } = editor;
   const doc = articleDocNode(state.schema, body);
   const tr = state.tr.replaceWith(0, state.doc.content.size, doc.content);
   const cover = readImageRef(body.cover);
   if (DOC_ATTR.cover in state.doc.attrs && !sameImageRef(readImageRef(state.doc.attrs[DOC_ATTR.cover]), cover)) tr.setDocAttribute(DOC_ATTR.cover, cover);
+  const coverSlot = cover ? null : readImageSlot(body.coverSlot);
+  if (DOC_ATTR.coverSlot in state.doc.attrs && JSON.stringify(readImageSlot(state.doc.attrs[DOC_ATTR.coverSlot])) !== JSON.stringify(coverSlot)) {
+    tr.setDocAttribute(DOC_ATTR.coverSlot, coverSlot);
+  }
   if (!options.history) tr.setMeta('addToHistory', false);
   if (!options.emitUpdate) tr.setMeta('preventUpdate', true);
   editor.view.dispatch(tr);
@@ -246,6 +268,29 @@ export function setFigureSources(editor: Editor, sources: FigureSources): void {
  */
 export function setArticleCover(editor: Editor, cover: ImageRef | null): boolean {
   const tr = setCoverTransaction(editor.state, cover);
+  if (!tr) return false;
+  dispatchImageStep(editor.view, tr);
+  return true;
+}
+
+// ——— Image slots ———
+
+/**
+ * "Escolher imagem" on an image slot (a figure the generation planned, or the cover suggestion with
+ * `COVER_BLOCK_ID`): one undoable step that saves. The figure keeps its id and evidence; pass what
+ * to show right away (`src`, `credit`, size) with the `ImageRef`. Start the form from
+ * `imageSlotDefaults(slot)`. `false` when the slot is gone.
+ */
+export function fillImageSlot(editor: Editor, blockId: BlockId, image: SlotFill): boolean {
+  const tr = fillImageSlotTransaction(editor.state, blockId, image);
+  if (!tr) return false;
+  dispatchImageStep(editor.view, tr);
+  return true;
+}
+
+/** "Dispensar" an image slot (or the cover suggestion with `COVER_BLOCK_ID`): one undoable step that saves. */
+export function dismissImageSlot(editor: Editor, blockId: BlockId): boolean {
+  const tr = dismissImageSlotTransaction(editor.state, blockId);
   if (!tr) return false;
   dispatchImageStep(editor.view, tr);
   return true;

@@ -95,11 +95,12 @@ describe('article schema', () => {
     assert.equal(figure.isBlock, true);
     assert.equal(figure.spec.selectable, true);
     assert.equal(figure.spec.draggable, false);
-    assert.deepEqual(Object.keys(figure.spec.attrs ?? {}).sort(), ['ai', 'alt', 'assetId', 'blockId', 'caption', 'credit', 'height', 'sourceRefs', 'src', 'width']);
+    assert.deepEqual(Object.keys(figure.spec.attrs ?? {}).sort(), ['ai', 'alt', 'assetId', 'blockId', 'caption', 'credit', 'height', 'slot', 'sourceRefs', 'src', 'width']);
   });
 
   test('the cover is a document attribute, not a node', () => {
     assert.ok('cover' in (schema.nodes.doc.spec.attrs ?? {}));
+    assert.ok('coverSlot' in (schema.nodes.doc.spec.attrs ?? {}), 'its suggestion too');
     assert.equal(schema.nodes.cover, undefined);
   });
 

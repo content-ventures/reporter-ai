@@ -2,9 +2,9 @@ import { closeHistory } from '@tiptap/pm/history';
 import type { DOMOutputSpec, Node as PMNode } from '@tiptap/pm/model';
 import { NodeSelection, Plugin, PluginKey, Selection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
-import { creditLine } from '../domain/index.ts';
-import type { AiReviewState, AssetId, BlockId, ImageRef, SourceRef } from '../domain/index.ts';
-import { EMPTY_BLOCK_ATTRS, figureAttrs, readImageRef } from './pm-json.ts';
+import { COVER_BLOCK_ID, creditLine } from '../domain/index.ts';
+import type { AiReviewState, AssetId, BlockId, ImageOrientation, ImageRef, ImageSlot, SourceRef } from '../domain/index.ts';
+import { EMPTY_BLOCK_ATTRS, figureAttrs, readImageRef, readImageSlot } from './pm-json.ts';
 import type { FigureAttrs, FigureDisplay, FigureSources } from './pm-json.ts';
 import { blockIdOf, blockTextOf, findBlockEntry, posToOffset } from './ranges.ts';
 import { DATA_ATTR, DOC_ATTR, FIGURE_ATTR, FIGURE_DISPLAY_ATTRS, NODE } from './schema.ts';
@@ -21,6 +21,10 @@ import type { ViewLike } from './view.ts';
  *   that comes back without it (undo, paste, restore, a block rebuilt by a suggestion).
  * - Rendering is plain HTML the Design System `Prose` styles: `figure[data-block-id] > img +
  *   figcaption` (caption, then `cite` with the credit line). Nothing here creates DOM.
+ * - An image slot (a figure the generation planned, no image yet) is the same atom with its
+ *   suggestion in the `slot` attr: `figure[data-slot][data-missing][data-display="line"] >
+ *   img[data-missing] + figcaption(subject)`, one compact line in the text. It is filled ("Escolher imagem") or dismissed ("Dispensar") as one
+ *   undoable step; the cover's suggestion is the `coverSlot` document attribute.
  */
 
 export type FigureInfo = FigureAttrs & {
@@ -74,6 +78,7 @@ export function readFigureAttrs(attrs: Record<string, unknown>): FigureAttrs {
       width: asNumber(attrs[FIGURE_ATTR.width]),
       height: asNumber(attrs[FIGURE_ATTR.height]),
     },
+    attrs[FIGURE_ATTR.slot],
   );
 }
 
@@ -130,6 +135,52 @@ export function coverOf(doc: PMNode): ImageRef | null {
   return readImageRef(doc.attrs[DOC_ATTR.cover]);
 }
 
+/** The generation's suggestion for the cover, while the document has no cover; `null` otherwise. */
+export function coverSlotOf(doc: PMNode): ImageSlot | null {
+  return coverOf(doc) ? null : readImageSlot(doc.attrs[DOC_ATTR.coverSlot]);
+}
+
+/** An open image slot: a figure without an image yet, or the cover suggestion (`COVER_BLOCK_ID`). */
+export type ImageSlotInfo = {
+  role: 'cover' | 'figure';
+  /** The figure block, or `COVER_BLOCK_ID`. */
+  blockId: BlockId;
+  slot: ImageSlot;
+  /** Figures: position before the node and index among the top-level blocks. */
+  pos?: number;
+  index?: number;
+};
+
+function slotInfoOf(figure: FigureInfo | null): ImageSlotInfo | null {
+  if (!figure || figure.assetId || !figure.slot) return null;
+  return { role: 'figure', blockId: figure.blockId, slot: figure.slot, pos: figure.pos, index: figure.index };
+}
+
+/** Every open slot of the document in reading order: the cover suggestion first, then the figures. */
+export function imageSlotsIn(doc: PMNode): ImageSlotInfo[] {
+  const slots: ImageSlotInfo[] = [];
+  const cover = coverSlotOf(doc);
+  if (cover) slots.push({ role: 'cover', blockId: COVER_BLOCK_ID, slot: cover });
+  for (const figure of figuresIn(doc)) {
+    const info = slotInfoOf(figure);
+    if (info) slots.push(info);
+  }
+  return slots;
+}
+
+/** The slot a selection holds (a click on it selects it whole), or `null`. */
+export function imageSlotAt(selection: Selection): ImageSlotInfo | null {
+  return slotInfoOf(figureAt(selection));
+}
+
+export function findImageSlot(doc: PMNode, blockId: BlockId): ImageSlotInfo | null {
+  if (blockId === COVER_BLOCK_ID) {
+    const cover = coverSlotOf(doc);
+    return cover ? { role: 'cover', blockId: COVER_BLOCK_ID, slot: cover } : null;
+  }
+  return slotInfoOf(findFigure(doc, blockId));
+}
+
 // ——— HTML (Prose hooks) ———
 
 const DISPLAYABLE_SRC = /^(https?:|blob:|data:image\/)/i;
@@ -166,8 +217,47 @@ export function figureDisplaySize(width: number, height: number): { width: numbe
   return { width: Math.max(1, Math.round((width * FIGURE_MAX_HEIGHT) / height)), height: FIGURE_MAX_HEIGHT };
 }
 
+/** The size an empty slot frame is drawn with, per orientation (landscape: Prose's 16:9 column frame). */
+const SLOT_FRAME: Readonly<Record<ImageOrientation, { width: number; height: number } | null>> = {
+  landscape: null,
+  portrait: figureDisplaySize(1080, 1350),
+  square: figureDisplaySize(1080, 1080),
+};
+
+/** The slot's name for screen readers: what to show and how to fill it (COPY §2.4). */
+export function slotAriaLabel(subject: string): string {
+  return `Imagem sugerida: ${subject}. Arraste uma imagem ou pressione Enter para escolher.`;
+}
+
+/**
+ * An image slot: `figure[data-slot][data-missing][data-display="line"]` (`aria-roledescription`
+ * "Sugestão de imagem", `aria-label` with what to show and how to fill it) drawn by Prose as one
+ * line "Imagem sugerida: {assunto}" — the DS writes the prefix, so the figcaption holds only the
+ * subject. The empty `img[data-missing]` (sized by the orientation) stays in the DOM: a dropped
+ * file still lands on it.
+ */
+function slotDOMSpec(slot: ImageSlot, htmlAttributes: Record<string, unknown>): DOMOutputSpec {
+  const outer: Record<string, unknown> = {
+    ...htmlAttributes,
+    [DATA_ATTR.slot]: '',
+    [DATA_ATTR.missing]: '',
+    [DATA_ATTR.display]: 'line',
+    'aria-roledescription': 'Sugestão de imagem',
+    'aria-label': slotAriaLabel(slot.subject),
+  };
+  if (slot.orientation) outer[DATA_ATTR.orientation] = slot.orientation;
+  const img: Record<string, string> = { alt: '', draggable: 'false', [DATA_ATTR.missing]: '' };
+  const frame = slot.orientation ? SLOT_FRAME[slot.orientation] : null;
+  if (frame) {
+    img.width = String(frame.width);
+    img.height = String(frame.height);
+  }
+  return ['figure', outer, ['img', img], ['figcaption', slot.subject]];
+}
+
 export function figureDOMSpec(attrs: Record<string, unknown>, htmlAttributes: Record<string, unknown> = {}): DOMOutputSpec {
   const figure = readFigureAttrs(attrs);
+  if (!figure.assetId && figure.slot) return slotDOMSpec(figure.slot, htmlAttributes);
   const src = displayableSrc(figure.src);
   // `draggable="false"`: the browser would otherwise drag the picture itself out of the atom.
   const img: Record<string, string> = { alt: figure.alt?.trim() ?? '', draggable: 'false' };
@@ -208,6 +298,14 @@ function tinyImage(img: ElementLike): boolean {
  */
 export function parseFigureElement(element: ElementLike): Partial<FigureAttrs> | false {
   const isImg = element.nodeName.toUpperCase() === 'IMG';
+  if (!isImg && element.getAttribute(DATA_ATTR.slot) !== null) {
+    // An image slot copied from this editor: its subject is the figcaption.
+    const slot = readImageSlot({
+      subject: element.querySelector('figcaption')?.textContent ?? '',
+      orientation: element.getAttribute(DATA_ATTR.orientation) ?? undefined,
+    });
+    return slot ? { assetId: null, slot } : false;
+  }
   const img = isImg ? element : element.querySelector('img');
   if (!img) return false;
   const assetId = isImg ? null : element.getAttribute(DATA_ATTR.assetId)?.trim() || null;
@@ -331,10 +429,12 @@ export function insertFigureTransaction(state: EditorState, input: FigureInput, 
 
 function patchedAttrs(current: FigureAttrs, patch: FigurePatch): FigureAttrs {
   const pick = <K extends keyof FigurePatch>(key: K, fallback: FigureAttrs[K]) => (key in patch ? (patch[key] ?? undefined) : (fallback ?? undefined));
-  return figureAttrs(
+  const next = figureAttrs(
     { assetId: pick('assetId', current.assetId), alt: pick('alt', current.alt), caption: pick('caption', current.caption) },
     { credit: pick('credit', current.credit), src: pick('src', current.src), width: pick('width', current.width), height: pick('height', current.height) },
   );
+  // An image answers the slot; until then the suggestion stays as it is.
+  return { ...next, slot: next.assetId ? null : current.slot };
 }
 
 /**
@@ -428,11 +528,46 @@ export function sameImageRef(a: ImageRef | null | undefined, b: ImageRef | null 
   return a?.assetId === b?.assetId && a?.alt === b?.alt && a?.caption === b?.caption;
 }
 
-/** Sets (or, with `null`, removes) the cover as one undoable step that saves; `null` when unchanged. */
+/**
+ * Sets (or, with `null`, removes) the cover as one undoable step that saves; `null` when unchanged.
+ * A cover answers the cover suggestion (`coverSlot` goes with it).
+ */
 export function setCoverTransaction(state: EditorState, cover: ImageRef | null): Transaction | null {
   const next = cover ? readImageRef(cover) : null;
   if (sameImageRef(coverOf(state.doc), next) || !(DOC_ATTR.cover in state.doc.attrs)) return null;
-  return closeHistory(state.tr).setDocAttribute(DOC_ATTR.cover, next);
+  const tr = closeHistory(state.tr).setDocAttribute(DOC_ATTR.cover, next);
+  if (next && state.doc.attrs[DOC_ATTR.coverSlot]) tr.setDocAttribute(DOC_ATTR.coverSlot, null);
+  return tr;
+}
+
+// ——— Image slots ———
+
+/** The image that fills a slot: the domain `ImageRef` plus what to show right away. */
+export type SlotFill = ImageRef & FigureDisplay;
+
+/**
+ * "Escolher imagem" on a slot, as one undoable step that saves: the figure keeps its id and
+ * evidence and shows the image (the suggestion goes); `COVER_BLOCK_ID` sets the cover. `null`
+ * when the slot is gone or the image has no asset.
+ */
+export function fillImageSlotTransaction(state: EditorState, blockId: BlockId, image: SlotFill): Transaction | null {
+  if (!image.assetId || !findImageSlot(state.doc, blockId)) return null;
+  if (blockId === COVER_BLOCK_ID) return setCoverTransaction(state, { assetId: image.assetId, alt: image.alt, caption: image.caption });
+  const figure = findFigure(state.doc, blockId);
+  if (!figure) return null;
+  const next = figureAttrs(image, image);
+  const tr = closeHistory(state.tr);
+  for (const name of Object.keys(next) as (keyof FigureAttrs)[]) {
+    if (next[name] !== figure[name]) tr.setNodeAttribute(figure.pos, name, next[name]);
+  }
+  return tr;
+}
+
+/** "Dispensar" a slot as one undoable step that saves (the cover suggestion leaves the document). */
+export function dismissImageSlotTransaction(state: EditorState, blockId: BlockId): Transaction | null {
+  if (!findImageSlot(state.doc, blockId)) return null;
+  if (blockId === COVER_BLOCK_ID) return closeHistory(state.tr).setDocAttribute(DOC_ATTR.coverSlot, null);
+  return removeFigureTransaction(state, blockId);
 }
 
 // ——— Anchors ———
