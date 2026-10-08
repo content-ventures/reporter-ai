@@ -1,4 +1,4 @@
-import { expect, type ConsoleMessage, type Page } from "@playwright/test";
+import { expect, type ConsoleMessage, type Locator, type Page } from "@playwright/test";
 
 /** The two widths every screen must hold (PLAN §8: desktop and a 390 px phone). */
 export const VIEWPORTS = [
@@ -56,4 +56,14 @@ export async function expectHeadingOutline(page: Page): Promise<void> {
     if (previous && heading.level > previous.level + 1) skips.push(`h${previous.level} → h${heading.level} "${heading.text}"`);
   });
   expect(skips, "níveis de título sem pular").toEqual([]);
+}
+
+/**
+ * Picks a DS ChoiceCard the way a person does: a click on the card (its whole label chooses; the
+ * thumbnail paints over the native radio, so the radio itself is not the click target).
+ */
+export async function chooseCard(group: Locator, name: string | RegExp): Promise<void> {
+  const radio = group.getByRole("radio", { name });
+  await group.locator("label", { has: group.page().getByRole("radio", { name }) }).click();
+  await expect(radio).toBeChecked();
 }

@@ -1,10 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { expectNoHorizontalOverflow, watchErrors } from "./support";
+import { chooseCard, expectNoHorizontalOverflow, watchErrors } from "./support";
 
 /**
  * Main path of R1 · Experiência (PLAN §8): paste a transcript → link the speakers → authorise →
- * generate the article → edit → send → approve → generate the carousel → send → approve → the
- * export package, with no console error on the way. Runs on a fresh workspace (new context).
+ * generate the article → edit → send → approve → choose a carousel model → generate the carousel →
+ * send → approve → the export package, with no console error on the way. Runs on a fresh
+ * workspace (new context).
  */
 
 const TITLE = "Cooperativa de leite do Vale";
@@ -46,7 +47,7 @@ test("caminho principal: da transcrição ao pacote exportado", async ({ page })
 
   await test.step("autorizar e gerar o artigo", async () => {
     await page.getByRole("textbox", { name: "Título interno" }).fill(TITLE);
-    await page.getByRole("radio", { name: "Curta" }).click();
+    await page.getByRole("radio", { name: /^Curto/ }).click();
     await page.getByRole("switch", { name: "Os falantes autorizaram o uso" }).click();
     await page.getByRole("button", { name: "Gerar artigo" }).click();
     await page.waitForURL(/\/productions\/[^/]+\/article$/);
@@ -74,12 +75,18 @@ test("caminho principal: da transcrição ao pacote exportado", async ({ page })
     await expect(page.getByText(/Versão \d+ aprovada/).first()).toBeVisible();
   });
 
-  await test.step("gerar, enviar e aprovar o carrossel", async () => {
+  await test.step("escolher o modelo, gerar, enviar e aprovar o carrossel", async () => {
     await page.getByRole("button", { name: "Gerar carrossel" }).first().click();
     await page.waitForURL(/\/carousel$/);
+    // A square model from the library (its format tab first): the preview takes its size before anything is generated.
+    await page.getByRole("tab", { name: /Quadrado/ }).click();
+    await chooseCard(page.getByRole("radiogroup", { name: "Modelo do carrossel" }), /^Aspas/);
+    await expect(page.getByRole("img", { name: "Prévia da capa no modelo Aspas" })).toBeVisible();
+    await expect(page.getByText("Capa · 1080 × 1080 px")).toBeVisible();
     await page.getByRole("button", { name: /^Gerar textos/ }).first().click();
     const sendCarousel = page.getByRole("button", { name: "Enviar para aprovação" }).first();
     await expect(sendCarousel).toBeEnabled({ timeout: 90_000 });
+    await expect(page.getByLabel("Situação do carrossel")).toContainText("Modelo Aspas");
     // The cover's title is a whole line of the article: never an attribution cut to ", diz".
     const coverTitle = page.getByRole("textbox", { name: "Título" }).first();
     await expect(coverTitle).not.toHaveValue(/(,|\s)diz$/);
