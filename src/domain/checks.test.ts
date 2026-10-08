@@ -4,7 +4,7 @@ import { COVER_BLOCK_ID, figureBlock, markBlocksReviewed, paragraphBlock, quoteB
 import type { ArticleBody } from './article.ts';
 import { assetLookupOf } from './asset.ts';
 import type { ImageAsset } from './asset.ts';
-import { ARTICLE_CHECKS, CAROUSEL_CHECKS, readiness, runChecks } from './checks.ts';
+import { ARTICLE_CHECKS, CAROUSEL_CHECKS, readiness, runChecks, sizeCheck } from './checks.ts';
 import type { CheckResult } from './checks.ts';
 import { slotIssues } from './carousel.ts';
 import type { VersionRef } from './refs.ts';
@@ -17,11 +17,12 @@ describe('article readiness checks', () => {
   test('report title, length, quotes, AI review, links and generation', () => {
     const source = sampleSource(createKit());
     const body = sampleArticle(source);
-    const results = byId(runChecks(ARTICLE_CHECKS, { body, brief: { sections: 3, length: 'short', revision: 1 }, sources: [source], generation: idle }));
+    const results = byId(runChecks(ARTICLE_CHECKS, { body, brief: { sections: 3, size: 'standard', revision: 1 }, sources: [source], generation: idle }));
     assert.equal(results['article.title'].status, 'pass');
-    assert.equal(results['article.length'].status, 'warn');
-    assert.deepEqual(results['article.length'].progress, { current: 33, total: 500 });
-    assert.equal(results['article.length'].detail, '33/500 palavras');
+    assert.equal(results['article.length'].label, 'Tamanho');
+    assert.equal(results['article.length'].status, 'info', 'a short text is information, never a warning');
+    assert.deepEqual(results['article.length'].progress, { current: 192, total: 4000 });
+    assert.equal(results['article.length'].meta, '0,1/2 laudas');
     assert.equal(results['article.quotes'].status, 'pass');
     assert.equal(results['article.quotes'].detail, '2 de 2 conferidas');
     assert.equal(results['article.ai-reviewed'].status, 'warn');
@@ -39,7 +40,7 @@ describe('article readiness checks', () => {
       title: '',
       blocks: [quoteBlock('q1', 'Frase que ninguém disse na entrevista.'), paragraphBlock('p1', [{ text: 'link', marks: ['link'], href: 'javascript:alert(1)' }])],
     };
-    const results = byId(runChecks(ARTICLE_CHECKS, { body, brief: { sections: 3, length: 'medium', revision: 1 }, sources: [source], generation: idle }));
+    const results = byId(runChecks(ARTICLE_CHECKS, { body, brief: { sections: 3, size: 'standard', revision: 1 }, sources: [source], generation: idle }));
     assert.equal(results['article.title'].status, 'warn');
     assert.equal(results['article.quotes'].status, 'warn');
     assert.deepEqual(results['article.quotes'].targets, [{ blockId: 'q1', from: 0, to: 38 }]);
@@ -50,7 +51,7 @@ describe('article readiness checks', () => {
   test('a running or interrupted generation is the only blocker', () => {
     const source = sampleSource(createKit());
     const body = markBlocksReviewed(sampleArticle(source), ['b-intro', 'b-h1', 'b-p1', 'b-q1']);
-    const context = { body, brief: { sections: 3, length: 'short' as const, revision: 1 }, sources: [source] };
+    const context = { body, brief: { sections: 3, size: 'standard' as const, revision: 1 }, sources: [source] };
     const running = readiness(runChecks(ARTICLE_CHECKS, { ...context, generation: { running: true, interrupted: false } }));
     assert.equal(running.ready, false);
     assert.equal(running.blockers[0].detail, 'Geração em andamento');
@@ -58,12 +59,80 @@ describe('article readiness checks', () => {
     assert.equal(interrupted.ready, false);
     const fine = readiness(runChecks(ARTICLE_CHECKS, { ...context, generation: idle }));
     assert.equal(fine.ready, true);
-    assert.deepEqual([fine.passed, fine.total], [4, 5], 'length warns; no cover is neutral; links and images are not applicable');
+    assert.deepEqual([fine.passed, fine.total], [4, 4], 'a short text and no cover are neutral; links and images are not applicable');
+  });
+});
+
+describe('"Tamanho": the lauda rule (1 lauda = 2.000 characters, body only)', () => {
+  /** A body of exactly `chars` characters (paragraphs of 100; blank lines between blocks never count). */
+  const bodyOf = (chars: number, title = 'Um título que não conta'): ArticleBody => {
+    const blocks = [];
+    for (let left = chars, index = 0; left > 0; left -= 100, index += 1) blocks.push(paragraphBlock(`p${index}`, 'x'.repeat(Math.min(100, left))));
+    return { type: 'article', title, blocks };
+  };
+  const check = (chars: number, size: 'short' | 'standard', materialChars?: number) => sizeCheck(bodyOf(chars), { size }, idle, materialChars);
+
+  test('inside the range passes: Curto 1.000–2.000, Padrão 2.001–4.000', () => {
+    assert.deepEqual(check(2764, 'standard'), { status: 'pass', meta: '1,4/2 laudas', detail: '2.764 de até 4.000 caracteres', progress: { current: 2764, total: 4000 } });
+    assert.equal(check(4000, 'standard').status, 'pass');
+    assert.equal(check(2001, 'standard').status, 'pass');
+    assert.equal(check(1000, 'short').status, 'pass');
+    assert.equal(check(2000, 'short').meta, '1/1 lauda');
+  });
+
+  test('above the maximum warns, never blocks', () => {
+    assert.deepEqual(check(4640, 'standard'), { status: 'warn', meta: '2,4/2 laudas', detail: 'Passa 640 caracteres de 2 laudas', progress: { current: 4640, total: 4000 } });
+    assert.equal(check(2001, 'short').detail, 'Passa 1 caracteres de 1 lauda');
+    const results = runChecks(ARTICLE_CHECKS, { body: bodyOf(6000), brief: { sections: 3, size: 'standard', revision: 1 }, sources: [], generation: idle });
+    assert.equal(results.find((result) => result.id === 'article.length')?.blocking, false);
+  });
+
+  test('below the minimum only informs: the AI never pads a text', () => {
+    assert.deepEqual(check(900, 'short', 900), {
+      status: 'info',
+      meta: '0,5/1 lauda',
+      detail: 'O material não rende mais. A IA não completa o texto.',
+      progress: { current: 900, total: 2000 },
+    });
+    assert.equal(check(800, 'short', 5000).detail, 'Abaixo de 1.000 caracteres: confira se a notícia se sustenta');
+    assert.equal(check(800, 'short', 5000).meta, '0,4/1 lauda');
+    assert.equal(check(2000, 'standard', 5000).detail, 'Cabe em 1 lauda: considere Curto na pauta');
+    assert.equal(check(2000, 'standard', 5000).meta, '1/2 laudas');
+    assert.equal(check(1500, 'standard', 1800).detail, 'O material não rende mais. A IA não completa o texto.');
+    assert.equal(check(1500, 'standard').detail, 'Cabe em 1 lauda: considere Curto na pauta', 'unknown material: the size advice');
+  });
+
+  test('no text, a running generation or the partial text of an interrupted one is not applicable', () => {
+    assert.deepEqual(check(0, 'standard'), { status: 'na', meta: '—', detail: 'Sem texto' });
+    assert.deepEqual(sizeCheck(bodyOf(3000), { size: 'standard' }, { running: true, interrupted: false }), { status: 'na', meta: '—', detail: 'Gerando' });
+    assert.deepEqual(sizeCheck(bodyOf(1500), { size: 'standard' }, { running: false, interrupted: true }), { status: 'na', meta: '—', detail: 'Geração interrompida' });
+  });
+
+  test('counts the body only: title, captions, alt text and image slots never count; neither do line breaks', () => {
+    const body: ArticleBody = {
+      type: 'article',
+      title: 'x'.repeat(500),
+      cover: { assetId: 'img-1', caption: 'x'.repeat(300), alt: 'x'.repeat(300) },
+      blocks: [
+        paragraphBlock('p1', 'x'.repeat(1000)),
+        figureBlock('f1', { assetId: 'img-2', caption: 'x'.repeat(200), alt: 'x'.repeat(200) }),
+        paragraphBlock('p2', 'x'.repeat(1000)),
+      ],
+    };
+    assert.equal(sizeCheck(body, { size: 'short' }, idle).meta, '1/1 lauda');
+    assert.equal(sizeCheck(body, { size: 'short' }, idle).status, 'pass');
+  });
+
+  test('info and na never count against readiness', () => {
+    const results = runChecks(ARTICLE_CHECKS, { body: bodyOf(500), brief: { sections: 2, size: 'short', revision: 1 }, sources: [], generation: idle });
+    const counted = readiness(results);
+    assert.equal(results.find((result) => result.id === 'article.length')?.status, 'info');
+    assert.equal(counted.total, results.filter((result) => result.status !== 'na' && result.status !== 'info').length);
   });
 });
 
 describe('image checks', () => {
-  const brief = { sections: 3, length: 'short' as const, revision: 1 };
+  const brief = { sections: 3, size: 'standard' as const, revision: 1 };
   const asset = (id: string, overrides: Partial<ImageAsset> = {}): ImageAsset => ({
     id,
     workspaceId: 'ws',
@@ -154,7 +223,7 @@ describe('carousel readiness checks', () => {
     const results = byId(runChecks(CAROUSEL_CHECKS, { body: sampleCarousel(), template: TEMPLATE, inputs: [parent], latestApprovedParent: parent, generation: idle }));
     // "Imagem da capa" does not apply: the article has no cover.
     assert.ok(Object.values(results).every((result) => result.status === 'pass' || (result.id === 'carousel.cover-image' && result.status === 'na')), JSON.stringify(results));
-    assert.equal(results['carousel.article-version'].detail, 'Feito a partir da v1');
+    assert.equal(results['carousel.article-version'].detail, 'Feito a partir do artigo aprovado');
   });
 
   test('warn on overflow, missing cover, wrong count and an outdated article version', () => {
@@ -167,7 +236,7 @@ describe('carousel readiness checks', () => {
     assert.equal(results['carousel.limits'].status, 'warn');
     assert.equal(results['carousel.limits'].detail, 'Citação excede 140 caracteres.');
     assert.deepEqual(results['carousel.limits'].progress, { current: 1, total: 2 });
-    assert.equal(results['carousel.article-version'].detail, 'Feito a partir da v1; a aprovada é a v2');
+    assert.equal(results['carousel.article-version'].detail, 'Feito a partir de uma versão anterior do artigo');
     const unknown = byId(runChecks(CAROUSEL_CHECKS, { body: { ...body, templateId: 'nope' }, inputs: [], generation: idle }));
     assert.equal(unknown['carousel.template'].status, 'warn');
     assert.equal(unknown['carousel.limits'].status, 'na');

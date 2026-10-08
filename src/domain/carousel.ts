@@ -20,7 +20,11 @@ export type Slide = {
 
 export type CarouselBody = { type: 'carousel'; templateId: TemplateId; slides: Slide[] };
 
-export type SlotRole = 'kicker' | 'title' | 'body' | 'quote' | 'attribution' | 'cta';
+/**
+ * What a slot holds. `stat` is the figure of a data slide ("38%"); `list` holds one item per line
+ * break (the renderer numbers them). Switching templates maps slots by role.
+ */
+export type SlotRole = 'kicker' | 'title' | 'body' | 'quote' | 'attribution' | 'cta' | 'stat' | 'list';
 
 export type SlotSpec = {
   id: string;
@@ -49,7 +53,21 @@ export type CarouselTemplate = {
   maxSlides: number;
   coverLayoutId: string;
   layouts: SlideLayout[];
+  /**
+   * Layouts the generation puts in place of a "Ponto principal" when the approved article has the
+   * material for them (`data`: a figure; `list`: a list or an enumeration). Absent: the default
+   * sequence only.
+   */
+  featuredLayouts?: string[];
 };
+
+/** Items of a list slot: one per line break, blank lines ignored. */
+export function listItems(text: string): string[] {
+  return text
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 /** Wireframe R1·3 default structure: Capa · Contexto · Ponto principal · Citação · Conclusão. */
 export const DEFAULT_SLIDE_SEQUENCE: readonly string[] = ['cover', 'context', 'point', 'quote', 'closing'];

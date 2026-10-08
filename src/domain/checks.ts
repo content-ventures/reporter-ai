@@ -1,20 +1,21 @@
-import { aiBlockIds, articleImages, articleLinks, articleStats, blockText, COVER_BLOCK_ID, findBlock, unreviewedAiBlockIds } from './article.ts';
+import { aiBlockIds, articleCharacters, articleImages, articleLinks, blockText, COVER_BLOCK_ID, findBlock, unreviewedAiBlockIds } from './article.ts';
 import type { ArticleBody } from './article.ts';
+import { articleImageSlots } from './article-slots.ts';
 import { creditLine, IMAGE_ISSUE_LABELS, imageAlt, imageIssues, NO_ASSETS } from './asset.ts';
 import type { AssetLookup, ImageIssue, ImageRef } from './asset.ts';
 import { DEFAULT_SLIDE_SEQUENCE, slotIssues } from './carousel.ts';
 import type { CarouselBody, CarouselTemplate } from './carousel.ts';
 import type { BlockId, CheckId } from './ids.ts';
 import type { PieceKind } from './piece.ts';
-import { LENGTH_TARGETS } from './production.ts';
 import type { Brief } from './production.ts';
 import { checkQuotes } from './quotes.ts';
 import type { TextRange, VersionRef } from './refs.ts';
+import { ARTICLE_SIZE_IDS, groupDigits, laudaUnit, sizeFit, sizeMeta, sizeOf } from './sizing.ts';
 import type { Source } from './source.ts';
 import { normalizeLink } from './text/links.ts';
 
 /**
- * Readiness checks, a data-driven registry. Only "Geração concluída" blocks approval: the rest
+ * Readiness checks, a data-driven registry. Only "Texto da IA" (the generation finished) blocks approval: the rest
  * are warnings because the human decides. The same results feed the studio status line, the
  * review side panel, the "Prontidão" meter and the snapshot stored with each decision.
  *
@@ -29,8 +30,10 @@ export type CheckResult = {
   label: string;
   status: CheckStatus;
   blocking: boolean;
-  /** Short pt-BR detail: "812/800 palavras", "3 de 4 conferidas". */
+  /** Short pt-BR detail: "2.764 de até 4.000 caracteres", "3 de 4 conferidas". */
   detail?: string;
+  /** Short value for the row, shown before progress and detail: "1,4/2 laudas". */
+  meta?: string;
   /** Meter value for MeterList ("citações conferidas 3/4"). */
   progress?: { current: number; total: number };
   /** Where to jump to fix it (next pending item first). */
@@ -50,6 +53,11 @@ export type ArticleCheckContext = {
   generation: GenerationState;
   /** Image metadata (credit, rights) from the AssetStore; without it every image reads as not found. */
   assets?: AssetLookup;
+  /**
+   * Characters of the longest article the material supports, when the adapter knows: "Tamanho"
+   * then tells a text the material cannot fill from one a person could still grow.
+   */
+  materialChars?: number;
 };
 
 export type CarouselCheckContext = {
@@ -66,7 +74,7 @@ export type CarouselCheckContext = {
   assets?: AssetLookup;
 };
 
-export type CheckOutcome = Pick<CheckResult, 'status' | 'detail' | 'progress' | 'targets'>;
+export type CheckOutcome = Pick<CheckResult, 'status' | 'detail' | 'meta' | 'progress' | 'targets'>;
 
 export type CheckDefinition<C> = {
   id: CheckId;
@@ -96,6 +104,37 @@ const ISSUE_DETAIL: Record<ImageIssue, (count: number) => string> = {
   missing_asset: (count) => countLabel(count, 'não encontrada', 'não encontradas'),
 };
 
+/**
+ * "Tamanho" (João's lauda rule): inside the size's range passes; above it warns (never blocks);
+ * below it only informs, because the system never asks to pad a text. Below the range, the
+ * detail tells a material that gives no more (the AI does not complete the text) from a text a
+ * person could still grow (Curto: does the news stand? Padrão: it fits the smaller size). The
+ * partial text of an interrupted generation is not measured: it is short because the run stopped.
+ */
+export function sizeCheck(body: ArticleBody, brief: Pick<Brief, 'size'>, generation: GenerationState, materialChars?: number): CheckOutcome {
+  if (generation.running) return { status: 'na', meta: '—', detail: 'Gerando' };
+  if (generation.interrupted) return { status: 'na', meta: '—', detail: 'Geração interrompida' };
+  const chars = articleCharacters(body);
+  if (chars === 0) return { status: 'na', meta: '—', detail: 'Sem texto' };
+  const spec = sizeOf(brief.size);
+  const meta = sizeMeta(chars, spec.id);
+  const progress = { current: chars, total: spec.maxChars };
+  const fit = sizeFit(spec.id, chars);
+  if (fit === 'inside') return { status: 'pass', meta, detail: `${groupDigits(chars)} de até ${groupDigits(spec.maxChars)} caracteres`, progress };
+  if (fit === 'above') {
+    return { status: 'warn', meta, detail: `Passa ${groupDigits(chars - spec.maxChars)} caracteres de ${spec.laudas} ${laudaUnit(spec.laudas)}`, progress };
+  }
+  if (materialChars !== undefined && materialChars < spec.minChars) {
+    return { status: 'info', meta, detail: 'O material não rende mais. A IA não completa o texto.', progress };
+  }
+  // The next smaller size this text fits in, if any ("Cabe em 1 lauda: considere Curto na pauta").
+  const smaller = ARTICLE_SIZE_IDS.map(sizeOf).filter((candidate) => candidate.maxChars < spec.maxChars && chars <= candidate.maxChars).pop();
+  if (smaller) {
+    return { status: 'info', meta, detail: `Cabe em ${smaller.laudas} ${laudaUnit(smaller.laudas)}: considere ${smaller.label} na pauta`, progress };
+  }
+  return { status: 'info', meta, detail: `Abaixo de ${groupDigits(spec.minChars)} caracteres: confira se a notícia se sustenta`, progress };
+}
+
 function generationCheck(generation: GenerationState): CheckOutcome {
   if (generation.running) return { status: 'fail', detail: 'Geração em andamento' };
   if (generation.interrupted) return { status: 'fail', detail: 'Geração interrompida: continue ou edite o texto' };
@@ -116,24 +155,30 @@ export const ARTICLE_CHECKS: readonly CheckDefinition<ArticleCheckContext>[] = [
     pieceKind: 'article',
     blocking: false,
     evaluate: ({ body, assets = NO_ASSETS }) => {
-      // The cover is optional (D04): its absence is a neutral fact, not a warning.
-      if (!body.cover) return { status: 'info', detail: 'Sem capa', targets: [imageTarget(COVER_BLOCK_ID)] };
+      // The cover is optional (D04): its absence is a neutral fact, not a warning (its suggestion too).
+      if (!body.cover) return { status: 'info', detail: body.coverSlot ? 'Sem capa · 1 sugestão' : 'Sem capa', targets: [imageTarget(COVER_BLOCK_ID)] };
       if (!assets(body.cover.assetId)) return { status: 'warn', detail: 'Imagem não encontrada neste navegador', targets: [imageTarget(COVER_BLOCK_ID)] };
       return { status: 'pass' };
     },
   },
   {
-    id: 'article.length',
-    label: 'Extensão no alvo',
+    id: 'article.image-slots',
+    label: 'Imagens sugeridas',
     pieceKind: 'article',
     blocking: false,
-    evaluate: ({ body, brief }) => {
-      const target = LENGTH_TARGETS[brief.length];
-      const { words } = articleStats(body);
-      const detail = `${words}/${target.words} palavras`;
-      const progress = { current: words, total: target.words };
-      return words >= target.min && words <= target.max ? { status: 'pass', detail, progress } : { status: 'warn', detail, progress };
+    evaluate: ({ body }) => {
+      // Figure slots only: the cover suggestion stays under "Imagem de destaque" (optional, D04).
+      const open = articleImageSlots(body).filter((use) => use.role === 'figure');
+      if (open.length === 0) return { status: 'na' };
+      return { status: 'warn', detail: `${open.length} a preencher`, targets: open.map((use) => imageTarget(use.blockId)) };
     },
+  },
+  {
+    id: 'article.length',
+    label: 'Tamanho',
+    pieceKind: 'article',
+    blocking: false,
+    evaluate: ({ body, brief, generation, materialChars }) => sizeCheck(body, brief, generation, materialChars),
   },
   {
     id: 'article.quotes',
@@ -156,7 +201,7 @@ export const ARTICLE_CHECKS: readonly CheckDefinition<ArticleCheckContext>[] = [
   },
   {
     id: 'article.ai-reviewed',
-    label: 'Blocos da IA revisados',
+    label: 'Texto revisado',
     pieceKind: 'article',
     blocking: false,
     evaluate: ({ body }) => {
@@ -183,7 +228,7 @@ export const ARTICLE_CHECKS: readonly CheckDefinition<ArticleCheckContext>[] = [
       const broken = links.filter((link) => !normalizeLink(link.href).ok);
       const outcome: CheckOutcome = {
         status: broken.length === 0 ? 'pass' : 'warn',
-        detail: broken.length === 0 ? `${links.length} válidos` : `${broken.length} inválidos`,
+        detail: broken.length === 0 ? countLabel(links.length, 'válido', 'válidos') : countLabel(broken.length, 'inválido', 'inválidos'),
         progress: { current: links.length - broken.length, total: links.length },
       };
       if (broken.length > 0) outcome.targets = broken.map((link) => wholeBlock(body, link.blockId));
@@ -230,7 +275,7 @@ export const ARTICLE_CHECKS: readonly CheckDefinition<ArticleCheckContext>[] = [
   },
   {
     id: 'article.generation',
-    label: 'Geração concluída',
+    label: 'Texto da IA',
     pieceKind: 'article',
     blocking: true,
     evaluate: ({ generation }) => generationCheck(generation),
@@ -240,11 +285,11 @@ export const ARTICLE_CHECKS: readonly CheckDefinition<ArticleCheckContext>[] = [
 export const CAROUSEL_CHECKS: readonly CheckDefinition<CarouselCheckContext>[] = [
   {
     id: 'carousel.template',
-    label: 'Template',
+    label: 'Modelo',
     pieceKind: 'carousel',
     blocking: false,
     evaluate: ({ body, template }) =>
-      template && template.id === body.templateId ? { status: 'pass', detail: template.name } : { status: 'warn', detail: 'Template não encontrado' },
+      template && template.id === body.templateId ? { status: 'pass', detail: template.name } : { status: 'warn', detail: 'Modelo não encontrado' },
   },
   {
     id: 'carousel.cover',
@@ -311,15 +356,16 @@ export const CAROUSEL_CHECKS: readonly CheckDefinition<CarouselCheckContext>[] =
     evaluate: ({ inputs, latestApprovedParent }) => {
       const used = inputs.find((input) => input.pieceId === latestApprovedParent?.pieceId) ?? inputs[0];
       if (!used) return { status: 'warn', detail: 'Sem versão de origem' };
+      // Writer words, no version numbers (D11): the numbers stay in the version history and Logs.
       if (!latestApprovedParent || used.versionId === latestApprovedParent.versionId) {
-        return { status: 'pass', detail: `Feito a partir da v${used.number}` };
+        return { status: 'pass', detail: 'Feito a partir do artigo aprovado' };
       }
-      return { status: 'warn', detail: `Feito a partir da v${used.number}; a aprovada é a v${latestApprovedParent.number}` };
+      return { status: 'warn', detail: 'Feito a partir de uma versão anterior do artigo' };
     },
   },
   {
     id: 'carousel.generation',
-    label: 'Geração concluída',
+    label: 'Texto da IA',
     pieceKind: 'carousel',
     blocking: true,
     evaluate: ({ generation }) => generationCheck(generation),

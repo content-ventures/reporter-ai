@@ -36,7 +36,15 @@ export type ReviewRequest = {
   subject: VersionRef;
   requestedBy: PersonId;
   requestedAt: IsoDateTime;
+  /** "Recado": what the sender tells the approver. */
   note?: string;
+  /** "Quem aprova". Absent (legacy requests): any member with the gate role may pick it up. */
+  assigneeId?: PersonId;
+  /** "Para quando": local calendar date `YYYY-MM-DD`. */
+  dueOn?: string;
+  /** "Retirar envio": the request stops waiting for a decision (the text is editable again). */
+  withdrawnAt?: IsoDateTime;
+  withdrawnBy?: PersonId;
 };
 
 export type GateDefinition = {
