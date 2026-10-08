@@ -1,5 +1,5 @@
 import type { ArticleBody, Source } from '../../domain/index.ts';
-import { anchorOn, applyEdits, buildDraftScript, h2, p, quote, reviewAll } from '../build/article.ts';
+import { anchorOn, applyEdits, buildDraftScript, h2, img, p, quote, reviewAll } from '../build/article.ts';
 import type { ArticleSpec } from '../build/article.ts';
 import { startScenario } from '../build/scenario.ts';
 import { buildTranscriptSource } from '../build/source.ts';
@@ -40,6 +40,7 @@ export const CASA_FORMA_TRANSCRIPT = [
 
 export const CASA_FORMA_ARTICLE: ArticleSpec = {
   title: 'Casa Forma reduz estande e fecha 35% mais pedidos na feira',
+  coverSlot: { subject: 'Estande da Casa Forma com as peças montadas como ambientes', suggestedCaption: 'O estande da Casa Forma na feira', suggestedAlt: 'Sala montada no estande da Casa Forma, com sofá, tapete e luminária', orientation: 'landscape' },
   keyExcerpts: [
     'O estande vende antes da feira começar.',
     'Na última edição recebemos 2.300 visitantes no estande, menos do que nos anos de estande grande, mas fechamos 35% mais pedidos.',
@@ -56,6 +57,11 @@ export const CASA_FORMA_ARTICLE: ArticleSpec = {
           'a Casa Forma fabrica móveis de design',
           'Na última edição recebemos 2.300 visitantes no estande, menos do que nos anos de estande grande, mas fechamos 35% mais pedidos.',
           'Começamos seis meses antes.',
+        ),
+        img(
+          'cf-img-1',
+          { subject: 'Marceneiro mostra o encaixe das peças na oficina do estande', suggestedCaption: 'Na oficina do estande, um marceneiro mostra o encaixe e o acabamento à mão', suggestedAlt: 'Marceneiro trabalha no canto de oficina do estande', orientation: 'landscape' },
+          'Um marceneiro trabalha ali durante a feira, mostrando o encaixe das peças e o acabamento à mão.',
         ),
       ],
     },
@@ -106,6 +112,11 @@ export const CASA_FORMA_ARTICLE: ArticleSpec = {
           'Tentar mostrar tudo.',
           'A empresa leva o catálogo inteiro e o visitante não consegue enxergar nada.',
           'Nós fazemos um treinamento de dois dias antes de cada feira, com simulação de atendimento.',
+        ),
+        img(
+          'cf-img-2',
+          { subject: 'Ambientes da feira fotografados para o catálogo da temporada', suggestedCaption: 'Os ambientes montados para a feira entram no catálogo da temporada', suggestedAlt: 'Ambiente do estande da Casa Forma fotografado para o catálogo', orientation: 'landscape' },
+          'Os ambientes montados para a feira são fotografados e entram no catálogo da temporada.',
         ),
         p(
           'cf-s2-p2',
@@ -179,7 +190,7 @@ export function casaFormaStory(ctx: StoryContext): Story {
     source,
     ownerId: PEOPLE.joao,
     createdAt,
-    brief: { angle: 'O método da Casa Forma para transformar a feira em pedidos', sections: 2, length: 'short', revision: 1 },
+    brief: { angle: 'O método da Casa Forma para transformar a feira em pedidos', sections: 2, size: 'standard', revision: 1 },
     plan: ['article', 'carousel'],
     templates: ctx.templates,
   });
@@ -194,7 +205,7 @@ export function casaFormaStory(ctx: StoryContext): Story {
     ]),
   );
   const v2 = builder.saveEdit('article', v2Body, ago(ctx.now, { hours: 3, minutes: 30 }), PEOPLE.joao);
-  builder.requestReview('article', ago(ctx.now, { hours: 3, minutes: 20 }), PEOPLE.joao);
+  builder.requestReview('article', ago(ctx.now, { hours: 3, minutes: 20 }), PEOPLE.joao, { assigneeId: PEOPLE.pedro });
   builder.decide('article', 'changes_requested', ago(ctx.now, { hours: 1, minutes: 5 }), PEOPLE.pedro, {
     note: CASA_FORMA_REVIEW_NOTE,
     anchors: [

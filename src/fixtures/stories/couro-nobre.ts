@@ -57,7 +57,7 @@ export function couroNobreStory(ctx: StoryContext): Story {
     // B06 · REQ-T.1: material still waiting for its release stays with the team that holds it.
     restrictedTo: [PEOPLE.clara],
     createdAt,
-    brief: { angle: 'O que muda para marcas e fábricas que adotam o couro vegetal', sections: 3, length: 'short', revision: 1 },
+    brief: { angle: 'O que muda para marcas e fábricas que adotam o couro vegetal', sections: 2, size: 'short', revision: 1 },
     plan: ['article', 'carousel'],
     templates: ctx.templates,
   });

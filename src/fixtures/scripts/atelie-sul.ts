@@ -1,16 +1,18 @@
 import type { Source } from '../../domain/index.ts';
-import { buildDraftScript, h2, p, quote } from '../build/article.ts';
+import { buildDraftScript, h2, img, p, quote } from '../build/article.ts';
 import type { ArticleSpec } from '../build/article.ts';
 import type { ScriptEntry } from '../script-book.ts';
 
 /**
- * Hand-written outputs for the flagship interview: article v1 (≈850 words, intro + 3 sections,
- * 6 quotations that match the transcript exactly), rewrites per tone for three paragraphs,
- * alternative titles, heading ideas and five slides. Every fact comes from the transcript.
+ * Hand-written outputs for the flagship interview: article v1 (Padrão, ≈ 1,9 lauda: inside the
+ * 2.001–4.000 characters of 2 laudas, near the 3.600 target; intro + 3 sections, 6 quotations that
+ * match the transcript exactly), rewrites per tone for three paragraphs, alternative titles,
+ * heading ideas and five slides. Every fact comes from the transcript.
  */
 
 export const ATELIE_SUL_ARTICLE: ArticleSpec = {
   title: 'Da garagem à exportação: como o Ateliê Sul usa rastreabilidade e IA sem perder o ofício',
+  coverSlot: { subject: 'Marina Lopes na fábrica do Ateliê Sul em dia de produção', suggestedCaption: 'Marina Lopes, fundadora do Ateliê Sul', suggestedAlt: 'Marina Lopes entre as bancadas da fábrica do Ateliê Sul', orientation: 'landscape' },
   keyExcerpts: [
     'Foi numa garagem, em 2015, com duas máquinas de costura usadas e muita teimosia.',
     'A feira mudou tudo, porque ali a gente entendeu que o produto aguentava a comparação com qualquer marca do pavilhão.',
@@ -31,10 +33,10 @@ export const ATELIE_SUL_ARTICLE: ArticleSpec = {
           'com 142 pessoas trabalhando aqui dentro e uma produção média de 1.100 pares por dia',
           'Hoje são 38% do faturamento, para onze países.',
         ),
-        p(
-          'as-intro-2',
-          'A trajetória mostra que disciplina pesa mais do que tamanho. A empresa testou cada passo antes de crescer e, nas palavras de Marina, nunca avançou além do que conseguia sustentar.',
-          'nunca deu um passo maior do que conseguia sustentar',
+        img(
+          'as-img-1',
+          { subject: 'Esteira e sala de modelagem da fábrica', suggestedCaption: 'A fábrica do Ateliê Sul produz em média 1.100 pares por dia', suggestedAlt: 'Costureiras na esteira de produção do Ateliê Sul', orientation: 'landscape' },
+          'A diferença é que agora o ateliê tem esteira, tem sala de modelagem, tem gente cuidando de exportação.',
         ),
       ],
     },
@@ -59,13 +61,6 @@ export const ATELIE_SUL_ARTICLE: ArticleSpec = {
           'O lucro da fábrica tem que vir da fábrica.',
           'travar uma parte dos contratos assim que o pedido é confirmado',
         ),
-        p(
-          'as-s1-p3',
-          'A diversificação virou regra depois de alguns sustos. O Chile, que já respondeu por quase metade das vendas externas, hoje divide espaço com Portugal, Uruguai, Estados Unidos e Colômbia, e nenhum país pode passar de 15% do faturamento total. Os erros também ensinaram: um lote enviado a Lisboa com etiqueta de composição só em português do Brasil ficou onze dias parado na alfândega. Desde então, cada embarque passa por um checklist por país, conferido por duas pessoas.',
-          'nenhum país pode passar de 15% do faturamento total',
-          'o lote ficou parado na alfândega por onze dias',
-          'ninguém embarca nada sem duas pessoas conferirem',
-        ),
       ],
     },
     {
@@ -79,13 +74,17 @@ export const ATELIE_SUL_ARTICLE: ArticleSpec = {
           'Hoje 70% do couro que entra aqui é rastreado até o frigorífico',
           'Cada lote de couro chega com um código',
         ),
+        img(
+          'as-img-2',
+          { subject: 'Lote de couro com o código que acompanha corte, costura e montagem', suggestedCaption: 'Cada lote de couro chega com um código que segue até a caixa', suggestedAlt: 'Código de rastreabilidade num lote de couro', orientation: 'square' },
+          'Cada lote de couro chega com um código',
+        ),
         p(
           'as-s2-p2',
-          '“A rastreabilidade deixou de ser diferencial e virou passaporte”, afirma Tiago. Segundo ele, quem não consegue provar a origem do material fica fora da lista de fornecedores. O custo de implantação assusta no início, mas cai depois do primeiro ano, e a fábrica passa a conhecer a própria cadeia. Para Marina, o processo também obrigou a empresa a organizar o que vinha sendo adiado.',
+          '“A rastreabilidade deixou de ser diferencial e virou passaporte”, afirma Tiago. Segundo ele, quem não consegue provar a origem do material fica fora da lista de fornecedores. O custo de implantação assusta no início, mas cai depois do primeiro ano, e a fábrica passa a conhecer a própria cadeia.',
           'A rastreabilidade deixou de ser diferencial e virou passaporte.',
           'Quem não consegue provar a origem do couro simplesmente não entra na lista.',
           'ela passa a conhecer a própria cadeia',
-          'A rastreabilidade me obrigou a organizar coisas que eu deixava para depois.',
         ),
         p(
           'as-s2-p3',
@@ -111,19 +110,16 @@ export const ATELIE_SUL_ARTICLE: ArticleSpec = {
         quote('as-q2', 'A IA não desenha sapato, ela encurta a conversa até o sapato certo.'),
         p(
           'as-s3-p2',
-          'A decisão continua humana. Marina lembra de uma bota sugerida pelo sistema com um salto esculpido impossível de montar, que divertiu a modelagem por uma semana. Para Tiago, o caso funciona porque começou de um problema medido, e não de uma ferramenta da moda. Antes de adotar qualquer sistema, a empresa passou seis meses organizando fichas técnicas e históricos de devolução. “A IA é tão boa quanto a memória da empresa”, diz o consultor.',
-          'uma bota que o sistema sugeriu com um salto lindo',
+          'A decisão continua humana. Para Tiago, o caso funciona porque começou de um problema medido, e não de uma ferramenta da moda. Antes de adotar qualquer sistema, a empresa passou seis meses organizando fichas técnicas e históricos de devolução. “A IA é tão boa quanto a memória da empresa”, diz o consultor.',
           'O caso do Ateliê Sul funciona porque começou de um problema medido',
           'A gente passou seis meses só organizando dados antes de usar qualquer ferramenta.',
           'A IA é tão boa quanto a memória da empresa.',
         ),
         p(
           'as-s3-p3',
-          'O próximo desafio é de gente. A idade média das costureiras é de 51 anos, e a fábrica vai abrir no ano que vem uma escola de ofício interna, com turmas de vinte jovens, bolsa e contratação garantida. A primeira turma começa em março e já tem mais de setenta inscritos para vinte vagas. Nenhum posto foi cortado por causa da tecnologia: um ano depois da amostra virtual, o Ateliê Sul contratou 22 pessoas. A meta para os próximos três anos é chegar a 1.500 pares por dia, com metade do faturamento vindo de fora.',
+          'O próximo desafio é de gente. A idade média das costureiras é de 51 anos, e a fábrica vai abrir no ano que vem uma escola de ofício interna, com turmas de vinte jovens, bolsa e contratação garantida. A meta para os próximos três anos é chegar a 1.500 pares por dia, com metade do faturamento vindo de fora.',
           'A idade média das nossas costureiras é de 51 anos.',
           'uma escola de ofício aqui dentro, com turmas de vinte jovens',
-          'já temos mais de setenta inscritos para vinte vagas',
-          'Ninguém foi demitido por causa da tecnologia.',
           'Quero chegar a 1.500 pares por dia sem perder o jeito de ateliê',
         ),
       ],

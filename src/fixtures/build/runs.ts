@@ -1,6 +1,7 @@
-import { foldRun, SIMULATED_MODEL, stampRunEvent } from '../../domain/index.ts';
+import { foldRun, laudaUnit, sectionBudget, SIMULATED_MODEL, sizeOf, stampRunEvent } from '../../domain/index.ts';
 import type {
   ActorId,
+  Brief,
   GenerationRun,
   IsoDateTime,
   PieceId,
@@ -74,6 +75,8 @@ export type ArticleStreamPlan = {
   startedAt: IsoDateTime;
   source: Source;
   script: ArticleDraftScript;
+  /** The production's brief: the outline announces its size and a budget per section. */
+  brief: Pick<Brief, 'size' | 'sections'>;
   /** Stop the log at this step: still `running` there, or `failed` with the error. */
   stopAt: StepId;
   outcome: 'running' | 'failed';
@@ -124,15 +127,29 @@ export function articleRunEvents(plan: ArticleStreamPlan): RunEvent[] {
       for (const ref of plan.script.keySegments) payloads.push({ type: 'source.used', ref });
       payloads.push({ type: 'step.completed', stepId: step.id, meta: `${plan.script.keySegments.length} falas-chave` });
     } else if (step.id === 'outline') {
+      const size = sizeOf(plan.brief.size);
+      const budget = sectionBudget(size.id, plan.script.outline.length);
+      const count = plan.script.outline.length;
       payloads.push(
         { type: 'step.started', stepId: step.id },
-        { type: 'outline', title: plan.script.title, sections: plan.script.outline },
-        { type: 'step.completed', stepId: step.id, meta: `${plan.script.outline.length} intertítulos` },
+        {
+          type: 'outline',
+          title: plan.script.title,
+          sections: plan.script.outline.map((section) => ({ ...section, budget: budget.sectionChars })),
+          size: { laudas: size.laudas, minChars: size.minChars, maxChars: size.maxChars, targetChars: size.targetChars },
+          ...(plan.script.coverSlot ? { cover: plan.script.coverSlot } : {}),
+        },
+        { type: 'step.completed', stepId: step.id, meta: `${count} ${count === 1 ? 'seção' : 'seções'} · alvo ${size.laudas} ${laudaUnit(size.laudas)}` },
       );
     } else {
       const section = plan.script.sections.find((entry) => entry.id === step.id);
       payloads.push({ type: 'step.started', stepId: step.id });
       for (const block of section?.blocks ?? []) {
+        // Image slots have no text to stream: they arrive whole, as the simulated engine sends them.
+        if (block.type === 'figure') {
+          payloads.push({ type: 'block.completed', block: structuredClone(block) });
+          continue;
+        }
         const shape = { id: block.id, type: block.type, ...(block.type === 'heading' ? { level: block.level } : {}) };
         payloads.push({ type: 'block.started', block: shape }, { type: 'block.completed', block: structuredClone(block) });
       }

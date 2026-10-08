@@ -1,6 +1,6 @@
-import { DECISION_LABELS, toSourceVersionRef, toVersionRef, versionLabel, versionsOf } from '../domain/index.ts';
+import { DECISION_LABELS, requestRound, toSourceVersionRef, toVersionRef, versionLabel, versionsOf } from '../domain/index.ts';
 import type { ActivityEvent, ActivityType, ActorId, FeedbackEntry, IsoDateTime, ProductionRecord, Ref } from '../domain/index.ts';
-import { WORKSPACE_ID } from './people.ts';
+import { personName, WORKSPACE_ID } from './people.ts';
 
 /**
  * Semantic activity feed derived from the fixture records (Timeline, notification dot). Only
@@ -63,7 +63,21 @@ function recordActivity(record: ProductionRecord): Draft[] {
     }
   }
   for (const request of record.reviewRequests) {
-    out.push(event('review.requested', request.requestedAt, request.requestedBy, production.id, request.subject, { number: request.subject.number }));
+    // The same data as live sends: piece, number, round, "Quem aprova" and "Para quando".
+    const piece = record.pieces.find((entry) => entry.id === request.subject.pieceId);
+    const data: ActivityEvent['data'] = { number: request.subject.number, round: requestRound(record, request) };
+    if (piece) data.piece = piece.kind;
+    if (request.assigneeId) {
+      data.assigneeId = request.assigneeId;
+      data.assigneeName = personName(request.assigneeId);
+    }
+    if (request.dueOn) data.dueOn = request.dueOn;
+    out.push(event('review.requested', request.requestedAt, request.requestedBy, production.id, request.subject, data));
+    if (request.withdrawnAt) {
+      const withdrawn: ActivityEvent['data'] = { number: request.subject.number };
+      if (piece) withdrawn.piece = piece.kind;
+      out.push(event('review.withdrawn', request.withdrawnAt, request.withdrawnBy ?? request.requestedBy, production.id, request.subject, withdrawn));
+    }
   }
   for (const decision of record.decisions) {
     const data: ActivityEvent['data'] = { decision: decision.decision, label: DECISION_LABELS[decision.decision] };

@@ -1,7 +1,7 @@
 import { blockText, findBlock, toSourceVersionRef, toVersionRef } from '../../domain/index.ts';
 import type { ArticleBody, Source } from '../../domain/index.ts';
 import { copilotTool } from '../../registries/index.ts';
-import { applyEdits, buildDraftScript, h2, p } from '../build/article.ts';
+import { applyEdits, buildDraftScript, h2, img, p } from '../build/article.ts';
 import type { ArticleSpec } from '../build/article.ts';
 import { completedRun } from '../build/runs.ts';
 import { startScenario } from '../build/scenario.ts';
@@ -41,6 +41,7 @@ export const ESTUDIO_NORTE_TRANSCRIPT = [
 
 export const ESTUDIO_NORTE_ARTICLE: ArticleSpec = {
   title: 'Estúdio Norte usa impressão 3D para testar saltos em dois dias',
+  coverSlot: { subject: 'Helena Brandão com um salto impresso em resina', suggestedCaption: 'Helena Brandão, sócia do Estúdio Norte', suggestedAlt: 'Helena Brandão segura um protótipo de salto impresso em 3D', orientation: 'landscape' },
   keyExcerpts: [
     'Um protótipo de salto que levava três semanas agora fica pronto em dois dias.',
     'A impressora não substitui a matriz, ela impede a matriz errada.',
@@ -56,6 +57,11 @@ export const ESTUDIO_NORTE_ARTICLE: ArticleSpec = {
           'O Estúdio Norte, que desenha coleções de calçados para catorze fábricas sem equipe própria de criação, encontrou na impressão 3D uma forma de errar mais barato. Protótipos de salto que levavam três semanas agora ficam prontos em dois dias, impressos em resina e montados no cabedal para teste na própria fábrica. A sócia Helena Brandão explica como a tecnologia mudou a relação com os clientes e onde ainda estão os limites.',
           'Hoje atendemos catorze fábricas, a maioria de pequeno porte.',
           'Um protótipo de salto que levava três semanas agora fica pronto em dois dias.',
+        ),
+        img(
+          'en-img-1',
+          { subject: 'Impressora 3D imprimindo um salto em resina no estúdio', suggestedCaption: 'Um protótipo de salto que levava três semanas fica pronto em dois dias', suggestedAlt: 'Impressora 3D do Estúdio Norte imprime um salto', orientation: 'landscape' },
+          'Hoje a gente imprime o salto em resina no próprio estúdio',
         ),
       ],
     },
@@ -106,6 +112,11 @@ export const ESTUDIO_NORTE_ARTICLE: ArticleSpec = {
           'Com o protótipo na mesa, a conversa ficou concreta. Reuniões que tomavam uma tarde inteira agora se resolvem em quarenta minutos, e as fábricas passaram a arriscar mais. “Errar no protótipo ficou barato”, diz Helena.',
           'Reunião que levava uma tarde inteira agora se resolve em quarenta minutos.',
           'porque errar no protótipo ficou barato',
+        ),
+        img(
+          'en-img-2',
+          { subject: 'Protótipo de salto sobre a mesa de reunião com a fábrica', suggestedCaption: 'Com o protótipo na mesa, a reunião que levava uma tarde se resolve em quarenta minutos', suggestedAlt: 'Protótipo de calçado com salto impresso sobre a mesa', orientation: 'square' },
+          'Agora eu coloco o protótipo na mesa e todo mundo discute a mesma coisa.',
         ),
         p(
           'en-s2-p1b',
@@ -175,7 +186,7 @@ export function estudioNorteStory(ctx: StoryContext): Story {
     source,
     ownerId: PEOPLE.joao,
     createdAt,
-    brief: { angle: 'Como a impressão 3D barateia o erro no desenvolvimento de calçados', sections: 2, length: 'short', revision: 1 },
+    brief: { angle: 'Como a impressão 3D barateia o erro no desenvolvimento de calçados', sections: 2, size: 'standard', revision: 1 },
     plan: ['article', 'carousel'],
     templates: ctx.templates,
   });

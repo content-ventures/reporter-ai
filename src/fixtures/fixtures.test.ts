@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import {
+  ARTICLE_SIZES,
+  articleAssetIds,
+  articleCharacters,
+  articleImageSlots,
   articleStats,
   blockText,
   bodyHash,
@@ -14,13 +19,13 @@ import {
   foldRun,
   isApproved,
   latestDecisionOn,
-  LENGTH_TARGETS,
-  LENGTH_TOLERANCE,
+  manifestImageSuggestions,
   pieceStatus,
   productionStatus,
   resolveExport,
   resolveSourceRef,
   sameVersionRef,
+  sizeFit,
   slotIssues,
   toVersionRef,
 } from '../domain/index.ts';
@@ -29,7 +34,7 @@ import { planFromScript } from '../adapters/local/generation/draft-plan.ts';
 import type { TemplateRender as AdapterTemplateRender } from '../adapters/local/render/templates.ts';
 import { normalizeSeed } from '../adapters/local/store/state.ts';
 import { recipeFor } from '../registries/index.ts';
-import { createFixtures, fixtureSeed, scriptBody } from './index.ts';
+import { createFixtures, fixtureSeed, SAMPLE_FILES, sampleSrc, scriptBody } from './index.ts';
 import type { FixtureSet } from './index.ts';
 
 const NOW = '2026-10-07T15:00:00.000Z';
@@ -127,7 +132,7 @@ describe('fixture set', () => {
     assert.equal(empty.records.length, 0);
     assert.equal(empty.history.approvals.length, 0);
     assert.equal(empty.members.length, fixtures.members.length);
-    assert.equal(empty.templates.length, 2);
+    assert.deepEqual(empty.templates.map((template) => template.id), fixtures.templates.map((template) => template.id), 'the whole template library');
   });
 });
 
@@ -217,17 +222,17 @@ describe('evidence and quotes', () => {
     }
   });
 
-  test('hand-written drafts: every quote verified, every block AI-unreviewed, in the target length', () => {
+  test('hand-written drafts: every quote verified, every block AI-unreviewed, inside the size of the brief', () => {
     for (const entry of fixtures.records) {
       const script = fixtures.scriptBook.draft(entry.sources[0].id);
       if (!script) continue;
       const body = scriptBody(script);
       assert.ok(checkQuotes(body, entry.sources).every((check) => check.status === 'verified'), entry.production.id);
-      assert.ok(body.blocks.every((block) => block.ai === 'unreviewed'));
-      const target = LENGTH_TARGETS[entry.production.brief.length];
-      const { words } = articleStats(body);
-      // D10 (A09): what the simulation writes lands within ±10% of the brief's length.
-      assert.ok(Math.abs(words - target.words) <= target.words * LENGTH_TOLERANCE, `${entry.production.id}: ${words} of ${target.words} words`);
+      // Image slots carry no review flag: a person fills or dismisses them.
+      assert.ok(body.blocks.every((block) => (block.type === 'figure' ? block.ai === undefined : block.ai === 'unreviewed')));
+      // The lauda rule: what the simulation writes lands inside the brief's size, never above its maximum.
+      const chars = articleCharacters(body);
+      assert.equal(sizeFit(entry.production.brief.size, chars), 'inside', `${entry.production.id}: ${chars} characters for ${entry.production.brief.size}`);
       const steps = recipeFor('article.generate').steps({ sections: entry.production.brief.sections }).map((step) => step.id);
       for (const section of script.sections) assert.ok(steps.includes(section.id), `${entry.production.id} section ${section.id}`);
       assert.equal(script.sections.length, entry.production.brief.sections + 1);
@@ -235,15 +240,37 @@ describe('evidence and quotes', () => {
     }
   });
 
-  test('flagship article v1: 800–900 words, intro + 3 sections, 4–6 direct quotes', () => {
+  test('flagship article v1: Padrão near its 3.600 target (never above 4.000), intro + 3 sections, 4–6 direct quotes', () => {
     const script = fixtures.scriptBook.draft('src-atelie-sul');
     assert.ok(script);
     const body = scriptBody(script);
-    const { words } = articleStats(body);
-    assert.ok(words >= 800 && words <= 900, `${words} words`);
+    const chars = articleCharacters(body);
+    const { targetChars, maxChars } = ARTICLE_SIZES.standard;
+    assert.ok(Math.abs(chars - targetChars) <= targetChars * 0.1 && chars <= maxChars, `${chars} characters`);
     assert.equal(body.blocks.filter((block) => block.type === 'heading').length, 3);
     const quotes = extractQuotes(body).length;
     assert.ok(quotes >= 4 && quotes <= 6, `${quotes} quotes`);
+  });
+
+  test('sizes by lauda: approved and delivered articles land inside their size; one production is Curto', () => {
+    for (const entry of fixtures.records) {
+      const { brief } = entry.production;
+      const { sections } = ARTICLE_SIZES[brief.size];
+      assert.ok(brief.sections >= sections.min && brief.sections <= sections.max, `${entry.production.id}: ${brief.sections} sections in a ${brief.size}`);
+      for (const version of entry.versions) {
+        if (version.body.type !== 'article' || !isApproved(entry, toVersionRef(version))) continue;
+        const chars = articleCharacters(version.body);
+        assert.equal(sizeFit(brief.size, chars), 'inside', `${version.id}: ${chars} characters for ${brief.size}`);
+      }
+    }
+    const curto = fixtures.records.filter((entry) => entry.production.brief.size === 'short');
+    assert.ok(curto.length >= 1, 'the 1-lauda path is visible');
+    for (const entry of curto) {
+      const draft = entry.pieces.find((piece) => piece.kind === 'article')?.draft.body;
+      assert.ok(entry.production.brief.sections <= 2, entry.production.id);
+      // A Curto has no intertítulos: its sections only guide the drafting.
+      assert.ok(draft?.type !== 'article' || !draft.blocks.some((block) => block.type === 'heading'), `${entry.production.id}: no H2 in a Curto`);
+    }
   });
 });
 
@@ -510,6 +537,87 @@ describe('script book', () => {
           assert.ok(checkQuotes(rewritten, entry.sources).every((check) => check.status === 'verified'), `${block.id} ${variant}`);
         }
       }
+    }
+  });
+});
+
+describe('image slots', () => {
+  test('every hand-written draft suggests a cover and asks for an image after the intro and in section 2, with evidence', () => {
+    let drafts = 0;
+    for (const entry of fixtures.records) {
+      const script = fixtures.scriptBook.draft(entry.sources[0].id);
+      if (!script) continue;
+      drafts += 1;
+      assert.ok(script.coverSlot?.subject, `${entry.production.id} cover suggestion`);
+      const intro = script.sections.find((section) => section.id === 'intro');
+      const second = script.sections.find((section) => section.id === 'section-2');
+      assert.equal(intro?.blocks.at(-1)?.type, 'figure', `${entry.production.id}: a slot closes the intro`);
+      assert.ok(second?.blocks.some((block) => block.type === 'figure'), `${entry.production.id}: a slot inside section 2`);
+      const slots = articleImageSlots(scriptBody(script));
+      assert.equal(slots.length, 3, `${entry.production.id}: cover + 2 figures`);
+      for (const slot of slots.filter((use) => use.role === 'figure')) {
+        assert.ok(slot.sourceRefs && slot.sourceRefs.length > 0, `${slot.blockId} has evidence`);
+        assert.ok(slot.sourceRefs.every((ref) => resolveSourceRef(entry.sources, ref)), `${slot.blockId} evidence resolves`);
+      }
+    }
+    assert.equal(drafts, 8);
+  });
+
+  test('the fixture runs stream slots whole and announce the cover suggestion with the outline', () => {
+    const live = record('atelie-sul').runs.flatMap((run) => fixtures.runEvents[run.id] ?? []);
+    assert.ok(live.some((event) => event.type === 'outline' && event.cover?.subject), 'the live run announced the cover suggestion');
+    const failed = record('horizonte');
+    const events = failed.runs.flatMap((run) => fixtures.runEvents[run.id] ?? []);
+    const slotIds = new Set(events.flatMap((event) => (event.type === 'block.completed' && event.block.type === 'figure' ? [event.block.id] : [])));
+    assert.deepEqual([...slotIds], ['gh-img-1'], 'the failed run wrote the intro slot before stopping');
+    assert.ok(!events.some((event) => event.type === 'block.started' && slotIds.has(event.block.id)));
+    const draft = failed.pieces.find((piece) => piece.kind === 'article')?.draft.body;
+    assert.ok(draft?.type === 'article' && draft.coverSlot?.subject && draft.blocks.some((block) => block.id === 'gh-img-1'), '"v1 · interrompida" keeps them');
+  });
+
+  test('approved and delivered articles keep their open slots: the manifest lists them, the files never do', () => {
+    const lume = record('lume');
+    const approved = lume.versions.filter((version) => version.body.type === 'article' && isApproved(lume, toVersionRef(version)));
+    assert.ok(approved.length > 0);
+    for (const version of approved) {
+      assert.ok(version.body.type === 'article' && manifestImageSuggestions(version.body, version.id).length === 3);
+    }
+  });
+
+  test('the delivered article reads with its images: cover and both figures filled, credited and authorised', () => {
+    const bella = record('bella-passo');
+    const approved = bella.versions.filter((version) => version.body.type === 'article' && isApproved(bella, toVersionRef(version)));
+    assert.equal(approved.length, 1);
+    const body = approved[0].body as ArticleBody;
+    assert.equal(manifestImageSuggestions(body, approved[0].id).length, 0, 'no suggestion left open');
+    const used = articleAssetIds(body);
+    assert.equal(used.length, 3);
+    assert.equal(body.cover?.assetId, 'img-bella-passo-par');
+    for (const assetId of used) {
+      const image = fixtures.images.find((entry) => entry.asset.id === assetId);
+      assert.ok(image, assetId);
+      assert.equal(image.productionId, bella.production.id);
+      assert.ok(image.asset.credit && image.asset.rights.authorized, assetId);
+      assert.match(image.src, /^\/samples\/[a-z-]+\.jpg$/);
+    }
+    assert.deepEqual(createFixtures({ now: fixtures.now, empty: true }).images, []);
+  });
+
+  test('every sample image is a JPEG in public/ with the size and dimensions the fixtures declare', () => {
+    for (const sample of Object.values(SAMPLE_FILES)) {
+      const bytes = readFileSync(new URL(`../../public${sampleSrc(sample)}`, import.meta.url));
+      assert.equal(bytes.length, sample.bytes, sample.file);
+      assert.deepEqual([bytes[0], bytes[1]], [0xff, 0xd8], `${sample.file} is a JPEG`);
+      // The first baseline/progressive frame header carries height then width.
+      let at = 2;
+      let size: [number, number] | undefined;
+      while (at < bytes.length && !size) {
+        const marker = bytes[at + 1];
+        const length = (bytes[at + 2] << 8) | bytes[at + 3];
+        if (marker === 0xc0 || marker === 0xc2) size = [(bytes[at + 7] << 8) | bytes[at + 8], (bytes[at + 5] << 8) | bytes[at + 6]];
+        at += 2 + length;
+      }
+      assert.deepEqual(size, [sample.width, sample.height], sample.file);
     }
   });
 });

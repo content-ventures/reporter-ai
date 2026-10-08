@@ -38,11 +38,13 @@ export function createScriptBook(entries: readonly ScriptEntry[]): ScriptBook {
 
 /** The full body a draft script produces (what "v1 · IA" contains when the run completes). */
 export function scriptBody(script: ArticleDraftScript): ArticleBody {
-  return {
+  const body: ArticleBody = {
     type: 'article',
     title: script.title,
     blocks: script.sections.flatMap((section) => section.blocks.map((block) => structuredClone(block))),
   };
+  if (script.coverSlot) body.coverSlot = structuredClone(script.coverSlot);
+  return body;
 }
 
 /** Blocks written before `sectionId` (exclusive): what a run interrupted at that section keeps. */

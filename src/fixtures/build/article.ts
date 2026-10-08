@@ -1,5 +1,5 @@
-import { blockText, findBlock, headingBlock, listBlock, paragraphBlock, quoteBlock } from '../../domain/index.ts';
-import type { AiReviewState, ArticleBlock, ArticleBody, BlockId, DecisionAnchor, Source } from '../../domain/index.ts';
+import { blockText, findBlock, headingBlock, imageSlotBlock, listBlock, paragraphBlock, quoteBlock } from '../../domain/index.ts';
+import type { AiReviewState, ArticleBlock, ArticleBody, BlockId, DecisionAnchor, ImageSlot, Source } from '../../domain/index.ts';
 import type { ArticleDraftScript, ScriptSection } from '../script-book.ts';
 import { excerptRef } from './source.ts';
 
@@ -12,7 +12,8 @@ export type BlockSpec =
   | { kind: 'paragraph'; id: BlockId; text: string; refs: string[] }
   | { kind: 'heading'; id: BlockId; text: string; level: 2 | 3 }
   | { kind: 'quote'; id: BlockId; text: string; refs: string[] }
-  | { kind: 'list'; id: BlockId; items: string[]; ordered: boolean; refs: string[] };
+  | { kind: 'list'; id: BlockId; items: string[]; ordered: boolean; refs: string[] }
+  | { kind: 'slot'; id: BlockId; slot: ImageSlot; refs: string[] };
 
 export function p(id: BlockId, text: string, ...refs: string[]): BlockSpec {
   return { kind: 'paragraph', id, text, refs };
@@ -31,10 +32,20 @@ export function ul(id: BlockId, items: string[], ...refs: string[]): BlockSpec {
   return { kind: 'list', id, items, ordered: false, refs };
 }
 
+/**
+ * An image slot ("Sugestão de imagem"): what the picture should show, grounded in the excerpt
+ * that motivated it (written as the transcript says it, resolved like any other evidence).
+ */
+export function img(id: BlockId, slot: ImageSlot, ...refs: string[]): BlockSpec {
+  return { kind: 'slot', id, slot, refs };
+}
+
 export type SectionSpec = { id: string; blocks: BlockSpec[] };
 
 export type ArticleSpec = {
   title: string;
+  /** The outline's cover suggestion (the article has no cover yet). */
+  coverSlot?: ImageSlot;
   /** Excerpts announced as key lines while the run selects material. */
   keyExcerpts: string[];
   /** `intro` first, then `section-1`…`section-n` (ids match the recipe steps). */
@@ -52,6 +63,9 @@ export function buildBlock(source: Source, spec: BlockSpec, ai?: AiReviewState):
       return quoteBlock(spec.id, spec.text, { ...options, sourceRefs: spec.refs.map((excerpt) => excerptRef(source, excerpt)) });
     case 'list':
       return listBlock(spec.id, spec.items, spec.ordered, { ...options, sourceRefs: spec.refs.map((excerpt) => excerptRef(source, excerpt)) });
+    case 'slot':
+      // Slots carry evidence but no review flag: a person fills or dismisses them.
+      return imageSlotBlock(spec.id, spec.slot, { sourceRefs: spec.refs.map((excerpt) => excerptRef(source, excerpt)) });
   }
 }
 
@@ -74,6 +88,7 @@ export function buildDraftScript(source: Source, spec: ArticleSpec): ArticleDraf
   return {
     sourceId: source.id,
     sourceVersion: version.number,
+    ...(spec.coverSlot ? { coverSlot: structuredClone(spec.coverSlot) } : {}),
     title: spec.title,
     keySegments: spec.keyExcerpts.map((excerpt) => excerptRef(source, excerpt)),
     outline: sections

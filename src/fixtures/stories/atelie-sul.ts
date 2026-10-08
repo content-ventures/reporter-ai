@@ -41,7 +41,7 @@ export function atelieSulStory(ctx: StoryContext): Story {
     brief: {
       angle: 'Como uma fábrica média usa exportação, rastreabilidade e IA para crescer sem perder o ofício',
       sections: 3,
-      length: 'medium',
+      size: 'standard',
       revision: 1,
     },
     plan: ['article', 'carousel'],

@@ -10,8 +10,10 @@ import {
   evaluatePieceChecks,
   foldRun,
   gateForPiece,
+  hasAnyRole,
   latestApproved,
   latestVersion,
+  pendingReview,
   plannedExportFiles,
   resolveExport,
   settleGeneration,
@@ -76,6 +78,8 @@ export type Scenario = {
   runEvents: Record<RunId, RunEvent[]>;
   feedback: FeedbackEntry[];
 };
+
+export type RequestOptions = { note?: string; assigneeId?: PersonId; dueOn?: string };
 
 export type GenerateOptions = {
   body: PieceBody;
@@ -218,16 +222,38 @@ export function startScenario(init: ScenarioInit) {
     touch(at);
   }
 
-  function requestReview(kind: PieceKind, at: IsoDateTime, by: PersonId, note?: string): ReviewRequest {
+  /**
+   * "Enviar para aprovação": "Quem aprova" must hold the gate's role and never be the sender;
+   * "Para quando" is a local date (`localDateOf`). A string is the "Recado" alone.
+   */
+  function requestReview(kind: PieceKind, at: IsoDateTime, by: PersonId, send: string | RequestOptions = {}): ReviewRequest {
+    const options: RequestOptions = typeof send === 'string' ? { note: send } : send;
     const target = piece(kind);
     const version = latestVersion(record, target.id);
     const gate = gateForPiece(kind);
     if (!version || !gate) throw new Error(`${init.key}: nothing to review in ${kind}`);
+    if (options.assigneeId) {
+      const assignee = FIXTURE_MEMBERS.find((member) => member.personId === options.assigneeId);
+      if (!assignee || !hasAnyRole(assignee, gate.roles) || options.assigneeId === by) throw new Error(`${init.key}: ${options.assigneeId} cannot approve ${kind}`);
+    }
     const request: ReviewRequest = { id: newId('rev'), gate: gate.id, subject: toVersionRef(version), requestedBy: by, requestedAt: at };
-    if (note) request.note = note;
+    if (options.note) request.note = options.note;
+    if (options.assigneeId) request.assigneeId = options.assigneeId;
+    if (options.dueOn) request.dueOn = options.dueOn;
     record.reviewRequests.push(request);
     touch(at);
     return request;
+  }
+
+  /** "Retirar envio para editar": the pending send of the piece stops waiting. */
+  function withdrawReview(kind: PieceKind, at: IsoDateTime, by: PersonId): ReviewRequest {
+    const target = piece(kind);
+    const pending = pendingReview(record, target.id);
+    if (!pending) throw new Error(`${init.key}: no pending send in ${kind}`);
+    const withdrawn: ReviewRequest = { ...pending, withdrawnAt: at, withdrawnBy: by };
+    record.reviewRequests = record.reviewRequests.map((request) => (request.id === pending.id ? withdrawn : request));
+    touch(at);
+    return withdrawn;
   }
 
   function decideOn(
@@ -297,6 +323,7 @@ export function startScenario(init: ScenarioInit) {
       createdBy: plan.by,
       inputs: allowed.value.inputs,
       source: init.source,
+      brief: record.production.brief,
     });
     let run = runFromEvents(events);
     addRun(run, events);
@@ -374,6 +401,7 @@ export function startScenario(init: ScenarioInit) {
     saveEdit,
     editDraft,
     requestReview,
+    withdrawReview,
     decide: decideOn,
     startCarousel,
     addRun,

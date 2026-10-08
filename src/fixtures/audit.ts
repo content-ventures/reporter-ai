@@ -1,6 +1,6 @@
-import { DEFAULT_SECTIONS, LENGTH_TARGETS, maskIp, PIECE_LABELS } from '../domain/index.ts';
+import { DEFAULT_SECTIONS, maskIp, PIECE_LABELS, sizeLabel } from '../domain/index.ts';
 import type {
-  ArticleLength,
+  ArticleSize,
   AuditAction,
   AuditChange,
   AuditEvent,
@@ -130,11 +130,6 @@ function nameOf(personId: PersonId): string {
   return FIXTURE_PEOPLE.find((person) => person.id === personId)?.name ?? 'Pessoa';
 }
 
-function lengthLabel(length: ArticleLength): string {
-  const target = LENGTH_TARGETS[length];
-  return `${target.label} · ${target.words} palavras`;
-}
-
 function productionTarget(entry: AuditSeedProduction): AuditTarget {
   return { kind: 'production', id: entry.production.id, label: entry.production.title, productionId: entry.production.id };
 }
@@ -159,8 +154,9 @@ function productionSpecs(input: AuditSeedInput): Spec[] {
     const brief = aurora.production.brief;
     const changes: AuditChange[] = [];
     if (brief.sections !== DEFAULT_SECTIONS) changes.push({ field: 'Seções', before: String(DEFAULT_SECTIONS), after: String(brief.sections) });
-    const previous: ArticleLength = brief.length === 'medium' ? 'long' : 'medium';
-    changes.push({ field: 'Extensão', before: lengthLabel(previous), after: lengthLabel(brief.length) });
+    // The pauta's size toggled between the two sizes (Padrão ↔ Curto).
+    const previous: ArticleSize = brief.size === 'standard' ? 'short' : 'standard';
+    changes.push({ field: 'Tamanho do artigo', before: sizeLabel(previous), after: sizeLabel(brief.size) });
     specs.push(
       { ago: { days: 4, hours: 7 }, actor: PEOPLE.joao, action: 'production.updated', target: productionTarget(aurora), changes, notBefore: aurora.production.createdAt },
       {

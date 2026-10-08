@@ -1,8 +1,11 @@
-import type { ArticleBody, CarouselBody, Source } from '../../domain/index.ts';
-import { applyEdits, buildDraftScript, h2, p, quote, reviewAll } from '../build/article.ts';
+import { COVER_BLOCK_ID, fillImageSlot } from '../../domain/index.ts';
+import type { ArticleBody, BlockId, CarouselBody, ImageRef, Source } from '../../domain/index.ts';
+import { applyEdits, buildDraftScript, h2, img, p, quote, reviewAll } from '../build/article.ts';
 import type { ArticleSpec } from '../build/article.ts';
 import { startScenario } from '../build/scenario.ts';
 import { buildTranscriptSource } from '../build/source.ts';
+import { fixtureImage, SAMPLE_FILES } from '../images.ts';
+import type { FixtureImage } from '../images.ts';
 import { PEOPLE } from '../people.ts';
 import { scriptBody } from '../script-book.ts';
 import type { ScriptEntry, SlideCopy } from '../script-book.ts';
@@ -13,7 +16,9 @@ import type { Story, StoryContext } from './types.ts';
 
 /**
  * State: concluded (gray). Article v2 and carousel v2 approved, package exported with the
- * manifest, and the pilot feedback recorded (REQ-T.8) with automatic stage timings.
+ * manifest, and the pilot feedback recorded (REQ-T.8) with automatic stage timings. The editor
+ * filled the generation's image suggestions (cover and both figures) with the brand's press
+ * photos before sending v2, so the final article reads with its images.
  */
 
 export const BELLA_PASSO_TRANSCRIPT = [
@@ -41,6 +46,7 @@ export const BELLA_PASSO_TRANSCRIPT = [
 
 export const BELLA_PASSO_ARTICLE: ArticleSpec = {
   title: 'Bella Passo cria calçado infantil que acompanha o crescimento do pé',
+  coverSlot: { subject: 'Gustavo Hoff com o kit de demonstração das palmilhas', suggestedCaption: 'Gustavo Hoff, diretor de produto da Bella Passo', suggestedAlt: 'Gustavo Hoff segura as duas palmilhas do calçado infantil', orientation: 'landscape' },
   keyExcerpts: [
     'As mães diziam que o sapato ficava pequeno antes de gastar.',
     'o mesmo par atende uma numeração e meia',
@@ -55,6 +61,11 @@ export const BELLA_PASSO_ARTICLE: ArticleSpec = {
           'A Bella Passo redesenhou seu calçado infantil a partir de uma queixa recorrente das famílias: o sapato ficava pequeno antes de gastar. Entre três e seis anos, a criança troca de numeração em média a cada quatro meses, e o calçado dura bem mais do que isso. A nova linha foi pensada para acompanhar esse crescimento por mais tempo.',
           'As mães diziam que o sapato ficava pequeno antes de gastar.',
           'A criança de três a seis anos troca de numeração em média a cada quatro meses, e o sapato dura bem mais do que isso.',
+        ),
+        img(
+          'bp-img-1',
+          { subject: 'Calçado infantil com a palmilha removível de duas espessuras', suggestedCaption: 'Quando o pé cresce, a família troca a palmilha grossa pela fina', suggestedAlt: 'Calçado infantil da Bella Passo com as duas palmilhas ao lado', orientation: 'landscape' },
+          'uma palmilha removível com duas espessuras',
         ),
       ],
     },
@@ -110,6 +121,11 @@ export const BELLA_PASSO_ARTICLE: ArticleSpec = {
           'O par custa cerca de 15% mais do que a nossa linha tradicional.',
           'Treinamos as vendedoras de 300 lojas para fazer essa explicação em menos de um minuto.',
           'A gente mandou para cada loja um kit com as duas palmilhas e um pé de demonstração.',
+          'Quando a vendedora mostra a troca para a mãe, a venda acontece na hora.',
+        ),
+        img(
+          'bp-img-2',
+          { subject: 'Vendedora mostra a troca da palmilha para uma mãe', suggestedCaption: 'Cada loja recebeu um kit com as duas palmilhas e um pé de demonstração', suggestedAlt: 'Vendedora demonstra a troca da palmilha num pé de demonstração', orientation: 'landscape' },
           'Quando a vendedora mostra a troca para a mãe, a venda acontece na hora.',
         ),
         p(
@@ -191,17 +207,35 @@ export function bellaPassoStory(ctx: StoryContext): Story {
     source,
     ownerId: PEOPLE.joao,
     createdAt,
-    brief: { angle: 'Como um produto que dura mais fideliza as famílias', sections: 2, length: 'short', revision: 1 },
+    brief: { angle: 'Como um produto que dura mais fideliza as famílias', sections: 2, size: 'standard', revision: 1 },
     plan: ['article', 'carousel'],
     templates: ctx.templates,
   });
   const generatedAt = after(createdAt, { minutes: 3 });
   const v1 = builder.generate('article', { body: scriptBody(script.draft), endedAt: generatedAt, durationMs: 47_000, by: PEOPLE.joao });
-  const v2Body = reviewAll(
+  const editedAt = ago(ctx.now, { days: 11, hours: 5 });
+  const productionId = builder.record.production.id;
+  const press = { credit: 'Divulgação/Bella Passo', at: ago(ctx.now, { days: 11, hours: 5, minutes: 20 }), by: PEOPLE.joao };
+  const images: FixtureImage[] = [
+    fixtureImage(productionId, 'img-bella-passo-par', SAMPLE_FILES.bellaPassoPair, press),
+    fixtureImage(productionId, 'img-bella-passo-palmilhas', SAMPLE_FILES.bellaPassoInsoles, press),
+    fixtureImage(productionId, 'img-bella-passo-kit', SAMPLE_FILES.bellaPassoKit, press),
+  ];
+  const fills: [BlockId, ImageRef][] = [
+    [COVER_BLOCK_ID, { assetId: 'img-bella-passo-par', alt: 'Par de tênis infantis da Bella Passo visto de cima', caption: 'A nova linha: o mesmo par atende uma numeração e meia' }],
+    ['bp-img-1', { assetId: 'img-bella-passo-palmilhas', alt: 'Tênis infantil ao lado das palmilhas grossa e fina', caption: 'Quando o pé cresce, a família troca a palmilha grossa pela fina' }],
+    ['bp-img-2', { assetId: 'img-bella-passo-kit', alt: 'Caixa do kit de demonstração com as palmilhas grossa e fina lado a lado', caption: 'O kit que cada loja recebeu para mostrar a troca da palmilha' }],
+  ];
+  const titled = reviewAll(
     applyEdits(source, v1.body as ArticleBody, [{ type: 'title', text: 'Bella Passo lança calçado infantil que acompanha o crescimento do pé' }]),
   );
-  builder.saveEdit('article', v2Body, ago(ctx.now, { days: 11, hours: 5 }), PEOPLE.joao);
-  builder.requestReview('article', ago(ctx.now, { days: 11, hours: 4 }), PEOPLE.joao);
+  const v2Body = fills.reduce((body, [blockId, image]) => {
+    const filled = fillImageSlot(body, blockId, image);
+    if (!filled.ok) throw new Error(`bella-passo: ${filled.refusal.message} (${blockId})`);
+    return filled.value;
+  }, titled);
+  builder.saveEdit('article', v2Body, editedAt, PEOPLE.joao);
+  builder.requestReview('article', ago(ctx.now, { days: 11, hours: 4 }), PEOPLE.joao, { assigneeId: PEOPLE.pedro });
   const articleApproval = builder.decide('article', 'approved', ago(ctx.now, { days: 10, hours: 22 }), PEOPLE.pedro);
 
   builder.startCarousel(NEUTRAL_LIGHT_TEMPLATE_ID, ago(ctx.now, { days: 9, hours: 6 }), PEOPLE.joao);
@@ -214,7 +248,7 @@ export function bellaPassoStory(ctx: StoryContext): Story {
     ),
   };
   builder.saveEdit('carousel', edited, ago(ctx.now, { days: 9, hours: 4 }), PEOPLE.juliana);
-  builder.requestReview('carousel', ago(ctx.now, { days: 9, hours: 3 }), PEOPLE.joao);
+  builder.requestReview('carousel', ago(ctx.now, { days: 9, hours: 3 }), PEOPLE.joao, { assigneeId: PEOPLE.juliana });
   builder.decide('carousel', 'approved', ago(ctx.now, { days: 8, hours: 23 }), PEOPLE.juliana);
 
   const deliveredAt = ago(ctx.now, { days: 8, hours: 21 });
@@ -237,6 +271,7 @@ export function bellaPassoStory(ctx: StoryContext): Story {
   return {
     scenario: builder.scenario,
     script,
+    images,
     expect: {
       label: 'Concluída e exportada',
       productionStatus: 'completed',

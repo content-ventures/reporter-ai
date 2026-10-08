@@ -1,5 +1,6 @@
+import { localDateOf } from '../../domain/index.ts';
 import type { ArticleBody, Source } from '../../domain/index.ts';
-import { applyEdits, buildDraftScript, h2, p, quote, reviewAll } from '../build/article.ts';
+import { anchorOn, applyEdits, buildDraftScript, h2, img, p, quote, reviewAll } from '../build/article.ts';
 import type { ArticleSpec } from '../build/article.ts';
 import { startScenario } from '../build/scenario.ts';
 import { buildTranscriptSource } from '../build/source.ts';
@@ -10,10 +11,13 @@ import { after, ago, dateOf } from '../time.ts';
 import type { Story, StoryContext } from './types.ts';
 
 /**
- * State: article in review, waiting for Pedro (violet). Juliana edited v1 · IA into v2 and sent
- * it for approval two hours ago. The interviewer is labelled "Entrevistadora" in the material
- * and mapped to Juliana in "Falantes".
+ * State: article in review, waiting for Pedro (violet), 2º envio. Juliana sent v1 · IA to Pedro
+ * yesterday; he asked for adjustments ("O título promete mais do que o texto entrega."). She
+ * edited it into v2 and sent it again two hours ago, due today, with a "Recado" — the review opens
+ * on "O que mudou". The interviewer is labelled "Entrevistadora" and mapped to Juliana.
  */
+
+export const AURORA_REVIEW_NOTE = 'O título promete mais do que o texto entrega.';
 
 export const AURORA_TRANSCRIPT = [
   'Entrevistadora: Sérgio, a Aurora lançou há um ano um aplicativo de pedidos para lojistas. Por quê?',
@@ -38,6 +42,7 @@ export const AURORA_TRANSCRIPT = [
 
 export const AURORA_ARTICLE: ArticleSpec = {
   title: 'Aurora Calçados cria app de reposição e reduz pedido mínimo para 6 pares',
+  coverSlot: { subject: 'Retrato de Sérgio Lang', suggestedCaption: 'Sérgio Lang, diretor comercial da Aurora Calçados', suggestedAlt: 'Retrato de Sérgio Lang', orientation: 'landscape' },
   keyExcerpts: [
     'o lojista compra uma grade enxuta na feira e repõe ao longo da estação',
     'A reposição representa hoje 27% das vendas para o varejo multimarca',
@@ -59,6 +64,11 @@ export const AURORA_ARTICLE: ArticleSpec = {
           'Antes, o pedido grande da feira garantia o semestre. Sem um canal simples de reposição, a marca perdia a segunda compra do lojista para concorrentes com estoque disponível na hora.',
           'Antes, o pedido grande da feira garantia o semestre.',
           'Sem um canal de reposição simples, a gente perdia essa segunda compra para quem tinha estoque na hora.',
+        ),
+        img(
+          'au-img-1',
+          { subject: 'Tela do aplicativo com o estoque em tempo real, a cor e a numeração', suggestedCaption: 'No aplicativo, o lojista vê o estoque disponível em tempo real', suggestedAlt: 'Tela do aplicativo de pedidos da Aurora Calçados', orientation: 'portrait' },
+          'O lojista vê o estoque disponível em tempo real',
         ),
       ],
     },
@@ -110,6 +120,11 @@ export const AURORA_ARTICLE: ArticleSpec = {
           'Criamos uma linha de separação só para reposição',
           'revisamos os números toda semana',
           'caiu a sobra no fim da estação',
+        ),
+        img(
+          'au-img-2',
+          { subject: 'Linha de separação dedicada aos pedidos de reposição', suggestedCaption: 'A linha de separação criada só para a reposição', suggestedAlt: 'Pares separados na linha de reposição da Aurora', orientation: 'landscape' },
+          'Criamos uma linha de separação só para reposição',
         ),
         p(
           'au-s2-p2',
@@ -163,11 +178,17 @@ export function auroraStory(ctx: StoryContext): Story {
     source,
     ownerId: PEOPLE.juliana,
     createdAt,
-    brief: { angle: 'O que o app de reposição mudou na relação com o lojista multimarca', sections: 2, length: 'short', revision: 1 },
+    brief: { angle: 'O que o app de reposição mudou na relação com o lojista multimarca', sections: 2, size: 'standard', revision: 1 },
     plan: ['article', 'carousel'],
     templates: ctx.templates,
   });
   const v1 = builder.generate('article', { body: scriptBody(script.draft), endedAt: after(createdAt, { minutes: 3 }), durationMs: 52_000, by: PEOPLE.juliana });
+  // 1º envio: Pedro asked for adjustments on the AI text.
+  builder.requestReview('article', ago(ctx.now, { days: 1 }), PEOPLE.juliana, { assigneeId: PEOPLE.pedro });
+  builder.decide('article', 'changes_requested', ago(ctx.now, { hours: 20 }), PEOPLE.pedro, {
+    note: AURORA_REVIEW_NOTE,
+    anchors: [anchorOn(v1.body as ArticleBody, 'au-s1-p3', 'Depois de uma enxurrada de ligações com as mesmas perguntas')],
+  });
   const v2Body = reviewAll(
     applyEdits(source, v1.body as ArticleBody, [
       { type: 'title', text: 'Aurora Calçados reduz pedido mínimo para 6 pares com app de reposição' },
@@ -179,12 +200,17 @@ export function auroraStory(ctx: StoryContext): Story {
     ]),
   );
   builder.saveEdit('article', v2Body, ago(ctx.now, { hours: 2, minutes: 20 }), PEOPLE.juliana);
-  builder.requestReview('article', ago(ctx.now, { hours: 2 }), PEOPLE.juliana, 'Pedro, pode revisar hoje? O Sérgio pediu para publicar ainda nesta semana.');
+  // 2º envio: back to Pedro, due today ("prazo: hoje"), with a "Recado".
+  builder.requestReview('article', ago(ctx.now, { hours: 2 }), PEOPLE.juliana, {
+    assigneeId: PEOPLE.pedro,
+    dueOn: localDateOf(ctx.now),
+    note: 'Pedro, pode revisar hoje? O Sérgio pediu para publicar ainda nesta semana.',
+  });
   return {
     scenario: builder.scenario,
     script,
     expect: {
-      label: 'Aguardando aprovação',
+      label: 'Aguardando aprovação (2º envio, prazo hoje)',
       productionStatus: 'in_review',
       pieces: { article: 'in_review', carousel: 'locked' },
       draftQuotes: { verified: 3, total: 3 },

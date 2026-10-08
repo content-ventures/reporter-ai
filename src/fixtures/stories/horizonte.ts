@@ -1,5 +1,5 @@
 import type { Source } from '../../domain/index.ts';
-import { buildDraftScript, h2, p, quote } from '../build/article.ts';
+import { buildDraftScript, h2, img, p, quote } from '../build/article.ts';
 import type { ArticleSpec } from '../build/article.ts';
 import { startScenario } from '../build/scenario.ts';
 import { buildTranscriptSource } from '../build/source.ts';
@@ -70,6 +70,7 @@ export const HORIZONTE_TRANSCRIPT = toVtt(HORIZONTE_TURNS);
 
 export const HORIZONTE_ARTICLE: ArticleSpec = {
   title: 'Grupo Horizonte organiza a logística de expositores com janelas de 30 minutos',
+  coverSlot: { subject: 'Caminhões nas docas do pavilhão durante a montagem da feira', suggestedAlt: 'Caminhões descarregam nas docas do pavilhão', orientation: 'landscape' },
   keyExcerpts: [
     'a gente movimenta a carga de mais de duzentos expositores em quatro dias de montagem',
     'Parece piada, mas é o problema mais comum.',
@@ -85,6 +86,11 @@ export const HORIZONTE_ARTICLE: ArticleSpec = {
           'Tudo o que acontece entre a fábrica do expositor e o estande.',
           'Coleta das peças, transporte, armazenagem perto do pavilhão, entrega no horário da montagem e o caminho de volta depois da feira.',
           'a gente movimenta a carga de mais de duzentos expositores em quatro dias de montagem',
+        ),
+        img(
+          'gh-img-1',
+          { subject: 'Armazém perto do pavilhão com a carga dos expositores', suggestedCaption: 'A carga chega ao armazém com até uma semana de antecedência', suggestedAlt: 'Volumes etiquetados no armazém do Grupo Horizonte', orientation: 'landscape' },
+          'Mantemos um armazém a quinze minutos do pavilhão durante toda a temporada de feiras.',
         ),
       ],
     },
@@ -133,6 +139,11 @@ export const HORIZONTE_ARTICLE: ArticleSpec = {
           'Todo mundo quer desmontar ao mesmo tempo e ir embora.',
           'passamos a recolher as caixas por ordem de agendamento, não por ordem de chegada',
           'As avarias na volta caíram pela metade em duas temporadas.',
+        ),
+        img(
+          'gh-img-2',
+          { subject: 'Caixas recolhidas por ordem de agendamento na desmontagem', suggestedCaption: 'Na volta, as caixas são recolhidas por ordem de agendamento', suggestedAlt: 'Equipe recolhe caixas na desmontagem de um estande', orientation: 'landscape' },
+          'passamos a recolher as caixas por ordem de agendamento, não por ordem de chegada',
         ),
         p(
           'gh-s2-p2',
@@ -196,7 +207,7 @@ export function horizonteStory(ctx: StoryContext): Story {
     source,
     ownerId: PEOPLE.rafael,
     createdAt,
-    brief: { angle: 'O que o expositor precisa saber sobre a logística da feira', sections: 2, length: 'short', revision: 1 },
+    brief: { angle: 'O que o expositor precisa saber sobre a logística da feira', sections: 2, size: 'standard', revision: 1 },
     plan: ['article', 'carousel'],
     templates: ctx.templates,
   });

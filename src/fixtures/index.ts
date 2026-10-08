@@ -18,6 +18,8 @@ import type {
 } from '../domain/index.ts';
 import { deriveActivity } from './activity.ts';
 import { seededHistory } from './history.ts';
+import { SAMPLE_PHOTO } from './images.ts';
+import type { FixtureImage } from './images.ts';
 import type { FixtureHistory } from './history.ts';
 import { DEFAULT_VIEWER_ID, FIXTURE_MEMBERS, FIXTURE_PEOPLE, fixtureWorkspace } from './people.ts';
 import { createScriptBook } from './script-book.ts';
@@ -32,7 +34,8 @@ import { horizonteStory } from './stories/horizonte.ts';
 import { lumeStory } from './stories/lume.ts';
 import { patioCouroStory } from './stories/patio-couro.ts';
 import type { Story, StoryContext, StoryExpectation } from './stories/types.ts';
-import { CAROUSEL_TEMPLATE_DESCRIPTIONS, CAROUSEL_TEMPLATE_RENDERS, CAROUSEL_TEMPLATES } from './templates/catalog.ts';
+import type { TemplateLibraryData } from '../ports/render-template.ts';
+import { CAROUSEL_TEMPLATE_DESCRIPTIONS, CAROUSEL_TEMPLATE_LIBRARY, CAROUSEL_TEMPLATE_RENDERS, CAROUSEL_TEMPLATES } from './templates/catalog.ts';
 import type { TemplateRender } from './templates/provisional.ts';
 import { ago, assertValidNow } from './time.ts';
 
@@ -66,9 +69,15 @@ export type FixtureSet = {
   templateRenders: Record<TemplateId, TemplateRender>;
   /** pt-BR one-liners for the template ChoiceCard. */
   templateDescriptions: Record<TemplateId, string>;
+  /** Library metadata (category, format, tags, status) and sample copy per template. */
+  templateLibrary: Record<TemplateId, TemplateLibraryData>;
   scriptBook: ScriptBook;
   /** Catalogue of seeded states (for tests and the "Simulação" command group). */
   stories: FixtureStory[];
+  /** Images the example's articles use: the asset store's seed (bytes served from `public/samples/`). */
+  images: FixtureImage[];
+  /** The library previews' sample photo ("Foto de exemplo"), drawn by the models that use an image. */
+  samplePhoto: typeof SAMPLE_PHOTO;
 };
 
 export type FixtureOptions = {
@@ -102,6 +111,8 @@ export function createFixtures(options: FixtureOptions): FixtureSet {
     templates,
     templateRenders: structuredClone(CAROUSEL_TEMPLATE_RENDERS),
     templateDescriptions: { ...CAROUSEL_TEMPLATE_DESCRIPTIONS },
+    templateLibrary: structuredClone(CAROUSEL_TEMPLATE_LIBRARY) as Record<TemplateId, TemplateLibraryData>,
+    samplePhoto: SAMPLE_PHOTO,
   };
   if (options.empty) {
     return {
@@ -114,6 +125,7 @@ export function createFixtures(options: FixtureOptions): FixtureSet {
       history: { approvals: [], days: [] },
       scriptBook: createScriptBook([]),
       stories: [],
+      images: [],
     };
   }
 
@@ -126,8 +138,8 @@ export function createFixtures(options: FixtureOptions): FixtureSet {
     .map((story): ScriptEntry | undefined => {
       const { script } = story;
       if (!script?.draft) return script;
-      const { angle, sections, length } = story.scenario.record.production.brief;
-      return { ...script, draft: { ...script.draft, brief: { ...(angle ? { angle } : {}), sections, length } } };
+      const { angle, sections, size } = story.scenario.record.production.brief;
+      return { ...script, draft: { ...script.draft, brief: { ...(angle ? { angle } : {}), sections, size } } };
     })
     .filter((script): script is ScriptEntry => script !== undefined);
   const runEvents: Record<RunId, RunEvent[]> = Object.assign({}, ...stories.map((story) => story.scenario.runEvents));
@@ -146,6 +158,7 @@ export function createFixtures(options: FixtureOptions): FixtureSet {
     history: seededHistory(options.now, options.historySeed === undefined ? {} : { seed: options.historySeed }),
     scriptBook: createScriptBook(scripts),
     stories: stories.map((story) => ({ key: story.scenario.key, productionId: story.scenario.record.production.id, expect: story.expect })),
+    images: stories.flatMap((story) => story.images ?? []).map((image) => structuredClone(image)),
   };
 }
 
@@ -185,6 +198,8 @@ export { DEFAULT_VIEWER_ID, FIXTURE_MEMBERS, FIXTURE_PEOPLE, PEOPLE, WORKSPACE_I
 export { HISTORY_DAYS, HISTORY_SEED, seededHistory } from './history.ts';
 export type { DaySummary, FixtureHistory } from './history.ts';
 export { deriveActivity } from './activity.ts';
+export { SAMPLE_FILES, SAMPLE_PHOTO, fixtureImage, sampleSrc } from './images.ts';
+export type { FixtureImage } from './images.ts';
 export {
   DEFAULT_TEMPLATE_ID,
   NEUTRAL_DARK_TEMPLATE_ID,
@@ -194,7 +209,7 @@ export {
   TEMPLATE_RENDERS,
 } from './templates/provisional.ts';
 export type { LayoutRender, SlotStyle, TemplateRender } from './templates/provisional.ts';
-export { CAROUSEL_TEMPLATE_DESCRIPTIONS, CAROUSEL_TEMPLATE_RENDERS, CAROUSEL_TEMPLATES, TEMPLATE_CATALOG } from './templates/catalog.ts';
+export { CAROUSEL_TEMPLATE_DESCRIPTIONS, CAROUSEL_TEMPLATE_LIBRARY, CAROUSEL_TEMPLATE_RENDERS, CAROUSEL_TEMPLATES, TEMPLATE_CATALOG, templateEntry } from './templates/catalog.ts';
 export type { TemplateEntry } from './templates/catalog.ts';
 export type { StoryExpectation } from './stories/types.ts';
 export { LIVE_RUN_STARTED_SECONDS_AGO } from './stories/atelie-sul.ts';
