@@ -109,7 +109,17 @@ function mapActivity(event: ActivityEvent, lookup: ActivityLookup): Mapped | und
     }
     case 'review.requested': {
       const kind = pieceKindOf(event, lookup) ?? 'article';
-      return { action: 'review.requested', target: versionTarget(event, kind) };
+      // "Quem aprova" and "Para quando" as they were sent (names are stored with the event).
+      const changes: AuditChange[] = [];
+      const assignee = text(event.data, 'assigneeName');
+      if (assignee) changes.push({ field: 'Quem aprova', before: '—', after: assignee });
+      const due = text(event.data, 'dueOn');
+      if (due) changes.push({ field: 'Para quando', before: '—', after: due.split('-').reverse().join('/') });
+      return { action: 'review.requested', target: versionTarget(event, kind), changes: changes.length > 0 ? changes : undefined };
+    }
+    case 'review.withdrawn': {
+      const kind = pieceKindOf(event, lookup) ?? 'article';
+      return { action: 'review.withdrawn', target: versionTarget(event, kind) };
     }
     case 'decision.recorded': {
       const kind = pieceKindOf(event, lookup) ?? 'article';

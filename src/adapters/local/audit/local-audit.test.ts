@@ -161,6 +161,18 @@ describe('local audit: live entries', () => {
     assert.equal(update.productionTitle, 'Lume Acessórios chega a 64 lojas na Europa');
   });
 
+  it('records a new size of the pauta as "Tamanho do artigo"', async () => {
+    const runtime = open();
+    const before = await runtime.queries.get('prod-lume');
+    assert.ok(before.ok);
+    assert.equal(before.value.brief.size, 'standard');
+    const saved = await runtime.commands.updateBrief('prod-lume', { sections: 2, size: 'short', angle: before.value.brief.angle }, before.value.brief.revision);
+    assert.ok(saved.ok, saved.ok ? '' : saved.refusal.message);
+    const { items } = await page(runtime, { from: NOW, types: ['production'] });
+    const update = items.find((entry) => entry.action === 'production.updated' && entry.id.startsWith('aud-l-'));
+    assert.deepEqual(update?.changes, [{ field: 'Tamanho do artigo', before: 'Padrão · 2 laudas', after: 'Curto · 1 lauda' }]);
+  });
+
   it('⌘K › Simulação: the next read fails as "Log indisponível", then the trail answers again', async () => {
     const runtime = open();
     const notices: ChangeNotice[] = [];
@@ -228,6 +240,20 @@ describe('auditFromActivity', () => {
     );
     assert.equal(approved?.action, 'review.approved');
     assert.equal(approved?.target?.label, 'Artigo v4');
+
+    const version = { kind: 'version' as const, pieceId: 'piece-1', versionId: 'ver-2', number: 2, hash: 'h' };
+    const sent = auditFromActivity(
+      { ...base, type: 'review.requested', productionId: 'prod-1', subject: version, data: { piece: 'article', number: 2, assigneeId: 'person-pedro', assigneeName: 'Pedro', dueOn: '2026-10-08' } },
+      { pieceKind: () => 'article' },
+    );
+    assert.equal(sent?.action, 'review.requested');
+    assert.deepEqual(sent?.changes, [
+      { field: 'Quem aprova', before: '—', after: 'Pedro' },
+      { field: 'Para quando', before: '—', after: '08/10/2026' },
+    ]);
+    const withdrawn = auditFromActivity({ ...base, type: 'review.withdrawn', productionId: 'prod-1', subject: version, data: { piece: 'article', number: 2 } }, { pieceKind: () => 'article' });
+    assert.equal(withdrawn?.action, 'review.withdrawn');
+    assert.equal(withdrawn?.target?.label, 'Artigo v2');
 
     const edited = auditFromActivity({ ...base, type: 'version.created', productionId: 'prod-1', data: { piece: 'Carrossel', number: 2, origin: 'edit' } }, none);
     assert.equal(edited?.action, 'carousel.updated');

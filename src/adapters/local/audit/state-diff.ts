@@ -1,7 +1,7 @@
 import type { AuditAction, AuditChange, AuditTarget } from '../../../domain/audit.ts';
 import type { PersonId } from '../../../domain/ids.ts';
-import { LENGTH_TARGETS } from '../../../domain/production.ts';
-import type { Brief, Production } from '../../../domain/production.ts';
+import type { Production } from '../../../domain/production.ts';
+import { sizeLabel } from '../../../domain/sizing.ts';
 import type { Source } from '../../../domain/source.ts';
 import type { Member, Role } from '../../../domain/workspace.ts';
 import type { StoreState } from '../store/state.ts';
@@ -21,11 +21,6 @@ function personName(state: Pick<StoreState, 'people'>, personId: PersonId | unde
   return state.people.find((person) => person.id === personId)?.name ?? 'Pessoa removida';
 }
 
-function lengthLabel(length: Brief['length']): string {
-  const target = LENGTH_TARGETS[length];
-  return target ? `${target.label} · ${target.words} palavras` : length;
-}
-
 function change(changes: AuditChange[], field: string, before: string, after: string): void {
   if (before !== after) changes.push({ field, before, after });
 }
@@ -35,7 +30,7 @@ function productionChanges(state: StoreState, before: Production, after: Product
   change(changes, 'Título', before.title, after.title);
   change(changes, 'Orientação editorial', before.brief.angle?.trim() || 'Sem orientação', after.brief.angle?.trim() || 'Sem orientação');
   change(changes, 'Seções', String(before.brief.sections), String(after.brief.sections));
-  change(changes, 'Extensão', lengthLabel(before.brief.length), lengthLabel(after.brief.length));
+  change(changes, 'Tamanho do artigo', sizeLabel(before.brief.size), sizeLabel(after.brief.size));
   change(changes, 'Responsável', personName(state, before.ownerId), personName(state, after.ownerId));
   return changes;
 }
