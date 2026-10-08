@@ -7,8 +7,9 @@ import { extractQuotes } from '../../../domain/quotes.ts';
 import { resolveSourceRef } from '../../../domain/source.ts';
 import type { Source, SourceOrigin } from '../../../domain/source.ts';
 import { articleTopic, coverKicker } from '../../../domain/text/kicker.ts';
-import { sameText, titleCandidates } from '../../../domain/text/slide-text.ts';
+import { sameText, sentences, standalone, titleCandidates } from '../../../domain/text/slide-text.ts';
 import type { SlideCopy } from '../../../ports/script-book.ts';
+import { featureSlides } from './carousel-features.ts';
 import { fitText, sentenceSpans, withoutFinalPeriod } from './sentences.ts';
 
 /**
@@ -17,14 +18,22 @@ import { fitText, sentenceSpans, withoutFinalPeriod } from './sentences.ts';
  * fitted to each slot's character budget at sentence or word boundaries; the render's line fit is
  * checked by the run's "Conferindo limites" step. The cover's call is "editoria · marca". No slot
  * gets a label for text ("Contexto"): the context slide is titled by the production's working
- * title when it reads as one, else it shows its text alone.
+ * title when it reads as one, else it shows its text alone. Templates that feature `data` or
+ * `list` get one of those in place of a point when the article has the material
+ * (`carousel-features.ts`). A Curto has no intertítulos: each paragraph after the lead reads as a
+ * point, headed by its own first statement.
  */
 
 export type CarouselPlan = { origin: 'script' | 'extractive'; slides: Slide[] };
 
 type NewId = (prefix: string) => string;
 
-type Section = { heading?: ArticleBlock; blocks: ArticleBlock[] };
+type Section = {
+  heading?: ArticleBlock;
+  blocks: ArticleBlock[];
+  /** A paragraph of a text without intertítulos read as a point (its first statement heads it). */
+  point?: ArticleBlock;
+};
 
 /** Last resort of the cover's call, when neither the editoria nor the brand is known. */
 const ORIGIN_KICKERS: Partial<Record<SourceOrigin, string>> = {
@@ -35,6 +44,16 @@ const ORIGIN_KICKERS: Partial<Record<SourceOrigin, string>> = {
 };
 
 const CTA_TEXT = 'Leia a matéria completa';
+
+/**
+ * A paragraph read as a point: the first statement (the words inside its quotation, without the
+ * attribution) heads the slide and the rest of the paragraph is its text.
+ */
+function pointOf(block: ArticleBlock): { title: string; body: string } {
+  const [head = '', ...rest] = sentences(blockText(block));
+  const quoted = /“([^”]+)”/.exec(head)?.[1];
+  return { title: standalone(withoutFinalPeriod((quoted ?? head).trim())), body: rest.join(' ') };
+}
 
 function sectionsOf(body: ArticleBody): Section[] {
   const sections: Section[] = [{ blocks: [] }];
@@ -128,23 +147,30 @@ export function planFromCarouselScript(
     copy.length === input.slides &&
     copy.every((slide) => findLayout(input.template, slide.layout) && slide.sourceBlockIds.every((id) => blockIds.has(id)));
   if (!fits) return undefined;
-  return {
-    origin: 'script',
-    slides: copy.map((slide) => ({
-      id: input.newId('sld'),
-      layout: slide.layout,
-      slots: { ...slide.slots },
-      sourceBlockIds: [...slide.sourceBlockIds],
-      ai: 'unreviewed',
-    })),
-  };
+  const slides: Slide[] = copy.map((slide) => ({
+    id: input.newId('sld'),
+    layout: slide.layout,
+    slots: { ...slide.slots },
+    sourceBlockIds: [...slide.sourceBlockIds],
+    ai: 'unreviewed',
+  }));
+  return { origin: 'script', slides: featureSlides(slides, input.template, input.article) };
 }
 
 export function extractiveCarouselPlan(input: CarouselPlanInput): CarouselPlan {
   const { article, template } = input;
   const sections = sectionsOf(article);
-  const intro = sections.find((section) => !section.heading);
-  const bodySections = sections.filter((section) => section.heading);
+  let intro = sections.find((section) => !section.heading);
+  let bodySections = sections.filter((section) => section.heading);
+  if (bodySections.length === 0 && intro) {
+    // A Curto writes no intertítulos: the lead opens, every paragraph after it is a point.
+    const [lead, ...rest] = paragraphs(intro.blocks);
+    if (rest.length > 0) {
+      bodySections = rest.map((block) => ({ blocks: [block], point: block }));
+      intro = { blocks: lead ? [lead] : [] };
+    }
+  }
+  const headless = bodySections.length > 0 && bodySections.every((section) => section.point);
   const used = new Set<BlockId>();
   const quotes = extractQuotes(article);
   const origin = input.sources[0]?.origin;
@@ -205,6 +231,18 @@ export function extractiveCarouselPlan(input: CarouselPlanInput): CarouselPlan {
         break;
       }
       case 'closing': {
+        if (headless) {
+          const last = [...bodySections].reverse().find((section) => section.point && !used.has(section.point.id)) ?? bodySections[bodySections.length - 1];
+          if (last.point) {
+            const point = pointOf(last.point);
+            values.title = point.title;
+            if (!used.has(last.point.id) && point.body) values.body = point.body;
+            used.add(last.point.id);
+            blocks.push(last.point.id);
+          }
+          values.cta = CTA_TEXT;
+          break;
+        }
         const last = bodySections[bodySections.length - 1] ?? intro;
         if (last?.heading) values.title = blockText(last.heading);
         const closingBlock = [...paragraphs(last?.blocks ?? [])].reverse().find((block) => !used.has(block.id));
@@ -213,6 +251,15 @@ export function extractiveCarouselPlan(input: CarouselPlanInput): CarouselPlan {
         break;
       }
       default: {
+        const free = headless ? bodySections.find((section) => section.point && !used.has(section.point.id)) : undefined;
+        if (free?.point) {
+          const point = pointOf(free.point);
+          values.title = point.title;
+          if (point.body) values.body = point.body;
+          used.add(free.point.id);
+          blocks.push(free.point.id);
+          break;
+        }
         const section = bodySections[pointIndex] ?? bodySections[bodySections.length - 1] ?? intro;
         pointIndex += 1;
         if (section?.heading) values.title = blockText(section.heading);
@@ -241,5 +288,5 @@ export function extractiveCarouselPlan(input: CarouselPlanInput): CarouselPlan {
     const slide: Slide = { id: input.newId('sld'), layout: layoutId, slots, sourceBlockIds: [...new Set(blocks)], ai: 'unreviewed' };
     return slide;
   });
-  return { origin: 'extractive', slides };
+  return { origin: 'extractive', slides: featureSlides(slides, template, article) };
 }

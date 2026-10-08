@@ -1,4 +1,4 @@
-import { blockText, findBlock, listBlock, paragraphBlock, sliceText } from '../../../domain/article.ts';
+import { articleCharacters, blockText, findBlock, listBlock, paragraphBlock, sliceText } from '../../../domain/article.ts';
 import type { ArticleBlock, ArticleBody } from '../../../domain/article.ts';
 import { extractQuotes } from '../../../domain/quotes.ts';
 import { segmentRef } from '../../../domain/refs.ts';
@@ -9,7 +9,8 @@ import { findSegment, resolveSourceRef } from '../../../domain/source.ts';
 import type { Source } from '../../../domain/source.ts';
 import type { SuggestionProposal } from '../../../domain/suggestion.ts';
 import { foldForMatch } from '../../../domain/text/normalize.ts';
-import { countWords } from '../../../domain/text/stats.ts';
+import { groupDigits } from '../../../domain/sizing.ts';
+import { countCharacters, countWords } from '../../../domain/text/stats.ts';
 import { GENERATION_LABELS, REWRITE_TONE_LABELS } from '../../../ports/generation.ts';
 import type { GenerationKind, RewriteTone, StartRefusal } from '../../../ports/generation.ts';
 import type { RewriteVariant, ScriptBook } from '../../../ports/script-book.ts';
@@ -111,7 +112,7 @@ function shortenBlock(context: AssistContext, located: Located): string | undefi
 export function planShorten(
   body: ArticleBody,
   target: readonly TextRange[] | undefined,
-  targetWords: number | undefined,
+  targetCharacters: number | undefined,
   context: AssistContext,
 ): Result<AssistPlan, StartRefusal> {
   const label = GENERATION_LABELS['article.shorten'];
@@ -124,16 +125,16 @@ export function planShorten(
       reply: [],
       suggestions: [textSuggestion(context.newId, located.value.range, text, label)],
       sourcesUsed: [],
-      meta: `${countWords(located.value.text)} → ${countWords(text)} palavras`,
+      meta: `${groupDigits(countCharacters(located.value.text))} → ${groupDigits(countCharacters(text))} caracteres`,
     });
   }
-  // Whole document: longest paragraphs first, until the projected total reaches the target.
-  const total = body.blocks.reduce((sum, block) => sum + countWords(blockText(block)), 0);
-  const goal = targetWords ?? Math.round(total * 0.8);
-  if (total <= goal) return refuse('no_change', `O texto já tem ${total} palavras.`);
+  // Whole document: longest paragraphs first, until the projected body (lauda count) reaches the target.
+  const total = articleCharacters(body);
+  const goal = targetCharacters ?? Math.round(total * 0.8);
+  if (total <= goal) return refuse('no_change', `O texto já tem ${groupDigits(total)} caracteres.`);
   const candidates = body.blocks
     .filter((block) => block.type === 'paragraph')
-    .sort((a, b) => countWords(blockText(b)) - countWords(blockText(a)));
+    .sort((a, b) => countCharacters(blockText(b)) - countCharacters(blockText(a)));
   let projected = total;
   const suggestions: PlannedSuggestion[] = [];
   for (const block of candidates) {
@@ -142,13 +143,13 @@ export function planShorten(
     const located: Located = { block, range: { blockId: block.id, from: 0, to: full.length }, text: full, wholeBlock: true };
     const text = shortenBlock(context, located);
     if (!text) continue;
-    projected -= countWords(full) - countWords(text);
+    projected -= countCharacters(full) - countCharacters(text);
     suggestions.push(textSuggestion(context.newId, located.range, text, label));
   }
   if (suggestions.length === 0) return refuse('no_change', 'Não há o que encurtar sem perder informação.');
   const order = new Map(body.blocks.map((block, index) => [block.id, index]));
   suggestions.sort((a, b) => (order.get(a.target[0].blockId) ?? 0) - (order.get(b.target[0].blockId) ?? 0));
-  return ok({ reply: [], suggestions, sourcesUsed: [], meta: `${total} → ${projected} palavras` });
+  return ok({ reply: [], suggestions, sourcesUsed: [], meta: `${groupDigits(total)} → ${groupDigits(projected)} caracteres` });
 }
 
 export function planToList(body: ArticleBody, target: readonly TextRange[], context: AssistContext): Result<AssistPlan, StartRefusal> {

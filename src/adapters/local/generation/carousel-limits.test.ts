@@ -48,10 +48,11 @@ describe('carousel copy · limits step', () => {
       const measured = render.measure(body);
       return measured.ok ? measured.value : [];
     };
-    const long = 'Cooperativa de padeiras reúne nove mulheres e corta o custo da farinha';
+    // Long words wrap early: within the characters, past the cover's lines.
+    const long = 'Cooperativa de panificadoras paranaenses compartilha infraestrutura';
     assert.ok(long.length <= 70, 'within the character budget');
     const body: CarouselBody = { type: 'carousel', templateId: template.id, slides: [{ id: 's1', layout: 'cover', slots: { title: long }, sourceBlockIds: [] }] };
-    assert.ok(measure(body).some((fit) => fit.slotId === 'title' && fit.overflow), 'but over the 3 lines of the cover');
+    assert.ok(measure(body).some((fit) => fit.slotId === 'title' && fit.overflow), 'but over the 4 lines of the cover');
     const fitted = fitSlidesToRender(body, template, measure);
     assert.equal(fitted.shortened, 1);
     assert.equal(fitted.over, 0);
