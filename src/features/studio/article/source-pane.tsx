@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ErrorState, TranscriptViewer, type TranscriptAction } from '@content-ventures/design-system/v3';
+import { EmptyState, ErrorState, TranscriptViewer, type TranscriptAction } from '@content-ventures/design-system/v3';
 import { MessageSquareText, Quote } from '@content-ventures/design-system/v3/icons';
 import { useStudio } from './studio-context';
 
@@ -35,6 +35,9 @@ export function MaterialTab() {
   );
   if (studio.sourceError) {
     return <ErrorState size="panel" title="Não foi possível abrir o material" onRetry={studio.sourceError.retry} />;
+  }
+  if (studio.production.sources.length === 0) {
+    return <EmptyState size="panel" icon={Quote} title="Artigo escrito do zero" description="Este artigo não usa uma transcrição." />;
   }
   return (
     <TranscriptViewer

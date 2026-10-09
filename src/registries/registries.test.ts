@@ -242,11 +242,11 @@ describe('navigation registry', () => {
 });
 
 describe('content registries', () => {
-  test('R1 ships transcripts, article and carousel, two gates, one flow and export', () => {
+  test('R1 keeps transcript production and adds direct article writing with export', () => {
     assert.deepEqual(sourceKindsFor(R1).map((entry) => entry.kind), ['transcript']);
     assert.deepEqual(pieceKindsFor(R1).map((entry) => entry.kind), ['article', 'carousel']);
     assert.deepEqual(ids(gatesFor(R1)), ['article.approval', 'carousel.approval']);
-    assert.deepEqual(ids(flowsFor(R1)), ['transcript-article']);
+    assert.deepEqual(ids(flowsFor(R1)), ['transcript-article', 'writing-article']);
     assert.deepEqual(ids(channelsFor(R1)), ['export']);
     assert.deepEqual(
       ids(channelsFor('R6')),

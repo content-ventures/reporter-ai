@@ -49,6 +49,7 @@ type Methods<T> = { [K in keyof T]: true };
 
 const PRODUCTION_METHODS: Methods<ProductionCommands> = {
   createFromSource: true,
+  createBlank: true,
   rename: true,
   updateBrief: true,
   updateSpeakers: true,

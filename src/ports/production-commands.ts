@@ -78,6 +78,11 @@ export type CreatedProduction = {
   pieces: { kind: PieceKind; pieceId: PieceId }[];
 };
 
+/** Opens an owned, empty article in the existing studio; no material or AI run is created. */
+export type BlankProductionInput = { title: string; brief: BriefInput };
+export type CreatedBlankProduction = { productionId: ProductionId; pieceId: PieceId };
+export type CreateBlankRefusal = 'empty_title' | 'sections_out_of_range' | 'unknown_size' | 'forbidden';
+
 // ── Estúdio ──────────────────────────────────────────────────────────────────────────────
 
 /** `locked`: the text waits for a decision ("O texto está com Pedro para aprovação. Retire o envio para editar."). */
@@ -207,6 +212,7 @@ export type ArchiveRefusal = NotFoundRefusal | 'run_in_progress';
 export interface ProductionCommands {
   /** Saves the source and the production BEFORE any run starts (REQ-1.1, REQ-1.2). */
   createFromSource(input: NewProductionInput): Promise<Result<CreatedProduction, CreateProductionRefusal>>;
+  createBlank(input: BlankProductionInput): Promise<Result<CreatedBlankProduction, CreateBlankRefusal>>;
   rename(productionId: ProductionId, title: string): Promise<Result<{ title: string }, NotFoundRefusal | 'empty_title'>>;
   /** Pass `baseRevision` to detect a concurrent edit. */
   updateBrief(productionId: ProductionId, brief: BriefInput, baseRevision?: number): Promise<Result<Brief, BriefRefusal>>;

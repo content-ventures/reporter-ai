@@ -9,13 +9,17 @@ import type { CommandContext, Result } from '../../../domain/result.ts';
 import { createTranscriptSource, mapSpeaker, toSourceVersionRef } from '../../../domain/source.ts';
 import type { Source } from '../../../domain/source.ts';
 import type { FlowDefinition } from '../../../domain/stage.ts';
+import { WRITING_FLOW } from '../../../domain/stage.ts';
 import { parseTranscript } from '../../../domain/text/transcript-parse.ts';
 import type { Person } from '../../../domain/workspace.ts';
+import { hasAnyRole } from '../../../domain/workspace.ts';
 import type { PersonSummary } from '../../../ports/common.ts';
 import type {
   ArchiveRefusal,
   BriefRefusal,
   CreatedProduction,
+  CreatedBlankProduction,
+  CreateBlankRefusal,
   CreateProductionRefusal,
   PersonDetails,
   PersonRefusal,
@@ -24,7 +28,7 @@ import type {
   SpeakersRefusal,
 } from '../../../ports/production-commands.ts';
 import type { ActivityDraft, LocalStore, Tx } from './local-store.ts';
-import { isKnownPerson, toPersonSummary } from './people.ts';
+import { currentMember, isKnownPerson, toPersonSummary } from './people.ts';
 import type { ReadContext } from './read-context.ts';
 import { findProduction, productionsUsingSource, withProduction, withSource } from './state.ts';
 import type { ProductionState, StoreState } from './state.ts';
@@ -34,7 +38,7 @@ import { sourceDetail } from './views-piece.ts';
 
 type ProductionLevelCommands = Pick<
   ProductionCommands,
-  'createFromSource' | 'rename' | 'updateBrief' | 'updateSpeakers' | 'updatePerson' | 'setMaterialAuthorization' | 'archive'
+  'createFromSource' | 'createBlank' | 'rename' | 'updateBrief' | 'updateSpeakers' | 'updatePerson' | 'setMaterialAuthorization' | 'archive'
 >;
 
 const PRODUCTION_NOT_FOUND = refuse('not_found', 'Não encontramos esta produção.');
@@ -93,6 +97,37 @@ function touch(production: ProductionState, patch: Partial<Production>, now: str
 
 export function createProductionCommands(store: LocalStore, read: () => ReadContext, flow: FlowDefinition): ProductionLevelCommands {
   return {
+    async createBlank(input) {
+      return store.transact((state, ctx): Tx<CreatedBlankProduction, CreateBlankRefusal> => {
+        const member = currentMember(state);
+        if (!member || !hasAnyRole(member, ['editor', 'admin'])) return refuse('forbidden', 'Você não tem permissão para criar artigos.');
+        const title = input.title.trim();
+        if (!title) return refuse('empty_title', 'Dê um título à produção.');
+        const brief = validateBrief({ ...input.brief, revision: 1 });
+        if (!brief.ok) return brief;
+        const production: Production = {
+          id: ctx.newId('prod'), workspaceId: state.workspace.id, flowId: WRITING_FLOW.id,
+          title, sourceIds: [], brief: brief.value, plan: ['article'], relations: [],
+          ownerId: ctx.actorId, createdAt: ctx.now, createdBy: ctx.actorId, updatedAt: ctx.now,
+        };
+        const article: Piece = {
+          id: ctx.newId('piece'), productionId: production.id, kind: 'article', slug: 'article',
+          draft: { body: emptyArticle(), revision: 0, inputs: [], sources: [], updatedAt: ctx.now, updatedBy: ctx.actorId },
+          createdAt: ctx.now, createdBy: ctx.actorId,
+        };
+        const entry: ProductionState = {
+          production, pieces: [article], versions: [], decisions: [], reviewRequests: [],
+          runs: [], suggestions: [], deliveries: [],
+        };
+        return ok({
+          state: { ...state, productions: [...state.productions, entry] },
+          value: { productionId: production.id, pieceId: article.id },
+          productionIds: [production.id],
+          activity: [{ type: 'production.created', productionId: production.id, data: { title } }],
+        });
+      });
+    },
+
     async createFromSource(input) {
       return store.transact((state, ctx): Tx<CreatedProduction, CreateProductionRefusal> => {
         const title = input.title.trim();

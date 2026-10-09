@@ -26,7 +26,7 @@ export function useStudioPrimary(): HeaderPrimary | undefined {
     status: piece.status,
     generating: generation.active,
     ...(approval ? { approval } : {}),
-    authorized: production.sources.every((entry) => entry.authorized),
+    authorized: production.sources.length > 0 && production.sources.every((entry) => entry.authorized),
     ...(carousel ? { carousel: { status: carousel.status } } : {}),
     tabReadOnly: studio.readOnly,
   });
@@ -70,10 +70,10 @@ function useStudioMenu(): MenuSection[] {
     ...(studio.canEdit
       ? [{ label: 'Editar pauta', icon: ClipboardList, disabled: generation.active, ...(generation.active ? { description: 'Aguarde a IA terminar.' } : {}), onSelect: () => panes.openDialog('brief') }]
       : []),
-    { label: 'Ver estrutura', icon: ListTree, onSelect: () => panes.openDialog('structure') },
+    ...(studio.production.sources.length > 0 ? [{ label: 'Ver estrutura', icon: ListTree, onSelect: () => panes.openDialog('structure') }] : []),
     { label: 'Histórico de versões', icon: HistoryIcon, onSelect: () => panes.openDialog('history') },
     { label: 'Como a IA escreveu', icon: Sparkles, onSelect: () => panes.openDialog('trace') },
-    ...(studio.canEdit && !studio.empty
+    ...(studio.canEdit && !studio.empty && studio.production.sources.length > 0
       ? [
           {
             label: 'Reescrever o artigo do zero…',

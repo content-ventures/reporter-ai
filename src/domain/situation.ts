@@ -9,6 +9,7 @@ import { isDelivered, PIECE_PARENTS, pieceStatus } from './rules/status.ts';
 import type { PieceStatus, ProductionStatus } from './rules/status.ts';
 import type { GenerationRun } from './run.ts';
 import type { ProductionView } from './views.ts';
+import { WRITING_FLOW } from './stage.ts';
 import { hasAnyRole } from './workspace.ts';
 import type { Member } from './workspace.ts';
 
@@ -220,7 +221,9 @@ export function nextStepFor(input: SituationInput): NextStep | null {
       return owner || admin ? step('retry', studio, true) : open;
     case 'not_started':
       if (!editor) return open;
-      if (kind === 'article') return step('structure', { kind: 'structure' }, owner);
+      if (kind === 'article') return record.production.flowId === WRITING_FLOW.id
+        ? step('continue', studio, owner)
+        : step('structure', { kind: 'structure' }, owner);
       return step(kind === 'carousel' ? 'create_carousel' : 'continue', studio, owner);
     case 'draft':
       return editor ? step('continue', studio, owner) : open;

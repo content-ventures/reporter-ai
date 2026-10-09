@@ -1,4 +1,4 @@
-import { R1_FLOW } from '../domain/index.ts';
+import { R1_FLOW, WRITING_FLOW } from '../domain/index.ts';
 import type { FlowDefinition, FlowId, GateId, SourceKind } from '../domain/index.ts';
 import { availableIn, CURRENT_RELEASE } from './release.ts';
 import type { ReleaseId } from './release.ts';
@@ -22,6 +22,13 @@ export const FLOWS: readonly FlowEntry[] = [
     description: 'Transcrição autorizada → artigo aprovado → carrossel aprovado → exportação.',
     sourceKinds: ['transcript'],
     gates: ['article.approval', 'carousel.approval'],
+  },
+  {
+    ...WRITING_FLOW,
+    since: 'R1',
+    description: 'Escrita livre → artigo aprovado → exportação.',
+    sourceKinds: [],
+    gates: ['article.approval'],
   },
   {
     id: 'news-article',

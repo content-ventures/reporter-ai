@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Alert,
@@ -16,7 +16,7 @@ import {
   Tooltip,
 } from '@content-ventures/design-system/v3';
 import { FileText, RotateCcw, Sparkles } from '@content-ventures/design-system/v3/icons';
-import { sizeOf } from '@/domain';
+import { sizeOf, WRITING_FLOW } from '@/domain';
 import { EditorContent } from '@/editor';
 import { formatCharacters, formatLaudas, plural } from '@/ui/format';
 import { materialHref } from '@/ui/routes';
@@ -35,6 +35,11 @@ import { useSpeakersWithoutPerson } from './studio-footer';
 export function EditorCanvas() {
   const studio = useStudio();
   const { editor, generation } = studio;
+  const writing = studio.production.flowId === WRITING_FLOW.id;
+  const editable = studio.canEdit && !studio.readOnly && !studio.locked;
+  useEffect(() => {
+    if (writing && editable && studio.empty) editor?.commands.focus('start');
+  }, [editor, writing, editable, studio.empty]);
 
   return (
     <Prose
@@ -53,7 +58,7 @@ export function EditorCanvas() {
       <PageStack>
         <EditorContent editor={editor} />
         {generation.active ? <PendingStructure /> : null}
-        {studio.empty ? <EmptyDraft /> : null}
+        {studio.empty && !writing ? <EmptyDraft /> : null}
       </PageStack>
     </Prose>
   );

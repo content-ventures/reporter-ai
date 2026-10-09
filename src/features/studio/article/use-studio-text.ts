@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { proseWidgets } from '@content-ventures/design-system/v3';
-import { bodyHash, type ArticleBody, type BlockId, type TextRange } from '@/domain';
+import { bodyHash, WRITING_FLOW, type ArticleBody, type BlockId, type TextRange } from '@/domain';
 import {
   findBlockEntry,
   focusBlock,
@@ -73,7 +73,7 @@ export function useStudioText({
     widgets: proseWidgets,
     // An empty draft says "Ainda não há texto" under it (or the generation writes): no second
     // call to action inside the text.
-    placeholder: { document: () => '' },
+    placeholder: { document: () => production.flowId === WRITING_FLOW.id ? 'Comece a escrever…' : '' },
     onChange: (next) => {
       setBody(next);
       void sync.save(next);

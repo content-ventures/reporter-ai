@@ -51,6 +51,13 @@ export const R1_FLOW: FlowDefinition = {
   ],
 };
 
+/** Direct writing uses the same article approval and delivery, without a transcript stage. */
+export const WRITING_FLOW: FlowDefinition = {
+  id: 'writing-article',
+  label: 'Escrita → artigo',
+  stages: R1_FLOW.stages.filter((stage) => stage.id !== 'source' && stage.id !== 'carousel'),
+};
+
 export type StageState = 'done' | 'current' | 'upcoming' | 'warn' | 'error' | 'blocked';
 
 export type StageView = {
@@ -193,6 +200,7 @@ function evaluateStage(record: ProductionRecord, stage: StageDefinition, gatedKi
 }
 
 export function stageState(record: ProductionRecord, flow: FlowDefinition = R1_FLOW, options: StageStateOptions = {}): JourneyView {
+  if (record.production.flowId === WRITING_FLOW.id) flow = WRITING_FLOW;
   const stages = flow.stages.filter(
     (stage) => (stage.kind !== 'piece' && stage.kind !== 'gate') || (stage.pieceKind && record.production.plan.includes(stage.pieceKind)),
   );

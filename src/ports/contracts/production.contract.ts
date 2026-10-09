@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { paragraphBlock } from '../../domain/article.ts';
 import type { ChangeNotice } from '../common.ts';
 import {
   CONTRACT_TRANSCRIPT,
@@ -21,6 +22,62 @@ import type { PortsFactory } from './fixture.ts';
 
 export function productionPortsContract(name: string, make: PortsFactory): void {
   describe(`${name} · production ports contract`, () => {
+    it('creates a blank owned article without a transcript or generation and resumes in the studio', () =>
+      withPorts(make, async (ports) => {
+        const created = unwrap(await ports.commands.createBlank({ title: 'Artigo sem título', brief: { size: 'standard', sections: 3 } }));
+        const detail = unwrap(await ports.queries.get(created.productionId));
+        assert.equal(detail.flowId, 'writing-article');
+        assert.equal(detail.ownerId, ports.people.editor);
+        assert.deepEqual(detail.plan, ['article']);
+        assert.deepEqual(detail.sources, []);
+        assert.deepEqual(detail.runs, []);
+        assert.deepEqual(detail.stages.map((stage) => stage.id), ['article', 'approval', 'delivery']);
+        assert.equal(detail.currentStageId, 'article');
+        assert.equal(detail.nextStep?.kind, 'continue');
+        assert.deepEqual(detail.nextStep?.target, { kind: 'studio', pieceKind: 'article' });
+        assert.deepEqual(unwrap(await ports.queries.draft(created.pieceId)).body, { type: 'article', title: '', blocks: [] });
+        assert.deepEqual((await ports.queries.activity({ productionId: created.productionId })).items.map((item) => item.type), ['production.created']);
+        assert.equal(detail.guards.pieces.article?.generate.allowed, false, 'manual creation never invents source material for the AI');
+      }));
+
+    it('refuses invalid or unauthorised blank article creation atomically', () =>
+      withPorts(make, async (ports) => {
+        const before = await ports.queries.list();
+        for (const [input, code] of [
+          [{ title: ' ', brief: { size: 'standard', sections: 3 } }, 'empty_title'],
+          [{ title: 'Nova história', brief: { size: 'standard', sections: 9 } }, 'sections_out_of_range'],
+        ] as const) {
+          const result = await ports.commands.createBlank(input);
+          assert.ok(!result.ok && result.refusal.code === code);
+        }
+        await ports.actAs(ports.people.approver);
+        const forbidden = await ports.commands.createBlank({ title: 'Nova história', brief: { size: 'standard', sections: 3 } });
+        assert.ok(!forbidden.ok && forbidden.refusal.code === 'forbidden');
+        assert.deepEqual(await ports.queries.list(), before);
+        assert.equal((await ports.queries.activity()).total, 0);
+      }));
+
+    it('autosaves manual text and reuses the existing version and approval workflow', () =>
+      withPorts(make, async (ports) => {
+        const created = unwrap(await ports.commands.createBlank({ title: 'Uma praça para o bairro', brief: { size: 'standard', sections: 3 } }));
+        const draft = unwrap(await ports.queries.draft(created.pieceId));
+        const body = { type: 'article' as const, title: 'Uma praça para o bairro', blocks: [paragraphBlock('manual-paragraph', 'A praça reúne moradores que cuidam dos jardins e dos espaços de leitura. '.repeat(35).trim())] };
+        unwrap(await ports.commands.saveDraft(created.pieceId, body, draft.revision));
+        assert.deepEqual(unwrap(await ports.queries.draft(created.pieceId)).body, body);
+        const requested = unwrap(await ports.commands.requestReview(created.pieceId, { assigneeId: ports.people.approver }));
+        const version = unwrap(await ports.queries.version(requested.version.id));
+        assert.deepEqual(version.body, body);
+        assert.deepEqual(version.sources, []);
+        await ports.actAs(ports.people.approver);
+        unwrap(await ports.commands.decide({ pieceId: created.pieceId, subject: requested.version.ref, decision: 'approved' }));
+        const approved = unwrap(await ports.queries.get(created.productionId));
+        assert.equal(approved.status, 'approved');
+        assert.equal(approved.currentStageId, 'delivery');
+        assert.equal(approved.guards.export.allowed, true);
+        assert.deepEqual(approved.sources, []);
+        assert.deepEqual(approved.runs, []);
+      }));
+
     it('creates a production from material and saves the source before any run', () =>
       withPorts(make, async (ports) => {
         const analysis = unwrap(await ports.ingest.analyze(CONTRACT_TRANSCRIPT), 'analyze');
