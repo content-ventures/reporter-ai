@@ -1,6 +1,6 @@
 'use client';
 
-import { ButtonLink, Card, EmptyState, MediaFrame, MetaList, PageHeader, PageStack, SkeletonText } from '@content-ventures/design-system/v3';
+import { ButtonLink, Card, CardHeader, EmptyState, Grid, MediaFrame, MetaList, PageStack, SkeletonText, StepperCompact } from '@content-ventures/design-system/v3';
 import { ArrowRight, CheckCircle2 } from '@content-ventures/design-system/v3/icons';
 import { creditLine, imageAlt } from '@/domain';
 import type { InProgressItem } from '@/ports';
@@ -9,15 +9,17 @@ import { PRODUCTIONS_HREF, stepTargetHref } from '@/ui/routes';
 import { useNow } from '@/ui/time';
 import { inProgressLine } from './desk-copy';
 
-/** The existing "Continue" action, promoted to a visual card; no new draft or workflow state. */
+/** A compact resumption of the real production, with its cover and current R1 journey. */
 export function FeaturedProduction({ item, loading }: { item: InProgressItem | undefined; loading: boolean }) {
   if (item?.nextStep) return <ProductionCard item={item} />;
   if (loading) {
     return (
       <Card loading aria-label="Carregando produção para continuar" padding="lg">
         <PageStack>
-          <MediaFrame ratio="24/9" alt="" state="loading" />
-          <SkeletonText lines={2} />
+          <Grid columns="1:2" collapseBelow={false}>
+            <MediaFrame ratio="4/3" maxHeight={120} alt="" state="loading" />
+            <SkeletonText lines={3} />
+          </Grid>
         </PageStack>
       </Card>
     );
@@ -47,30 +49,42 @@ function ProductionCard({ item }: { item: InProgressItem }) {
   const caption = cover ? [cover.caption, credit].filter(Boolean).join(' — ') || undefined : undefined;
   const loading = production.status === 'loading' || (article && draft.status === 'loading') || (cover && url.status === 'loading');
   const step = item.nextStep;
+  const stages = production.data?.stages;
+  const current = stages?.findIndex((stage) => stage.id === production.data?.currentStageId) ?? -1;
+  const action = step && (
+    <ButtonLink size="sm" href={stepTargetHref(item.productionId, step.target)} icon={ArrowRight} aria-label={`${step.label}: ${item.productionTitle}`}>
+      {step.label}
+    </ButtonLink>
+  );
 
   return (
     <Card as="article" padding="lg" aria-label={`Continuar: ${item.productionTitle}`}>
       <PageStack>
-        <MediaFrame
-          ratio="24/9"
-          src={cover ? url.data : '/editorial/writing.jpg'}
-          alt={cover ? imageAlt(cover) : ''}
-          state={loading ? 'loading' : undefined}
-          caption={caption}
-        />
-        <PageHeader
-          titleAs="h2"
-          title={item.productionTitle}
-          eyebrow="Continue de onde parou"
-          actions={
-            step && (
-              <ButtonLink href={stepTargetHref(item.productionId, step.target)} icon={ArrowRight} aria-label={`${step.label}: ${item.productionTitle}`}>
-                {step.label}
-              </ButtonLink>
-            )
-          }
-        />
-        <MetaList size="sm" items={[inProgressLine(item, now), item.owner.name]} />
+        <Grid columns="1:2" collapseBelow={false} align="start">
+          <MediaFrame
+            ratio="4/3"
+            maxHeight={120}
+            src={cover ? url.data : '/editorial/writing.jpg'}
+            alt={cover ? imageAlt(cover) : ''}
+            state={loading ? 'loading' : undefined}
+            caption={caption}
+          />
+          <PageStack>
+            <CardHeader titleAs="h2" size="md" title={item.productionTitle} description="Continue de onde parou" />
+            <MetaList size="sm" items={[inProgressLine(item, now), item.owner.name]} />
+          </PageStack>
+        </Grid>
+        {stages && current >= 0 ? (
+          <StepperCompact
+            label={`Etapas de ${item.productionTitle}`}
+            steps={stages.map((stage) => ({ id: stage.id, label: stage.label, ...(stage.state !== 'current' ? { state: stage.state } : {}) }))}
+            current={current}
+            showNext={false}
+            actions={action}
+          />
+        ) : (
+          <CardHeader title={item.situation.line} actions={action} />
+        )}
       </PageStack>
     </Card>
   );

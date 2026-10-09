@@ -43,3 +43,4 @@
 - Status colours are reserved for state; meters and sparklines are neutral by default.
 - Every AI output carries the "Simulação local" label while the product runs on the local simulation.
 - The writer overview is based on `release-one-experience`: a photographic card resumes the real next action beside the original personal/team queues. Preserve every R1 screen, route and workflow state. See `docs/EDITORIAL_OVERVIEW.md` for scope and references.
+- The overview uses a compact image beside the continuation, real stage progress, four previews of other productions filtered by R1 stage, and four recent workspace events. Personal work and the original priority actions remain intact; no new workflow state is introduced.

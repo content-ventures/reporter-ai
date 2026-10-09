@@ -101,7 +101,8 @@
     "Status colours are reserved for state; meters and sparklines are neutral by default",
     "AI output carries the Simulação local label while the product runs on the local simulation",
     "Reporter consumes DS 0.2.0 from the editorial-studio branch until the version is tagged and pinned",
-    "Improve only the overview on release-one-experience: the approved photographic writer direction uses the real next action and the original personal/team queues; preserve all R1 screens, routes and workflow state"
+    "Improve only the overview on release-one-experience: the approved photographic writer direction uses the real next action and the original personal/team queues; preserve all R1 screens, routes and workflow state",
+    "Use a compact continuation with real stage progress, four other-production previews filtered by R1 stage and four recent workspace events; retain the original personal work and priority actions without new workflow state"
   ],
   "evidence": [
     {

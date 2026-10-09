@@ -91,10 +91,34 @@ for (const viewport of VIEWPORTS) {
       });
     }
 
-    test("visão geral: continuar no estúdio original, consultar equipe e manter o período", async ({ page }) => {
+    test("visão geral: continuar no estúdio original, filtrar produções, consultar equipe e manter o período", async ({ page }, testInfo) => {
       const errors = watchErrors(page);
       await page.goto("/");
       const featured = page.getByRole("article", { name: /^Continuar: Estúdio Norte/ });
+      await expect(featured.getByRole("progressbar", { name: /^Etapas de Estúdio Norte/ })).toBeVisible();
+      await expect(page.getByRole("list", { name: "Últimas movimentações", exact: true })).toBeVisible();
+      await expectLoaded(page);
+      const screenshot = testInfo.outputPath("overview.png");
+      await page.screenshot({ path: screenshot, fullPage: true });
+      await testInfo.attach("Início", { path: screenshot, contentType: "image/png" });
+
+      await page.getByRole("tab", { name: /^Material/ }).click();
+      const material = page.getByRole("tabpanel", { name: /^Material/ });
+      await expect(material.getByRole("article", { name: /Couro Nobre/ })).toBeVisible();
+      await expect(material.getByRole("article")).toHaveCount(1);
+      await material.getByRole("link", { name: /^Autorizar:/ }).click();
+      await page.waitForURL("/productions/prod-couro-nobre/source");
+      await expect(page.getByRole("heading", { name: /Couro Nobre/, level: 1 })).toBeVisible();
+      await page.goBack();
+      const approvalTab = page.getByRole("tab", { name: /^Aprovação/ });
+      await approvalTab.click();
+      await expect(page.getByRole("tabpanel", { name: /^Aprovação/ })).toContainText("Aurora");
+      await approvalTab.press("ArrowRight");
+      await expect(page.getByRole("tab", { name: /^Carrossel/ })).toBeFocused();
+      await expect(page.getByRole("tabpanel", { name: /^Carrossel/ })).toContainText("Lume");
+      await expectNoHorizontalOverflow(page);
+      await page.getByRole("tab", { name: /^Todas/ }).click();
+
       await featured.getByRole("link", { name: /^Continuar:/ }).click();
       await page.waitForURL("/productions/prod-estudio-norte/article");
       await expect(page.getByRole("textbox", { name: "Texto do artigo" })).toBeVisible();

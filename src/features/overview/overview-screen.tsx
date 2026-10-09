@@ -13,12 +13,14 @@ import { deskSummary } from './desk-copy';
 import { InProgressPanel } from './in-progress-panel';
 import { NeedsYouPanel } from './needs-you-panel';
 import { FeaturedProduction } from './featured-production';
+import { ProductionDesk } from './production-desk';
+import { RecentActivity } from './recent-activity';
 import { parseRange, type OverviewRangeKey } from './overview-format';
 import { WeekLine } from './week-line';
 
 /**
- * The writer's desk: resume their own next move alongside the original personal/team queue,
- * then the remaining work and the week line. All actions use the existing R1 journey routes.
+ * The writer's desk: compact continuation, other productions by stage and recent activity,
+ * alongside the original personal/team queue. All actions use the existing R1 journey routes.
  * The read model, role-specific queues, live updates and URL window remain unchanged.
  */
 
@@ -106,12 +108,14 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
           <>
             {shows('in-progress') && <FeaturedProduction item={featured} loading={!data} />}
             {shows('in-progress') && <InProgressPanel desk={data?.desk} featuredId={featured?.productionId} />}
+            {shows('team') && <ProductionDesk desk={data?.desk} featuredId={featured?.productionId} />}
           </>
         }
         aside={
           shows('needs-you') && (
             <PageStack id="priorities" tabIndex={-1}>
               <NeedsYouPanel desk={data?.desk} team={shows('team')} featuredId={featured?.productionId} />
+              {shows('team') && <RecentActivity items={data?.activity} />}
             </PageStack>
           )
         }
