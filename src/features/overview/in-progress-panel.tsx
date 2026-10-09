@@ -1,7 +1,7 @@
 'use client';
 
 import { List, ListItem, ListItemSkeleton, Panel, Section, TextLink } from '@content-ventures/design-system/v3';
-import type { DeskView } from '@/ports';
+import type { DeskView, InProgressItem } from '@/ports';
 import { formatCount } from '@/ui/format';
 import { PRODUCTIONS_HREF } from '@/ui/routes';
 import { useNow } from '@/ui/time';
@@ -15,9 +15,9 @@ import { ProgressAction } from './next-step-action';
  * 20 min") and a quiet "Continuar" / "Abrir". The production already offered by the empty queue's
  * "Continuar" card is not repeated here. "Ver todas" opens Produções.
  */
-export function InProgressPanel({ desk }: { desk: DeskView | undefined }) {
+export function InProgressPanel({ desk, featuredId }: { desk: DeskView | undefined; featuredId?: InProgressItem['productionId'] }) {
   const now = useNow();
-  const card = desk && desk.needsYou === 0 ? desk.continueWith?.productionId : undefined;
+  const card = featuredId ?? (desk && desk.needsYou === 0 ? desk.continueWith?.productionId : undefined);
   const items = desk?.inProgress.filter((item) => item.productionId !== card) ?? [];
   const total = desk ? desk.inProgressTotal - (card && desk.inProgress.some((item) => item.productionId === card) ? 1 : 0) : 0;
   if (desk && items.length === 0) return null;

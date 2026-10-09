@@ -26,7 +26,7 @@ const heading = (name: string | RegExp) => (page: Page) => page.getByRole("headi
 const text = (value: string | RegExp) => (page: Page) => page.getByText(value).first();
 
 const ROUTES: readonly RouteCase[] = [
-  { name: "Visão geral", path: "/", ready: text("Aguardando você"), live: true },
+  { name: "Visão geral", path: "/", ready: text("Precisa de você"), live: true },
   { name: "Produções", path: "/productions", ready: heading("Produções") },
   { name: "Nova produção", path: "/productions/new", ready: (page) => page.getByRole("button", { name: "Usar exemplo" }).first() },
   { name: "Material", path: "/productions/prod-estudio-norte/source", ready: heading(/Estúdio Norte/) },
@@ -91,10 +91,35 @@ for (const viewport of VIEWPORTS) {
       });
     }
 
+    test("visão geral: continuar no estúdio original, consultar equipe e manter o período", async ({ page }) => {
+      const errors = watchErrors(page);
+      await page.goto("/");
+      const featured = page.getByRole("article", { name: /^Continuar: Estúdio Norte/ });
+      await featured.getByRole("link", { name: /^Continuar:/ }).click();
+      await page.waitForURL("/productions/prod-estudio-norte/article");
+      await expect(page.getByRole("textbox", { name: "Texto do artigo" })).toBeVisible();
+
+      await page.goBack();
+      await page.getByRole("link", { name: "Ver prioridades" }).click();
+      await expect(page.getByRole("heading", { name: "Precisa de você", exact: true })).toBeInViewport();
+      await page.getByRole("radio", { name: "Equipe", exact: true }).click();
+      await expect(page.getByRole("list", { name: "Equipe", exact: true })).toContainText("Bella Passo");
+      await page.getByRole("radio", { name: "Para mim", exact: true }).click();
+      await expect(page.getByRole("list", { name: "Precisa de você", exact: true })).toContainText("Casa Forma");
+
+      await page.getByRole("radio", { name: "30 dias", exact: true }).click();
+      await expect(page).toHaveURL((url) => url.searchParams.get("range") === "30d");
+      await page.reload();
+      await expect(page.getByRole("radio", { name: "30 dias", exact: true })).toBeChecked();
+      await expect(page.getByText(/Últimos 30 dias:/)).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      expect(errors, "erros no console").toEqual([]);
+    });
+
     test("menu: o mapa R1–R7 mostra o que ainda não abre como “Em breve”", async ({ page }) => {
       const errors = watchErrors(page);
       await page.goto("/");
-      await expect(text("Aguardando você")(page)).toBeVisible();
+      await expect(text("Precisa de você")(page)).toBeVisible();
       const phone = viewport.width < 768;
       if (phone) await page.getByRole("button", { name: "Abrir menu" }).click();
       await expect(page.getByRole("button", { name: /, Em breve$/ })).toHaveCount(17);
@@ -114,7 +139,7 @@ for (const viewport of VIEWPORTS) {
     test("acesso restrito para quem não é admin", async ({ page }) => {
       const errors = watchErrors(page);
       await page.goto("/");
-      await expect(text("Aguardando você")(page)).toBeVisible();
+      await expect(text("Precisa de você")(page)).toBeVisible();
       // ⌘K › Simulação › "Entrar como Pedro" (aprovador, sem o papel de admin).
       await page.keyboard.press("ControlOrMeta+k");
       await page.keyboard.type("Entrar como Pedro");

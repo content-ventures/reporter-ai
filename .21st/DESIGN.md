@@ -42,3 +42,4 @@
 - Studios use the full width with one line of chrome above the text.
 - Status colours are reserved for state; meters and sparklines are neutral by default.
 - Every AI output carries the "Simulação local" label while the product runs on the local simulation.
+- The writer overview is based on `release-one-experience`: a photographic card resumes the real next action beside the original personal/team queues. Preserve every R1 screen, route and workflow state. See `docs/EDITORIAL_OVERVIEW.md` for scope and references.

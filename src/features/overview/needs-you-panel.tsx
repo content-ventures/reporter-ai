@@ -114,13 +114,13 @@ function ContinueCard({ item }: { item: InProgressItem }) {
   );
 }
 
-function MyQueue({ desk, now }: { desk: DeskView; now: Date | undefined }) {
+function MyQueue({ desk, now, featuredId }: { desk: DeskView; now: Date | undefined; featuredId?: InProgressItem['productionId'] }) {
   if (desk.needsYou > 0) return <QueueList groups={desk.groups} now={now} />;
   // Nothing needs the viewer: say so, offer their own next move, then what they wait on.
   return (
     <PageStack>
       <EmptyState size="inline" icon={CheckCircle2} title="Nada esperando você" />
-      {desk.continueWith && <ContinueCard item={desk.continueWith} />}
+      {desk.continueWith && desk.continueWith.productionId !== featuredId && <ContinueCard item={desk.continueWith} />}
       {desk.groups.length > 0 && <QueueList groups={desk.groups} now={now} />}
     </PageStack>
   );
@@ -164,7 +164,7 @@ function Loading() {
 }
 
 /** `team`: the "Equipe" view is released (dashboard registry); without it there is no switch. */
-export function NeedsYouPanel({ desk, team }: { desk: DeskView | undefined; team: boolean }) {
+export function NeedsYouPanel({ desk, team, featuredId }: { desk: DeskView | undefined; team: boolean; featuredId?: InProgressItem['productionId'] }) {
   const [view, setView] = useState<View>('mine');
   const now = useNow();
   const shown: View = team ? view : 'mine';
@@ -177,7 +177,7 @@ export function NeedsYouPanel({ desk, team }: { desk: DeskView | undefined; team
         meta={meta}
         action={team ? <Segmented label="Mostrar" size="sm" options={VIEW_OPTIONS} value={view} onChange={setView} /> : undefined}
       >
-        {!desk ? <Loading /> : shown === 'team' ? <TeamList team={desk.team} /> : <MyQueue desk={desk} now={now} />}
+        {!desk ? <Loading /> : shown === 'team' ? <TeamList team={desk.team} /> : <MyQueue desk={desk} now={now} featuredId={featuredId} />}
       </Section>
     </Panel>
   );

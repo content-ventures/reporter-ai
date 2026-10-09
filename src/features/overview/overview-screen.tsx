@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Button, ButtonLink, EmptyState, ErrorState, PageHeader, PageStack } from '@content-ventures/design-system/v3';
+import { Button, ButtonLink, EmptyState, ErrorState, PageHeader, PageStack, SplitLayout } from '@content-ventures/design-system/v3';
 import { Inbox, Plus } from '@content-ventures/design-system/v3/icons';
 import type { OverviewData } from '@/ports';
 import { dashboardWidgetsFor } from '@/registries';
@@ -12,15 +12,14 @@ import { useNow } from '@/ui/time';
 import { deskSummary } from './desk-copy';
 import { InProgressPanel } from './in-progress-panel';
 import { NeedsYouPanel } from './needs-you-panel';
+import { FeaturedProduction } from './featured-production';
 import { parseRange, type OverviewRangeKey } from './overview-format';
 import { WeekLine } from './week-line';
 
 /**
- * Início (`/`, D1 "Minha mesa"): the one sentence that says what waits for the viewer, then the
- * queue itself ("Precisa de você", grouped by urgency and role, a verb on every row; "Equipe"
- * shows the same area by stage), what is in progress, and one quiet line with the week's numbers
- * (7 or 30 days, `?range=30d`). "Nova produção" is the only primary. Everything is live: the
- * page re-reads the runtime when anything changes, so approving elsewhere moves the queue.
+ * The writer's desk: resume their own next move alongside the original personal/team queue,
+ * then the remaining work and the week line. All actions use the existing R1 journey routes.
+ * The read model, role-specific queues, live updates and URL window remain unchanged.
  */
 
 type BodyProps = { range: OverviewRangeKey; onRangeChange: (range: OverviewRangeKey) => void };
@@ -29,7 +28,7 @@ type BodyProps = { range: OverviewRangeKey; onRangeChange: (range: OverviewRange
 const WIDGETS = new Set(dashboardWidgetsFor().map((widget) => widget.id));
 const shows = (id: string) => WIDGETS.has(id);
 
-const TITLE = 'Início';
+const TITLE = 'Qual história vamos entregar hoje?';
 
 function NewProductionButton() {
   return (
@@ -57,6 +56,7 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
   const summary = useSummary(data);
   // The week line names the window of the data on screen until the new window arrives.
   const shownRange = data?.range ?? range;
+  const featured = shows('in-progress') ? data?.desk.continueWith : undefined;
 
   if (query.status === 'error' && data === undefined) {
     return (
@@ -90,9 +90,32 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
   return (
     <PageStack>
       {/* A non-breaking space keeps the sentence's line while it loads (no jump under the title). */}
-      <PageHeader title={TITLE} description={summary ?? ' '} actions={<NewProductionButton />} />
-      {shows('needs-you') && <NeedsYouPanel desk={data?.desk} team={shows('team')} />}
-      {shows('in-progress') && <InProgressPanel desk={data?.desk} />}
+      <PageHeader
+        title={TITLE}
+        description={summary ?? ' '}
+        actions={
+          <>
+            <NewProductionButton />
+            {shows('needs-you') && <ButtonLink href="#priorities">Ver prioridades</ButtonLink>}
+          </>
+        }
+      />
+      <SplitLayout
+        asideLabel="Prioridades da sua produção"
+        main={
+          <>
+            {shows('in-progress') && <FeaturedProduction item={featured} loading={!data} />}
+            {shows('in-progress') && <InProgressPanel desk={data?.desk} featuredId={featured?.productionId} />}
+          </>
+        }
+        aside={
+          shows('needs-you') && (
+            <PageStack id="priorities" tabIndex={-1}>
+              <NeedsYouPanel desk={data?.desk} team={shows('team')} featuredId={featured?.productionId} />
+            </PageStack>
+          )
+        }
+      />
       {shows('week') && data && <WeekLine week={data.desk.week} shownRange={shownRange} range={range} onRangeChange={onRangeChange} />}
     </PageStack>
   );
