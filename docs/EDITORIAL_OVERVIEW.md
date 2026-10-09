@@ -23,8 +23,8 @@ part of this change. Work continues locally on `editorial-overview-r1`.
 - “Em andamento” keeps its existing state and actions. The featured production appears once
   in the personal view and remains visible in its team stage.
 - “Histórias da redação” previews the existing team desk as four compact, equally sized cards,
-  with 14 px article headlines, short openings, authors and the next action. The title and
-  opening have reserved 60/40 px areas, so longer text does not move the metadata or action.
+  with short article headlines and openings, authors and the next action. Titles and openings
+  use single-line ellipses in a fixed minimum-height list row, with no internal scrolling.
   A tooltip retains the full headline; the original studio retains the complete article.
   Images stay in the lead and delivery preview to keep the story cards the same size.
   Status, size and last update remain supporting information. Stage tabs filter the existing
@@ -40,8 +40,8 @@ part of this change. Work continues locally on `editorial-overview-r1`.
 - Loading, empty, retry and example-loading states stay available. No browser reset occurs
   merely by opening the home page.
 
-The overview composes only public Content Ventures V3 components and icons, including Card
-and ScrollArea for equal preview areas. It adds no local CSS or replacement R1 screen.
+The overview composes only public Content Ventures V3 components and icons, including Card,
+List and ListItem for compact previews. It adds no local CSS or replacement R1 screen.
 The separately requested “Escrever do zero” entry adds the direct-writing flow documented
 in `docs/DIRECT_WRITING.md`; the transcript creation journey remains available unchanged.
 
@@ -96,3 +96,7 @@ Final editorial/direct-writing validation: `pnpm gate` passed with 1,106 tests a
 production build. Ten selected route/flow checks passed at 1440 and 390 px. They also assert
 equal compact card heights when an article has no text, then cover writing a title and body,
 autosave, browser reload and continuation into the same article. No original file was deleted.
+
+The card-scroll correction also checks the four-column layout at 1760 px and the 390 px phone:
+all cards have equal compact heights and no scrolling descendants. Full titles remain in the
+DOM and the DS tooltip; saved article text and next-step actions remain available.

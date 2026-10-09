@@ -101,12 +101,28 @@ for (const viewport of VIEWPORTS) {
       await expectLoaded(page);
       const storyCards = page.getByRole("tabpanel", { name: /^Todas/ }).getByRole("article");
       await expect(storyCards).toHaveCount(4);
+      // Also cover the narrow cards in a four-column desktop layout.
+      if (viewport.width >= 1024) {
+        await page.setViewportSize({ width: 1760, height: viewport.height });
+        const rows = await storyCards.evaluateAll((cards) => new Set(cards.map((card) => card.getBoundingClientRect().top)).size);
+        expect(rows, "quatro cards na mesma linha").toBe(1);
+      }
       const sizes = await storyCards.evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height));
       expect(Math.max(...sizes) - Math.min(...sizes), "cards com altura padronizada").toBeLessThanOrEqual(1);
       expect(Math.max(...sizes), "cards compactos").toBeLessThan(220);
+      const innerScrolls = await storyCards.evaluateAll((cards) => cards.flatMap((card) =>
+        Array.from(card.querySelectorAll<HTMLElement>("*")).filter((element) => {
+          const css = getComputedStyle(element);
+          return (/(auto|scroll)/.test(css.overflowY) && element.scrollHeight > element.clientHeight + 1)
+            || (/(auto|scroll)/.test(css.overflowX) && element.scrollWidth > element.clientWidth + 1);
+        }).map((element) => element.getAttribute("aria-label") ?? element.tagName)
+      ));
+      expect(innerScrolls, "cards sem rolagem interna").toEqual([]);
+      await expectNoHorizontalOverflow(page);
       const screenshot = testInfo.outputPath("overview.png");
       await page.screenshot({ path: screenshot, fullPage: true });
       await testInfo.attach("Início", { path: screenshot, contentType: "image/png" });
+      if (viewport.width >= 1024) await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.getByRole("button", { name: "Ver movimentações recentes" }).click();
       await expect(page.getByRole("list", { name: "Últimas movimentações", exact: true })).toBeVisible();
       await page.getByRole("link", { name: "Ler artigo", exact: true }).click();

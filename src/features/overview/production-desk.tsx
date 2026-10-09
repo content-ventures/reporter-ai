@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { Card, EditableTitle, EmptyState, Grid, MetaList, PageStack, Panel, Prose, ScrollArea, Section, SkeletonText, Tabs, TextLink, Tooltip } from '@content-ventures/design-system/v3';
+import { Card, EmptyState, Grid, List, ListItem, MetaList, PageStack, Panel, Section, SkeletonText, Tabs, TextLink, Tooltip } from '@content-ventures/design-system/v3';
 import { Inbox } from '@content-ventures/design-system/v3/icons';
 import type { DeskView, InProgressItem, TeamStage } from '@/ports';
 import { PRODUCTIONS_HREF } from '@/ui/routes';
@@ -64,32 +64,28 @@ function ProductionPreview({ item }: { item: InProgressItem }) {
   const story = useStoryPreview(item);
   const piece = story.currentPiece;
   return (
-    <Card as="article" padding="sm" aria-label={item.productionTitle}>
-      <Prose variant="compact" align="start" measure="wide">
+    <Tooltip content={story.title} bare describe={false}>
+      <Card as="article" padding="md" aria-label={item.productionTitle}>
         <MetaList size="xs" wrap={false} items={[
           piece ? <StatusBadge key="status" kind="piece" status={piece.status} size="sm" /> : story.detail && <StatusBadge key="status" kind="production" status={story.detail.status} size="sm" />,
           story.stage?.label ?? item.situation.line,
         ]} />
-        <ScrollArea height={60} fade={false} label={`Título: ${story.title}`}>
-          <Tooltip content={story.title}>
-            <EditableTitle value={storyOpening(story.title, 85) ?? story.title} as="h3" size="card" label="Título da história" readOnly onCommit={() => undefined} />
-          </Tooltip>
-        </ScrollArea>
-        <ScrollArea height={40} fade={false} label={`Abertura: ${item.productionTitle}`}>
-          {story.loading ? <SkeletonText lines={2} /> : storyOpening(story.text, 75)}
-        </ScrollArea>
-        <ScrollArea height={32} fade={false} label={`Autoria e atualização: ${item.productionTitle}`}>
-          <MetaList size="xs" wrap={false} items={[
-            item.owner.name,
-            now ? formatAgo(item.updatedAt, now) : undefined,
-          ]} />
-          <MetaList size="xs" wrap={false} items={[
-            inProgressSize(item),
-            story.simulated ? 'Simulação local' : undefined,
-          ]} />
-        </ScrollArea>
+        <List label={`História: ${story.title}`} framed={false} dividers={false} bleed>
+          <ListItem
+            title={story.title}
+            description={story.loading ? <SkeletonText lines={1} /> : storyOpening(story.text, 75) ?? 'Texto ainda não iniciado'}
+          />
+        </List>
+        <MetaList size="xs" wrap={false} items={[
+          item.owner.name,
+          now ? formatAgo(item.updatedAt, now) : undefined,
+        ]} />
+        <MetaList size="xs" wrap={false} items={[
+          inProgressSize(item) ?? 'Sem texto',
+          story.simulated ? 'Simulação local' : undefined,
+        ]} />
         <ProgressAction item={item} />
-      </Prose>
-    </Card>
+      </Card>
+    </Tooltip>
   );
 }
