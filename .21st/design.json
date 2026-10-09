@@ -102,7 +102,8 @@
     "AI output carries the Simulação local label while the product runs on the local simulation",
     "Reporter consumes DS 0.2.0 from the editorial-studio branch until the version is tagged and pinned",
     "Improve only the overview on release-one-experience: the approved photographic writer direction uses the real next action and the original personal/team queues; preserve all R1 screens, routes and workflow state",
-    "Use a compact continuation with real stage progress, four other-production previews filtered by R1 stage and four recent workspace events; retain the original personal work and priority actions without new workflow state"
+    "The user selected an editorial, visual overview with stories in focus: real article headlines and openings, existing article images, a prominent story to continue and a delivery-stage story to read; keep the original priorities and stage filters, with recent activity collapsible and no new workflow state",
+    "Story previews use compact equally sized cards with 14 px headings, short openings and reserved title/opening areas; the separately requested Escrever do zero entry opens an empty article in the existing studio alongside transcript creation"
   ],
   "evidence": [
     {

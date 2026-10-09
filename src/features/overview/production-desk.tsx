@@ -1,17 +1,16 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { Card, CardHeader, EmptyState, Grid, MetaList, PageStack, Panel, Section, SkeletonText, Tabs, TextLink } from '@content-ventures/design-system/v3';
+import { Card, EditableTitle, EmptyState, Grid, MetaList, PageStack, Panel, Prose, ScrollArea, Section, SkeletonText, Tabs, TextLink, Tooltip } from '@content-ventures/design-system/v3';
 import { Inbox } from '@content-ventures/design-system/v3/icons';
 import type { DeskView, InProgressItem, TeamStage } from '@/ports';
-import { useProduction } from '@/state';
-import { PersonAvatar } from '@/ui/person-avatar';
 import { PRODUCTIONS_HREF } from '@/ui/routes';
 import { StatusBadge } from '@/ui/status-badge';
 import { useNow } from '@/ui/time';
 import { formatAgo } from '@/ui/approval-copy';
 import { inProgressSize, TEAM_STAGE_LABELS } from './desk-copy';
 import { ProgressAction } from './next-step-action';
+import { storyOpening, useStoryPreview } from './use-story-preview';
 
 type DeskTab = 'all' | TeamStage;
 
@@ -36,7 +35,7 @@ export function ProductionDesk({ desk, featuredId }: { desk: DeskView | undefine
   return (
     <Panel>
       <Section
-        title="Outras produções"
+        title="Histórias da redação"
         meta={desk && items.length > preview.length ? `${preview.length} de ${items.length}` : undefined}
         action={<TextLink size="sm" href={PRODUCTIONS_HREF}>Ver todas</TextLink>}
       >
@@ -46,9 +45,9 @@ export function ProductionDesk({ desk, featuredId }: { desk: DeskView | undefine
             {desk && preview.length === 0 ? (
               <EmptyState size="inline" icon={Inbox} title={tab === 'all' ? 'Nenhuma outra produção' : 'Nenhuma produção nesta etapa'} />
             ) : (
-              <Grid columns="auto" min={250} gap="md" as="ul" label="Outras produções">
+              <Grid columns="auto" min={250} gap="sm" label="Histórias da redação">
                 {desk ? preview.map((item) => <ProductionPreview key={item.productionId} item={item} />) : [0, 1, 2, 3].map((index) => (
-                  <Card key={index} loading padding="md"><SkeletonText lines={4} /></Card>
+                  <SkeletonText key={index} lines={5} />
                 ))}
               </Grid>
             )}
@@ -62,22 +61,35 @@ export function ProductionDesk({ desk, featuredId }: { desk: DeskView | undefine
 /** Existing status vocabulary, ownership and next action, without another workflow model. */
 function ProductionPreview({ item }: { item: InProgressItem }) {
   const now = useNow();
-  const production = useProduction(item.productionId);
-  const detail = production.data;
-  const currentStage = detail?.stages.find((stage) => stage.id === detail.currentStageId);
-  const piece = detail?.pieces.find((piece) => piece.kind === currentStage?.pieceKind);
+  const story = useStoryPreview(item);
+  const piece = story.currentPiece;
   return (
-    <Card as="article" padding="md" aria-label={item.productionTitle}>
-      <PageStack>
-        <CardHeader title={item.productionTitle} size="md" description={item.owner.name} leading={<PersonAvatar person={item.owner} size="sm" decorative />} />
-        <MetaList size="sm" items={[
-          piece ? <StatusBadge key="status" kind="piece" status={piece.status} size="sm" /> : detail && <StatusBadge key="status" kind="production" status={detail.status} size="sm" />,
-          currentStage?.label ?? item.situation.line,
-          inProgressSize(item),
-          now ? formatAgo(item.updatedAt, now) : undefined,
+    <Card as="article" padding="sm" aria-label={item.productionTitle}>
+      <Prose variant="compact" align="start" measure="wide">
+        <MetaList size="xs" wrap={false} items={[
+          piece ? <StatusBadge key="status" kind="piece" status={piece.status} size="sm" /> : story.detail && <StatusBadge key="status" kind="production" status={story.detail.status} size="sm" />,
+          story.stage?.label ?? item.situation.line,
         ]} />
+        <ScrollArea height={60} fade={false} label={`Título: ${story.title}`}>
+          <Tooltip content={story.title}>
+            <EditableTitle value={storyOpening(story.title, 85) ?? story.title} as="h3" size="card" label="Título da história" readOnly onCommit={() => undefined} />
+          </Tooltip>
+        </ScrollArea>
+        <ScrollArea height={40} fade={false} label={`Abertura: ${item.productionTitle}`}>
+          {story.loading ? <SkeletonText lines={2} /> : storyOpening(story.text, 75)}
+        </ScrollArea>
+        <ScrollArea height={32} fade={false} label={`Autoria e atualização: ${item.productionTitle}`}>
+          <MetaList size="xs" wrap={false} items={[
+            item.owner.name,
+            now ? formatAgo(item.updatedAt, now) : undefined,
+          ]} />
+          <MetaList size="xs" wrap={false} items={[
+            inProgressSize(item),
+            story.simulated ? 'Simulação local' : undefined,
+          ]} />
+        </ScrollArea>
         <ProgressAction item={item} />
-      </PageStack>
+      </Prose>
     </Card>
   );
 }

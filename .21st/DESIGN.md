@@ -43,4 +43,5 @@
 - Status colours are reserved for state; meters and sparklines are neutral by default.
 - Every AI output carries the "Simulação local" label while the product runs on the local simulation.
 - The writer overview is based on `release-one-experience`: a photographic card resumes the real next action beside the original personal/team queues. Preserve every R1 screen, route and workflow state. See `docs/EDITORIAL_OVERVIEW.md` for scope and references.
-- The overview uses a compact image beside the continuation, real stage progress, four previews of other productions filtered by R1 stage, and four recent workspace events. Personal work and the original priority actions remain intact; no new workflow state is introduced.
+- The user selected an editorial, visual overview with stories in focus. Use real article headlines and openings, images already present in the article, a prominent story to continue and a delivery-stage story to read. The original priorities and stage filters remain; recent activity is secondary and collapsible. No new workflow state is introduced.
+- Story previews use compact, equally sized cards with 14 px headings and short openings; reserve equal title/opening areas and keep metadata/actions aligned. The separately requested “Escrever do zero” entry opens an empty article in the existing studio alongside transcript creation.

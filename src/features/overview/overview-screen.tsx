@@ -2,12 +2,13 @@
 
 import { Suspense, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Button, ButtonLink, EmptyState, ErrorState, PageHeader, PageStack, SplitLayout } from '@content-ventures/design-system/v3';
+import { Accordion, Button, ButtonLink, EmptyState, ErrorState, PageHeader, PageStack, SplitLayout } from '@content-ventures/design-system/v3';
 import { Inbox, Plus } from '@content-ventures/design-system/v3/icons';
 import type { OverviewData } from '@/ports';
 import { dashboardWidgetsFor } from '@/registries';
 import { useOverview, useSession, useSimulation } from '@/state';
 import { NEW_PRODUCTION_HREF } from '@/ui/routes';
+import { StartWritingButton } from '@/features/new-production/start-writing-button';
 import { useNow } from '@/ui/time';
 import { deskSummary } from './desk-copy';
 import { InProgressPanel } from './in-progress-panel';
@@ -15,11 +16,12 @@ import { NeedsYouPanel } from './needs-you-panel';
 import { FeaturedProduction } from './featured-production';
 import { ProductionDesk } from './production-desk';
 import { RecentActivity } from './recent-activity';
+import { ReadyStory } from './ready-story';
 import { parseRange, type OverviewRangeKey } from './overview-format';
 import { WeekLine } from './week-line';
 
 /**
- * The writer's desk: compact continuation, other productions by stage and recent activity,
+ * An editorial desk: real story headlines and openings, continuation and delivery preview,
  * alongside the original personal/team queue. All actions use the existing R1 journey routes.
  * The read model, role-specific queues, live updates and URL window remain unchanged.
  */
@@ -59,11 +61,12 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
   // The week line names the window of the data on screen until the new window arrives.
   const shownRange = data?.range ?? range;
   const featured = shows('in-progress') ? data?.desk.continueWith : undefined;
+  const ready = data?.desk.team.find((group) => group.stage === 'delivery')?.items[0];
 
   if (query.status === 'error' && data === undefined) {
     return (
       <PageStack>
-        <PageHeader title={TITLE} actions={<NewProductionButton />} />
+        <PageHeader title={TITLE} actions={<><NewProductionButton /><StartWritingButton /></>} />
         <ErrorState size="panel" title="Não foi possível carregar o Início" description={query.error?.message} onRetry={query.retry} />
       </PageStack>
     );
@@ -77,10 +80,11 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
           size="page"
           icon={Inbox}
           title="Nenhuma produção ainda"
-          description="Comece pela transcrição de uma entrevista."
+          description="Crie uma produção com transcrição ou comece um artigo do zero."
           actions={
             <>
               <NewProductionButton />
+              <StartWritingButton />
               {simulation.available && <Button onClick={simulation.reset}>Carregar exemplo</Button>}
             </>
           }
@@ -98,6 +102,7 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
         actions={
           <>
             <NewProductionButton />
+            <StartWritingButton />
             {shows('needs-you') && <ButtonLink href="#priorities">Ver prioridades</ButtonLink>}
           </>
         }
@@ -113,14 +118,17 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
         }
         aside={
           shows('needs-you') && (
-            <PageStack id="priorities" tabIndex={-1}>
-              <NeedsYouPanel desk={data?.desk} team={shows('team')} featuredId={featured?.productionId} />
-              {shows('team') && <RecentActivity items={data?.activity} />}
+            <PageStack>
+              {shows('team') && ready && <ReadyStory item={ready} />}
+              <PageStack id="priorities" tabIndex={-1}>
+                <NeedsYouPanel desk={data?.desk} team={shows('team')} featuredId={featured?.productionId} />
+              </PageStack>
             </PageStack>
           )
         }
       />
       {shows('week') && data && <WeekLine week={data.desk.week} shownRange={shownRange} range={range} onRangeChange={onRangeChange} />}
+      {shows('team') && <Accordion items={[{ id: 'activity', title: 'Ver movimentações recentes', content: <RecentActivity items={data?.activity} /> }]} />}
     </PageStack>
   );
 }

@@ -95,12 +95,24 @@ for (const viewport of VIEWPORTS) {
       const errors = watchErrors(page);
       await page.goto("/");
       const featured = page.getByRole("article", { name: /^Continuar: Estúdio Norte/ });
-      await expect(featured.getByRole("progressbar", { name: /^Etapas de Estúdio Norte/ })).toBeVisible();
-      await expect(page.getByRole("list", { name: "Últimas movimentações", exact: true })).toBeVisible();
+      await expect(featured.getByRole("region", { name: "Abertura do artigo em edição" })).toContainText("O Estúdio Norte");
+      await expect(page.getByRole("heading", { name: /Bella Passo lança calçado infantil/ })).toBeVisible();
+      await expect(page.getByRole("img", { name: "Par de tênis infantis da Bella Passo visto de cima", exact: true })).toBeVisible();
       await expectLoaded(page);
+      const storyCards = page.getByRole("tabpanel", { name: /^Todas/ }).getByRole("article");
+      await expect(storyCards).toHaveCount(4);
+      const sizes = await storyCards.evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height));
+      expect(Math.max(...sizes) - Math.min(...sizes), "cards com altura padronizada").toBeLessThanOrEqual(1);
+      expect(Math.max(...sizes), "cards compactos").toBeLessThan(220);
       const screenshot = testInfo.outputPath("overview.png");
       await page.screenshot({ path: screenshot, fullPage: true });
       await testInfo.attach("Início", { path: screenshot, contentType: "image/png" });
+      await page.getByRole("button", { name: "Ver movimentações recentes" }).click();
+      await expect(page.getByRole("list", { name: "Últimas movimentações", exact: true })).toBeVisible();
+      await page.getByRole("link", { name: "Ler artigo", exact: true }).click();
+      await page.waitForURL("/productions/prod-bella-passo/delivery?view=article");
+      await expect(page.getByRole("list", { name: "Aprovação", exact: true })).toBeVisible();
+      await page.goBack();
 
       await page.getByRole("tab", { name: /^Material/ }).click();
       const material = page.getByRole("tabpanel", { name: /^Material/ });
@@ -140,6 +152,47 @@ for (const viewport of VIEWPORTS) {
       expect(errors, "erros no console").toEqual([]);
     });
 
+    test("escrever do zero: abrir editor, salvar texto e retomar sem transcrição", async ({ page }, testInfo) => {
+      const errors = watchErrors(page);
+      await page.goto("/");
+      await page.getByRole("button", { name: "Escrever do zero", exact: true }).click();
+      await page.waitForURL(/\/productions\/prod-.+\/article$/);
+      const address = page.url();
+      const editor = page.getByRole("textbox", { name: "Texto do artigo", exact: true });
+      await expect(editor).toBeFocused();
+      await expect(editor).toBeEmpty();
+      await expect(page.getByRole("button", { name: "Gerar rascunho", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Montar estrutura", exact: true })).toHaveCount(0);
+      await expectLoaded(page);
+      await expectHeadingOutline(page);
+      await expectNoHorizontalOverflow(page);
+      const blank = testInfo.outputPath("blank-article.png");
+      await page.screenshot({ path: blank, fullPage: true });
+      await testInfo.attach("Escrever do zero", { path: blank, contentType: "image/png" });
+      await page.getByRole("heading", { name: "Título do artigo", exact: true }).getByRole("button").click();
+      const title = page.getByRole("textbox", { name: "Título do artigo", exact: true });
+      await title.fill("Uma praça para o bairro");
+      await title.press("Enter");
+      const opening = "A praça ganhou um espaço de leitura criado pelos moradores do bairro.";
+      await editor.fill(opening);
+      // The body counter changes after the editor's debounce, before autosave settles.
+      await expect(page.getByText(/0,1 de 2 laudas/)).toHaveCount(1);
+      await expect(page.getByRole("status").filter({ hasText: /^Salvo$/ })).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole("heading", { name: "Uma praça para o bairro", exact: true })).toBeVisible();
+      await expect(editor).toContainText(opening);
+      await expect(page.getByRole("button", { name: "Enviar para aprovação", exact: true }).first()).toBeVisible();
+      await page.goto("/");
+      const continued = page.getByRole("article", { name: "Continuar: Artigo sem título", exact: true });
+      await expect(continued).toContainText(opening);
+      await expect(continued).not.toContainText("Simulação local");
+      await continued.getByRole("link", { name: /^Continuar:/ }).click();
+      await expect(page).toHaveURL(address);
+      await expect(editor).toContainText(opening);
+      await expectNoHorizontalOverflow(page);
+      expect(errors, "erros no console").toEqual([]);
+    });
+
     test("menu: o mapa R1–R7 mostra o que ainda não abre como “Em breve”", async ({ page }) => {
       const errors = watchErrors(page);
       await page.goto("/");
@@ -169,6 +222,9 @@ for (const viewport of VIEWPORTS) {
       await page.keyboard.type("Entrar como Pedro");
       await page.getByRole("option", { name: /Entrar como Pedro/ }).click();
       await expect(text("Você entrou como Pedro")(page)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Escrever do zero", exact: true })).toHaveCount(0);
+      await page.getByRole("tab", { name: /^Material/ }).click();
+      await expect(page.getByRole("tabpanel", { name: /^Material/ }).getByRole("article", { name: /Couro Nobre/ })).toHaveCount(0);
 
       for (const [path, title] of [
         ["/admin/audit", "Logs restritos a administradores"],
