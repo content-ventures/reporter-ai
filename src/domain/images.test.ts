@@ -32,6 +32,7 @@ import {
 import { ARTICLE_CHECKS, CAROUSEL_CHECKS, runChecks } from './checks.ts';
 import type { CarouselCheckContext } from './checks.ts';
 import type { ImageAsset } from './asset.ts';
+import type { StockImage } from './visual-library.ts';
 import { diffArticles, diffSummary, imageDiffText } from './diff.ts';
 import { buildManifest, EXTERNAL_IMAGE_REASON, exportImageFiles, exportImageSources, MISSING_IMAGE_REASON, plannedExportFiles } from './manifest.ts';
 import { bodyHash } from './piece.ts';
@@ -178,6 +179,12 @@ describe('image metadata rules', () => {
     assert.equal(slugify('   '), '');
     assert.ok(slugify('palavra '.repeat(20)).length <= 48);
     assert.ok(!slugify('palavra '.repeat(20)).endsWith('-'));
+  });
+  test('Pixabay does not require a published credit; authorisation and legacy credit rules remain', () => {
+    const provenance = { provider: 'pixabay',libraryId: 'saved-photo',attribution: 'Contributor / Pixabay' } as StockImage & { libraryId: string };
+    assert.deepEqual(imageIssues(asset('pixabay',{ provenance,credit: undefined })),[]);
+    assert.deepEqual(imageIssues(asset('pixabay',{ provenance,credit: undefined,rights: { authorized: false } })),['not_authorized']);
+    assert.deepEqual(imageIssues(asset('legacy',{ provenance: { ...provenance,provider: 'openverse' },credit: undefined })),['missing_credit']);
   });
 });
 

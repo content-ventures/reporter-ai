@@ -2,6 +2,7 @@ import type { ActorId, AssetId, IsoDateTime, RunId, WorkspaceId } from './ids.ts
 import { ok, refuse } from './result.ts';
 import type { Result } from './result.ts';
 import { normalizeLink } from './text/links.ts';
+import type { StockImage } from './visual-library.ts';
 
 /**
  * Images of an article (R1): uploaded files and external links, with credit and usage rights
@@ -45,6 +46,8 @@ export type ImageAsset = {
   rights: AssetRights;
   createdAt: IsoDateTime;
   createdBy: ActorId;
+  /** Stock source, licence and author survive reuse and exports. */
+  provenance?: StockImage & { libraryId: string };
 };
 
 /** R1 assets are images; R4/R5 add their own shapes to this union. */
@@ -234,12 +237,14 @@ export function assetOriginLabel(origin: AssetOrigin): string {
 }
 
 export type ImageIssue = 'missing_asset' | 'missing_credit' | 'not_authorized';
+/** The optional Pixabay credit never removes the separate per-use authorization check. */
+export function imageCreditRequired(asset: Pick<ImageAsset,'provenance'> | undefined) { return asset?.provenance?.provider !== 'pixabay'; }
 
 /** What keeps an image from being publish-ready (credit and authorisation; R2 REQ-2.9). */
 export function imageIssues(asset: ImageAsset | undefined): ImageIssue[] {
   if (!asset) return ['missing_asset'];
   const issues: ImageIssue[] = [];
-  if (!normalizeCredit(asset.credit)) issues.push('missing_credit');
+  if (imageCreditRequired(asset) && !normalizeCredit(asset.credit)) issues.push('missing_credit');
   if (!asset.rights.authorized) issues.push('not_authorized');
   return issues;
 }

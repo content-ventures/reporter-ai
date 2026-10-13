@@ -67,6 +67,17 @@ export function categoryLabel(id: TemplateCategory): string {
   return TEMPLATE_CATEGORIES.find((category) => category.id === id)?.label ?? id;
 }
 
+/** Editorial purpose, independent from colour/style and format. Legacy models have no family. */
+export type TemplateFamily = 'news' | 'explainer' | 'podcast';
+export const TEMPLATE_FAMILIES: readonly { id: TemplateFamily; label: string; use: string }[] = [
+  { id: 'news', label: 'Notícia', use: 'Manchetes e reportagens do setor.' },
+  { id: 'explainer', label: 'Explica', use: 'Processos, etapas e dados contextualizados.' },
+  { id: 'podcast', label: 'Podcast', use: 'Conversas e citações verificadas.' },
+];
+export function familyLabel(id: TemplateFamily): string {
+  return TEMPLATE_FAMILIES.find(family => family.id === id)?.label ?? id;
+}
+
 /** `aprovado`: a model Marketing approved; `base`: a model the product ships with. */
 export type TemplateStatus = 'aprovado' | 'base';
 
@@ -77,6 +88,7 @@ export const TEMPLATE_STATUS_LABELS: Readonly<Record<TemplateStatus, string>> = 
 
 /** What the library card of a template shows and filters by. */
 export type TemplateMeta = {
+  family?: TemplateFamily;
   category: TemplateCategory;
   format: CarouselFormatId;
   /** pt-BR one-liner. */
@@ -96,7 +108,7 @@ function fold(text: string): string {
   return text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{M}/gu, '');
 }
 
-export type TemplateFilter = { format?: CarouselFormatId; category?: TemplateCategory; status?: TemplateStatus; query?: string };
+export type TemplateFilter = { format?: CarouselFormatId; family?: TemplateFamily; category?: TemplateCategory; status?: TemplateStatus; query?: string };
 
 /**
  * Library filter: format, category and status match exactly; the query matches every word against
@@ -108,10 +120,11 @@ export function filterTemplates<T extends Pick<CarouselTemplate, 'name'> & Templ
     .filter(Boolean);
   return templates.filter((template) => {
     if (filter.format && template.format !== filter.format) return false;
+    if (filter.family && template.family !== filter.family) return false;
     if (filter.category && template.category !== filter.category) return false;
     if (filter.status && template.status !== filter.status) return false;
     if (words.length === 0) return true;
-    const haystack = fold([template.name, template.description, categoryLabel(template.category), ...template.tags].join(' '));
+    const haystack = fold([template.name, template.description, categoryLabel(template.category), template.family ? familyLabel(template.family) : '', ...template.tags].join(' '));
     return words.every((word) => haystack.includes(word));
   });
 }

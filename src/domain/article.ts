@@ -54,6 +54,7 @@ export type ImageSlot = {
   suggestedCaption?: string;
   suggestedAlt?: string;
   orientation?: ImageOrientation;
+  availability?: { code: string; message: string };
 };
 
 /**
@@ -168,6 +169,7 @@ export function normalizeImageSlot(slot: ImageSlot): ImageSlot {
   if (caption) out.suggestedCaption = caption;
   if (alt) out.suggestedAlt = alt;
   if (slot.orientation && IMAGE_ORIENTATIONS.includes(slot.orientation)) out.orientation = slot.orientation;
+  if (slot.availability) out.availability = { ...slot.availability };
   return out;
 }
 
