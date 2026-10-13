@@ -60,6 +60,7 @@ const functions = {
       REPORTER_DEPLOYMENT_MODE: 'cloud',
       REPORTER_FUNCTION_RUNTIME: 'true',
       REPORTER_DEFAULT_PORTAL_ID: '10000000-0000-0000-0000-000000000101',
+      REPORTER_APP_ORIGIN: 'https://reporter-ai-three.vercel.app',
       REPORTER_WORKER_DATABASE_URL: workerDatabaseUrl(),
       REPORTER_WORKER_PASSWORD: required('REPORTER_WORKER_PASSWORD'),
       GROQ_API_KEY: required('GROQ_API_KEY'),
@@ -73,10 +74,17 @@ const functions = {
 
 export default defineConfig({
   auth: true,
+  buckets: {
+    'reporter-source-media': {},
+  },
   functions,
   triggers: {
     'reporter-editorial-every-minute': {
       type: 'schedule',function: 'reporterworker',cron: '* * * * *',functionPath: '/',enabled: true,
+    },
+    'reporter-source-uploaded': {
+      type: 'storage_object_created',function: 'reporterworker',bucket: 'reporter-source-media',
+      prefix: 'incoming/',functionPath: '/',enabled: true,
     },
   },
 });

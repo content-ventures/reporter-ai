@@ -7,7 +7,7 @@ export class FlowError extends Error {
 export function safeCode(error: unknown): string {
   if (error instanceof FlowError) return error.code;
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
-  if (["40001","42501","23514","22023","ECONNREFUSED","ENOENT"].includes(code)) return code;
+  if (["40001","42501","23514","22023","55000","ECONNREFUSED","ENOENT"].includes(code)) return code;
   if (error instanceof Error && ["LOCAL_MODE_DISABLED","GROQ_KEY_MISSING","OPENAI_KEY_MISSING","ANTHROPIC_KEY_MISSING","DATABASE_CONFIGURATION"].includes(error.message)) return error.message;
   return "INTERNAL_ERROR";
 }

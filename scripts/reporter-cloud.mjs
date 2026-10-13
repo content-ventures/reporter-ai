@@ -17,6 +17,7 @@ const files = [
   'database/migrations/005-neon-cloud.sql',
   'database/migrations/006-cloud-auth-context.sql',
   'database/migrations/007-neon-scheduled-worker.sql',
+  'database/migrations/008-neon-object-storage.sql',
 ];
 
 function ownerUrl() {
