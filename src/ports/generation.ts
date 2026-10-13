@@ -141,6 +141,10 @@ export type DraftSizeInstructions = {
   minChars: number;
   maxChars: number;
   targetChars: number;
+  minWords?: number;
+  maxWords?: number;
+  targetWords?: number;
+  minQuotes?: number;
   /** Share of the target a draft may land around; the maximum still holds. */
   tolerance: number;
   /** Sections become H2 intertítulos (Padrão); in a Curto they only guide the drafting. */
@@ -243,6 +247,8 @@ export type StartOptions = {
 };
 
 export type StartRefusal =
+  | 'provider_unavailable'
+  | 'unsupported_action'
   | GenerateRefusal
   | 'unknown_production'
   | 'unknown_piece'

@@ -1,5 +1,5 @@
 import type { TemplateMeta } from '../domain/carousel-library.ts';
-import type { TemplateId } from '../domain/ids.ts';
+import type { AssetId, TemplateId } from '../domain/ids.ts';
 
 /**
  * Visual DATA of a carousel template, as the local renderer draws it, in canvas pixels at the
@@ -43,12 +43,20 @@ export type SlotStyle = {
   uppercase?: boolean;
   /** Letter spacing, in canvas pixels. */
   tracking?: number;
+  /** Opt-in optical fit: shrink from fontSize down to this floor, never trim the stored copy. */
+  minFontSize?: number;
+  /** Balance headline lines without changing their words or explicit paragraph breaks. */
+  balanced?: boolean;
   /** List slots: items with markers in a hanging indent. */
   list?: ListStyle;
 };
 
 /** A flat colour block of the creative (bleed band, panel, hairline), in canvas pixels. */
-export type ShapeStyle = { x: number; y: number; width: number; height: number; color: string };
+export type ShapeStyle = {
+  x: number; y: number; width: number; height: number; color: string;
+  /** Optional polygon vertices in absolute canvas coordinates, inside the bounding box. */
+  points?: readonly { x: number; y: number }[];
+};
 
 /** A typographic mark of the creative (the big “ of a quote slide, an arrow), drawn under the text. */
 export type MarkStyle = {
@@ -61,6 +69,7 @@ export type MarkStyle = {
   fontFamily?: string;
   italic?: boolean;
   align?: TextAlign;
+  tracking?: number;
 };
 
 /** The slide number set large ("02"), as part of the layout. */
@@ -96,6 +105,8 @@ export type LayoutImage = {
   y: number;
   width: number;
   height: number;
+  /** Crop anchor on the excess source area; defaults to the centre, clamped to 0–1. */
+  position?: { x: number; y: number };
   /** Legibility scrim over the image, under the text (template colours). */
   scrim: ScrimStyle[];
   /** Slot colours while the image is drawn (text set on the photo). */
@@ -138,4 +149,4 @@ export type TemplateRender = {
 export type SampleContent = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
 /** Library data of a template: the card's metadata and the sample copy of its previews. */
-export type TemplateLibraryData = { meta: TemplateMeta; sample: SampleContent };
+export type TemplateLibraryData = { meta: TemplateMeta; sample: SampleContent; previewPhoto?: AssetId };

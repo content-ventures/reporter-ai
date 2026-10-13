@@ -28,7 +28,7 @@ export type ImageSourceEntry = {
 export const IMAGE_SOURCES: readonly ImageSourceEntry[] = [
   { id: 'upload', label: 'Enviar arquivo', icon: 'Image', since: 'R1', origin: 'upload' },
   { id: 'link', label: 'Link', icon: 'Globe', since: 'R1', origin: 'url' },
-  { id: 'archive', label: 'Acervo', icon: 'Archive', since: 'R2', origin: 'archive', requirement: 'F2.9' },
+  { id: 'archive', label: 'Biblioteca', icon: 'Archive', since: 'R1', origin: 'url', requirement: 'F2.9' },
   { id: 'generate', label: 'Gerar com IA', icon: 'Sparkles', since: 'R6', origin: 'generated', requirement: 'F6.10', ai: true },
   { id: 'semantic-search', label: 'Busca semântica', icon: 'Search', since: 'R6', origin: 'archive', requirement: 'F6.9' },
 ];

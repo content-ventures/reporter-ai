@@ -18,17 +18,15 @@ function outline(menu: readonly MenuSection[]): [string, string[]][] {
 const soonIds = (menu: readonly MenuSection[]) => menu.find((section) => section.group.id === 'soon')?.items.map((item) => item.id) ?? [];
 
 describe('menu (D9): what works today on top, "Em breve" as one collapsed group', () => {
-  test('João (editor + admin): Início, Produções, Aprovações, Modelos, Logs; 17 later items under "Em breve"; Novidades', () => {
+  test('João sees connected images, citations, banners and prompts in R1; 14 later items stay under "Em breve"', () => {
     const menu = menuFor(R1, { roles: ['editor', 'admin'] });
     assert.deepEqual(outline(menu), [
-      ['main', ['Início /', 'Produções /productions', 'Aprovações /approvals', 'Modelos /library/templates', 'Logs /admin/audit']],
+      ['main', ['Início /', 'Produções /productions', 'Aprovações /approvals', 'Modelos /library/templates', 'Imagens /images', 'Banners /banners', 'Citações /quotes', 'Logs /admin/audit', 'Prompts /config']],
       [
         'soon',
         [
           'Notícias · Em breve',
           'Acervo · Em breve',
-          'Citações · Em breve',
-          'Imagens · Em breve',
           'Mapa editorial · Em breve',
           'Guia de escrita · Em breve',
           'Integrações · Em breve',
@@ -40,13 +38,12 @@ describe('menu (D9): what works today on top, "Em breve" as one collapsed group'
           'Desempenho · Em breve',
           'Lotes · Em breve',
           'Eventos · Em breve',
-          'Prompts · Em breve',
           'Workspaces · Em breve',
         ],
       ],
       ['utility', ['Novidades /whats-new']],
     ]);
-    assert.equal(soonIds(menu).length, 17);
+    assert.equal(soonIds(menu).length, 14);
   });
 
   test('the main section has no label; "Em breve" folds and starts closed; Novidades sits at the bottom', () => {
@@ -77,23 +74,23 @@ describe('menu (D9): what works today on top, "Em breve" as one collapsed group'
     assert.equal(approvals?.badge, 'awaiting-approval');
     assert.ok(!NAV_ITEMS.some((item) => item.id !== 'approvals' && item.badge), 'no other item carries a count ("Produções 2" is gone)');
     const main = (roles: readonly Role[]) => menuFor(R1, { roles })[0]?.items.map((item) => item.label);
-    assert.deepEqual(main(['editor']), ['Início', 'Produções', 'Modelos']);
-    assert.deepEqual(main(['approver']), ['Início', 'Produções', 'Aprovações', 'Modelos']);
-    assert.deepEqual(main(['editor', 'creative_reviewer']), ['Início', 'Produções', 'Aprovações', 'Modelos']);
-    assert.deepEqual(main(['editor', 'admin']), ['Início', 'Produções', 'Aprovações', 'Modelos', 'Logs']);
-    assert.deepEqual(menuFor(R1)[0]?.items.map((item) => item.label), ['Início', 'Produções', 'Modelos'], 'unknown viewer: role items stay hidden');
+    assert.deepEqual(main(['editor']), ['Início', 'Produções', 'Modelos', 'Imagens', 'Banners', 'Citações']);
+    assert.deepEqual(main(['approver']), ['Início', 'Produções', 'Aprovações', 'Modelos', 'Imagens', 'Banners', 'Citações']);
+    assert.deepEqual(main(['editor', 'creative_reviewer']), ['Início', 'Produções', 'Aprovações', 'Modelos', 'Imagens', 'Banners', 'Citações']);
+    assert.deepEqual(main(['editor', 'admin']), ['Início', 'Produções', 'Aprovações', 'Modelos', 'Imagens', 'Banners', 'Citações', 'Logs', 'Prompts']);
+    assert.deepEqual(menuFor(R1)[0]?.items.map((item) => item.label), ['Início', 'Produções', 'Modelos', 'Imagens', 'Banners', 'Citações'], 'unknown viewer: role items stay hidden');
   });
 
   test('non-admins never see admin items, not even under "Em breve"', () => {
     const soon = soonIds(menuFor(R1, { roles: ['editor'] }));
-    assert.equal(soon.length, 14);
+    assert.equal(soon.length, 12);
     for (const id of ['integrations', 'prompts', 'workspaces']) assert.ok(!soon.includes(id), `${id} stays hidden`);
   });
 
-  test('⌘K "Ir para" lists released items only: Início, Produções, Aprovações, Modelos, Logs, Novidades', () => {
+  test('⌘K "Ir para" lists released items including Prompts', () => {
     const labels = (roles: readonly Role[]) => navigationFor(R1, { roles }).flatMap((section) => section.items.map((item) => item.label));
-    assert.deepEqual(labels(['editor', 'admin']), ['Início', 'Produções', 'Aprovações', 'Modelos', 'Logs', 'Novidades']);
-    assert.deepEqual(labels(['editor']), ['Início', 'Produções', 'Modelos', 'Novidades']);
+    assert.deepEqual(labels(['editor', 'admin']), ['Início', 'Produções', 'Aprovações', 'Modelos', 'Imagens', 'Banners', 'Citações', 'Logs', 'Prompts', 'Novidades']);
+    assert.deepEqual(labels(['editor']), ['Início', 'Produções', 'Modelos', 'Imagens', 'Banners', 'Citações', 'Novidades']);
   });
 
   test('shipping a release moves its items from "Em breve" to the top, in registry order', () => {
@@ -104,15 +101,17 @@ describe('menu (D9): what works today on top, "Em breve" as one collapsed group'
       'approvals',
       'news',
       'templates',
-      'archive',
-      'quotes',
       'images',
+      'banners',
+      'quotes',
+      'archive',
       'editorial-map',
       'writing-guide',
       'audit',
+      'prompts',
       'integrations',
     ]);
-    assert.deepEqual(soonIds(r2), ['opportunities', 'media', 'channels', 'profiles', 'newsletter', 'performance', 'batches', 'events', 'prompts', 'workspaces']);
+    assert.deepEqual(soonIds(r2), ['opportunities', 'media', 'channels', 'profiles', 'newsletter', 'performance', 'batches', 'events', 'workspaces']);
     const last: ReleaseId = RELEASES[RELEASES.length - 1] as ReleaseId;
     assert.deepEqual(soonIds(menuFor(last, { roles: EVERYONE })), [], 'nothing left "Em breve" once R7 ships');
   });
@@ -122,5 +121,6 @@ describe('menu (D9): what works today on top, "Em breve" as one collapsed group'
     assert.equal(activeNavItem('/approvals')?.id, 'approvals');
     assert.equal(activeNavItem('/approvals?aba=aprovadas')?.id, 'approvals');
     assert.equal(activeNavItem('/productions/prod-aurora/article/review')?.id, 'productions');
+    assert.equal(activeNavItem('/config')?.id, 'prompts');
   });
 });

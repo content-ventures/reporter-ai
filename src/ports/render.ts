@@ -23,6 +23,8 @@ export type TemplateInfo = CarouselTemplate &
     formatInfo: CarouselFormat;
     /** A layout draws the article's featured image (photo templates). */
     usesArticleCover: boolean;
+    /** Illustrative library asset ONLY. Real carousel requests use the approved article cover. */
+    previewPhoto?: AssetId;
   };
 
 export type SlotFit = {

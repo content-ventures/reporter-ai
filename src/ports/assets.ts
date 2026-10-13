@@ -3,6 +3,7 @@ import type { AssetId, ProductionId } from '../domain/ids.ts';
 import type { Result } from '../domain/result.ts';
 import type { Unsubscribe } from './common.ts';
 import type { SaveErrorCode } from './save-status.ts';
+import type { StockImage } from '../domain/visual-library.ts';
 
 /**
  * Image store of the articles (cover and figures). Bytes are Blobs (IndexedDB in the browser;
@@ -27,6 +28,7 @@ export type AssetMeta = {
   credit?: string;
   /** Rights note ("uso só no site"). */
   note?: string;
+  provenance?: StockImage & { libraryId: string };
 };
 
 /** A `credit` key that is blank (or `undefined`) removes the credit; absent keys stay as they are. */

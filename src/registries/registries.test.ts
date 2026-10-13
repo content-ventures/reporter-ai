@@ -107,12 +107,12 @@ const EVERYONE = ['editor', 'approver', 'creative_reviewer', 'admin'] as const;
 
 // The menu's shape (released items, "Em breve", utilities; roles) is tested in `navigation.test.ts`.
 describe('navigation registry', () => {
-  test('R1 menu: 23 items for an admin, 6 of them navigate (Início, Produções, Aprovações, Modelos, Logs, Novidades)', () => {
+  test('R1 menu: 24 items for an admin, including connected images, banners and local prompts', () => {
     const items = menuFor(R1, { roles: ['editor', 'admin'] }).flatMap((section) => section.items);
-    assert.equal(items.length, 23);
+    assert.equal(items.length, 24);
     assert.deepEqual(
       items.filter((item) => !item.soon).map((item) => item.id),
-      ['overview', 'productions', 'approvals', 'templates', 'audit', 'whats-new'],
+      ['overview', 'productions', 'approvals', 'templates', 'images', 'banners', 'quotes', 'audit', 'prompts', 'whats-new'],
     );
     assert.equal(menuFor(R1).at(-1)?.group.placement, 'utility');
     assert.equal(items.find((item) => item.id === 'whats-new')?.icon, 'Megaphone');
@@ -137,7 +137,7 @@ describe('navigation registry', () => {
 
   test('⌘K, the active item and the trail use only released items', () => {
     const released = navigationFor(R1, { roles: EVERYONE }).flatMap((section) => section.items.map((item) => item.id));
-    assert.deepEqual(released, ['overview', 'productions', 'approvals', 'templates', 'audit', 'whats-new']);
+    assert.deepEqual(released, ['overview', 'productions', 'approvals', 'templates', 'images', 'banners', 'quotes', 'audit', 'prompts', 'whats-new']);
     for (const item of NAV_ITEMS.filter((entry) => !isReleased(entry.since, R1))) {
       assert.equal(activeNavItem(item.href), undefined, `${item.href} is not highlighted before ${item.since}`);
     }
@@ -176,7 +176,7 @@ describe('navigation registry', () => {
     for (const release of RELEASES) assert.deepEqual(all(release), all(R1), `${release} shows the same items`);
     const soon = (release: ReleaseId) =>
       menuFor(release, { roles: EVERYONE }).flatMap((section) => section.items.filter((item) => item.soon).map((item) => item.id));
-    assert.deepEqual(soon('R2'), ['opportunities', 'media', 'channels', 'profiles', 'newsletter', 'performance', 'batches', 'events', 'prompts', 'workspaces']);
+    assert.deepEqual(soon('R2'), ['opportunities', 'media', 'channels', 'profiles', 'newsletter', 'performance', 'batches', 'events', 'workspaces']);
     assert.deepEqual(soon('R7'), []);
     assert.deepEqual(
       navigationFor('R2').map((section) => section.group.id),
@@ -377,19 +377,23 @@ describe('sizing', () => {
       size: 'standard',
       laudas: 2,
       charsPerLauda: 2000,
-      minChars: 2001,
+      minChars: 2500,
       maxChars: 4000,
-      targetChars: 3600,
+      targetChars: 3900,
+      minWords: 500,
+      maxWords: 800,
+      targetWords: 700,
+      minQuotes: 2,
       tolerance: 0.1,
       headings: true,
       neverPad: true,
-      introChars: 900,
+      introChars: 975,
       sections: [
-        { stepId: 'section-1', budgetChars: 900 },
-        { stepId: 'section-2', budgetChars: 900 },
-        { stepId: 'section-3', budgetChars: 900 },
+        { stepId: 'section-1', budgetChars: 975 },
+        { stepId: 'section-2', budgetChars: 975 },
+        { stepId: 'section-3', budgetChars: 975 },
       ],
-      instruction: 'Escreva até 4.000 caracteres; se o material não sustentar, escreva menos e não complete.',
+      instruction: 'O corpo deve cumprir simultaneamente 2.500–4.000 caracteres com espaços e 500–800 palavras. Busque 3.900 caracteres e cerca de 700 palavras, sem ultrapassar nenhum teto. Inclua ao menos duas citações literais distintas, copiadas da evidência referenciada. Se faltar material, sinalize a insuficiência; nunca preencha com repetição ou invenção.',
     });
     const curto = draftSizeInstructions({ size: 'short', sections: 2 });
     assert.equal(curto.headings, false, 'a Curto has no intertítulos');
@@ -435,10 +439,10 @@ describe('copilot and dashboard', () => {
 describe('image sources', () => {
   test('R1 picks a file or a link; the archive (R2) and AI generation and semantic search (R6) plug in as entries', () => {
     assertUnique(ids(IMAGE_SOURCES), 'image source ids');
-    assert.deepEqual(ids(imageSourcesFor(R1)), ['upload', 'link']);
+    assert.deepEqual(ids(imageSourcesFor(R1)), ['upload', 'link', 'archive']);
     assert.deepEqual(ids(imageSourcesFor('R2')), ['upload', 'link', 'archive']);
     assert.deepEqual(ids(imageSourcesFor('R6')), ['upload', 'link', 'archive', 'generate', 'semantic-search']);
-    assert.deepEqual(imageSourcesFor(R1).map((entry) => entry.label), ['Enviar arquivo', 'Link']);
+    assert.deepEqual(imageSourcesFor(R1).map((entry) => entry.label), ['Enviar arquivo', 'Link', 'Biblioteca']);
     assert.ok(IMAGE_SOURCES.filter((entry) => entry.ai).every((entry) => entry.icon === 'Sparkles'), 'AI actions use the reserved AI icon');
     assert.deepEqual(
       IMAGE_SOURCES.filter((entry) => entry.requirement).map((entry) => entry.requirement),

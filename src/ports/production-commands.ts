@@ -10,7 +10,7 @@ import type { Result } from '../domain/result.ts';
 import type { DecideRefusal } from '../domain/rules/decide.ts';
 import type { DeriveRefusal } from '../domain/rules/derive.ts';
 import type { ExportRefusal } from '../domain/rules/export.ts';
-import type { SourceOrigin } from '../domain/source.ts';
+import type { SourceOrigin, SpeakerPresentation } from '../domain/source.ts';
 import type { SuggestionState } from '../domain/suggestion.ts';
 import type { TranscriptFormat } from '../domain/text/transcript-parse.ts';
 import type { VersionView } from '../domain/views.ts';
@@ -31,6 +31,7 @@ export type PersonDetails = { name: string; title?: string; organization?: strin
 
 export type SpeakerAssignment = {
   label: string;
+  presentation?: SpeakerPresentation;
   /** Existing person, or… */
   personId?: PersonId;
   /** …a new one created with the production ("Falantes"), or… */
@@ -44,6 +45,8 @@ export type NewProductionInput = {
   title: string;
   material: {
     text: string;
+    /** Uploaded transcript already persisted by the server. */
+    transcriptId?: string;
     fileName?: string;
     format?: TranscriptFormat | 'auto';
     /** Material title; defaults to the production title. */
@@ -51,6 +54,9 @@ export type NewProductionInput = {
     origin: SourceOrigin;
     /** YYYY-MM-DD. */
     recordedOn?: string;
+    programName?: string;
+    sourceUrl?: string;
+    location?: string;
     /** "Material autorizado": generation stays blocked while false (REQ-T.1). */
     authorized: boolean;
   };

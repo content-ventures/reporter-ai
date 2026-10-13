@@ -18,6 +18,11 @@ export type SessionMember = PersonSummary & {
 
 export type ActAsRefusal = 'unknown_member' | 'not_simulated';
 
+/** Test profiles of the one loopback operator. Not account switching or production login. */
+export type LocalRoleProfileId = 'all' | 'editor' | 'approver' | 'creative_reviewer' | 'admin';
+export type LocalRoleProfile = { id: LocalRoleProfileId; label: string; roles: Role[] };
+export type LocalRoleRefusal = 'not_local_operator' | 'unknown_profile' | 'unavailable';
+
 export interface SessionPort {
   readonly mode: SessionMode;
   workspace(): Promise<Workspace>;
@@ -26,5 +31,8 @@ export interface SessionPort {
   members(): Promise<SessionMember[]>;
   /** Simulated mode only: switch the acting member. Remote adapters omit it. */
   actAs?(personId: PersonId): Promise<Result<SessionMember, ActAsRefusal>>;
+  /** Only an explicitly local adapter exposes these capabilities. */
+  localRoleProfiles?(): Promise<LocalRoleProfile[]>;
+  selectLocalRole?(profile: LocalRoleProfileId): Promise<Result<SessionMember, LocalRoleRefusal>>;
   subscribe(listener: ChangeListener): Unsubscribe;
 }

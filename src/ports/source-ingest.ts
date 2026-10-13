@@ -26,7 +26,10 @@ export type IngestLimits = {
 
 export type ReadRefusal = 'unsupported_type' | 'too_large' | 'empty' | 'read_failed';
 
-export type ReadFile = { text: string; fileName: string; format: TranscriptFormat; bytes: number };
+export type ReadFile = { text: string; fileName: string; format: TranscriptFormat; bytes: number; transcriptId?: string };
+export type FileReadOptions = { signal?: AbortSignal; onProgress?: (progress: number,message: string) => void };
+export type ReadLink = ReadFile & { sourceUrl: string; provider: 'youtube' | 'spotify'; title?: string; programName?: string };
+export type LinkReadOptions = FileReadOptions;
 
 export type AnalyzeOptions = {
   fileName?: string;
@@ -37,7 +40,9 @@ export type AnalyzeOptions = {
   speakerNames?: Readonly<Record<string, string>>;
 };
 
-export type SpeakerStats = { label: string; segments: number; words: number };
+export type MaterialParticipant = { name: string; title: string; organization: string; segmentId: string; excerpt: string };
+export type MaterialInsights = { title: string; participants: MaterialParticipant[]; pipelineRevision: number };
+export type SpeakerStats = { label: string; segments: number; words: number; presentation?: Omit<MaterialParticipant, 'name'> };
 
 /** A saved source whose content hash equals the analysed material ("material duplicado"). */
 export type DuplicateMatch = {
@@ -65,6 +70,8 @@ export type SourceAnalysis = {
   preview: ParsedSegment[];
   warnings: TranscriptWarning[];
   short: boolean;
+  /** Provider suggestion grounded in the material, separate from the simulated outlook. */
+  topicTitle?: string;
   duplicate?: DuplicateMatch;
   /** How the article would be born from this material (simulated adapters; absent elsewhere). */
   outlook?: MaterialOutlook;
@@ -80,10 +87,11 @@ export type MaterialOutlook = {
   keyLines: { segmentId: string; speaker?: string; text: string }[];
 };
 
-export type AnalyzeRefusal = 'empty';
+export type AnalyzeRefusal = 'empty' | 'analysis_failed';
 
 export interface SourceIngest {
   readonly limits: IngestLimits;
-  read(file: IngestFile): Promise<Result<ReadFile, ReadRefusal>>;
+  read(file: IngestFile, options?: FileReadOptions): Promise<Result<ReadFile, ReadRefusal>>;
+  readLink(url: string, options?: LinkReadOptions): Promise<Result<ReadLink, ReadRefusal>>;
   analyze(text: string, options?: AnalyzeOptions): Promise<Result<SourceAnalysis, AnalyzeRefusal>>;
 }

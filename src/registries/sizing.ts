@@ -1,7 +1,8 @@
-import { ARTICLE_SIZE_IDS, CHARS_PER_LAUDA, DEFAULT_ARTICLE_SIZE, groupDigits, sectionBudget, sizeOf, SIZE_TOLERANCE } from '../domain/index.ts';
+import { CHARS_PER_LAUDA, DEFAULT_ARTICLE_SIZE, groupDigits, sectionBudget, sizeOf, SIZE_TOLERANCE } from '../domain/index.ts';
 import type { ArticleSize, Brief, FlowId } from '../domain/index.ts';
 import type { DraftSizeInstructions } from '../ports/index.ts';
 import { sectionStepId } from './recipes.ts';
+import { R1_ARTICLE_LIMITS } from '../domain/article-policy.ts';
 import type { ReleaseId } from './release.ts';
 
 /**
@@ -48,10 +49,10 @@ export const HARD_NEWS_SIZING: LaudaSizingPolicy = {
   since: 'R1',
   flows: ['transcript-article', 'news-article'],
   charsPerLauda: CHARS_PER_LAUDA,
-  sizes: ARTICLE_SIZE_IDS,
+  sizes: [DEFAULT_ARTICLE_SIZE],
   defaultSize: DEFAULT_ARTICLE_SIZE,
   neverPad: true,
-  instruction: 'Escreva até {max} caracteres; se o material não sustentar, escreva menos e não complete.',
+  instruction: 'O corpo deve cumprir simultaneamente 2.500–4.000 caracteres com espaços e 500–800 palavras. Busque 3.900 caracteres e cerca de 700 palavras, sem ultrapassar nenhum teto. Inclua ao menos duas citações literais distintas, copiadas da evidência referenciada. Se faltar material, sinalize a insuficiência; nunca preencha com repetição ou invenção.',
 };
 
 export const EVERGREEN_SIZING: IntentSizingPolicy = {
@@ -84,11 +85,14 @@ export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections'>): 
     minChars: spec.minChars,
     maxChars: spec.maxChars,
     targetChars: spec.targetChars,
+    ...(spec.id === 'standard' ? { minWords: R1_ARTICLE_LIMITS.minWords, maxWords: R1_ARTICLE_LIMITS.maxWords,
+      targetWords: R1_ARTICLE_LIMITS.targetWords, minQuotes: R1_ARTICLE_LIMITS.minQuotes } : {}),
     tolerance: SIZE_TOLERANCE,
     headings: spec.headings,
     neverPad: true,
     introChars: budget.introChars,
     sections: Array.from({ length: Math.max(0, brief.sections) }, (_, index) => ({ stepId: sectionStepId(index + 1), budgetChars: budget.sectionChars })),
-    instruction: HARD_NEWS_SIZING.instruction.replace('{max}', groupDigits(spec.maxChars)),
+    instruction: spec.id === 'standard' ? HARD_NEWS_SIZING.instruction
+      : `Escreva até ${groupDigits(spec.maxChars)} caracteres; se o material não sustentar, escreva menos e não complete.`,
   };
 }
