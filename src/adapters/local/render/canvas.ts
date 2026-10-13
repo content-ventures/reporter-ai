@@ -2,6 +2,7 @@ import type { CarouselTemplate, Slide } from '../../../domain/carousel.ts';
 import type { LaidSlot } from './slide-layout.ts';
 import { BASE_FAMILY, cssFont, MARGIN } from './templates.ts';
 import type { TemplateRender, Typefaces } from './templates.ts';
+import type { ShapeStyle } from '../../../ports/render-template.ts';
 import { ellipsize } from './text-metrics.ts';
 
 /**
@@ -20,6 +21,11 @@ export type Canvas2D = {
   fillRect(x: number, y: number, width: number, height: number): void;
   fillText(text: string, x: number, y: number): void;
   measureText(text: string): { width: number };
+  beginPath?(): void;
+  moveTo?(x: number, y: number): void;
+  lineTo?(x: number, y: number): void;
+  closePath?(): void;
+  fill?(): void;
   /** Needed only for background images and their scrim. */
   globalAlpha?: number;
   /** Letter spacing ("4px") where the canvas supports it; measuring sets it the same way. */
@@ -31,11 +37,12 @@ export type Canvas2D = {
 export type CoverImage = { source: unknown; width: number; height: number };
 
 /** Source rectangle that makes an image cover a box (scaled to fill, centred, cropped). */
-export function coverFit(image: { width: number; height: number }, box: { width: number; height: number }): { sx: number; sy: number; sw: number; sh: number } {
+export function coverFit(image: { width: number; height: number }, box: { width: number; height: number }, position?: { x: number; y: number }): { sx: number; sy: number; sw: number; sh: number } {
   const wider = image.width * box.height > box.width * image.height;
   const sw = wider ? (image.height * box.width) / box.height : image.width;
   const sh = wider ? image.height : (image.width * box.height) / box.width;
-  return { sx: (image.width - sw) / 2, sy: (image.height - sh) / 2, sw, sh };
+  const anchor = (value: number | undefined) => value !== undefined && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.5;
+  return { sx: (image.width - sw) * anchor(position?.x), sy: (image.height - sh) * anchor(position?.y), sw, sh };
 }
 
 /** True when the context can draw the layout's background image. */
@@ -100,8 +107,16 @@ export function drawSlide(
   const layout = render.layouts[slide.layout];
   if (!layout) return false;
   const px = (value: number) => Math.round(value * scale);
-  const fill = (shape: { x: number; y: number; width: number; height: number; color: string }) => {
+  const fill = (shape: ShapeStyle) => {
     context.fillStyle = shape.color;
+    if (shape.points && shape.points.length >= 3 && context.beginPath && context.moveTo && context.lineTo && context.closePath && context.fill) {
+      context.beginPath();
+      context.moveTo(px(shape.points[0].x), px(shape.points[0].y));
+      for (const point of shape.points.slice(1)) context.lineTo(px(point.x), px(point.y));
+      context.closePath();
+      context.fill();
+      return;
+    }
     context.fillRect(px(shape.x), px(shape.y), px(shape.width), px(shape.height));
   };
 
@@ -112,7 +127,7 @@ export function drawSlide(
   const withImage = Boolean(image && input.cover && input.cover.width > 0 && input.cover.height > 0 && canDrawImages(context));
   if (image && input.cover && withImage) {
     const box = { x: px(image.x), y: px(image.y), width: px(image.width), height: px(image.height) };
-    const source = coverFit(input.cover, image);
+    const source = coverFit(input.cover, image, image.position);
     context.drawImage?.(input.cover.source, source.sx, source.sy, source.sw, source.sh, box.x, box.y, box.width, box.height);
     for (const scrim of image.scrim) {
       context.globalAlpha = Math.min(1, Math.max(0, scrim.opacity));
@@ -131,7 +146,9 @@ export function drawSlide(
     context.font = cssFont({ fontFamily: mark.fontFamily ?? BASE_FAMILY, fontWeight: mark.fontWeight, fontSize: mark.fontSize, ...(mark.italic ? { italic: true } : {}) }, scale, typefaces);
     context.fillStyle = mark.color;
     context.textAlign = mark.align ?? 'left';
+    if (mark.tracking) context.letterSpacing = `${mark.tracking * scale}px`;
     context.fillText(mark.text, px(mark.x), px(mark.y));
+    if (mark.tracking) context.letterSpacing = '0px';
   }
   if (layout.number) {
     const number = layout.number;

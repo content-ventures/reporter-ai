@@ -64,6 +64,8 @@ export type LocalRenderDeps = {
    * ("Foto de exemplo"), so a photo model shows a photo under the sample copy.
    */
   samplePhoto?: { assetId: AssetId; credit: string; load: () => Promise<Result<CoverImage, CoverRefusal>> };
+  /** Additional explicitly selected preview-only assets; never substituted for a missing real cover. */
+  samplePhotos?: readonly NonNullable<LocalRenderDeps['samplePhoto']>[];
 };
 
 const NO_COVER = 'O artigo não tem imagem de destaque.';
@@ -136,7 +138,7 @@ export function createLocalRenderService(deps: LocalRenderDeps): RenderService {
   // Measuring is synchronous (line fit while a run writes): the faces start loading right away.
   if (probe) void fontsReady([...new Set(deps.templates.flatMap((entry) => facesOf(entry.id)))]);
   const template = (id: TemplateId) => deps.templates.find((candidate) => candidate.id === id);
-  const sampleOf = (assetId: AssetId) => (deps.samplePhoto && deps.samplePhoto.assetId === assetId ? deps.samplePhoto : undefined);
+  const sampleOf = (assetId: AssetId) => [deps.samplePhoto, ...(deps.samplePhotos ?? [])].find(photo => photo?.assetId === assetId);
   const creditOf = (assetId: AssetId) => sampleOf(assetId)?.credit ?? deps.coverCredit?.(assetId);
 
   const fitsOf = (body: CarouselBody, found: CarouselTemplate): SlotFit[] =>
@@ -152,6 +154,7 @@ export function createLocalRenderService(deps: LocalRenderDeps): RenderService {
       provisional: meta.status === 'base',
       formatInfo: { ...formatInfo },
       usesArticleCover: usesArticleCover(entry),
+      ...(deps.library?.[entry.id]?.previewPhoto ? { previewPhoto: deps.library[entry.id].previewPhoto } : {}),
     };
   });
 

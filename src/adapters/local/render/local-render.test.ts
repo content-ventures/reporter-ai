@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { CarouselBody, CarouselTemplate } from '../../../domain/carousel.ts';
 import { PROVISIONAL_TEMPLATES, TEMPLATE_RENDERS } from '../../../fixtures/templates/provisional.ts';
+import { CAROUSEL_TEMPLATES, CAROUSEL_TEMPLATE_RENDERS, CAROUSEL_TEMPLATE_LIBRARY } from '../../../fixtures/templates/catalog.ts';
 import type { SlotStyle, TemplateRender } from '../../../ports/render-template.ts';
 import { pngFile } from '../../../ports/contracts/assets.contract.ts';
 import { createMemoryAssetStore } from '../assets/index.ts';
@@ -283,6 +284,52 @@ describe('encoding', () => {
 });
 
 describe('library render features', () => {
+  it('draws polygon vertices at export scale rather than flattening an angular creative into a rectangle', async () => {
+    const calls: Call[] = [];
+    const service = createLocalRenderService({ templates: CAROUSEL_TEMPLATES, renders: CAROUSEL_TEMPLATE_RENDERS, library: CAROUSEL_TEMPLATE_LIBRARY,
+      fontsReady: async () => undefined,
+      createSurface: (width, height) => {
+        const surface = fakeSurfaces(calls)(width, height)!;
+        for (const operation of ['beginPath', 'moveTo', 'lineTo', 'closePath', 'fill'] as const) {
+          surface.context[operation] = (...args: number[]) => { calls.push({ op: operation, args }); };
+        }
+        return surface;
+      },
+    });
+    const sample = service.sample('tpl-seafood-headline'); assert.ok(sample.ok);
+    const rendered = await service.render({ body: sample.value, slideIds: [sample.value.slides[0].id], scale: 0.5 });
+    assert.ok(rendered.ok);
+    const polygons = CAROUSEL_TEMPLATE_RENDERS['tpl-seafood-headline'].layouts.cover.overlays!.filter(shape => shape.points);
+    assert.ok(polygons.length > 0);
+    for (const polygon of polygons) {
+      const [start, ...rest] = polygon.points!;
+      assert.ok(calls.some(call => call.op === 'moveTo' && call.args[0] === Math.round(start.x * 0.5) && call.args[1] === Math.round(start.y * 0.5)));
+      for (const point of rest) assert.ok(calls.some(call => call.op === 'lineTo' && call.args[0] === Math.round(point.x * 0.5) && call.args[1] === Math.round(point.y * 0.5)));
+    }
+    assert.equal(calls.filter(call => call.op === 'fill').length, polygons.length);
+  });
+
+  it('uses a template-specific illustrative photo only when explicitly requested and never as a real cover fallback', async () => {
+    const calls: DrawCall[] = [];
+    let previewLoads = 0;
+    const service = createLocalRenderService({ templates: CAROUSEL_TEMPLATES, renders: CAROUSEL_TEMPLATE_RENDERS, library: CAROUSEL_TEMPLATE_LIBRARY,
+      fontsReady: async () => undefined, createSurface: imageSurfaces(calls),
+      samplePhotos: [{ assetId: 'img-amostra-pescado', credit: 'Imagem ilustrativa gerada por IA', load: async () => { previewLoads++; return { ok: true, value: { source: 'sample-bitmap', width: 1120, height: 1400 } }; } }],
+      loadCover: async () => ({ ok: false, refusal: { code: 'missing', message: COVER_REASONS.missing } }),
+    });
+    const id = 'tpl-seafood-headline';
+    assert.equal(service.templates().find(template => template.id === id)?.previewPhoto, 'img-amostra-pescado');
+    const sample = service.sample(id); assert.ok(sample.ok);
+    const plain = await service.render({ body: sample.value }); assert.ok(plain.ok);
+    assert.equal(previewLoads, 0);
+    assert.equal(plain.value.slides[0].background?.drawn, false);
+    const missing = await service.render({ body: sample.value, articleCover: 'missing-real-cover' }); assert.ok(missing.ok);
+    assert.equal(previewLoads, 0, 'an unavailable real cover must not turn into a sample photo');
+    const preview = await service.preview({ templateId: id, articleCover: 'img-amostra-pescado' }); assert.ok(preview.ok);
+    assert.equal(previewLoads, 1);
+    assert.equal(preview.value.slides[0].background?.drawn, true);
+    assert.ok(calls.some(call => call.op === 'fillText' && call.args[0] === 'Imagem ilustrativa gerada por IA'));
+  });
   const LIST_TEMPLATE: CarouselTemplate = {
     id: 'tpl-lista',
     name: 'Lista',

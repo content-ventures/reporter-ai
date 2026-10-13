@@ -20,7 +20,7 @@ import { Sparkles } from '@content-ventures/design-system/v3/icons';
 import { blockText, formatSize, plannedLayouts, SIMULATED_MODEL, type CarouselBody, type RunId, type TemplateId } from '@/domain';
 import type { DraftView, PieceView, ProductionDetail, RunView, TemplateInfo } from '@/ports';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
-import { useCommands, useRuntime, useVersion } from '@/state';
+import { useCommands, useRuntime, useSession, useVersion } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
 import { rememberTemplate, useLastTemplate } from '@/features/library/last-template';
 import { featuredNote, initialTemplate, libraryFilter, type LibraryFilter } from '@/features/library/library-model';
@@ -142,11 +142,14 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
   const preview = useSlideRenders(cover, { scale: 0.5, delay: 0, slideIds: COVER_ONLY, articleCover })['preview-cover'];
 
   const generateGuard = production.guards.pieces.carousel?.generate;
-  const blockedReason = !from ? 'Disponível após aprovar o artigo.' : generateGuard && !generateGuard.allowed && carousel ? generateGuard.reason : !template ? 'Carregando os modelos.' : undefined;
+  const roles = useSession().data?.current?.roles;
+  const canEdit = roles?.some(role => role === 'editor' || role === 'admin') === true;
+  const blockedReason = !canEdit ? 'Para criar o carrossel, escolha Editor ou Todos os papéis no teste local.'
+    : !from ? 'Disponível após aprovar o artigo.' : generateGuard && !generateGuard.allowed && carousel ? generateGuard.reason : !template ? 'Carregando os modelos.' : undefined;
   const [starting, setStarting] = useState(false);
 
   const start = async () => {
-    if (!from || !template) return;
+    if (!from || !template || blockedReason) return;
     setStarting(true);
     let pieceId = carousel?.id;
     if (!pieceId) {
@@ -158,7 +161,12 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
       }
       pieceId = derived.value.pieceId;
     } else if (draft && existingTemplate !== template.id) {
-      await commands.production.saveDraft(pieceId, { type: 'carousel', templateId: template.id, slides: [] }, draft.revision);
+      const saved = await commands.production.saveDraft(pieceId, { type: 'carousel', templateId: template.id, slides: [] }, draft.revision);
+      if (!saved.ok) {
+        setStarting(false);
+        toast('Não foi possível salvar o modelo', { tone: 'error', description: saved.refusal.message });
+        return;
+      }
     }
     const started = await commands.generation.start(
       'carousel.copy',

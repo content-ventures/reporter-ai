@@ -3,7 +3,7 @@ import type { CarouselTemplate, Slide, SlotSpec } from '../../../domain/carousel
 import type { SlotFit } from '../../../ports/render.ts';
 import { slotStyle } from './templates.ts';
 import type { SlotStyle, TemplateRender } from './templates.ts';
-import { wrapLines } from './text-metrics.ts';
+import { balancedLines, wrapLines } from './text-metrics.ts';
 import type { MeasureText } from './text-metrics.ts';
 
 /**
@@ -59,9 +59,24 @@ export function laySlide(slide: Slide, template: CarouselTemplate, render: Templ
   if (!layout) return [];
   const laid: LaidSlot[] = [];
   layout.slots.forEach((spec, index) => {
-    const style = slotStyle(template, render, layout.id, spec, index);
+    let style = slotStyle(template, render, layout.id, spec, index);
     const text = displayText(spec, slide.slots[spec.id] ?? '', style);
     if (!text) return;
+    if (style.minFontSize !== undefined && !style.list) {
+      const original = style;
+      const floor = Math.max(1, Math.min(original.fontSize, original.minFontSize!));
+      const leading = original.lineHeight / original.fontSize;
+      for (let size = original.fontSize; size >= floor; size = Math.max(floor, size - 1)) {
+        const candidate = { ...original, fontSize: size, lineHeight: Math.round(size * leading) };
+        const measured = wrapLines(text, candidate.width, value => measure(value, { family: candidate.fontFamily, size, weight: candidate.fontWeight, italic: candidate.italic, tracking: candidate.tracking }));
+        style = candidate;
+        const fits = measured.length <= Math.min(spec.maxLines ?? Infinity, Math.floor(candidate.height / candidate.lineHeight));
+        const canImprove = fits && original.balanced && measured.length > 2 && text.split(/\s+/).length > 4 && size > original.fontSize * 0.86;
+        const balanced = canImprove ? balancedLines(text, candidate.width, value => measure(value, { family: candidate.fontFamily, size, weight: candidate.fontWeight, italic: candidate.italic, tracking: candidate.tracking })) : [];
+        const orphan = balanced.some(line => !line.includes(' ') && measure(line, { family: candidate.fontFamily, size, weight: candidate.fontWeight, italic: candidate.italic, tracking: candidate.tracking }) < candidate.width * 0.4);
+        if ((fits && !orphan) || size === floor) break;
+      }
+    }
     const font = { family: style.fontFamily, size: style.fontSize, weight: style.fontWeight, ...(style.italic ? { italic: true } : {}), ...(style.tracking ? { tracking: style.tracking } : {}) };
     const width = (value: string) => measure(value, font);
     let rows: LaidRow[];
@@ -71,7 +86,7 @@ export function laySlide(slide: Slide, template: CarouselTemplate, render: Templ
       rows = listed.rows;
       boxLines = listed.capacity;
     } else {
-      rows = wrapLines(text, style.width, width).map((line, row) => ({ text: line, indent: 0, top: row * style.lineHeight }));
+      rows = (style.balanced ? balancedLines : wrapLines)(text, style.width, width).map((line, row) => ({ text: line, indent: 0, top: row * style.lineHeight }));
       boxLines = Math.max(1, Math.floor(style.height / style.lineHeight));
     }
     const lines = rows.map((row) => row.text);

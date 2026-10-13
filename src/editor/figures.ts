@@ -4,6 +4,7 @@ import { NodeSelection, Plugin, PluginKey, Selection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { COVER_BLOCK_ID, creditLine } from '../domain/index.ts';
 import type { AiReviewState, AssetId, BlockId, ImageOrientation, ImageRef, ImageSlot, SourceRef } from '../domain/index.ts';
+import { imageCreditUrl } from '../domain/visual-library.ts';
 import { EMPTY_BLOCK_ATTRS, figureAttrs, readImageRef, readImageSlot } from './pm-json.ts';
 import type { FigureAttrs, FigureDisplay, FigureSources } from './pm-json.ts';
 import { blockIdOf, blockTextOf, findBlockEntry, posToOffset } from './ranges.ts';
@@ -74,6 +75,7 @@ export function readFigureAttrs(attrs: Record<string, unknown>): FigureAttrs {
     { assetId: asText(attrs[FIGURE_ATTR.assetId]), alt: asText(attrs[FIGURE_ATTR.alt]), caption: asText(attrs[FIGURE_ATTR.caption]) },
     {
       credit: asText(attrs[FIGURE_ATTR.credit]),
+      creditUrl: asText(attrs[FIGURE_ATTR.creditUrl]),
       src: asText(attrs[FIGURE_ATTR.src]),
       width: asNumber(attrs[FIGURE_ATTR.width]),
       height: asNumber(attrs[FIGURE_ATTR.height]),
@@ -275,7 +277,8 @@ export function figureDOMSpec(attrs: Record<string, unknown>, htmlAttributes: Re
   if (!caption && !credit) return ['figure', outer, ['img', img]];
   const captionParts: (string | DOMOutputSpec)[] = [];
   if (caption) captionParts.push(credit ? `${caption}${CAPTION_CREDIT_SEPARATOR}` : caption);
-  if (credit) captionParts.push(['cite', credit]);
+  const creditUrl = imageCreditUrl(figure.creditUrl ?? undefined);
+  if (credit) captionParts.push(creditUrl ? ['cite', ['a', { href: creditUrl,target: '_blank',rel: 'noopener noreferrer' }, credit]] : ['cite', credit]);
   return ['figure', outer, ['img', img], ['figcaption', ...captionParts]];
 }
 

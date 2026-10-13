@@ -37,6 +37,8 @@ export type CarouselGenerateAction = {
 export type CarouselReviewAction = {
   /** Already sent: the action opens the review instead. */
   inReview: boolean;
+  /** The unchanged approved carousel continues to delivery, not another review request. */
+  approved?: boolean;
   href: string;
   /** Why "Enviar para aprovação" is unavailable. */
   reason?: string;
@@ -45,6 +47,7 @@ export type CarouselReviewAction = {
 };
 
 export function CarouselSendButton({ action, size }: { action: CarouselReviewAction; size?: 'sm' }) {
+  if (action.approved) return <ButtonLink href={action.href} variant="primary" size={size}>Ir para entrega</ButtonLink>;
   if (action.inReview) {
     return (
       <ButtonLink href={action.href} variant="primary" icon={Send} size={size}>

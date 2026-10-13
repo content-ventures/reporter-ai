@@ -46,13 +46,14 @@ export const FIGURE_ATTR = {
   caption: 'caption',
   slot: 'slot',
   credit: 'credit',
+  creditUrl: 'creditUrl',
   src: 'src',
   width: 'width',
   height: 'height',
 } as const;
 
 /** Figure attributes that only drive what the editor shows (never in the domain body). */
-export const FIGURE_DISPLAY_ATTRS = [FIGURE_ATTR.credit, FIGURE_ATTR.src, FIGURE_ATTR.width, FIGURE_ATTR.height] as const;
+export const FIGURE_DISPLAY_ATTRS = [FIGURE_ATTR.credit, FIGURE_ATTR.creditUrl, FIGURE_ATTR.src, FIGURE_ATTR.width, FIGURE_ATTR.height] as const;
 
 /** Document attributes (body metadata kept with the text, outside any node). */
 export const DOC_ATTR = {

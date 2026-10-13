@@ -20,7 +20,7 @@ import {
   type DiffBlockType,
 } from '@content-ventures/design-system/v3';
 import { ArrowLeftRight, Scissors, Sparkles, Type } from '@content-ventures/design-system/v3/icons';
-import { blockText, diffWords, SIMULATED_MODEL, type ArticleBody, type CarouselBody, type CarouselTemplate, type Slide, type SlideAssistAction, type SlideLayout, type SlotRole } from '@/domain';
+import { blockText, diffWords, type ArticleBody, type CarouselBody, type CarouselTemplate, type Slide, type SlideAssistAction, type SlideLayout, type SlotRole } from '@/domain';
 import type { RunView, SlotFit } from '@/ports';
 import { copilotToolsFor } from '@/registries';
 import { Provenance } from '@/ui/provenance';
@@ -163,6 +163,7 @@ function AssistSection({
   lockedReason,
   assist,
   assistRun,
+  generationRun,
   updateLabel,
   article,
   onAssist,
@@ -192,7 +193,7 @@ function AssistSection({
 
   const showCard = assist && (assist.state !== 'ready' || assist.proposal);
   return (
-    <Section title="IA" meta={SIMULATED_MODEL.label}>
+    <Section title="IA" meta={generationRun?.model.label ?? 'Sem geração registrada'}>
       <Toolbar label="IA no slide" size="sm" overflow="wrap" keepFocus={false}>
         {tools.map((tool) => {
           const kind = TOOL_KIND[tool.id];
@@ -214,7 +215,7 @@ function AssistSection({
         <SuggestionCard
           key={`${slide.id}:${assist.kind}`}
           title={assistTitle(assist.kind, updateLabel)}
-          provenance={[assistRun?.model.label ?? SIMULATED_MODEL.label]}
+          provenance={[assistRun?.model.label ?? generationRun?.model.label ?? 'Sem geração registrada']}
           state={assist.state}
           error={assist.reason}
           acceptLabel="Aplicar ao slide"

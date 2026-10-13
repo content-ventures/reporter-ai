@@ -33,13 +33,13 @@ import {
   type VersionView,
 } from '@/domain';
 import type { PieceView, ProductionDetail, SlotFit } from '@/ports';
-import { useCommands, usePiece, useRun, useRuntime, useSaveStatus, useVersion } from '@/state';
+import { useCommands, usePiece, useRun, useRuntime, useSaveStatus, useSession, useVersion } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
 import { rememberTemplate } from '@/features/library/last-template';
 import { switchSummary } from '@/features/library/library-model';
 import { TemplatePickerDrawer } from '@/features/library/template-drawers';
 import { plural } from '@/ui/format';
-import { pieceHref, reviewHref } from '@/ui/routes';
+import { deliveryHref, pieceHref, reviewHref } from '@/ui/routes';
 import { RunTrace } from '@/ui/run-trace';
 import { takeArmedSimulation, useCommandGroup, useFocusMode } from '@/ui/shell';
 import { usePersistentFlag } from '@/ui/shell/preference';
@@ -112,7 +112,9 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
   }, [draft.body?.templateId, live, request?.templateId, running]);
   const body = runBody ?? draft.body;
   const slides = useMemo(() => body?.slides ?? [], [body]);
-  const lockedReason = running ? LOCKED : undefined;
+  const roles = useSession().data?.current?.roles;
+  const canEdit = roles?.some(role => role === 'editor' || role === 'admin') === true;
+  const lockedReason = running ? LOCKED : !canEdit ? 'Seu papel permite revisar, mas não editar o carrossel. No teste local, escolha Editor ou Todos os papéis.' : undefined;
 
   // ── Template and fit (approximate, measured by the render service) ──────────────────
   const templates = useMemo(() => runtime?.render.templates() ?? [], [runtime]);
@@ -432,6 +434,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
   const guards = production.guards.pieces.carousel;
   const reviewGuard = guards?.requestReview;
   const inReview = reviewGuard && !reviewGuard.allowed && reviewGuard.code === 'already_requested' && !draft.pending;
+  const approved = carousel.status === 'approved' && !draft.pending && !running;
   const reviewReason = lockedReason ?? (reviewGuard && !reviewGuard.allowed && !inReview && !draft.pending ? reviewGuard.reason : undefined);
   const generateGuard = guards?.generate;
   const carouselStage = production.stages.find((stage) => stage.pieceKind === 'carousel');
@@ -457,11 +460,12 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
       // Blocked, "Enviar para aprovação" stays listed with the header's reason and says it again on Enter.
       {
         id: 'carousel-send-review',
-        label: inReview ? 'Abrir revisão' : 'Enviar para aprovação',
+        label: approved ? 'Ir para entrega' : inReview ? 'Abrir revisão' : 'Enviar para aprovação',
         icon: Send,
-        ...(!inReview && reviewReason ? { description: reviewReason } : {}),
+        ...(!approved && !inReview && reviewReason ? { description: reviewReason } : {}),
         onSelect: () => {
-          if (inReview) router.push(reviewHref(production.id, 'carousel'));
+          if (approved) router.push(deliveryHref(production.id));
+          else if (inReview) router.push(reviewHref(production.id, 'carousel'));
           else if (reviewReason) toast('Ainda não dá para enviar', { tone: 'info', description: reviewReason });
           else void sendToReview();
         },
@@ -501,7 +505,8 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
   };
   const reviewAction: CarouselReviewAction = {
     inReview: Boolean(inReview),
-    href: reviewHref(production.id, 'carousel'),
+    approved,
+    href: approved ? deliveryHref(production.id) : reviewHref(production.id, 'carousel'),
     ...(reviewReason ? { reason: reviewReason } : {}),
     sending,
     onSend: () => void sendToReview(),

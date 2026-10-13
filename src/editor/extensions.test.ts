@@ -95,7 +95,7 @@ describe('article schema', () => {
     assert.equal(figure.isBlock, true);
     assert.equal(figure.spec.selectable, true);
     assert.equal(figure.spec.draggable, false);
-    assert.deepEqual(Object.keys(figure.spec.attrs ?? {}).sort(), ['ai', 'alt', 'assetId', 'blockId', 'caption', 'credit', 'height', 'slot', 'sourceRefs', 'src', 'width']);
+    assert.deepEqual(Object.keys(figure.spec.attrs ?? {}).sort(), ['ai', 'alt', 'assetId', 'blockId', 'caption', 'credit', 'creditUrl', 'height', 'slot', 'sourceRefs', 'src', 'width']);
   });
 
   test('the cover is a document attribute, not a node', () => {
@@ -162,6 +162,14 @@ describe('figure HTML', () => {
     assert.deepEqual(credited[3], ['figcaption', ['cite', 'Ilustração: Bia']]);
     const captioned = figure({ assetId: 'ast-1', caption: 'Só legenda' }, { src: 'https://example.com/a.jpg' }) as readonly unknown[];
     assert.deepEqual(captioned[3], ['figcaption', 'Só legenda']);
+  });
+  test('Unsplash attribution links to the photographer without entering article content or accepting unsafe hrefs', () => {
+    const href = 'https://unsplash.com/@photographer?utm_source=reporter_ai&utm_medium=referral';
+    const linked = figure({ assetId: 'ast-1' },{ src: 'https://images.unsplash.com/photo-test?ixid=test',credit: 'Photographer / Unsplash',creditUrl: href }) as readonly unknown[];
+    assert.deepEqual(linked[3],['figcaption',['cite',['a',{ href,target: '_blank',rel: 'noopener noreferrer' },'Foto: Photographer / Unsplash']]]);
+    for (const creditUrl of ['javascript:alert(1)','https://unsplash.com.evil.test/@author','https://user:pass@unsplash.com/@author']) {
+      assert.deepEqual((figure({ assetId: 'ast-1' },{ credit: 'Photographer / Unsplash',creditUrl }) as readonly unknown[])[3],['figcaption',['cite','Foto: Photographer / Unsplash']]);
+    }
   });
 
   test('without a file the img has no src and carries data-missing; unsafe addresses are not shown', () => {

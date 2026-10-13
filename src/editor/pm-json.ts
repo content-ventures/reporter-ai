@@ -56,7 +56,7 @@ export const EMPTY_BLOCK_ATTRS: BlockAttrs = { blockId: null, sourceRefs: null, 
 // ——— Images ———
 
 /** What the editor shows for an asset: display only, never persisted. */
-export type FigureDisplay = { src?: string; credit?: string; width?: number; height?: number };
+export type FigureDisplay = { src?: string; credit?: string; creditUrl?: string; width?: number; height?: number };
 
 /** Display data per asset (object URL of the stored file or the link, credit, size). */
 export type FigureSources = ReadonlyMap<AssetId, FigureDisplay>;
@@ -69,6 +69,7 @@ export type FigureAttrs = {
   /** An image slot's suggestion; `null` on figures with an image. */
   slot: ImageSlot | null;
   credit: string | null;
+  creditUrl?: string | null;
   src: string | null;
   width: number | null;
   height: number | null;
@@ -96,6 +97,7 @@ export function figureAttrs(image: Partial<ImageRef>, display: FigureDisplay = {
     caption: text(image.caption),
     slot: assetId ? null : readImageSlot(slot),
     credit: text(display.credit),
+    ...(display.creditUrl ? { creditUrl: text(display.creditUrl) } : {}),
     src: text(display.src),
     width: size(display.width),
     height: size(display.height),
@@ -114,6 +116,9 @@ export function readImageSlot(value: unknown): ImageSlot | null {
     suggestedCaption: text(record.suggestedCaption) ?? undefined,
     suggestedAlt: text(record.suggestedAlt) ?? undefined,
     orientation,
+    ...(record.availability && typeof record.availability === 'object'
+      && typeof (record.availability as { code?: unknown }).code === 'string' && typeof (record.availability as { message?: unknown }).message === 'string'
+      ? { availability: record.availability as { code: string; message: string } } : {}),
   });
 }
 
