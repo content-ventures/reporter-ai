@@ -23,7 +23,7 @@ export type TemplateCover = {
 
 /** The cover at the model's proportion (the grid shows one format at a time). */
 export function TemplateThumb({ template, cover }: { template: TemplateInfo; cover?: TemplateCover }) {
-  const image = useTemplateThumbnail(template.id, cover);
+  const image = useTemplateThumbnail(template.id, { ...cover, scale: 0.6 });
   const state = image.src ? undefined : image.status === 'error' ? 'error' : 'loading';
   return <MediaFrame ratio={template.formatInfo.ratio} src={image.src} alt="" fit="contain" radius="sm" state={state} />;
 }

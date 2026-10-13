@@ -1,10 +1,11 @@
-import { CAROUSEL_FORMATS, FORMAT_SOON_LABEL, TEMPLATE_STATUS_LABELS, categoryLabel, filterTemplates, formatSize } from '../../domain/index.ts';
+import { CAROUSEL_FORMATS, FORMAT_SOON_LABEL, TEMPLATE_FAMILIES, TEMPLATE_STATUS_LABELS, categoryLabel, familyLabel, filterTemplates, formatSize } from '../../domain/index.ts';
 import type {
   CarouselFormat,
   CarouselFormatId,
   CarouselTemplate,
   SlotSpec,
   TemplateId,
+  TemplateFamily,
   TemplateMeta,
   TemplateStatus,
   TemplateSwitchIssue,
@@ -29,8 +30,8 @@ export function formatName(format: Pick<CarouselFormat, 'label' | 'ratioLabel'>)
 }
 
 /** What the model is, for the drawer: "Editorial · Feed 4:5". */
-export function templateLine(template: Pick<LibraryTemplate, 'category' | 'formatInfo'>): string {
-  return `${categoryLabel(template.category)} · ${formatName(template.formatInfo)}`;
+export function templateLine(template: Pick<LibraryTemplate, 'category' | 'family' | 'formatInfo'>): string {
+  return `${template.family ? familyLabel(template.family) : categoryLabel(template.category)} · ${formatName(template.formatInfo)}`;
 }
 
 /** "Feed 4:5 · 1080 × 1350 px". */
@@ -48,7 +49,7 @@ export function statusBadge(status: TemplateStatus): { label: string; tone: 'tea
 
 // ── Filters ─────────────────────────────────────────────────────────────────────────────
 
-export type LibraryFilter = { format: CarouselFormatId; query: string };
+export type LibraryFilter = { format: CarouselFormatId; query: string; family?: TemplateFamily | null };
 
 /** The first format a carousel can use (Feed). */
 export const FIRST_FORMAT: CarouselFormatId = (CAROUSEL_FORMATS.find((format) => format.available) ?? CAROUSEL_FORMATS[0]).id;
@@ -59,7 +60,8 @@ export function libraryFilter(format: CarouselFormatId = FIRST_FORMAT): LibraryF
 }
 
 export function applyFilter<T extends LibraryTemplate>(templates: readonly T[], filter: LibraryFilter): T[] {
-  return filterTemplates(templates, { format: filter.format, ...(filter.query.trim() ? { query: filter.query } : {}) });
+  return filterTemplates(templates, { format: filter.format, ...(filter.family ? { family: filter.family } : {}), ...(filter.query.trim() ? { query: filter.query } : {}) })
+    .sort((a, b) => Number(Boolean(b.family)) - Number(Boolean(a.family)));
 }
 
 export type FormatTab = { value: CarouselFormatId; label: string; count: number | string; disabled: boolean };
@@ -94,7 +96,7 @@ export function initialTemplate(
 // ── "Modelos" page URL ───────────────────────────────────────────────────────────────────
 
 /** `format: null`: none in the address (the open model's format, else the first one). */
-export type LibraryParams = { format: CarouselFormatId | null; query: string; model: TemplateId | null };
+export type LibraryParams = { format: CarouselFormatId | null; query: string; model: TemplateId | null; family?: TemplateFamily | null };
 
 export const DEFAULT_LIBRARY_PARAMS: LibraryParams = Object.freeze({ format: null, query: '', model: null });
 
@@ -106,10 +108,12 @@ const FORMAT_IDS = new Set<string>(CAROUSEL_FORMATS.filter((format) => format.av
 export function parseLibraryParams(search: SearchParamsLike): LibraryParams {
   const format = search.get('format');
   const model = search.get('model');
+  const family = TEMPLATE_FAMILIES.find(entry => entry.id === search.get('family'))?.id;
   return {
     format: format && FORMAT_IDS.has(format) ? (format as CarouselFormatId) : null,
     query: (search.get('q') ?? '').slice(0, 80),
     model: model ? model : null,
+    ...(family ? { family } : {}),
   };
 }
 
@@ -119,6 +123,7 @@ export function serializeLibraryParams(params: LibraryParams): string {
   if (params.format) search.set('format', params.format);
   if (params.query.trim()) search.set('q', params.query.trim());
   if (params.model) search.set('model', params.model);
+  if (params.family) search.set('family', params.family);
   return search.toString();
 }
 

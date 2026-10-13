@@ -84,8 +84,23 @@ function photoUnder(layout: LayoutRender, x: number, y: number): Rgb[] {
 const minimum = (size: number, weight: number) => (size >= 64 || (size >= 50 && weight >= 600) ? 3 : 4.5);
 
 describe('carousel template library · metadata', () => {
-  it('lists 8 to 10 models once, the default first, each with a short name and a one-line description', () => {
-    assert.ok(TEMPLATE_CATALOG.length >= 8 && TEMPLATE_CATALOG.length <= 10, `${TEMPLATE_CATALOG.length} models`);
+  it('offers two distinct editable Seafood variations per family without claiming Marketing approval', () => {
+    const seafood = TEMPLATE_CATALOG.filter(entry => entry.meta.family);
+    assert.equal(seafood.length, 6);
+    for (const family of ['news', 'explainer', 'podcast']) {
+      const models = seafood.filter(entry => entry.meta.family === family);
+      assert.equal(models.length, 2);
+      assert.notDeepEqual(models[0].render.layouts.cover, models[1].render.layouts.cover);
+      assert.notDeepEqual(models[0].render.layouts.point, models[1].render.layouts.point);
+    }
+    for (const model of seafood) {
+      assert.equal(model.meta.status, 'base');
+      assert.equal(model.previewPhoto, 'img-amostra-pescado');
+      assert.match(model.sample.quote.quote, /^\[/, 'sample quotes cannot impersonate actual speakers');
+    }
+  });
+  it('keeps the 10 existing models and adds 6 Seafood variations, the default first, each with a short name and a one-line description', () => {
+    assert.equal(TEMPLATE_CATALOG.length, 16);
     assert.equal(CAROUSEL_TEMPLATES[0]?.id, DEFAULT_TEMPLATE_ID);
     const ids = TEMPLATE_CATALOG.map((entry) => entry.template.id);
     const names = TEMPLATE_CATALOG.map((entry) => entry.template.name);
@@ -123,6 +138,23 @@ describe('carousel template library · metadata', () => {
 });
 
 describe('carousel template library · structure and render data', () => {
+  it('reserves breathing room above the Seafood signature and keeps headline/body boxes apart', () => {
+    for (const { template, render } of TEMPLATE_CATALOG.filter(entry => entry.meta.family)) {
+      for (const layout of template.layouts) {
+        const boxes = Object.values(render.layouts[layout.id].slots);
+        for (const box of boxes) {
+          assert.ok(box.y + box.height <= 1184, `${template.name} · ${layout.id}: content must not touch the footer`);
+          if (box.minFontSize !== undefined) assert.ok(box.minFontSize > 0 && box.minFontSize <= box.fontSize);
+        }
+        for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i], b = boxes[j];
+          assert.ok(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y, `${template.name} · ${layout.id}: text boxes must not overlap`);
+        }
+        const image = render.layouts[layout.id].image;
+        if (image?.position) assert.ok(image.position.x >= 0 && image.position.x <= 1 && image.position.y >= 0 && image.position.y <= 1);
+      }
+    }
+  });
   it('every model has the shared layouts, its featured layouts and the photo where its data draws it', () => {
     for (const { template, render } of TEMPLATE_CATALOG) {
       assert.deepEqual(
@@ -146,6 +178,9 @@ describe('carousel template library · structure and render data', () => {
         assert.ok(visual, `${template.name} · ${layout.label}: render data`);
         for (const shape of [...(visual.shapes ?? []), ...(visual.overlays ?? [])]) {
           assert.ok(shape.x >= 0 && shape.y >= 0 && shape.x + shape.width <= template.width && shape.y + shape.height <= template.height, `${template.name} · ${layout.label}: shape inside`);
+          for (const point of shape.points ?? []) {
+            assert.ok(inside(shape, point.x, point.y), `${template.name}: polygon vertex inside its box`);
+          }
         }
         for (const slot of layout.slots) {
           const box = visual.slots[slot.id];

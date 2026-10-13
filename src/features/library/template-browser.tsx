@@ -1,9 +1,9 @@
 'use client';
 
 import { useId } from 'react';
-import { Button, EmptyState, FilterBar, Grid, PageStack, SearchField, Tabs } from '@content-ventures/design-system/v3';
+import { Button, EmptyState, FilterBar, Grid, PageStack, SearchField, Select, Tabs } from '@content-ventures/design-system/v3';
 import { SearchX } from '@content-ventures/design-system/v3/icons';
-import type { CarouselFormatId, TemplateId } from '@/domain';
+import { TEMPLATE_FAMILIES, type CarouselFormatId, type TemplateId } from '@/domain';
 import type { TemplateInfo } from '@/ports';
 import { applyFilter, formatTabs, otherFormatMatch, type LibraryFilter } from './library-model';
 import { TemplateCard, TemplateChoice, type TemplateCover } from './template-card';
@@ -78,6 +78,11 @@ export function TemplateBrowser({
           ) : undefined
         }
         filters={false}
+        actions={
+          <Select size="sm" label="Tipo de criativo" value={filter.family ?? ''}
+            options={[{ value: '', label: 'Todos os criativos' }, ...TEMPLATE_FAMILIES.map(family => ({ value: family.id, label: family.label, description: family.use }))]}
+            onChange={value => onFilterChange({ family: TEMPLATE_FAMILIES.find(family => family.id === value)?.id ?? null })} />
+        }
       />
       {shown.length === 0 ? (
         <EmptyState
@@ -90,9 +95,9 @@ export function TemplateBrowser({
               <Button size="sm" onClick={() => onFilterChange({ format: elsewhere.value })}>
                 {`Ver em ${elsewhere.label} · ${elsewhere.count}`}
               </Button>
-            ) : filter.query.trim() ? (
-              <Button size="sm" onClick={() => onFilterChange({ query: '' })}>
-                Limpar busca
+            ) : filter.query.trim() || filter.family ? (
+              <Button size="sm" onClick={() => onFilterChange({ query: '', family: null })}>
+                Limpar filtros
               </Button>
             ) : undefined
           }

@@ -22,7 +22,7 @@ export function useLibraryParams(): [LibraryParams, SetLibraryParams] {
       const current = new URLSearchParams(window.location.search);
       const next = { ...parseLibraryParams(current), ...patch };
       const search = new URLSearchParams(serializeLibraryParams(next));
-      for (const [key, value] of current) if (!['format', 'category', 'q', 'model'].includes(key)) search.append(key, value);
+      for (const [key, value] of current) if (!['format', 'category', 'q', 'model', 'family'].includes(key)) search.append(key, value);
       const query = search.toString();
       const url = query ? `${pathname}?${query}` : pathname;
       if (url !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, '', url);

@@ -60,18 +60,20 @@ function Library({ params, setParams }: { params: LibraryParams; setParams: SetL
   // What is on screen answers each keystroke; the address follows (a shared link opens the same view).
   const [query, setQuery] = useState(params.query);
   const [format, setFormat] = useState(params.format);
+  const [family, setFamily] = useState(params.family);
   const [open, setOpen] = useState<TemplateId | null>(params.model);
   const [urlModel, setUrlModel] = useState(params.model);
   if (params.model !== urlModel) {
     setUrlModel(params.model);
     setOpen(params.model);
   }
-  const filter: LibraryFilter = { format: shownFormat({ format, model: open }, templates), query };
+  const filter: LibraryFilter = { format: shownFormat({ format, model: open }, templates), query, family };
   const template = templates.find((entry) => entry.id === open);
 
   const changeFilter = (patch: Partial<LibraryFilter>) => {
     if (patch.query !== undefined) setQuery(patch.query);
     if (patch.format !== undefined) setFormat(patch.format);
+    if (patch.family !== undefined) setFamily(patch.family);
     setParams(patch);
   };
   const openModel = (id: TemplateId | null) => {
@@ -107,17 +109,17 @@ function Library({ params, setParams }: { params: LibraryParams; setParams: SetL
           label="Modelos de carrossel"
           mode="browse"
           onOpen={(id) => openModel(id)}
-          coverFor={() => (samplePhoto ? { articleCover: samplePhoto } : undefined)}
+          coverFor={entry => ({ articleCover: entry.previewPhoto ?? samplePhoto })}
           noteFor={(entry) => (entry.id === standard ? DEFAULT_NOTE : undefined)}
           compact={phone}
-          min={phone ? 150 : 208}
+          min={phone ? 150 : 264}
         />
       )}
       <TemplateDrawer
         open={Boolean(template)}
         onClose={() => openModel(null)}
         template={template}
-        articleCover={samplePhoto}
+        articleCover={template?.previewPhoto ?? samplePhoto}
         footerStart={template && template.id === standard ? 'Modelo padrão dos próximos carrosséis' : undefined}
         footer={
           template && template.id !== standard ? (

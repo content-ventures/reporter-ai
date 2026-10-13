@@ -1,11 +1,12 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Alert, Badge, Carousel, DescriptionList, Disclosure, MediaFrame, MetaList, Section, type DescriptionItem } from '@content-ventures/design-system/v3';
-import type { AssetId, CarouselBody } from '@/domain';
+import { Alert, Badge, Carousel, DescriptionList, Disclosure, LinkButton, MediaFrame, MetaList, Section, type DescriptionItem } from '@content-ventures/design-system/v3';
+import { familyLabel, type AssetId, type CarouselBody } from '@/domain';
 import type { TemplateInfo } from '@/ports';
 import { coverLayouts, featuredNote, formatFacts, slotLimit, statusBadge, templateLine } from './library-model';
 import { useCarouselPreview, useTemplatePreview } from './use-template-images';
+import type { TemplateInspection, TemplatePreviewFrame } from './template-page-viewer';
 
 /**
  * A model of the library in full (the body of its drawer): every layout drawn — with sample copy,
@@ -33,19 +34,19 @@ export function TemplateFacts({ template }: { template: TemplateInfo }) {
   );
 }
 
-function facts(template: TemplateInfo): DescriptionItem[] {
+function facts(template: TemplateInfo, own: boolean): DescriptionItem[] {
   const cover = coverLayouts(template);
   const featured = featuredNote(template);
   return [
+    ...(template.family ? [{ label: 'Família', value: familyLabel(template.family) }] : []),
     { label: 'Estilo', value: template.description },
     { label: 'Formato', value: formatFacts(template.formatInfo), numeric: true },
     { label: 'Slides', value: `${template.minSlides} a ${template.maxSlides}`, numeric: true },
     { label: 'Imagem de destaque', value: cover ?? 'Não usa' },
+    ...(template.previewPhoto && !own ? [{ label: 'Prévia da biblioteca', value: 'Textos e imagem ilustrativos; a geração usa o artigo e a imagem de destaque escolhida.' }] : []),
     ...(featured ? [{ label: 'Estrutura', value: featured }] : []),
   ];
 }
-
-type Frame = { key: string; label: string; src?: string };
 
 export function TemplateDetail({
   template,
@@ -53,6 +54,7 @@ export function TemplateDetail({
   body,
   own = false,
   children,
+  onInspect,
 }: {
   template: TemplateInfo;
   /** The article's featured image (or the sample photo) for the layouts that draw it. */
@@ -62,22 +64,34 @@ export function TemplateDetail({
   /** `body` is the carousel being edited: "Este carrossel", each slide numbered. */
   own?: boolean;
   children?: ReactNode;
+  /** Opens a snapshot of these rendered pages in the parent-owned, sibling Dialog. */
+  onInspect: (inspection: TemplateInspection) => void;
 }) {
-  const sample = useTemplatePreview(body ? undefined : template.id, { articleCover });
-  const drawn = useCarouselPreview(body, { articleCover });
+  const sample = useTemplatePreview(body ? undefined : template.id, { articleCover, scale: 0.75 });
+  const drawn = useCarouselPreview(body, { articleCover, scale: 0.75 });
   const preview = body ? drawn : sample;
   const labelOf = (layoutId: string) => template.layouts.find((layout) => layout.id === layoutId)?.label ?? layoutId;
-  const frames: Frame[] = body
-    ? body.slides.map((slide, index) => ({
-        key: slide.id,
-        label: own ? `Slide ${index + 1} · ${labelOf(slide.layout)}` : labelOf(slide.layout),
-        src: preview.slides.find((entry) => entry.slideId === slide.id)?.image?.dataUrl,
-      }))
-    : template.layouts.map((layout) => ({
-        key: layout.id,
-        label: layout.label,
-        src: preview.slides.find((entry) => entry.layout === layout.id)?.image?.dataUrl,
-      }));
+  const frames: TemplatePreviewFrame[] = body
+    ? body.slides.map((slide, index) => {
+        const rendered = preview.slides.find(entry => entry.slideId === slide.id);
+        return {
+          key: slide.id,
+          label: own ? `Slide ${index + 1} · ${labelOf(slide.layout)}` : labelOf(slide.layout),
+          src: rendered?.image?.dataUrl,
+          width: rendered?.width,
+          height: rendered?.height,
+        };
+      })
+    : template.layouts.map((layout) => {
+        const rendered = preview.slides.find(entry => entry.layout === layout.id);
+        return {
+          key: layout.id,
+          label: layout.label,
+          src: rendered?.image?.dataUrl,
+          width: rendered?.width,
+          height: rendered?.height,
+        };
+      });
   return (
     <>
       <Section>
@@ -87,7 +101,7 @@ export function TemplateDetail({
           </Alert>
         ) : (
           <Carousel label={`${own ? 'Slides deste carrossel' : 'Layouts'} no modelo ${template.name}`} title={own ? 'Este carrossel' : 'Layouts'} perView={2}>
-            {frames.map((frame) => (
+            {frames.map((frame, index) => (
               <MediaFrame
                 key={frame.key}
                 ratio={template.formatInfo.ratio}
@@ -96,7 +110,11 @@ export function TemplateDetail({
                 fit="contain"
                 radius="sm"
                 state={frame.src ? undefined : preview.status === 'loading' ? 'loading' : 'error'}
-                caption={frame.label}
+                caption={
+                  <LinkButton size="inherit" tone="quiet" disabled={!frame.src} onClick={() => onInspect({ templateId: template.id, frames, index })} aria-label={`Ampliar ${frame.label} no modelo ${template.name}`}>
+                    Ampliar {frame.label}
+                  </LinkButton>
+                }
               />
             ))}
           </Carousel>
@@ -104,7 +122,7 @@ export function TemplateDetail({
       </Section>
       {children}
       <Section>
-        <DescriptionList label={`Ficha do modelo ${template.name}`} items={facts(template)} labelWidth={128} />
+        <DescriptionList label={`Ficha do modelo ${template.name}`} items={facts(template, own)} labelWidth={128} />
         <Disclosure summary="Limites de texto" meta={`${template.layouts.length} layouts`}>
           <DescriptionList
             label={`Limites dos layouts do modelo ${template.name}`}

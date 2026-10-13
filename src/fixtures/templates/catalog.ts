@@ -1,4 +1,4 @@
-import type { CarouselFormatId, CarouselTemplate, TemplateCategory, TemplateId, TemplateMeta, TemplateStatus } from '../../domain/index.ts';
+import type { AssetId, CarouselFormatId, CarouselTemplate, TemplateCategory, TemplateFamily, TemplateId, TemplateMeta, TemplateStatus } from '../../domain/index.ts';
 import type { SampleContent, TemplateLibraryData, TemplateRender } from '../../ports/render-template.ts';
 import { boldFeed } from './designs/bold.ts';
 import { dataFeed } from './designs/data.ts';
@@ -8,6 +8,9 @@ import { minimalSquare } from './designs/minimal.ts';
 import { photoFeed } from './designs/photo.ts';
 import { quoteSquare } from './designs/quote.ts';
 import { stepsFeed } from './designs/steps.ts';
+import { seafoodFeed, seafoodSample } from './designs/seafood.ts';
+import type { SeafoodVariation } from './designs/seafood.ts';
+import { SEAFOOD_SAMPLE_PHOTO } from '../images.ts';
 import { FEED, SQUARE } from './kit.ts';
 import { SAMPLE_CONTENT } from './sample.ts';
 import { structure } from './structure.ts';
@@ -25,7 +28,7 @@ import type { StructureOptions } from './structure.ts';
  * ones that carry the "Aprovado" badge.
  */
 
-export type TemplateEntry = { template: CarouselTemplate; render: TemplateRender; meta: TemplateMeta; sample: SampleContent };
+export type TemplateEntry = { template: CarouselTemplate; render: TemplateRender; meta: TemplateMeta; sample: SampleContent; previewPhoto?: AssetId };
 
 /** Ids kept from the first two models, so carousels saved with them still open. */
 export const EDITORIAL_TEMPLATE_ID: TemplateId = 'tpl-provisorio-claro';
@@ -37,6 +40,8 @@ type EntrySpec = {
   name: string;
   format: CarouselFormatId;
   category: TemplateCategory;
+  family?: TemplateFamily;
+  previewPhoto?: AssetId;
   description: string;
   tags: string[];
   structure?: StructureOptions;
@@ -51,10 +56,20 @@ function entry(spec: EntrySpec): TemplateEntry {
   return {
     template: structure(spec.id, spec.name, canvas, spec.structure),
     render: spec.render(spec.id),
-    meta: { category: spec.category, format: spec.format, description: spec.description, tags: [...spec.tags], status: spec.status ?? 'base' },
+    meta: { category: spec.category, format: spec.format, description: spec.description, tags: [...spec.tags], status: spec.status ?? 'base', ...(spec.family ? { family: spec.family } : {}) },
     sample: spec.sample ?? SAMPLE_CONTENT,
+    ...(spec.previewPhoto ? { previewPhoto: spec.previewPhoto } : {}),
   };
 }
+
+const SEAFOOD_SPECS: readonly { variation: SeafoodVariation; name: string; family: TemplateFamily; category: TemplateCategory; description: string; photo: NonNullable<StructureOptions['photo']>; featured?: StructureOptions['featured'] }[] = [
+  { variation: 'headline', name: 'Seafood Manchete', family: 'news', category: 'photo', description: 'Notícia com fotografia imersiva e manchete de alto impacto.', photo: ['cover', 'context'] },
+  { variation: 'reportage', name: 'Seafood Reportagem', family: 'news', category: 'editorial', description: 'Reportagem com foto ampla e painel de leitura claro.', photo: ['cover', 'point'] },
+  { variation: 'flow', name: 'Seafood Fluxo', family: 'explainer', category: 'list', description: 'Explicação clara com etapas numeradas e fotografia.', photo: ['cover', 'context'], featured: ['list'] },
+  { variation: 'panorama', name: 'Seafood Panorama', family: 'explainer', category: 'data', description: 'Contexto e dados em contraste azul, com páginas alternadas.', photo: ['cover'], featured: ['data'] },
+  { variation: 'interview', name: 'Seafood Entrevista', family: 'podcast', category: 'quote', description: 'Podcast com capa imersiva e citações em destaque amarelo.', photo: ['cover'] },
+  { variation: 'quotes', name: 'Seafood Aspas', family: 'podcast', category: 'quote', description: 'Conversa em páginas claras, aspas fortes e faixa de foto.', photo: ['cover'] },
+];
 
 export const TEMPLATE_CATALOG: readonly TemplateEntry[] = [
   entry({
@@ -223,6 +238,13 @@ export const TEMPLATE_CATALOG: readonly TemplateEntry[] = [
     structure: { coverTitleLines: 4 },
     render: (id) => minimalSquare(id, { page: '#FAFAF8', ink: '#121212', muted: '#646464', hairline: '#DCDCD8' }),
   }),
+  ...SEAFOOD_SPECS.map(spec => entry({
+    id: `tpl-seafood-${spec.variation}`, name: spec.name, family: spec.family,
+    format: 'feed', category: spec.category, description: spec.description,
+    tags: ['seafood', 'pescado', 'azul', spec.family === 'news' ? 'notícia' : spec.family === 'explainer' ? 'explica' : 'podcast'],
+    structure: { photo: spec.photo, coverTitleLines: 4, ...(spec.featured ? { featured: spec.featured } : {}) },
+    render: id => seafoodFeed(id, spec.variation), sample: seafoodSample(spec.variation), previewPhoto: SEAFOOD_SAMPLE_PHOTO.assetId,
+  })),
 ];
 
 /** Structures, in library order (the first is the default). */
@@ -238,7 +260,7 @@ export const CAROUSEL_TEMPLATE_DESCRIPTIONS: Readonly<Record<TemplateId, string>
 
 /** Library metadata and sample copy per template id (`LocalRenderDeps.library`). */
 export const CAROUSEL_TEMPLATE_LIBRARY: Readonly<Record<TemplateId, TemplateLibraryData>> = Object.fromEntries(
-  TEMPLATE_CATALOG.map((item) => [item.template.id, { meta: item.meta, sample: item.sample }]),
+  TEMPLATE_CATALOG.map((item) => [item.template.id, { meta: item.meta, sample: item.sample, ...(item.previewPhoto ? { previewPhoto: item.previewPhoto } : {}) }]),
 );
 
 export function templateEntry(id: TemplateId): TemplateEntry | undefined {

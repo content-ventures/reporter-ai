@@ -12,7 +12,7 @@ import type { Canvas } from './kit.ts';
 
 export type StructureOptions = {
   /** Layouts that draw the article's featured image. */
-  photo?: readonly ('cover' | 'quote' | 'closing')[];
+  photo?: readonly ('cover' | 'context' | 'point' | 'quote' | 'closing')[];
   /** Lines of the cover title (default 3). */
   coverTitleLines?: number;
   featured?: readonly ('data' | 'list')[];
@@ -24,7 +24,7 @@ function slot(id: string, label: string, role: SlotSpec['role'], maxChars: numbe
 
 function layouts(options: StructureOptions): SlideLayout[] {
   const photo = new Set(options.photo ?? []);
-  const withPhoto = (layout: SlideLayout, id: 'cover' | 'quote' | 'closing'): SlideLayout => (photo.has(id) ? { ...layout, articleCover: true } : layout);
+  const withPhoto = (layout: SlideLayout, id: NonNullable<StructureOptions['photo']>[number]): SlideLayout => (photo.has(id) ? { ...layout, articleCover: true } : layout);
   return [
     withPhoto(
       {
@@ -34,8 +34,8 @@ function layouts(options: StructureOptions): SlideLayout[] {
       },
       'cover',
     ),
-    { id: 'context', label: 'Contexto', slots: [slot('title', 'Título', 'title', 40, 2), slot('body', 'Texto', 'body', 200, 6, true)] },
-    { id: 'point', label: 'Ponto principal', slots: [slot('title', 'Título', 'title', 40, 2, true), slot('body', 'Texto', 'body', 200, 6)] },
+    withPhoto({ id: 'context', label: 'Contexto', slots: [slot('title', 'Título', 'title', 40, 2), slot('body', 'Texto', 'body', 200, 6, true)] }, 'context'),
+    withPhoto({ id: 'point', label: 'Ponto principal', slots: [slot('title', 'Título', 'title', 40, 2, true), slot('body', 'Texto', 'body', 200, 6)] }, 'point'),
     {
       id: 'data',
       label: 'Número',

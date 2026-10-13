@@ -59,3 +59,5 @@ export function fixtureImage(
  * "Foto de exemplo"; it never enters a production.
  */
 export const SAMPLE_PHOTO = { assetId: 'img-amostra-cafe', src: sampleSrc(SAMPLE_FILES.coffeeBeans), credit: 'Foto de exemplo' } as const;
+/** Library demonstration only: never seeded into a real article or carousel's assets. */
+export const SEAFOOD_SAMPLE_PHOTO = { assetId: 'img-amostra-pescado', src: '/samples/seafood-processing-sample.jpg', credit: 'Exemplo ilustrativo · imagem gerada por IA' } as const;

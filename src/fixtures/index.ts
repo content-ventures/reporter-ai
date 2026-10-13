@@ -18,7 +18,7 @@ import type {
 } from '../domain/index.ts';
 import { deriveActivity } from './activity.ts';
 import { seededHistory } from './history.ts';
-import { SAMPLE_PHOTO } from './images.ts';
+import { SAMPLE_PHOTO, SEAFOOD_SAMPLE_PHOTO } from './images.ts';
 import type { FixtureImage } from './images.ts';
 import type { FixtureHistory } from './history.ts';
 import { DEFAULT_VIEWER_ID, FIXTURE_MEMBERS, FIXTURE_PEOPLE, fixtureWorkspace } from './people.ts';
@@ -78,6 +78,7 @@ export type FixtureSet = {
   images: FixtureImage[];
   /** The library previews' sample photo ("Foto de exemplo"), drawn by the models that use an image. */
   samplePhoto: typeof SAMPLE_PHOTO;
+  samplePhotos: readonly typeof SEAFOOD_SAMPLE_PHOTO[];
 };
 
 export type FixtureOptions = {
@@ -113,6 +114,7 @@ export function createFixtures(options: FixtureOptions): FixtureSet {
     templateDescriptions: { ...CAROUSEL_TEMPLATE_DESCRIPTIONS },
     templateLibrary: structuredClone(CAROUSEL_TEMPLATE_LIBRARY) as Record<TemplateId, TemplateLibraryData>,
     samplePhoto: SAMPLE_PHOTO,
+    samplePhotos: [SEAFOOD_SAMPLE_PHOTO],
   };
   if (options.empty) {
     return {

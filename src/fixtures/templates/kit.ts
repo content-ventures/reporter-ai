@@ -20,6 +20,8 @@ export type TextOptions = {
   valign?: SlotStyle['valign'];
   uppercase?: boolean;
   tracking?: number;
+  minFontSize?: number;
+  balanced?: boolean;
   /** Line height as a multiple of the size (default 1.2). */
   leading?: number;
   /** Box height in lines (default: the lines the slot allows; more leaves room for valign). */
@@ -51,6 +53,8 @@ export function text(x: number, y: number, width: number, lines: number, size: n
   if (options.valign) style.valign = options.valign;
   if (options.uppercase) style.uppercase = true;
   if (options.tracking) style.tracking = options.tracking;
+  if (options.minFontSize !== undefined) style.minFontSize = options.minFontSize;
+  if (options.balanced) style.balanced = true;
   if (options.list) style.list = { ...options.list, gap };
   return style;
 }

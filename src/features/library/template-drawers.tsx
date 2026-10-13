@@ -9,6 +9,7 @@ import { libraryFilter, switchLines, switchSummary, type LibraryFilter } from '.
 import { TemplateBrowser } from './template-browser';
 import type { TemplateCover } from './template-card';
 import { TemplateDetail, TemplateFacts } from './template-detail';
+import { TemplatePageViewer, type TemplateInspection } from './template-page-viewer';
 
 /**
  * The library's drawers. `TemplateDrawer` shows one model ("Ver modelo"): "Usar como padrão" on the
@@ -44,7 +45,11 @@ export function TemplateDrawer({
   /** Sections after the layouts (what a switch changes in the carousel being edited). */
   children?: ReactNode;
 }) {
+  const currentModel = open ? template?.id : undefined;
+  const [inspection, setInspection] = useState<TemplateInspection | null>(null);
+  if (inspection && inspection.templateId !== currentModel) setInspection(null);
   return (
+    <>
     <Drawer
       open={open && Boolean(template)}
       onClose={onClose}
@@ -56,11 +61,19 @@ export function TemplateDrawer({
       footerStart={footerStart}
     >
       {template ? (
-        <TemplateDetail template={template} articleCover={articleCover} body={body} own={own}>
+        <TemplateDetail key={template.id} template={template} articleCover={articleCover} body={body} own={own} onInspect={setInspection}>
           {children}
         </TemplateDetail>
       ) : null}
     </Drawer>
+    <TemplatePageViewer
+      inspection={open && inspection?.templateId === template?.id ? inspection : null}
+      name={template?.name ?? 'Modelo'}
+      ratio={template?.formatInfo.ratio ?? '4/5'}
+      onIndex={index => setInspection(current => current && index >= 0 && index < current.frames.length ? { ...current, index } : current)}
+      onClose={() => setInspection(null)}
+    />
+    </>
   );
 }
 

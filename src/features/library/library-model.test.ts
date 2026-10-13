@@ -62,6 +62,20 @@ describe('library cards', () => {
 });
 
 describe('library filters', () => {
+  it('filters the Seafood families independently, puts them first and keeps every legacy model available', () => {
+    const catalog: LibraryTemplate[] = TEMPLATE_CATALOG.map(entry => ({ ...entry.template, ...entry.meta, formatInfo: CAROUSEL_FORMATS.find(format => format.id === entry.meta.format)! }));
+    for (const family of ['news', 'explainer', 'podcast'] as const) {
+      const found = applyFilter(catalog, { format: 'feed', query: '', family });
+      assert.equal(found.length, 2);
+      assert.ok(found.every(template => template.family === family));
+    }
+    const all = applyFilter(catalog, libraryFilter('feed'));
+    assert.ok(all.slice(0, 6).every(template => template.family));
+    assert.equal(all.length, catalog.filter(template => template.format === 'feed').length);
+    assert.equal(applyFilter(catalog, { format: 'feed', family: 'podcast', query: 'aspas' })[0]?.name, 'Seafood Aspas');
+    assert.equal(applyFilter(catalog, { format: 'square', family: 'news', query: '' }).length, 0);
+    assert.equal(initialTemplate(catalog, {}), TEMPLATE_CATALOG[0].template.id, 'UI ordering must not silently change the saved/default choice');
+  });
   it('one format at a time: tabs count what the search leaves; Stories is "Em breve"', () => {
     assert.deepEqual(
       formatTabs(LIBRARY, libraryFilter()).map((tab) => [tab.label, tab.count, tab.disabled]),
@@ -94,6 +108,12 @@ describe('library filters', () => {
 });
 
 describe('"Modelos" page URL', () => {
+  it('round-trips the family and discards invalid or cleared family filters', () => {
+    const params = { format: 'feed' as const, query: 'seafood', model: 'tpl-seafood-flow', family: 'explainer' as const };
+    assert.deepEqual(parseLibraryParams(new URLSearchParams(serializeLibraryParams(params))), params);
+    assert.deepEqual(parseLibraryParams(new URLSearchParams('family=unknown')), DEFAULT_LIBRARY_PARAMS);
+    assert.equal(serializeLibraryParams({ ...DEFAULT_LIBRARY_PARAMS, family: null }), '');
+  });
   it('round-trips the format, the search and the open model, leaving the defaults out', () => {
     const params = { format: 'square' as const, query: 'serifa', model: 'tpl-aspas' };
     const query = serializeLibraryParams(params);
