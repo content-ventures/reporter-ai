@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { toast } from '@content-ventures/design-system/v3';
 import { sizeOf, type RunId, type Suggestion, type TextRange } from '@/domain';
 import { blockEntries, blockTextOf, type Editor } from '@/editor';
@@ -46,6 +46,7 @@ export function useStudioCopilot({
   setSuggestionFocus,
   segments,
   focusComposer,
+  showAssistant,
   copilotHidden,
 }: {
   commands: Commands;
@@ -57,6 +58,7 @@ export function useStudioCopilot({
   setSuggestionFocus: Dispatch<SetStateAction<SuggestionFocus>>;
   segments: ViewerSegment[];
   focusComposer: () => void;
+  showAssistant: () => void;
   copilotHidden: () => boolean;
 }) {
   const pieceId = piece.id;
@@ -67,6 +69,8 @@ export function useStudioCopilot({
   const [turns, setTurns] = useState<SessionTurn[]>([]);
   const [composer, setComposer] = useState('');
   const [chips, setChips] = useState<ComposerChip[]>([]);
+  const sending = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   const updateTurn = useCallback((id: string, patch: Partial<SessionTurn>) => {
     setTurns((current) => current.map((turn) => (turn.id === id ? { ...turn, ...patch } : turn)));
   }, []);
@@ -76,7 +80,9 @@ export function useStudioCopilot({
    * Once shown, a run stays in the thread after its suggestions are decided.
    */
   const [pinnedRuns, setPinnedRuns] = useState<readonly string[]>([]);
-  const unpinned = unpinnedRunIds(liveOpen, pinnedRuns);
+  const restored = production.runs.filter(run => run.pieceId === pieceId && run.model.engine === 'provider'
+    && ['article.assist', 'article.titles'].includes(run.kind)).slice(-20).map(run => run.id);
+  const unpinned = [...new Set([...unpinnedRunIds(liveOpen, pinnedRuns), ...restored.filter(id => !pinnedRuns.includes(id))])];
   if (unpinned.length > 0) setPinnedRuns([...pinnedRuns, ...unpinned]);
   const persistedTurns = useMemo<SessionTurn[]>(
     () => assistTurnsOf({ runs: production.runs, pieceId, pinned: pinnedRuns, turns, suggestions }),
@@ -89,8 +95,9 @@ export function useStudioCopilot({
   const startTool = useCallback(
     async (tool: CopilotTool, options: ToolOptions = {}) => {
       const request = tool.request;
-      if (!request) return;
-      const needsTarget = tool.target === 'selection' || tool.target === 'block';
+      if (!request || sending.current || activeAssist) return;
+      showAssistant();
+      const needsTarget = request !== 'article.ask' && (tool.target === 'selection' || tool.target === 'block');
       const selection = currentSelection();
       const target = options.target ?? (needsTarget ? (selection.empty ? caretBlockTarget(editor) : selection.ranges) : undefined);
       const turn: SessionTurn = {
@@ -99,16 +106,20 @@ export function useStudioCopilot({
         toolId: tool.id,
         chips: options.chips ?? [],
         at: Date.now(),
+        pending: true,
         ...(target ? { target } : {}),
         ...(options.question ? { question: options.question } : {}),
       };
       setTurns((current) => [...current, turn]);
       if (needsTarget && (!target || target.length === 0)) {
-        updateTurn(turn.id, { reply: 'Selecione um trecho no texto e peça de novo.' });
+        updateTurn(turn.id, { reply: 'Selecione um trecho no texto e peça de novo.', pending: false });
         return;
       }
+      sending.current = true;
+      setSubmitting(true);
+      try {
       const prepared = await prepare();
-      if (!prepared) return;
+      if (!prepared) { updateTurn(turn.id, { pending: false, error: 'Não foi possível salvar o texto antes do ajuste. Tente novamente.' }); return; }
       const base = { productionId, pieceId, baseRevision: prepared.baseRevision, body: prepared.body };
       const simulation = takeArmedSimulation(request);
       const startOptions = simulation ? { simulation } : undefined;
@@ -146,13 +157,16 @@ export function useStudioCopilot({
           return;
       }
       if (!result.ok) {
-        updateTurn(turn.id, { reply: result.refusal.message });
+        updateTurn(turn.id, { pending: false, error: result.refusal.message });
         return;
       }
-      updateTurn(turn.id, { runId: result.value.runId });
+      updateTurn(turn.id, { runId: result.value.runId, pending: false });
       if (target && target.length > 0) setSuggestionFocus({ runId: result.value.runId, target });
+      } catch {
+        updateTurn(turn.id, { pending: false, error: 'Não foi possível enviar o pedido. Seu texto está preservado; tente novamente.' });
+      } finally { sending.current = false; setSubmitting(false); }
     },
-    [currentSelection, editor, prepare, productionId, pieceId, commands, updateTurn, production.brief.size, setSuggestionFocus],
+    [currentSelection, editor, prepare, productionId, pieceId, commands, updateTurn, production.brief.size, setSuggestionFocus, activeAssist, showAssistant],
   );
 
   /** "Gerar de novo": the same request again, on the passage as it is now. */
@@ -181,6 +195,7 @@ export function useStudioCopilot({
 
   const ask = useCallback(
     (typed: string) => {
+      if (!typed.trim() || sending.current || activeAssist) return;
       const tool = copilotTool('ask');
       if (!tool) return;
       const used = chips;
@@ -189,7 +204,7 @@ export function useStudioCopilot({
       setChips([]);
       void startTool(tool, { prompt: typed, question: askQuestion(typed, used), chips: used, ...(target ? { target } : {}) });
     },
-    [chips, startTool],
+    [chips, startTool, activeAssist],
   );
 
   /** A preset chip of the composer: the pinned selection is its target, then the chips clear. */
@@ -232,17 +247,23 @@ export function useStudioCopilot({
 
   // ——— Runs of the thread ———
   const stopAssist = useCallback(async () => {
-    if (activeAssist) await commands.generation.cancel(activeAssist.id);
+    if (!activeAssist) return;
+    try {
+      const result = await commands.generation.cancel(activeAssist.id);
+      if (!result.ok) toast('Não foi possível parar', { tone: 'error', description: result.refusal.message });
+    } catch { toast('Não foi possível parar', { tone: 'error', description: 'Confira a conexão e tente novamente.' }); }
   }, [activeAssist, commands]);
 
   const retryRun = useCallback(
     async (runId: RunId) => {
+      try {
       const result = await commands.generation.retry(runId);
       if (!result.ok) {
         toast('Não foi possível tentar de novo', { tone: 'error', description: result.refusal.message });
         return;
       }
       setTurns((current) => current.map((turn) => (turn.runId === runId ? { ...turn, runId: result.value.runId } : turn)));
+      } catch { toast('Não foi possível tentar de novo', { tone: 'error', description: 'Confira a conexão. O texto original foi preservado.' }); }
     },
     [commands],
   );
@@ -250,6 +271,7 @@ export function useStudioCopilot({
   return {
     thread,
     activeAssist,
+    submitting,
     composer,
     setComposer,
     chips,

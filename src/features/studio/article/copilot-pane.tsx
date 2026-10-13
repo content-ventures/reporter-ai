@@ -123,7 +123,7 @@ function usePresets(): PromptPreset[] {
 }
 
 function Composer() {
-  const { bindComposer, composer, setComposer, chips, removeChip, generation, activeAssist, actions, readOnly } = useStudio();
+  const { bindComposer, composer, setComposer, chips, removeChip, generation, activeAssist, submittingAssist, actions, readOnly } = useStudio();
   const presets = usePresets();
   // The article generation has its own "Parar" in the header banner: here Enviar just waits.
   const busy = generation.active || Boolean(activeAssist);
@@ -137,7 +137,7 @@ function Composer() {
         if (presetId) actions.runPreset(presetId);
         else actions.ask(text);
       }}
-      status={busy ? 'streaming' : 'idle'}
+      status={submittingAssist ? 'submitting' : busy ? 'streaming' : 'idle'}
       onStop={activeAssist && !generation.active ? () => void actions.stopAssist() : undefined}
       context={context}
       presets={presets}

@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import type { MenuSection } from '@content-ventures/design-system/v3';
-import { ClipboardList, History as HistoryIcon, ListTree, RotateCcw, Send, Sparkles, Undo2 } from '@content-ventures/design-system/v3/icons';
+import { ClipboardList, History as HistoryIcon, LayoutTemplate, ListTree, RotateCcw, Send, Sparkles, Undo2 } from '@content-ventures/design-system/v3/icons';
 import { ProductionHeader, ProductionPrimaryBar, type HeaderPrimary } from '@/features/production/production-frame';
 import { ApprovalBanner, GenerationBanner, StatusBadge, StatusBanner, useWithdrawReview } from '@/ui';
 import { deliveryHref, materialHref, pieceHref, reviewHref, structureHref } from '@/ui/routes';
@@ -25,9 +25,11 @@ export function useStudioPrimary(): HeaderPrimary | undefined {
   const primary = studioPrimary({
     status: piece.status,
     generating: generation.active,
+    generationFailed: generation.run?.status === 'failed',
     ...(approval ? { approval } : {}),
     authorized: production.sources.length > 0 && production.sources.every((entry) => entry.authorized),
     ...(carousel ? { carousel: { status: carousel.status } } : {}),
+    plannedCarousel: production.plan.includes('carousel'),
     tabReadOnly: studio.readOnly,
   });
   if (!primary) return undefined;
@@ -73,6 +75,7 @@ function useStudioMenu(): MenuSection[] {
     ...(studio.production.sources.length > 0 ? [{ label: 'Ver estrutura', icon: ListTree, onSelect: () => panes.openDialog('structure') }] : []),
     { label: 'Histórico de versões', icon: HistoryIcon, onSelect: () => panes.openDialog('history') },
     { label: 'Como a IA escreveu', icon: Sparkles, onSelect: () => panes.openDialog('trace') },
+    { label: 'Criar banner do artigo salvo',icon: LayoutTemplate,onSelect: () => { window.open('/banners?production='+encodeURIComponent(studio.production.id),'_blank','noopener,noreferrer'); } },
     ...(studio.canEdit && !studio.empty && studio.production.sources.length > 0
       ? [
           {
@@ -95,7 +98,7 @@ function useStudioMenu(): MenuSection[] {
 /** The ONE task notice under the header line (or none: the frame then says when another tab edits). */
 function useStudioNotice(): ReactNode {
   const studio = useStudio();
-  const { generation, piece, approval, production, panes, actions } = studio;
+  const { generation, approval, production, panes, actions } = studio;
   const [stopping, setStopping] = useState(false);
   const run = generation.run;
   if (generation.active && run) {
@@ -115,7 +118,7 @@ function useStudioNotice(): ReactNode {
       />
     );
   }
-  if (piece.status === 'failed' && run?.status === 'failed') {
+  if (run?.status === 'failed') {
     return (
       <GenerationBanner
         run={run}
@@ -137,8 +140,8 @@ function useStudioNotice(): ReactNode {
       <ApprovalBanner
         approval={approval}
         onShowComments={() => panes.showPanel('comments')}
-        approvedNext={carousel && carousel.status !== 'approved' ? 'carousel' : 'delivery'}
-        usedBy={carousel ? 'carousel_and_delivery' : 'delivery'}
+        approvedNext={production.plan.includes('carousel') && carousel?.status !== 'approved' ? 'carousel' : 'delivery'}
+        usedBy={production.plan.includes('carousel') ? 'carousel_and_delivery' : 'delivery'}
         onUndo={actions.undoChanges}
       />
     );

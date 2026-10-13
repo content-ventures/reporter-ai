@@ -34,6 +34,7 @@ import { Provenance } from '@/ui/provenance';
 import { RunTrace, runDuration } from '@/ui/run-trace';
 import { SourceChipFor } from '@/ui/source-chip-for';
 import { useRelativeTime } from '@/ui/time';
+import { useGenerationFeedback } from '@/ui/use-generation-feedback';
 import { useStudio } from './studio-context';
 import { clip, isOpenSuggestion, proposalText, suggestionHunks, targetLabel } from './studio-model';
 import type { ComposerChip, SessionTurn } from './use-article-studio';
@@ -346,6 +347,10 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
   const fold = live.status === 'ready' ? live.data?.fold : undefined;
   const view = turn.runId ? studio.production.runs.find((run) => run.id === turn.runId) : undefined;
   const run: TraceRun | undefined = fold?.run ?? view;
+  const feedback = useGenerationFeedback(run);
+  const request = live.status === 'ready' ? live.data?.meta.request : undefined;
+  const recovered = request?.kind === 'article.ask' ? { ...turn, toolId: 'ask', prompt: request.input.prompt, question: request.input.prompt }
+    : request?.kind === 'article.apply-note' ? { ...turn, toolId: 'apply-review-note', question: request.input.note } : turn;
   const suggestions = useMemo(() => studio.suggestions.filter((suggestion) => suggestion.runId === turn.runId), [studio.suggestions, turn.runId]);
   // Streamed blocks are the reply or the preview of a proposal (same id as its suggestion). A
   // finished preview is AI text to review (`ai: 'unreviewed'`); a reply is not. While a block is
@@ -372,6 +377,7 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
     return [{ segmentId: ref.locator.segmentId, start, end: ref.locator.to ?? resolved.segment.text.length, text: resolved.excerpt }];
   });
   const active = run ? isRunActive(run) : Boolean(turn.runId);
+  const preview = active ? fold?.assistPreview : undefined;
   const failed = run?.status === 'failed';
   const cancelled = run?.status === 'cancelled';
   const runId = turn.runId;
@@ -379,23 +385,23 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
   return (
     <>
       <ConversationTurn role="user" context={turn.chips.length > 0 ? <ContextChips chips={turn.chips} /> : undefined}>
-        {turn.prompt}
+        {recovered.prompt}
       </ConversationTurn>
       <ConversationTurn
         role="assistant"
-        meta={turn.reply ? undefined : modelMeta(run)}
-        status={turn.reply ? 'done' : active ? 'streaming' : failed ? 'error' : cancelled ? 'stopped' : 'done'}
-        error={failed ? (run?.error?.message ?? 'A sugestão não foi gerada.') : undefined}
+        meta={turn.reply ? undefined : run && isRunActive(run) ? feedback?.elapsed : modelMeta(run)}
+        status={turn.error ? 'error' : turn.pending || active ? 'streaming' : turn.reply ? 'done' : failed ? 'error' : cancelled ? 'stopped' : 'done'}
+        error={turn.error ?? (failed ? (run?.error?.message ?? 'A sugestão não foi gerada.') : undefined)}
         onRetry={
-          runId && failed
-            ? () => void (fold ? studio.actions.retryRun(runId) : studio.actions.repeatTurn(turn))
+          turn.error ? () => studio.actions.repeatTurn(recovered) : runId && failed
+            ? () => void (fold ? studio.actions.retryRun(runId) : studio.actions.repeatTurn(recovered))
             : runId && !active && !turn.reply
-              ? () => studio.actions.repeatTurn(turn)
+              ? () => studio.actions.repeatTurn(recovered)
               : undefined
         }
-        onContinue={runId && cancelled ? () => void (fold ? studio.actions.retryRun(runId) : studio.actions.repeatTurn(turn)) : undefined}
+        onContinue={runId && cancelled ? () => void (fold ? studio.actions.retryRun(runId) : studio.actions.repeatTurn(recovered)) : undefined}
         actions={
-          !active && quotable.length > 0 ? (
+          active ? <Button size="sm" variant="ghost" onClick={() => void studio.actions.stopAssist()}>Parar geração</Button> : !active && quotable.length > 0 ? (
             <Button size="sm" variant="ghost" icon={Quote} onClick={() => quotable.forEach((excerpt) => studio.actions.insertQuote(excerpt))}>
               {quotable.length === 1 ? 'Inserir citação' : 'Inserir citações'}
             </Button>
@@ -403,6 +409,9 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
         }
       >
         {turn.reply ? turn.reply : null}
+        {turn.pending ? 'Preparando pedido · salvando seu texto…' : null}
+        {preview?.reply || null}
+        {preview?.proposals.map(proposal => <SuggestionCard key={proposal.id} title="Escrevendo proposta" state="streaming" proposal={proposal.text} />)}
         {active && run ? <RunTrace run={run} label={turn.prompt} variant="compact" announce={false} /> : null}
         {replies.length === 1 && replies[0]?.type === 'paragraph' && !replies[0].sourceRefs ? (
           replies[0].inlines.map((inline) => inline.text).join('')
@@ -430,6 +439,7 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
           <SuggestionCard key={block.id} title="Escrevendo proposta" state="streaming" proposal={block.text} />
         ))}
         {runId && suggestions.length > 0 ? <SuggestionCards runId={runId} suggestions={suggestions} /> : null}
+        {!active && run ? <Provenance run={run} /> : null}
       </ConversationTurn>
     </>
   );

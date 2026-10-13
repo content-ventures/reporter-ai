@@ -9,6 +9,7 @@ import {
   EditableTitle,
   EmptyState,
   LinkButton,
+  MetaList,
   PageStack,
   Prose,
   Skeleton,
@@ -21,8 +22,13 @@ import { EditorContent } from '@/editor';
 import { formatCharacters, formatLaudas, plural } from '@/ui/format';
 import { materialHref } from '@/ui/routes';
 import { CoverSlot } from './cover-slot';
+import { RunTrace } from '@/ui/run-trace';
+import { useGenerationFeedback } from '@/ui/use-generation-feedback';
 import { useStudio } from './studio-context';
 import { useSpeakersWithoutPerson } from './studio-footer';
+import { ProviderPreview } from './provider-preview';
+import { useRuntime } from '@/state';
+import { contentHash } from '@/domain/text/hash';
 
 /**
  * The writing canvas (PLAN §3.5 "Texto"): the cover ("Imagem de destaque"), the article title and
@@ -35,6 +41,8 @@ import { useSpeakersWithoutPerson } from './studio-footer';
 export function EditorCanvas() {
   const studio = useStudio();
   const { editor, generation } = studio;
+  const providerProgress = generation.active && generation.run?.model.engine === 'provider';
+  const preview = providerProgress ? generation.live?.fold.preview : undefined;
   const writing = studio.production.flowId === WRITING_FLOW.id;
   const editable = studio.canEdit && !studio.readOnly && !studio.locked;
   useEffect(() => {
@@ -56,12 +64,46 @@ export function EditorCanvas() {
       onTouchMove={studio.noteUserScroll}
     >
       <PageStack>
-        <EditorContent editor={editor} />
-        {generation.active ? <PendingStructure /> : null}
-        {studio.empty && !writing ? <EmptyDraft /> : null}
+        {!generation.active ? <AutomaticArticleImages /> : null}
+        {providerProgress && !preview?.blocks.length ? <PendingStructure /> : null}
+        {preview?.blocks.length ? <ProviderPreview body={preview} /> : <EditorContent editor={editor} />}
+        {providerProgress && preview?.blocks.length ? <StreamingStatus /> : null}
+        {generation.active && !providerProgress ? <PendingStructure /> : null}
+        {studio.empty && !writing && !generation.active ? <EmptyDraft /> : null}
       </PageStack>
     </Prose>
   );
+}
+
+function AutomaticArticleImages() {
+  const studio = useStudio(),{ runtime } = useRuntime();
+  const [busy,setBusy] = useState(false),[error,setError] = useState<string>();
+  const slots = [studio.body.coverSlot,...studio.body.blocks.flatMap(block => block.type === 'figure' && block.slot ? [block.slot] : [])].filter(Boolean);
+  const unavailable = slots.find(slot => slot?.availability)?.availability;
+  const port = runtime?.visuals;
+  if (!slots.length || !port?.illustrate) return null;
+  async function search() {
+    if (!port?.illustrate || busy) return;
+    setBusy(true);setError(undefined);
+    try {
+      await studio.sync.idle();
+      const result = await port.illustrate(studio.production.id,studio.sync.base(),contentHash(studio.body));
+      if (!result.filled) setError(result.codes.includes('PIXABAY_ORIGINAL_REQUIRED') ? 'Libere os originais no Pixabay para preencher as imagens em alta resolução.' : 'Nenhuma foto pertinente foi preenchida. Você pode tentar novamente ou escolher outra na biblioteca.');
+    } catch (error) { setError(error instanceof Error ? error.message : 'Não foi possível buscar fotos. Seu artigo continua salvo.'); }
+    finally { setBusy(false); }
+  }
+  return <Alert compact tone={unavailable || error ? 'warning' : 'info'} title={busy ? 'Buscando fotos no Pixabay' : 'Imagens do artigo'}>
+    {error ?? unavailable?.message ?? 'Preencha os espaços planejados sem subir arquivos manualmente.'}
+    <Button size="sm" loading={busy} disabled={!studio.canEdit || studio.locked || studio.sync.status.status !== 'saved'} onClick={() => void search()}>Buscar imagens automaticamente</Button>
+    {unavailable?.code === 'PIXABAY_ORIGINAL_REQUIRED' ? <ButtonLink href="https://pixabay.com/api/docs/#api_support" target="_blank" rel="noopener noreferrer" size="sm">Liberar originais no Pixabay</ButtonLink> : null}
+  </Alert>;
+}
+
+function StreamingStatus() {
+  const { generation } = useStudio();
+  const feedback = useGenerationFeedback(generation.run);
+  return <MetaList size="sm" label="Estado da redação" items={[feedback?.detail ?? feedback?.label ?? 'Escrevendo',feedback?.elapsed,
+    'Prévia em tempo real. Edição liberada após validar o artigo.'].filter(Boolean) as string[]} />;
 }
 
 function ArticleTitle() {
@@ -76,7 +118,7 @@ function ArticleTitle() {
       value={studio.title}
       placeholder={generatingTitle ? 'Gerando título…' : 'Título do artigo'}
       maxLength={140}
-      readOnly={generatingTitle || studio.readOnly}
+      readOnly={generatingTitle || studio.readOnly || studio.generation.active}
       onCommit={studio.commitTitle}
     />
   );
@@ -85,6 +127,8 @@ function ArticleTitle() {
 /** Sections the generation planned but has not written yet ("skeleton pela estrutura"). */
 function PendingStructure() {
   const studio = useStudio();
+  const run = studio.generation.run;
+  const feedback = useGenerationFeedback(run);
   const fold = studio.generation.live?.fold;
   const count = useMemo(() => {
     if (!fold) return 2;
@@ -92,6 +136,10 @@ function PendingStructure() {
     const written = new Set(fold.blocks.map((block) => block.id));
     return fold.outline.filter((section) => !section.blockId || !written.has(section.blockId)).length;
   }, [fold]);
+  if (run?.model.engine === 'provider') return <PageStack>
+    <RunTrace run={run} label="Preparando o artigo" collapsible={false} />
+    <MetaList size="sm" items={[feedback?.elapsed,'O texto aparecerá aqui assim que a IA começar a escrever.',feedback?.background].filter(Boolean) as string[]} />
+  </PageStack>;
   if (count === 0) return null;
   return (
     <PageStack>

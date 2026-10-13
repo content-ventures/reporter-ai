@@ -1,17 +1,19 @@
 'use client';
 
 import { useEffect, useState, type ComponentType } from 'react';
-import { Dropzone, Field, Input, LinkButton, MediaFrame, MetaList, formatBytes } from '@content-ventures/design-system/v3';
+import { Dropzone, Field, Input, LinkButton, MediaFrame, MetaList, PageStack, formatBytes } from '@content-ventures/design-system/v3';
 import { IMAGE_LIMITS, validateImageFile, validateImageUrl } from '@/domain';
 import type { AssetInput, AssetRefusal } from '@/ports';
 import type { ImageSourceId } from '@/registries';
 import { probeImage, useImageProbe } from '@/ui/image-probe';
 import { refusedFileMessage, type ImageFields } from './image-model';
+import { LibraryBrowser } from '@/features/images/library-browser';
+import { libraryImageSource, libraryImageNote, publicationImageCredit, type LibraryImage } from '@/domain/visual-library';
 
 /**
  * The tabs of the image picker, one panel per image source of the registry
- * (`imageSourcesFor()`): R1 "Enviar arquivo" and "Link". A source plugs in by adding its panel
- * here — R2 "Acervo" (F2.9), R6 "Gerar com IA" (F6.10) and "Busca semântica" (F6.9) — and the
+ * (`imageSourcesFor()`): R1 "Enviar arquivo", "Link" and the connected "Biblioteca". A source plugs in by adding its panel
+ * here — future semantic archive/AI sources remain separate — and the
  * picker stays as it is: each panel keeps its own state (kept while the person switches tabs),
  * says whether something was chosen, shows its own errors, and hands the store an `AssetInput`
  * of its origin plus what it already knows of the image (an archive record's caption and credit).
@@ -22,6 +24,7 @@ export type SourceSelection = {
   input: AssetInput;
   /** Caption, credit, alt or rights the source already knows (empty fields take them). */
   suggested?: Partial<ImageFields>;
+  meta?: Pick<import('@/ports').AssetMeta, 'note' | 'provenance' | 'credit'>;
 };
 
 export type SourceSubmit<S> = { ok: true; selection: SourceSelection } | { ok: false; state: S; focus: string };
@@ -38,7 +41,7 @@ export type SourcePanelProps<S> = {
   /** Alt text typed so far, for the preview. */
   alt: string;
   /** Fills the fields still empty with what the source knows (an archive record's credit). */
-  onSuggest: (fields: Partial<ImageFields>) => void;
+  onSuggest: (fields: Partial<ImageFields>, creditOptional?: boolean) => void;
 };
 
 export type ImageSourcePanel<S> = {
@@ -224,4 +227,22 @@ const linkPanel = panel<LinkState>({
 export const IMAGE_SOURCE_PANELS: Readonly<Partial<Record<ImageSourceId, AnyPanel>>> = {
   upload: uploadPanel,
   link: linkPanel,
+  archive: panel<{ selected?: LibraryImage; error?: string }>({
+    initial: () => ({}),dirty: state => Boolean(state.selected),focusOnOpen: () => undefined,
+    async submit(state,id) {
+      if (!state.selected) return { ok: false,state: { error: 'Selecione uma imagem da biblioteca.' },focus: id };
+      const image = state.selected;
+      return { ok: true,selection: {
+        input: { type: 'url',url: new URL(libraryImageSource(image),window.location.origin).href,width: image.width,height: image.height },
+        suggested: { credit: publicationImageCredit(image) },
+        meta: { ...(image.provider === 'pixabay' ? {} : { credit: image.attribution }),note: libraryImageNote(image),provenance: { ...image,libraryId: image.id } },
+      } };
+    },
+    refused: (state,refusal,id) => ({ state: { ...state,error: refusal.message },focus: id }),
+    Panel: ({ state,onChange,onSuggest }) => <PageStack>
+      <LibraryBrowser selectedId={state.selected?.id} onSelect={image => { onChange({ selected: image });onSuggest({ credit: publicationImageCredit(image),alt: image.title,caption: `Imagem ilustrativa: ${image.title}` },image.provider === 'pixabay'); }} />
+      {state.selected ? <MetaList items={['Imagem selecionada',state.selected.title,state.selected.license,'Revise legenda, texto alternativo e contexto. Confirme o uso desta foto neste artigo.']} /> : null}
+      {state.error ? <MetaList items={[state.error]} /> : null}
+    </PageStack>,
+  }),
 };

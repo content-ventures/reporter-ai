@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from '@content-ventures/design-system/v3';
 import { Image as ImageIcon, ImagePlus, Pencil, RefreshCw, Trash2, X } from '@content-ventures/design-system/v3/icons';
-import { COVER_BLOCK_ID, creditLine, IMAGE_ISSUE_LABELS, IMAGE_LIMITS, imageAlt, type ImageRef } from '@/domain';
+import { COVER_BLOCK_ID, creditLine, imageCreditRequired, IMAGE_ISSUE_LABELS, IMAGE_LIMITS, imageAlt, type ImageRef } from '@/domain';
 import { useArticleCover, useImageSlots } from '@/editor';
 import { useAsset, useAssetUrl } from '@/state';
 import { usePhone } from '@/ui/use-phone';
@@ -188,7 +188,7 @@ function CoverImage({ cover, rootRef }: { cover: ImageRef; rootRef: (node: HTMLE
       <Badge key="missing" tone="red" variant="text" size="sm">
         {IMAGE_ISSUE_LABELS.missing_asset}
       </Badge>
-    ) : found && !credit ? (
+    ) : found && imageCreditRequired(found) && !credit ? (
       <Badge key="credit" tone="red" variant="text" size="sm">
         {IMAGE_ISSUE_LABELS.missing_credit}
       </Badge>

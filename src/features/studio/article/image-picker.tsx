@@ -19,7 +19,7 @@ import {
   formatBytes,
   toast,
 } from '@content-ventures/design-system/v3';
-import { assetOriginLabel, type AssetId, type BlockId, type ImageAsset, type ImageRef, type ProductionId } from '@/domain';
+import { assetOriginLabel, imageCreditRequired, type AssetId, type BlockId, type ImageAsset, type ImageRef, type ProductionId } from '@/domain';
 import type { FigurePlacement } from '@/editor';
 import type { UnusedAssets } from '@/ports';
 import { imageSource, imageSourcesFor, type ImageSourceId } from '@/registries';
@@ -32,6 +32,7 @@ import {
   imageRefOf,
   pickerCopy,
   rightsChanged,
+  withLibrarySelection,
   withSuggested,
   type ImageFields,
   type ImageRole,
@@ -91,6 +92,8 @@ type Form = {
   drafts: Drafts;
   fields: ImageFields;
   initial: ImageFields;
+  sourceFields?: Pick<ImageFields,'alt'|'caption'>;
+  creditOptional?: boolean;
   failure?: { message: string; quota: boolean };
 };
 
@@ -186,7 +189,10 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
   const setDraft = (tab: ImageSourceId, next: unknown) => setForm((current) => ({ ...current, drafts: { ...current.drafts, [tab]: next }, failure: undefined }));
   const setField = <K extends keyof ImageFields>(name: K, value: ImageFields[K]) =>
     setForm((current) => ({ ...current, fields: { ...current.fields, [name]: value }, failure: undefined }));
-  const suggest = (fields: Partial<ImageFields>) => setForm((current) => ({ ...current, fields: withSuggested(current.fields, fields) }));
+  const suggest = (fields: Partial<ImageFields>, creditOptional = false) => setForm((current) => current.tab === 'archive' ? {
+    ...current,fields: withLibrarySelection(current.fields,current.sourceFields ?? current.initial,fields),
+    sourceFields: { alt: fields.alt ?? '',caption: fields.caption ?? '' },creditOptional,
+  } : { ...current, fields: withSuggested(current.fields, fields) });
   const fieldsDirty = (Object.keys(form.fields) as (keyof ImageFields)[]).some((name) => form.fields[name] !== form.initial[name]);
   const chosen =
     form.mode === 'choose' &&
@@ -240,7 +246,7 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
       return;
     }
     const fields = withSuggested(form.fields, checked.selection.suggested);
-    const meta = { productionId, authorized: fields.authorized, ...(fields.credit.trim() ? { credit: fields.credit } : {}) };
+    const meta = { productionId, authorized: fields.authorized, ...(fields.credit.trim() ? { credit: fields.credit } : {}),...checked.selection.meta };
     const result = await commands.assets.put(checked.selection.input, meta);
     if (!result.ok) {
       setSaving(false);
@@ -359,12 +365,13 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
               />
             )}
           </Field>
-          <Field label="Crédito" hint={creditHint(form.fields.credit)}>
+          <Field label="Crédito" optional={form.mode === 'choose' && form.tab === 'archive' ? form.creditOptional : !imageCreditRequired(currentAsset)} hint={form.mode === 'choose' && form.tab === 'archive' ? form.creditOptional ? 'Pixabay: crédito não obrigatório. A origem e a licença ficam registradas internamente.' : 'Crédito da fonte preservado. Confira a licença e o contexto antes de autorizar o uso.' : imageCreditRequired(currentAsset) ? creditHint(form.fields.credit) : 'Pixabay: crédito não obrigatório.'}>
             {({ id: fieldId, describedBy }) => (
               <Input
                 id={fieldId}
                 aria-describedby={describedBy}
                 value={form.fields.credit}
+                readOnly={form.mode === 'choose' && form.tab === 'archive' && !form.creditOptional}
                 maxLength={120}
                 autoComplete="off"
                 onChange={(event) => setField('credit', event.target.value)}

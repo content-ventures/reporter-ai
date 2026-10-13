@@ -113,7 +113,7 @@ export function StudioFooter({ narrow = false }: { narrow?: boolean }) {
 
   const sizeItem =
     chars === 0 ? (
-      'Sem texto'
+      generation.active ? 'Preparando o texto…' : 'Sem texto'
     ) : above > 0 ? (
       <LinkButton key="size" tone="text" size="inherit" onClick={() => studio.actions.runTool('shorten-to-brief')}>
         {`${formatLaudasOf(chars, size)} · ${formatCharacters(above)} acima`}
