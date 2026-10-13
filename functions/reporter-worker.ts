@@ -51,12 +51,22 @@ export async function drainEditorialQueue(
 
 if (process.env.NEON_BRANCH) attachDatabasePool(pool('worker'));
 
-function hasWorkerSecret(request: Request) {
+function matchesWorkerSecret(supplied: string | undefined) {
   const expected = process.env.REPORTER_WORKER_PASSWORD?.trim();
-  const supplied = request.headers.get('authorization')?.replace(/^Bearer\s+/i,'').trim();
   if (!expected || !supplied) return false;
   const left = Buffer.from(expected),right = Buffer.from(supplied);
   return left.length === right.length && timingSafeEqual(left,right);
+}
+
+async function hasWorkerSecret(request: Request) {
+  const header = request.headers.get('x-reporter-worker-key')?.trim()
+    || request.headers.get('authorization')?.replace(/^Bearer\s+/i,'').trim();
+  if (matchesWorkerSecret(header)) return true;
+  if (request.method !== 'POST' || !request.headers.get('content-type')?.includes('application/json')) return false;
+  try {
+    const body = await request.clone().json() as { health_secret?: unknown };
+    return typeof body.health_secret === 'string' && matchesWorkerSecret(body.health_secret.trim());
+  } catch { return false; }
 }
 
 async function diagnosticHeartbeat(owner: string,services: WorkerDependencies) {
@@ -66,8 +76,7 @@ async function diagnosticHeartbeat(owner: string,services: WorkerDependencies) {
 export function createReporterWorker(services: WorkerDependencies = dependencies) {
   return {
   async fetch(request: Request): Promise<Response> {
-    if (request.method === 'GET') {
-      if (!hasWorkerSecret(request)) return new Response('Unauthorized',{ status: 401 });
+    if ((request.method === 'GET' || request.method === 'POST') && await hasWorkerSecret(request)) {
       try {
         await services.heartbeat(`reporter-health-${randomUUID()}`);
         return Response.json({ ok: true });

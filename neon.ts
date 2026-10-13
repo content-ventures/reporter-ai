@@ -12,6 +12,13 @@ const requiredAny = (...names: string[]) => {
   if (!value) throw new Error(`${names.join(' or ')} is required to deploy Reporter AI Functions`);
   return value;
 };
+const workerDatabaseUrl = () => {
+  const url = new URL(required('DATABASE_URL'));
+  url.username = 'reporter_worker';
+  url.password = required('REPORTER_WORKER_PASSWORD');
+  url.searchParams.set('sslmode','verify-full');
+  return url.toString();
+};
 
 const bundleWorker: FunctionBundler = async fn => {
   const { traceNativePackages } = await import('@neon/config-runtime/v1');
@@ -53,6 +60,7 @@ const functions = {
       REPORTER_DEPLOYMENT_MODE: 'cloud',
       REPORTER_FUNCTION_RUNTIME: 'true',
       REPORTER_DEFAULT_PORTAL_ID: '10000000-0000-0000-0000-000000000101',
+      REPORTER_WORKER_DATABASE_URL: workerDatabaseUrl(),
       REPORTER_WORKER_PASSWORD: required('REPORTER_WORKER_PASSWORD'),
       GROQ_API_KEY: required('GROQ_API_KEY'),
       OPENAI_API_KEY: requiredAny('OPENAI_API_KEY','OPEN_AI_API_KEY'),

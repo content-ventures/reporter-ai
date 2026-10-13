@@ -31,7 +31,7 @@ export function cloudDatabaseUrl(role: "runtime" | "worker") {
 
 export function cloudPortalId() {
   const value = process.env.REPORTER_DEFAULT_PORTAL_ID?.trim() || '10000000-0000-0000-0000-000000000101';
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) {
     throw new Error('DATABASE_CONFIGURATION');
   }
   return value;

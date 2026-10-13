@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReporterWorker, drainEditorialQueue } from '../functions/reporter-worker.ts';
+import { cloudPortalId } from '../src/server/config.ts';
+
+test('cloud portal accepts the deterministic UUID used by the Reporter AI seed',() => {
+  const previous = process.env.REPORTER_DEFAULT_PORTAL_ID;
+  process.env.REPORTER_DEFAULT_PORTAL_ID = '10000000-0000-0000-0000-000000000101';
+  try { assert.equal(cloudPortalId(),'10000000-0000-0000-0000-000000000101'); }
+  finally {
+    if (previous === undefined) delete process.env.REPORTER_DEFAULT_PORTAL_ID;
+    else process.env.REPORTER_DEFAULT_PORTAL_ID = previous;
+  }
+});
 
 test('scheduled worker heartbeats once and drains bounded editorial work',async () => {
   let heartbeats = 0,runs = 0,now = 1000;
@@ -51,9 +62,10 @@ test('health check requires the worker secret and reports database readiness',as
   try {
     let heartbeats = 0;
     const worker = createReporterWorker({ heartbeat: async () => { heartbeats++; },run: async () => false,now: Date.now });
-    const denied = await worker.fetch(new Request('https://worker.test/'));
+    const denied = await worker.fetch(new Request('https://worker.test/',{ method: 'POST' }));
     const ready = await worker.fetch(new Request('https://worker.test/',{
-      headers: { authorization: 'Bearer worker-secret' },
+      method: 'POST',headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ health_secret: 'worker-secret' }),
     }));
     assert.equal(denied.status,401);
     assert.equal(ready.status,200);
