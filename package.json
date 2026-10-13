@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@content-ventures/design-system": "https://github.com/content-ventures/design-system/archive/63b5b8021ca512a6b9c2532d1457a65740477ee5.tar.gz",
+    "@neon/functions": "^0.11.0",
     "@neondatabase/auth": "0.6.0-beta",
     "@next/env": "16.3.8",
     "@tiptap/extension-placeholder": "3.31.4",
@@ -61,12 +62,15 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@neon/config": "^1.9.1",
+    "@neon/config-runtime": "1.9.1",
     "@playwright/test": "1.62.1",
     "@types/busboy": "1.5.5",
     "@types/node": "^24",
     "@types/pg": "8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "tsx": "4.23.15",
