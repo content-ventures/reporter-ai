@@ -2,7 +2,11 @@
 
 Produto da Content Ventures para automatizar fluxos de produção editorial.
 
-Este repositório está na **R1 · Experiência**: a interface completa da R1 roda no navegador sobre uma simulação local, sem backend, banco, login ou IA real. A versão publicada continua 0.1.0 (R0); a v1.0.0 sai com a **R1 · Conexão**, quando os adapters reais substituírem a simulação sem mexer nas telas.
+O projeto local agora conecta a interface aprovada ao fluxo arquivo → transcrição com Groq → artigo → aprovação manual → carrossel, com persistência no PostgreSQL do Reporter AI e sem login. Para subir e verificar, siga [Local connected workflow](docs/LOCAL_BACKEND.md). Use `pnpm worker` e `pnpm dev:local` na raiz do projeto; abra `http://127.0.0.1:3002/productions/new`.
+
+Este é um piloto local, não uma publicação da R1 completa. As seções abaixo registram o escopo e o roteiro histórico da fase **R1 · Experiência**; os limites atuais e o que permanece adiado estão no documento de backend. A versão publicada continua 0.1.0 (R0).
+
+Em [Prompts](http://127.0.0.1:3002/config), edite e ative os prompts e parâmetros usados pelo worker. A página mostra a orquestração, revisões e chamadas reais. Gerações já enfileiradas mantêm a configuração original; novas gerações usam a revisão salva.
 
 ## Escopo da R1 · Experiência
 

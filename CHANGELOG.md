@@ -6,6 +6,33 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ### Added
 
+- Added the connected Citações library with literal transcript verification, source/version/time
+  traceability, explicit author confirmation, editorial relevance and searchable curated entries.
+  Generated article quotations are emphasized without rewriting their text.
+
+- Connected automatic Pixabay article illustration to private server assets and the existing
+  editor/export ports. Original-resolution requirements and provider access limitations remain
+  explicit; missing images never discard a valid article or silently use reduced previews.
+
+- Added six Seafood-inspired carousel creatives in the Notícia, Explica and Podcast families,
+  with real editable layouts, template-specific illustrative previews, shared writer selection
+  and safe model switching that retains text and reports overflow. Existing model IDs remain available.
+
+- Connected OpenAI Responses and Claude Messages alongside Groq transcription, with explicit
+  per-stage provider selection, safe credential aliases, exact editable prompts and call provenance.
+
+- Added editable material analysis for source-grounded internal titles and presented participants,
+  with literal evidence and human confirmation, without inventing audio speaker attribution.
+
+- Added a design-system prompt configuration page backed by PostgreSQL revisions and immutable
+  per-job snapshots. Connected Make-inspired sequential article writing, optional evidence curation,
+  editable model parameters, safe template variables and actual call traces to the existing UI.
+
+- Connected the approved UI to private uploads, Groq transcription, reviewed outlines, article
+  generation, exact-version manual approval and template-constrained carousel copy.
+- Added isolated PostgreSQL bootstrap, a durable worker and a server-owned rich-editorial aggregate
+  without login or external platform dependencies.
+
 - Added the development harness, repository policies, local hooks, and continuous quality gate.
 - Added controlled release foundations and the public version-history experience.
 - Added the R1 · Experiência screens on a local simulation: overview, productions, new production, material, article studio, review, carousel, delivery, and the admin-only read-only Logs (F1.7).
@@ -24,6 +51,32 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 - Added the whole R1–R7 map to the sidebar: items of a later release show "Em breve" with no link, and their tip says what the screen will do and which release brings it. ⌘K, the active item and the trail list only released items; Administração items show only to admins.
 
 ### Changed
+
+- Kept successful production writes successful when a subsequent refresh fails, reused identical
+  ambiguous command retries, and validated outline references/titles before provider caching.
+  A failed optional length refinement now retains an already-valid R1 article; invalid articles
+  are still rejected rather than truncated or accepted below the required limits.
+
+- Kept enlarged carousel previews entirely within the viewport, reserving room for the dialog
+  header and mobile footer. Centered the page counter with its arrows using the existing DS footer;
+  full-resolution preview images and saved carousel content remain unchanged.
+
+- Refined the six Seafood carousel creatives with optical headline fitting, balanced line breaks,
+  intentional photo crops, lighter signatures and legible quotation layouts. Added sharper library
+  previews and an accessible enlarged-page viewer without changing saved copy, model IDs or exports.
+
+- Prevented provider event replay from appending regenerated articles or autosaving replayed text
+  as a human edit; the editor adopts validated server drafts without altering its layout.
+- Fixed automatic adoption of completed articles in an empty editor, preserving unsaved human
+  changes and provenance. Added complete-sentence contracts and visible concise-writing prompts
+  so paragraph/slide body length limits do not accept unfinished generated prose.
+- Exposed actual outline progress and bounded provider quota waits instead of opaque loading.
+- Allocated article character budgets before each writing stage and validated paragraph contracts
+  before checkpointing, without truncating generated prose or changing the approved design.
+
+- Aligned long-source provider contracts with runtime limits, validated outputs before caching,
+  and shortened whole-episode passages to avoid overflowing the facts contract.
+- Reused the existing form-row spacing for the optional brief details, removing the border-adjacent divider.
 
 - Moved the toolchain to Node.js 24.
 - Rewrote the README in Portuguese for R1 · Experiência and updated the development harness: rebase-only merges, repository setup within GitHub Free, and the Design System update and acceptance build procedures.
