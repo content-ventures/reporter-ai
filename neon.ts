@@ -26,7 +26,7 @@ const bundleWorker: FunctionBundler = async fn => {
     conditions: ['react-server', 'node', 'import'],
     external: ['pg', 'sharp'],
     banner: {
-      js: "import{createRequire}from'node:module';const require=createRequire(import.meta.url);",
+      js: "import{createRequire}from'node:module';import{fileURLToPath}from'node:url';import{dirname}from'node:path';const require=createRequire(import.meta.url);const __filename=fileURLToPath(import.meta.url);const __dirname=dirname(__filename);",
     },
   });
   const staged = await traceNativePackages({
