@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { drainEditorialQueue } from '../functions/reporter-worker.ts';
+import { createReporterWorker, drainEditorialQueue } from '../functions/reporter-worker.ts';
 
 test('scheduled worker heartbeats once and drains bounded editorial work',async () => {
   let heartbeats = 0,runs = 0,now = 1000;
@@ -22,4 +22,44 @@ test('scheduled worker stops before starting work when already aborted',async ()
   });
   assert.equal(result.processed,0);
   assert.equal(runs,0);
+});
+
+test('scheduled delivery is authenticated, heartbeats and returns the drained count',async () => {
+  const heartbeats: string[] = [];
+  const worker = createReporterWorker({
+    heartbeat: async owner => { heartbeats.push(owner); },
+    run: async () => false,
+    now: () => 1000,
+  });
+  const invocationId = 'test-invocation';
+  const response = await worker.fetch(new Request('https://worker.test/',{
+    method: 'POST',headers: { 'content-type': 'application/json','x-neon-trigger-invocation-id': invocationId },
+    body: JSON.stringify({ version: 1,invocation_id: invocationId,
+      trigger: { type: 'schedule',id: 'trigger-test',name: 'every-minute' },
+      data: { scheduled_at: '2026-10-13T18:00:00Z' },
+    }),
+  }));
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{ ok: true,processed: 0 });
+  assert.equal(heartbeats.length,1);
+  assert.match(heartbeats[0],/^reporter-neon-/);
+});
+
+test('health check requires the worker secret and reports database readiness',async () => {
+  const previous = process.env.REPORTER_WORKER_PASSWORD;
+  process.env.REPORTER_WORKER_PASSWORD = 'worker-secret';
+  try {
+    let heartbeats = 0;
+    const worker = createReporterWorker({ heartbeat: async () => { heartbeats++; },run: async () => false,now: Date.now });
+    const denied = await worker.fetch(new Request('https://worker.test/health'));
+    const ready = await worker.fetch(new Request('https://worker.test/health',{
+      headers: { authorization: 'Bearer worker-secret' },
+    }));
+    assert.equal(denied.status,401);
+    assert.equal(ready.status,200);
+    assert.equal(heartbeats,1);
+  } finally {
+    if (previous === undefined) delete process.env.REPORTER_WORKER_PASSWORD;
+    else process.env.REPORTER_WORKER_PASSWORD = previous;
+  }
 });

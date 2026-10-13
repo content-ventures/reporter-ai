@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { attachDatabasePool } from '@neon/functions';
 import { parseTriggerDelivery } from '@neon/functions/triggers';
 import { runEditorialJob } from '../src/server/editorial-worker.ts';
@@ -51,11 +51,39 @@ export async function drainEditorialQueue(
 
 if (process.env.NEON_BRANCH) attachDatabasePool(pool('worker'));
 
-const reporterWorker = {
+function hasWorkerSecret(request: Request) {
+  const expected = process.env.REPORTER_WORKER_PASSWORD?.trim();
+  const supplied = request.headers.get('authorization')?.replace(/^Bearer\s+/i,'').trim();
+  if (!expected || !supplied) return false;
+  const left = Buffer.from(expected),right = Buffer.from(supplied);
+  return left.length === right.length && timingSafeEqual(left,right);
+}
+
+async function diagnosticHeartbeat(owner: string,services: WorkerDependencies) {
+  await services.heartbeat(owner).catch(() => {});
+}
+
+export function createReporterWorker(services: WorkerDependencies = dependencies) {
+  return {
   async fetch(request: Request): Promise<Response> {
-    if (request.method !== 'POST') return new Response('Method Not Allowed',{ status: 405 });
+    const pathname = new URL(request.url).pathname;
+    if (request.method === 'GET' && pathname.endsWith('/health')) {
+      if (!hasWorkerSecret(request)) return new Response('Unauthorized',{ status: 401 });
+      try {
+        await services.heartbeat(`reporter-health-${randomUUID()}`);
+        return Response.json({ ok: true });
+      } catch (error) {
+        return Response.json({ ok: false,error: safeCode(error) },{ status: 503 });
+      }
+    }
+    const triggerHeader = request.headers.get('x-neon-trigger-invocation-id')?.trim();
+    if (request.method !== 'POST') {
+      if (triggerHeader) await diagnosticHeartbeat('reporter-trigger-invalid-method',services);
+      return new Response('Method Not Allowed',{ status: 405 });
+    }
     const parsed = await parseTriggerDelivery(request);
     if (!parsed.ok) {
+      if (triggerHeader) await diagnosticHeartbeat(`reporter-trigger-${parsed.error}`,services);
       return new Response(parsed.error,{ status: parsed.error === 'invalid_body' ? 400 : 401 });
     }
     if (parsed.invocation.type !== 'schedule') return new Response('Invalid trigger',{ status: 400 });
@@ -64,7 +92,7 @@ const reporterWorker = {
     const timeout = setTimeout(() => controller.abort('invocation_budget'),MAX_INVOCATION_MS);
     timeout.unref?.();
     try {
-      const result = await drainEditorialQueue(owner,controller.signal);
+      const result = await drainEditorialQueue(owner,controller.signal,services);
       logEvent('worker','scheduled_run_completed',{ duration_ms: result.elapsedMs });
       return Response.json({ ok: true,processed: result.processed });
     } catch (error) {
@@ -74,6 +102,7 @@ const reporterWorker = {
       clearTimeout(timeout);
     }
   },
-};
+  };
+}
 
-export default reporterWorker;
+export default createReporterWorker();
