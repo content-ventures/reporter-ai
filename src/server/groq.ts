@@ -19,13 +19,13 @@ export type ProviderResult = {
   content?: string; segments?: Segment[] | null; title?: string; slides?: { title?: string; body: string }[];
 };
 
-async function request(endpoint: string, body: FormData | object, signal: AbortSignal) {
+async function request(endpoint: string, body: FormData | object, signal: AbortSignal,timeoutMs = 180000) {
   const response = await fetch(BASE + endpoint, {
     method: "POST", headers: {
       Authorization: "Bearer " + groqKey(),
       ...(body instanceof FormData ? {} : { "Content-Type": "application/json" }),
     }, body: body instanceof FormData ? body : JSON.stringify(body),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(180000)]),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
   }).catch(() => { throw new FlowError(signal.aborted ? "JOB_INTERRUPTED" : "GROQ_UNAVAILABLE", 503, true, 5); });
   if (!response.ok) {
     // Inspect only a bounded machine code; never reflect provider messages or failed text.
@@ -62,26 +62,51 @@ async function request(endpoint: string, body: FormData | object, signal: AbortS
   finally { reader.releaseLock(); }
 }
 
-export async function transcribeChunk(path: string, language: string, signal: AbortSignal): Promise<ProviderResult> {
-  if ((await stat(path)).size >= 24 * 1000 ** 2) throw new FlowError("AUDIO_CHUNK_TOO_LARGE", 413);
+const transcriptResponseSchema = z.object({
+  text: z.string().max(1000000),duration: z.number().nonnegative().optional(),
+  segments: z.array(z.object({ start: z.number().nonnegative(),end: z.number().nonnegative(),text: z.string().max(20000) })).max(20000).optional(),
+});
+
+function transcriptResult(data: unknown,requestId: string | null,model: string): ProviderResult {
+  const result = transcriptResponseSchema.safeParse(data);
+  if (!result.success) throw new FlowError('GROQ_INVALID_TRANSCRIPT',502);
+  const segments = result.data.segments?.filter(item => item.text.trim() && item.end>=item.start).map(item => ({
+    start_ms: Math.round(item.start*1000),end_ms: Math.round(item.end*1000),text: item.text.trim(),
+  })) ?? null;
+  return { content: result.data.text,segments,provider: 'groq',model,provider_request_id: requestId,
+    usage_unit: 'audio_ms',input_units: result.data.duration===undefined ? null : Math.round(result.data.duration*1000),output_units: null };
+}
+
+function checkedTranscriptionModel() {
   const model = transcriptionModel();
   if (!["whisper-large-v3","whisper-large-v3-turbo"].includes(model)) throw new FlowError("UNSUPPORTED_TRANSCRIPTION_MODEL", 503);
+  return model;
+}
+
+export async function transcribeChunk(path: string, language: string, signal: AbortSignal): Promise<ProviderResult> {
+  if ((await stat(path)).size >= 24 * 1000 ** 2) throw new FlowError("AUDIO_CHUNK_TOO_LARGE", 413);
+  const model = checkedTranscriptionModel();
   const body = new FormData();
   body.set("file", await openAsBlob(path, { type: "audio/flac" }), "audio.flac");
   body.set("model", model); body.set("language", language.split("-")[0]);
   body.set("response_format", "verbose_json"); body.set("temperature", "0");
   body.append("timestamp_granularities[]", "segment");
   const { data, requestId } = await request("audio/transcriptions", body, signal);
-  const result = z.object({
-    text: z.string().max(1000000), duration: z.number().nonnegative().optional(),
-    segments: z.array(z.object({ start: z.number().nonnegative(), end: z.number().nonnegative(), text: z.string().max(20000) })).max(20000).optional(),
-  }).safeParse(data);
-  if (!result.success) throw new FlowError("GROQ_INVALID_TRANSCRIPT", 502);
-  const segments = result.data.segments?.filter(item => item.text.trim() && item.end >= item.start).map(item => ({
-    start_ms: Math.round(item.start * 1000), end_ms: Math.round(item.end * 1000), text: item.text.trim(),
-  })) ?? null;
-  return { content: result.data.text, segments, provider: "groq", model, provider_request_id: requestId,
-    usage_unit: "audio_ms", input_units: result.data.duration === undefined ? null : Math.round(result.data.duration * 1000), output_units: null };
+  return transcriptResult(data,requestId,model);
+}
+
+/** Groq fetches large private media from a short-lived Neon URL, so the
+ * recording never crosses a Vercel request body and the Function does not
+ * need to buffer gigabytes or bundle ffmpeg. */
+export async function transcribeUrl(url: string,language: string,signal: AbortSignal): Promise<ProviderResult> {
+  const parsed = new URL(url);
+  if (parsed.protocol!=='https:' || parsed.username || parsed.password) throw new FlowError('SOURCE_UNAVAILABLE',422);
+  const model = checkedTranscriptionModel();
+  const { data,requestId } = await request('audio/transcriptions',{
+    url,model,language: language.split('-')[0],response_format: 'verbose_json',temperature: 0,
+    timestamp_granularities: ['segment'],
+  },signal,12*60*1000);
+  return transcriptResult(data,requestId,model);
 }
 
 const objectSchema = (properties: Record<string, unknown>) => ({ type: "object", additionalProperties: false, properties, required: Object.keys(properties) });

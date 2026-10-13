@@ -42,6 +42,8 @@
     "cloud:vercel:env": "node scripts/reporter-vercel-env.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1151.0",
+    "@aws-sdk/s3-request-presigner": "^3.1151.0",
     "@content-ventures/design-system": "https://github.com/content-ventures/design-system/archive/63b5b8021ca512a6b9c2532d1457a65740477ee5.tar.gz",
     "@neon/functions": "^0.11.0",
     "@neondatabase/auth": "0.6.0-beta",

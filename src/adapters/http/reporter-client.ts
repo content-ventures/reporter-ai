@@ -16,14 +16,25 @@ export class ReporterHttpError extends Error {
   constructor(message: string,code: string,status: number) { super(message);this.code = code;this.status = status; }
 }
 
+async function responseValue(response: Response): Promise<Record<string,unknown>> {
+  const text = await response.text();
+  if (!text) return {};
+  try { return JSON.parse(text) as Record<string,unknown>; }
+  catch {
+    return { message: response.status===413
+      ? 'Este arquivo não pode passar pelo servidor. Tente novamente pelo upload direto.'
+      : 'O servidor respondeu em um formato inesperado. Tente novamente.' };
+  }
+}
+
 export async function reporterRequest<T>(path = '/workspace', body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch('/api/reporter'+path,{ method: body === undefined ? 'GET' : 'POST',
     headers: { 'x-reporter-client': 'local',...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     cache: 'no-store',...(body === undefined ? {} : { body: JSON.stringify(body) }),signal: signal ?? AbortSignal.timeout(30000),
   });
-  const value = await response.json();
+  const value = await responseValue(response);
   if (!response.ok) {
-    const code = value.error ?? 'REQUEST_FAILED';
+    const code = typeof value.error==='string' ? value.error : 'REQUEST_FAILED';
     if (typeof window !== 'undefined') {
       if (code === 'AUTH_REQUIRED') window.location.replace('/auth/sign-in');
       else if (code === 'ACCESS_PENDING' || code === 'EMAIL_NOT_VERIFIED') window.location.replace('/auth/pending');
@@ -88,8 +99,54 @@ export function transcriptFileText(transcript: Transcript & { segments?: { start
   return transcript.segments?.length ? transcript.segments.map((s,i) => `${i+1}\n${timestamp(s.start_ms)} --> ${timestamp(s.end_ms)}\n${s.text}`).join('\n\n') : transcript.content ?? '';
 }
 
+function uploadToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+type CloudUpload = { id: string;source_id: string;upload_endpoint: string };
+async function functionRequest(endpoint: string,path: string,sourceId: string,token: string,signal?: AbortSignal) {
+  const response = await fetch(new URL(path,endpoint.endsWith('/') ? endpoint : endpoint+'/'),{
+    method: 'POST',headers: { 'content-type': 'application/json' },body: JSON.stringify({ sourceId,token }),signal,
+  });
+  const value = await responseValue(response);
+  if (!response.ok) throw new ReporterHttpError(typeof value.message==='string' ? value.message : 'Não foi possível preparar o armazenamento do arquivo.',
+    typeof value.error==='string' ? value.error : 'UPLOAD_FAILED',response.status);
+  return value;
+}
+
+async function uploadParts(file: Blob,session: Record<string,unknown>,onProgress?: (progress: number,label?: string) => void,signal?: AbortSignal) {
+  const partSize = Number(session.partSize);
+  const parts = Array.isArray(session.parts) ? session.parts.map(part => part as { number: number;url: string }) : [];
+  if (!Number.isSafeInteger(partSize) || partSize<5*1024**2 || !parts.length) throw new ReporterHttpError('A sessão de upload retornou dados inválidos.','UPLOAD_SESSION_INVALID',502);
+  let cursor = 0,uploaded = 0;
+  const controller = new AbortController(),combined = signal ? AbortSignal.any([signal,controller.signal]) : controller.signal;
+  const worker = async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index>=parts.length) return;
+      const part = parts[index],start = (part.number-1)*partSize,end = Math.min(file.size,start+partSize);
+      if (part.number!==index+1 || typeof part.url!=='string' || end<=start) throw new ReporterHttpError('A sessão de upload retornou partes inválidas.','UPLOAD_SESSION_INVALID',502);
+      let response: Response | undefined;
+      for (let attempt=0;attempt<3;attempt++) {
+        combined.throwIfAborted();
+        response = await fetch(part.url,{ method: 'PUT',body: file.slice(start,end),signal: combined }).catch(() => undefined);
+        if (response?.ok) break;
+        if (attempt<2) await new Promise(resolve => setTimeout(resolve,500*2**attempt));
+      }
+      if (!response?.ok) throw new ReporterHttpError('Uma parte do arquivo não chegou ao armazenamento. Tente novamente.','UPLOAD_PART_FAILED',503);
+      uploaded += end-start;
+      onProgress?.(Math.min(84,4+Math.round(uploaded/file.size*80)),`Enviando arquivo · ${Math.round(uploaded/file.size*100)}%`);
+    }
+  };
+  try { await Promise.all(Array.from({ length: Math.min(3,parts.length) },worker)); }
+  catch (error) { controller.abort('part_failed');throw error; }
+}
+
 export function createHttpIngest(local: SourceIngest): SourceIngest {
-  const uploads = new WeakMap<object,{ key: string; id?: string }>();
+  const uploads = new WeakMap<object,{ key: string;id?: string;sourceId?: string;token?: string;uploaded?: boolean }>();
   const links = new Map<string,{ key: string; id?: string; provider?: 'youtube' | 'spotify'; title?: string; programName?: string; fileName?: string; bytes?: number; sourceUrl?: string }>();
   return {
     limits: { ...local.limits,extensions: [...local.limits.extensions,'.mp3','.m4a','.mp4','.wav','.ogg','.flac','.webm'],maxBytes: MAX_UPLOAD_BYTES },
@@ -102,15 +159,16 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
         if (!known.id) {
           const response = await fetch('/api/reporter/links',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local','idempotency-key': known.key },
             body: JSON.stringify({ url }),signal: options.signal });
-          const result = await response.json();
-          if (!response.ok) return refuse('read_failed',result.message ?? 'Não foi possível importar este link.');
-          known.provider = result.provider;known.title = result.title;known.programName = result.programName;known.fileName = result.fileName;known.bytes = result.bytes;known.sourceUrl = result.sourceUrl;
+          const result = await responseValue(response);
+          if (!response.ok) return refuse('read_failed',typeof result.message==='string' ? result.message : 'Não foi possível importar este link.');
+          known.provider = result.provider as typeof known.provider;known.title = result.title as string;known.programName = result.programName as string;
+          known.fileName = result.fileName as string;known.bytes = result.bytes as number;known.sourceUrl = result.sourceUrl as string;
           if (result.kind==='ready') {
             options.onProgress?.(100,'Legendas importadas');
-            return ok({ text: result.text,fileName: result.fileName,format: detectTranscriptFormat(result.text,result.fileName),bytes: result.bytes,
-              sourceUrl: result.sourceUrl,provider: result.provider,title: result.title,programName: result.programName });
+            return ok({ text: result.text as string,fileName: result.fileName as string,format: detectTranscriptFormat(result.text as string,result.fileName as string),bytes: result.bytes as number,
+              sourceUrl: result.sourceUrl as string,provider: result.provider as 'youtube' | 'spotify',title: result.title as string,programName: result.programName as string });
           }
-          known.id = result.id;
+          known.id = result.id as string;
         }
         for (;;) {
           options.signal?.throwIfAborted();
@@ -166,12 +224,34 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
       let retried = false;
       try {
         options.onProgress?.(0,'Enviando arquivo');
-        if (!upload.id) {
-          const data = new FormData(); data.set('file',file,file.name);
-          const response = await fetch('/api/reporter/files',{ method: 'POST',headers: { 'x-reporter-client': 'local','idempotency-key': upload.key },body: data,signal: options.signal });
-          const result = await response.json();
-          if (!response.ok) return refuse('read_failed',result.message ?? 'Não foi possível enviar o arquivo.');
-          upload.id = result.id;
+        if (!upload.uploaded) {
+          let direct: CloudUpload | undefined;
+          if (!textFile) {
+            upload.sourceId ??= crypto.randomUUID();
+            upload.token ??= uploadToken();
+            const prepared = await fetch('/api/reporter/uploads',{ method: 'POST',headers: { 'content-type': 'application/json',
+              'x-reporter-client': 'local','idempotency-key': upload.key },body: JSON.stringify({ sourceId: upload.sourceId,token: upload.token,
+                name: file.name,size: file.size }),signal: options.signal });
+            const value = await responseValue(prepared);
+            if (!prepared.ok) return refuse('read_failed',typeof value.message==='string' ? value.message : 'Não foi possível preparar o envio do arquivo.');
+            if (value.mode==='cloud') direct = value as CloudUpload & Record<string,unknown>;
+          }
+          if (direct) {
+            upload.id = direct.id;
+            options.onProgress?.(2,'Preparando envio seguro');
+            const session = await functionRequest(direct.upload_endpoint,'/uploads/start',direct.source_id,upload.token!,options.signal);
+            await uploadParts(file,session,options.onProgress ? (progress,label) => options.onProgress!(progress,label ?? 'Enviando arquivo') : undefined,options.signal);
+            options.onProgress?.(88,'Confirmando arquivo');
+            await functionRequest(direct.upload_endpoint,'/uploads/complete',direct.source_id,upload.token!,options.signal);
+            upload.uploaded = true;
+          } else {
+            const data = new FormData();data.set('file',file,file.name);
+            const response = await fetch('/api/reporter/files',{ method: 'POST',headers: { 'x-reporter-client': 'local','idempotency-key': upload.key },body: data,signal: options.signal });
+            const result = await responseValue(response);
+            if (!response.ok) return refuse('read_failed',typeof result.message==='string' ? result.message : 'Não foi possível enviar o arquivo.');
+            upload.id = result.id as string;
+            upload.uploaded = true;
+          }
         }
         for (;;) {
           options.signal?.throwIfAborted();
@@ -193,8 +273,8 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           }
           if (!state.worker_online) return refuse('read_failed','O worker está desligado. Inicie pnpm worker e tente de novo; o arquivo já está salvo.');
           const progress = transcript.job?.progress;
-          options.onProgress?.(progress?.total ? Math.round(progress.done/progress.total*90) : 0,
-            progress?.phase === 'transcribing' ? `Transcrevendo trechos ${Math.min((progress.done ?? 0)+1,progress.total)} de ${progress.total}` : 'Preparando áudio para transcrição');
+          options.onProgress?.(progress?.total ? 90+Math.round(progress.done/progress.total*9) : 89,
+            progress?.phase === 'transcribing' ? (progress.total===1 ? 'Transcrevendo podcast' : `Transcrevendo trechos ${Math.min((progress.done ?? 0)+1,progress.total)} de ${progress.total}`) : 'Preparando áudio para transcrição');
           await new Promise<void>((resolve,reject) => { const timer = setTimeout(() => { options.signal?.removeEventListener('abort',abort); resolve(); },1000); const abort = () => { clearTimeout(timer); reject(new Error('Leitura cancelada.')); }; options.signal?.addEventListener('abort',abort,{ once: true }); });
         }
       } catch (error) { return refuse('read_failed',error instanceof Error ? error.message : 'Não foi possível processar o arquivo.'); }
