@@ -1,0 +1,8 @@
+{
+  "purpose": "Illustrative carousel-library previews only, never an automatic article/carousel cover",
+  "asset": "seafood-processing-sample.jpg",
+  "provider": "Built-in image_gen tool",
+  "generatedAt": "2026-10-13",
+  "notNewsEvidence": true,
+  "prompt": "Use case: photorealistic-natural. Asset type: illustrative background photo for a carousel template library, not news evidence. Create a premium editorial-style photograph of seafood processing: close view of natural gloved hands inspecting a whole silver fish on a stainless-steel counter in a clean fish processing facility, blurred industrial setting, no identifiable faces. Vertical 4:5 composition, fish and hands in the central upper half, cool natural light, rich detail in scales and steel, realistic blue nitrile gloves. Leave visually quiet darker space towards the bottom for separately rendered headline text. No text, no logos, no watermark, no collage, no typography. This is an explicitly AI-generated illustrative sample, not a representation of any real client or reported event."
+}
