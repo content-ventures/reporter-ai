@@ -72,7 +72,7 @@ export function sendRefusal(items: readonly SendItem[]): { code: SendRefusalCode
 
 /** Members who may decide at the gate, without `exclude` (the sender never decides on their send). */
 export function gateMembers(state: Pick<StoreState, 'members'>, gate: GateDefinition, exclude?: PersonId): Member[] {
-  return state.members.filter((member) => member.personId !== exclude && hasAnyRole(member, gate.roles));
+  return state.members.filter((member) => (member.personId !== exclude || member.localOperator) && hasAnyRole(member, gate.roles));
 }
 
 /**

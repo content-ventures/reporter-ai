@@ -26,6 +26,9 @@ function extensionOf(name: string): string {
 export function createLocalIngest(store: LocalStore, limits: IngestLimits = INGEST_LIMITS): SourceIngest {
   return {
     limits,
+    async readLink() {
+      return refuse('read_failed', 'A importação por link está disponível com o backend local conectado.');
+    },
     async read(file) {
       if (!limits.extensions.includes(extensionOf(file.name))) {
         return refuse('unsupported_type', `Envie um arquivo ${limits.extensions.join(', ')}.`);

@@ -254,6 +254,7 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
     };
     const credit = normalizeCredit(meta.credit);
     if (credit) asset.credit = credit;
+    if (meta.provenance) asset.provenance = structuredClone(meta.provenance);
     return asset;
   }
 

@@ -166,13 +166,18 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
               authorized: input.material.authorized,
               speakerPeople: speakers.value.mapping,
               unattributed: speakers.value.unattributed,
+              presentations: Object.fromEntries((input.speakers ?? []).filter(speaker => speaker.presentation).map(speaker => [speaker.label, speaker.presentation!])),
               ...(input.material.recordedOn ? { recordedOn: input.material.recordedOn } : {}),
+              ...(input.material.programName ? { programName: input.material.programName } : {}),
+              ...(input.material.sourceUrl ? { sourceUrl: input.material.sourceUrl } : {}),
+              ...(input.material.location ? { location: input.material.location } : {}),
               ...(input.material.fileName ? { fileName: input.material.fileName } : {}),
             },
             ctx,
           );
         }
 
+        if (input.material.transcriptId) source = { ...source,transcriptId: input.material.transcriptId };
         const production: Production = {
           id: ctx.newId('prod'),
           workspaceId: state.workspace.id,

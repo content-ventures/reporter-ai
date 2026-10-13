@@ -103,7 +103,7 @@ export function pieceApproval(ctx: ReadContext, record: ProductionRecord, piece:
     viewer: {
       canEdit,
       canSend: canEdit,
-      canDecide: hasAnyRole(viewer, gate.roles) && (REQUESTER_MAY_DECIDE || !isRequester),
+      canDecide: hasAnyRole(viewer, gate.roles) && (REQUESTER_MAY_DECIDE || viewer?.localOperator === true || !isRequester),
       canWithdraw: pending !== undefined && (isRequester || hasAnyRole(viewer, ['admin'])),
       isRequester,
       isAssignee: pending?.assigneeId !== undefined && pending.assigneeId === viewer?.personId,
