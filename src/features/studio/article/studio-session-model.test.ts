@@ -10,6 +10,7 @@ import {
   factsBodyOf,
   focusedSuggestionOf,
   generationRunsOf,
+  editorStreamRunId,
   READ_ONLY_REASON,
   studioBadge,
   studioPrimary,
@@ -47,6 +48,12 @@ const written: RunFold = {
 } as unknown as RunFold;
 
 describe('studio session model', () => {
+  it('does not replay server-owned provider output as client streaming edits, including regeneration and reload', () => {
+    assert.equal(editorStreamRunId('provider-regeneration', 'provider'), null);
+    assert.equal(editorStreamRunId('provider-completed-reload', 'provider'), null);
+    assert.equal(editorStreamRunId('simulation', 'simulated'), 'simulation');
+    assert.equal(editorStreamRunId(null, 'provider'), null);
+  });
   it('keeps the article generations of the piece, without continuations', () => {
     const runs = [
       run('r1'),
@@ -151,6 +158,7 @@ describe('studio session model', () => {
     assert.deepEqual(studioPrimary(base), { kind: 'send', label: 'Enviar para aprovação' });
     // Never while the AI writes, after an error (the banner's verb) or while the author waits.
     assert.equal(studioPrimary({ ...base, generating: true }), null);
+    assert.equal(studioPrimary({ ...base, generationFailed: true }), null, 'an older draft must not look like a successfully regenerated article');
     assert.equal(studioPrimary({ ...base, status: 'failed' }), null);
     assert.equal(studioPrimary({ ...base, status: 'in_review', approval: approval('awaiting') }), null);
     // Whoever decides reviews it from here.
@@ -169,6 +177,8 @@ describe('studio session model', () => {
     assert.deepEqual(studioPrimary({ ...approved, carousel: { status: 'in_review' } }), { kind: 'open_carousel', label: 'Abrir o carrossel' });
     assert.deepEqual(studioPrimary({ ...approved, carousel: { status: 'approved' } }), { kind: 'delivery', label: 'Ir para entrega' });
     assert.deepEqual(studioPrimary(approved), { kind: 'delivery', label: 'Ir para entrega' });
+    assert.deepEqual(studioPrimary({ ...approved, plannedCarousel: true }), { kind: 'create_carousel', label: 'Criar carrossel' });
+    assert.equal(studioPrimary({ ...approved, plannedCarousel: true, approval: approval('approved', { viewer: { ...viewer, canEdit: false } }) }), null);
     // No text yet: the structure first (only with the material authorized).
     assert.deepEqual(studioPrimary({ ...base, status: 'not_started' }), { kind: 'structure', label: 'Montar estrutura' });
     assert.equal(studioPrimary({ ...base, status: 'not_started', authorized: false }), null);

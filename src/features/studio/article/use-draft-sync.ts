@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { bodyHash, type ArticleBody, type PieceId } from '@/domain';
+import type { ArticleBody, PieceId } from '@/domain';
 import type { SaveState } from '@/ports';
 import { useCommands, useSaveStatus } from '@/state';
+import { draftSnapshotHash } from './studio-model';
 
 /**
  * Autosave of the studio draft slot (PLAN §3.5 "Versões"): the editor's debounced body goes to
@@ -31,8 +32,8 @@ export type DraftSync = {
   busy: () => boolean;
   /** Last revision the store acknowledged for this tab's writes. */
   base: () => number;
-  /** Hash of the body the store holds as far as this tab knows. */
-  syncedHash: () => string;
+  /** Body the store holds as far as this tab knows, including review and evidence. */
+  syncedBody: () => ArticleBody;
   /** Takes the store's revision as the new base (external change already on screen). */
   adopt: (revision: number, body?: ArticleBody) => void;
   status: DraftSyncStatus;
@@ -50,7 +51,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
   const commands = useCommands();
   const port = useSaveStatus();
   const base = useRef(initial.revision);
-  const synced = useRef<string | null>(null);
+  const synced = useRef(initial.body);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const queued = useRef<ArticleBody | null>(null);
   const writing = useRef(false);
@@ -58,12 +59,9 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
   const [conflict, setConflict] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [lastOwnSave, setLastOwnSave] = useState<string | undefined>(undefined);
-  const initialBody = useRef(initial.body);
+  const savedSnapshot = useRef(draftSnapshotHash(initial.body));
 
-  const syncedHash = useCallback(() => {
-    if (synced.current === null) synced.current = bodyHash(initialBody.current);
-    return synced.current;
-  }, []);
+  const syncedBody = useCallback(() => synced.current, []);
 
   const save = useCallback(
     (body: ArticleBody) => {
@@ -73,14 +71,15 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
         const next = queued.current;
         if (!next) return;
         queued.current = null;
-        const hash = bodyHash(next);
-        if (hash !== syncedHash()) {
+        const snapshotHash = draftSnapshotHash(next);
+        if (snapshotHash !== savedSnapshot.current) {
           writing.current = true;
           try {
             const result = await commands.production.saveDraft(pieceId, next, base.current);
             if (result.ok) {
               base.current = result.value.revision;
-              synced.current = hash;
+              synced.current = next;
+              savedSnapshot.current = snapshotHash;
               setRefused(null);
               setLastOwnSave(result.value.updatedAt);
             } else if (result.refusal.code === 'conflict') {
@@ -98,7 +97,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
       });
       return queue.current;
     },
-    [commands, pieceId, syncedHash],
+    [commands, pieceId],
   );
 
   const idle = useCallback(() => queue.current, []);
@@ -106,7 +105,10 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
   const getBase = useCallback(() => base.current, []);
   const adopt = useCallback((revision: number, body?: ArticleBody) => {
     base.current = revision;
-    if (body) synced.current = bodyHash(body);
+    if (body) {
+      synced.current = body;
+      savedSnapshot.current = draftSnapshotHash(body);
+    }
   }, []);
   const retry = useCallback(() => {
     setRefused(null);
@@ -124,7 +126,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
   }, [conflict, refused, port, pending, lastOwnSave]);
 
   return useMemo(
-    () => ({ save, idle, busy, base: getBase, syncedHash, adopt, status, retry, clearConflict }),
-    [save, idle, busy, getBase, syncedHash, adopt, status, retry, clearConflict],
+    () => ({ save, idle, busy, base: getBase, syncedBody, adopt, status, retry, clearConflict }),
+    [save, idle, busy, getBase, syncedBody, adopt, status, retry, clearConflict],
   );
 }

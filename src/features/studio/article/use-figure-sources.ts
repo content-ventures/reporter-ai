@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetId } from '@/domain';
+import type { StockImage } from '@/domain/visual-library';
 import type { FigureDisplay, FigureSources } from '@/editor';
 import { useAssetLookup, useRuntime } from '@/state';
 
@@ -80,10 +81,11 @@ export function useFigureSources(assetIds: readonly AssetId[]): FigureSourcesSta
   return useMemo(() => ({ sources, display }), [sources, display]);
 }
 
-function displayOf(asset: { credit?: string; width?: number; height?: number } | undefined, src: string | undefined): FigureDisplay {
+function displayOf(asset: { credit?: string; width?: number; height?: number; provenance?: StockImage } | undefined, src: string | undefined): FigureDisplay {
   const display: FigureDisplay = {};
   if (src) display.src = src;
   if (asset?.credit) display.credit = asset.credit;
+  if (asset?.provenance?.provider === 'unsplash') { display.credit = asset.provenance.attribution;display.creditUrl = asset.provenance.creatorUrl; }
   if (asset?.width) display.width = asset.width;
   if (asset?.height) display.height = asset.height;
   return display;

@@ -9,6 +9,7 @@ import { takeArmedSimulation } from '@/ui/shell';
 import { isBlankBody } from './studio-model';
 import { continuationMode, generationRunsOf } from './studio-session-model';
 import type { StreamMode } from './studio-types';
+import { newestRunId } from '@/ui/generation-feedback';
 
 /**
  * The article generation on screen: the live run of the piece, the one this tab started
@@ -18,10 +19,9 @@ import type { StreamMode } from './studio-types';
 export function useStudioGeneration({ production, piece }: { production: ProductionDetail; piece: PieceView }) {
   const pieceId = piece.id;
   const generationRuns = useMemo(() => generationRunsOf(production.runs, pieceId), [production.runs, pieceId]);
-  const lastGeneration = generationRuns[generationRuns.length - 1];
   const activeGeneration = piece.activeRun?.kind === 'article.generate' ? piece.activeRun : undefined;
   const [started, setStarted] = useState<{ runId: RunId; mode: StreamMode } | null>(null);
-  const runId = activeGeneration?.id ?? started?.runId ?? lastGeneration?.id ?? null;
+  const runId = activeGeneration?.id ?? newestRunId(generationRuns,started?.runId) ?? null;
   const streamMode: StreamMode = started && started.runId === runId ? started.mode : 'append';
   const liveRun = useRun(runId);
   const live = liveRun.status === 'ready' ? liveRun.data : undefined;

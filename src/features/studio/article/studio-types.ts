@@ -25,6 +25,8 @@ export type SessionTurn = {
   chips: ComposerChip[];
   /** Immediate answer without a run (nothing selected, refused request). */
   reply?: string;
+  pending?: boolean;
+  error?: string;
   at: number;
 };
 

@@ -12,6 +12,7 @@ import {
   pickerCopy,
   refusedFileMessage,
   rightsChanged,
+  withLibrarySelection,
   withSuggested,
 } from './image-model.ts';
 import { isBlankBody } from './studio-model.ts';
@@ -82,6 +83,20 @@ describe('image model', () => {
     assert.deepEqual(fieldsOf({ assetId: 'a', alt: 'Alt', caption: 'Legenda' }, undefined), { alt: 'Alt', caption: 'Legenda', credit: '', authorized: false });
     assert.deepEqual(fieldsOf(undefined, asset('a', { credit: 'Ana' })), { alt: '', caption: '', credit: 'Ana', authorized: true });
     assert.deepEqual(imageRefOf('a', { alt: '  ', caption: ' Legenda  nova ' }), { assetId: 'a', caption: 'Legenda nova' });
+  });
+
+  it('replaces untouched AI image descriptions with the selected photo and requires per-use confirmation', () => {
+    const initial = { alt: 'Supermercado sugerido pela IA',caption: 'Legenda sugerida',credit: 'Crédito anterior',authorized: true };
+    const selected = { alt: 'Mercado de peixe em Pemba',caption: 'Imagem ilustrativa: Pemba',credit: 'Autoria / CC BY' };
+    const fields = withLibrarySelection(initial,initial,selected);
+    assert.deepEqual(fields,{ ...selected,authorized: false });
+    assert.equal(withSuggested(fields,{ credit: selected.credit }).authorized,false,'submission must not silently authorize the selected photo');
+  });
+
+  it('keeps human-written descriptions when choosing another library photo, but never an unrelated credit', () => {
+    const fields = { alt: 'Descrição humana',caption: 'Legenda revisada',credit: 'Outra pessoa',authorized: true };
+    const next = withLibrarySelection(fields,{ alt: 'Descrição automática',caption: 'Legenda automática' },{ alt: 'Foto escolhida',caption: 'Outra legenda',credit: 'Autoria correta' });
+    assert.deepEqual(next,{ ...fields,credit: 'Autoria correta',authorized: false });
   });
 
   it('knows when credit or rights changed (they belong to the image, not to the use)', () => {

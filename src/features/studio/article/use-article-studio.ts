@@ -51,6 +51,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
   const checking = useStudioChecks({ production, piece, sources, generation, text, setView: panes.setView });
   const bar = useSuggestionBar({ draft, editor: text.editor });
   const showMaterial = useCallback(() => showPanel('material'), [showPanel]);
+  const showAssistant = useCallback(() => showPanel('assistant'), [showPanel]);
   const sourceLink = useStudioSourceLink({ source, people, text, factsBody: checking.factsBody, setView: panes.setView, showMaterial });
   const copilot = useStudioCopilot({
     commands,
@@ -62,6 +63,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
     setSuggestionFocus: bar.setSuggestionFocus,
     segments: sourceLink.segments,
     focusComposer: panes.focusComposer,
+    showAssistant,
     copilotHidden: panes.assistantHidden,
   });
   const decide = useSuggestionActions({ commands, text, bar, startTool: copilot.startTool, activeAssist: copilot.activeAssist, stopAssist: copilot.stopAssist });
@@ -296,6 +298,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
     reviewNote: review.reviewNote,
     thread: copilot.thread,
     activeAssist: copilot.activeAssist,
+    submittingAssist: copilot.submitting,
     composer: copilot.composer,
     setComposer: copilot.setComposer,
     chips: copilot.chips,

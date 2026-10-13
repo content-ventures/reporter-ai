@@ -54,6 +54,16 @@ export function withSuggested(fields: ImageFields, suggested: Partial<ImageField
   };
 }
 
+/** Replace untouched AI/previous-source suggestions, preserve human copy, reconfirm this use. */
+export function withLibrarySelection(fields: ImageFields, baseline: Pick<ImageFields,'alt'|'caption'>, suggested: Partial<ImageFields>): ImageFields {
+  return {
+    alt: fields.alt === baseline.alt ? suggested.alt ?? '' : fields.alt,
+    caption: fields.caption === baseline.caption ? suggested.caption ?? '' : fields.caption,
+    credit: suggested.credit ?? fields.credit,
+    authorized: false,
+  };
+}
+
 /** The use of the image (alt and caption, trimmed; empty ones dropped). */
 export function imageRefOf(assetId: string, fields: Pick<ImageFields, 'alt' | 'caption'>): ImageRef {
   return normalizeImageRef({ assetId, alt: fields.alt, caption: fields.caption });

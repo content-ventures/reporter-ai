@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { proseWidgets } from '@content-ventures/design-system/v3';
-import { bodyHash, WRITING_FLOW, type ArticleBody, type BlockId, type TextRange } from '@/domain';
+import { WRITING_FLOW, type ArticleBody, type BlockId, type TextRange } from '@/domain';
 import {
   findBlockEntry,
   focusBlock,
@@ -22,6 +22,8 @@ import { revealInUpperThird } from './reveal';
 import { useArticleImages } from './use-article-images';
 import { useDraftSync, type DraftSync } from './use-draft-sync';
 import type { StudioGeneration } from './use-studio-generation';
+import { editorStreamRunId } from './studio-session-model';
+import { externalDraftSync } from './studio-model';
 
 /**
  * The text of the studio: the title, the TipTap editor with its images and autosave, the
@@ -68,7 +70,7 @@ export function useStudioText({
     initialBody: draft.body as ArticleBody,
     title,
     label: 'Texto do artigo',
-    readOnly: readOnly || locked,
+    readOnly: readOnly || locked || (generation.active && generation.run?.model?.engine === 'provider'),
     // The proposal read in the paragraph and the AI marker in the gutter come from the DS factory.
     widgets: proseWidgets,
     // An empty draft says "Ainda não há texto" under it (or the generation writes): no second
@@ -85,7 +87,7 @@ export function useStudioText({
   useEffect(() => {
     editorRef.current = editor;
   }, [editor]);
-  useEditorRunStream(editor, generation.runId, { mode: generation.streamMode });
+  useEditorRunStream(editor, editorStreamRunId(generation.runId, generation.run?.model?.engine), { mode: generation.streamMode });
   const streaming = useStreamingInfo(editor);
 
   // ——— The text follows the block being written, unless the person scrolled away ———
@@ -120,6 +122,7 @@ export function useStudioText({
 
   // The body on screen after a stream ends (the editor emits no change for streamed text).
   useRunListener(generation.runId, (update) => {
+    if (generation.run?.model?.engine === 'provider') return;
     const type = update.event.type;
     if (type === 'run.completed' || type === 'run.failed' || type === 'run.cancelled' || type === 'block.completed') {
       queueMicrotask(() => {
@@ -141,22 +144,22 @@ export function useStudioText({
     const stored = draft.body as ArticleBody;
     const current = handle.getBody();
     if (!current) return;
-    const storeHash = bodyHash(stored);
-    if (bodyHash({ ...current, title: stored.title }) === storeHash) {
+    const action = externalDraftSync(current, sync.syncedBody(), stored, localTitle, expectReload.current);
+    if (action === 'current') {
       sync.adopt(draft.revision, stored);
       return;
     }
-    if (expectReload.current || bodyHash(current) === sync.syncedHash()) {
+    if (action === 'adopt') {
       expectReload.current = false;
       setArticleBody(editor, stored);
       sync.adopt(draft.revision, stored);
-      queueMicrotask(() => setBody(stored));
+      queueMicrotask(() => { setBody(stored); setLocalTitle(null); });
       return;
     }
     // Edits on top of an external change: the text on screen wins and is saved next.
     sync.adopt(draft.revision);
     handle.flush();
-  }, [draft.revision, draft.body, editor, handle, streaming.active, sync]);
+  }, [draft.revision, draft.body, editor, handle, streaming.active, sync, localTitle]);
 
   const scrollToBlock = useCallback(
     (blockId: BlockId) => {

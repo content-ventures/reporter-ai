@@ -63,7 +63,7 @@ export function useStudioChecks({
       assets: assetLookup,
       ...(production.charsAvailable !== undefined ? { materialChars: production.charsAvailable } : {}),
     });
-    return mergeChecks(local, piece.checks);
+    return mergeChecks(local, piece.checks, { body: factsBody, sources });
   }, [factsBody, production.brief, production.charsAvailable, sources, generating, piece.checks, assetLookup]);
   /** Images without credit, authorisation or file ("Imagens com crédito"), in reading order. */
   const imageIssues: ImageToCheck[] = useMemo(() => imagesToCheck(factsBody, assetLookup), [factsBody, assetLookup]);

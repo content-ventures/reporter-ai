@@ -2,17 +2,20 @@ import {
   articleStats,
   blockText,
   bodyHash,
+  contentHash,
   checkQuotes,
   currentSourceVersion,
   diffWords,
   foldForMatch,
   formatTimestamp,
+  normalizeArticle,
   shortenToSizeLabel,
   sizeOf,
   textReviewOf,
   unreviewedAiBlockIds,
   words,
 } from '../../../domain/index.ts';
+import { enforceR1ArticleChecks } from '../../../domain/article-policy.ts';
 import type {
   ArticleBlock,
   ArticleSize,
@@ -45,6 +48,26 @@ import type {
  */
 
 // ——— Facts about the text (status line, Checagem, outline) ———
+
+/** Autosave includes review/provenance; the immutable published-content hash intentionally does not. */
+export function draftSnapshotHash(body: ArticleBody): string {
+  return contentHash(body);
+}
+
+/** TipTap supplies one empty paragraph for an empty draft; that is not a human edit. */
+function editorSnapshotHash(body: ArticleBody): string {
+  const normalized = normalizeArticle(body);
+  const only = normalized.blocks.length === 1 ? normalized.blocks[0] : undefined;
+  if (only?.type === 'paragraph' && only.inlines.length === 0 && !only.ai && !only.sourceRefs?.length) normalized.blocks = [];
+  return draftSnapshotHash(normalized);
+}
+
+/** A server-driven title must not make untouched editor content look like a local edit. */
+export function externalDraftSync(current: ArticleBody, baseline: ArticleBody, stored: ArticleBody, localTitle: string | null, expected = false): 'current' | 'adopt' | 'local' {
+  if (editorSnapshotHash(current) === editorSnapshotHash(stored)) return 'current';
+  const local = { ...current, title: localTitle ?? baseline.title };
+  return expected || editorSnapshotHash(local) === editorSnapshotHash(baseline) ? 'adopt' : 'local';
+}
 
 export type OutlineEntry = { blockId: BlockId; level: 2 | 3; text: string; number: number };
 
@@ -153,8 +176,10 @@ export function sameBody(a: ArticleBody, b: ArticleBody): boolean {
  * Local checks of the live text: the domain article checks on what is on screen, with the
  * "Geração concluída" result (run state) taken from the store, which owns the run.
  */
-export function mergeChecks(local: readonly CheckResult[], stored: readonly CheckResult[]): CheckResult[] {
-  return local.map((check) => (check.id === 'article.generation' ? (stored.find((entry) => entry.id === check.id) ?? check) : check));
+export function mergeChecks(local: readonly CheckResult[], stored: readonly CheckResult[], live?: { body: ArticleBody; sources: readonly Source[] }): CheckResult[] {
+  const merged = local.map((check) => (check.id === 'article.generation' ? (stored.find((entry) => entry.id === check.id) ?? check) : check));
+  const hasR1Contract = stored.some(check => check.id === 'article.length' && check.blocking);
+  return live && hasR1Contract ? enforceR1ArticleChecks(merged, live.body, live.sources) : merged;
 }
 
 // ——— Copilot tools that make sense for the text on screen ———
@@ -457,6 +482,7 @@ export function footerNeeds(items: readonly SendItem[]): { ready: boolean; parts
 
 /** Checks whose problem blocks "Enviar para aprovação" (CONTRACT override R1); the rest only warn. */
 const SEND_BLOCKING_CHECKS = new Set(['article.generation', 'article.quotes', 'article.title', 'article.ai-reviewed']);
+const blocksSending = (check: CheckResult) => check.blocking || SEND_BLOCKING_CHECKS.has(check.id);
 
 /**
  * The Checagem tab: only what needs attention, grouped as "Falta para enviar" and "Avisos" (no
@@ -479,8 +505,8 @@ export function checagemGroups(checks: readonly CheckResult[], open: readonly Pi
         ]
       : [];
   return {
-    missing: [...suggestions, ...pending.filter((check) => SEND_BLOCKING_CHECKS.has(check.id))],
-    warnings: pending.filter((check) => !SEND_BLOCKING_CHECKS.has(check.id)),
+    missing: [...suggestions, ...pending.filter(blocksSending)],
+    warnings: pending.filter((check) => !blocksSending(check)),
   };
 }
 

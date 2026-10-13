@@ -21,12 +21,18 @@ export function generationRunsOf(runs: readonly RunView[], pieceId: PieceId): Ru
   return runs.filter((run) => run.pieceId === pieceId && run.kind === 'article.generate' && !run.parentRunId);
 }
 
+/** Provider jobs commit validated bodies on the server; replaying their block events into
+ * the editor would append a regenerated article and autosave it as a human edit. */
+export function editorStreamRunId(runId: string | null, engine?: GenerationRun['model']['engine']): string | null {
+  return engine === 'provider' ? null : runId;
+}
+
 /**
  * The text the status line, the Checagem and the outline read. While a generation writes over an
  * empty text (or replaces it), that is what the run wrote so far, with the cover on screen kept.
  */
 export function factsBodyOf(body: ArticleBody, title: string, writing?: { fold: RunFold; mode: StreamMode }): ArticleBody {
-  const written = writing && (writing.mode === 'replace' || isBlankBody(body)) ? articleBodyFromRun(writing.fold, { includePartial: true }) : undefined;
+  const written = writing?.fold.preview ?? (writing && (writing.mode === 'replace' || isBlankBody(body)) ? articleBodyFromRun(writing.fold, { includePartial: true }) : undefined);
   if (written) return body.cover ? { ...written, cover: body.cover } : written;
   return { ...body, title };
 }
@@ -120,11 +126,14 @@ export type StudioPrimaryInput = {
   status: PieceStatus;
   /** The AI writes the text right now (the banner carries "Parar"). */
   generating: boolean;
+  generationFailed?: boolean;
   approval?: Pick<PieceApproval, 'state' | 'viewer' | 'send' | 'decision'>;
   /** The material is authorized (the AI may write the article). */
   authorized: boolean;
   /** The carousel of the plan, when there is one. */
   carousel?: { status: PieceStatus };
+  /** A planned carousel may not have a piece yet (it is derived after approval). */
+  plannedCarousel?: boolean;
   /** Another tab of this browser edits this production (A10). */
   tabReadOnly: boolean;
 };
@@ -140,7 +149,7 @@ export type StudioPrimaryInput = {
  */
 export function studioPrimary(input: StudioPrimaryInput): StudioPrimary | null {
   const { status, approval } = input;
-  if (input.generating || status === 'generating' || status === 'failed') return null;
+  if (input.generating || input.generationFailed || status === 'generating' || status === 'failed') return null;
   const state = approval?.state ?? 'none';
   const viewer = approval?.viewer;
   if (state === 'awaiting') return viewer?.canDecide ? { kind: 'review', label: 'Revisar artigo' } : null;
@@ -149,9 +158,9 @@ export function studioPrimary(input: StudioPrimaryInput): StudioPrimary | null {
   }
   if (state === 'approved') {
     const carousel = input.carousel;
-    if (carousel && carousel.status !== 'approved') {
+    if ((carousel || input.plannedCarousel) && carousel?.status !== 'approved') {
       if (viewer?.canEdit === false) return null;
-      return carousel.status === 'not_started' || carousel.status === 'locked'
+      return !carousel || carousel.status === 'not_started' || carousel.status === 'locked'
         ? { kind: 'create_carousel', label: 'Criar carrossel' }
         : { kind: 'open_carousel', label: 'Abrir o carrossel' };
     }

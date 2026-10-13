@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { createTranscriptSource, headingBlock, listBlock, paragraphBlock, parseTranscript, quoteBlock, segmentRef } from '../../../domain/index.ts';
+import { bodyHash, createTranscriptSource, headingBlock, listBlock, paragraphBlock, parseTranscript, quoteBlock, segmentRef } from '../../../domain/index.ts';
 import type { ArticleBody, CheckResult, SendItem, Suggestion } from '../../../domain/index.ts';
 import {
   articleFacts,
+  draftSnapshotHash,
+  externalDraftSync,
   articleOutline,
   blocksCitingSegment,
   checagemGroups,
@@ -40,6 +42,38 @@ const body: ArticleBody = {
 };
 
 describe('studio model', () => {
+  it('adopts completed provider text over TipTap’s untouched empty paragraph and server-driven title', () => {
+    const baseline: ArticleBody = { type: 'article', title: '', blocks: [] };
+    const current: ArticleBody = { ...baseline, title: body.title, blocks: [paragraphBlock('editor-placeholder', '')] };
+    assert.equal(externalDraftSync(current, baseline, body, null), 'adopt');
+    assert.deepEqual(baseline.blocks, [], 'comparison never mutates the persisted baseline');
+    assert.equal(externalDraftSync(body, body, body, null), 'current');
+  });
+
+  it('preserves unsaved human text, title, image and review changes when an external draft arrives', () => {
+    const baseline: ArticleBody = { type: 'article', title: '', blocks: [] };
+    const typed: ArticleBody = { ...baseline, blocks: [paragraphBlock('human', 'Minha edição.')] };
+    assert.equal(externalDraftSync(typed, baseline, body, null), 'local');
+    assert.equal(externalDraftSync({ ...baseline, title: 'Meu título' }, baseline, body, 'Meu título'), 'local');
+    assert.equal(externalDraftSync({ ...baseline, coverSlot: { subject: 'Imagem escolhida' } }, baseline, body, null), 'local');
+    const reviewed: ArticleBody = { ...body, blocks: body.blocks.map(block => ({ ...block, ai: 'reviewed' })) };
+    assert.equal(externalDraftSync(reviewed, body, { ...body, title: 'Título externo' }, null), 'local');
+    assert.equal(externalDraftSync(typed, baseline, body, null, true), 'adopt', 'explicit restore still adopts');
+  });
+
+  it('adopts a regenerated article without treating its server title as a human edit or losing provenance', () => {
+    const stored: ArticleBody = { ...body, title: 'Novo título', blocks: [paragraphBlock('new', 'Novo artigo.', { ai: 'unreviewed', sourceRefs: [ref('s1')] })] };
+    assert.equal(externalDraftSync({ ...body, title: stored.title }, body, stored, null), 'adopt');
+    assert.equal(externalDraftSync({ ...body, title: stored.title }, body, stored, 'Título digitado'), 'local');
+  });
+
+  it('autosaves a review-only change without changing the approved-content hash', () => {
+    const reviewed: ArticleBody = { ...body, blocks: body.blocks.map(block => block.ai === 'unreviewed' ? { ...block, ai: 'reviewed' as const } : block) };
+    assert.equal(bodyHash(body), bodyHash(reviewed));
+    assert.notEqual(draftSnapshotHash(body), draftSnapshotHash(reviewed));
+    const reordered = JSON.parse(JSON.stringify(reviewed), (_key,value) => value && !Array.isArray(value) && typeof value === 'object' ? Object.fromEntries(Object.entries(value).reverse()) : value);
+    assert.equal(draftSnapshotHash(reviewed), draftSnapshotHash(reordered));
+  });
   it('counts the text and lists unreviewed AI blocks in order', () => {
     const facts = articleFacts(body, []);
     assert.equal(facts.words, 17);
@@ -74,6 +108,24 @@ describe('studio model', () => {
     const groups = checagemGroups([review], []);
     assert.deepEqual(groups.missing.map((check) => check.id), ['article.ai-reviewed']);
     assert.deepEqual(groups.warnings, []);
+  });
+
+  it('rechecks unsaved provider drafts and reports mandatory length and quotation failures as missing', () => {
+    const local: CheckResult[] = [
+      { id: 'article.length', label: 'Tamanho', status: 'pass', blocking: false },
+      { id: 'article.quotes', label: 'Citações', status: 'na', blocking: false },
+    ];
+    const stored = local.map(check => ({ ...check, status: 'pass' as const, blocking: true }));
+    const edited: ArticleBody = { type: 'article', title: 'Título', blocks: [paragraphBlock('p', 'PalavraLonga '.repeat(260))] };
+    const checks = mergeChecks(local, stored, { body: edited, sources: [] });
+    assert.equal(checks[0].status, 'fail');
+    assert.match(checks[0].detail ?? '', /500 palavras/);
+    assert.equal(checks[1].status, 'fail');
+    assert.match(checks[1].detail ?? '', /duas citações/);
+    assert.deepEqual(checagemGroups(checks, []).missing.map(check => check.id), ['article.length', 'article.quotes']);
+    assert.deepEqual(checagemGroups(checks, []).warnings, []);
+    assert.deepEqual(mergeChecks(local, local, { body: edited, sources: [] }), local, 'simulation keeps its historical checks');
+    assert.deepEqual(mergeChecks(local, stored, { body: edited, sources: [] }), checks, 'stored pass never overrides invalid live text');
   });
 
   it('knows which transcript segments the text uses and which blocks cite one', () => {
