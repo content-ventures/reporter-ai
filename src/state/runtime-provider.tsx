@@ -4,6 +4,7 @@ import { createContext, Suspense, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { interV3 } from '@content-ventures/design-system/v3';
+import { createConnectedRuntime } from '../runtime/create-connected-runtime.ts';
 import { createRuntime } from '../runtime/create-runtime.ts';
 import { createRuntimeHolder } from './runtime-holder.ts';
 import type { RuntimeHolder } from './runtime-holder.ts';
@@ -20,6 +21,9 @@ const RESET_PARAM = 'reset';
 
 /** The creatives' "Inter" is the DS face (registered under its own family name). */
 const TYPEFACES = { Inter: interV3.style.fontFamily };
+// Compiled only into the disposable fixture build used by the legacy UI regression suite. The
+// release build never exposes the simulated workspace and always uses PostgreSQL-backed state.
+const E2E_FIXTURES = process.env.NEXT_PUBLIC_REPORTER_E2E_FIXTURES === 'true';
 
 /** Reads and removes `?reset=1` (client only). */
 function consumeResetParam(): boolean {
@@ -38,7 +42,9 @@ function FlushOnRouteChange({ holder }: { holder: RuntimeHolder }) {
 }
 
 export function RuntimeProvider({ children }: { children: ReactNode }) {
-  const [holder] = useState(() => createRuntimeHolder(({ reset, empty }) => createRuntime({ reset, empty, typefaces: TYPEFACES })));
+  const [holder] = useState(() => createRuntimeHolder((options) => E2E_FIXTURES
+    ? createRuntime({ ...options,typefaces: TYPEFACES })
+    : createConnectedRuntime({ typefaces: TYPEFACES })));
 
   useEffect(() => {
     holder.start({ reset: consumeResetParam() });

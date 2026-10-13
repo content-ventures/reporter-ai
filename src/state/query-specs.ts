@@ -25,7 +25,7 @@ import type {
   SourceDetail,
   VersionDetail,
 } from '../ports/production-queries.ts';
-import type { SessionMember, SessionMode } from '../ports/session.ts';
+import type { LocalRoleProfile, SessionMember, SessionMode } from '../ports/session.ts';
 import type { Runtime } from '../runtime/runtime.ts';
 import type { QuerySpec } from './query-store.ts';
 
@@ -42,6 +42,7 @@ export type SessionData = {
   workspace: Workspace;
   current: SessionMember | undefined;
   members: SessionMember[];
+  localRoleProfiles?: LocalRoleProfile[];
 };
 
 const key = (name: string, ...args: unknown[]): string => {
@@ -241,7 +242,8 @@ export function sessionQuery(): RuntimeQuery<SessionData> {
     key: key('session'),
     fetch: async (rt) => {
       const [workspace, current, members] = await Promise.all([rt.session.workspace(), rt.session.current(), rt.session.members()]);
-      return ok({ mode: rt.session.mode, workspace, current, members });
+      const localRoleProfiles = await rt.session.localRoleProfiles?.();
+      return ok({ mode: rt.session.mode, workspace, current, members, ...(localRoleProfiles ? { localRoleProfiles } : {}) });
     },
     affectedBy: isGlobal,
   };

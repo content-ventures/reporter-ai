@@ -8,7 +8,7 @@ import type { GenerationService } from '../ports/generation.ts';
 import type { ProductionCommands } from '../ports/production-commands.ts';
 import type { RenderService } from '../ports/render.ts';
 import type { SaveStatusPort } from '../ports/save-status.ts';
-import type { ActAsRefusal, SessionMember } from '../ports/session.ts';
+import type { ActAsRefusal, LocalRoleProfileId, LocalRoleRefusal, SessionMember } from '../ports/session.ts';
 import type { SourceIngest } from '../ports/source-ingest.ts';
 import type { Runtime } from '../runtime/runtime.ts';
 
@@ -22,7 +22,7 @@ export type Commands = {
   production: ProductionCommands;
   generation: Pick<GenerationService, 'start' | 'cancel' | 'resume' | 'retry'>;
   export: Pick<ExportService, 'plan' | 'build' | 'buildFile'>;
-  ingest: Pick<SourceIngest, 'read' | 'analyze'>;
+  ingest: Pick<SourceIngest, 'read' | 'readLink' | 'analyze'>;
   /** "Retorno do piloto" (`record`) and 👍/👎 on AI output (`vote`, one per person and target). */
   feedback: Pick<FeedbackPort, 'record' | 'vote'>;
   /** Slides as PNG (`render`) and the template library's images: card covers (`thumbnail`) and every layout (`preview`). */
@@ -38,7 +38,10 @@ export type Commands = {
     freeSpace(inUse?: Iterable<AssetId>): Promise<Result<UnusedAssets, AssetRefusal>>;
   };
   /** "Agir como" (simulated mode only). */
-  session: { actAs(personId: PersonId): Promise<Result<SessionMember, ActAsRefusal>> };
+  session: {
+    actAs(personId: PersonId): Promise<Result<SessionMember, ActAsRefusal>>;
+    selectLocalRole(profile: LocalRoleProfileId): Promise<Result<SessionMember, LocalRoleRefusal>>;
+  };
   /** "Tentar de novo" after a save error. */
   save: Pick<SaveStatusPort, 'retry'>;
   /** "Usar esta aba": this tab reloads what another tab saved and edits again (A10). */
@@ -70,7 +73,7 @@ const PRODUCTION_METHODS: Methods<ProductionCommands> = {
 
 const GENERATION_METHODS: Methods<Commands['generation']> = { start: true, cancel: true, resume: true, retry: true };
 const EXPORT_METHODS: Methods<Commands['export']> = { plan: true, build: true, buildFile: true };
-const INGEST_METHODS: Methods<Commands['ingest']> = { read: true, analyze: true };
+const INGEST_METHODS: Methods<Commands['ingest']> = { read: true, readLink: true, analyze: true };
 
 type AnyMethod = (...args: unknown[]) => unknown;
 
@@ -123,6 +126,11 @@ export function createCommands(whenReady: () => Promise<Runtime>): Commands {
       },
     },
     session: {
+      async selectLocalRole(profile) {
+        const { session } = await whenReady();
+        if (!session.selectLocalRole) return refuse('not_local_operator', 'Testar papéis só está disponível para o operador local.');
+        return session.selectLocalRole(profile);
+      },
       async actAs(personId) {
         const { session } = await whenReady();
         if (!session.actAs) return refuse('not_simulated', 'Trocar de pessoa só existe na simulação.');

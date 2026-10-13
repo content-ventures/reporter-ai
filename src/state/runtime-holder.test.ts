@@ -85,6 +85,8 @@ describe('createRuntimeHolder', () => {
     assert.equal(renamed.value.title, 'Aurora: app de reposição');
     const actAs = await commands.session.actAs('pessoa-inexistente');
     assert.equal(!actAs.ok && actAs.refusal.code, 'unknown_member');
+    const localRole = await commands.session.selectLocalRole('all');
+    assert.equal(!localRole.ok && localRole.refusal.code, 'not_local_operator');
     holder.reset();
 
     const broken = createRuntimeHolder(() => {

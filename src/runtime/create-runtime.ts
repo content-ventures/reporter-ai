@@ -284,6 +284,7 @@ export function createRuntime(options: CreateRuntimeOptions = {}): Runtime {
     loadCover: assetCoverLoader(imageStore),
     coverCredit: (assetId) => creditLine(imageStore.get(assetId)?.credit),
     samplePhoto: { assetId: fixtures.samplePhoto.assetId, credit: fixtures.samplePhoto.credit, load: servedCoverLoader(fixtures.samplePhoto.src) },
+    samplePhotos: fixtures.samplePhotos.map(photo => ({ assetId: photo.assetId, credit: photo.credit, load: servedCoverLoader(photo.src) })),
     ...(options.typefaces ? { typefaces: options.typefaces } : {}),
   });
 

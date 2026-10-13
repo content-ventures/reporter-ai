@@ -11,6 +11,9 @@ import type { RenderService } from '../ports/render.ts';
 import type { SaveStatusPort } from '../ports/save-status.ts';
 import type { SessionMode, SessionPort } from '../ports/session.ts';
 import type { SourceIngest } from '../ports/source-ingest.ts';
+import type { PipelineSettings } from '../ports/pipeline-settings.ts';
+import type { VisualLibrary } from '../ports/visual-library.ts';
+import type { CitationLibrary } from '../ports/citation-library.ts';
 import type { Clock, IdGenerator } from '../ports/system.ts';
 
 /**
@@ -61,6 +64,10 @@ export type Runtime = {
   readonly commands: ProductionCommands;
   readonly ingest: SourceIngest;
   readonly generation: GenerationService;
+  /** Connected local engine only; absent in the historical frontend simulation. */
+  readonly pipeline?: PipelineSettings;
+  readonly visuals?: VisualLibrary;
+  readonly citations?: CitationLibrary;
   readonly render: RenderService;
   readonly export: ExportService;
   readonly session: SessionPort;
