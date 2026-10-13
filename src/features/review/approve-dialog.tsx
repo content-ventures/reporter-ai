@@ -15,11 +15,13 @@ export type ApproveDialogProps = {
   open: boolean;
   onClose: () => void;
   kind: PieceKind;
+  /** Says where a successful decision takes the person. */
+  confirmLabel?: string;
   /** Resolves with the refusal message, or `null` when the piece was approved. */
   onSubmit: (note: string) => Promise<string | null>;
 };
 
-export function ApproveDialog({ open, onClose, kind, onSubmit }: ApproveDialogProps) {
+export function ApproveDialog({ open, onClose, kind, confirmLabel = 'Aprovar', onSubmit }: ApproveDialogProps) {
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
@@ -50,7 +52,7 @@ export function ApproveDialog({ open, onClose, kind, onSubmit }: ApproveDialogPr
             Cancelar
           </Button>
           <Button variant="primary" loading={sending} onClick={() => void submit()}>
-            Aprovar
+            {confirmLabel}
           </Button>
         </>
       }

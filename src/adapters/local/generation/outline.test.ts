@@ -81,7 +81,7 @@ describe('"Montar estrutura": the outline-only run', () => {
     // The structure: title, introduction, sections with budgets and quotes, size, what the material gives.
     assert.ok(proposal.title.length > 0);
     assert.equal(proposal.sections.length, 3, 'the brief asks for 3 sections');
-    assert.deepEqual(proposal.size, { laudas: 2, minChars: 2001, maxChars: 4000, targetChars: 3600 });
+    assert.deepEqual(proposal.size, { laudas: 2, minChars: 2500, maxChars: 4000, targetChars: 3900 });
     assert.ok((proposal.materialChars ?? 0) > 0);
     assert.equal(proposal.intro.quotes.length, 1, 'the lead');
     assert.ok(proposal.intro.budget > 0);

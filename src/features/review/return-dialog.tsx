@@ -32,11 +32,12 @@ export type ReturnDialogProps = {
   onRemoveAnchor: (anchor: DecisionAnchor) => void;
   /** Resolves with the refusal message, or `null` when the adjustments were requested. */
   onSubmit: () => Promise<string | null>;
+  confirmLabel?: string;
 };
 
 const NOTE_LIMIT = 1200;
 
-export function ReturnDialog({ open, onClose, requesterName, note, onNoteChange, anchors, onRemoveAnchor, onSubmit }: ReturnDialogProps) {
+export function ReturnDialog({ open, onClose, requesterName, note, onNoteChange, anchors, onRemoveAnchor, onSubmit, confirmLabel = 'Pedir ajustes' }: ReturnDialogProps) {
   const [error, setError] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
   const [session, setSession] = useState(open);
@@ -70,7 +71,7 @@ export function ReturnDialog({ open, onClose, requesterName, note, onNoteChange,
             Cancelar
           </Button>
           <Button variant="primary" loading={sending} onClick={() => void submit()}>
-            Pedir ajustes
+            {confirmLabel}
           </Button>
         </>
       }

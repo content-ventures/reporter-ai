@@ -1,4 +1,4 @@
-import { assetOriginLabel, creditLine } from '../../domain/index.ts';
+import { assetOriginLabel, creditLine, imageCreditRequired } from '../../domain/index.ts';
 import type { Delivery, DeliveryAttempt, DeliveryFormat, DeliveryStatus, ExportImage, PieceKind, VersionRef } from '../../domain/index.ts';
 import { formatLaudas } from '../../domain/sizing.ts';
 import type { DeliveryFileOutcome, DeliveryItemView, PackageFile, PackageFormat, RunView } from '../../ports/index.ts';
@@ -115,7 +115,7 @@ export function imageUseLabel(image: Pick<ExportImage, 'uses'>): string {
 
 /** "Foto: Ana Prado", or "Sem crédito" (the delivery says what is missing, never hides it). */
 export function imageCreditText(image: Pick<ExportImage, 'asset'>): string {
-  return creditLine(image.asset?.credit) ?? 'Sem crédito';
+  return creditLine(image.asset?.credit) ?? (imageCreditRequired(image.asset) ? 'Sem crédito' : 'Crédito não obrigatório · Pixabay');
 }
 
 /** The credit or rights changed after the version was approved (`ExportImage.approved` keeps them). */

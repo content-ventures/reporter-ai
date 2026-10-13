@@ -61,6 +61,7 @@ export function useImageSources(assetIds: readonly AssetId[]): ImageSources {
       const src = current.get(id);
       if (src) display.src = src;
       if (asset?.credit) display.credit = asset.credit;
+      if (asset?.provenance?.provider === 'unsplash') { display.credit = asset.provenance.attribution;display.creditUrl = asset.provenance.creatorUrl; }
       if (asset?.width) display.width = asset.width;
       if (asset?.height) display.height = asset.height;
       map.set(id, display);

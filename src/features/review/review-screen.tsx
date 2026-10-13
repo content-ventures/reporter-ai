@@ -30,13 +30,13 @@ import { blocked, type Guard, type ProductionDetail } from '@/ports';
 import { pieceKind as pieceKindEntry } from '@/registries';
 import { useCommands, usePeople, useReview } from '@/state';
 import { dueOf, noteLine } from '@/features/approval/approvals-model';
-import { useProductionFrame } from '@/features/production/production-frame';
+import { ProductionPrimaryBar, useProductionFrame } from '@/features/production/production-frame';
 import { ApprovalBanner } from '@/ui/approval-banner';
 import { approvalNoticeKind, taskCardMeta, taskCardTitle, type ApprovedNext } from '@/ui/approval-copy';
 import { ChecksList } from '@/ui/checks-list';
 import { iconFor } from '@/ui/icons';
 import { PersonAvatar } from '@/ui/person-avatar';
-import { approvalsHref, pieceHref } from '@/ui/routes';
+import { approvalsHref, deliveryHref, pieceHref, reviewHref } from '@/ui/routes';
 import { useCommandGroup } from '@/ui/shell';
 import { StatusBadge } from '@/ui/status-badge';
 import { useNow } from '@/ui/time';
@@ -62,6 +62,7 @@ import {
 } from './review-model';
 import { ReviewSurface } from './review-surface';
 import { useReviewView } from './use-review-view';
+import { reviewNextStep } from './review-next-step';
 
 /**
  * Revisão guiada (`/productions/[id]/[piece]/review`, COPY §4): who was asked reads the exact text
@@ -95,7 +96,8 @@ const CHECKS_TONE: Readonly<Record<ChecksSummary['level'], Tone>> = { ok: 'teal'
 
 /** What the next stage of the journey is, for the "approved" notice. */
 function approvedNextOf(kind: PieceKind, production: ProductionDetail | undefined): ApprovedNext {
-  return kind === 'article' && production?.plan.includes('carousel') ? 'carousel' : 'delivery';
+  return kind === 'article' && production?.plan.includes('carousel')
+    && production.pieces.find(candidate => candidate.kind === 'carousel')?.status !== 'approved' ? 'carousel' : 'delivery';
 }
 
 type AnchorState = { versionId: string | undefined; list: DecisionAnchor[] };
@@ -157,6 +159,24 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
     ? checksSummary({ kind: pieceKind, checks: data.checks, ...(size ? { size } : {}), ...(characters !== undefined ? { characters } : {}) })
     : undefined;
 
+  const nextAfter = (decision: 'approved' | 'changes_requested') => {
+    const next = reviewNextStep({ kind: pieceKind, decision, canEdit: approval?.viewer.canEdit === true,
+      plannedCarousel: detail?.plan.includes('carousel') === true,
+      carouselStatus: detail?.pieces.find(candidate => candidate.kind === 'carousel')?.status,
+      hasNextInQueue: Boolean(data?.nextInQueue) });
+    const href = next.kind === 'carousel' ? pieceHref(productionId, 'carousel')
+      : next.kind === 'delivery' ? deliveryHref(productionId)
+      : next.kind === 'studio' ? studioHref
+      : next.kind === 'next_review' && data?.nextInQueue ? reviewHref(data.nextInQueue.productionId, data.nextInQueue.kind)
+      : approvalsHref();
+    return { label: next.label, href };
+  };
+  const approvedAction = nextAfter('approved');
+  const returnAction = nextAfter('changes_requested');
+  const resolvedDecision = decided?.decision ?? (approval?.state === 'approved' ? 'approved' : approval?.state === 'changes_requested' ? 'changes_requested' : undefined);
+  const nextAction = resolvedDecision ? nextAfter(resolvedDecision) : undefined;
+  const nextPrimary = nextAction ? { kind: 'link' as const, ...nextAction } : undefined;
+
   async function approve(noteText: string): Promise<string | null> {
     if (!data) return null;
     const text = noteText.trim();
@@ -170,7 +190,8 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
     if (!result.ok) return result.refusal.message;
     setDecidedHere({ versionId: data.version.id, decision: 'approved', requesterName });
     setDialog(null);
-    toast('Aprovado');
+    toast('Aprovado', { description: `Próximo passo: ${approvedAction.label.toLocaleLowerCase('pt-BR')}.` });
+    router.push(approvedAction.href);
     return null;
   }
 
@@ -190,6 +211,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
     setNote('');
     setAnchors([]);
     toast('Ajustes pedidos');
+    router.push(returnAction.href);
     return null;
   }
 
@@ -243,6 +265,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
         <ApprovalBanner
           approval={approval}
           approvedNext={approvedNextOf(pieceKind, detail)}
+          nextAction={nextAction}
           {...(decided ? { decided: { decision: decided.decision, requesterName: decided.requesterName, ...(data.nextInQueue ? { next: data.nextInQueue } : {}) } } : {})}
         />
       );
@@ -356,7 +379,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
   }
 
   // ── Decision bar ──
-  const footer: ReactNode =
+  const footer: ReactNode | ((narrow: boolean) => ReactNode) =
     data && version && deciding ? (
       <DecisionBar
         kind={pieceKind}
@@ -371,7 +394,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
         onApprove={() => setDialog('approve')}
         onReturn={() => setDialog('return')}
       />
-    ) : undefined;
+    ) : nextPrimary ? (narrow: boolean) => narrow ? <ProductionPrimaryBar primary={nextPrimary} /> : null : undefined;
 
   return (
     <>
@@ -380,6 +403,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
           ...(canDecide ? { back: { label: 'Aprovações', href: approvalsHref() } } : {}),
           ...(noticeKind === 'awaiting_you' && data ? { status: <StatusBadge kind="piece" status={data.status} label="Aguardando sua aprovação" /> } : {}),
           menu,
+          primary: nextPrimary,
         }}
         mainLabel={mainLabelOf(pieceKind)}
         footer={footer}
@@ -388,7 +412,8 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
       </ReviewSurface>
       {data && version ? (
         <>
-          <ApproveDialog open={dialog === 'approve'} onClose={() => setDialog(null)} kind={pieceKind} onSubmit={approve} />
+          <ApproveDialog open={dialog === 'approve'} onClose={() => setDialog(null)} kind={pieceKind} onSubmit={approve}
+            confirmLabel={`Aprovar e ${approvedAction.label.toLocaleLowerCase('pt-BR')}`} />
           <ReturnDialog
             open={dialog === 'return'}
             onClose={() => setDialog(null)}
@@ -398,6 +423,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
             anchors={anchors}
             onRemoveAnchor={(anchor) => setAnchors(anchors.filter((candidate) => anchorKey(candidate) !== anchorKey(anchor)))}
             onSubmit={sendReturn}
+            confirmLabel={approval?.viewer.canEdit ? 'Enviar ajustes e abrir estúdio' : 'Enviar ajustes e continuar'}
           />
           <ReviewHistory
             open={historyOpen}

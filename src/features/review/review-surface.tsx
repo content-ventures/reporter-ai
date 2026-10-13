@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { WorkspaceLayout } from '@content-ventures/design-system/v3';
+import { useWorkspace, WorkspaceLayout } from '@content-ventures/design-system/v3';
 import { ProductionHeader } from '@/features/production/production-frame';
 import type { ProductionHeaderProps } from '@/features/production/production-header';
 
@@ -30,7 +30,7 @@ export function ReviewSurface({ header, mainLabel, children, footer }: ReviewSur
     <WorkspaceLayout
       docked
       storageKey="reporter:review"
-      header={<ProductionHeader {...header} />}
+      header={<ReviewHeader {...header} />}
       mainLabel={mainLabel}
       viewsLabel="Revisão"
       footer={footer}
@@ -38,4 +38,10 @@ export function ReviewSurface({ header, mainLabel, children, footer }: ReviewSur
       {children}
     </WorkspaceLayout>
   );
+}
+
+/** In narrow frames the one primary lives in the fixed footer, like the article studio. */
+function ReviewHeader(props: ProductionHeaderProps) {
+  const workspace = useWorkspace();
+  return <ProductionHeader {...props} primary={workspace?.narrow ? undefined : props.primary} />;
 }

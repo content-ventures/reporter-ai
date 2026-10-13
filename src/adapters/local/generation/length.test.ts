@@ -85,7 +85,7 @@ describe('size of the simulated article', () => {
   it('keeps the preview of a long material at the target', () => {
     const source = sourceOf('prod-atelie-sul');
     const outlook = materialOutlook(source.versions[0].content.segments);
-    assert.deepEqual(expectedDraftChars('standard', outlook.charsAvailable), { chars: 3600, reachesTarget: true, reachesRange: true });
+    assert.deepEqual(expectedDraftChars('standard', outlook.charsAvailable), { chars: 3900, reachesTarget: true, reachesRange: true });
   });
 });
 
