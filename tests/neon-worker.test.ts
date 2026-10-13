@@ -51,8 +51,8 @@ test('health check requires the worker secret and reports database readiness',as
   try {
     let heartbeats = 0;
     const worker = createReporterWorker({ heartbeat: async () => { heartbeats++; },run: async () => false,now: Date.now });
-    const denied = await worker.fetch(new Request('https://worker.test/health'));
-    const ready = await worker.fetch(new Request('https://worker.test/health',{
+    const denied = await worker.fetch(new Request('https://worker.test/'));
+    const ready = await worker.fetch(new Request('https://worker.test/',{
       headers: { authorization: 'Bearer worker-secret' },
     }));
     assert.equal(denied.status,401);

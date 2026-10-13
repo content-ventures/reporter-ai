@@ -66,8 +66,7 @@ async function diagnosticHeartbeat(owner: string,services: WorkerDependencies) {
 export function createReporterWorker(services: WorkerDependencies = dependencies) {
   return {
   async fetch(request: Request): Promise<Response> {
-    const pathname = new URL(request.url).pathname;
-    if (request.method === 'GET' && pathname.endsWith('/health')) {
+    if (request.method === 'GET') {
       if (!hasWorkerSecret(request)) return new Response('Unauthorized',{ status: 401 });
       try {
         await services.heartbeat(`reporter-health-${randomUUID()}`);
