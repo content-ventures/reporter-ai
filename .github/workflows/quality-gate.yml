@@ -87,15 +87,17 @@ jobs:
       - name: Run PostgreSQL integration tests
         run: pnpm db:test
 
+      # Preserve pnpm links used by traced native packages such as Sharp. The artifact
+      # action dereferences directory symlinks, which detaches Sharp from its siblings.
+      - name: Archive the production build
+        run: tar --exclude='.next/cache' -czf next-build.tar.gz .next
+
       # The smoke runs on this same production build instead of building again.
       - name: Keep the production build for the smoke
         uses: actions/upload-artifact@v4
         with:
           name: next-build
-          path: |
-            .next
-            !.next/cache
-          include-hidden-files: true
+          path: next-build.tar.gz
           retention-days: 1
 
       - name: Stop isolated Reporter PostgreSQL
@@ -140,7 +142,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: next-build
-          path: .next
+
+      - name: Extract the production build
+        run: tar -xzf next-build.tar.gz
 
       # Browsers change only with the Playwright version (pinned in the lockfile).
       - name: Cache Playwright browsers
