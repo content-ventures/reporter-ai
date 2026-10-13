@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { interV3, ThemeV3, Toaster } from "@content-ventures/design-system/v3";
-import { RuntimeProvider } from "@/state";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +12,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="pt-BR" className={interV3.variable}>
       <body>
         <ThemeV3>
-          <RuntimeProvider>{children}</RuntimeProvider>
+          {children}
           <Toaster />
         </ThemeV3>
       </body>

@@ -46,6 +46,8 @@ export type ApprovalBannerProps = {
   decided?: { decision: 'approved' | 'changes_requested'; requesterName: string; next?: ApprovalItem };
   /** Approved: "Próximo passo: o carrossel / a entrega / baixar o pacote" (from the production's next step). */
   approvedNext?: ApprovedNext;
+  /** Continuation immediately after deciding; persisted reviews use their header primary. */
+  nextAction?: { label: string; href: string };
   /** Approval outdated: who keeps the approved version (default: carousel and delivery for the article). */
   usedBy?: ApprovedUsers;
   /**
@@ -100,6 +102,7 @@ export function ApprovalBanner({
   onWithdrawn,
   decided,
   approvedNext,
+  nextAction,
   usedBy,
   onUndo,
 }: ApprovalBannerProps): ReactElement | null {
@@ -136,9 +139,9 @@ export function ApprovalBanner({
         <StatusBanner
           kind="decided"
           action={
-            next
+            nextAction ?? (next
               ? { label: NOTICE_VERBS.review, href: reviewHref(next.productionId, next.kind) }
-              : { label: NOTICE_VERBS.approvals, href: approvalsHref() }
+              : { label: NOTICE_VERBS.approvals, href: approvalsHref() })
           }
         >
           {decidedNotice({ decision: decided.decision, requesterName: decided.requesterName, nextTitle: next?.productionTitle })}

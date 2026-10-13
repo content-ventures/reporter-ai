@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
-import { toast } from '@content-ventures/design-system/v3';
+import { useCallback, useMemo, useState } from 'react';
+import { toast, type MenuSection } from '@content-ventures/design-system/v3';
 import type { Role } from '@/domain';
-import type { SessionMember } from '@/ports';
+import type { LocalRoleProfile, SessionMember } from '@/ports';
 import { useCommands, useSession } from '@/state';
 
 /**
@@ -36,15 +36,33 @@ export type ActAs = {
   current: SessionMember | undefined;
   members: readonly SessionMember[];
   actAs: (member: SessionMember) => Promise<void>;
+  localProfiles: readonly LocalRoleProfile[];
+  selectedProfile: string | undefined;
+  switchingRole: boolean;
+  selectRole: (profile: LocalRoleProfile) => Promise<void>;
 };
 
 const NONE: readonly SessionMember[] = [];
+const NO_PROFILES: readonly LocalRoleProfile[] = [];
 
 export function useActAs(): ActAs {
   const commands = useCommands();
   const session = useSession();
+  const [switchingRole, setSwitchingRole] = useState(false);
   const current = session.data?.current;
   const members = session.data?.mode === 'simulated' ? session.data.members : NONE;
+  const localProfiles = session.data?.localRoleProfiles ?? NO_PROFILES;
+  const selectedProfile = localProfiles.find(profile => profile.roles.length === current?.roles.length
+    && profile.roles.every(role => current.roles.includes(role)))?.id;
+  const selectRole = useCallback(async (profile: LocalRoleProfile) => {
+    if (switchingRole) return;
+    setSwitchingRole(true);
+    try {
+      const result = await commands.session.selectLocalRole(profile.id);
+      if (result.ok) toast(`Teste local: ${profile.label}`, { description: 'Mesmo operador, permissões do papel escolhido. Compartilhado entre as abas locais.' });
+      else toast(result.refusal.message, { tone: 'error' });
+    } finally { setSwitchingRole(false); }
+  }, [commands, switchingRole]);
   const actAs = useCallback(
     async (member: SessionMember) => {
       const result = await commands.session.actAs(member.id);
@@ -53,5 +71,16 @@ export function useActAs(): ActAs {
     },
     [commands],
   );
-  return useMemo(() => ({ current, members, actAs }), [actAs, current, members]);
+  return useMemo(() => ({ current, members, actAs, localProfiles, selectedProfile, switchingRole, selectRole }),
+    [actAs, current, members, localProfiles, selectedProfile, switchingRole, selectRole]);
+}
+
+/** Same test-only choices in the account and in the immersive production header. */
+export function localRoleMenu(session: ActAs): MenuSection[] {
+  return session.localProfiles.length ? [{ label: 'Testar papel · ambiente local', items: session.localProfiles.map(profile => ({
+    label: profile.label,
+    checked: profile.id === session.selectedProfile,
+    disabled: session.switchingRole,
+    onSelect: () => { if (profile.id !== session.selectedProfile) void session.selectRole(profile); },
+  })) }] : [];
 }

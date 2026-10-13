@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import { writingParts, type GenerationRun } from '@/domain';
 import { errorNotice, NOTICE_VERBS, writingNotice, type ApprovalSubject } from './approval-copy';
 import { StatusBanner } from './status-banner';
+import { generationFeedback, type FeedbackRun } from './generation-feedback';
 
 /**
  * The AI at work, above the text: "A IA está escrevendo · parte 2 de 4. Você pode ler enquanto
@@ -16,7 +17,7 @@ import { StatusBanner } from './status-banner';
 
 export type GenerationBannerProps = {
   /** The piece's latest run (`RunView`, or any run with its steps). */
-  run: Pick<GenerationRun, 'status' | 'steps'> | undefined;
+  run: FeedbackRun | undefined;
   subject: ApprovalSubject;
   /** "Parar" (absent: no verb, e.g. a reader who cannot edit). */
   onStop?: () => void;
@@ -32,14 +33,15 @@ export function GenerationBanner({ run, subject, onStop, onRetry, busy = false }
   if (run.status === 'queued' || run.status === 'running') {
     return (
       <StatusBanner kind="writing" busy action={onStop ? { label: NOTICE_VERBS.stop, onClick: onStop, loading: busy } : undefined}>
-        {writingNotice(subject, parts)}
+        {run.model?.engine === 'provider' ? generationFeedback(run).notice : writingNotice(subject, parts)}
       </StatusBanner>
     );
   }
   if (run.status === 'failed') {
+    const failedStep = run.steps.find(step => step.state === 'error');
     return (
       <StatusBanner kind="error" action={onRetry ? { label: NOTICE_VERBS.retry, onClick: onRetry, loading: busy } : undefined}>
-        {errorNotice(subject, stoppedInPart(run) ? parts : undefined)}
+        {run.model?.engine === 'provider' ? `${failedStep ? `Parou em ${failedStep.label}. ` : ''}${run.error?.message ?? 'A geração foi interrompida.'} Seu material e a versão anterior continuam salvos.` : errorNotice(subject, stoppedInPart(run) ? parts : undefined)}
       </StatusBanner>
     );
   }

@@ -20,6 +20,7 @@ import { ChevronDown, Ellipsis, Pencil, type LucideIcon } from '@content-venture
 import type { ProductionDetail } from '@/ports';
 import { useCommands, useTabSync } from '@/state';
 import { OtherTabNotice, requestLeave } from '@/ui/shell';
+import { localRoleMenu, useActAs } from '@/ui/shell/act-as';
 import { PRODUCTIONS_HREF, routeStageId, stageHref, type ProductionRoute } from '@/ui/routes';
 import { StatusBadge } from '@/ui/status-badge';
 import { decidesAt, journeyLabel, journeyMenuItems, viewedStageIndex } from './journey';
@@ -275,6 +276,7 @@ export function ProductionHeaderView({
 }: ProductionHeaderViewProps) {
   const [renaming, setRenaming] = useState(false);
   const reasonId = useId();
+  const localRoles = localRoleMenu(useActAs());
   // A10: this tab went read-only (the same text was saved in another tab). Said under the line,
   // unless the screen already shows its one notice.
   const { readOnly } = useTabSync();
@@ -286,6 +288,7 @@ export function ProductionHeaderView({
 
   const sections: MenuSection[] = [
     ...(menu ?? []).filter((section) => section.items.length > 0),
+    ...(localRoles.length ? [{ items: [{ label: 'Testar papel', description: 'Somente neste ambiente local', items: localRoles[0].items }] }] : []),
     { items: [{ label: 'Renomear', icon: Pencil, onSelect: () => setRenaming(true) }] },
   ];
 

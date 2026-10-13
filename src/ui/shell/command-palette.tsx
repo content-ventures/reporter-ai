@@ -61,7 +61,7 @@ export function ShellCommandPalette({
   const simulation = useSimulation();
   const armed = useArmedSimulation();
   const audit = useAuditControls();
-  const { current: acting, members, actAs } = useActAs();
+  const { current: acting, members, actAs, localProfiles, selectedProfile, selectRole } = useActAs();
   const actingId = acting?.id;
   // "Ir para" lists the menu items this member can open (Logs only for admins). "Em breve" items
   // stay out: a ⌘K result always does something, and the DS CommandItem has no disabled state.
@@ -100,6 +100,15 @@ export function ShellCommandPalette({
       items: productions.map((item) => productionCommand(item, go)),
     };
     const result = [actions, ...registered.map((group) => ({ showWhenEmpty: true, ...group })), navigation, list];
+    if (localProfiles.length) result.push({
+      label: 'Testar papel · ambiente local', showWhenEmpty: true,
+      items: localProfiles.map(profile => ({
+        id: `local-role-${profile.id}`, label: `Testar como ${profile.label}`,
+        description: profile.id === selectedProfile ? 'Papel atual · mesmo operador local' : 'Mesmo operador · não altera contas de produção',
+        keywords: 'usuário permissões editor aprovador revisor criativo admin todos papéis',
+        onSelect: () => { if (profile.id !== selectedProfile) void selectRole(profile); },
+      })),
+    });
     if (simulation.available) {
       result.push({
         label: 'Simulação',
@@ -171,7 +180,7 @@ export function ShellCommandPalette({
       });
     }
     return result;
-  }, [actAs, actingId, armed, audit, members, productions, registered, roles, router, simulation]);
+  }, [actAs, actingId, armed, audit, members, localProfiles, selectedProfile, selectRole, productions, registered, roles, router, simulation]);
 
   const recent = useMemo(
     () => productions.slice(0, RECENT_COUNT).map((item) => productionCommand(item, (href) => router.push(href))),
