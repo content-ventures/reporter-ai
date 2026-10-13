@@ -58,7 +58,7 @@ jobs:
           node scripts/validate-branch-name.mjs "$BRANCH_NAME"
           node scripts/validate-commit-message.mjs "$PR_TITLE"
 
-      - name: Validate commit messages and sizes
+      - name: Validate commit messages and PR sizes
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -76,7 +76,13 @@ jobs:
             subject=$(git show -s --format=%s "$commit")
             node scripts/validate-commit-message.mjs "$subject"
           done
-          node scripts/check-change-size.mjs --range "$RANGE"
+          # GitHub squash-merges a reviewed PR into one commit on main. Enforce the
+          # per-commit size policy while the commits still exist on the PR branch;
+          # rechecking the synthetic squash commit would reject the approved PR as
+          # one oversized commit even though every source commit already passed.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            node scripts/check-change-size.mjs --range "$RANGE"
+          fi
 
       - name: Run complete gate
         run: pnpm gate
