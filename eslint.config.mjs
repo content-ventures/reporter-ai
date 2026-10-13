@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     // Smoke e2e output (Playwright).
     "test-results/**",
     "playwright-report/**",
+    ".claude/**",
+    ".pnpm-store/**",
+    ".reporter-local/**",
   ]),
 ]);
 

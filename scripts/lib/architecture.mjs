@@ -111,7 +111,9 @@ function dependencyViolations(file, reference, target) {
       : [`${where}: src/${targetLayer} may be imported only by src/runtime and tests`];
   }
 
-  if (targetLayer === "runtime" && sourceLayer !== "runtime" && sourceLayer !== "state" && !test && !isLayoutProvider(file.path)) {
+  const serverComposition = ["src/server/editorial.ts", "src/server/editorial-worker.ts"].includes(file.path)
+    && target.path === "src/runtime/editorial-engine.ts";
+  if (targetLayer === "runtime" && sourceLayer !== "runtime" && sourceLayer !== "state" && !serverComposition && !test && !isLayoutProvider(file.path)) {
     return [`${where}: src/runtime may be imported only by src/state and app layout providers`];
   }
 

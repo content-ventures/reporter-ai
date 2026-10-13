@@ -94,6 +94,8 @@
     ]
   },
   "decisions": [
+    "Polish the approved six Seafood carousel variations as premium B2B editorial creatives: a consistent 84px safe margin, opt-in balanced/optically fitted headlines with explicit minimum font sizes, intentional photo crops, quieter folio/signature and typographic quotation marks. Increase library thumbnail sharpness and desktop comparison size; allow each page to open in a readable DS Dialog with previous/next and a return action. Preserve all model IDs, slot contracts, stored copy, source references and existing exports; keep legacy render defaults unchanged. Do not add decorative charts, statistics, invented quotes or a parallel app design system.",
+    "The user approved Seafood Brasil-inspired photo-led navy/blue/cyan carousel directions. Offer six editable variations in Notícia, Explica and Podcast through the existing DS library, creation selector and switch drawer. Keep legacy IDs/defaults and article text; show fit warnings. Demo image/copy are explicitly illustrative and never substituted into real outputs. Preserve studio chrome, use a typeset brand label until the official logo asset arrives, and never invent statistics, podcast quotes or Marketing approval.",
     "The product shell uses the complete DS navigation pattern",
     "The visible menu contains only routes available to the user in the current release; Logs shows only to admins",
     "Studios use the full width with one line of chrome above the text",
@@ -103,9 +105,14 @@
     "Reporter consumes DS 0.2.0 from the editorial-studio branch until the version is tagged and pinned",
     "Improve only the overview on release-one-experience: the approved photographic writer direction uses the real next action and the original personal/team queues; preserve all R1 screens, routes and workflow state",
     "The user selected an editorial, visual overview with stories in focus: real article headlines and openings, existing article images, a prominent story to continue and a delivery-stage story to read; keep the original priorities and stage filters, with recent activity collapsible and no new workflow state",
-    "Story previews use compact equally sized cards with short headlines and openings truncated by DS ListItem ellipses, no internal scroll areas and aligned metadata/actions; the separately requested Escrever do zero entry opens an empty article in the existing studio alongside transcript creation"
+    "Story previews use compact equally sized cards with short headlines and openings truncated by DS ListItem ellipses, no internal scroll areas and aligned metadata/actions; the separately requested Escrever do zero entry opens an empty article in the existing studio alongside transcript creation",
+    "The user selected Pixabay for free commercial article and banner photography without obligatory published credits. Use horizontal originals of at least 2400 × 1350 pixels, seafood searches, optional editorial curation and uncropped previews. Identify reduced API previews honestly and require original-download access before importing; never upscale. Retain author, source and licence internally, show provider identification in the library, preserve legacy assets/licences and the approved Design System. Resolution and editorial awards do not guarantee relevance or aesthetic quality."
   ],
   "evidence": [
+    {
+      "fact": "approved-seafood-creative-library",
+      "source": "src/fixtures/templates/designs/seafood.ts; official Seafood Brasil website and Instagram reviewed with the user; 21st filter-gallery metadata"
+    },
     {
       "fact": "design-system-policy",
       "source": "docs/DEVELOPMENT_HARNESS.md"

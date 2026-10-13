@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.local.example
+!.env.reporter-db.example
+/.reporter-local/
+/.pnpm-store/
 
 # vercel
 .vercel
@@ -47,3 +51,5 @@ next-env.d.ts
 
 # local tool files
 /.claude/
+/.agents/
+/skills-lock.json
