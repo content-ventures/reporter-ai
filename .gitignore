@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.local.example
+!.env.reporter-db.example
+/.reporter-local/
+/.pnpm-store/
 
 # vercel
 .vercel
@@ -39,3 +43,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# smoke e2e (Playwright)
+/test-results/
+/playwright-report/
+/blob-report/
+
+# local tool files
+/.claude/
+/.agents/
+/skills-lock.json
+.neon

@@ -31,11 +31,23 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.9.0
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Configure isolated Reporter test database
+        run: |
+          umask 077
+          printf '%s\n' \
+            'REPORTER_POSTGRES_PASSWORD=ci-reporter-admin-password-0001' \
+            'REPORTER_RUNTIME_PASSWORD=ci-reporter-runtime-password-0002' \
+            'REPORTER_WORKER_PASSWORD=ci-reporter-worker-password-0003' \
+            > .env.reporter-db
+
+      - name: Start isolated Reporter PostgreSQL
+        run: pnpm db:up
 
       - name: Validate branch and PR title
         if: github.event_name == 'pull_request'
@@ -68,3 +80,111 @@ jobs:
 
       - name: Run complete gate
         run: pnpm gate
+
+      - name: Run backend contract tests
+        run: pnpm test:backend
+
+      - name: Run PostgreSQL integration tests
+        run: pnpm db:test
+
+      # Preserve pnpm links used by traced native packages such as Sharp. The artifact
+      # action dereferences directory symlinks, which detaches Sharp from its siblings.
+      - name: Archive the production build
+        run: tar --exclude='.next/cache' -czf next-build.tar.gz .next
+
+      # The smoke runs on this same production build instead of building again.
+      - name: Keep the production build for the smoke
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build
+          path: next-build.tar.gz
+          retention-days: 1
+
+      - name: Stop isolated Reporter PostgreSQL
+        if: always()
+        run: pnpm db:stop
+
+  smoke:
+    name: Smoke e2e
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure isolated Reporter smoke database
+        run: |
+          umask 077
+          printf '%s\n' \
+            'REPORTER_POSTGRES_PASSWORD=ci-reporter-admin-password-0001' \
+            'REPORTER_RUNTIME_PASSWORD=ci-reporter-runtime-password-0002' \
+            'REPORTER_WORKER_PASSWORD=ci-reporter-worker-password-0003' \
+            > .env.reporter-db
+
+      - name: Start isolated Reporter PostgreSQL
+        run: pnpm db:up
+
+      - name: Restore the production build
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build
+
+      - name: Extract the production build
+        run: tar -xzf next-build.tar.gz
+
+      # Browsers change only with the Playwright version (pinned in the lockfile).
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Chromium system packages
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Run connected smoke on the production build
+        env:
+          SMOKE_PREBUILT: "1"
+        run: pnpm smoke
+
+      - name: Build the disposable fixture regression app
+        env:
+          NEXT_PUBLIC_REPORTER_E2E_FIXTURES: "true"
+        run: pnpm build
+
+      - name: Run the preserved fixture regression suite
+        env:
+          SMOKE_PREBUILT: "1"
+        run: pnpm smoke:fixtures
+
+      - name: Keep traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-traces
+          path: test-results/
+          retention-days: 7
+
+      - name: Stop isolated Reporter PostgreSQL
+        if: always()
+        run: pnpm db:stop

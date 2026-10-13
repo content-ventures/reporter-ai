@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildReleaseViolations,
   compareVersions,
   nextVersion,
   parseVersion,
   releaseChangeFromSubject,
+  upcomingViolations,
 } from "./versioning.mjs";
 
 test("parses and compares semantic versions", () => {
@@ -33,4 +35,32 @@ test("creates readable release changes from conventional commits", () => {
     type: "Fixed",
     description: "Handle empty release notes",
   });
+});
+
+const history = (overrides = {}) => ({
+  currentVersion: "0.1.0",
+  currentRoadmapRelease: "R0",
+  releases: [{ version: "0.1.0", roadmapRelease: "R0" }],
+  upcoming: { roadmapRelease: "R1", title: "Experiência", summary: "Resumo.", changes: [{ type: "Added", description: "Logs." }] },
+  ...overrides,
+});
+
+test("validates the Em preparação block of Novidades", () => {
+  assert.deepEqual(upcomingViolations(history()), []);
+  assert.deepEqual(upcomingViolations(history({ upcoming: undefined })), []);
+  assert.match(upcomingViolations(history({ upcoming: { ...history().upcoming, roadmapRelease: "R2" } })).join(), /current \(R0\) or the next/);
+  assert.match(upcomingViolations(history({ upcoming: { ...history().upcoming, version: "1.0.0" } })).join(), /no version or date/);
+  assert.match(upcomingViolations(history({ upcoming: { ...history().upcoming, changes: [] } })).join(), /at least one/);
+  assert.match(upcomingViolations(history({ upcoming: { ...history().upcoming, changes: [{ type: "Maintenance", description: "x" }] } })).join(), /known type/);
+  assert.match(
+    upcomingViolations(history({ currentRoadmapRelease: "R0", releases: [{ version: "1.0.0", roadmapRelease: "R1" }] })).join(),
+    /already released/,
+  );
+});
+
+test("the build release is the released one or the announced next one", () => {
+  assert.deepEqual(buildReleaseViolations(history(), "R0"), []);
+  assert.deepEqual(buildReleaseViolations(history(), "R1"), []);
+  assert.match(buildReleaseViolations(history({ upcoming: undefined }), "R1").join(), /announce it/);
+  assert.match(buildReleaseViolations(history(), "R2").join(), /history is at R0/);
 });
