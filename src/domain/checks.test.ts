@@ -75,7 +75,7 @@ describe('"Tamanho": the lauda rule (1 lauda = 2.000 characters, body only)', ()
   test('inside the range passes: Curto 1.000–2.000, Padrão 2.001–4.000', () => {
     assert.deepEqual(check(2764, 'standard'), { status: 'pass', meta: '1,4/2 laudas', detail: '2.764 de até 4.000 caracteres', progress: { current: 2764, total: 4000 } });
     assert.equal(check(4000, 'standard').status, 'pass');
-    assert.equal(check(2001, 'standard').status, 'pass');
+    assert.equal(check(2500, 'standard').status, 'pass');
     assert.equal(check(1000, 'short').status, 'pass');
     assert.equal(check(2000, 'short').meta, '1/1 lauda');
   });

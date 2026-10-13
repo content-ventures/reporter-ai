@@ -134,6 +134,15 @@ describe('sendChecklist (R1: "Falta" blocks, and so does the AI text not reviewe
     assert.deepEqual(rows(sendChecklist(base)), [['ok', '3 de 3 citações conferidas · 1,6 de 2 laudas', null, null]]);
   });
 
+  it('reports one mandatory quotation issue instead of duplicate quote rows', () => {
+    const items = sendChecklist({ ...base, checks: [check('article.quotes', 'fail', {
+      blocking: true, detail: 'Confira a citação literal na fonte.', progress: { current: 0, total: 2 }, targets: [range('b-q1')],
+    })] });
+    const missing = items.filter(item => item.id === 'quotes' && item.level === 'missing');
+    assert.equal(missing.length, 1);
+    assert.equal(missing[0].text, 'Confira a citação literal na fonte.');
+  });
+
   it('lists every "Falta" first, then the warnings, then one summary row (COPY §5.2)', () => {
     const items = sendChecklist({
       ...base,

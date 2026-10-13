@@ -5,6 +5,7 @@ import type { Piece, PieceBody, Version, VersionOrigin } from '../piece.ts';
 import type { SourceVersionRef, VersionRef } from '../refs.ts';
 import { ok, refuse } from '../result.ts';
 import type { CommandContext, Result } from '../result.ts';
+import { contentHash } from '../text/hash.ts';
 
 /**
  * Versioning rules. The working draft is one overwritten slot; immutable versions are born at
@@ -122,7 +123,7 @@ export function saveVersion(
   return ok({ version, piece: draftFromVersion(piece, version, ctx) });
 }
 
-/** "Enviar para aprovação": reuses the latest version when the draft equals it. */
+/** A review freezes provenance too, without mutating a previously generated version. */
 export function ensureVersion(
   piece: Piece,
   versions: readonly Version[],
@@ -132,6 +133,10 @@ export function ensureVersion(
   if (saved.ok) return ok({ ...saved.value, created: true });
   if (saved.refusal.code === 'empty') return refuse('empty', saved.refusal.message);
   const latest = versionsOfPiece(versions, piece.id).pop() as Version;
+  if (contentHash(piece.draft.body) !== contentHash(latest.body)) {
+    const version = createVersion({ piece, versions, origin: 'edit', basedOn: latest.id }, ctx);
+    return ok({ version, piece: draftFromVersion(piece, version, ctx), created: true });
+  }
   return ok({ version: latest, piece, created: false });
 }
 

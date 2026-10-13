@@ -3,6 +3,8 @@ import type { ArticleBlock, ArticleBody, Inline } from './article.ts';
 import type { CarouselBody, SlideAssistAction } from './carousel.ts';
 import type { BlockId, IsoDateTime, PersonId, PieceId, RunId, SlideId, SuggestionId } from './ids.ts';
 import type { TextRange } from './refs.ts';
+import { dedupeRefs } from './refs.ts';
+import type { SourceRef } from './refs.ts';
 import { ok, refuse } from './result.ts';
 import type { Result } from './result.ts';
 
@@ -14,7 +16,7 @@ import type { Result } from './result.ts';
 export type SuggestionState = 'streaming' | 'ready' | 'stale' | 'applied' | 'discarded' | 'error';
 
 export type SuggestionProposal =
-  | { kind: 'replace-text'; text: string }
+  | { kind: 'replace-text'; text: string; sourceRefs?: SourceRef[] }
   | { kind: 'replace-blocks'; blocks: ArticleBlock[] }
   | { kind: 'title'; text: string }
   | {
@@ -100,7 +102,9 @@ export function applySuggestion(body: ArticleBody, suggestion: Suggestion): Resu
     if (proposal.kind === 'replace-text') {
       const replaced = replaceTextRange(body, range, proposal.text);
       if (!replaced.ok) return refuse('invalid_target', replaced.refusal.message);
-      return ok(markBlocksUnreviewed(replaced.value, [range.blockId]));
+      const updated = proposal.sourceRefs?.length ? { ...replaced.value, blocks: replaced.value.blocks.map(block => block.id === range.blockId
+        ? { ...block, sourceRefs: dedupeRefs([...(block.sourceRefs ?? []), ...proposal.sourceRefs!]) } : block) } : replaced.value;
+      return ok(markBlocksUnreviewed(updated, [range.blockId]));
     }
     return addLink(body, range, proposal.href);
   }

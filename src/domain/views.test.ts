@@ -22,8 +22,25 @@ import {
   TEMPLATE,
 } from './testing/scenario.ts';
 import { buildProductionView, toSourceSummary } from './views.ts';
+import { sendChecklist } from './approval.ts';
 
 describe('ProductionView', () => {
+  test('real provider productions expose mandatory R1 checks and their next corrective actions', () => {
+    const kit = createKit(), record = baseRecord(kit);
+    commitVersion(record, kit, 'article', sampleArticle(record.sources[0]));
+    record.runs.push({ id: 'real-outline', kind: 'article.outline', productionId: record.production.id,
+      prompt: { key: 'pipeline', version: '23', hash: 'hash' }, model: { engine: 'provider', alias: 'openai/gpt-6-astra', label: 'OpenAI' },
+      inputs: [], status: 'completed', steps: [], createdBy: JOAO, createdAt: kit.now() });
+    const piece = buildProductionView(record, { now: kit.now(), templates: [TEMPLATE] }).pieces[0];
+    assert.equal(piece.checks.find(check => check.id === 'article.length')?.status, 'fail');
+    assert.equal(piece.checks.find(check => check.id === 'article.length')?.blocking, true);
+    assert.equal(piece.checks.find(check => check.id === 'article.quotes')?.blocking, true);
+    assert.equal(piece.readiness.ready, false);
+    const checklist = sendChecklist({ kind: 'article', checks: piece.checks, openSuggestionIds: [], running: false, empty: false });
+    assert.equal(checklist.find(item => item.id === 'size')?.level, 'missing');
+    assert.match(checklist.find(item => item.id === 'size')?.text ?? '', /2.500/);
+    assert.ok(checklist.find(item => item.id === 'size')?.action);
+  });
   test('assembles stages, pieces, versions, checks and the next action', () => {
     const kit = createKit();
     const record = baseRecord(kit);

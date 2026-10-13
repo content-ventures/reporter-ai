@@ -17,7 +17,8 @@ export type SourceOrigin = 'interview' | 'podcast' | 'event' | 'talk' | 'other';
  * `unattributed`: the person chose "Sem atribuição" (quotes stay unnamed); a label with neither
  * is still undecided and counts as "sem pessoa".
  */
-export type Speaker = { label: string; personId?: PersonId; unattributed?: true };
+export type SpeakerPresentation = { segmentId: SegmentId; excerpt: string };
+export type Speaker = { label: string; personId?: PersonId; unattributed?: true; presentation?: SpeakerPresentation };
 
 /** Labels still waiting for a person (not linked, not explicitly "Sem atribuição"). */
 export function speakersWithoutPerson(source: Pick<Source, 'speakers'>): string[] {
@@ -63,7 +64,12 @@ export type Source = {
   origin: SourceOrigin;
   /** Calendar date of the interview/event (YYYY-MM-DD), when informed. */
   recordedOn?: string;
+  programName?: string;
+  sourceUrl?: string;
+  location?: string;
   fileName?: string;
+  /** Uploaded original and provider transcript in the local database. */
+  transcriptId?: string;
   speakers: Speaker[];
   rights: SourceRights;
   /** Ascending by `number`; never empty. */
@@ -132,6 +138,9 @@ export type NewTranscriptSource = {
   title: string;
   origin: SourceOrigin;
   recordedOn?: string;
+  programName?: string;
+  sourceUrl?: string;
+  location?: string;
   fileName?: string;
   parsed: ParsedTranscript;
   authorized: boolean;
@@ -139,9 +148,13 @@ export type NewTranscriptSource = {
   speakerPeople?: Record<string, PersonId>;
   /** Labels the person marked "Sem atribuição". */
   unattributed?: readonly string[];
+  /** Textually presented participants; never implies attribution of unlabeled audio. */
+  presentations?: Readonly<Record<string, SpeakerPresentation>>;
 };
 
 export function createTranscriptSource(input: NewTranscriptSource, ctx: CommandContext): Source {
+  const presentations = Object.fromEntries(Object.entries(input.presentations ?? {}).filter(([label, evidence]) =>
+    evidence.excerpt.includes(label) && input.parsed.segments.some(segment => segment.id === evidence.segmentId && segment.text.includes(evidence.excerpt))));
   const content: TranscriptContent = {
     type: 'transcript',
     format: input.parsed.format,
@@ -156,10 +169,11 @@ export function createTranscriptSource(input: NewTranscriptSource, ctx: CommandC
     kind: 'transcript',
     title: input.title.trim(),
     origin: input.origin,
-    speakers: input.parsed.speakers.map((label): Speaker => {
+    speakers: [...new Set([...input.parsed.speakers, ...Object.keys(presentations)])].map((label): Speaker => {
       const personId = input.speakerPeople?.[label];
-      if (personId) return { label, personId };
-      return input.unattributed?.includes(label) ? { label, unattributed: true } : { label };
+      const speaker: Speaker = personId ? { label, personId } : input.unattributed?.includes(label) ? { label, unattributed: true } : { label };
+      if (presentations[label]) speaker.presentation = { ...presentations[label] };
+      return speaker;
     }),
     rights,
     versions: [{ number: 1, hash: sourceContentHash(content), content, createdAt: ctx.now, createdBy: ctx.actorId }],
@@ -167,6 +181,9 @@ export function createTranscriptSource(input: NewTranscriptSource, ctx: CommandC
     createdBy: ctx.actorId,
   };
   if (input.recordedOn) source.recordedOn = input.recordedOn;
+  if (input.programName?.trim()) source.programName = input.programName.trim();
+  if (input.sourceUrl?.trim()) source.sourceUrl = input.sourceUrl.trim();
+  if (input.location?.trim()) source.location = input.location.trim();
   if (input.fileName) source.fileName = input.fileName;
   return source;
 }
@@ -255,8 +272,9 @@ export function mapSpeaker(source: Source, label: string, personId: PersonId | '
     ...source,
     speakers: source.speakers.map((speaker): Speaker => {
       if (speaker.label !== label) return speaker;
-      if (personId === 'none') return { label, unattributed: true };
-      return personId ? { label, personId } : { label };
+      const presentation = speaker.presentation ? { presentation: speaker.presentation } : {};
+      if (personId === 'none') return { label, unattributed: true, ...presentation };
+      return personId ? { label, personId, ...presentation } : { label, ...presentation };
     }),
   };
 }

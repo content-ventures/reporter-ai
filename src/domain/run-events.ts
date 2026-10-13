@@ -1,5 +1,6 @@
 import { blockText, normalizeInlines } from './article.ts';
 import type { ArticleBlock, ArticleBody, ImageSlot } from './article.ts';
+import type { ImageRef } from './asset.ts';
 import type { Slide } from './carousel.ts';
 import type { ActorId, BlockId, IsoDateTime, PieceId, ProductionId, RunId, StepId, SuggestionId } from './ids.ts';
 import { dedupeRefs } from './refs.ts';
@@ -54,6 +55,7 @@ export type RunEvent =
       sections: OutlineSection[];
       intro?: OutlineIntro;
       cover?: ImageSlot;
+      coverImage?: ImageRef;
       size?: OutlineSize;
       shortfall?: OutlineShortfall;
       materialChars?: number;
@@ -62,6 +64,10 @@ export type RunEvent =
     })
   | (EventBase & { type: 'block.started'; block: StreamBlockShape })
   | (EventBase & { type: 'text.delta'; blockId: BlockId; delta: string })
+  /** Unvalidated provider writing is a read-only preview, never a draft/version or evidence. */
+  | (EventBase & { type: 'article.preview'; body: ArticleBody | null })
+  /** Unvalidated assistant output: display only, never a persisted suggestion or document. */
+  | (EventBase & { type: 'assist.preview'; reply: string; proposals: { id: string; text: string }[] })
   | (EventBase & { type: 'block.completed'; block: ArticleBlock })
   | (EventBase & { type: 'slide.completed'; slide: Slide })
   | (EventBase & { type: 'suggestion'; suggestionId: SuggestionId; target: TextRange[]; proposal: SuggestionProposal; label?: string })
@@ -121,6 +127,7 @@ export type RunFold = {
   outline: OutlineSection[];
   /** The cover suggestion the outline announced (`ArticleBody.coverSlot` of the output). */
   coverSlot?: ImageSlot;
+  coverImage?: ImageRef;
   /** The size the outline announced (absent on runs before the lauda rule and on other run kinds). */
   size?: OutlineSize;
   /** The outline said the material cannot fill the size. */
@@ -134,6 +141,8 @@ export type RunFold = {
   /** The draft follows a structure a person reviewed. */
   edited?: OutlineEdited;
   blocks: StreamBlock[];
+  preview?: ArticleBody;
+  assistPreview?: { reply: string; proposals: { id: string; text: string }[] };
   slides: Slide[];
   sourcesUsed: SourceRef[];
   /**
@@ -220,6 +229,7 @@ export function applyRunEvent(fold: RunFold, event: RunEvent): RunFold {
       next.outline = event.sections;
       if (event.title !== undefined) next.title = event.title;
       if (event.cover) next.coverSlot = event.cover;
+      if (event.coverImage) { next.coverImage = event.coverImage;delete next.coverSlot; }
       if (event.size) next.size = event.size;
       if (event.shortfall) next.shortfall = event.shortfall;
       if (event.intro) next.intro = event.intro;
@@ -240,6 +250,12 @@ export function applyRunEvent(fold: RunFold, event: RunEvent): RunFold {
         : [...fold.blocks, { id: event.blockId, type: 'paragraph', text: event.delta, complete: false }];
       break;
     }
+    case 'article.preview':
+      if (event.body) next.preview = event.body; else delete next.preview;
+      break;
+    case 'assist.preview':
+      next.assistPreview = { reply: event.reply, proposals: event.proposals };
+      break;
     case 'block.completed': {
       const final = event.block;
       const streamed: StreamBlock = {
@@ -274,6 +290,8 @@ export function applyRunEvent(fold: RunFold, event: RunEvent): RunFold {
       if (event.cost) run.cost = event.cost;
       break;
     case 'run.completed':
+      delete next.preview;
+      delete next.assistPreview;
       run.status = 'completed';
       run.endedAt = event.at;
       run.steps = finishOpenSteps(run.steps, 'done', event.at);
@@ -281,6 +299,8 @@ export function applyRunEvent(fold: RunFold, event: RunEvent): RunFold {
       delete next.awaiting;
       break;
     case 'run.failed':
+      delete next.preview;
+      delete next.assistPreview;
       run.status = 'failed';
       run.endedAt = event.at;
       run.error = event.error;
@@ -288,6 +308,8 @@ export function applyRunEvent(fold: RunFold, event: RunEvent): RunFold {
       delete next.awaiting;
       break;
     case 'run.cancelled':
+      delete next.preview;
+      delete next.assistPreview;
       run.status = 'cancelled';
       run.endedAt = event.at;
       run.steps = run.steps.map((step) =>
@@ -390,7 +412,8 @@ export function articleBodyFromRun(fold: RunFold, options: { title?: string; inc
     }
   }
   const body: ArticleBody = { type: 'article', title: (options.title ?? fold.title ?? '').trim(), blocks };
-  if (fold.coverSlot) body.coverSlot = fold.coverSlot;
+  if (fold.coverImage) body.cover = fold.coverImage;
+  else if (fold.coverSlot) body.coverSlot = fold.coverSlot;
   return body;
 }
 

@@ -32,13 +32,13 @@ describe('article size by lauda (1 lauda = 2.000 characters)', () => {
     assert.equal(DEFAULT_SECTIONS, 3);
     const { short, standard } = ARTICLE_SIZES;
     assert.deepEqual([short.label, short.laudas, short.minChars, short.maxChars, short.targetChars], ['Curto', 1, 1000, 2000, 1800]);
-    assert.deepEqual([standard.label, standard.laudas, standard.minChars, standard.maxChars, standard.targetChars], ['Padrão', 2, 2001, 4000, 3600]);
+    assert.deepEqual([standard.label, standard.laudas, standard.minChars, standard.maxChars, standard.targetChars], ['Padrão', 2, 2500, 4000, 3900]);
     assert.deepEqual(short.sections, { min: 1, max: 3, default: 2 });
     assert.deepEqual(standard.sections, { min: 2, max: 5, default: 3 });
     assert.deepEqual([short.headings, standard.headings], [false, true], 'a Curto has no intertítulos');
     assert.equal(short.description, 'Notícia direta: um fato, pouco contexto. Até 2.000 caracteres.');
     assert.equal(standard.description, 'Notícia com contexto: histórico, citações, fontes e links. Até 4.000 caracteres.');
-    assert.equal(SIZE_RULE, '1 lauda = 2.000 caracteres com espaços. A IA não completa o texto para chegar ao tamanho.');
+    assert.match(SIZE_RULE, /2.500–4.000.*500–800.*2 citações literais/);
     assert.deepEqual([sizeLabel('short'), sizeLabel('standard')], ['Curto · 1 lauda', 'Padrão · 2 laudas']);
     assert.deepEqual([shortenToSizeLabel('short'), shortenToSizeLabel('standard')], ['Encurtar para 1 lauda', 'Encurtar para 2 laudas']);
   });
@@ -52,17 +52,17 @@ describe('article size by lauda (1 lauda = 2.000 characters)', () => {
 
   test('fit, sections and budgets', () => {
     assert.deepEqual([999, 1000, 2000, 2001].map((chars) => sizeFit('short', chars)), ['below', 'inside', 'inside', 'above']);
-    assert.deepEqual([2000, 2001, 4000, 4001].map((chars) => sizeFit('standard', chars)), ['below', 'inside', 'inside', 'above']);
+    assert.deepEqual([2499, 2500, 4000, 4001].map((chars) => sizeFit('standard', chars)), ['below', 'inside', 'inside', 'above']);
     assert.equal(fitSections('short', 5), 3);
     assert.equal(fitSections('standard', 1), 2);
     assert.equal(fitSections('standard', 4), 4);
     assert.deepEqual(sectionBudget('short', 2), { introChars: 720, sectionChars: 540 });
-    assert.deepEqual(sectionBudget('standard', 3), { introChars: 900, sectionChars: 900 });
+    assert.deepEqual(sectionBudget('standard', 3), { introChars: 975, sectionChars: 975 });
   });
 
   test('the expected draft: the target when the material reaches it, else all it gives, never above the maximum', () => {
-    assert.deepEqual(expectedDraftChars('standard', 9000), { chars: 3600, reachesTarget: true, reachesRange: true });
-    assert.deepEqual(expectedDraftChars('standard', 3240), { chars: 3600, reachesTarget: true, reachesRange: true }, 'within the tolerance');
+    assert.deepEqual(expectedDraftChars('standard', 9000), { chars: 3900, reachesTarget: true, reachesRange: true });
+    assert.deepEqual(expectedDraftChars('standard', 3510), { chars: 3900, reachesTarget: true, reachesRange: true }, 'within the tolerance');
     assert.deepEqual(expectedDraftChars('standard', 2900), { chars: 2900, reachesTarget: false, reachesRange: true });
     assert.deepEqual(expectedDraftChars('standard', 1500), { chars: 1500, reachesTarget: false, reachesRange: false });
     assert.deepEqual(expectedDraftChars('short', 1700), { chars: 1800, reachesTarget: true, reachesRange: true });

@@ -62,6 +62,8 @@ export type Member = {
   roles: Role[];
   /** Simulated-only flag that allows "Agir como" demos; ignored by real adapters. */
   simulated?: boolean;
+  /** Server-owned development identity: manual self-review only in the loopback pilot. */
+  localOperator?: true;
 };
 
 export function hasAnyRole(member: Pick<Member, 'roles'> | undefined, roles: readonly Role[]): boolean {

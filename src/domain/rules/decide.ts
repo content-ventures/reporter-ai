@@ -65,7 +65,7 @@ export function canDecide(state: DecideState, request: DecisionRequest): Result<
     return refuse('forbidden_role', forbiddenRoleMessage(request.gate.roles));
   }
   const pending = state.reviewRequests ? pendingReview({ reviewRequests: state.reviewRequests, decisions: state.decisions }, request.subject.pieceId) : undefined;
-  if (!REQUESTER_MAY_DECIDE && pending && state.member && pending.requestedBy === state.member.personId) {
+  if (!REQUESTER_MAY_DECIDE && !state.member?.localOperator && pending && state.member && pending.requestedBy === state.member.personId) {
     return refuse('self_decision', 'Quem enviou não aprova o próprio envio.');
   }
   const version = findVersion(state, request.subject.versionId);

@@ -15,6 +15,14 @@ import { createKit, JOAO, SAMPLE_TRANSCRIPT, sampleSource, WORKSPACE } from './t
 import { parseTranscript } from './text/transcript-parse.ts';
 
 describe('transcript source', () => {
+  test('presented participants persist with literal evidence without attributing unlabeled utterances', () => {
+    const parsed = parseTranscript('Eu sou Marina Costa. Vamos conversar sobre bibliotecas.');
+    const evidence = { segmentId: parsed.segments[0].id, excerpt: 'Eu sou Marina Costa.' };
+    const source = createTranscriptSource({ workspaceId: WORKSPACE, title: 'Bibliotecas', origin: 'podcast', authorized: true,
+      parsed, presentations: { 'Marina Costa': evidence, 'Nome inventado': evidence }, speakerPeople: { 'Marina Costa': 'person-marina' } }, createKit().ctx());
+    assert.deepEqual(source.speakers, [{ label: 'Marina Costa', personId: 'person-marina', presentation: evidence }]);
+    assert.ok(currentSourceVersion(source).content.segments.every(segment => !segment.speaker));
+  });
   test('is created with version 1, hashed content, speakers mapped to people and rights', () => {
     const kit = createKit();
     const source = sampleSource(kit);

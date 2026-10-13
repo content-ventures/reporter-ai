@@ -273,8 +273,12 @@ export function sendChecklist(input: SendChecklistInput): SendItem[] {
   }
 
   const quotes = check('article.quotes');
+  for (const [id, result] of [['size', check('article.length')], ['quotes', quotes]] as const) {
+    if (result?.blocking && result.status === 'fail') missing.push({ id, level: 'missing', text: result.detail ?? `${result.label} fora das regras da R1`,
+      action: { label: 'Conferir no texto', target: { kind: 'check', checkId: result.id } }, short: id === 'size' ? 'o tamanho obrigatório' : 'as citações obrigatórias' });
+  }
   const wrongQuotes = pendingOf(quotes);
-  if (wrongQuotes > 0) {
+  if (wrongQuotes > 0 && !(quotes?.blocking && quotes.status === 'fail')) {
     missing.push({
       id: 'quotes',
       level: 'missing',

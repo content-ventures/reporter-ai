@@ -33,6 +33,20 @@ describe('working draft', () => {
 });
 
 describe('versions', () => {
+  test('sending a reviewed draft freezes its flags without rewriting the immutable AI version', () => {
+    const kit = createKit(), record = baseRecord(kit);
+    const original = sampleArticle(record.sources[0]);
+    original.blocks = original.blocks.map(block => ({ ...block, ai: 'unreviewed' }));
+    const v1 = commitVersion(record, kit, 'article', original, { origin: 'generation' });
+    const piece = pieceIn(record, 'article');
+    const reviewed = updateDraft(piece, { ...original, blocks: original.blocks.map(block => ({ ...block, ai: 'reviewed' })) }, piece.draft.revision, kit.ctx());
+    assert.ok(reviewed.ok);
+    const sent = ensureVersion(reviewed.value, record.versions, kit.ctx());
+    assert.ok(sent.ok); assert.equal(sent.value.created, true);
+    assert.notEqual(sent.value.version.id, v1.id); assert.equal(sent.value.version.hash, v1.hash);
+    assert.equal(sent.value.version.body.type === 'article' && sent.value.version.body.blocks[0].ai, 'reviewed');
+    assert.equal(v1.body.type === 'article' && v1.body.blocks[0].ai, 'unreviewed');
+  });
   test('numbers are per piece and labels describe the origin', () => {
     const kit = createKit();
     const record = baseRecord(kit);

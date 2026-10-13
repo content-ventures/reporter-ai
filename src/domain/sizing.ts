@@ -3,8 +3,9 @@
  * `CHARS_PER_LAUDA` characters with spaces, counted on the BODY only (paragraphs, intertítulos,
  * quotes, lists; never the title, captions, credits, alt text or image slots). Every range,
  * target and section budget derives from that single constant. The size never forces the AI to
- * pad: a material that gives less yields a shorter text, and the check only informs.
+ * pad. R1 requires the standard range; insufficient material is a failure, not a short article.
  */
+import { R1_ARTICLE_LIMITS } from './article-policy.ts';
 
 /** Characters with spaces per lauda (body only). João's 1.000–4.000 for 1–2 laudas. */
 export const CHARS_PER_LAUDA = 2000;
@@ -60,7 +61,7 @@ const TARGET_SHARE = 0.9;
 function sizeSpec(id: ArticleSize, fields: Omit<ArticleSizeSpec, 'id' | 'maxChars' | 'targetChars' | 'description'> & { summary: string }): ArticleSizeSpec {
   const maxChars = fields.laudas * CHARS_PER_LAUDA;
   const { summary, ...rest } = fields;
-  return { id, ...rest, maxChars, targetChars: Math.round(maxChars * TARGET_SHARE), description: `${summary} Até ${groupDigits(maxChars)} caracteres.` };
+  return { id, ...rest, maxChars, targetChars: id === 'standard' ? R1_ARTICLE_LIMITS.targetChars : Math.round(maxChars * TARGET_SHARE), description: `${summary} Até ${groupDigits(maxChars)} caracteres.` };
 }
 
 export const ARTICLE_SIZES: Readonly<Record<ArticleSize, ArticleSizeSpec>> = {
@@ -76,7 +77,7 @@ export const ARTICLE_SIZES: Readonly<Record<ArticleSize, ArticleSizeSpec>> = {
   standard: sizeSpec('standard', {
     label: 'Padrão',
     laudas: 2,
-    minChars: CHARS_PER_LAUDA + 1,
+    minChars: R1_ARTICLE_LIMITS.minChars,
     sections: { min: 2, max: 5, default: 3 },
     headings: true,
     introShare: 0.25,
@@ -85,7 +86,7 @@ export const ARTICLE_SIZES: Readonly<Record<ArticleSize, ArticleSizeSpec>> = {
 };
 
 /** The size field's rule, in the writer's words. */
-export const SIZE_RULE = `1 lauda = ${groupDigits(CHARS_PER_LAUDA)} caracteres com espaços. A IA não completa o texto para chegar ao tamanho.`;
+export const SIZE_RULE = `R1: 2.500–4.000 caracteres com espaços, 500–800 palavras e ao menos 2 citações literais. 1 lauda = ${groupDigits(CHARS_PER_LAUDA)} caracteres. Sem repetição ou invenção para preencher.`;
 
 export function isArticleSize(value: unknown): value is ArticleSize {
   return typeof value === 'string' && (ARTICLE_SIZE_IDS as readonly string[]).includes(value);

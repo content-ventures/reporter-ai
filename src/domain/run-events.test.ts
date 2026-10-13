@@ -57,6 +57,19 @@ function streamToSecondBlock(): RunEvent[] {
 }
 
 describe('foldRun', () => {
+  test('provider previews never become usable output and clear on retry, failure, cancellation and completion', () => {
+    const begin = started();
+    const preview = { type: 'article' as const,title: 'Preview',blocks: [paragraphBlock('p','Unvalidated prose')] };
+    const frames = [begin,event({ type:'article.preview',body:preview })];
+    const fold = foldRun(frames)!;
+    assert.deepEqual(fold.preview,preview); assert.equal(articleBodyFromRun(fold,{includePartial:true}).blocks.length,0); assert.equal(hasUsableOutput(fold),false);
+    for (const end of [
+      { type:'article.preview' as const,body:null },
+      { type:'run.cancelled' as const },
+      { type:'run.failed' as const,error:{code:'TEST',message:'Test',retryable:true} },
+      { type:'run.completed' as const },
+    ]) assert.equal(foldRun([...frames,event(end)])!.preview,undefined);
+  });
   test('the outline announces the size, a budget per section and a material shortfall', () => {
     const fold = foldRun([
       started(),
