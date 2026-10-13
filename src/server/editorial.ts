@@ -1,0 +1,249 @@
+import 'server-only';
+import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
+import type { PoolClient } from 'pg';
+import { createEditorialEngine, emptyEditorialCheckpoint, adoptEditorialIdentity, appendEditorialEvent, validateEditorialOutline, editorialContextHash, selectEditorialLocalRole } from '../runtime/editorial-engine.ts';
+import { contentHash } from '../domain/text/hash.ts';
+import { pipelineRevision, pipelineRunSteps, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
+import { isRunActive } from '../domain/run.ts';
+import { pendingReview, latestApproved } from '../domain/record.ts';
+import { sameVersionRef } from '../domain/refs.ts';
+import { ok, refuse } from '../domain/result.ts';
+import { hasAnyRole } from '../domain/workspace.ts';
+import { GENERATION_LABELS, RUN_KIND_OF, GENERATION_KINDS } from '../ports/generation.ts';
+import type { GenerationKind, GenerationRequest, RunMeta } from '../ports/generation.ts';
+import type { OutlineInput } from '../ports/generation.ts';
+import type { EditorialCheckpoint, ConnectedWorkspace, EditorialJob } from '../ports/connected-workspace.ts';
+import { transaction } from './database';
+import { workerHeartbeat } from './storage';
+import { FlowError } from './errors';
+import { activePipeline, pipelineView, parsePipelineDefinition } from './pipeline';
+import { assertLocalMode, providerConfigured } from './config';
+import { r1ArticleIssue, ARTICLE_POLICY_MESSAGES } from '../domain/article-policy.ts';
+import { ARTICLE_ASSIST_KINDS, validateArticleAssistInput } from './article-assist';
+import { citationDay, podcastLink } from '../domain/citation-library.ts';
+import { currentReporterContext } from './request-context.ts';
+
+const ids = { next: () => randomUUID() };
+const identifier = z.string().min(1).max(128);
+const rpcSchema = z.object({ method: z.string().min(1).max(80), args: z.array(z.json()).max(8),requestId: z.string().uuid() }).strict();
+const supportedKinds = new Set(['article.outline', 'article.draft', 'carousel.copy', ...ARTICLE_ASSIST_KINDS]);
+const writes = new Set(['createFromSource', 'createBlank', 'rename', 'updateBrief', 'updateSpeakers', 'updatePerson', 'setMaterialAuthorization',
+  'saveDraft', 'createVersion', 'restoreVersion', 'requestReview', 'withdrawReview', 'decide', 'derive', 'decideSuggestion', 'recordDelivery', 'archive', 'recordFeedback']);
+
+/** A settings acknowledgment must not duplicate the entire prompt history in every receipt. */
+export function editorialReceipt(method: string,hash: string,result: unknown,revision: number) {
+  return method === 'pipeline.save' && (result as { ok?: boolean })?.ok
+    ? { hash,result: ok({ savedRevision: revision }),projection: 'pipeline' as const }
+    : { hash,result };
+}
+
+export async function editorialTransaction<T>(role: 'runtime' | 'worker', change: (
+  checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, client: PoolClient,
+) => Promise<T>, mutate = true): Promise<{ value: T; revision: number; checkpoint: EditorialCheckpoint }> {
+  return transaction(role, async client => {
+    const row = (await client.query('SELECT public.reporter_editorial_load($1) AS value', [mutate])).rows[0].value;
+    const context = role === 'runtime' ? currentReporterContext() : undefined;
+    const identity = context ? { workspaceId: context.portal,workspaceName: context.workspaceName,workspaceSlug: context.workspaceSlug,
+      personId: context.actor,name: context.name,email: context.email,avatarUrl: context.image,roles: context.roles } : undefined;
+    const checkpoint: EditorialCheckpoint = row.checkpoint.state ? row.checkpoint : emptyEditorialCheckpoint(identity);
+    if (identity) adoptEditorialIdentity(checkpoint,identity);
+    const before = contentHash(checkpoint);
+    const engine = createEditorialEngine(checkpoint, ids);
+    try {
+      const value = await change(checkpoint, engine, client);
+      checkpoint.state = engine.store.state;
+      const revision = mutate && (!row.checkpoint.state || before !== contentHash(checkpoint)) ? Number((await client.query('SELECT public.reporter_editorial_save($1,$2::jsonb) AS revision',
+        [row.revision, JSON.stringify(checkpoint)])).rows[0].revision) : Number(row.revision);
+      return { value, revision, checkpoint };
+    } finally { engine.store.dispose(); }
+  });
+}
+
+export async function editorialWorkspace(): Promise<ConnectedWorkspace> {
+  const result = await editorialTransaction('runtime', async () => undefined, false);
+  return { state: result.checkpoint.state,jobs: result.checkpoint.jobs,revision: result.revision,model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline: await workerHeartbeat() };
+}
+
+export async function editorialPipeline() {
+  return (await editorialTransaction('runtime',async checkpoint => pipelineView(checkpoint),false)).value;
+}
+
+function validateDraft(value: unknown) {
+  const body = z.object({ type: z.enum(['article', 'carousel']) }).passthrough().parse(value);
+  if (body.type === 'article') {
+    z.object({ title: z.string().max(500), blocks: z.array(z.object({ id: identifier,
+      type: z.enum(['paragraph','heading','quote','list','divider','figure']) }).passthrough()).max(1000) }).passthrough().parse(value);
+    for (const block of (value as { blocks: Record<string, unknown>[] }).blocks) {
+      if (['paragraph','heading','quote'].includes(String(block.type))) z.array(z.object({ text: z.string().max(200000) }).passthrough()).max(1000).parse(block.inlines);
+      if (block.type === 'list') z.array(z.array(z.object({ text: z.string().max(200000) }).passthrough()).max(1000)).max(1000).parse(block.items);
+      if (block.type === 'figure' && !block.image && !block.slot) throw new FlowError('INVALID_INPUT', 422);
+      if (block.type === 'heading') z.union([z.literal(2), z.literal(3)]).parse(block.level);
+    }
+  } else z.object({ templateId: identifier, slides: z.array(z.object({ id: identifier, layout: identifier,
+    slots: z.record(identifier,z.string().max(20000)), sourceBlockIds: z.array(identifier).max(1000) }).passthrough()).max(20) }).passthrough().parse(value);
+}
+
+/** The approved command port has positional IDs, object inputs and an array input. */
+export function validateEditorialCommandInput(method: string, args: unknown[]) {
+  const objectInputs = new Set(['createFromSource', 'createBlank', 'decide', 'derive', 'recordDelivery', 'recordFeedback']);
+  if (method === 'archive') z.array(identifier).min(1).max(1000).parse(args[0]);
+  else if (!objectInputs.has(method)) identifier.parse(args[0]);
+  if (method === 'saveDraft') { validateDraft(args[1]); z.number().int().nonnegative().parse(args[2]); }
+  if (method === 'recordDelivery') {
+    const version = z.object({ kind: z.literal('version'),pieceId: identifier,versionId: identifier,
+      number: z.number().int().positive(),hash: identifier }).strict();
+    z.object({ productionId: identifier,selection: z.array(version).min(1).max(20),
+      mode: z.literal('download').optional(),files: z.array(z.object({
+        fileName: z.string().min(1).max(512),format: z.enum(['md','html','png','pdf','json','txt','docx','jpg','webp','gif']),
+        versionId: identifier.optional(),ok: z.boolean(),
+        error: z.object({ code: z.string().max(128),message: z.string().max(2000) }).strict().optional(),
+      }).strict()).min(1).max(2000),
+    }).strict().parse(args[0]);
+  }
+}
+
+async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, kind: GenerationKind, input: Record<string, unknown>, retryOfRunId?: string) {
+  const member = engine.store.state.members.find(candidate => candidate.personId === engine.store.state.sessionPersonId);
+  if (!hasAnyRole(member, ['editor', 'admin'])) return refuse('forbidden', 'Seu papel não permite gerar conteúdo.');
+  if (!supportedKinds.has(kind)) return refuse('unsupported_action', 'Esta ação do copiloto ainda não está conectada. Use a geração de artigo ou carrossel.');
+  const productionId = identifier.parse(input.productionId), pieceId = identifier.parse(input.pieceId);
+  const record = engine.records.record(productionId);
+  if (!record) return refuse('unknown_production', 'Produção não encontrada.');
+  const piece = record.pieces.find(p => p.id === pieceId);
+  if (!piece || piece.kind !== (kind.startsWith('carousel') ? 'carousel' : 'article')) return refuse('unknown_piece', 'Peça não encontrada.');
+  if (pendingReview(record,pieceId)) return refuse('locked','Retire o envio para editar antes de gerar.');
+  if (['article.outline', 'article.draft'].includes(kind) && record.production.brief.size !== 'standard')
+    return refuse('unsupported_size', 'A R1 exige Padrão: 2.500–4.000 caracteres e 500–800 palavras. Altere o tamanho na pauta antes de gerar.');
+  if (kind === 'article.draft' && input.outline) {
+    const valid = validateEditorialOutline(record,input.outline as OutlineInput);
+    if (!valid.ok) return valid;
+    input = { ...input,outline: { ...input.outline as object,title: valid.value.title,
+      intro: { quotes: valid.value.intro },sections: valid.value.sections } };
+  }
+  if (kind === 'carousel.copy') {
+    const approved = latestApproved(record,record.pieces.find(p => p.kind === 'article')?.id ?? '');
+    if (!approved || (input.from && !sameVersionRef(approved.ref, input.from as typeof approved.ref))) return refuse('parent_not_ready','Aprove a versão exata do artigo antes de gerar o carrossel.');
+  }
+  if (ARTICLE_ASSIST_KINDS.has(kind)) {
+    const valid = validateArticleAssistInput(record,pieceId,kind,input);
+    if (!valid.ok) return valid;
+  }
+  const pipeline = structuredClone(activePipeline(checkpoint));
+  if (ARTICLE_ASSIST_KINDS.has(kind) && !pipeline.definition.steps.assist)
+    return refuse('provider_unavailable', 'Ative a etapa Assistente em Prompts antes de pedir ajustes.');
+  const keys = ARTICLE_ASSIST_KINDS.has(kind) ? ['assist'] as const : kind === 'carousel.copy' ? ['carousel'] as const : kind === 'article.outline' ? ['facts', 'outline', ...(pipeline.definition.curateQuotes ? ['quotes' as const] : [])] as const
+    : pipeline.definition.articleMode === 'single' ? ['facts', 'article'] as const : ['facts', 'intro', 'section'] as const;
+  const missing = keys.find(key => !providerConfigured(pipelineModelProvider(pipeline.definition.steps[key].model)));
+  if (missing) return refuse('provider_unavailable', 'Configure a chave de ' + pipelineModelLabel(pipeline.definition.steps[missing].model) + ' no servidor antes de gerar.');
+  checkpoint.pipeline ??= pipeline;
+  const prompt = { key: 'reporter.pipeline.' + kind, version: String(pipeline.revision), hash: pipeline.hash };
+  const model = pipeline.definition.steps[ARTICLE_ASSIST_KINDS.has(kind) ? 'assist' : kind === 'carousel.copy' ? 'carousel' : kind === 'article.outline' ? 'outline' : pipeline.definition.articleMode === 'single' ? 'article' : 'intro'].model;
+  const started = engine.runs.begin({ productionId, kind: RUN_KIND_OF[kind], prompt,
+    ...(retryOfRunId ? { retryOfRunId } : {}),
+    model: { alias: model, label: pipelineModelLabel(model) + ' · pipeline v' + pipeline.revision, engine: 'provider' },
+    steps: pipelineRunSteps(pipeline.definition,kind,record.production.brief.sections),
+  });
+  if (!started.ok) return started;
+  const run = started.value.run;
+  const meta: RunMeta = { runId: run.id, productionId, pieceId, label: GENERATION_LABELS[kind], request: { kind, input } as GenerationRequest };
+  const job: EditorialJob = { meta,kind,input: meta.request.input,events: [],attempts: 0,availableAt: Date.now(),contextHash: editorialContextHash(record,pieceId,run.inputs),pipeline,calls: [] };
+  const previous = retryOfRunId ? checkpoint.jobs[retryOfRunId] : undefined;
+  if (previous?.contextHash === job.contextHash && previous?.pipeline?.hash === pipeline.hash && previous.kind === kind)
+    job.cacheSourceRunId = previous.meta.runId;
+  checkpoint.jobs[run.id] = job;
+  appendEditorialEvent(engine,job,{ type: 'run.started', kind: run.kind, productionId,pieceId,prompt,model: run.model,
+    inputs: run.inputs,steps: run.steps.map(s => ({ id: s.id,label: s.label })),createdBy: engine.store.state.sessionPersonId,
+    ...(retryOfRunId ? { retryOfRunId } : {}) });
+  return ok({ runId: run.id });
+}
+
+export async function editorialRpc(payload: unknown) {
+  const { method,args,requestId } = rpcSchema.parse(payload);
+  if (['generation.start', 'generation.retry'].includes(method) && !await workerHeartbeat()) {
+    return refuse('provider_unavailable', 'Inicie o worker do Reporter AI antes de gerar.');
+  }
+  return (await editorialTransaction('runtime', async (checkpoint,engine,client) => {
+    const hash = contentHash({ method,args });
+    const receipt = checkpoint.receipts?.[requestId];
+    if (receipt) {
+      if (receipt.hash !== hash) throw new FlowError('IDEMPOTENCY_CONFLICT',409);
+      return receipt.projection === 'pipeline' ? ok(pipelineView(checkpoint)) : receipt.result;
+    }
+    const execute = async () => {
+    if (method === 'session.selectLocalRole') {
+      assertLocalMode();
+      const [profile] = z.tuple([z.enum(['all', 'editor', 'approver', 'creative_reviewer', 'admin'])]).parse(args);
+      return selectEditorialLocalRole(engine, profile);
+    }
+    if (method === 'pipeline.save') {
+      const baseRevision = z.number().int().positive().parse(args[1]);
+      const active = activePipeline(checkpoint);
+      if (active.revision !== baseRevision) return refuse('conflict','A configuração foi alterada em outra aba. Recarregue antes de salvar.');
+      const parsed = parsePipelineDefinition(args[0]);
+      if (!parsed.definition) return refuse('invalid_config',parsed.error!);
+      const next = pipelineRevision(parsed.definition,active.revision+1,new Date().toISOString());
+      if (next.hash === active.hash) return ok(pipelineView(checkpoint));
+      checkpoint.pipelineHistory = [...(checkpoint.pipelineHistory ?? []),active].slice(-20);
+      checkpoint.pipeline = next;
+      return ok(pipelineView(checkpoint));
+    }
+    if (method === 'generation.start') return startJob(checkpoint,engine,z.enum(GENERATION_KINDS as [GenerationKind,...GenerationKind[]]).parse(args[0]),z.record(z.string(),z.json()).parse(args[1]));
+    if (method === 'generation.cancel') {
+      const id = identifier.parse(args[0]), job = checkpoint.jobs[id], fold = engine.store.state.runFolds[id];
+      if (!job || !fold) return refuse('unknown_run','Geração não encontrada.');
+      if (!isRunActive(fold.run)) return refuse('not_running','Esta geração já terminou.');
+      delete job.lease;
+      return ok(appendEditorialEvent(engine,job,{ type: 'run.cancelled',reason: 'Cancelada pelo operador local.' }));
+    }
+    if (method === 'generation.retry') {
+      const id = identifier.parse(args[0]), job = checkpoint.jobs[id], fold = engine.store.state.runFolds[id];
+      if (!job || !fold) return refuse('unknown_run','Geração não encontrada.');
+      if (isRunActive(fold.run)) return refuse('still_running','Esta geração ainda está em andamento.');
+      if (fold.run.status === 'completed') return refuse('nothing_to_retry','Esta geração já terminou.');
+      return startJob(checkpoint,engine,job.kind,job.input as unknown as Record<string,unknown>,id);
+    }
+    if (method === 'feedback.vote') return engine.feedback.vote(args[0] as Parameters<typeof engine.feedback.vote>[0]);
+    if (!writes.has(method)) throw new FlowError('UNKNOWN_COMMAND',404);
+    const member = engine.store.state.members.find(candidate => candidate.personId === engine.store.state.sessionPersonId);
+    if (!['decide', 'recordFeedback'].includes(method) && !hasAnyRole(member, ['editor', 'admin'])) {
+      return refuse('forbidden', 'Seu papel não permite editar esta produção.');
+    }
+    validateEditorialCommandInput(method,args);
+    if (method === 'requestReview') {
+      const production = checkpoint.state.productions.find(entry => entry.pieces.some(piece => piece.id === args[0]));
+      const record = production ? engine.records.record(production.production.id) : undefined;
+      const body = record?.pieces.find(piece => piece.id === args[0])?.draft.body;
+      if (body?.type === 'article') {
+        const issue = r1ArticleIssue(body, record?.sources ?? []);
+        if (issue) return refuse('send_blocked', ARTICLE_POLICY_MESSAGES[issue]);
+      }
+    }
+    if (method === 'createFromSource') {
+      const input = z.object({ title: z.string().trim().min(1).max(120), material: z.object({
+        text: z.string().min(1).max(1048576),authorized: z.boolean(),origin: z.enum(['interview','podcast','event','talk','other']),
+        transcriptId: z.string().uuid().optional(),
+        programName: z.string().trim().max(160).optional(),sourceUrl: z.string().trim().max(2000).optional(),
+        location: z.string().trim().max(160).optional(),recordedOn: z.string().max(10).optional(),
+      }).passthrough(), brief: z.object({ sections: z.number().int().min(1).max(8),size: z.enum(['short','standard']),angle: z.string().max(600).optional() }),
+      plan: z.array(z.enum(['article','carousel'])).max(2),speakers: z.array(z.object({ label: z.string().max(500) }).passthrough()).max(100).optional() }).passthrough().parse(args[0]);
+      if (!citationDay(input.material.recordedOn) || input.material.sourceUrl && !podcastLink(input.material.sourceUrl))
+        throw new FlowError('CITATION_METADATA_INVALID',422);
+      if (input.material.transcriptId) {
+        const { rows } = await client.query('SELECT status FROM public.reporter_transcripts WHERE id=$1 AND portal_id=$2',[input.material.transcriptId,checkpoint.state.workspace.id]);
+        if (rows[0]?.status !== 'ready') throw new FlowError('TRANSCRIPT_NOT_READY',422);
+      }
+    }
+    // Only named domain commands may mutate the server-owned aggregate; no snapshot upload.
+    const command = engine.commands[method as keyof typeof engine.commands] as (...args: unknown[]) => Promise<unknown>;
+    return command(...args);
+    };
+    const result = await execute();
+    checkpoint.receipts ??= {};
+    checkpoint.receipts[requestId] = editorialReceipt(method,hash,result,activePipeline(checkpoint).revision);
+    // Bounded receipts preserve ambiguous-commit retries without an unbounded local aggregate.
+    const keys = Object.keys(checkpoint.receipts);
+    for (const key of keys.slice(0,Math.max(0,keys.length-1000))) delete checkpoint.receipts[key];
+    return result;
+  })).value;
+}
