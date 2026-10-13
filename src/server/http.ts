@@ -1,5 +1,5 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
+import { createHash,randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { z } from "zod";
 import { UUID, articleEditSchema, carouselEditSchema, createSchema, revisionSchema } from "./reporter-schema";
@@ -104,6 +104,8 @@ const messages: Record<string, string> = {
   ACCESS_PENDING: 'Sua conta existe, mas ainda precisa ser liberada por um administrador.',
   EMAIL_NOT_VERIFIED: 'Confirme seu e-mail antes de acessar o workspace.',
   CLOUD_UPLOAD_PENDING: 'O upload de arquivos grandes ainda não está liberado neste ambiente. Cole uma transcrição por enquanto.',
+  UPLOAD_WORKER_UNAVAILABLE: 'O serviço de upload está inicializando. Aguarde alguns segundos e tente novamente.',
+  UPLOAD_CONFIGURATION: 'O armazenamento de arquivos ainda não está configurado.',
   LOCAL_MODE_DISABLED: "Este fluxo só está disponível no modo local de desenvolvimento.",
   LOCAL_ACCESS_ONLY: "Acesso permitido apenas neste computador.", ORIGIN_DENIED: "Origem não autorizada.",
   ECONNREFUSED: "Banco indisponível. Inicie o PostgreSQL do Reporter AI.",
@@ -148,6 +150,25 @@ export async function handleReporter(request: Request, path: string[]) {
       return reply({ transcript,worker_online: await workerHeartbeat() });
     }
     if (request.method !== "POST") return reply({ error: "NOT_FOUND", message: "Rota não encontrada." }, 404);
+    if (path.length===1 && path[0]==='uploads') {
+      if (reporterDeploymentMode()!=='cloud') return reply({ mode: 'local' });
+      const key = idempotencyKey(request);
+      const input = z.object({ sourceId: UUID,token: z.string().min(32).max(128),name: z.string().trim().min(1).max(255),
+        size: z.number().int().min(1).max(2*1024**3) }).strict().parse(await jsonBody(request));
+      if (/[\x00-\x1f\x7f-\x9f\\/]/.test(input.name)) throw new FlowError('UNSUPPORTED_MEDIA',415);
+      const extension = input.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
+      const contentTypes: Record<string,string> = { mp3: 'audio/mpeg',m4a: 'audio/mp4',mp4: 'video/mp4',wav: 'audio/wav',
+        ogg: 'audio/ogg',flac: 'audio/flac',webm: 'video/webm' };
+      const contentType = extension ? contentTypes[extension] : undefined;
+      if (!extension || !contentType) throw new FlowError('UNSUPPORTED_MEDIA',415);
+      const objectKey = `incoming/${context.portal}/${input.sourceId}.${extension}`;
+      const tokenHash = createHash('sha256').update(input.token,'utf8').digest('hex');
+      const value = await transaction('runtime',async client => (await client.query(
+        'SELECT public.reporter_prepare_cloud_upload($1,$2,$3,$4,$5,$6,$7) AS value',
+        [input.sourceId,input.name.normalize('NFC'),input.size,contentType,objectKey,tokenHash,key],
+      )).rows[0].value,requestId);
+      return reply({ mode: 'cloud',...value },202);
+    }
     if (path.length === 1 && path[0] === "files") {
       if (reporterDeploymentMode() === 'cloud') throw new FlowError('CLOUD_UPLOAD_PENDING',503);
       const key = idempotencyKey(request);
@@ -220,9 +241,10 @@ export async function handleReporter(request: Request, path: string[]) {
     const code = error instanceof z.ZodError ? "INVALID_INPUT" : safeCode(error);
     const status = error instanceof FlowError ? error.status : error instanceof z.ZodError ? 422 :
       code === "40001" ? 409 : code === "42501" ? 403 : ["22023","23514"].includes(code) ? 422 :
+      code === '55000' ? 503 :
       code === 'AUTH_REQUIRED' ? 401 : ['ACCESS_PENDING','EMAIL_NOT_VERIFIED'].includes(code) ? 403 :
-      ["ECONNREFUSED","DATABASE_CONFIGURATION","GROQ_KEY_MISSING","LOCAL_MODE_DISABLED","AUTH_CONFIGURATION","CLOUD_UPLOAD_PENDING"].includes(code) ? 503 : 500;
+      ["ECONNREFUSED","DATABASE_CONFIGURATION","GROQ_KEY_MISSING","LOCAL_MODE_DISABLED","AUTH_CONFIGURATION","CLOUD_UPLOAD_PENDING","UPLOAD_CONFIGURATION"].includes(code) ? 503 : 500;
     logEvent("api", "request_failed", { request_id: requestId, error_code: code });
-    return reply({ error: code, message: messages[code] ?? (status < 500 ? "Revise os dados enviados." : "Não foi possível concluir. Tente novamente."), request_id: requestId }, status);
+    return reply({ error: code, message: messages[code==='55000' ? 'UPLOAD_WORKER_UNAVAILABLE' : code] ?? (status < 500 ? "Revise os dados enviados." : "Não foi possível concluir. Tente novamente."), request_id: requestId }, status);
   }
 }
