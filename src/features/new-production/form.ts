@@ -1,6 +1,7 @@
 import { DEFAULT_ARTICLE_SIZE, expectedDraftChars, fitSections, foldForMatch, formatLaudas, sizeLabel, sizeOf } from '../../domain/index.ts';
 import type { ArticleSize, PieceKind, SourceOrigin } from '../../domain/index.ts';
 import type { NewProductionInput, SourceAnalysis, SpeakerAssignment } from '../../ports/index.ts';
+import { podcastLink } from '../../domain/citation-library.ts';
 
 /**
  * Nova produção as a pure form model (CONTRACT §3.9, D6): three short steps with one decision
@@ -10,7 +11,7 @@ import type { NewProductionInput, SourceAnalysis, SpeakerAssignment } from '../.
  * the field validation behind ErrorSummary, and the command input. No React, no clock.
  */
 
-export type MaterialMode = 'paste' | 'file';
+export type MaterialMode = 'paste' | 'file' | 'link';
 
 /** "Entregas": the article is mandatory; the carousel is the optional derivative. */
 export type DeliveryPlan = 'article' | 'article-carousel';
@@ -36,12 +37,13 @@ export type SpeakerChoice =
   | { kind: 'person'; personId: string }
   | { kind: 'new'; name: string; title?: string; organization?: string };
 
-export type MaterialFile = { name: string; size: number; text: string };
+export type MaterialFile = { name: string; size: number; text: string; transcriptId?: string };
 
 export type NewProductionDraft = {
   mode: MaterialMode;
   pasted: string;
   file: MaterialFile | null;
+  linkFile: MaterialFile | null;
   /** "Os falantes autorizaram o uso" (required to continue). */
   authorized: boolean;
   /** Explicit choices only; labels without one use `suggestSpeaker`. */
@@ -56,6 +58,9 @@ export type NewProductionDraft = {
   origin: SourceOrigin;
   /** YYYY-MM-DD or empty. */
   recordedOn: string;
+  programName?: string;
+  sourceUrl?: string;
+  location?: string;
 };
 
 export type PersonOption = { id: string; name: string };
@@ -64,6 +69,7 @@ export const EMPTY_DRAFT: NewProductionDraft = {
   mode: 'paste',
   pasted: '',
   file: null,
+  linkFile: null,
   authorized: false,
   speakers: {},
   size: DEFAULT_ARTICLE_SIZE,
@@ -84,6 +90,7 @@ export const MAX_ANGLE_LENGTH = 600;
 /** The material the active mode points at (switching modes keeps both). */
 export function draftMaterial(draft: NewProductionDraft): { text: string; fileName?: string } {
   if (draft.mode === 'file') return draft.file ? { text: draft.file.text, fileName: draft.file.name } : { text: '' };
+  if (draft.mode === 'link') return draft.linkFile ? { text: draft.linkFile.text, fileName: draft.linkFile.name } : { text: '' };
   return { text: draft.pasted };
 }
 
@@ -98,6 +105,7 @@ export function isDraftDirty(draft: NewProductionDraft): boolean {
     draft.title.trim() !== '' ||
     draft.angle.trim() !== '' ||
     draft.recordedOn !== '' ||
+    Boolean(draft.programName?.trim() || draft.sourceUrl?.trim() || draft.location?.trim()) ||
     draft.authorized ||
     draft.origin !== EMPTY_DRAFT.origin ||
     draft.sectionsCustom ||
@@ -147,8 +155,10 @@ export function suggestSpeaker(label: string, people: readonly PersonOption[]): 
   return looksLikeFullName(label) ? { kind: 'new', name: label.trim() } : { kind: 'unset' };
 }
 
-export function speakerChoice(draft: Pick<NewProductionDraft, 'speakers'>, label: string, people: readonly PersonOption[]): SpeakerChoice {
-  return draft.speakers[label] ?? suggestSpeaker(label, people);
+export function speakerChoice(draft: Pick<NewProductionDraft, 'speakers'>, label: string, people: readonly PersonOption[], presentation?: SourceAnalysis['speakers'][number]['presentation']): SpeakerChoice {
+  const choice = draft.speakers[label] ?? suggestSpeaker(label, people);
+  if (draft.speakers[label] || !presentation || choice.kind === 'person' || choice.kind === 'none') return choice;
+  return { kind: 'new',name: label,...(presentation.title ? { title: presentation.title } : {}),...(presentation.organization ? { organization: presentation.organization } : {}) };
 }
 
 /** Name of a speaker as the production will show it: the linked person, the new name, or the raw label. */
@@ -160,7 +170,7 @@ export function speakerDisplayName(choice: SpeakerChoice, label: string, people:
 
 /** Labels of the material still without a person or an explicit "Sem atribuição". */
 export function speakersWithoutPerson(draft: Pick<NewProductionDraft, 'speakers'>, analysis: SourceAnalysis | undefined, people: readonly PersonOption[]): string[] {
-  return (analysis?.speakers ?? []).filter((speaker) => speakerChoice(draft, speaker.label, people).kind === 'unset').map((speaker) => speaker.label);
+  return (analysis?.speakers ?? []).filter((speaker) => speakerChoice(draft, speaker.label, people, speaker.presentation).kind === 'unset').map((speaker) => speaker.label);
 }
 
 /** "2 falantes sem pessoa" (ErrorSummary and the Falantes group). */
@@ -179,8 +189,9 @@ export function defaultTitle(
   people: readonly PersonOption[],
   isStaff: (personId: string) => boolean = () => false,
 ): string {
+  if (analysis?.topicTitle?.trim()) return analysis.topicTitle.trim();
   const named = (analysis?.speakers ?? [])
-    .map((speaker) => ({ label: speaker.label, choice: speakerChoice(draft, speaker.label, people) }))
+    .map((speaker) => ({ label: speaker.label, choice: speakerChoice(draft, speaker.label, people, speaker.presentation) }))
     .filter(({ choice }) => choice.kind === 'person' || (choice.kind === 'new' && choice.name.trim() !== ''));
   const guest = named.find(({ choice }) => choice.kind !== 'person' || !isStaff(choice.personId)) ?? named[0];
   return guest ? `Entrevista com ${speakerDisplayName(guest.choice, guest.label, people)}` : 'Nova entrevista';
@@ -229,7 +240,7 @@ export function withSize(draft: Pick<NewProductionDraft, 'sections' | 'sectionsC
 export function shortfallSentence(size: ArticleSize, charsAvailable: number | undefined): string | undefined {
   if (charsAvailable === undefined || charsAvailable <= 0) return undefined;
   const expected = expectedDraftChars(size, charsAvailable);
-  return expected.reachesRange ? undefined : `O material rende ≈ ${formatLaudas(expected.chars)}. O texto sai com isso.`;
+  return expected.reachesRange ? undefined : `O material rende ≈ ${formatLaudas(expected.chars)}. Acrescente fonte para cumprir o mínimo; a IA não inventará conteúdo.`;
 }
 
 /** Footer summary of the Pauta: "Padrão · 2 laudas · 3 seções · 2 falantes" ("Curto · 1 lauda · 2 partes · 2 falantes"). */
@@ -243,7 +254,8 @@ export function briefSummary(size: ArticleSize, sections: number, speakers: numb
 
 /** Why "Continuar" cannot move on from Material (COPY §6.1); `undefined` when it can. */
 export function materialBlocker(draft: NewProductionDraft): string | undefined {
-  if (!hasMaterial(draft)) return draft.mode === 'file' ? 'Envie o arquivo da transcrição para continuar.' : 'Cole a transcrição para continuar.';
+  if (!hasMaterial(draft)) return draft.mode === 'file' ? 'Envie o arquivo da transcrição para continuar.' :
+    draft.mode === 'link' ? 'Importe o link para continuar.' : 'Cole a transcrição para continuar.';
   if (!draft.authorized) return 'Marque a autorização dos falantes para continuar.';
   return undefined;
 }
@@ -273,10 +285,11 @@ export const SPEAKER_UNSET_MESSAGE = 'Escolha quem fala ou “Sem atribuição�
 export function validateMaterial(draft: NewProductionDraft, analysis: SourceAnalysis | undefined, people: readonly PersonOption[]): DraftIssue[] {
   const issues: DraftIssue[] = [];
   if (!hasMaterial(draft)) {
-    issues.push({ field: 'material', label: 'Transcrição', message: draft.mode === 'file' ? 'Envie o arquivo da transcrição.' : 'Cole a transcrição.' });
+    issues.push({ field: 'material', label: 'Transcrição', message: draft.mode === 'file' ? 'Envie o arquivo da transcrição.' :
+      draft.mode === 'link' ? 'Importe o link do episódio.' : 'Cole a transcrição.' });
   }
   for (const speaker of analysis?.speakers ?? []) {
-    const choice = speakerChoice(draft, speaker.label, people);
+    const choice = speakerChoice(draft, speaker.label, people, speaker.presentation);
     if (choice.kind === 'new' && !choice.name.trim()) {
       issues.push({ field: `speaker:${speaker.label}`, label: speaker.label, message: 'Informe o nome da pessoa.' });
     }
@@ -293,13 +306,14 @@ export function toCreateInput(draft: NewProductionDraft, analysis: SourceAnalysi
   const material = draftMaterial(draft);
   const speakers: SpeakerAssignment[] = [];
   for (const speaker of analysis?.speakers ?? []) {
-    const choice = speakerChoice(draft, speaker.label, people);
-    if (choice.kind === 'person') speakers.push({ label: speaker.label, personId: choice.personId });
-    if (choice.kind === 'none') speakers.push({ label: speaker.label, unattributed: true });
+    const choice = speakerChoice(draft, speaker.label, people, speaker.presentation);
+    const presentation = speaker.presentation ? { presentation: { segmentId: speaker.presentation.segmentId,excerpt: speaker.presentation.excerpt } } : {};
+    if (choice.kind === 'person') speakers.push({ label: speaker.label, personId: choice.personId, ...presentation });
+    if (choice.kind === 'none') speakers.push({ label: speaker.label, unattributed: true, ...presentation });
     if (choice.kind === 'new' && choice.name.trim()) {
       const title = choice.title?.trim();
       const organization = choice.organization?.trim();
-      speakers.push({ label: speaker.label, newPerson: { name: choice.name.trim(), ...(title ? { title } : {}), ...(organization ? { organization } : {}) } });
+      speakers.push({ label: speaker.label, ...presentation, newPerson: { name: choice.name.trim(), ...(title ? { title } : {}), ...(organization ? { organization } : {}) } });
     }
   }
   const angle = draft.angle.trim();
@@ -311,7 +325,12 @@ export function toCreateInput(draft: NewProductionDraft, analysis: SourceAnalysi
     plan: planKinds(draft.plan),
   };
   if (material.fileName) input.material.fileName = material.fileName;
+  const transcriptId = draft.mode === 'file' ? draft.file?.transcriptId : draft.mode === 'link' ? draft.linkFile?.transcriptId : undefined;
+  if (transcriptId) input.material.transcriptId = transcriptId;
   if (draft.recordedOn) input.material.recordedOn = draft.recordedOn;
+  if (draft.programName?.trim()) input.material.programName = draft.programName.trim();
+  if (draft.location?.trim()) input.material.location = draft.location.trim();
+  if (draft.sourceUrl?.trim()) input.material.sourceUrl = podcastLink(draft.sourceUrl) ?? draft.sourceUrl.trim();
   if (angle) input.brief.angle = angle;
   return input;
 }

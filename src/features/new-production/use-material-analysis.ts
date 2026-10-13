@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { SourceAnalysis } from '@/ports';
 import { useCommands } from '@/state';
 
@@ -17,6 +17,7 @@ export type MaterialAnalysis = {
   analysis: SourceAnalysis | undefined;
   /** pt-BR refusal ("Cole ou envie o material…") when `error`. */
   message: string | undefined;
+  retry?: () => void;
 };
 
 type Answer = { key: string; text: string; analysis?: SourceAnalysis; message?: string };
@@ -32,11 +33,13 @@ const OPTIONS_PAUSE_MS = 400;
 export function useMaterialAnalysis(text: string, fileName: string | undefined, delayMs: number, outlook?: OutlookInput): MaterialAnalysis {
   const commands = useCommands();
   const [answer, setAnswer] = useState<Answer | null>(null);
+  const [revision, setRevision] = useState(0);
+  const retry = useCallback(() => setRevision(value => value + 1), []);
   const blank = text.trim() === '';
   const angle = outlook?.angle.trim() ?? '';
   const names = JSON.stringify(outlook?.speakerNames ?? {});
   const textKey = `${fileName ?? ''}\u0000${text}`;
-  const key = `${textKey}\u0000${angle}\u0000${names}`;
+  const key = `${textKey}\u0000${angle}\u0000${names}\u0000${revision}`;
   // Same material, new brief or names: only the outlook changes, after a short pause.
   const delay = answer?.text === textKey ? Math.max(delayMs, OPTIONS_PAUSE_MS) : delayMs;
 
@@ -49,7 +52,7 @@ export function useMaterialAnalysis(text: string, fileName: string | undefined, 
       void commands.ingest.analyze(text, options).then((result) => {
         if (!alive) return;
         setAnswer(result.ok ? { key, text: textKey, analysis: result.value } : { key, text: textKey, message: result.refusal.message });
-      });
+      }).catch(() => { if (alive) setAnswer({ key, text: textKey, message: 'Não foi possível analisar o material. Tente novamente.' }); });
     }, delay);
     return () => {
       alive = false;
@@ -61,7 +64,7 @@ export function useMaterialAnalysis(text: string, fileName: string | undefined, 
   if (answer?.key === key) {
     return answer.analysis
       ? { status: 'ready', analysis: answer.analysis, message: undefined }
-      : { status: 'error', analysis: undefined, message: answer.message };
+      : { status: 'error', analysis: undefined, message: answer.message, retry };
   }
   return { status: 'analyzing', analysis: answer?.analysis, message: undefined };
 }

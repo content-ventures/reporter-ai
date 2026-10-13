@@ -29,6 +29,8 @@ import {
 } from '@content-ventures/design-system/v3';
 import { FileText, Sparkles, X } from '@content-ventures/design-system/v3/icons';
 import { sizeOf } from '@/domain';
+import { sourceLinkMessage } from '@/domain/source-link';
+import { MAX_UPLOAD_BYTES } from '../../domain/reporter.ts';
 import type { PersonSummary, SourceAnalysis } from '@/ports';
 import { sourceKind, type SourceIntake } from '@/registries';
 import { useCommands, usePeople, useProduction, useSource } from '@/state';
@@ -74,6 +76,7 @@ import {
 import { SpeakersSection } from './speakers-section';
 import { StructureStep } from './structure-step';
 import { useFileReader } from './use-file-reader';
+import { useLinkReader, type ImportedLink } from './use-link-reader';
 import { useMaterialAnalysis } from './use-material-analysis';
 import { useOutlineRun } from './use-outline-run';
 
@@ -113,6 +116,7 @@ function daysAgoIso(days: number): string {
 export function NewProductionScreen({ productionId: routeId }: { productionId?: string }) {
   const router = useRouter();
   const commands = useCommands();
+  const intake: SourceIntake = { ...INTAKE,extensions: [...INTAKE.extensions,'.mp3','.m4a','.mp4','.wav','.ogg','.flac','.webm'],maxBytes: MAX_UPLOAD_BYTES };
   const peopleQuery = usePeople();
   const people = peopleQuery.data ?? NO_PEOPLE;
   // From the shared page clock after hydration (the server never computes "today").
@@ -153,12 +157,17 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   const readyAnalysis = analysisState.status === 'ready' ? analysis : undefined;
 
   const onFileLoaded = useCallback((file: MaterialFile) => setDraft((current) => ({ ...current, file, speakers: {} })), []);
-  const fileReader = useFileReader(INTAKE, onFileLoaded);
+  const fileReader = useFileReader(intake, onFileLoaded);
+  const onLinkLoaded = useCallback((value: ImportedLink) => setDraft((current) => ({
+    ...current,linkFile: value.file,sourceUrl: value.sourceUrl,programName: current.programName?.trim() ? current.programName : value.programName,speakers: {},
+  })),[]);
+  const linkReader = useLinkReader(onLinkLoaded);
 
   // ── Field ids for ErrorSummary (read in handlers only) ──
   const dropzoneId = useId();
   const authorizationId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const linkRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const nameInputs = useRef(new Map<string, HTMLInputElement>());
   const nameRef = useCallback(
@@ -214,7 +223,8 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   };
   const blocker =
     step === 'material'
-      ? materialBlocker(draft)
+      ? materialBlocker(draft) ?? (analysisState.status === 'analyzing' ? 'Aguarde a análise do material.' :
+        analysisState.status === 'error' ? 'Tente analisar o material novamente.' : undefined)
       : step === 'brief'
         ? briefBlocker(activeId ? { ...draft, title: detail?.title ?? 'Produção' } : draft)
         : structureBlocker();
@@ -249,7 +259,20 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   }, [article, busy, detail, router]);
 
   // ── Actions ──
-  const setMode = (mode: MaterialMode) => update({ mode, speakers: {} });
+  const setMode = (mode: MaterialMode) => {
+    if (mode!=='file') fileReader.reset();
+    if (mode!=='link') linkReader.reset();
+    update({ mode,speakers: {} });
+  };
+  const changeLink = (sourceUrl: string) => {
+    linkReader.reset();
+    update({ sourceUrl,linkFile: null,speakers: {} });
+  };
+  const importLink = () => {
+    const message = sourceLinkMessage(draft.sourceUrl ?? '');
+    if (message) { toast('Link não importado',{ tone: 'error',description: message });linkRef.current?.focus();return; }
+    linkReader.read(draft.sourceUrl ?? '');
+  };
   const setSpeaker = (label: string, choice: SpeakerChoice) => setDraft((current) => ({ ...current, speakers: { ...current.speakers, [label]: choice } }));
 
   const fillSample = useCallback(() => {
@@ -271,7 +294,7 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   }, [fileReader]);
 
   const fieldIds = (): Attempt['ids'] => {
-    const ids: Attempt['ids'] = { material: draft.mode === 'paste' ? textareaRef.current?.id : `${dropzoneId}-dropzone` };
+    const ids: Attempt['ids'] = { material: draft.mode === 'paste' ? textareaRef.current?.id : draft.mode === 'link' ? linkRef.current?.id : `${dropzoneId}-dropzone` };
     for (const [label, id] of pickerIds.current) ids[`speaker:${label}`] = id;
     for (const [label, node] of nameInputs.current) ids[`speaker:${label}`] = node.id || undefined;
     return ids;
@@ -282,21 +305,25 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
     if (readyAnalysis) return readyAnalysis;
     if (!hasMaterial(draft)) return undefined;
     const result = await commands.ingest.analyze(material.text, material.fileName ? { fileName: material.fileName, format: 'auto' } : { format: 'auto' });
+    if (!result.ok) toast('Material não analisado', { tone: 'error', description: result.refusal.message });
     return result.ok ? result.value : undefined;
   };
 
-  // The internal title is prefilled from who speaks, until the person writes their own.
+  // Prefer the material's topic; a human-written internal title is never overwritten.
   const autoTitle = useRef('');
   const isStaff = useCallback((personId: string) => !people.find((person) => person.id === personId)?.organization, [people]);
 
   /** Step 1 → 2: the material is there, authorised, and every speaker has an answer. */
   const continueFromMaterial = async () => {
     if (busy) return;
+    if (analysisState.status !== 'ready') return;
     if (materialBlocker(draft)) {
-      focusField(hasMaterial(draft) ? authorizationId : draft.mode === 'paste' ? (textareaRef.current?.id ?? '') : `${dropzoneId}-dropzone`);
+      focusField(hasMaterial(draft) ? authorizationId : draft.mode === 'paste' ? (textareaRef.current?.id ?? '') :
+        draft.mode === 'link' ? (linkRef.current?.id ?? '') : `${dropzoneId}-dropzone`);
       return;
     }
     const current = await freshAnalysis();
+    if (!current) return;
     if (validateMaterial(draft, current, people).length > 0) {
       const ids = fieldIds();
       setAttempt((previous) => ({ key: (previous?.key ?? 0) + 1, ids }));
@@ -320,6 +347,7 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
     }
     setBusy('create');
     const current = await freshAnalysis();
+    if (!current) { setBusy(null); return; }
     const created = await commands.production.createFromSource(toCreateInput(draft, current, people));
     if (!created.ok) {
       setBusy(null);
@@ -451,7 +479,7 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   const facts = [
     briefSummary(outlineDraft?.size ?? detail?.brief.size ?? draft.size, outlineDraft?.sections.length ?? detail?.brief.sections ?? draft.sections, 0),
     proposal?.shortfall
-      ? `O material rende ≈ ${formatLaudas(proposal.shortfall.expectedChars)}. O texto sai com isso.`
+      ? `O material rende ≈ ${formatLaudas(proposal.shortfall.expectedChars)}. Acrescente fonte para cumprir o mínimo; a IA não inventará conteúdo.`
       : proposal?.materialChars !== undefined
         ? `O material rende ≈ ${formatLaudas(proposal.materialChars)}`
         : '',
@@ -521,18 +549,25 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
               draft={draft}
               material={analysisState}
               fileRead={fileReader.state}
-              intake={INTAKE}
+              linkRead={linkReader.state}
+              intake={intake}
               error={materialIssue}
-              state={materialState(draft, analysisState, fileReader.state, Boolean(materialIssue))}
+              state={materialState(draft, analysisState, fileReader.state, linkReader.state, Boolean(materialIssue))}
               dropzoneId={dropzoneId}
               textareaRef={textareaRef}
+              linkRef={linkRef}
               onModeChange={setMode}
               onPaste={(pasted) => update({ pasted })}
+              onLinkChange={changeLink}
+              onImportLink={importLink}
               onFile={fileReader.read}
               onReject={fileReader.reject}
               onRemoveFile={() => update({ file: null, speakers: {} })}
               onCancelRead={fileReader.reset}
               onRetryRead={fileReader.retry}
+              onCancelLink={linkReader.reset}
+              onRetryLink={linkReader.retry}
+              onRemoveLink={() => { linkReader.reset();update({ linkFile: null,sourceUrl: '',speakers: {} }); }}
               onUseSample={fillSample}
             />
             <SpeakersSection
@@ -581,6 +616,7 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
           <StructureStep
             run={runState}
             onRetry={() => void outline.restart()}
+            onStop={() => void outline.stop()}
             retrying={runState.status === 'loading'}
             outline={outlineDraft}
             onChange={setOutlineDraft}

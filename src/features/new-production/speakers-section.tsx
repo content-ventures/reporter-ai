@@ -128,14 +128,14 @@ export function SpeakersSection({ draft, analysis, people, peopleLoading, state,
   );
 
   const open = speakers.length > 0;
-  const summary = !analysis ? 'Detectados no material' : 'Nenhum falante identificado';
+  const summary = !analysis ? 'Detectados no material' : 'Sem identificação no texto; o áudio não separa vozes';
   const undecided = speakersWithoutPerson(draft, analysis, people).length;
   const meta = open ? [plural(speakers.length, 'falante', 'falantes'), undecided > 0 ? withoutPersonLabel(undecided) : null].filter(Boolean).join(' · ') : undefined;
 
   return (
     <FormSection title="Falantes" titleAs="h2" state={state} open={open} summary={open ? undefined : summary} meta={meta}>
       {speakers.map((speaker) => {
-        const choice = speakerChoice(draft, speaker.label, people);
+        const choice = speakerChoice(draft, speaker.label, people, speaker.presentation);
         const options: SelectOption[] = [
           ...peopleOptions,
           { value: NEW, label: 'Nova pessoa', leading: <Avatar name={choice.kind === 'new' && choice.name.trim() ? choice.name : speaker.label} size="xs" decorative /> },
@@ -145,7 +145,8 @@ export function SpeakersSection({ draft, analysis, people, peopleLoading, state,
           <FormRow
             key={speaker.label}
             label={`Quem é ${speaker.label}?`}
-            description={`${plural(speaker.segments, 'fala', 'falas')} · ${plural(speaker.words, 'palavra', 'palavras')}`}
+            description={speaker.presentation && speaker.segments === 0 ? 'Apresentado no material · confirme os dados; falas não atribuídas' : `${plural(speaker.segments, 'fala', 'falas')} · ${plural(speaker.words, 'palavra', 'palavras')}`}
+            hint={speaker.presentation ? `Evidência: “${speaker.presentation.excerpt}”` : undefined}
             error={errors[speaker.label]}
           >
             {({ id, describedBy, invalid }) => (

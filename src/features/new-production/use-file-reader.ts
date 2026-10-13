@@ -13,7 +13,7 @@ import type { MaterialFile } from './form';
  */
 
 export type FileReadState =
-  | { status: 'reading'; name: string; size: number; progress: number }
+  | { status: 'reading'; name: string; size: number; progress: number; message?: string }
   | { status: 'error'; name: string; size: number; message: string; retry: 'reread' | 'pick' };
 
 const MIN_READ_MS = 650;
@@ -37,10 +37,12 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
   const run = useRef(0);
   const ticker = useRef<number | undefined>(undefined);
   const lastFile = useRef<File | null>(null);
+  const controller = useRef<AbortController | undefined>(undefined);
 
   useEffect(
     () => () => {
       run.current += 1;
+      controller.current?.abort();
       window.clearInterval(ticker.current);
     },
     [],
@@ -51,13 +53,19 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
       run.current += 1;
       const token = run.current;
       lastFile.current = file;
+      controller.current?.abort();
+      controller.current = new AbortController();
       window.clearInterval(ticker.current);
       setState({ status: 'reading', name: file.name, size: file.size, progress: 6 });
       ticker.current = window.setInterval(() => {
         setState((current) => (current?.status === 'reading' ? { ...current, progress: Math.min(92, current.progress + 13) } : current));
       }, TICK_MS);
       const started = performance.now();
-      void commands.ingest.read(file).then(async (result) => {
+      void commands.ingest.read(file,{ signal: controller.current.signal,onProgress(progress,message) {
+        if (token !== run.current) return;
+        window.clearInterval(ticker.current);
+        setState({ status: 'reading',name: file.name,size: file.size,progress,message });
+      } }).then(async (result) => {
         const rest = MIN_READ_MS - (performance.now() - started);
         if (rest > 0) await new Promise((resolve) => window.setTimeout(resolve, rest));
         if (token !== run.current) return;
@@ -73,7 +81,7 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
           return;
         }
         setState(null);
-        onLoaded({ name: result.value.fileName, size: result.value.bytes, text: result.value.text });
+        onLoaded({ name: result.value.fileName, size: result.value.bytes, text: result.value.text,...(result.value.transcriptId ? { transcriptId: result.value.transcriptId } : {}) });
       }).catch(() => {
         // An unexpected failure (not a refusal) must not leave the row "reading" forever.
         if (token !== run.current) return;
@@ -102,6 +110,7 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
   /** "Cancelar envio" or "Escolher outro": back to the drop area. */
   const reset = useCallback(() => {
     run.current += 1;
+    controller.current?.abort();
     window.clearInterval(ticker.current);
     setState(null);
   }, []);

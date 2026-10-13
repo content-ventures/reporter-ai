@@ -1,8 +1,9 @@
 'use client';
 
-import type { Ref } from 'react';
+import { useState, type Ref } from 'react';
 import {
   Alert,
+  Button,
   ChoiceCard,
   DatePicker,
   Disclosure,
@@ -18,6 +19,7 @@ import {
 } from '@content-ventures/design-system/v3';
 import { SIZE_RULE, sizeOf, type ArticleSize, type SourceOrigin } from '@/domain';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
+import { podcastLink } from '@/domain/citation-library';
 import { SIZE_OPTIONS } from '@/ui/format';
 import {
   MAX_ANGLE_LENGTH,
@@ -62,6 +64,7 @@ export type BriefStepProps = {
 
 export function BriefStep({ draft, update, charsAvailable, existing = false, titleError, titleRef, today }: BriefStepProps) {
   const [notice, showNotice] = useNotice();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const shortfall = shortfallSentence(draft.size, charsAvailable);
   const automaticSections = sizeOf(draft.size).sections.default;
 
@@ -89,9 +92,10 @@ export function BriefStep({ draft, update, charsAvailable, existing = false, tit
               name="article-size"
               value={option.value}
               checked={draft.size === option.value}
+              disabled={option.value === 'short'}
               onChange={(value) => chooseSize(value as ArticleSize)}
               title={option.label}
-              description={option.description}
+              description={option.value === 'short' ? 'Fora da R1: o teto de 2.000 caracteres é menor que o mínimo obrigatório.' : option.description}
             />
           ))}
         </Grid>
@@ -172,7 +176,21 @@ export function BriefStep({ draft, update, charsAvailable, existing = false, tit
               />
             )}
           </FormRow>
-          <Disclosure summary="Mais detalhes">
+          <FormRow label="Mais detalhes">
+            <Button size="sm" variant="ghost" aria-expanded={detailsOpen} aria-label={detailsOpen ? 'Ocultar mais detalhes' : 'Mostrar mais detalhes'} onClick={() => setDetailsOpen(!detailsOpen)}>
+              {detailsOpen ? 'Ocultar' : 'Mostrar'}
+            </Button>
+          </FormRow>
+          {detailsOpen && <>
+            <FormRow label="Podcast ou programa" optional>
+              {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={draft.programName ?? ''} maxLength={160} placeholder="Ex.: Podcast Seafood Brasil" onChange={event => update({ programName: event.target.value })} />}
+            </FormRow>
+            <FormRow label="Link do episódio" optional error={draft.sourceUrl?.trim() && !podcastLink(draft.sourceUrl) ? 'Informe um link HTTPS válido.' : undefined}>
+              {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} value={draft.sourceUrl ?? ''} maxLength={2000} inputMode="url" placeholder="https://" onChange={event => update({ sourceUrl: event.target.value })} />}
+            </FormRow>
+            <FormRow label="Local da gravação" optional>
+              {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={draft.location ?? ''} maxLength={160} onChange={event => update({ location: event.target.value })} />}
+            </FormRow>
             <FormRow label="Origem">
               {({ id, describedBy }) => (
                 <Select id={id} describedBy={describedBy} value={draft.origin} options={ORIGINS} onChange={(value) => update({ origin: value as SourceOrigin })} />
@@ -183,7 +201,7 @@ export function BriefStep({ draft, update, charsAvailable, existing = false, tit
                 <DatePicker id={id} describedBy={describedBy} value={draft.recordedOn} max={today} editable onChange={(value) => update({ recordedOn: value })} />
               )}
             </FormRow>
-          </Disclosure>
+          </>}
         </>
       )}
     </FormSection>

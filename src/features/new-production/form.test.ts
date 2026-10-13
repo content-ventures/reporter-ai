@@ -80,6 +80,7 @@ describe('Nova produção form', () => {
   test('"Continuar" says why it is blocked: material first, then the authorisation', () => {
     assert.equal(materialBlocker(EMPTY_DRAFT), 'Cole a transcrição para continuar.');
     assert.equal(materialBlocker({ ...EMPTY_DRAFT, mode: 'file' }), 'Envie o arquivo da transcrição para continuar.');
+    assert.equal(materialBlocker({ ...EMPTY_DRAFT, mode: 'link' }), 'Importe o link para continuar.');
     assert.equal(materialBlocker(sample), 'Marque a autorização dos falantes para continuar.');
     assert.equal(materialBlocker({ ...sample, authorized: true }), undefined);
   });
@@ -168,7 +169,7 @@ describe('Nova produção form', () => {
   test('a material that cannot fill the size says so, never padded', () => {
     assert.equal(shortfallSentence('standard', undefined), undefined);
     assert.equal(shortfallSentence('standard', 6000), undefined);
-    assert.match(shortfallSentence('standard', 800) ?? '', /^O material rende ≈ .* lauda\. O texto sai com isso\.$/);
+    assert.match(shortfallSentence('standard', 800) ?? '', /^O material rende ≈ .* lauda\. Acrescente fonte para cumprir o mínimo/);
   });
 
   test('the summaries read "Padrão · 2 laudas · 3 seções · 2 falantes"', () => {
@@ -187,6 +188,12 @@ describe('Nova produção form', () => {
       defaultTitle({ speakers: { 'Rafael Dias': { kind: 'none' }, 'Beatriz Almeida': { kind: 'none' } } }, analysis, PEOPLE),
       `Entrevista com ${SAMPLE_NEW_SPEAKER}`,
     );
+  });
+
+  test('a material-grounded topic takes precedence over the generic interview title', () => {
+    const analysis = analysisOf(SAMPLE_TRANSCRIPT);
+    analysis.topicTitle = 'Gestão do mix de pescados no varejo';
+    assert.equal(defaultTitle({ speakers: {} }, analysis, PEOPLE), analysis.topicTitle);
   });
 
   test('helpers: dirty flag', () => {

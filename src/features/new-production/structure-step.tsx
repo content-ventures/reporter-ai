@@ -2,8 +2,8 @@
 
 import {
   ErrorState,
+  ExpandableText,
   Field,
-  Grid,
   IconButton,
   Input,
   LinkButton,
@@ -13,8 +13,9 @@ import {
   PageStack,
   Popover,
   PopoverHeader,
+  Prose,
   SkeletonText,
-  SourceChip,
+  Toolbar,
   formatTimestamp,
 } from '@content-ventures/design-system/v3';
 import { Trash2 } from '@content-ventures/design-system/v3/icons';
@@ -38,6 +39,8 @@ import {
 } from './outline-model';
 import { quoteView, type QuoteMaterial, type QuoteView } from './outline-quotes';
 import type { OutlineRunState } from './use-outline-run';
+import { RunTrace } from '@/ui/run-trace';
+import { useGenerationFeedback } from '@/ui/use-generation-feedback';
 
 /**
  * "Estrutura" (step 3, CONTRACT §3.9, COPY §6.4): the outline the AI proposed, edited before the
@@ -51,6 +54,7 @@ export const LOADING_TEXT = 'A IA está montando a estrutura…';
 export type StructureStepProps = {
   run: OutlineRunState;
   onRetry: () => void;
+  onStop?: () => void;
   retrying: boolean;
   outline: OutlineDraft | null;
   onChange: (draft: OutlineDraft) => void;
@@ -61,19 +65,21 @@ export type StructureStepProps = {
   showErrors: boolean;
 };
 
-function QuoteChip({ view, onRemove }: { view: QuoteView; onRemove: () => void }) {
+function QuoteExcerpt({ view, onRemove }: { view: QuoteView; onRemove: () => void }) {
   const time = view.startMs !== undefined ? formatTimestamp(view.startMs) : undefined;
-  return <SourceChip kind="quote" label={time ? `${view.speaker} · ${time}` : view.speaker} preview={view.excerpt} onRemove={onRemove} />;
+  return <ListItem density="sm" title={time ? `${view.speaker} · ${time}` : view.speaker}
+    description={<Prose variant="compact" measure="wide"><ExpandableText lines={3} moreLabel="Ler trecho completo" lessLabel="Recolher trecho">{view.excerpt || 'Trecho indisponível.'}</ExpandableText></Prose>}
+    actions={<IconButton label={`Tirar citação ${time ?? view.speaker}`} icon={Trash2} variant="ghost" onClick={onRemove} />} />;
 }
 
 function QuoteChips({ quotes, material, onRemove, empty }: { quotes: readonly SourceRef[]; material: QuoteMaterial; onRemove: (ref: SourceRef) => void; empty: string }) {
   if (quotes.length === 0) return empty;
   return (
-    <Grid columns="auto" min={170} gap="sm">
+    <List label="Trechos selecionados" framed={false}>
       {quotes.map((ref) => (
-        <QuoteChip key={refKey(ref)} view={quoteView(ref, material)} onRemove={() => onRemove(ref)} />
+        <QuoteExcerpt key={refKey(ref)} view={quoteView(ref, material)} onRemove={() => onRemove(ref)} />
       ))}
-    </Grid>
+    </List>
   );
 }
 
@@ -114,15 +120,22 @@ function AddQuote({ place, available, material, onAdd }: { place: OutlinePlace; 
   );
 }
 
-export function StructureStep({ run, onRetry, retrying, outline, onChange, material, facts, showErrors }: StructureStepProps) {
+export function StructureStep({ run, onRetry, onStop, retrying, outline, onChange, material, facts, showErrors }: StructureStepProps) {
+  const feedback = useGenerationFeedback(run.status === 'running' ? run.run : undefined);
   if (run.status === 'failed') {
-    return <ErrorState size="panel" title="Não foi possível montar a estrutura." description={run.message} onRetry={onRetry} retrying={retrying} />;
+    return <PageStack>
+      <ErrorState size="panel" title={run.run?.status === 'cancelled' ? 'Geração interrompida.' : 'Não foi possível montar a estrutura.'} description={run.message} onRetry={onRetry} retrying={retrying} />
+      {run.run && <RunTrace run={run.run} label="Etapas da estrutura" />}
+    </PageStack>;
   }
   if (run.status !== 'ready' || !outline) {
     return (
       <PageStack>
-        <SkeletonText lines={5} label={LOADING_TEXT} />
-        <MetaList size="sm" items={[LOADING_TEXT]} />
+        {run.status === 'running' ? <>
+          <RunTrace run={run.run} label="Montando a estrutura" collapsible={false} />
+          <MetaList size="sm" items={[feedback?.elapsed,feedback?.background].filter(Boolean) as string[]} />
+          {onStop && <LinkButton onClick={onStop}>Parar geração</LinkButton>}
+        </> : <SkeletonText lines={5} label="Iniciando a geração…" />}
       </PageStack>
     );
   }
@@ -152,16 +165,17 @@ export function StructureStep({ run, onRetry, retrying, outline, onChange, mater
       <List label="Estrutura" framed onReorder={(from, to) => onChange(moveSection(outline, from - 1, to - 1))}>
         <ListItem
           title="Introdução"
-          meta={`≈ ${formatLaudas(outline.introBudget)}`}
           description={
-            <QuoteChips
+            <><QuoteChips
               quotes={outline.intro}
               material={material}
               empty="Sem citações."
               onRemove={(ref) => onChange(removeQuote(outline, 'intro', ref))}
-            />
+            /><Toolbar label="Ações da introdução" overflow="wrap">
+              <MetaList size="sm" items={[`≈ ${formatLaudas(outline.introBudget)}`]} />
+              <AddQuote place="intro" available={available} material={material} onAdd={place} />
+            </Toolbar></>
           }
-          trailing={<AddQuote place="intro" available={available} material={material} onAdd={place} />}
         />
         {outline.sections.map((section, index) => {
           const missingTitle = showErrors && headings && !section.title.trim();
@@ -184,17 +198,14 @@ export function StructureStep({ run, onRetry, retrying, outline, onChange, mater
                   partTitle(index)
                 )
               }
-              meta={`≈ ${formatLaudas(sectionBudgetAt(outline, index))}`}
               description={
-                <QuoteChips
+                <><QuoteChips
                   quotes={section.quotes}
                   material={material}
                   empty={missingQuote ? 'Cada seção precisa de pelo menos uma citação.' : 'Sem citações ainda.'}
                   onRemove={(ref) => onChange(removeQuote(outline, section.key, ref))}
-                />
-              }
-              trailing={
-                <>
+                /><Toolbar label={`Ações da seção ${index + 1}`} overflow="wrap">
+                  <MetaList size="sm" items={[`≈ ${formatLaudas(sectionBudgetAt(outline, index))}`]} />
                   <AddQuote place={section.key} available={available} material={material} onAdd={place} />
                   <IconButton
                     label="Tirar seção"
@@ -203,7 +214,7 @@ export function StructureStep({ run, onRetry, retrying, outline, onChange, mater
                     disabled={!limits.canRemove}
                     onClick={() => onChange(removeSection(outline, section.key))}
                   />
-                </>
+                </Toolbar></>
               }
             />
           );

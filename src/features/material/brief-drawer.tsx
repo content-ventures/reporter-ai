@@ -36,7 +36,7 @@ function sectionOptions(size: ArticleSize): SegmentOption<string>[] {
   });
 }
 
-const SIZES: SegmentOption<ArticleSize>[] = SIZE_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
+const SIZES: SegmentOption<ArticleSize>[] = SIZE_OPTIONS.map((option) => ({ value: option.value, label: option.label, disabled: option.value === 'short' }));
 
 type Form = { angle: string; sections: number; size: ArticleSize; base: number };
 
@@ -64,8 +64,8 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
   const expected = editor.charsAvailable ? expectedDraftChars(current.size, editor.charsAvailable) : undefined;
   const sizeHint =
     expected && !expected.reachesRange
-      ? `O material rende ≈ ${formatLaudas(expected.chars)} (${formatCharacters(expected.chars)}). O texto sai com isso.`
-      : `Até ${formatCharacters(spec.maxChars)}`;
+      ? `O material rende ≈ ${formatLaudas(expected.chars)} (${formatCharacters(expected.chars)}). Acrescente fonte para cumprir o mínimo obrigatório, sem inventar.`
+      : `R1: 2.500–${formatCharacters(spec.maxChars)} · 500–800 palavras · ao menos 2 citações literais`;
   const update = (patch: Partial<Form>) => setForm({ ...current, ...patch });
 
   async function save() {
