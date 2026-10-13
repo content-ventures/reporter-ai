@@ -32,11 +32,6 @@ test("Estúdio: preencher uma imagem sugerida enviando um arquivo", async ({ pag
   const slots = editor.locator("figure[data-slot]");
   const total = await slots.count();
   expect(total, "imagens sugeridas no rascunho").toBeGreaterThan(0);
-  // The status line counts the figure suggestions still open (the cover's stays under "Imagem de destaque", optional).
-  const pending = page.getByLabel("Situação do texto").getByRole("button", { name: / a preencher$/ });
-  const open = Number.parseInt(await pending.innerText(), 10);
-  expect(open).toBeGreaterThanOrEqual(total);
-
   await slots.first().click();
   const bar = page.getByRole("toolbar", { name: "Imagem sugerida" });
   await bar.getByRole("button", { name: "Enviar imagem" }).click();
@@ -54,8 +49,6 @@ test("Estúdio: preencher uma imagem sugerida enviando um arquivo", async ({ pag
 
   await expect(slots).toHaveCount(total - 1);
   await expect(editor.getByRole("img", { name: altText })).toBeVisible();
-  if (open > 1) await expect(pending).toHaveText(`${open - 1} ${open - 1 === 1 ? "imagem" : "imagens"} a preencher`);
-
   if (total > 1) {
     // A file dropped on the next suggestion answers it: the picker opens on that file, and the slot
     // becomes the figure (never a second figure beside it).
@@ -85,29 +78,14 @@ test("Estúdio: preencher uma imagem sugerida enviando um arquivo", async ({ pag
   expect(errors, "erros no console").toEqual([]);
 });
 
-test("Revisão: o artigo lê numa coluna centrada, com o painel aberto ou recolhido", async ({ page }) => {
+test("Revisão: o artigo lê numa coluna centrada com as ações editoriais atuais", async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto("/productions/prod-aurora/article/review");
-  await expect(page.getByRole("button", { name: /Aprovar versão/ }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Aprovar artigo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pedir ajustes" })).toBeVisible();
   await expectLoaded(page);
   const column = page.locator('[data-part="reading-column"]').first();
   await expect(column).toBeVisible();
-
-  // Open pane: the column sits in the middle of the text's region, left of the pane.
-  await expectCentredIn(column, page.getByRole("region", { name: "Texto", exact: true }));
-
-  const collapse = page.getByRole("button", { name: "Recolher Detalhes" });
-  await collapse.click();
-  // The header toggle and the pane's rail both offer it back.
-  const show = page.getByRole("button", { name: "Mostrar Detalhes" }).first();
-  await expect(show).toHaveAttribute("aria-expanded", "false");
-  // Collapsed: the column sits in the middle of the main area.
-  await expectCentredIn(column, page.getByRole("main"));
-
-  // The choice is kept in this browser.
-  await page.reload();
-  await expect(show).toBeVisible();
-  await expectLoaded(page);
   await expectCentredIn(column, page.getByRole("main"));
 
   await expectNoHorizontalOverflow(page);

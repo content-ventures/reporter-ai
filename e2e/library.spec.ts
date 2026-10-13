@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from "@playwright/test";
+import { TEMPLATE_CATALOG } from "../src/fixtures/templates/catalog";
 import { expectNoHorizontalOverflow, watchErrors } from "./support";
 
 /**
@@ -10,6 +11,8 @@ import { expectNoHorizontalOverflow, watchErrors } from "./support";
  */
 
 test.use({ viewport: { width: 1440, height: 900 } });
+
+const FEED_MODELS = TEMPLATE_CATALOG.filter((entry) => entry.meta.format === "feed").length;
 
 /** A slide image drawn at the proportion `ratio` (width / height), within a pixel. */
 async function expectRatio(image: Locator, ratio: number): Promise<void> {
@@ -27,7 +30,7 @@ test("Modelos: filtrar a biblioteca e abrir um modelo com todos os layouts", asy
   const library = page.getByRole("list", { name: "Modelos de carrossel" });
   const cards = library.getByRole("listitem");
   // One format at a time: Feed first, every card at its proportion.
-  await expect(cards).toHaveCount(7);
+  await expect(cards).toHaveCount(FEED_MODELS);
   // Only a model Marketing approved carries a badge.
   await expect(library.getByText("Aprovado")).toHaveCount(3);
 
@@ -44,7 +47,7 @@ test("Modelos: filtrar a biblioteca e abrir um modelo com todos os layouts", asy
   await page.getByRole("button", { name: /^Ver em Feed 4:5/ }).click();
   await expect(cards).toHaveCount(1);
   await search.fill("");
-  await expect(cards).toHaveCount(7);
+  await expect(cards).toHaveCount(FEED_MODELS);
 
   await test.step("abrir o modelo: cada layout desenhado, e o endereço leva até ele", async () => {
     await library.getByRole("button", { name: "Fotografia", exact: true }).click();
@@ -86,7 +89,7 @@ test("Trocar modelo no estúdio do carrossel: mantém os textos, muda a proporç
   const picker = page.getByRole("dialog", { name: "Trocar modelo" });
   const models = picker.getByRole("radiogroup", { name: "Modelos de carrossel" });
   // It opens on the carousel's own format and model.
-  await expect(models.getByRole("radio")).toHaveCount(7);
+  await expect(models.getByRole("radio")).toHaveCount(FEED_MODELS);
   await expect(models.getByRole("radio", { checked: true })).toHaveAccessibleName(/^Noturno/);
   await picker.getByRole("tab", { name: /Quadrado/ }).click();
   // "Ver modelo" draws this carousel in that model, with what changes, before anything is applied.

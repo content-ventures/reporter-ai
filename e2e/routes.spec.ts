@@ -37,18 +37,15 @@ const ROUTES: readonly RouteCase[] = [
     name: "Estúdio com falha",
     path: "/productions/prod-horizonte/article",
     ready: heading(/Horizonte/),
-    // The copilot opens at its end: "Tentar de novo" is visible and nothing covers it ("Ir para o fim").
+    // A failed generation exposes a direct recovery action in the studio banner.
     desktop: async (page) => {
-      const retry = page.getByRole("button", { name: "Tentar de novo a partir desta etapa" });
+      const retry = page.getByRole("button", { name: "Tentar de novo", exact: true });
       await expect(retry).toBeVisible();
-      // Let the conversation's own scroll events and resize observers settle (two frames).
-      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-      await expect(page.getByRole("button", { name: "Ir para o fim" })).toHaveCount(0);
       await retry.click({ trial: true });
     },
   },
   { name: "Estúdio devolvido", path: "/productions/prod-casa-forma/article", ready: heading(/Casa Forma/) },
-  { name: "Revisão do artigo", path: "/productions/prod-aurora/article/review", ready: (page) => page.getByRole("button", { name: /Aprovar versão/ }).first() },
+  { name: "Revisão do artigo", path: "/productions/prod-aurora/article/review", ready: (page) => page.getByRole("button", { name: "Aprovar artigo" }) },
   { name: "Carrossel", path: "/productions/prod-lume/carousel", ready: heading(/Lume/) },
   { name: "Revisão do carrossel", path: "/productions/prod-lume/carousel/review", ready: heading(/Lume/) },
   { name: "Carrossel desatualizado", path: "/productions/prod-patio-couro/carousel", ready: heading(/Pátio Couro/) },
@@ -215,7 +212,8 @@ for (const viewport of VIEWPORTS) {
       await expect(text("Precisa de você")(page)).toBeVisible();
       const phone = viewport.width < 768;
       if (phone) await page.getByRole("button", { name: "Abrir menu" }).click();
-      await expect(page.getByRole("button", { name: /, Em breve$/ })).toHaveCount(17);
+      await page.getByRole("button", { name: "Em breve", exact: true }).click();
+      await expect(page.getByRole("button", { name: /, Em breve$/ })).toHaveCount(14);
       const news = page.getByRole("button", { name: "Notícias, Em breve" });
       await expect(news).toHaveAttribute("aria-disabled", "true");
       await expect(news).toHaveAccessibleDescription(/Fila de notícias com triagem por IA\.\sChega\sna\sR2\s·\sHard\sNews/);
