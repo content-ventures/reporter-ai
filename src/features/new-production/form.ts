@@ -3,28 +3,21 @@ import type { ArticleSize, PieceKind, SourceOrigin } from '../../domain/index.ts
 import type { NewProductionInput, SourceAnalysis, SpeakerAssignment } from '../../ports/index.ts';
 import { podcastLink } from '../../domain/citation-library.ts';
 
-/**
- * Nova produção as a pure form model (CONTRACT §3.9, D6): three short steps with one decision
- * each — Material (the transcript, who speaks, the speakers' consent) → Pauta (size, sections,
- * angle, pieces, internal title) → Estrutura (the outline the AI proposes, edited before
- * drafting). The draft the screen edits, what blocks each step's primary (the visible reason),
- * the field validation behind ErrorSummary, and the command input. No React, no clock.
- */
+/** Two form steps: confirm the material, then the pauta, before writing in the editor. */
 
 export type MaterialMode = 'paste' | 'file' | 'link';
 
 /** "Entregas": the article is mandatory; the carousel is the optional derivative. */
 export type DeliveryPlan = 'article' | 'article-carousel';
 
-/** The three steps, in order. */
-export type NewProductionStep = 'material' | 'brief' | 'structure';
+/** The two steps, in order. */
+export type NewProductionStep = 'material' | 'brief';
 
-export const NEW_PRODUCTION_STEPS: readonly NewProductionStep[] = ['material', 'brief', 'structure'];
+export const NEW_PRODUCTION_STEPS: readonly NewProductionStep[] = ['material', 'brief'];
 
 export const STEP_LABELS: Readonly<Record<NewProductionStep, string>> = {
   material: 'Material',
   brief: 'Pauta',
-  structure: 'Estrutura',
 };
 
 /**

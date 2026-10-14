@@ -118,7 +118,7 @@ export function briefChangedSince(run: Pick<GenerationRun, 'inputs'> | undefined
 export const READ_ONLY_REASON = 'Aberta em outra aba: escolha “Usar esta aba” para editar aqui.';
 
 /** The header primary of the studio (COPY §2.1), as data: the screen turns it into a button or a link. */
-export type StudioPrimaryKind = 'send' | 'resend' | 'review' | 'create_carousel' | 'open_carousel' | 'delivery' | 'structure';
+export type StudioPrimaryKind = 'send' | 'resend' | 'review' | 'create_carousel' | 'open_carousel' | 'delivery' | 'generate';
 export type StudioPrimary = { kind: StudioPrimaryKind; label: string; blockedReason?: string };
 
 export type StudioPrimaryInput = {
@@ -142,7 +142,7 @@ export type StudioPrimaryInput = {
  * ONE primary with the next step on it (D2, P3, CONTRACT §3.8): "Enviar para aprovação" ·
  * "Reenviar para Pedro" (adjustments) · "Reenviar para aprovação" (approved text changed) ·
  * "Revisar artigo" (whoever decides, while it waits) · "Criar carrossel" / "Abrir o carrossel" /
- * "Ir para entrega" (approved) · "Montar estrutura" (no text yet). None while the AI writes, after
+ * "Ir para entrega" (approved) · "Gerar artigo" (no text yet). None while the AI writes, after
  * an error (the banner's "Tentar de novo"), while the author waits for the decision, or when the
  * viewer cannot do the next step (P8). Sending is blocked with a visible reason only when it is
  * impossible (another tab, nobody can approve); what is missing in the text shows in the dialog.
@@ -154,7 +154,7 @@ export function studioPrimary(input: StudioPrimaryInput): StudioPrimary | null {
   const viewer = approval?.viewer;
   if (state === 'awaiting') return viewer?.canDecide ? { kind: 'review', label: 'Revisar artigo' } : null;
   if (status === 'not_started' || status === 'locked') {
-    return input.authorized && viewer?.canEdit !== false ? { kind: 'structure', label: 'Montar estrutura' } : null;
+    return input.authorized && viewer?.canEdit !== false ? { kind: 'generate', label: 'Gerar artigo' } : null;
   }
   if (state === 'approved') {
     const carousel = input.carousel;

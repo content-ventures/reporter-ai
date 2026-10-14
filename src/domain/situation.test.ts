@@ -132,7 +132,7 @@ describe('nextStepFor (the viewer rules, CONTRACT §2.2)', () => {
   it('walks an article from structure to approval for the owner, the approver and another editor', () => {
     const kit = createKit();
     const record = baseRecord(kit, { plan: ['article'] });
-    assert.deepEqual(steps(record, kit.now()), { João: 'Montar estrutura', Pedro: 'Abrir ·', Ana: 'Montar estrutura ·' });
+    assert.deepEqual(steps(record, kit.now()), { João: 'Gerar artigo', Pedro: 'Abrir ·', Ana: 'Gerar artigo ·' });
     const v1 = commitVersion(record, kit, 'article', sampleArticle(record.sources[0]), { origin: 'generation' });
     assert.deepEqual(steps(record, kit.now()), { João: 'Continuar', Pedro: 'Abrir ·', Ana: 'Continuar ·' });
     requestReview(record, kit, v1);

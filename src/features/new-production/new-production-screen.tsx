@@ -6,7 +6,6 @@ import {
   Button,
   Checkbox,
   ConfirmDialog,
-  ErrorState,
   ErrorSummary,
   FixedFrame,
   FormRow,
@@ -14,7 +13,6 @@ import {
   Grid,
   GridItem,
   IconButton,
-  LinkButton,
   LiveRegion,
   PageHeader,
   PageStack,
@@ -33,9 +31,9 @@ import { sourceLinkMessage } from '@/domain/source-link';
 import { MAX_UPLOAD_BYTES } from '../../domain/reporter.ts';
 import type { PersonSummary, SourceAnalysis } from '@/ports';
 import { sourceKind, type SourceIntake } from '@/registries';
-import { useCommands, usePeople, useProduction, useSource } from '@/state';
-import { formatLaudas, plural } from '@/ui/format';
-import { PRODUCTIONS_HREF, pieceHref, structureHref } from '@/ui/routes';
+import { useCommands, usePeople } from '@/state';
+import { plural } from '@/ui/format';
+import { PRODUCTIONS_HREF, pieceHref } from '@/ui/routes';
 import { takeArmedSimulation, useCommandGroup, useLeaveGuard } from '@/ui/shell';
 import { useNow } from '@/ui/time';
 import { BriefStep } from './brief-sections';
@@ -63,8 +61,6 @@ import {
 import { MaterialSection, materialState } from './material-section';
 import { materialProgress } from './material-progress';
 import { MaterialProgressDialog } from './material-progress-dialog';
-import { outlineBlocker, outlineFromProposal, toOutlineInput, type OutlineDraft } from './outline-model';
-import type { QuoteMaterial } from './outline-quotes';
 import { usePreviewSpeakers } from './preview-speakers';
 import {
   SAMPLE_ANGLE,
@@ -76,29 +72,18 @@ import {
   SAMPLE_TRANSCRIPT,
 } from './sample-material';
 import { SpeakersSection } from './speakers-section';
-import { StructureStep } from './structure-step';
 import { useFileReader } from './use-file-reader';
 import { useLinkReader, type ImportedLink } from './use-link-reader';
 import { useMaterialAnalysis } from './use-material-analysis';
-import { useOutlineRun } from './use-outline-run';
 
-/**
- * Nova produção (`/productions/new`, CONTRACT §3.9): a creation page, never a modal, in three
- * steps with one decision each. Material (the transcript, who speaks, the speakers' consent) →
- * Pauta (size, sections, angle, pieces, internal title) → Estrutura (the outline the AI proposes,
- * edited before drafting). "Montar estrutura" saves the source and the production (authorised
- * material, REQ-T.1) and opens step 3 on `?producao=`, where the outline run proposes the
- * structure; "Redigir artigo" starts the draft from the reviewed structure and opens the studio,
- * where the stream continues (REQ-1.1, REQ-1.2). Every blocked primary says why, next to it.
- */
+/** Material and pauta are confirmed before opening the editor with a queued article run. */
 
 const FALLBACK_INTAKE: SourceIntake = { extensions: ['.txt', '.md', '.srt', '.vtt'], maxBytes: 2 * 1024 * 1024, paste: true };
 const INTAKE: SourceIntake = sourceKind('transcript')?.intake ?? FALLBACK_INTAKE;
 const NO_PEOPLE: readonly PersonSummary[] = [];
 const PASTE_PAUSE_MS = 350;
 
-/** `create`: saving the material (or the new pauta); `draft`: starting the article from the structure. */
-type Busy = 'create' | 'draft' | null;
+type Busy = 'create' | null;
 type Attempt = { key: number; ids: Partial<Record<DraftField, string>> };
 
 const STEP_ITEMS = NEW_PRODUCTION_STEPS.map((id) => ({ id, label: STEP_LABELS[id] }));
@@ -115,7 +100,7 @@ function daysAgoIso(days: number): string {
   return isoDay(date);
 }
 
-export function NewProductionScreen({ productionId: routeId }: { productionId?: string }) {
+export function NewProductionScreen() {
   const router = useRouter();
   const commands = useCommands();
   const intake: SourceIntake = { ...INTAKE,extensions: [...INTAKE.extensions,'.mp3','.m4a','.mp4','.wav','.ogg','.flac','.webm'],maxBytes: MAX_UPLOAD_BYTES };
@@ -128,29 +113,7 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   const [draft, setDraft] = useState<NewProductionDraft>(EMPTY_DRAFT);
   const update = useCallback((patch: Partial<NewProductionDraft>) => setDraft((current) => ({ ...current, ...patch })), []);
 
-  // The production of step 3: the one in the URL (reload, "Montar estrutura" elsewhere) or the one this page created.
-  const [createdId, setCreatedId] = useState<string>();
-  const activeId = routeId ?? createdId;
-  const [view, setView] = useState<'material' | 'brief'>('material');
-  const [editingBrief, setEditingBrief] = useState(false);
-  const step: NewProductionStep = activeId ? (editingBrief ? 'brief' : 'structure') : view;
-
-  // ── The production, once it exists ──
-  const production = useProduction(activeId);
-  const detail = production.data;
-  const article = detail?.pieces.find((piece) => piece.kind === 'article');
-  const outline = useOutlineRun(activeId, detail, step === 'structure');
-  const runState = outline.state;
-  const source = useSource(detail?.sources[0]?.id);
-  const quotes = useMemo<QuoteMaterial>(
-    () => ({ segments: source.data?.version.content.segments ?? [], speakers: source.data?.speakers ?? [] }),
-    [source.data],
-  );
-  const [outlineDraft, setOutlineDraft] = useState<OutlineDraft | null>(null);
-  // A new proposal (first run, "Tentar de novo", a changed pauta) replaces the structure being edited.
-  if (runState.status === 'ready' && outlineDraft?.runId !== runState.runId) {
-    setOutlineDraft(outlineFromProposal(runState.proposal, detail?.brief.size ?? draft.size, runState.runId));
-  }
+  const [step, setView] = useState<NewProductionStep>('material');
 
   // ── Material ──
   const material = draftMaterial(draft);
@@ -192,7 +155,6 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   // ── Derived state ──
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [triedBrief, setTriedBrief] = useState(false);
-  const [triedStructure, setTriedStructure] = useState(false);
   const [busy, setBusy] = useState<Busy>(null);
   const issues = useMemo(() => (attempt ? validateMaterial(draft, readyAnalysis, people) : []), [attempt, draft, readyAnalysis, people]);
   const issueOf = (field: DraftField) => issues.find((issue) => issue.field === field)?.message;
@@ -216,33 +178,22 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   }, [attempt, issues]);
 
   const previewSpeakers = usePreviewSpeakers(draft.speakers, analysis, people);
-  const speakerCount = analysis?.speakers.length ?? detail?.sources[0]?.speakers.length ?? 0;
+  const speakerCount = analysis?.speakers.length ?? 0;
   const materialIssue = issueOf('material');
   const speakersState: SectionState = Object.keys(speakerErrors).length > 0 ? 'error' : previewSpeakers.length > 0 ? 'done' : 'empty';
 
-  /** Why the primary of the step cannot run yet (COPY §6.1), shown next to it; `undefined` when it can. */
-  const structureBlocker = (): string | undefined => {
-    if (runState.status === 'failed') return 'Tente montar a estrutura de novo.';
-    if (!detail || runState.status !== 'ready' || !outlineDraft) return 'Aguarde a estrutura.';
-    if (!outlineDraft.title.trim()) return 'Dê um título ao artigo.';
-    return outlineBlocker(outlineDraft);
-  };
-  const blocker =
-    step === 'material'
-      ? materialBlocker(draft) ?? (analysisState.status === 'analyzing' ? 'Aguarde a análise do material.' :
-        analysisState.status === 'error' ? 'Tente analisar o material novamente.' : undefined)
-      : step === 'brief'
-        ? briefBlocker(activeId ? { ...draft, title: detail?.title ?? 'Produção' } : draft)
-        : structureBlocker();
+  const blocker = step === 'material'
+    ? materialBlocker(draft) ?? (analysisState.status === 'analyzing' ? 'Aguarde a análise do material.' :
+      analysisState.status === 'error' ? 'Tente analisar o material novamente.' : undefined)
+    : briefBlocker(draft);
 
-  // ── Leaving: steps 1–2 lose what was typed; step 3 keeps the production (it is saved) ──
-  const dirty = !activeId && isDraftDirty(draft);
+  // Both form steps contain an unsaved draft until the production is created.
+  const dirty = isDraftDirty(draft);
   const departing = useRef(false);
   const [confirmExit, setConfirmExit] = useState(false);
-  const [confirmRebuild, setConfirmRebuild] = useState(false);
   /** Where the person was going when the dialog opened (menu, breadcrumb, ⌘K). */
   const [exitTo, setExitTo] = useState<string>(PRODUCTIONS_HREF);
-  useLeaveGuard(busy === null && (activeId ? step === 'structure' : dirty), (href) => {
+  useLeaveGuard(busy === null && dirty, (href) => {
     setExitTo(href);
     setConfirmExit(true);
   });
@@ -254,15 +205,6 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [dirty]);
-
-  // An article that already has text lives in the studio: Estrutura is only for one not started.
-  useEffect(() => {
-    if (!detail || !article || departing.current || busy) return;
-    if (article.status !== 'not_started') {
-      departing.current = true;
-      router.replace(pieceHref(detail.id, 'article'));
-    }
-  }, [article, busy, detail, router]);
 
   // ── Actions ──
   const setMode = (mode: MaterialMode) => {
@@ -365,8 +307,8 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
     setView('brief');
   };
 
-  /** Step 2 → 3: saves the source and the production, then the outline run proposes the structure. */
-  const buildStructure = async () => {
+  /** Enqueue only; source preparation and writing happen in the editor, reload-safe. */
+  const createArticle = async () => {
     if (busy) return;
     if (briefBlocker(draft)) {
       setTriedBrief(true);
@@ -382,110 +324,36 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
       toast('Produção não criada', { tone: 'error', description: created.refusal.message });
       return;
     }
-    setCreatedId(created.value.productionId);
-    setBusy(null);
-    router.replace(structureHref(created.value.productionId));
-  };
-
-  /** Step 3 → the pauta of the production that exists (changing it builds a new structure). */
-  const backToBrief = () => {
-    const brief = detail?.brief;
-    if (!brief || busy) return;
-    setDraft((current) => ({
-      ...current,
-      size: brief.size,
-      sections: brief.sections,
-      sectionsCustom: brief.sections !== sizeOf(brief.size).sections.default,
-      angle: brief.angle ?? '',
-    }));
-    setTriedBrief(false);
-    setEditingBrief(true);
-  };
-
-  const applyBrief = () => {
-    if (busy || !detail) return;
-    if (blocker) return;
-    const angle = draft.angle.trim();
-    const changed = draft.size !== detail.brief.size || draft.sections !== detail.brief.sections || angle !== (detail.brief.angle ?? '').trim();
-    if (!changed) setEditingBrief(false);
-    else setConfirmRebuild(true);
-  };
-
-  const rebuildStructure = async () => {
-    setConfirmRebuild(false);
-    if (!detail) return;
-    const angle = draft.angle.trim();
-    setBusy('create');
-    const saved = await commands.production.updateBrief(detail.id, { sections: draft.sections, size: draft.size, ...(angle ? { angle } : {}) }, detail.brief.revision);
-    if (!saved.ok) {
-      setBusy(null);
-      toast('Pauta não salva', { tone: 'error', description: saved.refusal.message });
-      return;
-    }
-    await outline.restart();
-    setBusy(null);
-    setTriedStructure(false);
-    setEditingBrief(false);
-  };
-
-  /** Step 3 → the studio: the draft is written from the reviewed structure. */
-  const writeArticle = async () => {
-    if (busy) return;
-    if (blocker || !detail || !article || !outlineDraft) {
-      setTriedStructure(true);
-      return;
-    }
-    setBusy('draft');
-    const simulation = takeArmedSimulation('article.draft');
-    const started = await commands.generation.start(
-      'article.draft',
-      { productionId: detail.id, pieceId: article.id, outline: toOutlineInput(outlineDraft) },
-      simulation ? { simulation } : undefined,
-    );
-    if (!started.ok) {
-      setBusy(null);
-      toast('Geração não iniciada', { tone: 'error', description: started.refusal.message });
-      return;
+    const article = created.value.pieces.find((piece) => piece.kind === 'article');
+    if (article) {
+      const simulation = takeArmedSimulation('article.draft');
+      const started = await commands.generation.start('article.draft',
+        { productionId: created.value.productionId, pieceId: article.pieceId }, simulation ? { simulation } : undefined);
+      if (!started.ok) toast('Produção salva; geração não iniciada', { tone: 'error', description: started.refusal.message });
     }
     departing.current = true;
-    router.push(pieceHref(detail.id, 'article'));
+    router.replace(pieceHref(created.value.productionId, 'article'));
   };
 
   const cancel = () => {
     if (busy) return;
-    if (activeId && step === 'brief') {
-      setEditingBrief(false);
-      return;
-    }
-    if (activeId || dirty) {
+    if (dirty) {
       setExitTo(PRODUCTIONS_HREF);
       setConfirmExit(true);
     } else router.push(PRODUCTIONS_HREF);
   };
 
   const selectStep = (index: number) => {
-    const target = NEW_PRODUCTION_STEPS[index];
-    if (busy) return;
-    if (activeId) {
-      if (target === 'brief' && step === 'structure') backToBrief();
-    } else if (target === 'material' || target === 'brief') setView(target);
+    if (!busy && NEW_PRODUCTION_STEPS[index]) setView(NEW_PRODUCTION_STEPS[index]);
   };
-  // Only steps already done are selectable; with the production saved, the Material is behind.
-  const canSelectStep = (index: number, state: StepState) => state === 'done' && !busy && (!activeId || index === 1);
-
+  const canSelectStep = (_index: number, state: StepState) => state === 'done' && !busy;
   const primary = {
     material: { label: 'Continuar', icon: undefined, run: continueFromMaterial, loading: false },
-    brief: { label: 'Montar estrutura', icon: Sparkles, run: activeId ? applyBrief : buildStructure, loading: busy === 'create' },
-    structure: { label: 'Redigir artigo', icon: Sparkles, run: writeArticle, loading: busy === 'draft' },
+    brief: { label: 'Gerar artigo', icon: Sparkles, run: createArticle, loading: busy === 'create' },
   }[step];
-  const back =
-    step === 'material'
-      ? { label: 'Cancelar', onClick: cancel, hideNarrow: true }
-      : step === 'brief' && activeId
-        ? { label: 'Cancelar', onClick: () => setEditingBrief(false), hideNarrow: false }
-        : step === 'brief'
-          ? { label: 'Voltar', onClick: () => setView('material'), hideNarrow: false }
-          : { label: 'Voltar', onClick: backToBrief, hideNarrow: false };
+  const back = step === 'material'
+    ? { label: 'Cancelar', onClick: cancel, hideNarrow: true }
+    : { label: 'Voltar', onClick: () => setView('material'), hideNarrow: false };
 
   useCommandGroup({
     label: 'Nova produção',
@@ -499,19 +367,9 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   // Speakers without a person count once, as the summary lists them ("2 falantes sem pessoa").
   const errorCount = step === 'material' ? summaryErrors.length : 0;
   const statusText =
-    busy === 'create' ? (activeId ? 'Montando a estrutura…' : 'Salvando material…') : busy === 'draft' ? 'Iniciando o artigo…' : errorCount > 0 ? `Revise ${plural(errorCount, 'campo', 'campos')}` : '';
+    busy === 'create' ? 'Abrindo o editor…' : errorCount > 0 ? `Revise ${plural(errorCount, 'campo', 'campos')}` : '';
   const summary = step === 'brief' ? briefSummary(draft.size, draft.sections, speakerCount) : '';
   const footerMeta = (narrow: boolean) => statusText || blocker || (narrow ? '' : summary) || undefined;
-
-  const proposal = runState.status === 'ready' ? runState.proposal : undefined;
-  const facts = [
-    briefSummary(outlineDraft?.size ?? detail?.brief.size ?? draft.size, outlineDraft?.sections.length ?? detail?.brief.sections ?? draft.sections, 0),
-    proposal?.shortfall
-      ? `O material rende ≈ ${formatLaudas(proposal.shortfall.expectedChars)}. Acrescente fonte para cumprir o mínimo; a IA não inventará conteúdo.`
-      : proposal?.materialChars !== undefined
-        ? `O material rende ≈ ${formatLaudas(proposal.materialChars)}`
-        : '',
-  ].filter(Boolean);
 
   const primaryButton = (
     <Button variant="primary" icon={primary.icon} aria-disabled={blocker ? true : undefined} loading={primary.loading} onClick={() => void primary.run()}>
@@ -622,38 +480,18 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
               </FormRow>
             </FormSection>
           </PageStack>
-        ) : step === 'brief' ? (
+        ) : (
           <PageStack>
             <BriefStep
               draft={draft}
               update={update}
-              charsAvailable={activeId ? detail?.charsAvailable : analysis?.outlook?.charsAvailable}
-              existing={Boolean(activeId)}
+              charsAvailable={analysis?.outlook?.charsAvailable}
+              existing={false}
               titleError={triedBrief && !draft.title.trim() ? 'Dê um título interno.' : undefined}
               titleRef={titleRef}
               today={today}
             />
           </PageStack>
-        ) : production.status === 'error' && !detail ? (
-          <ErrorState
-            size="panel"
-            title="Não encontramos esta produção."
-            description={production.error.message}
-            onRetry={production.retry}
-            actions={<LinkButton onClick={() => router.push(PRODUCTIONS_HREF)}>Ir para Produções</LinkButton>}
-          />
-        ) : (
-          <StructureStep
-            run={runState}
-            onRetry={() => void outline.restart()}
-            onStop={() => void outline.stop()}
-            retrying={runState.status === 'loading'}
-            outline={outlineDraft}
-            onChange={setOutlineDraft}
-            material={quotes}
-            facts={facts}
-            showErrors={triedStructure}
-          />
         )}
       </FixedFrame>
       <MaterialProgressDialog open={progressVisible && step === 'material'} progress={progress}
@@ -662,26 +500,17 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
       <ConfirmDialog
         open={confirmExit}
         onClose={() => setConfirmExit(false)}
-        title={activeId ? 'Sair sem redigir?' : 'Descartar a nova produção?'}
-        description={activeId ? 'A produção fica salva em Produções. Você pode redigir depois.' : 'O que você colou não fica salvo.'}
-        confirmLabel={activeId ? 'Sair' : 'Descartar'}
+        title="Descartar a nova produção?"
+        description="O que você colou não fica salvo."
+        confirmLabel="Descartar"
         cancelLabel="Continuar aqui"
-        tone={activeId ? 'default' : 'danger'}
+        tone="danger"
         onConfirm={() => {
           departing.current = true;
           setConfirmExit(false);
-          if (!activeId) setDraft(EMPTY_DRAFT);
+          setDraft(EMPTY_DRAFT);
           router.push(exitTo);
         }}
-      />
-      <ConfirmDialog
-        open={confirmRebuild}
-        onClose={() => setConfirmRebuild(false)}
-        title="Montar a estrutura de novo?"
-        description="A pauta mudou. A IA monta uma nova estrutura e as suas mudanças nesta se perdem."
-        confirmLabel="Montar de novo"
-        cancelLabel="Cancelar"
-        onConfirm={() => void rebuildStructure()}
       />
     </>
   );

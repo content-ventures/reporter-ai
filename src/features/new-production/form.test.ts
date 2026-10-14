@@ -65,8 +65,8 @@ describe('Nova produção form', () => {
     assert.ok(analysis.stats.hasTimestamps);
   });
 
-  test('three steps: Material, Pauta, Estrutura', () => {
-    assert.deepEqual(NEW_PRODUCTION_STEPS.map((step) => STEP_LABELS[step]), ['Material', 'Pauta', 'Estrutura']);
+  test('two steps: Material and Pauta', () => {
+    assert.deepEqual(NEW_PRODUCTION_STEPS.map((step) => STEP_LABELS[step]), ['Material', 'Pauta']);
   });
 
   test('speakers link to the one matching person, a new person, or wait for a decision', () => {
@@ -85,7 +85,7 @@ describe('Nova produção form', () => {
     assert.equal(materialBlocker({ ...sample, authorized: true }), undefined);
   });
 
-  test('"Montar estrutura" needs an internal title and a section count the size accepts', () => {
+  test('"Gerar artigo" needs an internal title and a section count the size accepts', () => {
     assert.equal(briefBlocker(EMPTY_DRAFT), 'Dê um título interno.');
     assert.equal(briefBlocker(sample), undefined);
     assert.equal(briefBlocker({ ...sample, size: 'short', sections: 4 }), 'Curto aceita de 1 a 3 partes.');

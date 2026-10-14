@@ -255,10 +255,10 @@ export function productionPortsContract(name: string, make: PortsFactory): void 
             ['Gama', `Artigo · Aguardando aprovação de ${approverName}`, null, 2],
             ['Épsilon', 'Material · Falta autorização', 'Autorizar', 3],
             ['Beta', 'Artigo · Rascunho', 'Continuar', 6],
-            ['Alfa', 'Artigo · Não iniciado', 'Montar estrutura', 6],
+            ['Alfa', 'Artigo · Não iniciado', 'Gerar artigo', 6],
           ],
         );
-        assert.deepEqual(byUrgency.items.find((item) => item.id === fresh.productionId)?.nextStep?.target, { kind: 'structure' });
+        assert.deepEqual(byUrgency.items.find((item) => item.id === fresh.productionId)?.nextStep?.target, { kind: 'studio', pieceKind: 'article' });
         assert.deepEqual(byUrgency.items.find((item) => item.id === unauthorized.productionId)?.situation.status, 'unauthorized');
         assert.equal(byUrgency.items.find((item) => item.id === sent.productionId)?.situation.withPersonId, ports.people.approver);
         assert.equal((await ports.queries.list()).items[0].id, unauthorized.productionId, 'the default order is still the latest activity');
