@@ -99,8 +99,8 @@ describe('carousel template library · metadata', () => {
       assert.match(model.sample.quote.quote, /^\[/, 'sample quotes cannot impersonate actual speakers');
     }
   });
-  it('keeps the 10 existing models and adds 6 Seafood variations, the default first, each with a short name and a one-line description', () => {
-    assert.equal(TEMPLATE_CATALOG.length, 16);
+  it('offers the 6 Seafood variations and 3 square models, the Seafood default first, each with a short name and a one-line description', () => {
+    assert.equal(TEMPLATE_CATALOG.length, 9);
     assert.equal(CAROUSEL_TEMPLATES[0]?.id, DEFAULT_TEMPLATE_ID);
     const ids = TEMPLATE_CATALOG.map((entry) => entry.template.id);
     const names = TEMPLATE_CATALOG.map((entry) => entry.template.name);
@@ -120,9 +120,11 @@ describe('carousel template library · metadata', () => {
     }
   });
 
-  it('covers every category and every available format; later formats have no models yet', () => {
+  it('removes the retired feed models and keeps every available format represented', () => {
     const metas = TEMPLATE_CATALOG.map((entry) => entry.meta);
-    for (const category of TEMPLATE_CATEGORIES) assert.ok(metas.some((meta) => meta.category === category.id), `${category.label}: at least one model`);
+    const retired = new Set(['tpl-provisorio-claro','tpl-provisorio-escuro','tpl-fotografia','tpl-revista','tpl-manchete','tpl-numeros','tpl-passo-a-passo']);
+    assert.ok(TEMPLATE_CATALOG.every(entry => !retired.has(entry.template.id)));
+    assert.ok(TEMPLATE_CATALOG.filter(entry => entry.meta.format === 'feed').every(entry => entry.meta.family));
     for (const format of CAROUSEL_FORMATS) {
       const count = metas.filter((meta) => meta.format === format.id).length;
       if (format.available) assert.ok(count > 0, `${format.label}: at least one model`);
@@ -349,7 +351,7 @@ describe('carousel template library · render smoke (Node, recording canvas)', (
     const listed = render.templates()[0];
     const own = await render.thumbnail({ templateId: listed.id, slots: { kicker: 'Podcast', title: 'Um título do próprio artigo' } });
     assert.ok(own.ok);
-    assert.ok(calls.some((call) => call.text === 'Podcast'), 'the cover with the article texts');
+    assert.ok(calls.some((call) => call.text?.toLocaleLowerCase('pt-BR') === 'podcast'), 'the cover with the article texts');
     const unknown = await render.thumbnail({ templateId: 'nao-existe' });
     assert.equal(!unknown.ok && unknown.refusal.code, 'unknown_template');
   });

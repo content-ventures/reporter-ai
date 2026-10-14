@@ -1,6 +1,6 @@
 import type { CarouselTemplate, TemplateId } from '../../domain/index.ts';
 import type { TemplateRender } from '../../ports/render-template.ts';
-import { DEFAULT_TEMPLATE_ID, EDITORIAL_TEMPLATE_ID, NOTURNO_TEMPLATE_ID, TEMPLATE_CATALOG } from './catalog.ts';
+import { DEFAULT_TEMPLATE_ID, EDITORIAL_TEMPLATE_ID, LEGACY_TEMPLATE_CATALOG, NOTURNO_TEMPLATE_ID } from './catalog.ts';
 
 /**
  * The first two models (Editorial and Noturno, accepted for R1 · Experiência, D09) under the
@@ -12,7 +12,7 @@ export { DEFAULT_TEMPLATE_ID };
 export const NEUTRAL_LIGHT_TEMPLATE_ID: TemplateId = EDITORIAL_TEMPLATE_ID;
 export const NEUTRAL_DARK_TEMPLATE_ID: TemplateId = NOTURNO_TEMPLATE_ID;
 
-const FIRST = TEMPLATE_CATALOG.filter((entry) => entry.template.id === EDITORIAL_TEMPLATE_ID || entry.template.id === NOTURNO_TEMPLATE_ID);
+const FIRST = LEGACY_TEMPLATE_CATALOG.filter((entry) => entry.template.id === EDITORIAL_TEMPLATE_ID || entry.template.id === NOTURNO_TEMPLATE_ID);
 
 export const PROVISIONAL_TEMPLATES: readonly CarouselTemplate[] = FIRST.map((entry) => entry.template);
 

@@ -23,9 +23,8 @@ import type { StructureOptions } from './structure.ts';
  * and the sample copy of its previews. Marketing's approved models arrive as entries appended
  * here with `status: 'aprovado'`, and nothing else changes: the library lists them, the studio
  * switches between them and the RenderService draws, measures and exports them (`catalog.test.ts`
- * checks every entry). The models below ship with the product, never "Provisório"; in the example
- * workspace Marketing already approved four of them (Editorial, Fotografia, Revista and Aspas), the
- * ones that carry the "Aprovado" badge.
+ * checks every entry). Legacy feed models stay available only to old fixture contracts; they are
+ * deliberately absent from the product catalogue and its model pickers.
  */
 
 export type TemplateEntry = { template: CarouselTemplate; render: TemplateRender; meta: TemplateMeta; sample: SampleContent; previewPhoto?: AssetId };
@@ -33,7 +32,7 @@ export type TemplateEntry = { template: CarouselTemplate; render: TemplateRender
 /** Ids kept from the first two models, so carousels saved with them still open. */
 export const EDITORIAL_TEMPLATE_ID: TemplateId = 'tpl-provisorio-claro';
 export const NOTURNO_TEMPLATE_ID: TemplateId = 'tpl-provisorio-escuro';
-export const DEFAULT_TEMPLATE_ID: TemplateId = EDITORIAL_TEMPLATE_ID;
+export const DEFAULT_TEMPLATE_ID: TemplateId = 'tpl-seafood-headline';
 
 type EntrySpec = {
   id: TemplateId;
@@ -71,7 +70,7 @@ const SEAFOOD_SPECS: readonly { variation: SeafoodVariation; name: string; famil
   { variation: 'quotes', name: 'Seafood Aspas', family: 'podcast', category: 'quote', description: 'Conversa em páginas claras, aspas fortes e faixa de foto.', photo: ['cover'] },
 ];
 
-export const TEMPLATE_CATALOG: readonly TemplateEntry[] = [
+export const LEGACY_TEMPLATE_CATALOG: readonly TemplateEntry[] = [
   entry({
     id: EDITORIAL_TEMPLATE_ID,
     name: 'Editorial',
@@ -187,6 +186,9 @@ export const TEMPLATE_CATALOG: readonly TemplateEntry[] = [
         onImage: '#F4F4F8',
       }),
   }),
+];
+
+const SQUARE_TEMPLATE_CATALOG: readonly TemplateEntry[] = [
   entry({
     id: 'tpl-aspas',
     name: 'Aspas',
@@ -238,14 +240,17 @@ export const TEMPLATE_CATALOG: readonly TemplateEntry[] = [
     structure: { coverTitleLines: 4 },
     render: (id) => minimalSquare(id, { page: '#FAFAF8', ink: '#121212', muted: '#646464', hairline: '#DCDCD8' }),
   }),
-  ...SEAFOOD_SPECS.map(spec => entry({
-    id: `tpl-seafood-${spec.variation}`, name: spec.name, family: spec.family,
-    format: 'feed', category: spec.category, description: spec.description,
-    tags: ['seafood', 'pescado', 'azul', spec.family === 'news' ? 'notícia' : spec.family === 'explainer' ? 'explica' : 'podcast'],
-    structure: { photo: spec.photo, coverTitleLines: 4, ...(spec.featured ? { featured: spec.featured } : {}) },
-    render: id => seafoodFeed(id, spec.variation), sample: seafoodSample(spec.variation), previewPhoto: SEAFOOD_SAMPLE_PHOTO.assetId,
-  })),
 ];
+
+const SEAFOOD_TEMPLATE_CATALOG = SEAFOOD_SPECS.map(spec => entry({
+  id: `tpl-seafood-${spec.variation}`, name: spec.name, family: spec.family,
+  format: 'feed', category: spec.category, description: spec.description,
+  tags: ['seafood', 'pescado', 'azul', spec.family === 'news' ? 'notícia' : spec.family === 'explainer' ? 'explica' : 'podcast'],
+  structure: { photo: spec.photo, coverTitleLines: 4, ...(spec.featured ? { featured: spec.featured } : {}) },
+  render: id => seafoodFeed(id, spec.variation), sample: seafoodSample(spec.variation), previewPhoto: SEAFOOD_SAMPLE_PHOTO.assetId,
+}));
+
+export const TEMPLATE_CATALOG: readonly TemplateEntry[] = [...SEAFOOD_TEMPLATE_CATALOG,...SQUARE_TEMPLATE_CATALOG];
 
 /** Structures, in library order (the first is the default). */
 export const CAROUSEL_TEMPLATES: readonly CarouselTemplate[] = TEMPLATE_CATALOG.map((item) => item.template);
