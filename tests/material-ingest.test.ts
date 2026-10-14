@@ -38,6 +38,60 @@ test('metadata failures return a recoverable refusal rather than silently advanc
   } finally { globalThis.fetch = original; }
 });
 
+test('text files are read without a local upload or worker, then analyzed through the real metadata contract', async () => {
+  const original = globalThis.fetch, requests: string[] = [];
+  const ingest = createHttpIngest({ ...local, limits: { ...local.limits, extensions: ['.txt','.md','.srt','.vtt'] } });
+  globalThis.fetch = async (input,init) => {
+    requests.push(String(input));
+    assert.equal(String(input),'/api/reporter/material/analysis');
+    const body = JSON.parse(String(init?.body));
+    assert.ok(body.text.includes('Oficinas de leitura'));
+    return Response.json({ title: 'Oficinas de leitura',participants: [],pipelineRevision: 1 });
+  };
+  try {
+    for (const [name,content,format] of [
+      ['Entrevista-Gestão.txt','Oficinas de leitura com inscrições gratuitas.','plain'],
+      ['entrevista.md','# Oficinas de leitura\n\nInscrições gratuitas.','plain'],
+      ['entrevista.srt','1\n00:00:00,000 --> 00:00:05,000\nOficinas de leitura.','srt'],
+      ['entrevista.vtt','WEBVTT\n\n00:00.000 --> 00:05.000\nOficinas de leitura.','vtt'],
+    ]) {
+      const progress: number[] = [];
+      const before = requests.length;
+      const result = await ingest.read(new File([content],name),{ onProgress: value => progress.push(value) });
+      assert.ok(result.ok);
+      assert.equal(result.value.text,content);
+      assert.equal(result.value.fileName,name);
+      assert.equal(result.value.format,format);
+      assert.equal(result.value.transcriptId,undefined);
+      assert.equal(requests.length,before);
+      assert.deepEqual(progress,[0,100]);
+      assert.ok((await ingest.analyze(result.value.text,{ fileName: name,format: 'auto' })).ok);
+    }
+    assert.equal(requests.length,4);
+  } finally { globalThis.fetch = original; }
+});
+
+test('text imports refuse invalid UTF-8, empty, NUL, oversized, unsupported and cancelled files before networking', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('Text imports must not upload'); };
+  const ingest = createHttpIngest(local);
+  try {
+    for (const [file,code] of [
+      [new File([new Uint8Array([0xff,0xfe])],'invalid.txt'),'read_failed'],
+      [new File([' \n '],'empty.txt'),'empty'],
+      [new File(['Texto\0inválido'],'nul.txt'),'read_failed'],
+      [new File([new Uint8Array(1048577)],'large.txt'),'too_large'],
+      [new File(['Texto'],'unsupported.pdf'),'unsupported_type'],
+    ] as const) {
+      const result = await ingest.read(file);
+      assert.equal(result.ok,false);
+      if (!result.ok) assert.equal(result.refusal.code,code);
+    }
+    const controller = new AbortController();controller.abort();
+    assert.equal((await ingest.read(new File(['Texto'],'cancelled.txt'),{ signal: controller.signal })).ok,false);
+  } finally { globalThis.fetch = original; }
+});
+
 test('large media uploads bypass the Next body through bounded presigned parts and then poll the transcript',async () => {
   const original = globalThis.fetch;
   const calls: string[] = [],uploaded: number[] = [],progress: number[] = [];

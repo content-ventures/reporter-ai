@@ -223,6 +223,19 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
       uploads.set(file,upload);
       let retried = false;
       try {
+        if (textFile) {
+          options.signal?.throwIfAborted();
+          options.onProgress?.(0,'Lendo arquivo');
+          const bytes = await file.arrayBuffer();
+          options.signal?.throwIfAborted();
+          let text: string;
+          try { text = new TextDecoder('utf-8',{ fatal: true }).decode(bytes); }
+          catch { return refuse('read_failed','Salve a transcrição em UTF-8.'); }
+          if (!text.trim()) return refuse('empty','O arquivo está vazio.');
+          if (text.includes('\0')) return refuse('read_failed','A transcrição está inválida.');
+          options.onProgress?.(100,'Arquivo lido');
+          return ok({ text,fileName: file.name,format: detectTranscriptFormat(text,file.name),bytes: file.size });
+        }
         options.onProgress?.(0,'Enviando arquivo');
         if (!upload.uploaded) {
           let direct: CloudUpload | undefined;

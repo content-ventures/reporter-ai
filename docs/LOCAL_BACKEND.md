@@ -30,7 +30,10 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
 
 ## Connected behavior
 
-- Upload TXT, MD, SRT or VTT in UTF-8 up to 1 MiB; audio/video up to 2 GiB and three hours.
+- Read TXT, MD, SRT or VTT in UTF-8 up to 1 MiB directly in the browser, then analyze the material
+  through the same API as pasted text. The full text is saved when the production is created;
+  these files need no upload route or transcription worker. Invalid UTF-8, empty files and NUL
+  characters are rejected. Upload audio/video up to 2 GiB and three hours.
   Supported media: MP3, M4A, MP4, WAV, OGG, FLAC, WEBM. Video must contain audio.
   Multipart filenames are decoded as UTF-8 and normalized to NFC, including decomposed
   macOS accents; the original display name is metadata, never the private storage path.

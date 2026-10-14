@@ -45,18 +45,49 @@ for (const viewport of VIEWPORTS) {
       expect(errors, "erros no console").toEqual([]);
     });
 
-    test("analisa o exemplo sem criar produção nem chamar IA paga", async ({ page }) => {
+    test("analisa texto e avança à pauta sem criar produção nem chamar IA paga", async ({ page }) => {
       const errors = watchErrors(page);
+      await page.route('**/api/reporter/material/analysis', route => route.fulfill({
+        json: { title: 'Produção de teste',participants: [],pipelineRevision: 1 },
+      }));
       await page.goto("/productions/new");
       await expectShell(page, "Nova produção");
 
       await page.getByRole("button", { name: "Usar exemplo" }).click();
       await expect(page.getByRole("textbox", { name: "Transcrição" })).not.toBeEmpty();
       await expect(page.getByText(/falantes?/).first()).toBeVisible();
-      await expect(page.getByRole("button", { name: "Continuar" })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Material (preenchida)',exact: true })).toBeVisible();
+      await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
+      await page.getByRole('button', { name: 'Continuar',exact: true }).click();
+      await expect(page.getByRole('textbox', { name: 'Título interno',exact: true })).not.toBeEmpty();
       await expectNoHorizontalOverflow(page);
 
       expect(errors, "erros no console").toEqual([]);
+    });
+
+    test('importa arquivo UTF-8 e avança à pauta sem upload local ou worker', async ({ page }) => {
+      const errors = watchErrors(page), uploads: string[] = [];
+      page.on('request', request => {
+        if (request.method() === 'POST' && /\/api\/reporter\/(?:files|uploads)$/.test(request.url())) uploads.push(request.url());
+      });
+      await page.route('**/api/reporter/material/analysis', async route => {
+        const material = route.request().postDataJSON();
+        expect(material.fileName).toBe('Entrevista-Gestão.txt');
+        expect(material.text).toBe('Material sintético de teste sobre oficinas gratuitas de leitura.');
+        await route.fulfill({ json: { title: 'Oficinas gratuitas de leitura',participants: [],pipelineRevision: 1 } });
+      });
+      await page.goto('/productions/new');
+      await expectShell(page, 'Nova produção');
+      await page.getByRole('radio', { name: 'Arquivo',exact: true }).click();
+      await page.locator('input[type="file"]').setInputFiles({ name: 'Entrevista-Gestão.txt',mimeType: 'text/plain',
+        buffer: Buffer.from('Material sintético de teste sobre oficinas gratuitas de leitura.') });
+      await expect(page.getByRole('heading', { name: 'Material (preenchida)',exact: true })).toBeVisible();
+      await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
+      await page.getByRole('button', { name: 'Continuar',exact: true }).click();
+      await expect(page.getByRole('textbox', { name: 'Título interno',exact: true })).toHaveValue('Oficinas gratuitas de leitura');
+      await expectNoHorizontalOverflow(page);
+      expect(uploads).toEqual([]);
+      expect(errors, 'erros no console').toEqual([]);
     });
 
     test("abre a biblioteca atual e a prévia de um modelo Seafood", async ({ page }) => {
