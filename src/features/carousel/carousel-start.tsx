@@ -15,6 +15,7 @@ import {
   Tooltip,
   useWorkspace,
   WorkspaceLayout,
+  type MediaRatio,
 } from '@content-ventures/design-system/v3';
 import { Sparkles } from '@content-ventures/design-system/v3/icons';
 import { blockText, formatSize, plannedLayouts, SIMULATED_MODEL, type CarouselBody, type RunId, type TemplateId } from '@/domain';
@@ -71,10 +72,13 @@ export type CarouselStartProps = {
   draft?: DraftView;
   /** A failed or interrupted run that left no slides ("Tentar de novo a partir desta etapa"). */
   lastRun?: RunView;
+  /** Shows the editing workspace as soon as carousel setup begins. */
+  onStartProgress: (phase: 'preparing' | 'generating', templateName: string, slides: number, ratio: MediaRatio) => void;
+  onStartFailed: () => void;
   onRunStarted: (runId: RunId) => void;
 };
 
-export function CarouselStart({ production, article, carousel, draft, lastRun, onRunStarted }: CarouselStartProps) {
+export function CarouselStart({ production, article, carousel, draft, lastRun, onStartProgress, onStartFailed, onRunStarted }: CarouselStartProps) {
   const commands = useCommands();
   const { runtime } = useRuntime();
   const phone = usePhone();
@@ -149,37 +153,52 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
   const [starting, setStarting] = useState(false);
 
   const start = async () => {
-    if (!from || !template || blockedReason) return;
+    if (!from || !template || blockedReason || starting) return;
     setStarting(true);
-    let pieceId = carousel?.id;
-    if (!pieceId) {
-      const derived = await commands.production.derive({ productionId: production.id, kind: 'carousel', from, templateId: template.id });
-      if (!derived.ok) {
+    onStartProgress('preparing', template.name, total, template.formatInfo.ratio);
+    try {
+      let pieceId = carousel?.id;
+      if (!pieceId) {
+        const derived = await commands.production.derive({ productionId: production.id, kind: 'carousel', from, templateId: template.id });
+        if (!derived.ok) {
+          setStarting(false);
+          onStartFailed();
+          toast('Não foi possível criar o carrossel', { tone: 'error', description: derived.refusal.message });
+          return;
+        }
+        pieceId = derived.value.pieceId;
+      } else if (draft && existingTemplate !== template.id) {
+        const saved = await commands.production.saveDraft(pieceId, { type: 'carousel', templateId: template.id, slides: [] }, draft.revision);
+        if (!saved.ok) {
+          setStarting(false);
+          onStartFailed();
+          toast('Não foi possível salvar o modelo', { tone: 'error', description: saved.refusal.message });
+          return;
+        }
+      }
+
+      onStartProgress('generating', template.name, total, template.formatInfo.ratio);
+      const started = await commands.generation.start(
+        'carousel.copy',
+        { productionId: production.id, pieceId, from, templateId: template.id, slides: total },
+        { simulation: takeArmedSimulation('carousel.copy') },
+      );
+      if (!started.ok) {
         setStarting(false);
-        toast('Não foi possível criar o carrossel', { tone: 'error', description: derived.refusal.message });
+        onStartFailed();
+        toast('Não foi possível gerar os textos', { tone: 'error', description: started.refusal.message });
         return;
       }
-      pieceId = derived.value.pieceId;
-    } else if (draft && existingTemplate !== template.id) {
-      const saved = await commands.production.saveDraft(pieceId, { type: 'carousel', templateId: template.id, slides: [] }, draft.revision);
-      if (!saved.ok) {
-        setStarting(false);
-        toast('Não foi possível salvar o modelo', { tone: 'error', description: saved.refusal.message });
-        return;
-      }
+      rememberTemplate(template.id);
+      onRunStarted(started.value.runId);
+    } catch (error) {
+      setStarting(false);
+      onStartFailed();
+      toast('Não foi possível iniciar a geração', {
+        tone: 'error',
+        description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+      });
     }
-    const started = await commands.generation.start(
-      'carousel.copy',
-      { productionId: production.id, pieceId, from, templateId: template.id, slides: total },
-      { simulation: takeArmedSimulation('carousel.copy') },
-    );
-    setStarting(false);
-    if (!started.ok) {
-      toast('Não foi possível gerar os textos', { tone: 'error', description: started.refusal.message });
-      return;
-    }
-    rememberTemplate(template.id);
-    onRunStarted(started.value.runId);
   };
 
   const retry = async (stepId: string) => {

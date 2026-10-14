@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ButtonLink, EmptyState, SkeletonText, SlideStrip, WorkspaceLayout } from '@content-ventures/design-system/v3';
+import { ButtonLink, EmptyState, MetaList, PageStack, Progress, ProgressSteps, Section, SkeletonText, SlideStrip, WorkspaceLayout, type MediaRatio } from '@content-ventures/design-system/v3';
 import { Presentation } from '@content-ventures/design-system/v3/icons';
 import { isRunActive, type ProductionId, type RunId } from '@/domain';
 import type { PieceView, ProductionDetail } from '@/ports';
@@ -23,9 +23,23 @@ export function CarouselStudio({ productionId }: { productionId: ProductionId })
   const frame = useProductionFrame();
   const production = frame.production.data;
   const [started, setStarted] = useState<{ productionId: ProductionId; runId: RunId } | null>(null);
+  const [starting, setStarting] = useState<{
+    productionId: ProductionId;
+    templateName: string;
+    slides: number;
+    ratio: MediaRatio;
+    phase: 'preparing' | 'generating';
+  } | null>(null);
   const startedRunId = started?.productionId === productionId ? started.runId : undefined;
-  const onRunStarted = (runId: RunId) => setStarted({ productionId, runId });
+  const onStartProgress = (phase: 'preparing' | 'generating', templateName: string, slides: number, ratio: MediaRatio) =>
+    setStarting({ productionId, templateName, slides, ratio, phase });
+  const onStartFailed = () => setStarting(null);
+  const onRunStarted = (runId: RunId) => {
+    setStarting(null);
+    setStarted({ productionId, runId });
+  };
 
+  if (starting?.productionId === productionId) return <CarouselStarting progress={starting} />;
   if (!production) return <StudioLoading />;
 
   const article = production.pieces.find((piece) => piece.kind === 'article');
@@ -49,12 +63,49 @@ export function CarouselStudio({ productionId }: { productionId: ProductionId })
   }
   if (!carousel) {
     return article?.approvedVersion ? (
-      <CarouselStart production={production} article={article} onRunStarted={onRunStarted} />
+      <CarouselStart production={production} article={article} onStartProgress={onStartProgress} onStartFailed={onStartFailed} onRunStarted={onRunStarted} />
     ) : (
       <CarouselBlocked production={production} article={article} />
     );
   }
-  return <ExistingCarousel production={production} article={article} carousel={carousel} startedRunId={startedRunId} onRunStarted={onRunStarted} />;
+  return <ExistingCarousel production={production} article={article} carousel={carousel} startedRunId={startedRunId} onStartProgress={onStartProgress} onStartFailed={onStartFailed} onRunStarted={onRunStarted} />;
+}
+
+function CarouselStarting({
+  progress,
+}: {
+  progress: { templateName: string; slides: number; ratio: MediaRatio; phase: 'preparing' | 'generating' };
+}) {
+  const preparing = progress.phase === 'preparing';
+  return (
+    <WorkspaceLayout
+      docked
+      header={<ProductionHeader compact />}
+      mainLabel="Carrossel"
+      start={{ label: 'Slides', defaultSize: 296, min: 260, max: 360, content: <SlideStrip label="Slides do carrossel" items={[]} value={null} onChange={() => undefined} loading loadingCount={progress.slides} ratio={progress.ratio} /> }}
+      end={{ label: 'Texto', defaultSize: 336, min: 300, max: 480, content: <SkeletonText lines={6} label="Preparando texto dos slides" /> }}
+    >
+      <PageStack>
+        <Section title={preparing ? 'Preparando seu carrossel' : 'Conectando a geração'}>
+          <MetaList size="sm" items={[progress.templateName, `${progress.slides} slides`]} />
+          <ProgressSteps
+            label="Preparação do carrossel"
+            steps={[
+              { id: 'workspace', label: 'Preparar o espaço de edição', state: preparing ? 'current' : 'done' },
+              {
+                id: 'generation',
+                label: 'Iniciar a geração dos textos',
+                state: preparing ? 'upcoming' : 'current',
+                detail: preparing ? undefined : 'Conectando ao modelo selecionado.',
+              },
+            ]}
+          />
+          <Progress aria-label="Preparando o estúdio do carrossel" />
+        </Section>
+        <SlideImage render={undefined} ratio={progress.ratio} alt="Preparando a prévia do carrossel" fitHeight />
+      </PageStack>
+    </WorkspaceLayout>
+  );
 }
 
 /** A carousel piece exists: the studio, or the start page while it has no slide and no run. */
@@ -63,12 +114,16 @@ function ExistingCarousel({
   article,
   carousel,
   startedRunId,
+  onStartProgress,
+  onStartFailed,
   onRunStarted,
 }: {
   production: ProductionDetail;
   article: PieceView | undefined;
   carousel: PieceView;
   startedRunId: RunId | undefined;
+  onStartProgress: (phase: 'preparing' | 'generating', templateName: string, slides: number, ratio: MediaRatio) => void;
+  onStartFailed: () => void;
   onRunStarted: (runId: RunId) => void;
 }) {
   const piece = usePiece(carousel.id);
@@ -83,6 +138,8 @@ function ExistingCarousel({
         carousel={carousel}
         draft={piece.data}
         lastRun={carousel.lastRun?.kind === 'carousel.generate' ? carousel.lastRun : undefined}
+        onStartProgress={onStartProgress}
+        onStartFailed={onStartFailed}
         onRunStarted={onRunStarted}
       />
     );
