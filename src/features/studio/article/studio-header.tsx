@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { MenuSection } from '@content-ventures/design-system/v3';
 import { ClipboardList, History as HistoryIcon, LayoutTemplate, ListTree, RotateCcw, Send, Sparkles, Undo2 } from '@content-ventures/design-system/v3/icons';
 import { ProductionHeader, ProductionPrimaryBar, type HeaderPrimary } from '@/features/production/production-frame';
@@ -12,9 +12,10 @@ import { studioPrimary } from './studio-session-model';
 /**
  * The studio's header line (D2, CONTRACT §3.8): ← Produções · title · the article's status ·
  * "Artigo · 2 de 5 ▾" · ⋯ · ONE primary with the next step written on it. Under the line, ONE
- * task notice: the AI writing or stopped, where the approval stands, or (from the frame) the
- * other-tab notice. Behind ⋯: the brief, the structure, the version history, how the AI wrote,
- * "Reescrever o artigo do zero…" and, while the text waits, "Retirar envio".
+ * task notice: where a failed run or approval stands, or (from the frame) the other-tab notice.
+ * Writing progress stays with the text in the editor. Behind ⋯: the brief, the structure, the
+ * version history, how the AI wrote, "Reescrever o artigo do zero…" and, while the text waits,
+ * "Retirar envio".
  */
 
 /** The header primary of the article, as `ProductionHeader` takes it (or none). */
@@ -100,25 +101,7 @@ function useStudioMenu(): MenuSection[] {
 function useStudioNotice(): ReactNode {
   const studio = useStudio();
   const { generation, approval, production, panes, actions } = studio;
-  const [stopping, setStopping] = useState(false);
   const run = generation.run;
-  if (generation.active && run) {
-    return (
-      <GenerationBanner
-        run={run}
-        subject="article"
-        busy={stopping}
-        {...(studio.canEdit
-          ? {
-              onStop: () => {
-                setStopping(true);
-                void actions.stopGeneration().finally(() => setStopping(false));
-              },
-            }
-          : {})}
-      />
-    );
-  }
   if (run?.status === 'failed') {
     return (
       <GenerationBanner

@@ -132,6 +132,10 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       lastStepId = key === 'facts' ? 'source' : stepId;
       if (key !== 'facts') await guarded([{ type: 'step.started',stepId,meta: 'Aguardando ' + pipelineModelLabel(pipeline.definition.steps[key].model) }]);
       const writing = requestedOutline && ['article','intro','section'].includes(key);
+      // A bounded single-mode refinement gets its own complete answer. Keep the first pass on
+      // screen while that answer is being prepared; publishing its fresh partial JSON made the
+      // preview shrink and look as if the article had restarted.
+      const streamText = writing && (key !== 'article' || index === 0);
       const expected = key === 'article' ? JSON.parse(values.outline) : key === 'section' ? JSON.parse(values.section) : undefined;
       const response = await executePipelineStep({ pipeline,key,index,variables: values,schema,directory,previousDirectory,factsDirectory,
         validateOutput: value => editorialResponseValid(key,value,knownIds,input.record.production.brief.sections,expected),
@@ -139,7 +143,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         ...(['article', 'intro', 'section'].includes(key) ? { writingContract: { evidence: new Map(candidates.map(candidate => [candidate.key, candidate.text])),
           ...(key === 'article' ? { limits: sizing, minQuotes: sizing.minQuotes } : {}) } } : {}),
         signal: key === 'images' ? AbortSignal.any([combined,AbortSignal.timeout(30000)]) : combined,trace: trace => guarded([],trace).then(() => undefined),
-        ...(writing ? { onText: async (text: string) => { writingStages.set(stepId,text); await publishPreview(); } } : {}) });
+        ...(streamText ? { onText: async (text: string) => { writingStages.set(stepId,text); await publishPreview(); } } : {}) });
       if (writing) { writingStages.set(stepId,JSON.stringify(response.value)); await publishPreview(true); }
       result = response;
       inputTokens = inputTokens === null || response.input_units === null ? null : inputTokens+response.input_units;
@@ -304,7 +308,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         const current = checkpoint.jobs[job.meta.runId];
         if (current?.lease?.fence !== job.lease?.fence || !isRunActive(engine.store.state.runFolds[job.meta.runId]?.run)) return;
         const policy = editorialRetryPolicy(error,current.attempts,engine.store.state.runFolds[job.meta.runId].run.createdAt,signal.aborted);
-        if (job.kind === 'article.draft') appendEditorialEvent(engine,current,{ type: 'article.preview',body: null });
+        // Keep an already visible preview through a provider retry. Clearing it here sent the
+        // editor back to its skeletons and replayed the text when the worker resumed.
         if (ARTICLE_ASSIST_KINDS.has(job.kind)) appendEditorialEvent(engine,current,{ type: 'assist.preview',reply: '',proposals: [] });
         current.attempts = policy.attempts;
         if (policy.retry) {
