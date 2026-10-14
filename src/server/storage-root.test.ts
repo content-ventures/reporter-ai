@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { storageRootPath } from '../src/server/storage.ts';
+import { storageRootPath } from './storage-root.ts';
 
 test('Vercel functions always use writable ephemeral storage', () => {
   assert.equal(storageRootPath({ VERCEL: '1' }, '/var/task'), '/tmp/reporter-ai');
