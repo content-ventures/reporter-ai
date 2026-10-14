@@ -14,11 +14,10 @@ import { FlowError } from "./errors";
 import { inspectMedia } from "./media";
 import { reporterDeploymentMode } from './deployment.ts';
 import { transaction } from './database.ts';
+import { storageRootPath } from './storage-root.ts';
 
 export async function storageRoot() {
-  const root = process.env.REPORTER_FUNCTION_RUNTIME === 'true'
-    ? join('/tmp','reporter-ai')
-    : join(process.cwd(), ".reporter-local");
+  const root = storageRootPath();
   await mkdir(root, { recursive: true, mode: 0o700 });
   if (!(await lstat(root)).isDirectory() || (await lstat(root)).isSymbolicLink()) throw new FlowError("UNSAFE_STORAGE", 500);
   if (await realpath(root) !== root) throw new FlowError("UNSAFE_STORAGE", 500);
