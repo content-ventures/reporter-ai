@@ -14,7 +14,7 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: production
 
     steps:
@@ -46,6 +46,72 @@ jobs:
 
       - name: Validate prepared release
         run: pnpm gate
+
+      - name: Install Neon CLI
+        run: npm install --global --no-audit --no-fund neon@6.3.0
+
+      - name: Migrate Neon and deploy the worker
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
+          REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+        run: |
+          set -euo pipefail
+          for name in NEON_API_KEY NEON_PROJECT_ID NEON_BRANCH_ID REPORTER_WORKER_PASSWORD GROQ_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY PIXABAY_API_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing $name in the production GitHub environment."
+              exit 1
+            fi
+          done
+
+          umask 077
+          env_file="$RUNNER_TEMP/reporter-neon-release.env"
+          trap 'rm -f "$env_file"' EXIT
+
+          # Resolve the target branch's owner connection in memory. It feeds the
+          # idempotent SQL migrations and the worker connection URL in neon.ts.
+          database_url="$(neon connection-string "$NEON_BRANCH_ID" --project-id "$NEON_PROJECT_ID" --role-name neondb_owner)"
+          if [[ -z "$database_url" ]]; then
+            echo "::error::Neon did not return a connection string for the configured production branch."
+            exit 1
+          fi
+          export DATABASE_URL="$database_url"
+          export DATABASE_URL_UNPOOLED="$database_url"
+
+          neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --service postgres --file "$env_file"
+          node --input-type=module - "$env_file" <<'NODE'
+          import { appendFile } from 'node:fs/promises';
+
+          const file = process.argv[2];
+          const names = ['REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY'];
+          const lines = names.map(name => `${name}=${JSON.stringify(process.env[name])}`);
+          await appendFile(file, `\n${lines.join('\n')}\n`, { mode: 0o600 });
+          NODE
+
+          node --env-file="$env_file" scripts/reporter-cloud.mjs migrate
+          neon deploy --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --env "$env_file" --allow-protected --no-env-pull
+
+          # Pull the newly deployed function URL into the temporary env file and
+          # prove the worker can authenticate to Postgres and register a heartbeat.
+          neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --file "$env_file"
+          node --env-file="$env_file" --input-type=module <<'NODE'
+          const endpoint = process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL;
+          const secret = process.env.REPORTER_WORKER_PASSWORD;
+          if (!endpoint || !secret) throw new Error('Neon worker health check is missing its function URL or password.');
+          const response = await fetch(endpoint, {
+            headers: { 'x-reporter-worker-key': secret },
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (!response.ok) throw new Error(`Neon worker health check failed with HTTP ${response.status}.`);
+          const payload = await response.json();
+          if (payload.ok !== true) throw new Error('Neon worker did not confirm its database heartbeat.');
+          console.log('Neon worker health check passed.');
+          NODE
 
       - name: Commit and tag release
         env:

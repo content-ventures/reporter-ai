@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "node scripts/build-next.mjs",
     "start": "next start",
-    "dev:local": "next dev --hostname 127.0.0.1 --port 3002",
+    "dev:local": "node scripts/dev-local.mjs",
     "start:local": "REPORTER_ALLOW_LOCAL_BUILD=true next start --hostname 127.0.0.1 --port 3002",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
