@@ -229,7 +229,7 @@ export function nextStepFor(input: SituationInput): NextStep | null {
       return editor ? step('continue', studio, owner) : open;
     case 'in_review': {
       const request = piece ? pendingReview(record, piece.id) : undefined;
-      if (request?.requestedBy === viewer.personId || (owner && !request)) return null;
+      if (request?.requestedBy === viewer.personId && !viewer.localOperator || (owner && !request)) return null;
       const gate = gateForPiece(kind, input.gates);
       if (gate && hasAnyRole(viewer, gate.roles)) {
         return step('review', { kind: 'review', pieceKind: kind }, request?.assigneeId === undefined || request.assigneeId === viewer.personId);

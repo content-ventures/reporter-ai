@@ -1,6 +1,6 @@
 'use client';
 
-import { SidebarAccount, type MenuSection } from '@content-ventures/design-system/v3';
+import { LiveRegion, Section, Select, SidebarAccount, useShell, type MenuSection } from '@content-ventures/design-system/v3';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { PersonAvatar } from '../person-avatar';
@@ -14,6 +14,7 @@ import { localRoleMenu, memberDetail, useActAs } from './act-as';
 export function ShellAccount() {
   const router = useRouter();
   const session = useActAs();
+  const { collapsed } = useShell();
   const { current, members, actAs } = session;
   if (!current) return null;
   const sections: MenuSection[] =
@@ -37,5 +38,20 @@ export function ShellAccount() {
     label: 'Sair',
     onSelect: () => { void authClient.signOut().finally(() => router.replace('/auth/sign-in')); },
   }] }];
-  return <SidebarAccount name={current.name} src={current.avatarUrl} detail={memberDetail(current)} sections={[...sections, ...localRoleMenu(session), ...cloudSections]} />;
+  const profile = session.localProfiles.find(profile => profile.id === session.selectedProfile);
+  return <>
+    <SidebarAccount name={current.name} src={current.avatarUrl}
+      detail={profile ? `Perfil de teste: ${profile.label}` : memberDetail(current)}
+      sections={[...sections, ...localRoleMenu(session), ...cloudSections]} />
+    {session.localProfiles.length && !collapsed ? <Section meta="Perfil de teste · local">
+      <Select label="Perfil de teste" size="sm" value={session.selectedProfile ?? ''}
+        options={session.localProfiles.map(profile => ({ value: profile.id, label: profile.label }))}
+        loading={session.switchingRole} placeholder="Selecionar perfil"
+        onChange={id => {
+          const next = session.localProfiles.find(profile => profile.id === id);
+          if (next && next.id !== session.selectedProfile) void session.selectRole(next);
+        }} />
+      <LiveRegion message={profile ? `Perfil de teste ativo: ${profile.label}` : ''} />
+    </Section> : null}
+  </>;
 }

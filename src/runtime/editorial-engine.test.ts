@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createEditorialEngine, editorialLocalRoleProfiles, selectEditorialLocalRole, emptyEditorialCheckpoint, LOCAL_OPERATOR, editorialCandidates, appendEditorialEvent, editorialContextHash, editorialCarouselLayouts, editorialTemplates } from './editorial-engine.ts';
+import { createEditorialEngine, editorialLocalRoleProfiles, selectEditorialLocalRole, emptyEditorialCheckpoint, adoptEditorialIdentity, LOCAL_OPERATOR, LOCAL_WORKSPACE, editorialCandidates, appendEditorialEvent, editorialContextHash, editorialCarouselLayouts, editorialTemplates } from './editorial-engine.ts';
 import { refKey } from '../domain/refs.ts';
+import { plannedLayouts } from '../domain/carousel.ts';
 import { contentHash } from '../domain/text/hash.ts';
 import { toVersionRef } from '../domain/piece.ts';
 import type { EditorialJob } from '../ports/connected-workspace.ts';
@@ -29,17 +30,40 @@ test('bounded local test profiles change roles without changing identity, produc
   assert.equal(selectEditorialLocalRole(engine, 'root').ok, false);
   assert.equal(selectEditorialLocalRole(engine, { personId: LOCAL_OPERATOR, roles: ['admin'] }).ok, false);
   assert.equal(contentHash(engine.store.state), before);
-  selectEditorialLocalRole(engine, 'all');
+  selectEditorialLocalRole(engine, 'editor');
   const created = await engine.commands.createFromSource(input); assert.ok(created.ok);
   const id = created.value.pieces.find(piece => piece.kind === 'article')!.pieceId;
   await engine.commands.saveDraft(id, { type: 'article', title: 'Teste fictício', blocks: [{ id: 'p', type: 'paragraph', inlines: [{ text: material }], ai: 'reviewed' }] }, 0);
   const requested = await engine.commands.requestReview(id, { assigneeId: LOCAL_OPERATOR }); assert.ok(requested.ok);
+  assert.equal((await engine.queries.approvals('to_approve')).items.length, 0, 'Editor has no approval tasks');
   selectEditorialLocalRole(engine, 'editor');
   const denied = await engine.commands.decide({ pieceId: id, subject: requested.value.request.subject, decision: 'approved', displayedHash: requested.value.request.subject.hash });
   assert.equal(denied.ok, false);
   assert.equal(engine.store.state.productions[0].decisions.length, 0);
   selectEditorialLocalRole(engine, 'approver');
+  const readyToReview = await engine.queries.get(created.value.productionId);
+  assert.ok(readyToReview.ok);
+  assert.equal(readyToReview.value.nextStep?.label, 'Revisar');
+  assert.equal((await engine.queries.approvals('to_approve')).items[0]?.pieceId, id);
   assert.ok((await engine.commands.decide({ pieceId: id, subject: requested.value.request.subject, decision: 'approved', displayedHash: requested.value.request.subject.hash })).ok);
+  selectEditorialLocalRole(engine, 'editor');
+  const carousel = await engine.commands.derive({ productionId: created.value.productionId, kind: 'carousel', from: requested.value.request.subject });
+  assert.ok(carousel.ok);
+  const carouselId = carousel.value.pieceId;
+  const carouselBody = engine.records.record(created.value.productionId)!.pieces.find(piece => piece.id === carouselId)!.draft.body;
+  assert.ok(carouselBody.type === 'carousel');
+  const template = editorialTemplates().find(template => template.id === carouselBody.templateId)!;
+  const filled = { ...carouselBody, slides: plannedLayouts(template, template.minSlides).map((layout, index) => ({
+    id: 'test-slide-' + index, layout: layout.id, slots: Object.fromEntries(layout.slots.map(slot => [slot.id, 'Texto sintético.'])),
+    sourceBlockIds: ['p'], ai: 'reviewed' as const,
+  })) };
+  assert.ok((await engine.commands.saveDraft(carouselId, filled, 0)).ok);
+  const carouselReview = await engine.commands.requestReview(carouselId, { assigneeId: LOCAL_OPERATOR });
+  assert.ok(carouselReview.ok, !carouselReview.ok ? carouselReview.refusal.message : '');
+  selectEditorialLocalRole(engine, 'approver');
+  const carouselSubject = carouselReview.value.request.subject;
+  assert.equal((await engine.queries.approvals('to_approve')).items[0]?.pieceId, carouselId);
+  assert.ok((await engine.commands.decide({ pieceId: carouselId, subject: carouselSubject, decision: 'approved', displayedHash: carouselSubject.hash })).ok);
   engine.store.dispose();
 });
 
@@ -57,6 +81,33 @@ test('ordinary members, another workspace and another identity cannot select loc
     assert.equal(contentHash(engine.store.state), before);
     engine.store.dispose();
   }
+});
+
+test('trusted local identity restores the test capability and preserves a selected profile across requests', () => {
+  const checkpoint = emptyEditorialCheckpoint();
+  const identity = { workspaceId: LOCAL_WORKSPACE, workspaceName: 'Local', workspaceSlug: 'reporter-ai-local',
+    personId: LOCAL_OPERATOR, name: 'Operador local', roles: ['admin', 'editor', 'approver', 'creative_reviewer'] as typeof checkpoint.state.members[0]['roles'], localOperator: true };
+  delete checkpoint.state.members[0].localOperator; // Legacy requests erased this server-owned marker.
+  adoptEditorialIdentity(checkpoint, identity);
+  assert.equal(checkpoint.state.members[0].localOperator, true);
+  const engine = createEditorialEngine(checkpoint, ids);
+  try {
+    assert.ok(selectEditorialLocalRole(engine, 'editor').ok);
+    checkpoint.state = engine.store.state;
+    adoptEditorialIdentity(checkpoint, identity);
+    assert.deepEqual(checkpoint.state.members[0].roles, ['editor']);
+    const reloaded = createEditorialEngine(JSON.parse(JSON.stringify(checkpoint)), ids);
+    try {
+      assert.ok(selectEditorialLocalRole(reloaded, 'approver').ok);
+      checkpoint.state = reloaded.store.state;
+      adoptEditorialIdentity(checkpoint, identity);
+      assert.deepEqual(checkpoint.state.members[0].roles, ['approver', 'creative_reviewer']);
+      assert.equal(checkpoint.state.sessionPersonId, LOCAL_OPERATOR);
+    } finally { reloaded.store.dispose(); }
+    adoptEditorialIdentity(checkpoint, { ...identity, localOperator: undefined, roles: ['editor'] });
+    assert.deepEqual(checkpoint.state.members[0].roles, ['editor'], 'cloud identity roles replace checkpoint roles');
+    assert.equal(checkpoint.state.members[0].localOperator, undefined, 'a cloud identity never receives local approval exceptions');
+  } finally { engine.store.dispose(); }
 });
 
 test('connected workspace starts empty, has one local operator and never imports demo productions', () => {

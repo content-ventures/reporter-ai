@@ -56,7 +56,7 @@ function itemOf(ctx: ReadContext, record: ProductionRecord, piece: Piece, versio
 export function isInQueue(ctx: Pick<ReadContext, 'gates'>, viewer: Member, piece: Piece, request: ReviewRequest): boolean {
   const gate = gateForPiece(piece.kind, ctx.gates);
   if (!gate || !hasAnyRole(viewer, gate.roles)) return false;
-  if (request.requestedBy === viewer.personId) return false;
+  if (request.requestedBy === viewer.personId && !viewer.localOperator) return false;
   return request.assigneeId === undefined || request.assigneeId === viewer.personId;
 }
 

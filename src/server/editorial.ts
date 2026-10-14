@@ -23,6 +23,7 @@ import { r1ArticleIssue, ARTICLE_POLICY_MESSAGES } from '../domain/article-polic
 import { ARTICLE_ASSIST_KINDS, validateArticleAssistInput } from './article-assist';
 import { citationDay, podcastLink } from '../domain/citation-library.ts';
 import { currentReporterContext } from './request-context.ts';
+import { reporterDeploymentMode } from './deployment.ts';
 
 const ids = { next: () => randomUUID() };
 const identifier = z.string().min(1).max(128);
@@ -45,7 +46,8 @@ export async function editorialTransaction<T>(role: 'runtime' | 'worker', change
     const row = (await client.query('SELECT public.reporter_editorial_load($1) AS value', [mutate])).rows[0].value;
     const context = role === 'runtime' ? currentReporterContext() : undefined;
     const identity = context ? { workspaceId: context.portal,workspaceName: context.workspaceName,workspaceSlug: context.workspaceSlug,
-      personId: context.actor,name: context.name,email: context.email,avatarUrl: context.image,roles: context.roles } : undefined;
+      personId: context.actor,name: context.name,email: context.email,avatarUrl: context.image,roles: context.roles,
+      ...(reporterDeploymentMode() === 'local' ? { localOperator: true as const } : {}) } : undefined;
     const checkpoint: EditorialCheckpoint = row.checkpoint.state ? row.checkpoint : emptyEditorialCheckpoint(identity);
     if (identity) adoptEditorialIdentity(checkpoint,identity);
     const before = contentHash(checkpoint);
@@ -172,6 +174,7 @@ export async function editorialRpc(payload: unknown) {
     }
     const execute = async () => {
     if (method === 'session.selectLocalRole') {
+      if (reporterDeploymentMode() !== 'local') return refuse('not_local_operator','Testar perfis só está disponível no ambiente local.');
       assertLocalMode();
       const [profile] = z.tuple([z.enum(['all', 'editor', 'approver', 'creative_reviewer', 'admin'])]).parse(args);
       return selectEditorialLocalRole(engine, profile);

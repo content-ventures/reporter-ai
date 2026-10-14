@@ -31,9 +31,9 @@ export const LOCAL_WORKSPACE = '00000000-0000-0000-0000-000000000101';
 const LOCAL_ROLE_PROFILES: LocalRoleProfile[] = [
   { id: 'all', label: 'Todos os papéis', roles: ['admin', 'editor', 'approver', 'creative_reviewer'] },
   { id: 'editor', label: 'Editor', roles: ['editor'] },
-  { id: 'approver', label: 'Aprovador', roles: ['approver'] },
+  { id: 'approver', label: 'Aprovador', roles: ['approver', 'creative_reviewer'] },
   { id: 'creative_reviewer', label: 'Revisor criativo', roles: ['creative_reviewer'] },
-  { id: 'admin', label: 'Admin', roles: ['admin'] },
+  { id: 'admin', label: 'Admin', roles: ['admin', 'editor', 'approver', 'creative_reviewer'] },
 ];
 
 /** No arbitrary member, identity, workspace or role array can be supplied by the client. */
@@ -102,10 +102,17 @@ export function emptyEditorialCheckpoint(identity: EditorialIdentity = LOCAL_IDE
 /** Session identity is server-derived and never accepted from the checkpoint client payload. */
 export function adoptEditorialIdentity(checkpoint: EditorialCheckpoint, identity: EditorialIdentity) {
   const state = checkpoint.state;
+  const local = identity.localOperator === true && identity.personId === LOCAL_OPERATOR
+    && identity.workspaceId === LOCAL_WORKSPACE && identity.workspaceSlug === 'reporter-ai-local';
+  const previous = state.workspace.id === identity.workspaceId && state.workspace.slug === identity.workspaceSlug
+    ? state.members.find(member => member.personId === identity.personId) : undefined;
+  const profile = local && LOCAL_ROLE_PROFILES.find(profile => profile.roles.length === previous?.roles.length
+    && profile.roles.every(role => previous.roles.includes(role)));
   state.workspace = { ...state.workspace,id: identity.workspaceId,name: identity.workspaceName,slug: identity.workspaceSlug };
   const person = { id: identity.personId,name: identity.name,email: identity.email,avatarUrl: identity.avatarUrl };
   state.people = [...state.people.filter(candidate => candidate.id !== identity.personId),person];
-  const member = { workspaceId: identity.workspaceId,personId: identity.personId,roles: [...identity.roles],...(identity.localOperator ? { localOperator: true as const } : {}) };
+  const member = { workspaceId: identity.workspaceId,personId: identity.personId,roles: [...(profile ? profile.roles : identity.roles)],
+    ...(local ? { localOperator: true as const } : {}) };
   state.members = [...state.members.filter(candidate => candidate.personId !== identity.personId),member];
   state.sessionPersonId = identity.personId;
 }

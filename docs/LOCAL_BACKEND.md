@@ -61,12 +61,18 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
 The fixed server-owned `Operador local` is a development identity, not a login. It can manually
 approve its own request only in this pilot. Ordinary membership retains the original two-person rule.
 
-The local operator starts with **Todos os papéis** (Editor, Aprovador, Revisor criativo and Admin).
-Its account menu, the production's **Mais ações → Testar papel**, and ⌘K expose bounded test profiles.
-This changes only that operator's active roles, shared between local tabs; it creates no accounts,
-changes no identity and is not production authentication. The server refuses profile selection for
-ordinary members or another workspace and keeps editor/reviewer permission checks active.
-Use **Todos os papéis** to exercise the complete pilot without switching people.
+The local operator starts with the **Admin** test profile. A **Perfil de teste** selector at the
+bottom-left of the sidebar offers **Editor**, **Aprovador** and **Admin**, without sign-out or
+changing the acting identity. The same choices remain in the account menu (including the collapsed
+sidebar), **Mais ações → Trocar perfil** inside productions, and ⌘K. Editor can create/edit/send;
+Aprovador can review both articles and carousels; Admin carries all local pilot permissions.
+
+The selected roles persist across requests, reloads and local tabs, while unsaved form text survives
+a profile change. A local Editor can send to the same operator, then switch to Aprovador to decide;
+Editor still cannot approve. The approval queue and next-step actions follow the current profile.
+The server grants this capability only to the trusted loopback identity in the fixed local workspace
+and explicitly refuses profile selection in cloud mode. Cloud membership roles replace checkpoint
+roles and never gain the local approval exception. Normal members retain the two-person rule.
 
 Approval continues the journey instead of leaving a dead end: an editor/all-roles operator goes
 from the exact approved article to **Criar carrossel** (even before a carousel piece exists), then

@@ -288,7 +288,7 @@ export function ProductionHeaderView({
 
   const sections: MenuSection[] = [
     ...(menu ?? []).filter((section) => section.items.length > 0),
-    ...(localRoles.length ? [{ items: [{ label: 'Testar papel', description: 'Somente neste ambiente local', items: localRoles[0].items }] }] : []),
+    ...(localRoles.length ? [{ items: [{ label: 'Trocar perfil', description: 'Ambiente local', items: localRoles[0].items }] }] : []),
     { items: [{ label: 'Renomear', icon: Pencil, onSelect: () => setRenaming(true) }] },
   ];
 
