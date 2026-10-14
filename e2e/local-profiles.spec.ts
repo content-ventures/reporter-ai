@@ -33,10 +33,10 @@ async function openMenu(page: Page, mobile: boolean) {
 }
 
 async function choose(page: Page, profile: string) {
-  const select = page.getByRole('combobox', { name: 'Perfil de teste', exact: true });
-  await select.click();
-  await page.getByRole('option', { name: profile, exact: true }).click();
-  await expect(select).toHaveText(profile);
+  const selector = page.getByRole('radiogroup', { name: 'Perfil de teste', exact: true });
+  const option = selector.getByRole('radio', { name: profile, exact: true });
+  await option.click();
+  await expect(option).toHaveAttribute('aria-checked', 'true');
 }
 
 for (const viewport of VIEWPORTS) {
@@ -51,14 +51,14 @@ for (const viewport of VIEWPORTS) {
         const material = page.getByRole('textbox', { name: 'Transcrição', exact: true });
         await material.fill('Material sintético mantido durante a troca de perfil.');
         await openMenu(page, mobile);
-        const selector = page.getByRole('combobox', { name: 'Perfil de teste', exact: true });
-        await expect(selector).toHaveText('Admin');
-        await selector.click();
-        await expect(page.getByRole('listbox').getByRole('option')).toHaveText(['Editor', 'Aprovador', 'Admin']);
+        const selector = page.getByRole('radiogroup', { name: 'Perfil de teste', exact: true });
+        await expect(selector.getByRole('radio')).toHaveText(['Editor', 'Aprovador', 'Admin']);
+        await expect(selector.getByRole('radio', { name: 'Admin', exact: true })).toHaveAttribute('aria-checked', 'true');
+        await selector.getByRole('radio', { name: 'Admin', exact: true }).focus();
         await page.keyboard.press('Home');
-        await page.keyboard.press('Enter');
-        await expect(selector).toHaveText('Editor');
-        await expect(selector).toBeFocused();
+        const editor = selector.getByRole('radio', { name: 'Editor', exact: true });
+        await expect(editor).toHaveAttribute('aria-checked', 'true');
+        await expect(editor).toBeFocused();
         await expect(page.getByRole('link', { name: 'Logs', exact: true })).toHaveCount(0);
         await expect(material).toHaveValue('Material sintético mantido durante a troca de perfil.');
         await choose(page, 'Aprovador');
@@ -66,7 +66,7 @@ for (const viewport of VIEWPORTS) {
         await expect(page.getByRole('link', { name: 'Logs', exact: true })).toHaveCount(0);
         await page.reload({ waitUntil: 'domcontentloaded' });
         await openMenu(page, mobile);
-        await expect(selector).toHaveText('Aprovador');
+        await expect(selector.getByRole('radio', { name: 'Aprovador', exact: true })).toHaveAttribute('aria-checked', 'true');
         await choose(page, 'Admin');
         await expect(page.getByRole('link', { name: 'Logs', exact: true })).toBeVisible();
         expect(runtime.selected).toEqual(['editor', 'approver', 'admin']);
@@ -80,12 +80,11 @@ for (const viewport of VIEWPORTS) {
       try {
         await page.goto('/productions/new');
         await openMenu(page, viewport.width < 768);
-        const selector = page.getByRole('combobox', { name: 'Perfil de teste', exact: true });
-        await expect(selector).toHaveText('Admin');
-        await selector.click();
-        await page.getByRole('option', { name: 'Editor', exact: true }).click();
+        const selector = page.getByRole('radiogroup', { name: 'Perfil de teste', exact: true });
+        await expect(selector.getByRole('radio', { name: 'Admin', exact: true })).toHaveAttribute('aria-checked', 'true');
+        await selector.getByRole('radio', { name: 'Editor', exact: true }).click();
         await expect(page.getByText('Não foi possível trocar o perfil.', { exact: true })).toBeVisible();
-        await expect(selector).toHaveText('Admin');
+        await expect(selector.getByRole('radio', { name: 'Admin', exact: true })).toHaveAttribute('aria-checked', 'true');
         expect(runtime.authRequests).toEqual([]);
       } finally { runtime.engine.store.dispose(); }
       await page.unroute('**/api/reporter/workspace');
@@ -94,7 +93,7 @@ for (const viewport of VIEWPORTS) {
         await page.reload({ waitUntil: 'domcontentloaded' });
         await openMenu(page, viewport.width < 768);
         await expect(page.getByRole('button', { name: /Operador local.*Menu da conta/ })).toBeVisible();
-        await expect(page.getByRole('combobox', { name: 'Perfil de teste', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('radiogroup', { name: 'Perfil de teste', exact: true })).toHaveCount(0);
         await expectNoHorizontalOverflow(page);
       } finally { ordinary.engine.store.dispose(); }
     });
