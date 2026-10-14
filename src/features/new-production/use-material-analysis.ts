@@ -40,11 +40,12 @@ export function useMaterialAnalysis(text: string, fileName: string | undefined, 
   const names = JSON.stringify(outlook?.speakerNames ?? {});
   const textKey = `${fileName ?? ''}\u0000${text}`;
   const key = `${textKey}\u0000${angle}\u0000${names}\u0000${revision}`;
+  const answeredKey = answer?.key;
   // Same material, new brief or names: only the outlook changes, after a short pause.
-  const delay = answer?.text === textKey ? Math.max(delayMs, OPTIONS_PAUSE_MS) : delayMs;
+  const delay = answer?.text === textKey && answer.key !== key ? Math.max(delayMs, OPTIONS_PAUSE_MS) : delayMs;
 
   useEffect(() => {
-    if (blank) return undefined;
+    if (blank || answeredKey === key) return undefined;
     let alive = true;
     const timer = window.setTimeout(() => {
       const speakerNames = JSON.parse(names) as Record<string, string>;
@@ -58,7 +59,7 @@ export function useMaterialAnalysis(text: string, fileName: string | undefined, 
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [angle, blank, commands, delay, fileName, key, names, text, textKey]);
+  }, [angle, answeredKey, blank, commands, delay, fileName, key, names, text, textKey]);
 
   if (blank) return IDLE;
   if (answer?.key === key) {

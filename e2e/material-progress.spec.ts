@@ -75,6 +75,7 @@ for (const viewport of VIEWPORTS) {
       response.resolve();
       const failure = page.getByRole('dialog', { name: 'Material não concluído' });
       await expect(failure.getByText('Limite temporário. Tente novamente.', { exact: true })).toBeVisible();
+      expect(calls).toBe(1);
       await failure.getByRole('button', { name: 'Tentar novamente' }).click();
       await expect(page.getByRole('dialog', { name: 'Material pronto' })).toBeVisible();
       await page.getByRole('button', { name: 'Revisar material' }).click();
