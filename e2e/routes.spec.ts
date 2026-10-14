@@ -175,7 +175,7 @@ for (const viewport of VIEWPORTS) {
       await expect(editor).toBeFocused();
       await expect(editor).toBeEmpty();
       await expect(page.getByRole("button", { name: "Gerar rascunho", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("link", { name: "Montar estrutura", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Gerar artigo", exact: true })).toHaveCount(0);
       await expectLoaded(page);
       await expectHeadingOutline(page);
       await expectNoHorizontalOverflow(page);
