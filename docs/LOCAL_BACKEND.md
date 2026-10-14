@@ -14,7 +14,10 @@ Both media commands must be on the worker's PATH. Run the app and worker from th
 2. Create `.env.local` from `.env.local.example`, set `GROQ_API_KEY` for transcription and
    `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` for the text models selected in Prompts.
    Existing `OPEN_AI_API_KEY` and `CLAUDE_API_KEY` names are accepted as aliases. Keep `REPORTER_LOCAL_MODE=true`.
-   Credentials are server-only; never prefix them with `NEXT_PUBLIC_` or commit them.
+   Credentials are server-only; never prefix them with `NEXT_PUBLIC_` or commit them. `pnpm dev:local`
+   always forces `REPORTER_DEPLOYMENT_MODE=local`, even if a cloud setting remains in `.env.local`.
+   To test the cloud backend from a local browser, run `pnpm dev` with
+   `REPORTER_DEPLOYMENT_MODE=cloud` set explicitly.
 3. Run `pnpm install`, `pnpm db:up`, then `pnpm db:flow`.
 4. Run `pnpm worker` in one terminal and `pnpm dev:local` in another.
 5. Open `http://127.0.0.1:3002/productions/new`.
