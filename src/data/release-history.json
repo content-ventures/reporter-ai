@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.1.0",
+  "currentVersion": "0.2.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,108 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.2.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-14",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 23 validated changes: stop repeated analysis after failure; allow controlled push past local guard; keep mobile profile switching tappable.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Maintenance",
+          "description": "Add development workflow harness"
+        },
+        {
+          "type": "Added",
+          "description": "Add controlled version history"
+        },
+        {
+          "type": "Added",
+          "description": "Enforce concise interface copy"
+        },
+        {
+          "type": "Fixed",
+          "description": "Restore design system spacing"
+        },
+        {
+          "type": "Fixed",
+          "description": "Install public design system without credentials"
+        },
+        {
+          "type": "Fixed",
+          "description": "Generate route types before typecheck"
+        },
+        {
+          "type": "Added",
+          "description": "Connect Reporter AI R1 to Neon (#2)"
+        },
+        {
+          "type": "Fixed",
+          "description": "Validate change size before squash merge (#3)"
+        },
+        {
+          "type": "Added",
+          "description": "Support direct Neon media uploads (#5)"
+        },
+        {
+          "type": "Fixed",
+          "description": "Restore Vercel uploads and retire generic models (#6)"
+        },
+        {
+          "type": "Fixed",
+          "description": "Unblock material analysis on Vercel"
+        },
+        {
+          "type": "Fixed",
+          "description": "Read transcript files without local upload"
+        },
+        {
+          "type": "Added",
+          "description": "Show material preparation progress"
+        },
+        {
+          "type": "Added",
+          "description": "Plan articles before streaming drafts"
+        },
+        {
+          "type": "Added",
+          "description": "Open the editor directly after pauta"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover direct creation and reload continuity"
+        },
+        {
+          "type": "Added",
+          "description": "Switch test profiles without signing out"
+        },
+        {
+          "type": "Fixed",
+          "description": "Stabilize streamed article generation"
+        },
+        {
+          "type": "Added",
+          "description": "Show progress before the editor loads"
+        },
+        {
+          "type": "Fixed",
+          "description": "Skip non-release production builds"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep mobile profile switching tappable"
+        },
+        {
+          "type": "Fixed",
+          "description": "Allow controlled push past local guard"
+        },
+        {
+          "type": "Fixed",
+          "description": "Stop repeated analysis after failure"
+        }
+      ]
+    },
     {
       "version": "0.1.0",
       "roadmapRelease": "R0",
