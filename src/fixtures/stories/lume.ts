@@ -7,7 +7,7 @@ import { buildTranscriptSource } from '../build/source.ts';
 import { PEOPLE } from '../people.ts';
 import { scriptBody } from '../script-book.ts';
 import type { ScriptEntry, SlideCopy } from '../script-book.ts';
-import { NEUTRAL_DARK_TEMPLATE_ID } from '../templates/provisional.ts';
+import { DEFAULT_TEMPLATE_ID } from '../templates/catalog.ts';
 import { after, ago, dateOf } from '../time.ts';
 import { slidesFrom } from './slides.ts';
 import type { Story, StoryContext } from './types.ts';
@@ -221,8 +221,8 @@ export function lumeStory(ctx: StoryContext): Story {
   builder.requestReview('article', ago(ctx.now, { days: 2, hours: 5 }), PEOPLE.rafael, { assigneeId: PEOPLE.pedro });
   builder.decide('article', 'approved', ago(ctx.now, { days: 1, hours: 20 }), PEOPLE.pedro);
 
-  builder.startCarousel(NEUTRAL_DARK_TEMPLATE_ID, ago(ctx.now, { hours: 6 }), PEOPLE.rafael);
-  const carousel: CarouselBody = { type: 'carousel', templateId: NEUTRAL_DARK_TEMPLATE_ID, slides: slidesFrom('lume', LUME_SLIDES) };
+  builder.startCarousel(DEFAULT_TEMPLATE_ID, ago(ctx.now, { hours: 6 }), PEOPLE.rafael);
+  const carousel: CarouselBody = { type: 'carousel', templateId: DEFAULT_TEMPLATE_ID, slides: slidesFrom('lume', LUME_SLIDES) };
   builder.generate('carousel', { body: carousel, endedAt: ago(ctx.now, { hours: 5, minutes: 50 }), durationMs: 31_000, by: PEOPLE.rafael });
   // Overdue: it was due yesterday ("atrasado · prazo era …"), no "Recado".
   builder.requestReview('carousel', ago(ctx.now, { hours: 4 }), PEOPLE.rafael, { assigneeId: PEOPLE.pedro, dueOn: localDateOf(ago(ctx.now, { days: 1 })) });

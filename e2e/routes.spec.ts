@@ -53,7 +53,7 @@ const ROUTES: readonly RouteCase[] = [
   { name: "Entrega com carrossel desatualizado", path: "/productions/prod-patio-couro/delivery", ready: heading(/Pátio Couro/) },
   { name: "Entrega · artigo final", path: "/productions/prod-bella-passo/delivery?view=article", ready: (page) => page.getByRole("list", { name: "Aprovação" }) },
   { name: "Produção abre a etapa atual", path: "/productions/prod-lume", landsOn: "/productions/prod-lume/carousel", ready: heading(/Lume/) },
-  { name: "Modelos", path: "/library/templates", ready: (page) => page.getByRole("button", { name: "Editorial", exact: true }).first() },
+  { name: "Modelos", path: "/library/templates", ready: (page) => page.getByRole("button", { name: "Seafood Manchete", exact: true }).first() },
   { name: "Novidades", path: "/whats-new", ready: heading("Novidades") },
   { name: "Logs", path: "/admin/audit", ready: heading("Logs") },
   { name: "Versões redireciona para Novidades", path: "/versions", landsOn: "/whats-new", ready: heading("Novidades") },

@@ -11,8 +11,8 @@ import { extractiveCarouselPlan, planFromCarouselScript } from './carousel-plan.
 import { fitSlide, swapPoint } from './slide-assist.ts';
 
 /**
- * Featured layouts: "Números" turns a point with a figure into a data slide, "Passo a passo" a
- * point with a list or an enumeration into a list slide — from the article's own words only.
+ * Featured layouts: Seafood Panorama turns a point with a figure into a data slide, Seafood Fluxo
+ * turns a point with a list or enumeration into a list slide — from the article's own words only.
  */
 
 const template = (id: string) => {
@@ -20,9 +20,9 @@ const template = (id: string) => {
   assert.ok(found, id);
   return found;
 };
-const NUMEROS = template('tpl-numeros');
-const PASSOS = template('tpl-passo-a-passo');
-const EDITORIAL = CAROUSEL_TEMPLATES[0];
+const NUMEROS = template('tpl-seafood-panorama');
+const PASSOS = template('tpl-seafood-flow');
+const EDITORIAL = template('tpl-seafood-reportage');
 
 const ARTICLE: ArticleBody = {
   type: 'article',
@@ -65,7 +65,7 @@ describe('figures and enumerations', () => {
 });
 
 describe('featured layouts in the carousel plan', () => {
-  it('Números: the first point with a figure becomes a data slide; other templates keep the point', () => {
+  it('Panorama: the first point with a figure becomes a data slide; other templates keep the point', () => {
     const plan = extractiveCarouselPlan({ article: ARTICLE, template: NUMEROS, slides: 5, sources: [], newId });
     const data = plan.slides.find((slide) => slide.layout === 'data');
     assert.ok(data, plan.slides.map((slide) => slide.layout).join(' · '));
@@ -76,7 +76,7 @@ describe('featured layouts in the carousel plan', () => {
     assert.ok(!plain.slides.some((slide) => slide.layout === 'data' || slide.layout === 'list'));
   });
 
-  it('Passo a passo: an enumeration of the article becomes a list slide with its section title', () => {
+  it('Fluxo: an enumeration of the article becomes a list slide with its section title', () => {
     const plan = extractiveCarouselPlan({ article: ARTICLE, template: PASSOS, slides: 6, sources: [], newId });
     const list = plan.slides.find((slide) => slide.layout === 'list');
     assert.ok(list, plan.slides.map((slide) => slide.layout).join(' · '));

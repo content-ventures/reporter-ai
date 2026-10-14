@@ -6,7 +6,7 @@ import { buildTranscriptSource } from '../build/source.ts';
 import { PEOPLE } from '../people.ts';
 import { scriptBody } from '../script-book.ts';
 import type { ScriptEntry, SlideCopy } from '../script-book.ts';
-import { NEUTRAL_LIGHT_TEMPLATE_ID } from '../templates/provisional.ts';
+import { DEFAULT_TEMPLATE_ID } from '../templates/catalog.ts';
 import { after, ago, dateOf } from '../time.ts';
 import { slidesFrom } from './slides.ts';
 import type { Story, StoryContext } from './types.ts';
@@ -220,8 +220,8 @@ export function patioCouroStory(ctx: StoryContext): Story {
   builder.requestReview('article', ago(ctx.now, { days: 8, hours: 1 }), PEOPLE.juliana, { assigneeId: PEOPLE.pedro });
   builder.decide('article', 'approved', ago(ctx.now, { days: 7, hours: 3 }), PEOPLE.pedro);
 
-  builder.startCarousel(NEUTRAL_LIGHT_TEMPLATE_ID, ago(ctx.now, { days: 6, hours: 6 }), PEOPLE.juliana);
-  const carousel: CarouselBody = { type: 'carousel', templateId: NEUTRAL_LIGHT_TEMPLATE_ID, slides: slidesFrom('patio-couro', PATIO_COURO_SLIDES) };
+  builder.startCarousel(DEFAULT_TEMPLATE_ID, ago(ctx.now, { days: 6, hours: 6 }), PEOPLE.juliana);
+  const carousel: CarouselBody = { type: 'carousel', templateId: DEFAULT_TEMPLATE_ID, slides: slidesFrom('patio-couro', PATIO_COURO_SLIDES) };
   builder.generate('carousel', { body: carousel, endedAt: ago(ctx.now, { days: 6, hours: 5 }), durationMs: 29_000, by: PEOPLE.juliana });
   builder.requestReview('carousel', ago(ctx.now, { days: 6, hours: 2 }), PEOPLE.juliana, { assigneeId: PEOPLE.pedro });
   builder.decide('carousel', 'approved', ago(ctx.now, { days: 5, hours: 22 }), PEOPLE.pedro);

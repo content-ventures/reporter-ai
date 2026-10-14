@@ -76,6 +76,7 @@ jobs:
             subject=$(git show -s --format=%s "$commit")
             node scripts/validate-commit-message.mjs "$subject"
           done
+          node scripts/validate-git-identity.mjs --range "$RANGE"
           # GitHub squash-merges a reviewed PR into one commit on main. Enforce the
           # per-commit size policy while the commits still exist on the PR branch;
           # rechecking the synthetic squash commit would reject the approved PR as

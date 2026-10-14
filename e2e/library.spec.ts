@@ -31,8 +31,8 @@ test("Modelos: filtrar a biblioteca e abrir um modelo com todos os layouts", asy
   const cards = library.getByRole("listitem");
   // One format at a time: Feed first, every card at its proportion.
   await expect(cards).toHaveCount(FEED_MODELS);
-  // Only a model Marketing approved carries a badge.
-  await expect(library.getByText("Aprovado")).toHaveCount(3);
+  // The current Seafood library is editorially available without claiming Marketing approval.
+  await expect(library.getByText("Aprovado")).toHaveCount(0);
 
   // Stories (9:16) is listed for a later release and cannot be chosen.
   await expect(page.getByRole("tab", { name: /Stories/ })).toBeDisabled();
@@ -43,31 +43,31 @@ test("Modelos: filtrar a biblioteca e abrir um modelo com todos os layouts", asy
   const search = page.getByRole("searchbox", { name: "Buscar modelo" });
   await search.fill("ASPAS");
   await expect(cards).toHaveCount(1);
-  await search.fill("numeros");
+  await search.fill("panorama");
   await page.getByRole("button", { name: /^Ver em Feed 4:5/ }).click();
   await expect(cards).toHaveCount(1);
   await search.fill("");
   await expect(cards).toHaveCount(FEED_MODELS);
 
   await test.step("abrir o modelo: cada layout desenhado, e o endereço leva até ele", async () => {
-    await library.getByRole("button", { name: "Fotografia", exact: true }).click();
-    const drawer = page.getByRole("dialog", { name: "Fotografia" });
+    await library.getByRole("button", { name: "Seafood Panorama", exact: true }).click();
+    const drawer = page.getByRole("dialog", { name: "Seafood Panorama" });
     await expect(drawer).toBeVisible();
     await expect(page).toHaveURL(/[?&]model=/);
-    const layouts = drawer.getByRole("img", { name: / no modelo Fotografia$/ });
+    const layouts = drawer.getByRole("img", { name: / no modelo Seafood Panorama$/ });
     await expect(layouts).toHaveCount(7);
-    await expect(drawer.getByRole("img", { name: "Capa no modelo Fotografia" })).toHaveAttribute("src", /^data:image\/png/);
+    await expect(drawer.getByRole("img", { name: "Capa no modelo Seafood Panorama" })).toHaveAttribute("src", /^data:image\/png/);
     await expect(drawer.getByText("1080 × 1350 px")).toBeVisible();
     // "Usar como padrão": the next carousel starts from it, and the library says so.
     await drawer.getByRole("button", { name: "Usar como padrão" }).click();
-    await expect(page.getByText("Fotografia é o modelo padrão")).toBeVisible();
+    await expect(page.getByText("Seafood Panorama é o modelo padrão")).toBeVisible();
     await expect(drawer.getByText("Modelo padrão dos próximos carrosséis")).toBeVisible();
 
     // The same address opens the same model.
     await page.reload();
-    await expect(page.getByRole("dialog", { name: "Fotografia" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Seafood Panorama" })).toBeVisible();
     await page.getByRole("button", { name: "Fechar modelo" }).click();
-    await expect(page.getByRole("dialog", { name: "Fotografia" })).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Seafood Panorama" })).toBeHidden();
     await expect(page).not.toHaveURL(/[?&]model=/);
   });
 
@@ -79,7 +79,7 @@ test("Trocar modelo no estúdio do carrossel: mantém os textos, muda a proporç
   const errors = watchErrors(page);
   await page.goto("/productions/prod-lume/carousel");
   const status = page.getByLabel("Situação do carrossel");
-  await expect(status).toContainText("Modelo Noturno");
+  await expect(status).toContainText("Modelo Seafood Manchete");
   const cover = page.getByRole("img", { name: "Slide 1: Capa" });
   await expectRatio(cover, 4 / 5);
   const title = page.getByRole("textbox", { name: "Título" }).first();
@@ -90,7 +90,7 @@ test("Trocar modelo no estúdio do carrossel: mantém os textos, muda a proporç
   const models = picker.getByRole("radiogroup", { name: "Modelos de carrossel" });
   // It opens on the carousel's own format and model.
   await expect(models.getByRole("radio")).toHaveCount(FEED_MODELS);
-  await expect(models.getByRole("radio", { checked: true })).toHaveAccessibleName(/^Noturno/);
+  await expect(models.getByRole("radio", { checked: true })).toHaveAccessibleName(/^Seafood Manchete/);
   await picker.getByRole("tab", { name: /Quadrado/ }).click();
   // "Ver modelo" draws this carousel in that model, with what changes, before anything is applied.
   await models.getByRole("button", { name: "Ver modelo Aspas" }).click();
@@ -105,7 +105,7 @@ test("Trocar modelo no estúdio do carrossel: mantém os textos, muda a proporç
   await expectRatio(cover, 1);
 
   await page.getByRole("button", { name: "Desfazer" }).click();
-  await expect(status).toContainText("Modelo Noturno");
+  await expect(status).toContainText("Modelo Seafood Manchete");
   await expectRatio(cover, 4 / 5);
   await expect(title).toHaveValue(before);
 

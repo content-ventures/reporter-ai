@@ -2,6 +2,15 @@
 
 This document defines the mandatory workflow for human and AI-assisted development. All repository-facing names and messages are written in English. Product copy may remain in Brazilian Portuguese.
 
+## GitHub identity
+
+- Every commit, push, pull request, merge, Preview and production deployment must be attributable to the authenticated GitHub account performing the action.
+- Local commits use the GitHub login as `user.name` and the account's numeric noreply address (`<account-id>+<login>@users.noreply.github.com`) as `user.email`. The macOS username, computer hostname and unrelated personal identities are forbidden.
+- Pushes target the `content-ventures/reporter-ai` GitHub repository using GitHub authentication. A local computer identity is never deployment provenance.
+- Pull requests and merges are created by the authenticated GitHub user after explicit approval. Bots may validate the work but may not impersonate the user.
+- Vercel Preview and production deployments originate only from the Francal workspace's GitHub integration. The Vercel CLI, a local Vercel token and the macOS user's Vercel identity are forbidden.
+- The hooks validate the configured author and committer before commit and push. CI validates the author and committer of every delivered commit. A mismatched identity blocks the delivery.
+
 ## Branches
 
 - Work on a branch. The local `pre-push` hook blocks direct pushes to `main`; on the current plan it is the only branch protection (see Repository setup).
@@ -19,8 +28,10 @@ This document defines the mandatory workflow for human and AI-assisted developme
 
 ## Pull requests
 
+- Local inspection, implementation, tests and commits are allowed within the active worktree. Pushing a branch, opening or updating a PR, merging, requesting a Preview, or starting a production deployment requires João's explicit approval for that exact remote action.
 - Open one PR when the work session or complete delivery is ready for review.
 - Do not open a PR for every edit or intermediate commit.
+- Reuse the existing PR for the branch. Do not create a duplicate PR for the same delivery.
 - An earlier PR is acceptable only when collaboration, an architectural decision, or an urgent review genuinely requires it.
 - Use a Conventional Commit title in English. The PR body must explain the outcome, validation, Design System usage, release impact, and any deployment consideration.
 - Merge PRs with rebase only, to keep a linear history of the validated commits. Squash would fail the per-commit size check on the push to `main`, and a merge commit fails the Conventional Commit check.
@@ -32,17 +43,16 @@ This document defines the mandatory workflow for human and AI-assisted developme
 - Do not create local visual primitives, tokens, fonts, icons, themes, color values, or substitute UI-library components.
 - Product components may compose public Design System components without recreating their visual behavior.
 - Local CSS is rejected by default. A future exception requires explicit technical review and must use only public Design System tokens.
-- Writing studio correction (October 6, 2026): the user requires the Design System contract for every product component. The earlier editor exceptions are revoked: no local CSS Modules or native JSX UI exceptions. Editor actions, fields, source excerpts, suggestions, block lists, reordering, menus and page layout compose public V3 components without custom skins. Tiptap has no node views: the document is styled by the Design System `Prose` component, and serialized user formatting remains document data. Do not introduce decorative colored side borders or per-paragraph frames. AI actions remain labeled simulations in the frontend-only R1 preview.
+- Writing studio correction (October 6, 2026): the user requires the Design System contract for every product component. The earlier editor exceptions are revoked: no local CSS Modules or native JSX UI exceptions. Editor actions, fields, source excerpts, suggestions, block lists, reordering, menus and page layout compose public V3 components without custom skins. Tiptap has no node views: the document is styled by the Design System `Prose` component, and serialized user formatting remains document data. Do not introduce decorative colored side borders or per-paragraph frames.
 - Editor boundary: Tiptap is logic only (schema, commands, plugins). No node views (`ReactNodeViewRenderer`, `NodeViewWrapper`, `addNodeView`); document styling comes from the DS `Prose` component; in-document markers are attribute-only marks or decorations styled by `Prose` data hooks; previews and actions render outside the document in DS overlays.
 - Product code creates no DOM and resolves no CSS: `document.createElement`, `innerHTML`, `dangerouslySetInnerHTML`, `getComputedStyle`, `.style` mutation, `style` props, literal classes and `<style` strings are rejected in `src/`. Any DOM factory belongs to the Design System.
-- AI actions remain labeled simulations ("Simulação local") in the frontend-only R1 preview: on the model chip, in provenance and on every AI output (suggestions, title cards, carousel copy). Simulated runs never show invented usage or cost.
 - A page `PageStack` must not contain adjacent open `Section` components. Both own vertical rhythm, causing additive gaps. Compact sidebar groups use `Panel → Section`; related controls use `FieldGroup`, and actions stay within their section.
 - Preserve the documented component composition because structural components own spacing. Use `Panel → Section → content`, or a standalone `Section variant="panel"`; never place visual content directly inside `Panel`.
 - Removing copy must remove only content props or text. Do not remove a Design System wrapper until its layout role has been checked in the public component contract.
 
 ## Architecture
 
-The R1 preview is front-end only, built once and plugged later: screens sit on a typed domain and port interfaces, implemented now by a local simulated adapter. `pnpm harness:architecture` enforces the layering:
+Reporter IA R1 is a full-stack application: Next.js UI and route handlers, durable workers, PostgreSQL on Neon, object storage and server-owned AI providers. Screens remain separated from infrastructure by the typed domain and port interfaces. `pnpm harness:architecture` enforces the layering:
 
 - `src/domain` and `src/ports` are framework-free `.ts`: no React, Next, Design System or `@/` imports; only relative `.ts` imports inside `domain`/`ports`. Port contract suites (`src/ports/**/*.contract.ts`) and tests may also import `node:test` and `node:assert`.
 - `src/adapters` and `src/fixtures` are imported only by `src/runtime` and tests. `src/runtime/create-runtime.ts` is the single composition root.
@@ -69,8 +79,8 @@ The R1 preview is front-end only, built once and plugged later: screens sit on a
 The toolchain runs on Node 24 (`.nvmrc`, `engines`, CI and `@types/node`). The hooks are installed by `pnpm install` and can be restored with `pnpm harness:setup`.
 
 - `commit-msg` validates commit structure and English phrasing.
-- `pre-commit` validates commit size, Design System boundaries, layering and content density.
-- `pre-push` blocks direct `main` pushes, validates the branch, and runs the complete gate.
+- `pre-commit` validates the GitHub author/committer identity, commit size, Design System boundaries, layering and content density.
+- `pre-push` validates the GitHub identity, blocks direct `main` pushes, validates the branch, and runs the complete gate.
 - `pnpm gate:quick` runs Design System, architecture, content-density and version policies, lint, types, and tests.
 - `pnpm test` runs `node --test` on `scripts/**/*.test.mjs` and `src/**/*.test.ts`. Node 24 strips types natively, so tests use erasable TypeScript only (no enums, namespaces or parameter properties; `import type`), which `tsc` enforces with `erasableSyntaxOnly`.
 - `pnpm gate` adds a production build and is the required release and CI gate.
@@ -81,34 +91,35 @@ The gate is intentionally compact. It must stay fast enough for every push while
 
 ## Deployments and releases
 
-- Production deployment is a deliberate release action, never a side effect of every commit or branch push.
+- Production deployment is a deliberate, explicitly approved release action, never a side effect of every commit or branch push.
 - A release may start only from an approved, clean `main` after `pnpm gate` passes.
 - The release process updates the version, description, changelog, and public version history together before deployment.
-- Configure the production provider to deploy only version tags created by the controlled release workflow. Preview deployments should be disabled unless explicitly requested for a review.
+- GitHub is the only deployment source. Vercel deployments use the repository's GitHub integration in the Francal workspace. Never deploy with the Vercel CLI, a local Vercel token, or the macOS user's Vercel identity.
+- Preview deployments are ephemeral review artifacts, require explicit approval, and never create a product version.
+- Every successful production deployment must come from the exact `chore(release): vX.Y.Z` commit created by the controlled deployment workflow. The production build rejects any other commit.
 - Do not open an automatic release PR for each change. Unreleased commits remain grouped until the delivery is ready.
 
 The release automation and SemVer mapping are documented with the version-history implementation.
 
 ## Semantic versioning
 
-- `X` is the commercial roadmap release: R1 ships as v1.0.0, R2 as v2.0.0, through R7 as v7.0.0.
-- `Y` increments when a significant, independently valuable feature is delivered inside the current roadmap release.
-- `Z` increments for bug fixes, corrections, and small maintenance improvements.
-- R0 uses the pre-commercial `0.Y.Z` range while the product foundation is being established.
-
-`pnpm release:prepare -- --bump <major|minor|patch> --roadmap <R0-R7> --summary "English summary"` updates `package.json`, `CHANGELOG.md`, and `src/data/release-history.json` together. It derives detailed changes from validated commits since the previous version.
+- Reporter IA uses `vX.Y.Z` and is currently in Alpha on the `v0.Y.Z` line. The current baseline is `v0.1.0`.
+- `X` is a deliberate commercial release. It changes only for a genuinely new, incompatible product release represented by a breaking Conventional Commit (`type!:`). The first such release moves R0 to R1 and v0 to v1.
+- `Y` is an intermediate feature release. Any validated `feat:` commit increments `Y` and resets `Z` to zero.
+- `Z` is a correction release. Deployments containing fixes, documentation, refactors, performance work or maintenance without a feature increment `Z`.
+- When a delivery contains different commit types, the highest impact wins: commercial (`X`), feature (`Y`), then correction (`Z`). A commercial increment must remain explicit in the commit history; the automation never guesses it from ordinary feature work.
+- Every approved production deployment creates exactly one new version. `pnpm release:prepare:auto` calculates the increment from validated commits, writes the English summary and detailed change list, and updates `package.json`, `CHANGELOG.md`, and `src/data/release-history.json` together.
 
 ## Controlled release workflow
 
-The `Controlled release` GitHub Action is manual, runs only from `main`, and does the following in order:
+The `Controlled production deployment` GitHub Action is manually dispatched after explicit approval, runs only from `main`, and does the following in order:
 
 1. Runs the complete quality gate on the approved source.
-2. Calculates the next valid SemVer and generates release descriptions from commits.
-3. Runs the complete gate again against the prepared release.
-4. Creates one release commit, an annotated version tag, and a GitHub release.
-5. Hands the tagged artifact to the future production-deployment step.
-
-The repository currently has no production provider configuration. Production deployment is intentionally disabled until a provider is selected and its step is reviewed. When added, it must run after release preparation and deploy only the version tag created by this workflow.
+2. Calculates the next valid `vX.Y.Z` from the validated Conventional Commits.
+3. Generates the release summary, detailed changes, changelog and public version history from those commits.
+4. Runs the complete gate again against the prepared release.
+5. Creates one `chore(release): vX.Y.Z` commit under the dispatching GitHub user's identity, an annotated version tag, and a GitHub Release.
+6. Pushes that release commit through GitHub; the Francal Vercel Git integration performs the production deployment.
 
 ## Repository setup
 
@@ -116,9 +127,9 @@ The repository is private on GitHub Free. That plan offers no branch protection,
 
 - Pull requests: allow only "Rebase and merge" (squash merging and merge commits off).
 - Branch protection: the local `pre-push` hook (installed by `pnpm install`, restorable with `pnpm harness:setup`) blocks direct pushes to `main` and runs `pnpm gate`. The `Quality gate` checks are reviewed on every PR before merging; nothing enforces them on the server.
-- Releases: the human approval is the manual dispatch of `Controlled release` from `main`. Its `production` environment carries no protection rule on this plan.
+- Releases: the human approval is the manual dispatch of `Controlled production deployment` from `main`. Its `production` environment carries no protection rule on this plan.
 - Actions: permit the controlled-release workflow to write the release commit and version tag.
-- No secrets are needed. The Design System repository is public and installs from its GitHub tarball.
+- Runtime secrets stay in Neon and the Francal Vercel workspace. They are never committed, copied into release notes, or sourced from a local Vercel identity.
 
 Making the repository public or moving to GitHub Pro would allow a `main` protection rule that requires the `Quality gate` checks; that is João's call.
 
