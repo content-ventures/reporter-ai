@@ -5,6 +5,8 @@ import { PHASE_PRODUCTION_SERVER } from 'next/constants';
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@content-ventures/design-system"],
+  // The local profile selector occupies the same corner as Next's development indicator.
+  devIndicators: false,
 };
 
 export default function config(phase: string): NextConfig {

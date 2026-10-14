@@ -173,7 +173,7 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
           const member = state.members.find((entry) => entry.personId === assigneeId);
           if (!assignee || !member) return refuse('unknown_assignee', 'Pessoa não encontrada.');
           if (assigneeId === ctx.actorId && !member?.localOperator) return refuse('self_assign', 'Escolha outra pessoa para aprovar.');
-          if (!hasAnyRole(member, gate.roles)) return refuse('assignee_cannot_approve', `${firstNameOf(state, assigneeId)} não aprova esta peça.`);
+          if (!member.localOperator && !hasAnyRole(member, gate.roles)) return refuse('assignee_cannot_approve', `${firstNameOf(state, assigneeId)} não aprova esta peça.`);
         }
         const dueOn = input.dueOn?.trim() || undefined;
         if (dueOn !== undefined && !isValidDue(dueOn, ctx.now)) return refuse('invalid_due', 'Escolha hoje ou uma data futura.');

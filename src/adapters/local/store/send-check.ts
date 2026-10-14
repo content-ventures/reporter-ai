@@ -72,7 +72,10 @@ export function sendRefusal(items: readonly SendItem[]): { code: SendRefusalCode
 
 /** Members who may decide at the gate, without `exclude` (the sender never decides on their send). */
 export function gateMembers(state: Pick<StoreState, 'members'>, gate: GateDefinition, exclude?: PersonId): Member[] {
-  return state.members.filter((member) => (member.personId !== exclude || member.localOperator) && hasAnyRole(member, gate.roles));
+  // The loopback operator can receive a request while editing, then switch to the approver
+  // profile to decide. canDecide still requires the currently selected approval role.
+  return state.members.filter((member) => (member.personId !== exclude || member.localOperator)
+    && (member.localOperator === true || hasAnyRole(member, gate.roles)));
 }
 
 /**

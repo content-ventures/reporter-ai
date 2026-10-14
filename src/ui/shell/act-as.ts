@@ -51,7 +51,8 @@ export function useActAs(): ActAs {
   const [switchingRole, setSwitchingRole] = useState(false);
   const current = session.data?.current;
   const members = session.data?.mode === 'simulated' ? session.data.members : NONE;
-  const localProfiles = session.data?.localRoleProfiles ?? NO_PROFILES;
+  const localProfiles = useMemo(() => (session.data?.localRoleProfiles ?? NO_PROFILES)
+    .filter(profile => ['editor', 'approver', 'admin'].includes(profile.id)), [session.data?.localRoleProfiles]);
   const selectedProfile = localProfiles.find(profile => profile.roles.length === current?.roles.length
     && profile.roles.every(role => current.roles.includes(role)))?.id;
   const selectRole = useCallback(async (profile: LocalRoleProfile) => {
@@ -59,8 +60,7 @@ export function useActAs(): ActAs {
     setSwitchingRole(true);
     try {
       const result = await commands.session.selectLocalRole(profile.id);
-      if (result.ok) toast(`Teste local: ${profile.label}`, { description: 'Mesmo operador, permissões do papel escolhido. Compartilhado entre as abas locais.' });
-      else toast(result.refusal.message, { tone: 'error' });
+      if (!result.ok) toast(result.refusal.message, { tone: 'error' });
     } finally { setSwitchingRole(false); }
   }, [commands, switchingRole]);
   const actAs = useCallback(
@@ -77,7 +77,7 @@ export function useActAs(): ActAs {
 
 /** Same test-only choices in the account and in the immersive production header. */
 export function localRoleMenu(session: ActAs): MenuSection[] {
-  return session.localProfiles.length ? [{ label: 'Testar papel · ambiente local', items: session.localProfiles.map(profile => ({
+  return session.localProfiles.length ? [{ label: 'Perfil de teste · local', items: session.localProfiles.map(profile => ({
     label: profile.label,
     checked: profile.id === session.selectedProfile,
     disabled: session.switchingRole,
