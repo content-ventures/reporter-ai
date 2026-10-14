@@ -646,3 +646,26 @@ horizontal page overflow. A fresh tab was required because the previously open e
 tab retained old chunks after reload. The 21st CLI was unavailable; catalogue inspiration and the
 existing approved public DS components guided the new interface, with no local CSS or shell redesign.
 
+
+
+## Pauta directly to the editor — 2026-10-14
+
+New production has two form steps, Material and Pauta. “Gerar artigo” saves the authorized source
+and production, enqueues one article run and opens `/productions/[id]/article` directly. A refused
+queue start preserves the saved production in the editor, where generation can be retried. Legacy
+`/productions/new?producao=` links redirect to the same editor without creating another production.
+
+An article draft without a reviewed outline now plans its sections and selects evidence within
+its immutable pipeline revision before writing. The existing literal-reference, section-count,
+quote and whole-article R1 validation remains mandatory; supplied outlines retain their existing
+path. Provider availability checks include the automatic planner and optional quotation curator.
+Retries reuse compatible cached planning and writing calls. No migration or new key is required.
+
+Preparation uses the existing editor chrome with an indeterminate progress bar and animated
+paragraph placeholders; received text replaces them in the live preview. Detailed run steps remain
+available in the existing trace drawer. Reloading attaches to the saved run without enqueueing a
+second one. Local real-service acceptance created one synthetic article: automatic outline and
+curation, streamed writing and bounded length refinement completed with 3,877 body characters,
+661 words, one saved version and valid literal citations. A reload during preparation kept exactly
+one generation request. Desktop and 390px QA reported no console errors or horizontal overflow.
+Live configuration and deployment were left for the user's release process.
