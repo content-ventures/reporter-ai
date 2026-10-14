@@ -1,7 +1,7 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { editorialCandidates, editorialTemplates, appendEditorialEvent, editorialContextHash, editorialCarouselLayouts } from '../runtime/editorial-engine.ts';
+import { editorialCandidates, editorialTemplates, appendEditorialEvent, editorialContextHash, editorialCarouselLayouts, validateEditorialOutline } from '../runtime/editorial-engine.ts';
 import type { RunEventPayload } from '../domain/run-events.ts';
 import type { OutlineInput } from '../ports/generation.ts';
 import { articlePlainText, blockText } from '../domain/article.ts';
@@ -28,7 +28,8 @@ import { citationsFromArticle, emphasizeArticleQuotes } from '../domain/citation
 import type { Citation } from '../domain/citation-library.ts';
 import type { ServerImageAsset } from '../ports/connected-workspace.ts';
 import { illustrateArticle } from './article-illustration';
-import { editorialResponseValid, outlineResponseSchema } from './editorial-validation';
+import { editorialResponseValid } from './editorial-validation';
+import { planEditorialOutline } from './editorial-outline';
 
 const object = (properties: Record<string,unknown>) => ({ type: 'object',additionalProperties: false,properties,required: Object.keys(properties) });
 const string = { type: 'string' }, strings = { type: 'array',items: string };
@@ -79,7 +80,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
   try {
     if (!job.pipeline) throw new FlowError('PIPELINE_SNAPSHOT_MISSING',422);
     const pipeline = job.pipeline;
-    const requestedOutline = (job.input as { outline?: OutlineInput }).outline;
+    let requestedOutline = (job.input as { outline?: OutlineInput }).outline;
     if (job.kind === 'article.draft') await guarded([{ type: 'article.preview',body: null }]);
     if (job.kind === 'article.draft' && requestedOutline) await guarded([{ type: 'outline',title: requestedOutline.title,
       sections: requestedOutline.sections.map(section => ({ blockId: section.blockId,title: section.title })) }]);
@@ -170,19 +171,19 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     await guarded([{ type: 'step.completed',stepId: 'source' },{ type: 'step.skipped',stepId: 'generate' }]);
     let value: unknown;
     let layouts: ReturnType<typeof editorialCarouselLayouts> = [];
-    const reviewed = (job.input as { outline?: OutlineInput }).outline;
-    if (job.kind === 'article.outline') {
-      value = await call('outline',outlineResponseSchema(input.record.production.brief.sections,[...knownIds]));
-      if (pipeline.definition.curateQuotes) {
-        const outline = z.object({ title: z.string(),introIds: z.array(z.string()),sections: z.array(z.object({ title: z.string(),evidenceIds: z.array(z.string()) }).strict()) }).strict().parse(value);
-        const selections = z.object({ introIds: z.array(z.string()).max(2),sectionIds: z.array(z.array(z.string()).min(1).max(20)) }).strict().parse(
-          await call('quotes',PIPELINE_SCHEMAS.quotes,{ ...variables,outline: JSON.stringify(outline) }));
-        if (selections.sectionIds.length !== outline.sections.length) throw new FlowError('INVALID_QUOTE_SELECTION',502);
-        value = { ...outline,introIds: selections.introIds,sections: outline.sections.map((section,index) => ({ ...section,evidenceIds: selections.sectionIds[index] })) };
-      }
+    if (job.kind === 'article.outline' || job.kind === 'article.draft' && !requestedOutline) {
+      requestedOutline = await planEditorialOutline({ sections: input.record.production.brief.sections,candidates,variables,
+        curateQuotes: pipeline.definition.curateQuotes,call,normalize: outline => {
+          const valid = validateEditorialOutline(input.record,outline);
+          if (!valid.ok) throw new FlowError('INVALID_OUTLINE',502);
+          return { title: valid.value.title,intro: { quotes: valid.value.intro },sections: valid.value.sections };
+        } });
+      if (job.kind === 'article.draft') await guarded([{ type: 'outline',title: requestedOutline.title,
+        sections: requestedOutline.sections.map(section => ({ blockId: section.blockId,title: section.title })) }]);
     }
+    const reviewed = requestedOutline;
     if (job.kind === 'article.draft') {
-      if (!reviewed) throw new FlowError('REVIEWED_OUTLINE_REQUIRED',422);
+      if (!reviewed) throw new FlowError('INVALID_OUTLINE',422);
       const candidateKey = (ref: Parameters<typeof refKey>[0]) => {
         const found = candidates.find(c => refKey(c.ref) === refKey(ref));
         if (!found) throw new FlowError('UNKNOWN_OUTLINE_EVIDENCE',422);
@@ -222,12 +223,9 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     const events: RunEventPayload[] = [];
     let additions: { citations: Citation[]; assets: ServerImageAsset[] } | undefined;
     if (job.kind === 'article.outline') {
-      const outline = z.object({ title: z.string().min(1).max(500),introIds: z.array(z.string()).max(2),sections: z.array(z.object({ title: z.string().min(1).max(120),evidenceIds: z.array(z.string()).min(1).max(20) }).strict()).min(1).max(8) }).strict().parse(value);
-      if (outline.sections.length !== input.record.production.brief.sections) throw new FlowError('INVALID_OUTLINE',502);
-      const all = [...outline.introIds,...outline.sections.flatMap(s => s.evidenceIds)];
-      if (new Set(all).size !== all.length) throw new FlowError('DUPLICATE_OUTLINE_EVIDENCE',502);
-      events.push({ type: 'outline',title: outline.title,intro: { budget: sizing.introChars,quotes: refs(outline.introIds) },
-        sections: outline.sections.map((section,i) => ({ blockId: randomUUID(),title: section.title,quotes: refs(section.evidenceIds),budget: sizing.sections[i]?.budgetChars })),
+      if (!reviewed) throw new FlowError('INVALID_OUTLINE',502);
+      events.push({ type: 'outline',title: reviewed.title,intro: { budget: sizing.introChars,quotes: reviewed.intro?.quotes ?? [] },
+        sections: reviewed.sections.map((section,i) => ({ ...section,budget: sizing.sections[i]?.budgetChars })),
         candidates: candidates.map(c => c.ref),size: { laudas: sizing.laudas,minChars: sizing.minChars,maxChars: sizing.maxChars,targetChars: sizing.targetChars } });
     } else if (job.kind === 'article.draft') {
       const article = z.object({ title: z.string().min(1).max(500),intro: z.array(paragraph).min(1).max(3),sections: z.array(z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict()).min(1).max(8) }).strict().parse(value);

@@ -270,17 +270,31 @@ export function pipelineRevision(definition: PipelineDefinition, revision = 1, s
   return { definition: structuredClone(definition), revision, savedAt, hash: contentHash({ engine: 'reporter-pipeline-v1', definition }) };
 }
 
-export function pipelineRunSteps(definition: PipelineDefinition, kind: string, sections: number) {
+/** Models used by a job, including automatic planning before the first writing token. */
+export function pipelineJobKeys(definition: PipelineDefinition, kind: string, automaticOutline = true): PipelineStepKey[] {
+  if (kind.startsWith('article.') && !['article.outline', 'article.draft'].includes(kind)) return ['assist'];
+  if (kind === 'carousel.copy') return ['carousel'];
+  const keys: PipelineStepKey[] = ['facts'];
+  if (kind === 'article.outline' || automaticOutline) {
+    keys.push('outline');
+    if (definition.curateQuotes) keys.push('quotes');
+  }
+  if (kind === 'article.draft') keys.push(...(definition.articleMode === 'single' ? ['article'] as const : ['intro', 'section'] as const));
+  return keys;
+}
+
+export function pipelineRunSteps(definition: PipelineDefinition, kind: string, sections: number, automaticOutline = true) {
   if (kind.startsWith('article.') && !['article.outline', 'article.draft'].includes(kind))
     return [{ id: 'source', label: 'Preparando texto e evidências' }, { id: 'assist', label: 'Escrevendo proposta' }, { id: 'validate', label: 'Conferindo proposta' }];
   const steps = [{ id: 'source', label: 'Preparando a fonte' }];
-  if (kind === 'article.outline') {
+  if (kind === 'article.outline' || kind === 'article.draft' && automaticOutline) {
     steps.push({ id: 'outline', label: PIPELINE_STEP_LABELS.outline });
     if (definition.curateQuotes) steps.push({ id: 'quotes', label: PIPELINE_STEP_LABELS.quotes });
-  } else if (kind === 'article.draft' && definition.articleMode === 'sequential') {
+  }
+  if (kind === 'article.draft' && definition.articleMode === 'sequential') {
     steps.push({ id: 'intro', label: PIPELINE_STEP_LABELS.intro });
     for (let i = 0; i < sections; i++) steps.push({ id: 'section-'+i, label: `Escrevendo seção ${i+1} de ${sections}` });
-  } else steps.push({ id: kind === 'carousel.copy' ? 'carousel' : 'article', label: kind === 'carousel.copy' ? PIPELINE_STEP_LABELS.carousel : PIPELINE_STEP_LABELS.article });
+  } else if (kind !== 'article.outline') steps.push({ id: kind === 'carousel.copy' ? 'carousel' : 'article', label: kind === 'carousel.copy' ? PIPELINE_STEP_LABELS.carousel : PIPELINE_STEP_LABELS.article });
   // Old immutable revisions did not have image planning; never rewrite their snapshots.
   if (kind === 'article.draft' && definition.steps.images) steps.push({ id: 'images', label: PIPELINE_STEP_LABELS.images });
   return steps;
