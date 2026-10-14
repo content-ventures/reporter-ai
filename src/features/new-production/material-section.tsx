@@ -3,6 +3,7 @@
 import type { Ref } from 'react';
 import {
   Alert,
+  AgentTrace,
   ControlButton,
   Dropzone,
   FileRow,
@@ -14,6 +15,7 @@ import {
   TextLink,
   Textarea,
   formatTimestamp,
+  formatBytes,
   type RejectedFile,
   type SectionState,
   type SegmentOption,
@@ -78,6 +80,8 @@ export type MaterialSectionProps = {
   linkRef: Ref<HTMLInputElement>;
   onModeChange: (mode: MaterialMode) => void;
   onPaste: (text: string) => void;
+  onBeginProcessing: () => void;
+  onShowProgress: () => void;
   onLinkChange: (url: string) => void;
   onImportLink: () => void;
   onFile: (file: File) => void;
@@ -104,6 +108,8 @@ export function MaterialSection({
   linkRef,
   onModeChange,
   onPaste,
+  onBeginProcessing,
+  onShowProgress,
   onLinkChange,
   onImportLink,
   onFile,
@@ -123,8 +129,8 @@ export function MaterialSection({
   const blank = draft.mode === 'paste' ? draft.pasted.trim() === '' : draft.mode === 'file' ? !draft.file && !fileRead : !draft.linkFile && !linkRead && !draft.sourceUrl?.trim();
   const hint = draft.mode === 'link' && blank ? 'YouTube com legendas ou Spotify com feed público' : blank ? (
     <LinkButton onClick={onUseSample}>Usar exemplo</LinkButton>
-  ) : material.status === 'analyzing' && !analysis ? (
-    'Lendo material…'
+  ) : material.status === 'analyzing' ? (
+    <LinkButton onClick={onShowProgress}>Acompanhar análise</LinkButton>
   ) : material.status === 'error' && material.retry ? (
     <LinkButton onClick={material.retry}>Tentar analisar novamente</LinkButton>
   ) : draft.mode === 'paste' && analysis && material.status !== 'error' ? (
@@ -150,6 +156,7 @@ export function MaterialSection({
                 placeholder={PLACEHOLDER}
                 spellCheck={false}
                 onChange={(event) => onPaste(event.target.value)}
+                onPaste={(event) => { if (event.clipboardData.getData('text').trim()) onBeginProcessing(); }}
               />
             ) : draft.mode === 'link' ? (
               <>
@@ -173,7 +180,9 @@ export function MaterialSection({
                   )}
                 />
                 {linkRead?.status === 'reading' ? (
-                  <FileRow name={linkProvider === 'spotify' ? 'Episódio do Spotify' : 'Vídeo do YouTube'} size={0} status="uploading" progress={linkRead.progress} message={linkRead.message} onCancel={onCancelLink} />
+                  <AgentTrace label={linkProvider === 'spotify' ? 'Episódio do Spotify' : 'Vídeo do YouTube'}
+                    steps={[{ id: 'read',label: linkRead.message,state: 'current' }]} variant="compact" announce={false}
+                    action={<LinkButton onClick={onShowProgress}>Acompanhar</LinkButton>} />
                 ) : linkRead?.status === 'error' ? (
                   <FileRow name={linkProvider === 'spotify' ? 'Episódio do Spotify' : 'Vídeo do YouTube'} size={0} status="error" message={linkRead.message} onRetry={onRetryLink} retryLabel="Tentar de novo" onRemove={onCancelLink} />
                 ) : draft.linkFile ? (
@@ -181,7 +190,8 @@ export function MaterialSection({
                 ) : null}
               </>
             ) : fileRead?.status === 'reading' ? (
-              <FileRow name={fileRead.name} size={fileRead.size} status="uploading" progress={fileRead.progress} message={fileRead.message} onCancel={onCancelRead} />
+              <AgentTrace label={fileRead.name} steps={[{ id: 'read',label: fileRead.message,state: 'current',meta: formatBytes(fileRead.size) }]}
+                variant="compact" announce={false} action={<LinkButton onClick={onShowProgress}>Acompanhar</LinkButton>} />
             ) : fileRead?.status === 'error' ? (
               <FileRow
                 name={fileRead.name}

@@ -61,6 +61,8 @@ import {
   type SpeakerChoice,
 } from './form';
 import { MaterialSection, materialState } from './material-section';
+import { materialProgress } from './material-progress';
+import { MaterialProgressDialog } from './material-progress-dialog';
 import { outlineBlocker, outlineFromProposal, toOutlineInput, type OutlineDraft } from './outline-model';
 import type { QuoteMaterial } from './outline-quotes';
 import { usePreviewSpeakers } from './preview-speakers';
@@ -162,6 +164,10 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
     ...current,linkFile: value.file,sourceUrl: value.sourceUrl,programName: current.programName?.trim() ? current.programName : value.programName,speakers: {},
   })),[]);
   const linkReader = useLinkReader(onLinkLoaded);
+  const [progressVisible,setProgressVisible] = useState(false);
+  const showProgress = useCallback(() => setProgressVisible(true),[]);
+  const closeProgress = useCallback(() => setProgressVisible(false),[]);
+  const progress = materialProgress(draft,analysisState,fileReader.state,linkReader.state);
 
   // ── Field ids for ErrorSummary (read in handlers only) ──
   const dropzoneId = useId();
@@ -260,6 +266,7 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
 
   // ── Actions ──
   const setMode = (mode: MaterialMode) => {
+    closeProgress();
     if (mode!=='file') fileReader.reset();
     if (mode!=='link') linkReader.reset();
     update({ mode,speakers: {} });
@@ -271,12 +278,33 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
   const importLink = () => {
     const message = sourceLinkMessage(draft.sourceUrl ?? '');
     if (message) { toast('Link não importado',{ tone: 'error',description: message });linkRef.current?.focus();return; }
+    update({ linkFile: null,speakers: {} });
+    showProgress();
     linkReader.read(draft.sourceUrl ?? '');
+  };
+  const importFile = (file: File) => {
+    update({ file: null,speakers: {} });
+    showProgress();
+    fileReader.read(file);
+  };
+  const cancelPreparation = () => {
+    if (draft.mode === 'file') fileReader.reset();
+    if (draft.mode === 'link') linkReader.reset();
+    closeProgress();
+  };
+  const retryPreparation = () => {
+    if (progress?.retry === 'pick') { fileReader.retry();closeProgress();return; }
+    showProgress();
+    if (progress?.retry === 'file') fileReader.retry();
+    else if (progress?.retry === 'link') linkReader.retry();
+    else analysisState.retry?.();
   };
   const setSpeaker = (label: string, choice: SpeakerChoice) => setDraft((current) => ({ ...current, speakers: { ...current.speakers, [label]: choice } }));
 
   const fillSample = useCallback(() => {
     fileReader.reset();
+    linkReader.reset();
+    showProgress();
     setDraft((current) => ({
       ...current,
       mode: 'paste',
@@ -291,7 +319,7 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
       plan: 'article-carousel',
       speakers: { [SAMPLE_NEW_SPEAKER]: { kind: 'new', name: SAMPLE_NEW_SPEAKER } },
     }));
-  }, [fileReader]);
+  }, [fileReader,linkReader,showProgress]);
 
   const fieldIds = (): Attempt['ids'] => {
     const ids: Attempt['ids'] = { material: draft.mode === 'paste' ? textareaRef.current?.id : draft.mode === 'link' ? linkRef.current?.id : `${dropzoneId}-dropzone` };
@@ -558,15 +586,17 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
               linkRef={linkRef}
               onModeChange={setMode}
               onPaste={(pasted) => update({ pasted })}
+              onBeginProcessing={showProgress}
+              onShowProgress={showProgress}
               onLinkChange={changeLink}
               onImportLink={importLink}
-              onFile={fileReader.read}
-              onReject={fileReader.reject}
+              onFile={importFile}
+              onReject={(rejected) => { fileReader.reject(rejected);showProgress(); }}
               onRemoveFile={() => update({ file: null, speakers: {} })}
-              onCancelRead={fileReader.reset}
-              onRetryRead={fileReader.retry}
-              onCancelLink={linkReader.reset}
-              onRetryLink={linkReader.retry}
+              onCancelRead={cancelPreparation}
+              onRetryRead={retryPreparation}
+              onCancelLink={cancelPreparation}
+              onRetryLink={retryPreparation}
               onRemoveLink={() => { linkReader.reset();update({ linkFile: null,sourceUrl: '',speakers: {} }); }}
               onUseSample={fillSample}
             />
@@ -626,6 +656,8 @@ export function NewProductionScreen({ productionId: routeId }: { productionId?: 
           />
         )}
       </FixedFrame>
+      <MaterialProgressDialog open={progressVisible && step === 'material'} progress={progress}
+        onClose={closeProgress} onCancel={cancelPreparation} onRetry={retryPreparation} />
       <LiveRegion message={statusText} />
       <ConfirmDialog
         open={confirmExit}

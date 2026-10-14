@@ -35,6 +35,10 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
   these files need no upload route or transcription worker. Invalid UTF-8, empty files and NUL
   characters are rejected. Upload audio/video up to 2 GiB and three hours.
   Supported media: MP3, M4A, MP4, WAV, OGG, FLAC, WEBM. Video must contain audio.
+  Pasting text, selecting a file or importing a link opens a responsive progress dialog. It follows
+  reading/upload, transcription when required, and metadata analysis. Upload percentages use
+  confirmed bytes; processing remains indeterminate. Closing the dialog keeps the task running
+  on the same page, and its inline action reopens it. Failed input remains available for retry.
   Multipart filenames are decoded as UTF-8 and normalized to NFC, including decomposed
   macOS accents; the original display name is metadata, never the private storage path.
 - The worker converts audio to mono 16 kHz FLAC, splits ten-minute portions with two-second

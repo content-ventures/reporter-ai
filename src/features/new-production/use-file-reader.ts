@@ -3,21 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RejectedFile } from '@content-ventures/design-system/v3';
 import type { SourceIntake } from '@/registries';
+import type { MaterialReadPhase, MaterialReadProgress } from '@/ports';
 import { useCommands } from '@/state';
 import type { MaterialFile } from './form';
 
 /**
  * "Enviar arquivo": reads a .txt/.md/.srt/.vtt through SourceIngest.read and reports progress
- * in the FileRow. A local read is instant, so the bar runs for a short minimum: the person sees
- * the file being taken in. Refusals keep the file's name and offer the right retry.
+ * with provider-reported stages and bytes. Instant reads remain visible briefly, without
+ * inventing transfer progress. Refusals keep the file's name and offer the right retry.
  */
 
 export type FileReadState =
-  | { status: 'reading'; name: string; size: number; progress: number; message?: string }
-  | { status: 'error'; name: string; size: number; message: string; retry: 'reread' | 'pick' };
+  | ({ status: 'reading'; name: string; size: number } & MaterialReadProgress)
+  | { status: 'error'; name: string; size: number; message: string; retry: 'reread' | 'pick'; phase: MaterialReadPhase };
 
 const MIN_READ_MS = 650;
-const TICK_MS = 70;
 
 function megabytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
@@ -35,7 +35,6 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
   const commands = useCommands();
   const [state, setState] = useState<FileReadState | null>(null);
   const run = useRef(0);
-  const ticker = useRef<number | undefined>(undefined);
   const lastFile = useRef<File | null>(null);
   const controller = useRef<AbortController | undefined>(undefined);
 
@@ -43,7 +42,6 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
     () => () => {
       run.current += 1;
       controller.current?.abort();
-      window.clearInterval(ticker.current);
     },
     [],
   );
@@ -55,29 +53,25 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
       lastFile.current = file;
       controller.current?.abort();
       controller.current = new AbortController();
-      window.clearInterval(ticker.current);
-      setState({ status: 'reading', name: file.name, size: file.size, progress: 6 });
-      ticker.current = window.setInterval(() => {
-        setState((current) => (current?.status === 'reading' ? { ...current, progress: Math.min(92, current.progress + 13) } : current));
-      }, TICK_MS);
+      const text = /\.(txt|md|srt|vtt)$/i.test(file.name);
+      setState({ status: 'reading', name: file.name, size: file.size, phase: text ? 'reading' : 'uploading',message: text ? 'Lendo arquivo' : 'Preparando envio' });
       const started = performance.now();
-      void commands.ingest.read(file,{ signal: controller.current.signal,onProgress(progress,message) {
+      void commands.ingest.read(file,{ signal: controller.current.signal,onStatus(progress) {
         if (token !== run.current) return;
-        window.clearInterval(ticker.current);
-        setState({ status: 'reading',name: file.name,size: file.size,progress,message });
+        setState({ status: 'reading',name: file.name,size: file.size,...progress });
       } }).then(async (result) => {
         const rest = MIN_READ_MS - (performance.now() - started);
         if (rest > 0) await new Promise((resolve) => window.setTimeout(resolve, rest));
         if (token !== run.current) return;
-        window.clearInterval(ticker.current);
         if (!result.ok) {
-          setState({
+          setState((current) => ({
             status: 'error',
             name: file.name,
             size: file.size,
             message: result.refusal.message,
             retry: result.refusal.code === 'read_failed' ? 'reread' : 'pick',
-          });
+            phase: current?.phase ?? 'reading',
+          }));
           return;
         }
         setState(null);
@@ -85,8 +79,7 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
       }).catch(() => {
         // An unexpected failure (not a refusal) must not leave the row "reading" forever.
         if (token !== run.current) return;
-        window.clearInterval(ticker.current);
-        setState({ status: 'error', name: file.name, size: file.size, message: 'Não foi possível ler o arquivo. Tente de novo.', retry: 'reread' });
+        setState((current) => ({ status: 'error', name: file.name, size: file.size, message: 'Não foi possível ler o arquivo. Tente de novo.', retry: 'reread',phase: current?.phase ?? 'reading' }));
       });
     },
     [commands, onLoaded],
@@ -95,13 +88,14 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
   const reject = useCallback(
     (rejected: RejectedFile) => {
       run.current += 1;
-      window.clearInterval(ticker.current);
+      controller.current?.abort();
       setState({
         status: 'error',
         name: rejected.file.name,
         size: rejected.file.size,
         message: rejectionMessage(rejected.reason, intake),
         retry: 'pick',
+        phase: 'reading',
       });
     },
     [intake],
@@ -111,7 +105,6 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
   const reset = useCallback(() => {
     run.current += 1;
     controller.current?.abort();
-    window.clearInterval(ticker.current);
     setState(null);
   }, []);
 
