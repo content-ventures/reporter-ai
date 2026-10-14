@@ -47,13 +47,22 @@ async function workspace(page: Page, refuseStart = false) {
       await route.fulfill({ json: { ok: true, value: { runId: run.id } } });
     } else throw new Error('Unexpected test command: ' + method);
   });
-  return { engine, counts: () => ({ creates, starts }), preview() {
+  return { engine, counts: () => ({ creates, starts }), preview(text = 'Primeiro parágrafo chegando em tempo real.') {
     expect(job).toBeDefined();
     appendEditorialEvent(engine, job!, { type: 'step.completed', stepId: 'source' });
     appendEditorialEvent(engine, job!, { type: 'step.started', stepId: 'article' });
-    appendEditorialEvent(engine, job!, { type: 'article.preview', body: { type: 'article', title: 'Texto sintético', blocks: [
-      { id: 'preview-1', type: 'paragraph', inlines: [{ text: 'Primeiro parágrafo chegando em tempo real.' }], ai: 'unreviewed' },
+    const coverSlot = { subject: 'capa da pauta sintética', availability: { code: 'NO_RELEVANT_IMAGE', message: 'Nenhuma foto pertinente em alta resolução foi encontrada. O texto está preservado.' } };
+    appendEditorialEvent(engine, job!, { type: 'outline', title: 'Texto sintético', sections: [], cover: coverSlot });
+    appendEditorialEvent(engine, job!, { type: 'article.preview', body: { type: 'article', title: 'Texto sintético', coverSlot, blocks: [
+      { id: 'preview-1', type: 'paragraph', inlines: [{ text }], ai: 'unreviewed' },
     ] } });
+    revision++;
+  }, complete() {
+    expect(job).toBeDefined();
+    appendEditorialEvent(engine, job!, { type: 'block.started', block: { id: 'final-1', type: 'paragraph' } });
+    appendEditorialEvent(engine, job!, { type: 'block.completed', block: { id: 'final-1', type: 'paragraph', inlines: [{ text: 'Artigo final validado e pronto para edição.' }], ai: 'unreviewed' } });
+    appendEditorialEvent(engine, job!, { type: 'step.completed', stepId: 'article' });
+    appendEditorialEvent(engine, job!, { type: 'run.completed' });
     revision++;
   } };
 }
@@ -75,7 +84,7 @@ async function confirmPauta(page: Page) {
 for (const viewport of VIEWPORTS) {
   test.describe(`pauta direto ao editor em ${viewport.name}`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
-    test('abre o editor durante o preparo, retoma na recarga e mostra a prévia', async ({ page }) => {
+    test('mostra a prévia, preserva a revisão e libera o artigo final para edição', async ({ page }) => {
       test.setTimeout(120_000);
       const errors = watchErrors(page), replay = await workspace(page);
       try {
@@ -83,12 +92,20 @@ for (const viewport of VIEWPORTS) {
         await expect(page.getByRole('progressbar', { name: 'Preparando o artigo' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Material', exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Parar', exact: true })).toBeVisible();
-        await page.reload({ waitUntil: 'domcontentloaded' });
-        await expect(page.getByRole('progressbar', { name: 'Preparando o artigo' })).toBeVisible();
+        await expect(page.getByText('Selecionar evidências e citações. Você pode acompanhar a prévia; a edição será liberada após a validação.', { exact: true })).toHaveCount(0);
         expect(replay.counts()).toEqual({ creates: 1, starts: 1 });
         replay.preview();
         await expect(page.getByRole('textbox', { name: 'Prévia do artigo em tempo real' })).toContainText('Primeiro parágrafo chegando em tempo real.');
         await expect(page.getByRole('progressbar', { name: 'Preparando o artigo' })).toHaveCount(0);
+        replay.preview('Texto de uma revisão que não deve fazer o artigo voltar para o início.');
+        await expect(page.getByRole('textbox', { name: 'Prévia do artigo em tempo real' })).toContainText('Primeiro parágrafo chegando em tempo real.');
+        replay.complete();
+        const article = page.getByRole('textbox', { name: 'Texto do artigo' });
+        await expect(article).toContainText('Artigo final validado e pronto para edição.');
+        await expect(article).toHaveAttribute('aria-readonly', 'false');
+        await expect(page.getByRole('progressbar', { name: 'Preparando o artigo' })).toHaveCount(0);
+        await expect(page.getByText('Nenhuma foto pertinente em alta resolução foi encontrada. O texto está preservado.', { exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Adicionar imagem de destaque' })).toBeVisible();
         await expectNoHorizontalOverflow(page);
         expect(errors).toEqual([]);
       } finally { replay.engine.store.dispose(); }

@@ -28,8 +28,6 @@ import { useGenerationFeedback } from '@/ui/use-generation-feedback';
 import { useStudio } from './studio-context';
 import { useSpeakersWithoutPerson } from './studio-footer';
 import { ProviderPreview } from './provider-preview';
-import { useRuntime } from '@/state';
-import { contentHash } from '@/domain/text/hash';
 
 /**
  * The writing canvas (PLAN §3.5 "Texto"): the cover ("Imagem de destaque"), the article title and
@@ -65,7 +63,6 @@ export function EditorCanvas() {
       onTouchMove={studio.noteUserScroll}
     >
       <PageStack>
-        {!generation.active ? <AutomaticArticleImages /> : null}
         {providerProgress && !preview?.blocks.length ? <PendingArticle /> : null}
         {preview?.blocks.length ? <ProviderPreview body={preview} /> : <EditorContent editor={editor} />}
         {providerProgress && preview?.blocks.length ? <StreamingStatus /> : null}
@@ -76,35 +73,24 @@ export function EditorCanvas() {
   );
 }
 
-function AutomaticArticleImages() {
-  const studio = useStudio(),{ runtime } = useRuntime();
-  const [busy,setBusy] = useState(false),[error,setError] = useState<string>();
-  const slots = [studio.body.coverSlot,...studio.body.blocks.flatMap(block => block.type === 'figure' && block.slot ? [block.slot] : [])].filter(Boolean);
-  const unavailable = slots.find(slot => slot?.availability)?.availability;
-  const port = runtime?.visuals;
-  if (!slots.length || !port?.illustrate) return null;
-  async function search() {
-    if (!port?.illustrate || busy) return;
-    setBusy(true);setError(undefined);
-    try {
-      await studio.sync.idle();
-      const result = await port.illustrate(studio.production.id,studio.sync.base(),contentHash(studio.body));
-      if (!result.filled) setError(result.codes.includes('PIXABAY_ORIGINAL_REQUIRED') ? 'Libere os originais no Pixabay para preencher as imagens em alta resolução.' : 'Nenhuma foto pertinente foi preenchida. Você pode tentar novamente ou escolher outra na biblioteca.');
-    } catch (error) { setError(error instanceof Error ? error.message : 'Não foi possível buscar fotos. Seu artigo continua salvo.'); }
-    finally { setBusy(false); }
-  }
-  return <Alert compact tone={unavailable || error ? 'warning' : 'info'} title={busy ? 'Buscando fotos no Pixabay' : 'Imagens do artigo'}>
-    {error ?? unavailable?.message ?? 'Preencha os espaços planejados sem subir arquivos manualmente.'}
-    <Button size="sm" loading={busy} disabled={!studio.canEdit || studio.locked || studio.sync.status.status !== 'saved'} onClick={() => void search()}>Buscar imagens automaticamente</Button>
-    {unavailable?.code === 'PIXABAY_ORIGINAL_REQUIRED' ? <ButtonLink href="https://pixabay.com/api/docs/#api_support" target="_blank" rel="noopener noreferrer" size="sm">Liberar originais no Pixabay</ButtonLink> : null}
-  </Alert>;
-}
-
 function StreamingStatus() {
   const { generation } = useStudio();
   const feedback = useGenerationFeedback(generation.run);
-  return <MetaList size="sm" label="Estado da redação" items={[feedback?.detail ?? feedback?.label ?? 'Escrevendo',feedback?.elapsed,
-    'Prévia em tempo real. Edição liberada após validar o artigo.'].filter(Boolean) as string[]} />;
+  return <>
+    <MetaList size="sm" label="Estado da redação" items={[feedback?.detail ?? feedback?.label ?? 'Escrevendo',feedback?.elapsed,
+      'Prévia em tempo real'].filter(Boolean) as string[]} />
+    <StopGenerationButton />
+  </>;
+}
+
+function StopGenerationButton() {
+  const studio = useStudio();
+  const [stopping,setStopping] = useState(false);
+  if (!studio.canEdit) return null;
+  return <Button size="sm" loading={stopping} onClick={() => {
+    setStopping(true);
+    void studio.actions.stopGeneration().finally(() => setStopping(false));
+  }}>Parar</Button>;
 }
 
 function ArticleTitle() {
@@ -142,6 +128,7 @@ function PendingArticle() {
     <Progress aria-label="Preparando o artigo" />
     <SkeletonText lines={4} lineHeight={28} label="Aguardando os primeiros parágrafos" />
     <SkeletonText lines={3} lineHeight={28} />
+    <StopGenerationButton />
     <LiveRegion message={feedback?.label ?? 'Preparando o artigo'} />
   </PageStack>;
   if (count === 0) return null;
@@ -153,6 +140,7 @@ function PendingArticle() {
           <SkeletonText lines={3} lineHeight={28} label="Seção a escrever" />
         </PageStack>
       ))}
+      <StopGenerationButton />
     </PageStack>
   );
 }
