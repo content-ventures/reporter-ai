@@ -15,10 +15,13 @@ import { inspectMedia } from "./media";
 import { reporterDeploymentMode } from './deployment.ts';
 import { transaction } from './database.ts';
 
+export function storageRootPath(environment: Readonly<Record<string,string | undefined>> = process.env, cwd = process.cwd()) {
+  const ephemeralRuntime = environment.REPORTER_FUNCTION_RUNTIME === 'true' || environment.VERCEL === '1';
+  return ephemeralRuntime ? join('/tmp','reporter-ai') : join(cwd,'.reporter-local');
+}
+
 export async function storageRoot() {
-  const root = process.env.REPORTER_FUNCTION_RUNTIME === 'true'
-    ? join('/tmp','reporter-ai')
-    : join(process.cwd(), ".reporter-local");
+  const root = storageRootPath();
   await mkdir(root, { recursive: true, mode: 0o700 });
   if (!(await lstat(root)).isDirectory() || (await lstat(root)).isSymbolicLink()) throw new FlowError("UNSAFE_STORAGE", 500);
   if (await realpath(root) !== root) throw new FlowError("UNSAFE_STORAGE", 500);
