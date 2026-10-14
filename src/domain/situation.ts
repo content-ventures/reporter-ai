@@ -20,7 +20,7 @@ import type { Member } from './workspace.ts';
  * viewer and is computed by the ports for the acting member.
  */
 
-/** Where a next step lands (routes resolve it: `stepTargetHref`). `structure` = Nova produção step 3 of this production. */
+/** Where a next step lands (routes resolve it: `stepTargetHref`). `structure` is a compatibility target for old article links. */
 export type StepTarget =
   | { kind: 'source' }
   | { kind: 'studio'; pieceKind: PieceKind }
@@ -33,7 +33,7 @@ export type NextStepKind =
   | 'adjust'
   | 'retry'
   | 'authorize'
-  | 'structure'
+  | 'generate_article'
   | 'continue'
   | 'send'
   | 'resend'
@@ -48,7 +48,7 @@ export const NEXT_STEP_LABELS: Record<NextStepKind, string> = {
   adjust: 'Ajustar',
   retry: 'Tentar de novo',
   authorize: 'Autorizar',
-  structure: 'Montar estrutura',
+  generate_article: 'Gerar artigo',
   continue: 'Continuar',
   send: 'Enviar para aprovação',
   resend: 'Reenviar',
@@ -223,7 +223,7 @@ export function nextStepFor(input: SituationInput): NextStep | null {
       if (!editor) return open;
       if (kind === 'article') return record.production.flowId === WRITING_FLOW.id
         ? step('continue', studio, owner)
-        : step('structure', { kind: 'structure' }, owner);
+        : step('generate_article', studio, owner);
       return step(kind === 'carousel' ? 'create_carousel' : 'continue', studio, owner);
     case 'draft':
       return editor ? step('continue', studio, owner) : open;

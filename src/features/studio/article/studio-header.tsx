@@ -5,7 +5,7 @@ import type { MenuSection } from '@content-ventures/design-system/v3';
 import { ClipboardList, History as HistoryIcon, LayoutTemplate, ListTree, RotateCcw, Send, Sparkles, Undo2 } from '@content-ventures/design-system/v3/icons';
 import { ProductionHeader, ProductionPrimaryBar, type HeaderPrimary } from '@/features/production/production-frame';
 import { ApprovalBanner, GenerationBanner, StatusBadge, StatusBanner, useWithdrawReview } from '@/ui';
-import { deliveryHref, materialHref, pieceHref, reviewHref, structureHref } from '@/ui/routes';
+import { deliveryHref, materialHref, pieceHref, reviewHref } from '@/ui/routes';
 import { useStudio } from './studio-context';
 import { studioPrimary } from './studio-session-model';
 
@@ -54,8 +54,9 @@ export function useStudioPrimary(): HeaderPrimary | undefined {
       return { kind: 'link', label: primary.label, href: pieceHref(production.id, 'carousel') };
     case 'delivery':
       return { kind: 'link', label: primary.label, href: deliveryHref(production.id) };
-    case 'structure':
-      return { kind: 'link', label: primary.label, href: structureHref(production.id) };
+    case 'generate':
+      return { kind: 'button', label: primary.label, icon: Sparkles, onClick: () => void studio.actions.generate(),
+        ...(studio.refusal ? { blockedReason: studio.refusal } : {}) };
   }
 }
 

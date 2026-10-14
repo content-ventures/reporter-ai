@@ -288,7 +288,7 @@ export function pipelineRunSteps(definition: PipelineDefinition, kind: string, s
     return [{ id: 'source', label: 'Preparando texto e evidências' }, { id: 'assist', label: 'Escrevendo proposta' }, { id: 'validate', label: 'Conferindo proposta' }];
   const steps = [{ id: 'source', label: 'Preparando a fonte' }];
   if (kind === 'article.outline' || kind === 'article.draft' && automaticOutline) {
-    steps.push({ id: 'outline', label: PIPELINE_STEP_LABELS.outline });
+    steps.push({ id: 'outline', label: kind === 'article.draft' ? 'Organizando a pauta' : PIPELINE_STEP_LABELS.outline });
     if (definition.curateQuotes) steps.push({ id: 'quotes', label: PIPELINE_STEP_LABELS.quotes });
   }
   if (kind === 'article.draft' && definition.articleMode === 'sequential') {

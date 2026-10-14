@@ -180,7 +180,7 @@ describe('studio session model', () => {
     assert.deepEqual(studioPrimary({ ...approved, plannedCarousel: true }), { kind: 'create_carousel', label: 'Criar carrossel' });
     assert.equal(studioPrimary({ ...approved, plannedCarousel: true, approval: approval('approved', { viewer: { ...viewer, canEdit: false } }) }), null);
     // No text yet: the structure first (only with the material authorized).
-    assert.deepEqual(studioPrimary({ ...base, status: 'not_started' }), { kind: 'structure', label: 'Montar estrutura' });
+    assert.deepEqual(studioPrimary({ ...base, status: 'not_started' }), { kind: 'generate', label: 'Gerar artigo' });
     assert.equal(studioPrimary({ ...base, status: 'not_started', authorized: false }), null);
     // Blocked only when sending is impossible, with the reason in words.
     assert.deepEqual(studioPrimary({ ...base, tabReadOnly: true }), { kind: 'send', label: 'Enviar para aprovação', blockedReason: READ_ONLY_REASON });

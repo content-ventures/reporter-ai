@@ -12,6 +12,8 @@ import {
   MetaList,
   PageStack,
   Prose,
+  Progress,
+  LiveRegion,
   Skeleton,
   SkeletonText,
   Tooltip,
@@ -22,7 +24,6 @@ import { EditorContent } from '@/editor';
 import { formatCharacters, formatLaudas, plural } from '@/ui/format';
 import { materialHref } from '@/ui/routes';
 import { CoverSlot } from './cover-slot';
-import { RunTrace } from '@/ui/run-trace';
 import { useGenerationFeedback } from '@/ui/use-generation-feedback';
 import { useStudio } from './studio-context';
 import { useSpeakersWithoutPerson } from './studio-footer';
@@ -65,10 +66,10 @@ export function EditorCanvas() {
     >
       <PageStack>
         {!generation.active ? <AutomaticArticleImages /> : null}
-        {providerProgress && !preview?.blocks.length ? <PendingStructure /> : null}
+        {providerProgress && !preview?.blocks.length ? <PendingArticle /> : null}
         {preview?.blocks.length ? <ProviderPreview body={preview} /> : <EditorContent editor={editor} />}
         {providerProgress && preview?.blocks.length ? <StreamingStatus /> : null}
-        {generation.active && !providerProgress ? <PendingStructure /> : null}
+        {generation.active && !providerProgress ? <PendingArticle /> : null}
         {studio.empty && !writing && !generation.active ? <EmptyDraft /> : null}
       </PageStack>
     </Prose>
@@ -124,8 +125,8 @@ function ArticleTitle() {
   );
 }
 
-/** Sections the generation planned but has not written yet ("skeleton pela estrutura"). */
-function PendingStructure() {
+/** Loading lives in the editor until the first preview replaces the skeleton paragraphs. */
+function PendingArticle() {
   const studio = useStudio();
   const run = studio.generation.run;
   const feedback = useGenerationFeedback(run);
@@ -137,8 +138,11 @@ function PendingStructure() {
     return fold.outline.filter((section) => !section.blockId || !written.has(section.blockId)).length;
   }, [fold]);
   if (run?.model.engine === 'provider') return <PageStack>
-    <RunTrace run={run} label="Preparando o artigo" collapsible={false} />
-    <MetaList size="sm" items={[feedback?.elapsed,'O texto aparecerá aqui assim que a IA começar a escrever.',feedback?.background].filter(Boolean) as string[]} />
+    <MetaList size="sm" label="Preparo do artigo" items={[feedback?.detail ?? feedback?.label ?? 'Preparando o artigo', feedback?.elapsed].filter(Boolean) as string[]} />
+    <Progress aria-label="Preparando o artigo" />
+    <SkeletonText lines={4} lineHeight={28} label="Aguardando os primeiros parágrafos" />
+    <SkeletonText lines={3} lineHeight={28} />
+    <LiveRegion message={feedback?.label ?? 'Preparando o artigo'} />
   </PageStack>;
   if (count === 0) return null;
   return (

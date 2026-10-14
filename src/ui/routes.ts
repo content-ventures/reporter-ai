@@ -59,9 +59,9 @@ export function reviewHref(productionId: ProductionId | string, kind: PieceKind)
   return `${pieceHref(productionId, kind)}/review`;
 }
 
-/** Nova produção, step 3 (Estrutura), for a production that already exists. */
+/** Compatibility target for saved structure links: planning now happens in the editor. */
 export function structureHref(productionId: ProductionId | string): string {
-  return `${NEW_PRODUCTION_HREF}?producao=${encodeURIComponent(productionId)}`;
+  return pieceHref(productionId, 'article');
 }
 
 /**
@@ -86,7 +86,7 @@ export function stageHref(
   }
 }
 
-/** Where a next step lands ("Revisar" → review, "Montar estrutura" → Nova produção step 3…). */
+/** Where a next step lands ("Revisar" → review, "Gerar artigo" → editor). */
 export function stepTargetHref(productionId: ProductionId | string, target: StepTarget): string {
   switch (target.kind) {
     case 'source':

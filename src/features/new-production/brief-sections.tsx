@@ -35,7 +35,7 @@ import {
 /**
  * "Pauta" (step 2, CONTRACT §3.9, COPY §6.3): the size of the article, the sections, the angle,
  * the pieces to deliver and the internal title, with "Origem" and "Data da entrevista" behind
- * "Mais detalhes". Once the production exists (back from "Estrutura") only the pauta itself is
+ * "Mais detalhes". When editing an existing production only the pauta itself is
  * editable: the pieces, the title and the details were fixed when it was created.
  */
 
