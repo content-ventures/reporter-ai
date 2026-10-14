@@ -26,6 +26,7 @@
     "gate": "pnpm gate:quick && pnpm build",
     "check": "pnpm gate",
     "release:prepare": "node scripts/prepare-release.mjs",
+    "release:prepare:auto": "node scripts/prepare-release.mjs --auto",
     "prepare": "pnpm harness:setup",
     "worker": "node --conditions=react-server --import tsx src/server/worker.ts",
     "test:backend": "node --conditions=react-server --import tsx --test tests/*.test.ts",

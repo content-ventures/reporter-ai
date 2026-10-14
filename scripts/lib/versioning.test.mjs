@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  automaticReleaseSummary,
   buildReleaseViolations,
   compareVersions,
   nextVersion,
   parseVersion,
+  releaseBumpFromSubjects,
   releaseChangeFromSubject,
   upcomingViolations,
 } from "./versioning.mjs";
@@ -24,6 +26,25 @@ test("maps roadmap releases to major versions", () => {
 test("increments features and fixes independently", () => {
   assert.equal(nextVersion("1.2.7", "minor", "R1"), "1.3.0");
   assert.equal(nextVersion("1.2.7", "patch", "R1"), "1.2.8");
+});
+
+test("derives the automatic deploy version from validated commits", () => {
+  assert.equal(releaseBumpFromSubjects(["fix: repair uploads"]), "patch");
+  assert.equal(releaseBumpFromSubjects(["docs: explain uploads", "feat: add direct uploads"]), "minor");
+  assert.equal(releaseBumpFromSubjects(["fix: repair uploads", "feat(storage)!: replace upload protocol"]), "major");
+  assert.throws(() => releaseBumpFromSubjects([]), /At least one commit/);
+});
+
+test("creates an automatic explanation for the deployment", () => {
+  assert.equal(
+    automaticReleaseSummary([
+      { type: "Added", description: "Add direct uploads" },
+      { type: "Fixed", description: "Repair text ingestion" },
+      { type: "Changed", description: "Clarify deployment feedback" },
+      { type: "Maintenance", description: "Cover release policy" },
+    ], "minor"),
+    "Automatic feature release with 4 validated changes: cover release policy; clarify deployment feedback; repair text ingestion.",
+  );
 });
 
 test("creates readable release changes from conventional commits", () => {

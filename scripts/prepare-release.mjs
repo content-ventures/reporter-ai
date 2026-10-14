@@ -1,7 +1,12 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { run, fail } from "./lib/command.mjs";
-import { nextVersion, releaseChangeFromSubject } from "./lib/versioning.mjs";
+import {
+  automaticReleaseSummary,
+  nextVersion,
+  releaseBumpFromSubjects,
+  releaseChangeFromSubject,
+} from "./lib/versioning.mjs";
 
 function option(name) {
   const index = process.argv.indexOf(`--${name}`);
@@ -28,16 +33,13 @@ function groupedMarkdown(changes) {
     .join("\n\n");
 }
 
-const bump = option("bump");
-const requestedRoadmap = option("roadmap");
-const summary = option("summary");
+const automatic = process.argv.includes("--auto");
+let bump = option("bump");
+let requestedRoadmap = option("roadmap");
+let summary = option("summary");
 
-if (!bump || !requestedRoadmap || !summary) {
-  fail("release:prepare requires --bump, --roadmap, and --summary");
-}
-
-if (!/^[\x20-\x7E]+$/.test(summary) || summary.length < 12) {
-  fail("the release summary must be a clear English sentence");
+if (!automatic && (!bump || !requestedRoadmap || !summary)) {
+  fail("release:prepare requires --auto or --bump, --roadmap, and --summary");
 }
 
 if (run("git", ["status", "--porcelain"])) {
@@ -47,12 +49,7 @@ if (run("git", ["status", "--porcelain"])) {
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 const historyPath = "src/data/release-history.json";
 const history = JSON.parse(readFileSync(historyPath, "utf8"));
-const next = nextVersion(packageJson.version, bump, requestedRoadmap);
 const currentRelease = history.releases[0];
-
-if (bump !== "major" && requestedRoadmap !== history.currentRoadmapRelease) {
-  fail(`${bump} releases must remain in ${history.currentRoadmapRelease}`);
-}
 
 const currentTag = `v${packageJson.version}`;
 const baseline = refExists(`refs/tags/${currentTag}`) ? currentTag : currentRelease.commit;
@@ -72,6 +69,24 @@ if (subjects.length === 0) {
 }
 
 const changes = subjects.map(releaseChangeFromSubject);
+
+if (automatic) {
+  bump = releaseBumpFromSubjects(subjects);
+  requestedRoadmap = bump === "major"
+    ? `R${Number(history.currentRoadmapRelease.slice(1)) + 1}`
+    : history.currentRoadmapRelease;
+  summary = automaticReleaseSummary(changes, bump);
+}
+
+if (!/^[\x20-\x7E]+$/.test(summary) || summary.length < 12) {
+  fail("the release summary must be a clear English sentence");
+}
+
+if (bump !== "major" && requestedRoadmap !== history.currentRoadmapRelease) {
+  fail(`${bump} releases must remain in ${history.currentRoadmapRelease}`);
+}
+
+const next = nextVersion(packageJson.version, bump, requestedRoadmap);
 const date = new Date().toISOString().slice(0, 10);
 const title = bump === "major"
   ? `${requestedRoadmap} commercial release`
@@ -112,8 +127,16 @@ const releaseSection = `## [${next}] - ${date}\n\n${groupedMarkdown(changes)}\n\
 const updatedChangelog = `${changelog.slice(0, unreleasedStart)}## [Unreleased]\n\n${releaseSection}${changelog.slice(previousReleaseStart + 1)}`;
 writeFileSync(changelogPath, updatedChangelog);
 
+const releaseNotesPath = process.env.RELEASE_NOTES_PATH;
+if (releaseNotesPath) {
+  writeFileSync(
+    releaseNotesPath,
+    `# Reporter IA v${next}\n\n${summary}\n\n${groupedMarkdown(changes)}\n`,
+  );
+}
+
 if (process.env.GITHUB_OUTPUT) {
-  appendFileSync(process.env.GITHUB_OUTPUT, `version=${next}\ntag=v${next}\n`);
+  appendFileSync(process.env.GITHUB_OUTPUT, `version=${next}\ntag=v${next}\nsummary=${summary}\n`);
 }
 
 console.log(`Prepared v${next} with ${changes.length} changes from ${baseline}`);

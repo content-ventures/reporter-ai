@@ -18,4 +18,8 @@
 
 ## Deployment
 
-<!-- Confirm whether this completed PR is intended for a controlled release. -->
+<!-- State whether no deployment, an explicitly approved Preview, or a future production deployment is expected. Production uses only the GitHub → Francal Vercel integration. -->
+
+- [ ] No remote push, PR, Preview, merge, or production action was performed without explicit approval.
+- [ ] This branch reuses its existing PR and does not duplicate a delivery already under review.
+- [ ] Production, when approved, will be versioned automatically from the validated Conventional Commits.

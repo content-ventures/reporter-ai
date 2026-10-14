@@ -50,6 +50,51 @@ export function nextVersion(currentVersion, bump, roadmapRelease) {
   throw new Error(`Unsupported release bump: ${bump}`);
 }
 
+export function releaseBumpFromSubjects(subjects) {
+  if (!Array.isArray(subjects) || subjects.length === 0) {
+    throw new Error("At least one commit is required to calculate a release bump");
+  }
+
+  let bump = "patch";
+
+  for (const subject of subjects) {
+    const match = /^(\w+)(?:\([^)]+\))?(!)?: (.+)$/.exec(subject);
+
+    if (!match || !changeTypeByCommitType[match[1]]) {
+      throw new Error(`Cannot calculate a release bump from commit: ${subject}`);
+    }
+
+    if (match[2] === "!") {
+      return "major";
+    }
+
+    if (match[1] === "feat") {
+      bump = "minor";
+    }
+  }
+
+  return bump;
+}
+
+export function automaticReleaseSummary(changes, bump) {
+  if (!Array.isArray(changes) || changes.length === 0) {
+    throw new Error("At least one change is required to create a release summary");
+  }
+
+  const kind = bump === "major"
+    ? "commercial release"
+    : bump === "minor"
+      ? "feature release"
+      : "maintenance release";
+  const highlights = changes
+    .slice(-3)
+    .reverse()
+    .map((change) => change.description.replace(/[.]$/, "").toLowerCase())
+    .join("; ");
+
+  return `Automatic ${kind} with ${changes.length} validated ${changes.length === 1 ? "change" : "changes"}: ${highlights}.`;
+}
+
 const changeTypeByCommitType = {
   feat: "Added",
   fix: "Fixed",

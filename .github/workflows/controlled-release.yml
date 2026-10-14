@@ -1,22 +1,7 @@
-name: Controlled release
+name: Controlled production deployment
 
 on:
   workflow_dispatch:
-    inputs:
-      bump:
-        description: Semantic version increment
-        required: true
-        type: choice
-        options: [patch, minor, major]
-      roadmap_release:
-        description: Product roadmap release
-        required: true
-        type: choice
-        options: [R0, R1, R2, R3, R4, R5, R6, R7]
-      summary:
-        description: Clear English description of the completed release
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -53,24 +38,24 @@ jobs:
       - name: Validate approved source
         run: pnpm gate
 
-      - name: Prepare version and release descriptions
+      - name: Calculate version and release descriptions
         id: release
         env:
-          BUMP: ${{ inputs.bump }}
-          ROADMAP_RELEASE: ${{ inputs.roadmap_release }}
-          RELEASE_SUMMARY: ${{ inputs.summary }}
-        run: pnpm release:prepare -- --bump "$BUMP" --roadmap "$ROADMAP_RELEASE" --summary "$RELEASE_SUMMARY"
+          RELEASE_NOTES_PATH: ${{ runner.temp }}/reporter-release-notes.md
+        run: pnpm release:prepare:auto
 
       - name: Validate prepared release
         run: pnpm gate
 
       - name: Commit and tag release
         env:
+          ACTOR_ID: ${{ github.actor_id }}
+          ACTOR_LOGIN: ${{ github.actor }}
           VERSION: ${{ steps.release.outputs.version }}
           TAG: ${{ steps.release.outputs.tag }}
         run: |
-          git config user.name "Content Ventures Release"
-          git config user.email "release@contentventures.com.br"
+          git config user.name "$ACTOR_LOGIN"
+          git config user.email "$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
           git add package.json CHANGELOG.md src/data/release-history.json
           git commit -m "chore(release): v$VERSION"
           git tag -a "$TAG" -m "Reporter IA $TAG"
@@ -80,12 +65,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_SUMMARY: ${{ inputs.summary }}
-        run: gh release create "$TAG" --verify-tag --title "Reporter IA $TAG" --notes "$RELEASE_SUMMARY"
+          RELEASE_NOTES_PATH: ${{ runner.temp }}/reporter-release-notes.md
+        run: gh release create "$TAG" --verify-tag --title "Reporter IA $TAG" --notes-file "$RELEASE_NOTES_PATH"
 
-      - name: Record deployment status
+      - name: Record production handoff
         env:
           TAG: ${{ steps.release.outputs.tag }}
+          SUMMARY: ${{ steps.release.outputs.summary }}
         run: |
-          echo "### $TAG is ready for controlled deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "No production provider is configured in this repository. Deployment remains intentionally disabled until its provider-specific step is approved." >> "$GITHUB_STEP_SUMMARY"
+          echo "### $TAG handed to Vercel through GitHub" >> "$GITHUB_STEP_SUMMARY"
+          echo "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          echo "The Vercel Git integration deploys the version commit. Local Vercel users, tokens and CLI deployment are prohibited." >> "$GITHUB_STEP_SUMMARY"
