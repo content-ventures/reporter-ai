@@ -2,6 +2,15 @@
 
 This document defines the mandatory workflow for human and AI-assisted development. All repository-facing names and messages are written in English. Product copy may remain in Brazilian Portuguese.
 
+## GitHub identity
+
+- Every commit, push, pull request, merge, Preview and production deployment must be attributable to the authenticated GitHub account performing the action.
+- Local commits use the GitHub login as `user.name` and the account's numeric noreply address (`<account-id>+<login>@users.noreply.github.com`) as `user.email`. The macOS username, computer hostname and unrelated personal identities are forbidden.
+- Pushes target the `content-ventures/reporter-ai` GitHub repository using GitHub authentication. A local computer identity is never deployment provenance.
+- Pull requests and merges are created by the authenticated GitHub user after explicit approval. Bots may validate the work but may not impersonate the user.
+- Vercel Preview and production deployments originate only from the Francal workspace's GitHub integration. The Vercel CLI, a local Vercel token and the macOS user's Vercel identity are forbidden.
+- The hooks validate the configured author and committer before commit and push. CI validates the author and committer of every delivered commit. A mismatched identity blocks the delivery.
+
 ## Branches
 
 - Work on a branch. The local `pre-push` hook blocks direct pushes to `main`; on the current plan it is the only branch protection (see Repository setup).
@@ -70,8 +79,8 @@ Reporter IA R1 is a full-stack application: Next.js UI and route handlers, durab
 The toolchain runs on Node 24 (`.nvmrc`, `engines`, CI and `@types/node`). The hooks are installed by `pnpm install` and can be restored with `pnpm harness:setup`.
 
 - `commit-msg` validates commit structure and English phrasing.
-- `pre-commit` validates commit size, Design System boundaries, layering and content density.
-- `pre-push` blocks direct `main` pushes, validates the branch, and runs the complete gate.
+- `pre-commit` validates the GitHub author/committer identity, commit size, Design System boundaries, layering and content density.
+- `pre-push` validates the GitHub identity, blocks direct `main` pushes, validates the branch, and runs the complete gate.
 - `pnpm gate:quick` runs Design System, architecture, content-density and version policies, lint, types, and tests.
 - `pnpm test` runs `node --test` on `scripts/**/*.test.mjs` and `src/**/*.test.ts`. Node 24 strips types natively, so tests use erasable TypeScript only (no enums, namespaces or parameter properties; `import type`), which `tsc` enforces with `erasableSyntaxOnly`.
 - `pnpm gate` adds a production build and is the required release and CI gate.

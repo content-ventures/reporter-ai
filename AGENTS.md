@@ -11,3 +11,5 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## Reporter IA repository workflow
 
 Before planning or changing this repository, read `docs/DEVELOPMENT_HARNESS.md` completely. Its rules for branches, commits, pull requests, approval, versioning and deployment are mandatory for human and AI-assisted work.
+
+All commits, pushes, pull requests and deployments must use the authenticated GitHub account identity. Never use the macOS account name, computer identity, a local Vercel identity or an unassociated email as authorship or deployment provenance.
