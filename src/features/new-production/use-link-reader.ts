@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useCommands } from '@/state';
+import type { MaterialReadPhase, MaterialReadProgress } from '@/ports';
 import type { MaterialFile } from './form';
 
 export type ImportedLink = {
@@ -13,8 +14,8 @@ export type ImportedLink = {
 };
 
 export type LinkReadState =
-  | { status: 'reading'; name: string; progress: number; message?: string }
-  | { status: 'error'; name: string; message: string };
+  | ({ status: 'reading'; name: string } & MaterialReadProgress)
+  | { status: 'error'; name: string; message: string; phase: MaterialReadPhase };
 
 export function useLinkReader(onLoaded: (value: ImportedLink) => void) {
   const commands = useCommands();
@@ -29,19 +30,19 @@ export function useLinkReader(onLoaded: (value: ImportedLink) => void) {
     last.current = url;
     controller.current?.abort();
     controller.current = new AbortController();
-    setState({ status: 'reading',name: url,progress: 4,message: 'Localizando episódio' });
-    void commands.ingest.readLink(url,{ signal: controller.current.signal,onProgress(progress,message) {
-      if (token===run.current) setState({ status: 'reading',name: url,progress,message });
+    setState({ status: 'reading',name: url,phase: 'locating',message: 'Localizando episódio' });
+    void commands.ingest.readLink(url,{ signal: controller.current.signal,onStatus(progress) {
+      if (token===run.current) setState({ status: 'reading',name: url,...progress });
     } }).then(result => {
       if (token!==run.current) return;
-      if (!result.ok) { setState({ status: 'error',name: url,message: result.refusal.message });return; }
+      if (!result.ok) { setState(current => ({ status: 'error',name: url,message: result.refusal.message,phase: current?.phase ?? 'locating' }));return; }
       setState(null);
       onLoaded({ file: { name: result.value.fileName,size: result.value.bytes,text: result.value.text,
         ...(result.value.transcriptId ? { transcriptId: result.value.transcriptId } : {}) },sourceUrl: result.value.sourceUrl,
         provider: result.value.provider,...(result.value.title ? { title: result.value.title } : {}),
         ...(result.value.programName ? { programName: result.value.programName } : {}) });
     }).catch(() => {
-      if (token===run.current) setState({ status: 'error',name: url,message: 'Não foi possível importar este link. Tente de novo.' });
+      if (token===run.current) setState(current => ({ status: 'error',name: url,message: 'Não foi possível importar este link. Tente de novo.',phase: current?.phase ?? 'locating' }));
     });
   },[commands,onLoaded]);
 

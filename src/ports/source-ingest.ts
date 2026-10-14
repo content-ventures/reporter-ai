@@ -27,7 +27,20 @@ export type IngestLimits = {
 export type ReadRefusal = 'unsupported_type' | 'too_large' | 'empty' | 'read_failed';
 
 export type ReadFile = { text: string; fileName: string; format: TranscriptFormat; bytes: number; transcriptId?: string };
-export type FileReadOptions = { signal?: AbortSignal; onProgress?: (progress: number,message: string) => void };
+export type MaterialReadPhase = 'reading' | 'locating' | 'uploading' | 'preparing' | 'transcribing' | 'ready';
+export type MaterialReadProgress = {
+  phase: MaterialReadPhase;
+  message: string;
+  uploadedBytes?: number;
+  totalBytes?: number;
+  done?: number;
+  total?: number;
+};
+export type FileReadOptions = {
+  signal?: AbortSignal;
+  onProgress?: (progress: number,message: string) => void;
+  onStatus?: (progress: MaterialReadProgress) => void;
+};
 export type ReadLink = ReadFile & { sourceUrl: string; provider: 'youtube' | 'spotify'; title?: string; programName?: string };
 export type LinkReadOptions = FileReadOptions;
 

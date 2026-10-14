@@ -117,7 +117,7 @@ async function functionRequest(endpoint: string,path: string,sourceId: string,to
   return value;
 }
 
-async function uploadParts(file: Blob,session: Record<string,unknown>,onProgress?: (progress: number,label?: string) => void,signal?: AbortSignal) {
+async function uploadParts(file: Blob,session: Record<string,unknown>,onProgress?: (progress: number,label?: string,uploadedBytes?: number) => void,signal?: AbortSignal) {
   const partSize = Number(session.partSize);
   const parts = Array.isArray(session.parts) ? session.parts.map(part => part as { number: number;url: string }) : [];
   if (!Number.isSafeInteger(partSize) || partSize<5*1024**2 || !parts.length) throw new ReporterHttpError('A sessão de upload retornou dados inválidos.','UPLOAD_SESSION_INVALID',502);
@@ -138,7 +138,7 @@ async function uploadParts(file: Blob,session: Record<string,unknown>,onProgress
       }
       if (!response?.ok) throw new ReporterHttpError('Uma parte do arquivo não chegou ao armazenamento. Tente novamente.','UPLOAD_PART_FAILED',503);
       uploaded += end-start;
-      onProgress?.(Math.min(84,4+Math.round(uploaded/file.size*80)),`Enviando arquivo · ${Math.round(uploaded/file.size*100)}%`);
+      onProgress?.(Math.min(84,4+Math.round(uploaded/file.size*80)),`Enviando arquivo · ${Math.round(uploaded/file.size*100)}%`,uploaded);
     }
   };
   try { await Promise.all(Array.from({ length: Math.min(3,parts.length) },worker)); }
@@ -156,6 +156,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
       let retried = false;
       try {
         options.onProgress?.(4,'Localizando episódio');
+        options.onStatus?.({ phase: 'locating',message: 'Localizando episódio' });
         if (!known.id) {
           const response = await fetch('/api/reporter/links',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local','idempotency-key': known.key },
             body: JSON.stringify({ url }),signal: options.signal });
@@ -165,6 +166,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           known.fileName = result.fileName as string;known.bytes = result.bytes as number;known.sourceUrl = result.sourceUrl as string;
           if (result.kind==='ready') {
             options.onProgress?.(100,'Legendas importadas');
+            options.onStatus?.({ phase: 'ready',message: 'Legendas importadas' });
             return ok({ text: result.text as string,fileName: result.fileName as string,format: detectTranscriptFormat(result.text as string,result.fileName as string),bytes: result.bytes as number,
               sourceUrl: result.sourceUrl as string,provider: result.provider as 'youtube' | 'spotify',title: result.title as string,programName: result.programName as string });
           }
@@ -178,6 +180,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           if (transcript.status==='ready') {
             const text = transcriptFileText(transcript);
             options.onProgress?.(100,'Transcrição concluída');
+            options.onStatus?.({ phase: 'ready',message: 'Transcrição concluída' });
             return ok({ text,fileName: known.fileName ?? transcript.file_name ?? 'episodio.mp3',format: detectTranscriptFormat(text,'transcript.srt'),
               bytes: known.bytes ?? 0,transcriptId: transcript.id,sourceUrl: known.sourceUrl ?? url,provider: known.provider ?? 'spotify',title: known.title,programName: known.programName });
           }
@@ -191,6 +194,9 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           }
           if (!state.worker_online) return refuse('read_failed','O worker está desligado. Inicie pnpm worker e tente de novo; o episódio já está salvo.');
           const progress = transcript.job?.progress;
+          options.onStatus?.({ phase: progress?.phase==='transcribing' ? 'transcribing' : 'preparing',
+            message: progress?.phase==='transcribing' ? 'Transcrevendo áudio' : 'Importando áudio do episódio',
+            ...(progress?.phase==='transcribing' ? { done: progress.done,total: progress.total } : {}) });
           options.onProgress?.(progress?.total ? Math.round(progress.done/progress.total*90) : 8,
             progress?.phase==='transcribing' ? `Transcrevendo trechos ${Math.min((progress.done ?? 0)+1,progress.total)} de ${progress.total}` : 'Importando áudio do feed público');
           await new Promise<void>((resolve,reject) => { const timer = setTimeout(() => { options.signal?.removeEventListener('abort',abort);resolve(); },1000);const abort = () => { clearTimeout(timer);reject(new Error('Importação cancelada.')); };options.signal?.addEventListener('abort',abort,{ once: true }); });
@@ -226,6 +232,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
         if (textFile) {
           options.signal?.throwIfAborted();
           options.onProgress?.(0,'Lendo arquivo');
+          options.onStatus?.({ phase: 'reading',message: 'Lendo arquivo' });
           const bytes = await file.arrayBuffer();
           options.signal?.throwIfAborted();
           let text: string;
@@ -234,9 +241,11 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           if (!text.trim()) return refuse('empty','O arquivo está vazio.');
           if (text.includes('\0')) return refuse('read_failed','A transcrição está inválida.');
           options.onProgress?.(100,'Arquivo lido');
+          options.onStatus?.({ phase: 'ready',message: 'Arquivo lido' });
           return ok({ text,fileName: file.name,format: detectTranscriptFormat(text,file.name),bytes: file.size });
         }
         options.onProgress?.(0,'Enviando arquivo');
+        options.onStatus?.({ phase: upload.uploaded ? 'preparing' : 'uploading',message: upload.uploaded ? 'Preparando áudio' : 'Enviando arquivo',totalBytes: file.size });
         if (!upload.uploaded) {
           let direct: CloudUpload | undefined;
           if (!textFile) {
@@ -252,9 +261,14 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           if (direct) {
             upload.id = direct.id;
             options.onProgress?.(2,'Preparando envio seguro');
+            options.onStatus?.({ phase: 'uploading',message: 'Preparando envio seguro',uploadedBytes: 0,totalBytes: file.size });
             const session = await functionRequest(direct.upload_endpoint,'/uploads/start',direct.source_id,upload.token!,options.signal);
-            await uploadParts(file,session,options.onProgress ? (progress,label) => options.onProgress!(progress,label ?? 'Enviando arquivo') : undefined,options.signal);
+            await uploadParts(file,session,(progress,label,uploadedBytes) => {
+              options.onProgress?.(progress,label ?? 'Enviando arquivo');
+              options.onStatus?.({ phase: 'uploading',message: 'Enviando arquivo',uploadedBytes,totalBytes: file.size });
+            },options.signal);
             options.onProgress?.(88,'Confirmando arquivo');
+            options.onStatus?.({ phase: 'preparing',message: 'Confirmando arquivo no servidor' });
             await functionRequest(direct.upload_endpoint,'/uploads/complete',direct.source_id,upload.token!,options.signal);
             upload.uploaded = true;
           } else {
@@ -274,6 +288,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           if (transcript.status === 'ready') {
             const text = transcriptFileText(transcript);
             options.onProgress?.(100,'Transcrição concluída');
+            options.onStatus?.({ phase: 'ready',message: 'Transcrição concluída' });
             return ok({ text,fileName: file.name,format: detectTranscriptFormat(text,textFile ? file.name : 'transcript.srt'),bytes: file.size,transcriptId: transcript.id });
           }
           if (transcript.status === 'failed') {
@@ -286,6 +301,9 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           }
           if (!state.worker_online) return refuse('read_failed','O worker está desligado. Inicie pnpm worker e tente de novo; o arquivo já está salvo.');
           const progress = transcript.job?.progress;
+          options.onStatus?.({ phase: progress?.phase==='transcribing' ? 'transcribing' : 'preparing',
+            message: progress?.phase==='transcribing' ? 'Transcrevendo áudio' : 'Preparando áudio para transcrição',
+            ...(progress?.phase==='transcribing' ? { done: progress.done,total: progress.total } : {}) });
           options.onProgress?.(progress?.total ? 90+Math.round(progress.done/progress.total*9) : 89,
             progress?.phase === 'transcribing' ? (progress.total===1 ? 'Transcrevendo podcast' : `Transcrevendo trechos ${Math.min((progress.done ?? 0)+1,progress.total)} de ${progress.total}`) : 'Preparando áudio para transcrição');
           await new Promise<void>((resolve,reject) => { const timer = setTimeout(() => { options.signal?.removeEventListener('abort',abort); resolve(); },1000); const abort = () => { clearTimeout(timer); reject(new Error('Leitura cancelada.')); }; options.signal?.addEventListener('abort',abort,{ once: true }); });

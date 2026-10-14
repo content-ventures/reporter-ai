@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { createHttpIngest } from '../src/adapters/http/reporter-client.ts';
 import { parseTranscript, analyzeTranscript, sourceContentHash } from '../src/domain/index.ts';
 import { ok, refuse } from '../src/domain/result.ts';
-import type { SourceIngest, SourceAnalysis } from '../src/ports/source-ingest.ts';
+import type { SourceIngest, SourceAnalysis, MaterialReadProgress } from '../src/ports/source-ingest.ts';
 
 const text = 'Eu sou Marina Costa. Nosso assunto é organizar oficinas de leitura.';
 const parsed = parseTranscript(text), stats = analyzeTranscript(parsed.segments);
@@ -95,6 +95,7 @@ test('text imports refuse invalid UTF-8, empty, NUL, oversized, unsupported and 
 test('large media uploads bypass the Next body through bounded presigned parts and then poll the transcript',async () => {
   const original = globalThis.fetch;
   const calls: string[] = [],uploaded: number[] = [],progress: number[] = [];
+  const statuses: MaterialReadProgress[] = [];
   globalThis.fetch = async (input,init) => {
     const url = String(input);calls.push(`${init?.method ?? 'GET'} ${url}`);
     if (url==='/api/reporter/uploads') return Response.json({ mode: 'cloud',id: 'transcript-1',
@@ -113,11 +114,13 @@ test('large media uploads bypass the Next body through bounded presigned parts a
   };
   try {
     const media = new File([new Uint8Array(6*1024**2)],'podcast.mp3',{ type: 'audio/mpeg' });
-    const result = await createHttpIngest(local).read(media,{ onProgress: value => progress.push(value) });
+    const result = await createHttpIngest(local).read(media,{ onProgress: value => progress.push(value),onStatus: value => statuses.push(value) });
     assert.ok(result.ok);
     if (result.ok) { assert.equal(result.value.text,'Transcrição pronta.');assert.equal(result.value.transcriptId,'transcript-1'); }
     assert.deepEqual(uploaded.sort((a,b) => b-a),[5*1024**2,1024**2]);
     assert.equal(calls.some(call => call.includes('/api/reporter/files')),false);
     assert.ok(progress.some(value => value>=80));assert.equal(progress.at(-1),100);
+    assert.deepEqual(statuses.filter(value => value.uploadedBytes !== undefined).map(value => value.uploadedBytes).sort((a,b) => a!-b!),[0,5*1024**2,6*1024**2]);
+    assert.equal(statuses.at(-1)?.phase,'ready');
   } finally { globalThis.fetch = original; }
 });
