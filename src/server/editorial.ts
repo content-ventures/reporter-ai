@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { createEditorialEngine, emptyEditorialCheckpoint, adoptEditorialIdentity, appendEditorialEvent, validateEditorialOutline, editorialContextHash, selectEditorialLocalRole } from '../runtime/editorial-engine.ts';
 import { contentHash } from '../domain/text/hash.ts';
-import { pipelineRevision, pipelineRunSteps, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
+import { pipelineRevision, pipelineRunSteps, pipelineJobKeys, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
 import { isRunActive } from '../domain/run.ts';
 import { pendingReview, latestApproved } from '../domain/record.ts';
 import { sameVersionRef } from '../domain/refs.ts';
@@ -132,8 +132,8 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   const pipeline = structuredClone(activePipeline(checkpoint));
   if (ARTICLE_ASSIST_KINDS.has(kind) && !pipeline.definition.steps.assist)
     return refuse('provider_unavailable', 'Ative a etapa Assistente em Prompts antes de pedir ajustes.');
-  const keys = ARTICLE_ASSIST_KINDS.has(kind) ? ['assist'] as const : kind === 'carousel.copy' ? ['carousel'] as const : kind === 'article.outline' ? ['facts', 'outline', ...(pipeline.definition.curateQuotes ? ['quotes' as const] : [])] as const
-    : pipeline.definition.articleMode === 'single' ? ['facts', 'article'] as const : ['facts', 'intro', 'section'] as const;
+  const automaticOutline = kind === 'article.draft' && !input.outline;
+  const keys = pipelineJobKeys(pipeline.definition,kind,automaticOutline);
   const missing = keys.find(key => !providerConfigured(pipelineModelProvider(pipeline.definition.steps[key].model)));
   if (missing) return refuse('provider_unavailable', 'Configure a chave de ' + pipelineModelLabel(pipeline.definition.steps[missing].model) + ' no servidor antes de gerar.');
   checkpoint.pipeline ??= pipeline;
@@ -142,7 +142,7 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   const started = engine.runs.begin({ productionId, kind: RUN_KIND_OF[kind], prompt,
     ...(retryOfRunId ? { retryOfRunId } : {}),
     model: { alias: model, label: pipelineModelLabel(model) + ' · pipeline v' + pipeline.revision, engine: 'provider' },
-    steps: pipelineRunSteps(pipeline.definition,kind,record.production.brief.sections),
+    steps: pipelineRunSteps(pipeline.definition,kind,record.production.brief.sections,automaticOutline),
   });
   if (!started.ok) return started;
   const run = started.value.run;

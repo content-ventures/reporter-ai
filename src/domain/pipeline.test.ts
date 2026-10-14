@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { defaultPipelineDefinition, pipelineRevision, pipelineRunSteps, renderPipelinePrompt, validatePipelineTemplates, PIPELINE_SCHEMAS } from './pipeline.ts';
+import { defaultPipelineDefinition, pipelineRevision, pipelineRunSteps, pipelineJobKeys, renderPipelinePrompt, validatePipelineTemplates, PIPELINE_SCHEMAS } from './pipeline.ts';
 import type { PipelineVariables } from './pipeline.ts';
 
 const variables: PipelineVariables = { source: 'Dados com {{brief}} e {{env.SECRET}}',brief: 'Pauta real',sizing: '',outline: '',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '' };
@@ -78,10 +78,14 @@ test('run steps represent the selected orchestration and real section count',() 
   const definition = defaultPipelineDefinition();
   const ids = (kind: string,count = 4) => pipelineRunSteps(definition,kind,count).map(step => step.id);
   assert.deepEqual(ids('article.outline'),['source','outline','quotes']);
-  assert.deepEqual(ids('article.draft'),['source','intro','section-0','section-1','section-2','section-3','images']);
+  assert.deepEqual(ids('article.draft'),['source','outline','quotes','intro','section-0','section-1','section-2','section-3','images']);
+  assert.deepEqual(pipelineJobKeys(definition,'article.draft'),['facts','outline','quotes','intro','section']);
+  assert.deepEqual(pipelineJobKeys(definition,'article.draft',false),['facts','intro','section']);
+  assert.deepEqual(pipelineRunSteps(definition,'article.draft',2,false).map(step => step.id),['source','intro','section-0','section-1','images']);
   definition.curateQuotes = false; definition.articleMode = 'single';
   assert.deepEqual(ids('article.outline'),['source','outline']);
-  assert.deepEqual(ids('article.draft'),['source','article','images']);
+  assert.deepEqual(ids('article.draft'),['source','outline','article','images']);
+  assert.deepEqual(pipelineJobKeys(definition,'article.draft'),['facts','outline','article']);
   assert.deepEqual(ids('carousel.copy'),['source','carousel']);
   for (const kind of ['article.rewrite','article.shorten','article.ask','article.titles'])
     assert.deepEqual(ids(kind),['source','assist','validate']);
