@@ -9,7 +9,7 @@ import { FlowError, safeCode } from './errors';
 import { restoreLiteralQuoteCase, validPipelineOutput, exceedsParagraphBudget, exceedsArticleBudget, writingContractIssue, writtenArticleText } from './pipeline-output';
 import type { WritingContract } from './pipeline-output';
 import { countCharacters, countWords, textStats } from '../domain/text/stats.ts';
-import { articleLengthIssue, articleQuotationIssue } from '../domain/article-policy.ts';
+import { articleLengthIssue, articleQuotationIssue, unquoteUnsupported } from '../domain/article-policy.ts';
 
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceIds: z.array(z.string()).min(1).max(30) }).strict();
 type Outline = { title: string; sections: { title: string; evidenceIds: string[] }[] };
@@ -129,6 +129,19 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
     const hard=(value:unknown)=>exceedsParagraphBudget(key,value,budget)?'ARTICLE_PART_SIZE_EXCEEDED'
       :evidence?articleQuotationIssue(paragraphsOf(value),evidence,0,evidencePassages):undefined;
     const short=(value:unknown)=>{if(!floor)return false;const size=measured(paragraphsOf(value));return size.chars<floor.chars||size.words<floor.words;};
+    const repair=(draft:unknown)=>{
+      let paragraphs=paragraphsOf(draft).map(p=>({...p}));
+      if(evidence)paragraphs=unquoteUnsupported(paragraphs,evidence,evidencePassages);
+      if(budget!==undefined){
+        while(paragraphs.length>1&&measured(paragraphs).chars>budget)paragraphs=paragraphs.slice(0,-1);
+        if(measured(paragraphs).chars>budget){
+          const sentences=paragraphs[0].text.match(/[^.!?]+[.!?]+[”"'’»)]*\s*/gu)??[paragraphs[0].text];
+          while(sentences.length>1&&countCharacters(sentences.join('').trim())>budget)sentences.pop();
+          paragraphs[0]={...paragraphs[0],text:sentences.join('').trim()};
+        }
+      }
+      return {...(draft as object),paragraphs};
+    };
     let value=await call(key,schema,values,index);
     let requested=values,developed=false;
     // A development that breaks the hard contract never replaces a valid, merely short draft.
@@ -167,7 +180,14 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
       if(!hard(value)&&(!kept||measured(paragraphsOf(value)).words>measured(paragraphsOf(kept)).words))kept=value;
     }
     const unresolved=hard(value);
-    if(unresolved&&!kept)throw new FlowError(unresolved,502);
+    if(unresolved&&!kept){
+      // A provider that ignores two measured revisions must not fail the whole article. Keep the
+      // words of an unsupported quotation as plain text, and drop whole trailing paragraphs, then
+      // whole trailing sentences, that do not fit the ceiling. The final R1 check still decides.
+      const repaired=repair(value);
+      if(!hard(repaired))return repaired;
+      throw new FlowError(unresolved,502);
+    }
     return unresolved||short(value)?kept:value;
   };
   // The article's ceiling bounds each part, not its share of the target: what is left of it after the

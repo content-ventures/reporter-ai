@@ -67,7 +67,7 @@ test('intro revision validates against the hard ceiling, not its reduced writing
   }finally{globalThis.fetch=original;await rm(directory,{recursive:true,force:true});}
 });
 
-test('a paraphrased quotation is revised within its part and an unsupported revision stays blocked',async()=>{
+test('a paraphrased quotation is revised within its part, and one that stays unsupported loses only its quotation marks',async()=>{
   const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};
   const evidence=new Map([['e1','The source confirms this exact statement.']]);
   const invalid={title:'Section',paragraphs:[{text:'The speaker said “A fabricated statement.”',evidenceIds:['e1']}]};
@@ -79,8 +79,21 @@ test('a paraphrased quotation is revised within its part and an unsupported revi
   },evidence);
   assert.deepEqual(result.sections[0],valid);assert.equal(requests.length,2);
   assert.equal(JSON.parse(requests[1].sizing).revisionFeedback.violation,'UNSUPPORTED_ARTICLE_QUOTE');
-  await assert.rejects(writeSequentialArticle(outline,variables,{introChars:100,sections:[{budgetChars:200}]},async key=>key==='intro'
-    ?{paragraphs:[{text:'A supported introduction.',evidenceIds:['e1']}]}:invalid,evidence),/UNSUPPORTED_ARTICLE_QUOTE/);
+  let calls=0;
+  const repaired=await writeSequentialArticle(outline,variables,{introChars:100,sections:[{budgetChars:200}]},async key=>{
+    if(key==='intro')return{paragraphs:[{text:'A supported introduction.',evidenceIds:['e1']}]};calls++;return invalid;
+  },evidence);
+  assert.equal(calls,3,'two revisions are asked for before the last resort');
+  assert.equal(repaired.sections[0].paragraphs[0].text,'The speaker said A fabricated statement.','never presented as a literal quotation');
+});
+
+test('a part that stays above its ceiling keeps whole paragraphs, never a cut sentence',async()=>{
+  const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};
+  const paragraph=(text:string)=>({text,evidenceIds:['e1']});
+  const oversized={title:'Section',paragraphs:[paragraph('Primeiro fato completo da seção.'),paragraph('Segundo fato completo, que já não cabe no teto.')]};
+  const result=await writeSequentialArticle(outline,variables,{introChars:15,sections:[{budgetChars:40}]},async key=>
+    key==='intro'?{paragraphs:[paragraph('Uma introdução.')]}:oversized);
+  assert.deepEqual(result.sections[0].paragraphs,[paragraph('Primeiro fato completo da seção.')]);
 });
 
 test('source capitalization is restored without accepting paraphrases or changing references',()=>{

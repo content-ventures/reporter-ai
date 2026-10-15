@@ -48,6 +48,22 @@ export function contiguousSourcePassages(sources:readonly Source[],refs:readonly
   if(current)passages.push(current.text.slice(current.from,current.to));return passages;
 }
 
+/** Last resort for a part whose revisions kept an unsupported quotation: its words stay as plain text,
+ * never presented as a literal quotation. Supported quotations and unquoted text are unchanged. */
+export function unquoteUnsupported<T extends { text: string; evidenceIds: readonly string[] }>(paragraphs: readonly T[],
+  evidence: ReadonlyMap<string, string>, passages?: (ids: readonly string[]) => readonly string[]): T[] {
+  return paragraphs.map(paragraph => {
+    const supported = [...paragraph.evidenceIds.map(id => evidence.get(id) ?? ''), ...(passages?.(paragraph.evidenceIds) ?? [])].map(literalQuoteText);
+    // An unclosed quotation cannot be told apart from the text around it: drop every mark.
+    if ((paragraph.text.match(/[“”"«»]/gu)?.length ?? 0) !== directQuotes(paragraph.text).length * 2)
+      return { ...paragraph, text: paragraph.text.replace(/[“”"«»]/gu, '') };
+    return { ...paragraph, text: paragraph.text.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu, (match, a, b, c) => {
+      const words = quotedWords(literalQuoteText(a ?? b ?? c));
+      return words && supported.some(source => source.includes(words)) ? match : a ?? b ?? c;
+    }) };
+  });
+}
+
 export function articleQuotationIssue(paragraphs: readonly { text: string; evidenceIds: readonly string[] }[],
   evidence: ReadonlyMap<string, string>, minimum = 0,passages?:(ids:readonly string[])=>readonly string[]): ArticlePolicyIssue | undefined {
   const distinct = new Set<string>();
