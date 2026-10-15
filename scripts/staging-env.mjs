@@ -14,20 +14,25 @@ const SECRETS = ['REPORTER_WORKER_PASSWORD', 'REPORTER_RUNTIME_PASSWORD', 'REPOR
  * worker connections, the worker and storage deployed there, and the provider keys. The
  * staging worker must already be deployed by the release's staging stage.
  */
-export async function writeStagingEnvironment(file, environment = process.env) {
-  await assertStagingTarget(environment);
+export async function writeStagingEnvironment(file, environment = process.env, { run = spawnSync, request = fetch } = {}) {
+  await assertStagingTarget(environment, request);
   const values = { ...environment, OPENAI_API_KEY: environment.OPENAI_API_KEY || environment.OPEN_AI_API_KEY,
     ANTHROPIC_API_KEY: environment.ANTHROPIC_API_KEY || environment.CLAUDE_API_KEY };
   const missing = SECRETS.filter(name => !values[name]?.trim());
   if (missing.length) throw new Error(`Missing staging configuration: ${missing.join(', ')}.`);
-  const neon = args => {
-    const result = spawnSync('neon', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: environment, maxBuffer: 4e6 });
-    if (result.status !== 0) throw new Error(`Neon CLI ${args[0]} failed for staging.`);
+  const neon = (args, extra = {}) => {
+    const result = run('neon', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...environment, ...extra }, maxBuffer: 4e6 });
+    if (result.status !== 0) {
+      // The repository is public: name the cause without any connection string.
+      const detail = `${result.stderr ?? ''}`.replace(/postgres(?:ql)?:\/\/\S+/g, 'postgresql://***').trim().split('\n').slice(-3).join(' ');
+      throw new Error(`Neon CLI ${args[0]} failed for staging${detail ? `: ${detail.slice(0, 400)}` : '.'}`);
+    }
     return result.stdout.trim();
   };
   const project = environment.NEON_PROJECT_ID, branch = environment.NEON_BRANCH_ID;
   const owner = neon(['connection-string', branch, '--project-id', project, '--role-name', 'neondb_owner']);
-  neon(['env', 'pull', '--project-id', project, '--branch', branch, '--file', file]);
+  // `env pull` evaluates neon.ts, which derives the worker's database URL from DATABASE_URL.
+  neon(['env', 'pull', '--project-id', project, '--branch', branch, '--file', file], { DATABASE_URL: owner, DATABASE_URL_UNPOOLED: owner });
   const deployed = parseEnv(await readFile(file, 'utf8'));
   if (!deployed.NEON_FUNCTION_REPORTERWORKER_BASE_URL) throw new Error('The staging worker is not deployed: its URL is missing.');
   const role = (name, password) => {
