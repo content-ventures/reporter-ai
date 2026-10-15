@@ -1,4 +1,5 @@
 import { createEditorialEngine, editorialLocalRoleProfiles, emptyEditorialCheckpoint, LOCAL_OPERATOR, LOCAL_WORKSPACE } from './editorial-engine.ts';
+import { applyWorkspaceDelta } from './editorial-sync.ts';
 import { createIndexedDbAssetStore } from '../adapters/local/assets/index.ts';
 import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
@@ -26,7 +27,9 @@ import { isRunActive } from '../domain/run.ts';
 export function createConnectedRuntime(options: { typefaces?: Readonly<Record<string,string>> } = {}): Runtime {
   const clock = { now: () => new Date().toISOString() },ids = { next: () => crypto.randomUUID() };
   let current: ConnectedWorkspace = { ...emptyEditorialCheckpoint(),revision: -1,model: '',workerOnline: false };
-  const ports = createEditorialEngine(current,ids);
+  // The engine reads image assets through this object, kept in step with every refresh.
+  const engineCheckpoint = { ...current };
+  const ports = createEditorialEngine(engineCheckpoint,ids);
   let disposed = false;
   const activeTab = Object.freeze({ status: 'active' as const });
   let lastRefresh = 0;
@@ -47,8 +50,19 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
         current = { ...current,workerOnline: snapshot.workerOnline,stalled: snapshot.stalled };
         return;
       }
+      if ('delta' in snapshot) {
+        // Only the changed rows: unchanged productions keep their identity and cached views.
+        const merged = applyWorkspaceDelta(current,{ ...snapshot,seq: snapshot.revision });
+        current = { ...merged.workspace,syncToken: snapshot.syncToken,workerOnline: snapshot.workerOnline,stalled: snapshot.stalled };
+        engineCheckpoint.imageAssets = current.imageAssets;
+        assets.adoptSnapshot();
+        if (merged.productionIds.length) ports.store.transact(() => ok({ state: current.state,value: undefined,persist: 'none',scope: 'external',productionIds: merged.productionIds }));
+        generation.accept(current);
+        return;
+      }
       const changed = snapshot.revision !== current.revision || snapshot.syncToken !== current.syncToken;
       current = snapshot;
+      engineCheckpoint.imageAssets = current.imageAssets;
       assets.adoptSnapshot();
       if (changed) ports.store.transact(() => ok({ state: snapshot.state,value: undefined,persist: 'none',scope: 'external',productionIds: snapshot.state.productions.map(p => p.production.id) }));
       generation.accept(snapshot);

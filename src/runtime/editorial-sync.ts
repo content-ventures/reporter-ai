@@ -1,47 +1,20 @@
 import type { ActivityEvent } from '../domain/activity.ts';
 import type { FeedbackEntry } from '../domain/feedback.ts';
 import type { PipelineRevision } from '../domain/pipeline.ts';
-import type { RunEvent, RunFold } from '../domain/run-events.ts';
-import type { Source } from '../domain/source.ts';
+import type { RunEvent } from '../domain/run-events.ts';
 import { stableStringify } from '../domain/text/hash.ts';
+import type { BannerDraft, LibraryImage } from '../domain/visual-library.ts';
 import type { Member, Person, Workspace } from '../domain/workspace.ts';
-import type { ConnectedWorkspace, EditorialCheckpoint, EditorialJob, EditorialState, ServerImageAsset } from '../ports/connected-workspace.ts';
-
+import type { ConnectedWorkspace, EditorialCheckpoint, EditorialJob, ServerImageAsset } from '../ports/connected-workspace.ts';
+import { PART_FIELDS, PART_KINDS } from '../ports/editorial-rows.ts';
+import type { EditorialChanges, EditorialRows, EventRow, ItemKind, ItemRow, JobDoc, LoadedScope, ProductionState, RunRow, WorkspaceDelta } from '../ports/editorial-rows.ts';
+export { PART_FIELDS, PART_KINDS };
+export type { EditorialChanges, EditorialRows, ItemKind, LoadedScope, PartKind, WorkspaceDelta } from '../ports/editorial-rows.ts';
 /**
  * The editorial checkpoint as rows. A command loads only the rows it needs, the unchanged
  * engine runs on the partial state they assemble, and only rows whose content changed are
  * written back. Browsers receive the same rows as deltas.
  */
-type ProductionState = EditorialState['productions'][number];
-
-export const PART_FIELDS = { piece: 'pieces', version: 'versions', decision: 'decisions', review: 'reviewRequests',
-  run: 'runs', suggestion: 'suggestions', delivery: 'deliveries' } as const;
-export type PartKind = keyof typeof PART_FIELDS;
-export const PART_KINDS = Object.keys(PART_FIELDS) as PartKind[];
-export type ItemKind = 'person' | 'member' | 'activity' | 'feedback' | 'image_asset' | 'citation' | 'library_image' | 'banner';
-
-export type WorkspaceDoc = { workspace: Workspace; pipelineHash?: string; historyHashes?: string[] };
-export type ProductionRow = { id: string; ordinal?: number; doc: ProductionState['production']; sourceIds: string[]; archived: boolean };
-export type PartRow = { kind: PartKind; id: string; productionId: string; ordinal?: number; doc: unknown; deleted?: boolean };
-export type SourceRow = { id: string; ordinal?: number; doc: Source };
-export type JobDoc = Omit<EditorialJob, 'events' | 'attempts' | 'availableAt' | 'lease' | 'pipeline'> & { pipelineHash?: string };
-export type RunRow = { id: string; productionId: string; status: string; availableAt?: number; lease?: EditorialJob['lease'] | null;
-  attempts?: number; job: JobDoc | null; fold: RunFold };
-export type EventRow = { runId: string; event: RunEvent };
-export type ItemRow = { kind: ItemKind; id: string; productionId: string | null; ordinal?: number; doc: unknown; deleted?: boolean };
-export type PipelineRow = { hash: string; doc: PipelineRevision };
-
-export type EditorialRows = {
-  seq: number; workspace: WorkspaceDoc | null; productions: ProductionRow[]; parts: PartRow[]; sources: SourceRow[];
-  runs: RunRow[]; events: EventRow[]; items: ItemRow[]; pipelines: PipelineRow[];
-};
-/** What a scope loaded, so absent rows are read as "not loaded" rather than "deleted". */
-export type LoadedScope = { parts: readonly PartKind[]; items: readonly ItemKind[]; history: boolean };
-export type EditorialChanges = {
-  workspace?: WorkspaceDoc; productions: ProductionRow[]; parts: PartRow[]; sources: SourceRow[];
-  runs: RunRow[]; events: EventRow[]; items: ItemRow[]; pipelines: PipelineRow[];
-};
-
 export class ScopeViolation extends Error {
   constructor(detail: string) { super('SCOPE_VIOLATION'); this.name = 'ScopeViolation'; this.cause = detail; }
 }
@@ -52,14 +25,22 @@ const itemId = (kind: ItemKind, doc: unknown): string => {
   if (kind === 'image_asset') return String((value.asset as { id: string }).id);
   return String(value.id);
 };
-const itemProduction = (kind: ItemKind, doc: unknown): string | null => {
+const itemProduction = (kind: ItemKind, doc: unknown, owner: (entity: string) => string | undefined): string | null => {
   const value = doc as Record<string, unknown>;
   if (kind === 'activity' || kind === 'image_asset' || kind === 'citation') return typeof value.productionId === 'string' ? value.productionId : null;
-  if (kind === 'feedback') return typeof (value.target as { productionId?: unknown })?.productionId === 'string'
-    ? (value.target as { productionId: string }).productionId : null;
+  if (kind !== 'feedback') return null;
+  // Feedback names its production directly or through the entity it is about.
+  const target = (value.target ?? {}) as Record<string, unknown>;
+  if (typeof target.productionId === 'string') return target.productionId;
+  for (const name of ['pieceId', 'versionId', 'runId', 'suggestionId']) {
+    const production = typeof target[name] === 'string' ? owner(target[name] as string) : undefined;
+    if (production) return production;
+  }
   return null;
 };
 const docs = <T,>(items: ItemRow[], kind: ItemKind) => items.filter(item => item.kind === kind).map(item => item.doc as T);
+// The visual library lists newest first, as the engine always kept it; rows keep insertion order.
+const newest = <T,>(values: T[], at: (value: T) => string) => [...values].sort((left, right) => at(right).localeCompare(at(left)));
 
 /** Rebuilds the engine's checkpoint from loaded rows. Missing collections are simply empty. */
 export function assembleCheckpoint(rows: EditorialRows, fallbackWorkspace: Workspace, loaded: LoadedScope): EditorialCheckpoint {
@@ -76,8 +57,9 @@ export function assembleCheckpoint(rows: EditorialRows, fallbackWorkspace: Works
     if (!run.job) continue;
     const { pipelineHash, ...job } = run.job;
     const pipeline = pipelineHash ? pipelines.get(pipelineHash) : undefined;
+    // A snapshot that was not loaded keeps its hash, so writing the job back never drops it.
     jobs[run.id] = { ...job, events: events.get(run.id) ?? [], attempts: run.attempts ?? 0, availableAt: run.availableAt ?? 0,
-      ...(run.lease ? { lease: run.lease } : {}), ...(pipeline ? { pipeline } : {}) } as EditorialJob;
+      ...(run.lease ? { lease: run.lease } : {}), ...(pipeline ? { pipeline } : pipelineHash ? { pipelineHash } : {}) } as EditorialJob;
   }
   const workspace = rows.workspace;
   const members = docs<Member>(rows.items, 'member');
@@ -95,7 +77,8 @@ export function assembleCheckpoint(rows: EditorialRows, fallbackWorkspace: Works
   if (loaded.history) checkpoint.pipelineHistory = (workspace?.historyHashes ?? []).map(hash => pipelines.get(hash)).filter((entry): entry is PipelineRevision => Boolean(entry));
   if (loaded.items.includes('citation')) checkpoint.citations = docs(rows.items, 'citation');
   if (loaded.items.includes('library_image') || loaded.items.includes('banner'))
-    checkpoint.visuals = { images: docs(rows.items, 'library_image'), banners: docs(rows.items, 'banner') };
+    checkpoint.visuals = { images: newest(docs<LibraryImage>(rows.items, 'library_image'), image => image.createdAt),
+      banners: newest(docs<BannerDraft>(rows.items, 'banner'), banner => banner.updatedAt) };
   return checkpoint;
 }
 
@@ -111,17 +94,18 @@ export function splitCheckpoint(checkpoint: EditorialCheckpoint, previous: Edito
     const job = checkpoint.jobs[runId];
     keep(job?.pipeline);
     const productionId = job?.meta.productionId ?? fold.run.productionId;
-    let jobDoc: JobDoc | null = null;
-    if (job) {
-      const { events: jobEvents, attempts: _attempts, availableAt: _availableAt, lease: _lease, pipeline, ...rest } = job;
-      jobDoc = { ...rest, ...(pipeline ? { pipelineHash: pipeline.hash } : {}) };
-      for (const event of jobEvents) events.push({ runId, event });
-    }
-    runs.push({ id: runId, productionId, status: fold.run.status, ...(job ? { availableAt: job.availableAt, lease: job.lease ?? null, attempts: job.attempts } : {}), job: jobDoc, fold });
+    if (!job) { runs.push({ id: runId, productionId, status: fold.run.status, job: null, fold }); continue; }
+    const { events: jobEvents, attempts, availableAt, lease, pipeline, ...rest } = job;
+    const jobDoc: JobDoc = { ...rest, ...(pipeline ? { pipelineHash: pipeline.hash } : {}) };
+    for (const event of jobEvents) events.push({ runId, event });
+    runs.push({ id: runId, productionId, status: fold.run.status, availableAt, lease: lease ?? null, attempts, job: jobDoc, fold });
   }
+  const owners = new Map<string, string>();
+  for (const entry of state.productions) for (const kind of PART_KINDS)
+    for (const part of entry[PART_FIELDS[kind]] as { id: string }[]) owners.set(part.id, entry.production.id);
   const items: ItemRow[] = [];
   const add = (kind: ItemKind, values: readonly unknown[] | undefined) => {
-    for (const doc of values ?? []) items.push({ kind, id: itemId(kind, doc), productionId: itemProduction(kind, doc), doc });
+    for (const doc of values ?? []) items.push({ kind, id: itemId(kind, doc), productionId: itemProduction(kind, doc, id => owners.get(id)), doc });
   };
   add('person', state.people); add('member', state.members); add('activity', state.activity); add('feedback', state.feedback);
   add('image_asset', checkpoint.imageAssets);
@@ -158,7 +142,7 @@ export function diffRows(before: EditorialRows, after: EditorialRows, loaded: Lo
     kept.add(partKey(row));
     const previous = parts.get(partKey(row));
     if (previous && same(previous.doc, row.doc)) continue;
-    if (!previous && loadedProductions.has(row.productionId) && !loaded.parts.includes(row.kind))
+    if (!previous && loadedProductions.has(row.productionId) && (!loaded.parts.includes(row.kind) || loaded.partIds && !loaded.partIds.includes(row.id)))
       throw new ScopeViolation(`${row.kind} added outside the loaded scope`);
     changes.parts.push(row);
   }
@@ -192,13 +176,6 @@ export function hasChanges(changes: EditorialChanges) {
   return Boolean(changes.workspace) || [changes.productions, changes.parts, changes.sources, changes.runs, changes.events, changes.items, changes.pipelines]
     .some(rows => rows.length > 0);
 }
-
-/** Rows changed since the browser's number, as `reporter_ed_changes` returns them. */
-export type WorkspaceDelta = {
-  seq: number; productions: ProductionRow[]; parts: PartRow[]; sources: SourceRow[];
-  runs: { id: string; productionId: string; status: string; job: Pick<EditorialJob, 'meta' | 'kind'>; fold: RunFold }[];
-  events: EventRow[]; items: ItemRow[];
-};
 
 function upsert<T>(list: readonly T[], id: string, idOf: (entry: T) => string, next: T | null): T[] {
   const index = list.findIndex(entry => idOf(entry) === id);
