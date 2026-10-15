@@ -15,7 +15,7 @@ assert.equal(checked.ok,true);const {branch}=await checked.json();assert.ok(bran
 const origin='https://reporter-ai-three.vercel.app',local=process.env.REPORTER_ACCEPTANCE_LOCAL_URL??'http://localhost:3001';
 assert.ok(['localhost','127.0.0.1'].includes(new URL(local).hostname));
 const portal='10000000-0000-0000-0000-000000000101',tenant='10000000-0000-0000-0000-000000000001';
-const directory=join(tmpdir(),'reporter-browser-'+branchId);await mkdir(directory,{recursive:true,mode:0o700});
+const directory=process.env.REPORTER_ACCEPTANCE_EVIDENCE_DIR??join(tmpdir(),'reporter-browser-'+branchId);await mkdir(directory,{recursive:true,mode:0o700});
 const dbUrl=new URL(process.env.DATABASE_URL_UNPOOLED);dbUrl.searchParams.set('sslmode','verify-full');
 const db=new pg.Client({connectionString:dbUrl.toString()});await db.connect();
 
@@ -80,6 +80,7 @@ try{
     }else await page.getByRole('textbox',{name:'Transcrição',exact:true}).fill(ATELIE_SUL_TRANSCRIPT);
     await expect(page.getByRole('heading',{name:'Material (preenchida)',exact:true})).toBeVisible({timeout:30*60000});
     await page.getByRole('checkbox',{name:'Os falantes autorizaram o uso'}).check();
+    while(await page.getByRole('button',{name:'Dispensar aviso',exact:true}).count())await page.getByRole('button',{name:'Dispensar aviso',exact:true}).first().click();
     await page.getByRole('button',{name:'Continuar',exact:true}).click();
     await expect(page.getByRole('textbox',{name:'Título interno',exact:true})).toBeVisible({timeout:240000});
     await page.getByRole('textbox',{name:'Título interno',exact:true}).fill('Acceptance browser '+kind);
