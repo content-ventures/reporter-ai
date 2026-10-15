@@ -26,7 +26,12 @@ export async function runMedia(executable: string, args: string[], signal?: Abor
       if (output.length + data.length > 1024 * 1024) { oversized = true; child.kill("SIGKILL"); }
       else output += data.toString();
     });
-    child.once("error", () => { clearTimeout(timer); reject(new FlowError("MEDIA_TOOL_UNAVAILABLE", 503)); });
+    child.once("error", error => {
+      clearTimeout(timer);
+      const code = (error as NodeJS.ErrnoException).code;
+      const unavailable = ['ENOENT','EACCES','EPERM','ENOEXEC'].includes(code ?? '') ? `MEDIA_TOOL_EXEC_${code}` : 'MEDIA_TOOL_UNAVAILABLE';
+      reject(new FlowError(unavailable, 503));
+    });
     child.once("close", code => {
       clearTimeout(timer);
       if (signal?.aborted) reject(new FlowError("JOB_INTERRUPTED", 503, true));
