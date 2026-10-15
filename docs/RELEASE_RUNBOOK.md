@@ -27,11 +27,14 @@ transfer passes 60% of the quota.
 - Protect the production branch. Acceptance refuses protected branches.
 - Note its project and branch IDs for the GitHub `production` environment.
 
-### Staging Neon project
+### Staging Neon branch
 
-Create a separate project. It has its own quota, so its tests never spend production's. Enable the
-same features as production: Auth, Functions and Object Storage. Do not protect its branch. Then,
-from any folder, set both owner variables to the staging owner URL:
+Staging is a persistent `staging` branch of the production project, created from the protected
+production branch. Buckets, functions, triggers and Auth are per branch in Neon, so staging never
+touches production's storage or worker. Every staging deployment first migrates a copy of
+production's data, which rehearses the production migration. Neon gives the roles of a branch
+created from a protected one new passwords, so set them again. Do not protect the staging branch.
+Then, from any folder, set both owner variables to the staging owner URL:
 
 ```sh
 export DATABASE_URL_UNPOOLED='<staging owner URL>' DATABASE_URL='<staging owner URL>'
