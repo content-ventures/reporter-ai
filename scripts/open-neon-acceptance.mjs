@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
+import { activePipelineDefinition } from './lib/editorial-rows.mjs';
 
 const branchId=process.argv[2],project=process.env.NEON_PROJECT_ID,parent=process.env.NEON_BRANCH_ID;
 if(!branchId?.startsWith('br-')||branchId===parent||!project||!parent||!process.env.NEON_API_KEY)throw new Error('Provide an isolated acceptance branch and the production project identifiers.');
@@ -21,7 +22,7 @@ neon(['env','pull','--project-id',project,'--branch',branchId,'--file',file]);
 const pipelinePath=join(directory,'pipeline.json');
 const production=neon(['connection-string',parent,'--project-id',project,'--role-name','neondb_owner']);
 const url=new URL(production);url.searchParams.set('sslmode','verify-full');const db=new pg.Client({connectionString:url.toString()});
-try{await db.connect();await db.query('BEGIN READ ONLY');const rows=(await db.query("SELECT checkpoint->'pipeline'->'definition' AS definition FROM public.reporter_editorial_workspaces WHERE portal_id='10000000-0000-0000-0000-000000000101'")).rows;await writeFile(pipelinePath,JSON.stringify(rows[0]?.definition??null),{mode:0o600});await db.query('ROLLBACK');}finally{await db.end();}
+try{await db.connect();await db.query('BEGIN READ ONLY');await writeFile(pipelinePath,JSON.stringify(await activePipelineDefinition(db,'10000000-0000-0000-0000-000000000101')),{mode:0o600});await db.query('ROLLBACK');}finally{await db.end();}
 const values={NEON_PROJECT_ID:project,NEON_BRANCH_ID:parent,NEON_API_KEY:process.env.NEON_API_KEY,
   DATABASE_URL:owner,DATABASE_URL_UNPOOLED:owner,REPORTER_DATABASE_URL:runtime,REPORTER_WORKER_DATABASE_URL:worker.toString(),
   REPORTER_WORKER_PASSWORD:process.env.REPORTER_WORKER_PASSWORD,REPORTER_DEPLOYMENT_MODE:'cloud',REPORTER_ACCEPTANCE_BRANCH:branchId,
