@@ -9,6 +9,7 @@ import { FlowError, logEvent, safeCode } from "./errors";
 import { receiveFile, workerAvailable } from "./storage";
 import { IDLE_QUEUE, queueStatus } from "./queue-status.ts";
 import { workerUrl } from "./worker-config.ts";
+import { kickWorker, shouldHealStall, type Defer } from "./worker-kick.ts";
 import { ingestSourceLink } from './source-link';
 import { editorialWorkspace, editorialRpc, editorialPipeline } from './editorial';
 import { analyzeMaterial } from './material-analysis';
@@ -130,8 +131,16 @@ const messages: Record<string, string> = {
   "22023": "Dados inválidos ou pedido repetido com informações diferentes.", "23514": "O conteúdo ainda não está no estado necessário.",
 };
 
-export async function handleReporter(request: Request, path: string[]) {
+const EDITORIAL_ENQUEUE = new Set(['generation.start','generation.retry']);
+const runAfterResponse: Defer = task => { void task().catch(() => {}); };
+
+/** `defer` runs work after the response; the route handler passes Next's `after`. */
+export async function handleReporter(request: Request, path: string[], deps: { defer?: Defer } = {}) {
   const requestId = randomUUID();
+  const defer = deps.defer ?? runAfterResponse;
+  // Every committed enqueue wakes the cloud worker; a stall seen by a poll wakes it again.
+  const kick = () => defer(() => kickWorker());
+  const heal = (stalled: boolean | undefined) => { if (stalled && shouldHealStall()) kick(); };
   try {
     const context = await guardReporterRequest(request);
     return await runWithReporterContext(context, async () => {
@@ -141,9 +150,16 @@ export async function handleReporter(request: Request, path: string[]) {
     if (path[0] === 'workspace' && path.length === 1) {
       if (request.method === 'GET') {
         const query = new URL(request.url).searchParams;
-        return reply(await editorialWorkspace(query.get('since') ?? undefined,{ active: query.get('active') === '1' }));
+        const workspace = await editorialWorkspace(query.get('since') ?? undefined,{ active: query.get('active') === '1' });
+        heal(workspace.stalled);
+        return reply(workspace);
       }
-      if (request.method === 'POST') return reply(await editorialRpc(await jsonBody(request)));
+      if (request.method === 'POST') {
+        const payload = await jsonBody(request);
+        const result = await editorialRpc(payload);
+        if (EDITORIAL_ENQUEUE.has((payload as { method?: unknown })?.method as string) && (result as { ok?: unknown })?.ok === true) kick();
+        return reply(result);
+      }
     }
     if (request.method === "GET" && path.length === 0) {
       const state = await transaction("runtime", async client => (await client.query("SELECT public.reporter_local_state() AS state")).rows[0].state, requestId);
@@ -156,6 +172,7 @@ export async function handleReporter(request: Request, path: string[]) {
         return { transcript: value,queue: ['queued','processing'].includes(value?.status) ? await queueStatus(client,`transcript:${id}`) : IDLE_QUEUE };
       },requestId);
       if (!transcript) throw new FlowError('NOT_FOUND',404);
+      heal(queue.stalled);
       return reply({ transcript,worker_online: await workerAvailable(),stalled: queue.stalled });
     }
     if (request.method !== "POST") return reply({ error: "NOT_FOUND", message: "Rota não encontrada." }, 404);
@@ -207,6 +224,7 @@ export async function handleReporter(request: Request, path: string[]) {
         const contentType=({mp3:'audio/mpeg',m4a:'audio/mp4',mp4:'video/mp4',wav:'audio/wav',ogg:'audio/ogg',flac:'audio/flac',webm:'video/webm'} as Record<string,string>)[imported.extension];
         const value=await transaction('runtime',async client=>(await client.query('SELECT public.reporter_prepare_remote_link($1,$2,$3,$4,$5,$6,$7,$8) AS value',
           [id,imported.fileName,imported.size,contentType,objectKey,createHash('sha256').update(token).digest('hex'),key,imported.remoteUrl])).rows[0].value,requestId);
+        kick();
         return reply({kind:'processing',provider:imported.provider,sourceUrl:imported.sourceUrl,title:imported.title,programName:imported.programName,fileName:imported.fileName,bytes:imported.size,id:value.id},202);
       }
       const file = imported.file;
@@ -231,6 +249,7 @@ export async function handleReporter(request: Request, path: string[]) {
     if (path.length === 1 && kind !== "transcript") {
       const input = createSchema.parse(body);
       const id = await command("reporter_create", [kind,input.source_id,input.input_revision,idempotencyKey(request),{}], requestId);
+      kick();
       return reply({ id }, 202);
     }
     const id = UUID.parse(path[1]);
@@ -252,6 +271,7 @@ export async function handleReporter(request: Request, path: string[]) {
       revision = await command<number>("reporter_ready_carousel", [id,revisionSchema.parse(body).revision], requestId);
     } else if (action === "retry") {
       const generation = await command("reporter_retry", [kind,id,revisionSchema.parse(body).revision,idempotencyKey(request)], requestId);
+      kick();
       return reply({ id, generation_id: generation }, 202);
     } else throw new FlowError("NOT_FOUND", 404);
     return reply({ id, revision });
