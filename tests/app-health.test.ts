@@ -49,6 +49,8 @@ test('the read-only release check agrees with the probe and names what is missin
   assert.deepEqual(healthProblems(health, { version: packageJson.version, commit: 'abc1234', worker: 'https://worker.example.test' }), []);
   assert.deepEqual(healthProblems(health, { version: '9.9.9', worker: 'https://other.example.test' }),
     [`version ${packageJson.version}, expected 9.9.9`, 'the app wakes a different worker']);
+  assert.deepEqual(healthProblems(health, { workerFingerprint: workerFingerprint('https://worker.example.test') }), []);
+  assert.deepEqual(healthProblems(health, { workerFingerprint: '0123456789abcdef' }), ['the app wakes a different worker']);
   const unready = withMode('cloud', () => appHealth({ ...CLOUD, PIXABAY_API_KEY: undefined }));
   assert.deepEqual(healthProblems(unready), ['missing settings: pixabay']);
   let calls = 0;

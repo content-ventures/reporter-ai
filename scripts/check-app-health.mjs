@@ -19,14 +19,15 @@ export function healthProblems(health, expected = {}) {
   if (expected.commit && health.commit !== expected.commit) problems.push(`commit ${String(health.commit).slice(0, 12)}, expected ${expected.commit.slice(0, 12)}`);
   const missing = Object.entries(health.configured ?? {}).filter(([, ok]) => !ok).map(([name]) => name);
   if (!health.ready) problems.push(`missing settings: ${missing.join(', ') || 'unknown'}`);
-  if (expected.worker && health.worker !== workerFingerprint(expected.worker)) problems.push('the app wakes a different worker');
+  const worker = expected.workerFingerprint ?? (expected.worker ? workerFingerprint(expected.worker) : undefined);
+  if (worker && health.worker !== worker) problems.push('the app wakes a different worker');
   return problems;
 }
 
 /**
  * Polls the public probe until the deployment reports the expected release, read-only.
  * @param {string | URL} baseUrl
- * @param {{ version?: string, commit?: string, worker?: string }} [expected]
+ * @param {{ version?: string, commit?: string, worker?: string, workerFingerprint?: string }} [expected]
  * @param {{ attempts?: number, sleep?: (ms: number) => Promise<unknown>, request?: (url: URL, init: RequestInit) => Promise<Response> }} [options]
  */
 export async function waitForAppHealth(baseUrl, expected = {}, { attempts = 60, sleep = delay, request = fetch } = {}) {
@@ -48,10 +49,11 @@ export async function waitForAppHealth(baseUrl, expected = {}, { attempts = 60, 
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({ options: { url: { type: 'string' }, version: { type: 'string' }, commit: { type: 'string' },
-    'worker-url': { type: 'string' }, attempts: { type: 'string' } } });
+    'worker-url': { type: 'string' }, 'worker-fingerprint': { type: 'string' }, attempts: { type: 'string' } } });
   if (!values.url) throw new Error('Use: pnpm cloud:check -- --url https://app [--version x.y.z] [--commit sha] [--worker-url https://worker]');
   try {
-    const health = await waitForAppHealth(values.url, { version: values.version, commit: values.commit, worker: values['worker-url'] },
+    const health = await waitForAppHealth(values.url, { version: values.version, commit: values.commit, worker: values['worker-url'],
+      workerFingerprint: values['worker-fingerprint'] },
       { attempts: Number(values.attempts ?? 1) });
     console.log(`Reporter ${health.version} (${String(health.commit).slice(0, 12)}, ${health.environment}) is ready.`);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
