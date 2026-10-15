@@ -79,6 +79,39 @@ test('rejected trigger deliveries expose only bounded operational codes and neve
   assert.equal(runs,0);
 });
 
+test('native trigger routes accept hosted Request objects without instanceof or clone dependencies',async () => {
+  let runs = 0,reads = 0;
+  const heartbeats: string[] = [];
+  const worker = createReporterWorker({
+    heartbeat: async owner => { heartbeats.push(owner); },run: async () => { runs++; return false; },
+    startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => ({}),now: Date.now,
+  });
+  const request = {
+    url: 'https://worker.test/triggers/schedule',method: 'POST',
+    headers: new Headers({ 'x-neon-trigger-invocation-id': 'native-invocation' }),
+    clone: () => { throw new Error('Hosted request cannot be cloned'); },
+    json: async () => { reads++; return { version: 1,invocation_id: 'native-invocation',
+      trigger: { type: 'schedule',id: 'schedule-id',name: 'every-minute' },
+      data: { scheduled_at: '2026-10-15T11:00:00Z' } }; },
+  } as unknown as Request;
+  assert.equal(request instanceof Request,false);
+  const response = await worker.fetch(request);
+  assert.equal(response.status,200); assert.equal(reads,1); assert.equal(runs,1);
+  assert.match(heartbeats[0],/^reporter-neon-/);
+});
+
+test('dedicated trigger routes reject a mismatched delivery type before processing work',async () => {
+  let runs = 0,finalized = 0;
+  const worker = createReporterWorker({ heartbeat: async () => {},run: async () => { runs++; return false; },
+    startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => { finalized++; },now: Date.now });
+  const response = await worker.fetch(new Request('https://worker.test/triggers/storage',{
+    method: 'POST',headers: { 'x-neon-trigger-invocation-id': 'schedule-invocation','content-type': 'application/json' },
+    body: JSON.stringify({version:1,invocation_id:'schedule-invocation',
+      trigger:{type:'schedule',id:'schedule-id',name:'every-minute'},data:{scheduled_at:'2026-10-15T11:00:00Z'}}),
+  }));
+  assert.equal(response.status,400); assert.equal(runs,0); assert.equal(finalized,0);
+});
+
 test('health check requires the worker secret and reports database readiness',async () => {
   const previous = process.env.REPORTER_WORKER_PASSWORD;
   process.env.REPORTER_WORKER_PASSWORD = 'worker-secret';

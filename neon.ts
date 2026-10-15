@@ -80,11 +80,11 @@ export default defineConfig({
   functions,
   triggers: {
     'reporter-editorial-every-minute': {
-      type: 'schedule',function: 'reporterworker',cron: '* * * * *',functionPath: '/',enabled: true,
+      type: 'schedule',function: 'reporterworker',cron: '* * * * *',functionPath: '/triggers/schedule',enabled: true,
     },
     'reporter-source-uploaded': {
       type: 'storage_object_created',function: 'reporterworker',bucket: 'reporter-source-media',
-      prefix: 'incoming/',functionPath: '/',enabled: true,
+      prefix: 'incoming/',functionPath: '/triggers/storage',enabled: true,
     },
   },
 });
