@@ -1,65 +1,105 @@
 name: Controlled production deployment
 
+# verify → staging → acceptance → production → release → verify production.
+# `validation_only` stops after the staging acceptance and works from any branch.
 on:
   workflow_dispatch:
     inputs:
       validation_only:
-        description: Validate the complete flow on an isolated Neon branch without publishing production
-        type: boolean
-        default: false
-      prepare_session:
-        description: Keep an expiring isolated Neon branch for real-file browser acceptance
+        description: Deploy and accept on staging only, without touching production
         type: boolean
         default: false
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: production-release
   cancel-in-progress: false
 
 jobs:
-  neon-acceptance:
-    if: inputs.validation_only
+  verify:
+    name: Verify the approved source
+    uses: ./.github/workflows/quality-gate.yml
+
+  staging:
+    name: Staging worker
+    needs: verify
+    uses: ./.github/workflows/worker-deploy.yml
+    with:
+      environment: staging
+    secrets: inherit
+
+  acceptance:
+    name: Accept on staging
+    needs: staging
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    environment: production
+    timeout-minutes: 40
+    environment: staging
     env:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
       NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
+      REPORTER_ACCEPTANCE_TARGET: ${{ vars.REPORTER_ACCEPTANCE_TARGET }}
+      REPORTER_APP_ORIGINS: ${{ vars.REPORTER_APP_ORIGINS }}
       REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
+      REPORTER_RUNTIME_PASSWORD: ${{ secrets.REPORTER_RUNTIME_PASSWORD }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-      REPORTER_ACCEPTANCE_SESSION: ${{ inputs.prepare_session && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - name: Keep Neon identifiers out of the logs
+        run: |
+          for value in "$NEON_PROJECT_ID" "$NEON_BRANCH_ID"; do
+            if [[ -n "$value" ]]; then echo "::add-mask::$value"; fi
+          done
+
+      - name: Check out the release source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm gate
-      - uses: ./.github/actions/build-native-media
-      - run: node scripts/check-neon-bundle.mjs
-      - run: pnpm test:backend
-      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends espeak-ng
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:release
-      - run: npm install --global --no-audit --no-fund neon@6.3.0
-      - name: Validate deployed Neon worker and complete editorial flow
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the speech generator and the Neon CLI
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends espeak-ng
+          npm install --global --no-audit --no-fund neon@6.3.0
+
+      # A 20-second synthetic upload through storage and Groq, one generated article and
+      # its approval by a second user, against the worker the staging stage just deployed.
+      - name: Run the staging acceptance
         run: node scripts/neon-acceptance.mjs
 
-  release:
-    if: github.ref == 'refs/heads/main' && !inputs.validation_only
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    environment: production
+  production:
+    name: Production worker
+    if: ${{ !inputs.validation_only && github.ref == 'refs/heads/main' }}
+    needs: acceptance
+    uses: ./.github/workflows/worker-deploy.yml
+    with:
+      environment: production
+    secrets: inherit
 
+  release:
+    name: Publish the release
+    needs: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.commit.outputs.sha }}
     steps:
       - name: Check out approved main
         uses: actions/checkout@v4
@@ -78,46 +118,6 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate release configuration and provider credentials
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-          NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
-          REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-        run: node scripts/check-release-services.mjs
-
-      - name: Validate approved source
-        run: pnpm gate
-
-      - uses: ./.github/actions/build-native-media
-
-      - name: Validate the complete worker archive
-        run: node scripts/check-neon-bundle.mjs
-
-      - name: Install Neon CLI
-        run: npm install --global --no-audit --no-fund neon@6.3.0
-
-      - name: Validate the complete Neon flow before production changes
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-          NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
-          REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends espeak-ng
-          pnpm exec playwright install --with-deps chromium
-          pnpm test:release
-          node scripts/neon-acceptance.mjs
-
       - name: Calculate version and release descriptions
         id: release
         env:
@@ -127,66 +127,8 @@ jobs:
       - name: Validate prepared release
         run: pnpm gate
 
-      - name: Migrate Neon and deploy the worker
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-          NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
-          REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-        run: |
-          set -euo pipefail
-          for name in NEON_API_KEY NEON_PROJECT_ID NEON_BRANCH_ID REPORTER_WORKER_PASSWORD GROQ_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY PIXABAY_API_KEY; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "::error::Missing $name in the production GitHub environment."
-              exit 1
-            fi
-          done
-
-          umask 077
-          env_file="$RUNNER_TEMP/reporter-neon-release.env"
-          trap 'rm -f "$env_file"' EXIT
-
-          # Resolve the target branch's owner connection in memory. It feeds the
-          # idempotent SQL migrations and the worker connection URL in neon.ts.
-          database_url="$(neon connection-string "$NEON_BRANCH_ID" --project-id "$NEON_PROJECT_ID" --role-name neondb_owner)"
-          if [[ -z "$database_url" ]]; then
-            echo "::error::Neon did not return a connection string for the configured production branch."
-            exit 1
-          fi
-          export DATABASE_URL="$database_url"
-          export DATABASE_URL_UNPOOLED="$database_url"
-
-          neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --file "$env_file"
-          node --input-type=module - "$env_file" <<'NODE'
-          import { appendFile } from 'node:fs/promises';
-
-          const file = process.argv[2];
-          const names = ['REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY'];
-          const lines = names.map(name => `${name}=${JSON.stringify(process.env[name])}`);
-          await appendFile(file, `\n${lines.join('\n')}\n`, { mode: 0o600 });
-          NODE
-
-          node --env-file="$env_file" scripts/reporter-cloud.mjs migrate
-          neon deploy --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --env "$env_file" --allow-protected --no-env-pull
-
-          # Pull the newly deployed function URL into the temporary env file and
-          # prove the worker can authenticate to Postgres and register a heartbeat.
-          neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --file "$env_file"
-          node --env-file="$env_file" --input-type=module <<'NODE'
-          import { waitForWorkerReadiness } from './scripts/check-worker-readiness.mjs';
-          const endpoint = process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL;
-          const secret = process.env.REPORTER_WORKER_PASSWORD;
-          if (!endpoint || !secret) throw new Error('Neon worker health check is missing its function URL or password.');
-          await waitForWorkerReadiness(endpoint,secret);
-          console.log('Neon worker database, upload storage and media tools are ready.');
-          NODE
-          node --env-file="$env_file" scripts/check-worker-schedule.mjs
-
       - name: Commit and tag release
+        id: commit
         env:
           ACTOR_ID: ${{ github.actor_id }}
           ACTOR_LOGIN: ${{ github.actor }}
@@ -200,6 +142,7 @@ jobs:
           git tag -a "$TAG" -m "Reporter IA $TAG"
           # The workflow already ran pnpm gate; allow this controlled release push past the local main guard.
           git -c core.hooksPath=/dev/null push origin HEAD:main "$TAG"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
         env:
@@ -208,11 +151,38 @@ jobs:
           RELEASE_NOTES_PATH: ${{ runner.temp }}/reporter-release-notes.md
         run: gh release create "$TAG" --verify-tag --title "Reporter IA $TAG" --notes-file "$RELEASE_NOTES_PATH"
 
-      - name: Record production handoff
+  verify-production:
+    name: Verify production
+    needs: [production, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Check out the release tooling
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The Vercel Git integration builds the release commit; production passes only when it
+      # serves that version and commit, with every setting present and the new worker wired.
+      - name: Wait for Vercel to serve the release
         env:
-          TAG: ${{ steps.release.outputs.tag }}
-          SUMMARY: ${{ steps.release.outputs.summary }}
+          REPORTER_APP_URL: ${{ vars.REPORTER_APP_URL }}
+          VERSION: ${{ needs.release.outputs.version }}
+          COMMIT: ${{ needs.release.outputs.commit }}
+          WORKER: ${{ needs.production.outputs.worker_fingerprint }}
         run: |
-          echo "### $TAG handed to Vercel through GitHub" >> "$GITHUB_STEP_SUMMARY"
-          echo "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
-          echo "The Vercel Git integration deploys the version commit. Local Vercel users, tokens and CLI deployment are prohibited." >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          if [[ -z "${REPORTER_APP_URL:-}" ]]; then
+            echo "::error::Set REPORTER_APP_URL on the production GitHub environment."
+            exit 1
+          fi
+          node scripts/check-app-health.mjs --url "$REPORTER_APP_URL" --version "$VERSION" --commit "$COMMIT" --worker-fingerprint "$WORKER" --attempts 90
+          {
+            echo "### Reporter IA v$VERSION is live"
+            echo "Vercel serves the release commit with every setting present and the newly deployed worker."
+            echo "Local Vercel users, tokens and CLI deployment are prohibited."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -74,3 +74,17 @@ test('release migrations must stay additive unless a line is explicitly approved
   assert.deepEqual(migrationProblems('x.sql', sql), { problems: ['x.sql:4 drops a column'], approved: ['x.sql:5 drops a table'] });
   assert.deepEqual((await checkMigrations()).problems, [], 'the current cloud migrations are additive');
 });
+
+test('a release stops once the period transfer passes 60% of the quota', async () => {
+  const { transferVerdict, neonProject, FREE_TRANSFER_BYTES } = await import('./check-neon-budget.mjs');
+  assert.equal(transferVerdict({ data_transfer_bytes: 2_900_000_000 }).ok, true);
+  const over = transferVerdict({ data_transfer_bytes: 3_100_000_000 });
+  assert.deepEqual([over.ok, over.message], [false, 'Transfer 3.10 GB of 5.00 GB this period (62%; releases stop above 60%).']);
+  assert.equal(transferVerdict({ data_transfer_bytes: 3_100_000_000 }, 500_000_000_000).ok, true, 'a paid quota leaves room');
+  assert.equal(transferVerdict({ data_transfer_bytes: 9e12 }, 0).ok, true, 'zero disables the check');
+  assert.equal(transferVerdict({}).ok, false, 'an unreadable usage never passes');
+  assert.equal(FREE_TRANSFER_BYTES, 5e9);
+  const project = await neonProject({ projectId: 'proj', apiKey: 'key', request: async url => {
+    assert.equal(url, 'https://console.neon.tech/api/v2/projects/proj'); return Response.json({ project: { data_transfer_bytes: 1 } }); } });
+  assert.equal(project.data_transfer_bytes, 1);
+});

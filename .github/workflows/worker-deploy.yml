@@ -1,0 +1,134 @@
+name: Deploy the Neon worker
+
+# Called by the controlled release, first for staging and then for production. Each GitHub
+# environment holds its own Neon target, worker password and allowed app origins.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment of the Neon target (staging or production)
+        type: string
+        required: true
+    outputs:
+      worker_fingerprint:
+        description: Fingerprint of the deployed worker URL, as the app's health probe reports it
+        value: ${{ jobs.deploy.outputs.worker_fingerprint }}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+    outputs:
+      worker_fingerprint: ${{ steps.deploy.outputs.worker_fingerprint }}
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
+      NEON_TRANSFER_QUOTA_BYTES: ${{ vars.NEON_TRANSFER_QUOTA_BYTES }}
+      REPORTER_APP_ORIGINS: ${{ vars.REPORTER_APP_ORIGINS }}
+      REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+
+    steps:
+      # The repository is public, and so are these logs.
+      - name: Keep Neon identifiers out of the logs
+        run: |
+          for value in "$NEON_PROJECT_ID" "$NEON_BRANCH_ID"; do
+            if [[ -n "$value" ]]; then echo "::add-mask::$value"; fi
+          done
+
+      - name: Check out the release source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require every setting and authenticate to the providers
+        run: |
+          set -euo pipefail
+          for name in NEON_API_KEY NEON_PROJECT_ID NEON_BRANCH_ID REPORTER_APP_ORIGINS REPORTER_WORKER_PASSWORD GROQ_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY PIXABAY_API_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing $name in the ${{ inputs.environment }} GitHub environment."
+              exit 1
+            fi
+          done
+          node scripts/check-release-services.mjs
+
+      - name: Refuse destructive migrations
+        run: node scripts/check-migrations.mjs
+
+      - name: Stop when the Neon transfer budget is spent
+        run: node scripts/check-neon-budget.mjs
+
+      - uses: ./.github/actions/build-native-media
+
+      - name: Validate the worker archive
+        run: node scripts/check-neon-bundle.mjs
+
+      - name: Install the Neon CLI
+        run: npm install --global --no-audit --no-fund neon@6.3.0
+
+      # Migrations are additive, so the running app keeps working while the worker changes.
+      - name: Migrate, deploy and verify the worker
+        id: deploy
+        run: |
+          set -euo pipefail
+          umask 077
+          env_file="$RUNNER_TEMP/reporter-neon.env"
+          trap 'rm -f "$env_file"' EXIT
+
+          database_url="$(neon connection-string "$NEON_BRANCH_ID" --project-id "$NEON_PROJECT_ID" --role-name neondb_owner)"
+          if [[ -z "$database_url" ]]; then
+            echo "::error::Neon returned no owner connection for the ${{ inputs.environment }} target."
+            exit 1
+          fi
+          echo "::add-mask::$database_url"
+          export DATABASE_URL="$database_url" DATABASE_URL_UNPOOLED="$database_url"
+
+          pull() {
+            neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --file "$env_file"
+            node scripts/lib/mask-env.mjs "$env_file"
+            node --input-type=module - "$env_file" <<'NODE'
+          import { appendFile } from 'node:fs/promises';
+          const names = ['DATABASE_URL', 'REPORTER_APP_ORIGINS', 'REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY'];
+          await appendFile(process.argv[2], `\n${names.map(name => `${name}=${JSON.stringify(process.env[name])}`).join('\n')}\n`, { mode: 0o600 });
+          NODE
+          }
+
+          pull
+          node --env-file="$env_file" scripts/reporter-cloud.mjs migrate
+          neon deploy --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --env "$env_file" --allow-protected --no-env-pull
+
+          # The deployed worker URL and storage credentials exist only after the deploy.
+          pull
+          node --env-file="$env_file" scripts/configure-bucket-cors.mjs
+          node --env-file="$env_file" --input-type=module <<'NODE'
+          import { waitForWorkerReadiness } from './scripts/check-worker-readiness.mjs';
+          const endpoint = process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL, secret = process.env.REPORTER_WORKER_PASSWORD;
+          if (!endpoint || !secret) throw new Error('Worker readiness is missing its function URL or password.');
+          await waitForWorkerReadiness(endpoint, secret);
+          console.log('Worker database, upload storage and media tools are ready.');
+          NODE
+          node scripts/check-worker-triggers.mjs
+          node --env-file="$env_file" scripts/check-worker-drain.mjs
+          node --env-file="$env_file" --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
+          import { workerFingerprint } from './scripts/check-app-health.mjs';
+          console.log(`worker_fingerprint=${workerFingerprint(process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL)}`);
+          NODE
