@@ -35,7 +35,9 @@ export function guardLocalRequest(request: Request) {
   if (!["GET","HEAD"].includes(request.method) && request.headers.get("x-reporter-client") !== "local") throw new FlowError("CLIENT_HEADER_REQUIRED", 403);
 }
 
-async function guardReporterRequest(request: Request): Promise<ReporterRequestContext> {
+type Identity = Awaited<ReturnType<typeof reporterIdentity>>;
+
+async function guardReporterRequest(request: Request, identify: () => Promise<Identity> = reporterIdentity): Promise<ReporterRequestContext> {
   if (reporterDeploymentMode() === 'local') {
     guardLocalRequest(request);
     return { ...localContext,roles: [...localContext.roles] };
@@ -43,7 +45,7 @@ async function guardReporterRequest(request: Request): Promise<ReporterRequestCo
   const url = new URL(request.url);
   const origin = request.headers.get('origin');
   if (!['GET','HEAD'].includes(request.method) && (!origin || origin !== url.origin)) throw new FlowError('ORIGIN_DENIED',403);
-  const identity = await reporterIdentity();
+  const identity = await identify();
   if (!identity) throw new FlowError('AUTH_REQUIRED',401);
   const context = await resolveReporterContext(identity);
   if (!context) throw new FlowError(identity.emailVerified ? 'ACCESS_PENDING' : 'EMAIL_NOT_VERIFIED',403);
@@ -134,15 +136,16 @@ const messages: Record<string, string> = {
 const EDITORIAL_ENQUEUE = new Set(['generation.start','generation.retry']);
 const runAfterResponse: Defer = task => { void task().catch(() => {}); };
 
-/** `defer` runs work after the response; the route handler passes Next's `after`. */
-export async function handleReporter(request: Request, path: string[], deps: { defer?: Defer } = {}) {
+/** `defer` runs work after the response; the route handler passes Next's `after`.
+ * `identify` replaces the Neon Auth session lookup only in the local cloud rehearsal. */
+export async function handleReporter(request: Request, path: string[], deps: { defer?: Defer; identify?: () => Promise<Identity> } = {}) {
   const requestId = randomUUID();
   const defer = deps.defer ?? runAfterResponse;
   // Every committed enqueue wakes the cloud worker; a stall seen by a poll wakes it again.
   const kick = () => defer(() => kickWorker());
   const heal = (stalled: boolean | undefined) => { if (stalled && shouldHealStall()) kick(); };
   try {
-    const context = await guardReporterRequest(request);
+    const context = await guardReporterRequest(request, deps.identify);
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'visuals') return await handleVisualLibrary(request,path.slice(1),jsonBody);
