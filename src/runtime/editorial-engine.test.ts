@@ -216,3 +216,23 @@ test('real generation events settle one immutable version, require review, and r
   assert.equal((await engine.commands.derive({ productionId: run.productionId,kind: 'carousel',from: toVersionRef(record.versions[0]) })).ok,false);
   engine.store.dispose();
 });
+
+test('events continue from the stored fold when the job carries only events not yet persisted', async () => {
+  const checkpoint = emptyEditorialCheckpoint(),engine = createEditorialEngine(checkpoint,ids);
+  const created = await engine.commands.createFromSource(input); assert.ok(created.ok);
+  const pieceId = created.value.pieces.find(p => p.kind === 'article')!.pieceId;
+  const begin = engine.runs.begin({ productionId: created.value.productionId,kind: 'article.generate',prompt: { key: 'groq.article',version: '2',hash: 'prompt' },model: { alias: 'groq-model',label: 'Groq',engine: 'provider' },steps: [{ id: 'generate',label: 'Gerar artigo' }] });
+  assert.ok(begin.ok); const run = begin.value.run;
+  const meta = { runId: run.id,productionId: created.value.productionId,pieceId,label: 'Gerar artigo',request: { kind: 'article.draft' as const,input: { productionId: created.value.productionId,pieceId } } };
+  const persisted: EditorialJob = { kind: 'article.draft',input: meta.request.input,attempts: 1,availableAt: 0,events: [],meta };
+  appendEditorialEvent(engine,persisted,{ type: 'run.started',kind: run.kind,productionId: run.productionId,pieceId,model: run.model,prompt: run.prompt,inputs: run.inputs,steps: [{ id: 'generate',label: 'Gerar artigo' }],createdBy: LOCAL_OPERATOR });
+  appendEditorialEvent(engine,persisted,{ type: 'outline',title: 'Oficinas fictícias previstas',sections: [] });
+  // A later transaction loads the fold but none of the two stored events.
+  const resumed: EditorialJob = { ...persisted,events: [] };
+  const fold = appendEditorialEvent(engine,resumed,{ type: 'run.completed' });
+  assert.deepEqual(resumed.events.map(event => event.seq),[3],'numbering continues after the persisted events');
+  assert.equal(fold.seq,3);
+  assert.equal(fold.title,'Oficinas fictícias previstas','the stored fold keeps earlier events');
+  assert.equal(fold.run.status,'completed');
+  engine.store.dispose();
+});

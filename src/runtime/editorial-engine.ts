@@ -127,10 +127,13 @@ export function createEditorialEngine(checkpoint: EditorialCheckpoint, ids: IdGe
   });
 }
 export function appendEditorialEvent(engine: ReturnType<typeof createEditorialEngine>, job: EditorialJob, payload: RunEventPayload) {
-  const event = stampRunEvent(payload, job.meta.runId, job.events.length + 1, new Date().toISOString());
+  // Continue from the stored fold: a job may carry only the events not yet persisted.
+  const previous = engine.store.state.runFolds[job.meta.runId];
+  const seq = Math.max(previous?.seq ?? 0, job.events.at(-1)?.seq ?? 0) + 1;
+  const event = stampRunEvent(payload, job.meta.runId, seq, new Date().toISOString());
   job.events.push(event);
   job.events = compactRunPreviews(job.events);
-  const fold = foldRun(job.events);
+  const fold = previous ? foldRun([event], previous) : foldRun(job.events);
   if (!fold) throw new Error('INVALID_RUN_STREAM');
   const result = engine.records.apply(job.meta.productionId, (record, ctx) => applyRunUpdate(record, {
     meta: job.meta, fold, event,
