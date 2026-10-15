@@ -4,8 +4,8 @@ import { latestApproved } from '../src/domain/record.ts';
 import { ATELIE_SUL_TRANSCRIPT } from '../src/fixtures/sources/atelie-sul.ts';
 import { createHttpIngest } from '../src/adapters/http/reporter-client.ts';
 
-// One scenario for offline preflight and isolated Neon acceptance. The transports
-// differ; commands, permissions, approvals, rendering and delivery assertions do not.
+// The complete editorial scenario of the full-scope staging acceptance: commands, permissions,
+// approvals, rendering and delivery, against the deployed worker.
 export async function acceptEditorialFlow({rpc,snapshot,record,waitRun,analyzeMaterial,uploadImage,validateExport,reviewerId,sourceText,transcriptId}) {
 const insights=await analyzeMaterial(sourceText,{fileName:'transcript.srt'});
 assert.ok(insights.title.length>3);console.log('PASS material analysis of the uploaded source.');
