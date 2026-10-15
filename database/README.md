@@ -249,8 +249,9 @@ again before claiming complete compliance. Local SQL validation is not completed
 ## Neon cloud bootstrap
 
 The cloud path is separate from the Docker-only seed and credentials. With ignored Neon owner URLs present,
-run `pnpm db:cloud:migrate`, then `pnpm db:cloud:roles`. The second command creates fresh least-privilege
-runtime/worker passwords and writes their URLs only to ignored local env files. Never use `DATABASE_URL` from
+run `pnpm db:cloud:migrate`, then, only when you mean to replace them, `pnpm db:cloud:roles -- --rotate`. Rotation
+creates fresh least-privilege runtime/worker passwords, writes their URLs only to ignored local env files and locks
+out every running app and worker until their environments receive the new values. Never use `DATABASE_URL` from
 the application process.
 
 Cloud signup does not grant editorial access. Provision a known person explicitly after they choose their

@@ -86,7 +86,12 @@ function roleUrl(owner,role,password) {
   return url.toString();
 }
 
+// New passwords lock out every running app and worker until each environment is updated, so
+// rotation is never a side effect of a release or a typo: it must be asked for by name.
 async function configureRoles(client) {
+  if (!process.argv.includes('--rotate')) {
+    throw new Error('roles replaces the runtime and worker passwords and breaks running deployments. Re-run with --rotate to confirm.');
+  }
   const runtimePassword = randomBytes(32).toString('base64url');
   const workerPassword = randomBytes(32).toString('base64url');
   await client.query("SELECT set_config('reporter.runtime_password',$1,false),set_config('reporter.worker_password',$2,false)",[runtimePassword,workerPassword]);
@@ -149,5 +154,5 @@ try {
   else if (command === 'roles') await configureRoles(client);
   else if (command === 'grant') await grant(client);
   else if (command === 'status') console.log(JSON.stringify(await status(client),null,2));
-  else throw new Error('Use: status | migrate | roles | grant --email ... [--name ...] [--role ...]');
+  else throw new Error('Use: status | migrate | roles --rotate | grant --email ... [--name ...] [--role ...]');
 } finally { await client.end(); }

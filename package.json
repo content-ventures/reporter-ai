@@ -43,7 +43,7 @@
     "db:cloud:roles": "node scripts/reporter-cloud.mjs roles",
     "db:cloud:grant": "node scripts/reporter-cloud.mjs grant",
     "db:cloud:smoke": "node scripts/reporter-cloud-smoke.mjs",
-    "cloud:vercel:env": "node scripts/reporter-vercel-env.mjs",
+    "cloud:check": "node scripts/check-app-health.mjs",
     "test:release": "node --conditions=react-server --import tsx --test scripts/release-preflight.mjs"
   },
   "dependencies": {
