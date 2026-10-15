@@ -10,6 +10,7 @@ import { FlowError,logEvent,safeCode } from '../src/server/errors.ts';
 import { runReporterJob } from '../src/server/reporter-worker-jobs.ts';
 import { workerImageObject } from '../src/server/image-storage.ts';
 import { runRemoteIngest } from '../src/server/remote-ingest.ts';
+import { workerMediaDiagnostics } from '../src/server/worker-media.ts';
 
 const MAX_INVOCATION_MS = 13*60*1000;
 const MAX_JOBS_PER_INVOCATION = 20;
@@ -159,7 +160,7 @@ export function createReporterWorker(services: WorkerDependencies = dependencies
         return Response.json({ ok: true });
       } catch (error) {
         const code=safeCode(error);console.warn(JSON.stringify({component:'worker',message:'readiness_failed',error_code:code}));
-        return Response.json({ ok: false,error: code },{ status: 503 });
+        return Response.json({ ok: false,error: code,...(code.startsWith('MEDIA_TOOL_')?{media:await workerMediaDiagnostics()}:{}),sourceCommit:process.env.REPORTER_SOURCE_COMMIT },{ status: 503 });
       }
     }
     if (request.method!=='POST') {
