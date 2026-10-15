@@ -130,3 +130,32 @@ test('a lock cycle or a duplicate receipt reruns the transaction on fresh rows; 
     if (previousMode === undefined) delete process.env.REPORTER_DEPLOYMENT_MODE; else process.env.REPORTER_DEPLOYMENT_MODE = previousMode;
   }
 });
+
+test('edits made in place on loaded rows are written, never mistaken for the unchanged baseline', async () => {
+  const globals = globalThis as typeof globalThis & { reporterPools?: Partial<Record<'runtime' | 'worker', Pool>> };
+  const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
+  const rows = { ...emptyRows(3),
+    runs: [{ id: 'run-1', productionId: 'production-1', status: 'running', availableAt: 0, lease: null, attempts: 1,
+      job: { meta: { runId: 'run-1', productionId: 'production-1' }, kind: 'article.draft', input: {}, calls: [] },
+      fold: { seq: 1, run: { id: 'run-1', productionId: 'production-1', status: 'running', steps: [] } } }],
+    items: [{ kind: 'image_asset', id: 'asset-1', productionId: 'production-1', doc: { productionId: 'production-1', asset: { id: 'asset-1', credit: 'Antes' } } }] };
+  let committed: { runs: { job: { calls: unknown[] } }[]; items: { id: string; doc: { asset: { credit: string } } }[] } | undefined;
+  const client = { release() {}, async query(sql: string, values: unknown[] = []) {
+    if (sql.includes('reporter_ed_load')) return { rows: [{ value: structuredClone(rows) }] };
+    if (sql.includes('reporter_ed_commit')) { committed = JSON.parse(String(values[0])); return { rows: [{ seq: 4 }] }; }
+    return { rows: [] };
+  } };
+  process.env.REPORTER_DEPLOYMENT_MODE = 'local';
+  globals.reporterPools = { runtime: { connect: async () => client } as unknown as Pool };
+  try {
+    await editorialTransaction('runtime', async checkpoint => {
+      checkpoint.jobs['run-1'].calls!.push({ key: 'outline', hash: 'call-1', model: 'model', status: 'running', startedAt: '2026-10-15T00:00:00Z' });
+      checkpoint.imageAssets![0].asset.credit = 'Depois';
+    }, true, 'reporter.edit', { runs: ['run-1'], items: { image_asset: ['asset-1'] } });
+    assert.equal(committed?.runs[0]?.job.calls.length, 1, 'a call appended to the loaded job is written');
+    assert.equal(committed?.items.find(item => item.id === 'asset-1')?.doc.asset.credit, 'Depois', 'an asset patched in place is written');
+  } finally {
+    globals.reporterPools = previous;
+    if (previousMode === undefined) delete process.env.REPORTER_DEPLOYMENT_MODE; else process.env.REPORTER_DEPLOYMENT_MODE = previousMode;
+  }
+});

@@ -76,6 +76,9 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
     if (role === 'runtime') await client.query("SELECT set_config('app.editorial_permission',$1,true)",[permission]);
     const { rows, receipt } = await loadEditorialRows(client, scope, mutate);
     const loaded = loadedScope(scope);
+    // The diff baseline must not share objects with what the command edits in place (a job's
+    // call list, an asset's credit), or those edits would look unchanged and never be written.
+    const baseline = mutate ? structuredClone(rows) : rows;
     const context = role === 'runtime' ? currentReporterContext() : undefined;
     const identity = context ? { workspaceId: context.portal,workspaceName: context.workspaceName,workspaceSlug: context.workspaceSlug,
       personId: context.actor,name: context.name,email: context.email,avatarUrl: context.image,roles: context.roles,
@@ -95,7 +98,7 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
       checkpoint.state = engine.store.state;
       let revision = rows.seq;
       if (mutate) {
-        const changes = diffRows(rows, splitCheckpoint(checkpoint, rows, loaded), loaded);
+        const changes = diffRows(baseline, splitCheckpoint(checkpoint, baseline, loaded), loaded);
         const stored = options.receipt?.(value, checkpoint);
         if (hasChanges(changes) || stored) revision = await commitEditorialChanges(client, changes, stored);
       }
