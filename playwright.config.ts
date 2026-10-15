@@ -35,7 +35,7 @@ export default defineConfig({
   webServer: external
     ? undefined
     : {
-        command: `${process.env.SMOKE_PREBUILT ? "" : "pnpm build && "}REPORTER_LOCAL_MODE=true REPORTER_ALLOW_LOCAL_BUILD=true pnpm start --port ${port}`,
+        command: `${process.env.SMOKE_PREBUILT ? "" : "pnpm build && "}REPORTER_DEPLOYMENT_MODE=local REPORTER_LOCAL_MODE=true REPORTER_ALLOW_LOCAL_BUILD=true pnpm start --port ${port}`,
         url: baseURL,
         reuseExistingServer: !ci,
         timeout: 300_000,
