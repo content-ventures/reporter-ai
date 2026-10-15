@@ -25,6 +25,12 @@ heartbeat. The release then waits for a fresh real scheduled invocation, excludi
 diagnostic calls, so a missing/broken schedule cannot pass and fail again three minutes later.
 A failure stops the release before the Vercel release commit is pushed.
 
+Schedule and storage deliveries use `/triggers/schedule` and `/triggers/storage`.
+The handler passes headers and JSON directly to the Neon SDK, without assuming
+the hosted request shares Node's global `Request` constructor or clone behavior.
+Both routes retain the SDK's invocation-header/body validation. Rejected deliveries
+emit a bounded reason code to the function console for release diagnostics.
+
 ## Required GitHub production environment
 
 Variables: `NEON_PROJECT_ID`, `NEON_BRANCH_ID` (the intended production branch ID).

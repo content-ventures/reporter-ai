@@ -112,31 +112,46 @@ async function diagnosticHeartbeat(owner: string,endpoint: string,services: Work
   await services.heartbeat(owner,endpoint).catch(() => {});
 }
 
+async function parseWorkerTrigger(request: Request) {
+  if (!request.headers.get('x-neon-trigger-invocation-id')?.trim()) return { ok: false,error: 'missing_header' } as const;
+  try {
+    // Use the SDK's explicit-data overload. Hosted Request implementations need
+    // not share Node's global Request constructor or its clone implementation.
+    return parseTriggerDelivery({ headers: request.headers,body: await request.json() });
+  } catch { return { ok: false,error: 'invalid_body' } as const; }
+}
+
 export function createReporterWorker(services: WorkerDependencies = dependencies) {
   return { async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname==='/uploads/start') return uploadRequest(request,services,'start');
     if (url.pathname==='/uploads/complete') return uploadRequest(request,services,'complete');
     const endpoint = url.origin;
-    if ((request.method==='GET' || request.method==='POST') && await hasWorkerSecret(request)) {
+    const triggerHeader = request.headers.get('x-neon-trigger-invocation-id')?.trim();
+    const triggerPath = url.pathname==='/triggers/schedule' || url.pathname==='/triggers/storage';
+    if (!triggerPath && !triggerHeader && (request.method==='GET' || request.method==='POST') && await hasWorkerSecret(request)) {
       try {
         await services.ready?.();
         await services.heartbeat(`reporter-health-${randomUUID()}`,endpoint);
         return Response.json({ ok: true });
       } catch (error) { return Response.json({ ok: false,error: safeCode(error) },{ status: 503 }); }
     }
-    const triggerHeader = request.headers.get('x-neon-trigger-invocation-id')?.trim();
     if (request.method!=='POST') {
       const method = ['GET','HEAD','OPTIONS','PUT','PATCH','DELETE'].includes(request.method) ? request.method : 'OTHER';
       services.rejectedTrigger?.(`TRIGGER_${method}_${triggerHeader ? 'WITH' : 'WITHOUT'}_HEADER`);
       if (triggerHeader) await diagnosticHeartbeat('reporter-trigger-invalid-method',endpoint,services);
       return new Response('Method Not Allowed',{ status: 405 });
     }
-    const parsed = await parseTriggerDelivery(request);
+    const parsed = await parseWorkerTrigger(request);
     if (!parsed.ok) {
       services.rejectedTrigger?.(`TRIGGER_POST_${parsed.error.toUpperCase()}`);
       if (triggerHeader) await diagnosticHeartbeat(`reporter-trigger-${parsed.error}`,endpoint,services);
       return new Response(parsed.error,{ status: parsed.error==='invalid_body' ? 400 : 401 });
+    }
+    if (url.pathname==='/triggers/schedule' && parsed.invocation.type!=='schedule' ||
+        url.pathname==='/triggers/storage' && parsed.invocation.type!=='storage_object_created') {
+      services.rejectedTrigger?.('TRIGGER_TYPE_MISMATCH');
+      return new Response('invalid_body',{ status: 400 });
     }
     if (parsed.invocation.type==='storage_object_created') {
       try {
