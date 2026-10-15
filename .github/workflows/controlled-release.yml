@@ -148,7 +148,7 @@ jobs:
           export DATABASE_URL="$database_url"
           export DATABASE_URL_UNPOOLED="$database_url"
 
-          neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --service postgres --file "$env_file"
+          neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --file "$env_file"
           node --input-type=module - "$env_file" <<'NODE'
           import { appendFile } from 'node:fs/promises';
 

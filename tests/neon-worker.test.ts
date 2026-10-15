@@ -149,6 +149,21 @@ test('release health check refuses readiness if storage or media tools fail and 
   }
 });
 
+test('hosted HTTP requests register the configured public HTTPS endpoint',async()=>{
+  const secret=process.env.REPORTER_WORKER_PASSWORD,endpoint=process.env.REPORTER_WORKER_ENDPOINT;
+  process.env.REPORTER_WORKER_PASSWORD='worker-secret';process.env.REPORTER_WORKER_ENDPOINT='https://branch-worker.compute.example/';
+  try{
+    let registered;
+    const worker=createReporterWorker({heartbeat:async(_owner,url)=>{registered=url;},run:async()=>false,
+      startUpload:async()=>({}),completeUpload:async()=>({}),finalizeObject:async()=>({}),now:Date.now});
+    const response=await worker.fetch(new Request('http://127.0.0.1:8080/',{headers:{'x-reporter-worker-key':'worker-secret'}}));
+    assert.equal(response.status,200);assert.equal(registered,'https://branch-worker.compute.example');
+  }finally{
+    if(secret===undefined)delete process.env.REPORTER_WORKER_PASSWORD;else process.env.REPORTER_WORKER_PASSWORD=secret;
+    if(endpoint===undefined)delete process.env.REPORTER_WORKER_ENDPOINT;else process.env.REPORTER_WORKER_ENDPOINT=endpoint;
+  }
+});
+
 test('browser upload session requires the configured app origin and delegates only the opaque token',async () => {
   const previous = process.env.REPORTER_APP_ORIGIN;
   process.env.REPORTER_APP_ORIGIN = 'https://reporter.test';
