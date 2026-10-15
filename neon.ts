@@ -2,6 +2,7 @@ import { build } from 'esbuild';
 import { defineConfig } from '@neon/config/v1';
 import type { FunctionBundler, FunctionDef } from '@neon/config/v1';
 import { nativeMediaAssets } from './scripts/native-media-assets.mjs';
+import { WORKER_TRIGGERS } from './scripts/lib/worker-triggers.mjs';
 
 const required = (name: string) => {
   const value = process.env[name]?.trim();
@@ -86,16 +87,6 @@ export default defineConfig({
     'reporter-source-media': {},
   },
   functions,
-  triggers: {
-    // Hourly safety sweep. The app wakes the worker on demand, so this only catches work
-    // whose wake-up was lost. The legacy name is kept on purpose: triggers are matched by
-    // name, and a renamed trigger would leave the old every-minute schedule firing.
-    'reporter-editorial-every-minute': {
-      type: 'schedule',function: 'reporterworker',cron: '0 * * * *',functionPath: '/triggers/schedule',enabled: true,
-    },
-    'reporter-source-uploaded': {
-      type: 'storage_object_created',function: 'reporterworker',bucket: 'reporter-source-media',
-      prefix: 'incoming/',functionPath: '/triggers/storage',enabled: true,
-    },
-  },
+  // Declared in scripts/lib/worker-triggers.mjs so the release can verify what is deployed.
+  triggers: WORKER_TRIGGERS,
 });
