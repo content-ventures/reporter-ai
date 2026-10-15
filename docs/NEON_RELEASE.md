@@ -9,7 +9,7 @@ function and schedule/storage triggers before handing the release commit to Verc
 
 Groq's documented file limits also apply to URL transcription (25 MB free, 100 MB developer).
 Sending a whole 406 MB recording by URL cannot replace the local worker's audio chunking.
-Cloud recordings now use the same overlapping ten-minute, mono 16 kHz FLAC chunks as local
+Cloud recordings now use the same overlapping ten-minute, mono 16 kHz, 16-bit FLAC chunks as local
 recordings, each under 24 MB. Only these audio chunks are sent to Groq. Conversion reads the
 private original through a per-job loopback byte-range bridge; Node verifies upstream HTTPS
 and handles DNS, and the original is never buffered in full or saved to the function's disk.

@@ -65,6 +65,6 @@ export async function inspectMedia(path: string, signal?: AbortSignal, remote = 
 export async function prepareChunk(source: string, destination: string, start: number, duration: number, signal: AbortSignal, remote = false) {
   await withMediaExecutable('ffmpeg',executable=>runMedia(executable, [
     "-nostdin", "-v", "error", ...inputProtocols(source, remote), "-ss", String(start), "-i", source,
-    "-t", String(duration), "-map", "0:a:0", "-vn", "-ar", "16000", "-ac", "1", "-c:a", "flac", "-y", destination,
+    "-t", String(duration), "-map", "0:a:0", "-vn", "-ar", "16000", "-ac", "1", "-sample_fmt", "s16", "-c:a", "flac", "-y", destination,
   ], signal, 180000));
 }
