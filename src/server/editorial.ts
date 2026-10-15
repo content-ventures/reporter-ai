@@ -2,7 +2,8 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
-import { createEditorialEngine, emptyEditorialCheckpoint, adoptEditorialIdentity, appendEditorialEvent, validateEditorialOutline, editorialContextHash, selectEditorialLocalRole } from '../runtime/editorial-engine.ts';
+import { createEditorialEngine, emptyEditorialCheckpoint, adoptEditorialIdentity, appendEditorialEvent, validateEditorialOutline, editorialContextHash, selectEditorialLocalRole,
+  assembleCheckpoint, diffRows, hasChanges, splitCheckpoint } from '../runtime/editorial-engine.ts';
 import { contentHash } from '../domain/text/hash.ts';
 import { pipelineRevision, pipelineRunSteps, pipelineJobKeys, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
 import { isRunActive } from '../domain/run.ts';
@@ -27,6 +28,8 @@ import { currentReporterContext } from './request-context.ts';
 import type { EditorialIdentity } from '../runtime/editorial-engine.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { compactRunPreviews } from '../domain/run-events.ts';
+import { FULL_SCOPE, commitEditorialChanges, loadEditorialRows, loadedScope, type EditorialScope, type StoredReceipt } from './editorial-store.ts';
+import { scopeForRpc } from './editorial-scope.ts';
 
 const ids = { next: () => randomUUID() };
 const identifier = z.string().min(1).max(128);
@@ -42,34 +45,74 @@ export function editorialReceipt(method: string,hash: string,result: unknown,rev
     : { hash,result };
 }
 
+type Loaded = { receipt: StoredReceipt | null };
+type ReceiptOf<T> = (value: T, checkpoint: EditorialCheckpoint) => { requestId: string; value: StoredReceipt } | undefined;
+// A duplicate command receipt (40001) or a lock cycle (40P01) rolled everything back: the
+// rerun either replays the stored receipt or redoes the command on fresh rows.
+const RERUN_CODES = new Set(['40001', '40P01']);
+const EDITORIAL_ATTEMPTS = 3;
+
+/**
+ * Loads the rows a scope names, runs the unchanged engine on the state they assemble and,
+ * when `mutate`, writes back only the rows whose content changed (plus an optional receipt).
+ */
 export async function editorialTransaction<T>(role: 'runtime' | 'worker', change: (
-  checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, client: PoolClient,
-) => Promise<T>, mutate = true, permission: 'reporter.edit' | 'reporter.review' = 'reporter.edit'): Promise<{ value: T; revision: number; checkpoint: EditorialCheckpoint }> {
+  checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, client: PoolClient, loaded: Loaded,
+) => Promise<T>, mutate = true, permission: 'reporter.edit' | 'reporter.review' = 'reporter.edit', scope: EditorialScope = FULL_SCOPE,
+options: { receipt?: ReceiptOf<T> } = {}): Promise<{ value: T; revision: number; checkpoint: EditorialCheckpoint }> {
+  for (let attempt = 1; ; attempt++) {
+    try { return await editorialAttempt(role, change, mutate, permission, scope, options); }
+    catch (error) {
+      if (attempt >= EDITORIAL_ATTEMPTS || !RERUN_CODES.has(String((error as { code?: unknown }).code))) throw error;
+    }
+  }
+}
+
+async function editorialAttempt<T>(role: 'runtime' | 'worker', change: (
+  checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, client: PoolClient, loaded: Loaded,
+) => Promise<T>, mutate: boolean, permission: 'reporter.edit' | 'reporter.review', scope: EditorialScope,
+options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; checkpoint: EditorialCheckpoint }> {
   return transaction(role, async client => {
     if (role === 'runtime') await client.query("SELECT set_config('app.editorial_permission',$1,true)",[permission]);
-    const row = (await client.query('SELECT public.reporter_editorial_load($1) AS value', [mutate])).rows[0].value;
+    const { rows, receipt } = await loadEditorialRows(client, scope, mutate);
+    const loaded = loadedScope(scope);
     const context = role === 'runtime' ? currentReporterContext() : undefined;
     const identity = context ? { workspaceId: context.portal,workspaceName: context.workspaceName,workspaceSlug: context.workspaceSlug,
       personId: context.actor,name: context.name,email: context.email,avatarUrl: context.image,roles: context.roles,
       ...(reporterDeploymentMode() === 'local' ? { localOperator: true as const } : {}) } : undefined;
-    const checkpoint: EditorialCheckpoint = row.checkpoint.state ? row.checkpoint : emptyEditorialCheckpoint(identity);
+    const fallback = emptyEditorialCheckpoint(identity).state.workspace;
+    const checkpoint = assembleCheckpoint(rows, fallback, loaded);
     if (identity && reporterDeploymentMode() === 'cloud') {
       const members=(await client.query('SELECT public.reporter_workspace_members() AS members')).rows[0].members as EditorialIdentity[];
       checkpoint.state.members=[];
       for(const member of members) adoptEditorialIdentity(checkpoint,member);
     }
     if (identity) adoptEditorialIdentity(checkpoint,identity);
-    const before = contentHash(checkpoint);
     for (const job of Object.values(checkpoint.jobs)) job.events = compactRunPreviews(job.events);
     const engine = createEditorialEngine(checkpoint, ids);
     try {
-      const value = await change(checkpoint, engine, client);
+      const value = await change(checkpoint, engine, client, { receipt });
       checkpoint.state = engine.store.state;
-      const revision = mutate && (!row.checkpoint.state || before !== contentHash(checkpoint)) ? Number((await client.query('SELECT public.reporter_editorial_save($1,$2::jsonb) AS revision',
-        [row.revision, JSON.stringify(checkpoint)])).rows[0].revision) : Number(row.revision);
+      let revision = rows.seq;
+      if (mutate) {
+        const changes = diffRows(rows, splitCheckpoint(checkpoint, rows, loaded), loaded);
+        const stored = options.receipt?.(value, checkpoint);
+        if (hasChanges(changes) || stored) revision = await commitEditorialChanges(client, changes, stored);
+      }
       return { value, revision, checkpoint };
     } finally { engine.store.dispose(); }
   });
+}
+
+// The browser reads every production and the active runs' streams; never job internals.
+const SNAPSHOT_SCOPE: EditorialScope = { productions: 'all', sources: 'all', events: 'active', jobs: false,
+  items: { person: 'all', member: 'all', activity: 'all', feedback: 'all', image_asset: 'all' } };
+type Status = { seq: number; floor: number; membersHash: string };
+
+/** `v2.<change number>.<identity scope>`: unchanged, a delta since that number, or a snapshot. */
+function parseToken(token: string | undefined) {
+  const match = token ? /^v2\.(\d+)\.([a-f0-9]+)$/.exec(token) : null;
+  return match ? { seq: Number(match[1]), scope: match[2] } : undefined;
 }
 
 export async function editorialWorkspace(): Promise<ConnectedWorkspace>;
@@ -77,19 +120,28 @@ export async function editorialWorkspace(since: string | undefined, options?: { 
 export async function editorialWorkspace(since?: string, options: { active?: boolean } = {}): Promise<WorkspaceRefresh> {
   // The queue is read only while the browser follows a run, so idle polls stay a single stamp.
   const { status, queue } = await transaction('runtime', async client => ({
-    status: (await client.query('SELECT public.reporter_editorial_status() AS value')).rows[0].value as { revision: number; membersHash: string },
+    status: (await client.query('SELECT public.reporter_ed_status() AS value')).rows[0].value as Status,
     queue: options.active ? await queueStatus(client, 'editorial') : IDLE_QUEUE,
   }));
   const workerOnline = await workerAvailable();
-  const token = (revision: number) => contentHash({ revision,membersHash: status.membersHash,context: currentReporterContext() });
-  const syncToken = token(Number(status.revision));
-  if (since === syncToken) return { unchanged: true,revision: Number(status.revision),syncToken,workerOnline,stalled: queue.stalled };
-  const result = await editorialTransaction('runtime', async () => undefined, false);
-  return { state: result.checkpoint.state,jobs: result.checkpoint.jobs,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline,stalled: queue.stalled,deploymentMode:reporterDeploymentMode() };
+  const scope = contentHash({ membersHash: status.membersHash,context: currentReporterContext() });
+  const token = (seq: number) => `v2.${seq}.${scope}`;
+  const seq = Number(status.seq);
+  if (since === token(seq)) return { unchanged: true,revision: seq,syncToken: token(seq),workerOnline,stalled: queue.stalled };
+  const known = parseToken(since);
+  if (known && known.scope === scope && known.seq >= Number(status.floor) && known.seq < seq) {
+    const delta = await transaction('runtime', async client => (await client.query('SELECT public.reporter_ed_changes($1) AS value',[known.seq])).rows[0].value);
+    // A workspace change (pipeline, name) is rare: send a snapshot rather than merging it.
+    if (!delta.workspace) return { delta: true,...delta,revision: Number(delta.seq),syncToken: token(Number(delta.seq)),workerOnline,stalled: queue.stalled };
+  }
+  const result = await editorialTransaction('runtime', async () => undefined, false, 'reporter.edit', SNAPSHOT_SCOPE);
+  const jobs = Object.fromEntries(Object.entries(result.checkpoint.jobs).map(([id,job]) => [id,{ meta: job.meta,kind: job.kind,events: job.events }])) as EditorialCheckpoint['jobs'];
+  return { state: result.checkpoint.state,jobs,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),
+    model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline,stalled: queue.stalled,deploymentMode:reporterDeploymentMode() };
 }
 
 export async function editorialPipeline() {
-  return (await editorialTransaction('runtime',async checkpoint => pipelineView(checkpoint),false)).value;
+  return (await editorialTransaction('runtime',async checkpoint => pipelineView(checkpoint),false,'reporter.edit',{ history: true,recentRuns: 20 })).value;
 }
 
 function validateDraft(value: unknown) {
@@ -186,11 +238,12 @@ export async function editorialRpc(payload: unknown) {
   if (['generation.start', 'generation.retry'].includes(method) && !await workerAvailable()) {
     return refuse('provider_unavailable', 'Inicie o worker do Reporter AI antes de gerar.');
   }
-  return (await editorialTransaction('runtime', async (checkpoint,engine,client) => {
-    const hash = contentHash({ method,args });
-    const receipt = checkpoint.receipts?.[requestId];
+  const hash = contentHash({ method,args });
+  let replayed = false;
+  return (await editorialTransaction('runtime', async (checkpoint,engine,client,{ receipt }) => {
     if (receipt) {
       if (receipt.hash !== hash) throw new FlowError('IDEMPOTENCY_CONFLICT',409);
+      replayed = true;
       return receipt.projection === 'pipeline' ? ok(pipelineView(checkpoint)) : receipt.result;
     }
     const execute = async () => {
@@ -262,12 +315,9 @@ export async function editorialRpc(payload: unknown) {
     const command = engine.commands[method as keyof typeof engine.commands] as (...args: unknown[]) => Promise<unknown>;
     return command(...args);
     };
-    const result = await execute();
-    checkpoint.receipts ??= {};
-    checkpoint.receipts[requestId] = editorialReceipt(method,hash,result,activePipeline(checkpoint).revision);
-    // Bounded receipts preserve ambiguous-commit retries without an unbounded local aggregate.
-    const keys = Object.keys(checkpoint.receipts);
-    for (const key of keys.slice(0,Math.max(0,keys.length-1000))) delete checkpoint.receipts[key];
-    return result;
-  },true,method === 'decide' ? 'reporter.review' : 'reporter.edit')).value;
+    return await execute();
+  },true,method === 'decide' ? 'reporter.review' : 'reporter.edit',{ ...scopeForRpc(method,args),receipt: requestId },{
+    // Receipts make an ambiguous commit safe to retry; they expire with compaction.
+    receipt: (result,checkpoint) => replayed ? undefined : { requestId,value: editorialReceipt(method,hash,result,activePipeline(checkpoint).revision) as StoredReceipt },
+  })).value;
 }

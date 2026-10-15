@@ -30,7 +30,9 @@ SELECT set_config('app.access_mode','user',true),set_config('app.module_key','re
 SELECT (public.reporter_ed_status()->>'seq')::bigint AS start_seq \gset
 SELECT public.reporter_ed_commit(jsonb_build_object(
   'receipt',jsonb_build_object('requestId','rows-test-1','hash','h1','result','{"ok":true}'::jsonb),
-  'workspace',jsonb_build_object('workspace',jsonb_build_object('id','00000000-0000-0000-0000-000000000101','name','Teste','slug','teste','createdAt','2026-10-15T00:00:00Z')),
+  'workspace',jsonb_build_object('workspace',jsonb_build_object('id','00000000-0000-0000-0000-000000000101','name','Teste','slug','teste','createdAt','2026-10-15T00:00:00Z'),
+    'pipelineHash','rows-pipeline'),
+  'pipelines',jsonb_build_array(jsonb_build_object('hash','rows-pipeline','doc',jsonb_build_object('hash','rows-pipeline'))),
   'productions',jsonb_build_array(jsonb_build_object('id','rows-production','doc',jsonb_build_object('id','rows-production','title','Linhas','sourceIds',jsonb_build_array('rows-source')),
     'sourceIds',jsonb_build_array('rows-source'),'archived',false)),
   'sources',jsonb_build_array(jsonb_build_object('id','rows-source','doc',jsonb_build_object('id','rows-source','text','Fonte sintética.'))),
@@ -53,6 +55,12 @@ BEGIN
     AND jsonb_array_length(loaded->'items')=1 AND loaded->'receipt'->>'hash'='h1','an entity id loads its production, sources, runs, events and items');
   loaded := public.reporter_ed_load('{"entities":["rows-version"],"parts":["piece"]}');
   PERFORM pg_temp.assert_true(jsonb_array_length(loaded->'parts')=1 AND loaded->'parts'->0->>'kind'='piece','a scope can load only some part kinds');
+  loaded := public.reporter_ed_load('{"productions":["rows-production"],"part_ids":["rows-version"],"runs":[],"pipelines":false}');
+  PERFORM pg_temp.assert_true(jsonb_array_length(loaded->'parts')=1 AND loaded->'parts'->0->>'id'='rows-version'
+    AND jsonb_array_length(loaded->'runs')=0 AND jsonb_array_length(loaded->'pipelines')=0
+    AND jsonb_array_length(public.reporter_ed_load('{"productions":["rows-production"]}')->'pipelines')=1
+    AND jsonb_array_length(public.reporter_ed_load('{"runs":["rows-run"]}')->'runs')=1,
+    'a progress scope names exact parts and runs and skips the pipeline snapshots');
 END $$;
 SELECT set_config('test.first',:'first_seq',true);
 SELECT public.reporter_ed_commit('{"parts":[{"kind":"version","id":"rows-version","productionId":"rows-production","doc":null,"deleted":true}]}') AS second_seq \gset

@@ -77,6 +77,7 @@ export async function runMaterialAnalysis(text: string, options: ParseTranscript
 }
 
 export async function analyzeMaterial(text: string, options: ParseTranscriptOptions) {
-  const pipeline = (await editorialTransaction('runtime', async checkpoint => structuredClone(activePipeline(checkpoint)), false)).value;
+  // Only the workspace and its active pipeline: no production is read.
+  const pipeline = (await editorialTransaction('runtime', async checkpoint => structuredClone(activePipeline(checkpoint)), false, 'reporter.edit', {})).value;
   return runMaterialAnalysis(text, options, pipeline, await storageRoot());
 }
