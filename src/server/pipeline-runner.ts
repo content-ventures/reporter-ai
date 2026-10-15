@@ -25,6 +25,12 @@ export function articleWritingBudgets(outline: Outline, sizing: WritingSize) {
   return { intro: budget(sizing.introChars), sections: outline.sections.map((_section, index) => budget(sizing.sections[index]?.budgetChars)) };
 }
 type PartFloor = { chars: number; words: number };
+/** Measured on staging with gpt-oss-120b: a paragraph runs 300 to 400 characters whatever its target. */
+const PARAGRAPH_CHARS = 300, LONG_PARAGRAPH_CHARS = 400;
+/** As many paragraphs as the target asks for and the ceiling holds, from one to the contract's limit. */
+function paragraphCount(target: number, maximum: number, limit: number) {
+  return Math.max(1, Math.min(limit, Math.round(target / PARAGRAPH_CHARS), Math.floor(maximum / LONG_PARAGRAPH_CHARS)));
+}
 /** Each part's share of the article minimums, in proportion to its budget. Intertítulos count as body. */
 export function articlePartFloors(outline: Outline, sizing: WritingSize, budgets = articleWritingBudgets(outline, sizing)): PartFloor[] | undefined {
   const parts = [budgets.intro, ...budgets.sections];
@@ -103,7 +109,7 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   const outputParagraphs = (schema: ReturnType<typeof articlePartSchema>, budget?: number, maximum=budget) => {
     const contract = schema.properties.paragraphs as { maxItems: number; items: { properties: { text: { maxLength: number } } } };
     const total = budget ?? contract.items.properties.text.maxLength;
-    const preferredCount = contract.maxItems;
+    const preferredCount = paragraphCount(total * 0.98, maximum ?? total, contract.maxItems);
     const targetCharsEach = Math.floor(total * 0.98 / preferredCount);
     return { maxCount: contract.maxItems, preferredCount, maxCharsEach: maximum??total, maxTotalChars: maximum??total,
       targetCharsEach, targetWordsEach: Math.max(1, Math.floor(targetCharsEach / 6.5)) };
@@ -143,7 +149,9 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
           ?Math.min(Math.floor((budget??Infinity)*0.98),Math.max(previousTarget,floor!.chars,Math.ceil(floor!.words*ratio)))
           :Math.min(budget??actual.characters,previousTarget);
       const targetWords=Math.max(violation==='ARTICLE_PART_TOO_SHORT'?floor!.words:0,Math.floor(targetTotalChars/ratio));
-      const count=sizing.outputParagraphs.preferredCount;
+      // Paragraph count drives the provider's length far more than character targets do.
+      const fit=paragraphCount(targetTotalChars,budget??targetTotalChars,sizing.outputParagraphs.maxCount);
+      const count=violation==='ARTICLE_PART_SIZE_EXCEEDED'?Math.min(fit,sizing.outputParagraphs.preferredCount):fit;
       // Revise only this part through the saved template, with measured feedback
       // and safer per-paragraph targets. Source and preceding prose stay unchanged.
       requested={...values,sizing:JSON.stringify({...sizing,targetChars:targetTotalChars,targetWords,
@@ -151,7 +159,7 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
         // allocation here contradicted the measured revision target above.
         ...(key==='intro'?{introChars:targetTotalChars}
           :{currentSection:{...sizing.currentSection,budgetChars:targetTotalChars}}),
-        outputParagraphs:{...sizing.outputParagraphs,targetCharsEach:Math.floor(targetTotalChars/count),targetWordsEach:Math.max(1,Math.floor(targetWords/count))},
+        outputParagraphs:{...sizing.outputParagraphs,preferredCount:count,targetCharsEach:Math.floor(targetTotalChars/count),targetWordsEach:Math.max(1,Math.floor(targetWords/count))},
         revisionFeedback:{scope:'current_part',attempt:revision,maxAttempts:2,violation,actualCharacters:measured(paragraphs).chars,actualWords:actual.words,
           ...(floor?{minTotalChars:floor.chars,minTotalWords:floor.words}:{}),maxTotalChars:budget,targetTotalChars,previousDraft:value},
       })};
@@ -162,17 +170,24 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
     if(unresolved&&!kept)throw new FlowError(unresolved,502);
     return unresolved||short(value)?kept:value;
   };
+  // The article's ceiling bounds each part, not its share of the target: what is left of it after the
+  // text already written and the minimums the later parts still need. A part's share was too tight.
+  const room=sizing.maxChars===undefined?undefined
+    :sizing.maxChars-(sizing.headings?outline.sections.reduce((sum,section)=>sum+countCharacters(section.title),0):0);
+  const reserve=(from:number)=>[budgets.intro,...budgets.sections].slice(from).reduce<number>((sum,budget,offset)=>sum+(floors?floors[from+offset].chars:budget??0),0);
+  const ceiling=(written:number,from:number,fallback?:number)=>room===undefined?fallback:Math.max(1,room-written-reserve(from));
+  const introMaximum=ceiling(0,1,budgets.intro);
   const intro = z.object({ paragraphs: z.array(paragraph).min(1).max(3) }).strict().parse(await part('intro',introSchema,
-    { ...variables,sizing: JSON.stringify(partSizing(budgets.intro,{introChars:budgets.intro,outputParagraphs:outputParagraphs(introSchema,budgets.intro),...minimums(floors?.[0])})) },
-    budgets.intro,undefined,floors?.[0]));
+    { ...variables,sizing: JSON.stringify(partSizing(budgets.intro,{introChars:budgets.intro,outputParagraphs:outputParagraphs(introSchema,budgets.intro,introMaximum),...minimums(floors?.[0])},introMaximum)) },
+    introMaximum,undefined,floors?.[0]));
   const sections: { title: string; paragraphs: z.infer<typeof paragraph>[] }[] = [];
   const opening=measured(intro.paragraphs);
-  let carry=Math.max(0,(budgets.intro??0)-opening.chars);
+  let carry=Math.max(0,(introMaximum??0)-opening.chars),writtenChars=opening.chars;
   // How far the written parts are above (+) or below (−) their shares of the article minimums.
   let balance=floors?{chars:opening.chars-floors[0].chars,words:opening.words-floors[0].words}:{chars:0,words:0};
   for (const [index,section] of outline.sections.entries()) {
     const history = [...intro.paragraphs.map(p => p.text),...sections.flatMap(s => [s.title,...s.paragraphs.map(p => p.text)])].join('\n\n');
-    const target=budgets.sections[index],maximum=target===undefined?undefined:target+carry;
+    const target=budgets.sections[index],maximum=target===undefined?undefined:ceiling(writtenChars,index+2,target+carry);
     // A shortfall raises this section's minimums and budget; spare room only raises its ceiling.
     const share=floors?.[index+1],floor=share&&{chars:Math.max(0,share.chars-balance.chars),words:Math.max(0,share.words-balance.words)};
     const goal=target===undefined?undefined:Math.min(maximum!,target+Math.max(0,-balance.chars,Math.ceil(-balance.words*6.5)));
@@ -184,7 +199,7 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
           outputParagraphs: outputParagraphs(schema,goal,maximum),charactersAlreadyWritten: countCharacters(history),...minimums(floor) },maximum)) },maximum,index,floor));
     if (drafted.title !== section.title) throw new FlowError('OUTLINE_NOT_FOLLOWED',502);
     const written=measured(drafted.paragraphs);
-    carry=Math.max(0,(maximum??0)-written.chars);
+    carry=Math.max(0,(maximum??0)-written.chars);writtenChars+=written.chars;
     if(share)balance={chars:balance.chars+written.chars-share.chars,words:balance.words+written.words-share.words};
     sections.push(drafted);
   }

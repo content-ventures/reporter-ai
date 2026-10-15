@@ -421,3 +421,21 @@ test('a development that breaks the hard contract never replaces a valid short d
   assert.deepEqual(violations,['ARTICLE_PART_TOO_SHORT','ARTICLE_PART_SIZE_EXCEEDED']);
   assert.deepEqual(article.sections[0],short,'the valid draft is kept; the final R1 check decides the article');
 });
+
+test('a provider that writes about 350 characters per paragraph, whatever it is asked, still lands inside R1',async()=>{
+  // Measured on staging with gpt-oss-120b: 300 to 400 characters per paragraph, and requests to shorten ignored.
+  const sizing=draftSizeInstructions({ size: 'standard',sections: 3 });
+  const outline={ title: 'Ateliê Sul',sections: ['Crescimento sustentável e estruturação da exportação no Ateliê Sul',
+    'Adaptação às exigências internacionais: sustentabilidade, rastreabilidade e auditorias',
+    'Inovação tecnológica e desafios de formação profissional na fábrica'].map(title=>({ title,evidenceIds: ['e1'] })) };
+  const long=Array.from({ length: 4 },()=>sentence).join(' ');
+  const violations:string[]=[];
+  const article=await writeSequentialArticle(outline,variables,sizing,async(key,_schema,values)=>{
+    const requested=JSON.parse(values.sizing);if(requested.revisionFeedback)violations.push(requested.revisionFeedback.violation);
+    const paragraphs=Array.from({ length: requested.outputParagraphs.preferredCount },()=>({ text: long,evidenceIds: ['e1'] }));
+    return key==='section'?{ title: JSON.parse(values.section).title,paragraphs }:{ paragraphs };
+  });
+  const stats=textStats(writtenArticleText(article,sizing.headings));
+  assert.equal(articleLengthIssue(stats,sizing),undefined,`the article meets R1: ${stats.words} words, ${stats.characters} characters`);
+  assert.deepEqual(violations,[],'each part is asked for as many paragraphs as its ceiling holds');
+});
