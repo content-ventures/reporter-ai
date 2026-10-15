@@ -166,24 +166,11 @@ jobs:
           neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --file "$env_file"
           node --env-file="$env_file" scripts/provision-worker-media.mjs
           node --env-file="$env_file" --input-type=module <<'NODE'
+          import { waitForWorkerReadiness } from './scripts/check-worker-readiness.mjs';
           const endpoint = process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL;
           const secret = process.env.REPORTER_WORKER_PASSWORD;
           if (!endpoint || !secret) throw new Error('Neon worker health check is missing its function URL or password.');
-          let ready = false;
-          for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-              const response = await fetch(endpoint, {
-                headers: { 'x-reporter-worker-key': secret },
-                signal: AbortSignal.timeout(120_000),
-              });
-              const payload = await response.json();
-              if (response.ok && payload.ok === true) { ready = true; break; }
-              const code = typeof payload.error === 'string' && /^[A-Z0-9_]{1,64}$/.test(payload.error)
-                ? payload.error : `HTTP_${response.status}`;
-              console.warn(`Neon worker readiness attempt ${attempt + 1}: ${code}`);
-            } catch { /* Retry a cold function without printing secret-bearing URLs. */ }
-          }
-          if (!ready) throw new Error('Neon worker readiness failed: database, upload storage or media tools unavailable.');
+          await waitForWorkerReadiness(endpoint,secret);
           console.log('Neon worker database, upload storage and media tools are ready.');
           NODE
           node --env-file="$env_file" scripts/check-worker-schedule.mjs
