@@ -23,6 +23,7 @@ import {
   SearchField,
   toast,
   useKanbanDrag,
+  VisuallyHidden,
 } from '@content-ventures/design-system/v3';
 import { Archive, ArrowUpRight, BadgeCheck, ChevronDown, FileText, GalleryHorizontal, Inbox, MoreHorizontal, Package, Plus } from '@content-ventures/design-system/v3/icons';
 import type { ProductionListItem, ProductionListPage } from '@/ports';
@@ -241,6 +242,7 @@ function ProductionsKanban() {
         )}
         {query.status === 'error' && !page ? errorState(query) : archivedQuery.status === 'error' && !archivedPage ? errorState(archivedQuery) : (
           <>
+            <VisuallyHidden role="heading" aria-level={2}>Etapas de produção e aprovações</VisuallyHidden>
             <KanbanBoard label="Etapas de produção e aprovações">
               {LANES.map((lane) => {
                 const laneRows = boardGroups[lane.id];

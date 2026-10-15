@@ -45,9 +45,9 @@ export async function expectLoaded(page: Page): Promise<void> {
 /** One h1, and no heading level skipped on the way down (visible and screen-reader headings). */
 export async function expectHeadingOutline(page: Page): Promise<void> {
   const levels = await page.evaluate(() =>
-    [...document.querySelectorAll("h1, h2, h3, h4, h5, h6")]
+    [...document.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"][aria-level]')]
       .filter((heading) => !heading.closest('[aria-hidden="true"], [inert], [hidden]') && heading.getClientRects().length > 0)
-      .map((heading) => ({ level: Number(heading.tagName.slice(1)), text: (heading.textContent ?? "").trim().slice(0, 40) })),
+      .map((heading) => ({ level: Number(heading.getAttribute("aria-level") ?? heading.tagName.slice(1)), text: (heading.textContent ?? "").trim().slice(0, 40) })),
   );
   expect(levels.filter((heading) => heading.level === 1).map((heading) => heading.text), "uma h1 por página").toHaveLength(1);
   const skips: string[] = [];
