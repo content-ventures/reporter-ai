@@ -9,6 +9,7 @@ import { availableIn, navigationFor, PRIMARY_ACTIONS, SOURCE_ORIGIN_LABELS } fro
 import { useAuditControls, useSession, useSimulation } from '@/state';
 import { formatShortDate } from '../format';
 import { iconFor } from '../icons';
+import { R2_NAVIGATION } from '../r2-preview';
 import { PersonAvatar } from '../person-avatar';
 import { OVERVIEW_HREF, productionHref } from '../routes';
 import { StatusBadge } from '../status-badge';
@@ -84,7 +85,7 @@ export function ShellCommandPalette({
     const navigation: CommandGroup = {
       label: 'Ir para',
       showWhenEmpty: true,
-      items: navigationFor(undefined, roles ? { roles } : undefined).flatMap((section) =>
+      items: navigationFor(undefined, roles ? { roles } : undefined, R2_NAVIGATION).flatMap((section) =>
         section.items.map((item) => ({
           id: `go-${item.id}`,
           label: item.label,

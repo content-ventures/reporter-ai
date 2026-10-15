@@ -79,7 +79,7 @@ function UpcomingSection({ upcoming }: { upcoming: Upcoming }) {
 }
 
 /**
- * Novidades (`/whats-new`): the product release notes (`src/data/release-history.json`, kept in
+ * Versões (`/whats-new`): the product release notes (`src/data/release-history.json`, kept in
  * sync by `pnpm release:prepare`). "Em preparação" announces the roadmap release being built
  * (R1 · Experiência) while the version stays 0.1.0 (D05); then the releases, newest first, each
  * change on its own line with its kind. Paginates once the history grows.
@@ -91,7 +91,7 @@ export function WhatsNewScreen() {
   const visible = releases.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   return (
     <PageStack>
-      <PageHeader title="Novidades" meta={[`Versão ${history.currentVersion}`]} />
+      <PageHeader title="Versões" meta={[`Versão ${history.currentVersion}`]} />
       <Panel>
         {upcoming ? <UpcomingSection upcoming={upcoming} /> : null}
         <Section title="Lançamentos" meta={String(releases.length)}>

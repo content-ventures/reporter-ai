@@ -107,12 +107,12 @@ const EVERYONE = ['editor', 'approver', 'creative_reviewer', 'admin'] as const;
 
 // The menu's shape (released items, "Em breve", utilities; roles) is tested in `navigation.test.ts`.
 describe('navigation registry', () => {
-  test('R1 menu: 24 items for an admin, including connected images, banners and local prompts', () => {
+  test('R1 menu: 20 scoped items for an admin, including local prompts and planned later destinations', () => {
     const items = menuFor(R1, { roles: ['editor', 'admin'] }).flatMap((section) => section.items);
-    assert.equal(items.length, 24);
+    assert.equal(items.length, 20);
     assert.deepEqual(
       items.filter((item) => !item.soon).map((item) => item.id),
-      ['overview', 'productions', 'approvals', 'templates', 'images', 'banners', 'quotes', 'audit', 'prompts', 'whats-new'],
+      ['overview', 'productions', 'templates', 'audit', 'prompts', 'whats-new'],
     );
     assert.equal(menuFor(R1).at(-1)?.group.placement, 'utility');
     assert.equal(items.find((item) => item.id === 'whats-new')?.icon, 'Megaphone');
@@ -137,7 +137,7 @@ describe('navigation registry', () => {
 
   test('⌘K, the active item and the trail use only released items', () => {
     const released = navigationFor(R1, { roles: EVERYONE }).flatMap((section) => section.items.map((item) => item.id));
-    assert.deepEqual(released, ['overview', 'productions', 'approvals', 'templates', 'images', 'banners', 'quotes', 'audit', 'prompts', 'whats-new']);
+    assert.deepEqual(released, ['overview', 'productions', 'templates', 'audit', 'prompts', 'whats-new']);
     for (const item of NAV_ITEMS.filter((entry) => !isReleased(entry.since, R1))) {
       assert.equal(activeNavItem(item.href), undefined, `${item.href} is not highlighted before ${item.since}`);
     }
@@ -147,14 +147,12 @@ describe('navigation registry', () => {
     );
   });
 
-  test('every R1 item has a route; later items have none yet', () => {
+  test('R1 and the approved R2 demonstration have routes; later releases remain unavailable', () => {
     const app = new URL('../app/(workspace)/', import.meta.url);
     const page = (href: string) => new URL(`.${href === '/' ? '' : href}/page.tsx`, app);
-    // Wave 2 (track C2) adds `app/(workspace)/approvals/page.tsx`; the integrator drops this exception at I2.
-    const pendingRoutes = new Set(['/approvals']);
+    const demonstrationRoutes = new Set(['/news', '/archive', '/settings/editorial-map', '/settings/writing-guide', '/admin/integrations']);
     for (const item of NAV_ITEMS) {
-      if (pendingRoutes.has(item.href) && !existsSync(page(item.href))) continue;
-      assert.equal(existsSync(page(item.href)), isReleased(item.since, R1), `${item.href} page exists only once ${item.since} ships`);
+      assert.equal(existsSync(page(item.href)), isReleased(item.since, R1) || demonstrationRoutes.has(item.href), `${item.href} follows the released or demonstrative route contract`);
     }
   });
 
@@ -166,12 +164,12 @@ describe('navigation registry', () => {
     );
   });
 
-  test('"Versões" is not a menu label; /versions redirects to Novidades', () => {
-    assert.ok(!NAV_ITEMS.some((item) => item.label === 'Versões'));
+  test('"Versões" names the product history and its legacy address keeps redirecting', () => {
+    assert.equal(NAV_ITEMS.find((item) => item.id === 'whats-new')?.label, 'Versões');
     assert.deepEqual(NAV_REDIRECTS, [{ from: '/versions', to: '/whats-new', permanent: true }]);
   });
 
-  test('shipping a release turns "Em breve" into links; every item stays in the menu', () => {
+  test('shipping a release turns "Em breve" into links; scoped items stay in the menu', () => {
     const all = (release: ReleaseId) => menuFor(release, { roles: EVERYONE }).flatMap((section) => section.items.map((item) => item.id)).sort();
     for (const release of RELEASES) assert.deepEqual(all(release), all(R1), `${release} shows the same items`);
     const soon = (release: ReleaseId) =>
@@ -182,7 +180,7 @@ describe('navigation registry', () => {
       navigationFor('R2').map((section) => section.group.id),
       ['production', 'intake', 'library', 'settings', 'utility'],
     );
-    assert.equal(navigationFor('R7', { roles: EVERYONE }).flatMap((section) => section.items).length, NAV_ITEMS.length);
+    assert.equal(navigationFor('R7', { roles: EVERYONE }).flatMap((section) => section.items).length, NAV_ITEMS.filter((item) => !item.hidden).length);
   });
 
   test('items are unique, follow their release inside the group and map to roadmap features', () => {
