@@ -162,24 +162,25 @@ for (const viewport of VIEWPORTS) {
       expect(errors, "erros no console").toEqual([]);
     });
 
-    test("menu: o mapa R1–R7 mostra o que ainda não abre como “Em breve”", async ({ page }) => {
+    test("menu: demonstrações R2 abrem e etapas futuras permanecem indisponíveis", async ({ page }) => {
       const errors = watchErrors(page);
       await page.goto("/");
       await expect(text("Precisa de você")(page)).toBeVisible();
       const phone = viewport.width < 768;
       if (phone) await page.getByRole("button", { name: "Abrir menu" }).click();
       await page.getByRole("button", { name: "Em breve", exact: true }).click();
-      await expect(page.getByRole("button", { name: /, Em breve$/ })).toHaveCount(14);
-      const news = page.getByRole("button", { name: "Notícias, Em breve" });
-      await expect(news).toHaveAttribute("aria-disabled", "true");
-      await expect(news).toHaveAccessibleDescription(/Fila de notícias com triagem por IA\.\sChega\sna\sR2\s·\sHard\sNews/);
+      await expect(page.getByRole("button", { name: /, Em breve$/ })).toHaveCount(9);
+      await expect(page.getByRole("navigation", { name: "Menu principal" }).getByRole("link", { name: "Notícias — R2", exact: true })).toHaveAttribute("href", "/news");
+      const planned = page.getByRole("button", { name: "Oportunidades, Em breve" });
+      await expect(planned).toHaveAttribute("aria-disabled", "true");
+      await expect(planned).toHaveAccessibleDescription(/Pautas Evergreen com dados de SEO\.\sChega\sna\sR3/);
       // Clique (ou toque), Enter e Espaço: nada abre, e na gaveta o menu continua aberto.
-      if (phone) await news.tap({ force: true });
-      else await news.click({ force: true });
-      await news.press("Enter");
-      await news.press(" ");
+      if (phone) await planned.tap({ force: true });
+      else await planned.click({ force: true });
+      await planned.press("Enter");
+      await planned.press(" ");
       await expect(page).toHaveURL((url) => url.pathname === "/");
-      await expect(news).toBeInViewport();
+      await expect(planned).toBeInViewport();
       expect(errors, "erros no console").toEqual([]);
     });
 
@@ -193,8 +194,7 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole("option", { name: /Entrar como Pedro/ }).click();
       await expect(text("Você entrou como Pedro")(page)).toBeVisible();
       await expect(page.getByRole("button", { name: "Escrever do zero", exact: true })).toHaveCount(0);
-      await page.getByRole("tab", { name: /^Material/ }).click();
-      await expect(page.getByRole("tabpanel", { name: /^Material/ }).getByRole("article", { name: /Couro Nobre/ })).toHaveCount(0);
+      await expect(page.getByRole("region", { name: "Produções recentes", exact: true }).getByRole("link", { name: /Couro Nobre/ })).toHaveCount(0);
 
       for (const [path, title] of [
         ["/admin/audit", "Logs restritos a administradores"],
