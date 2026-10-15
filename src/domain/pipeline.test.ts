@@ -26,6 +26,13 @@ test('preset 2.0 grounds each editorial part without recap, invented negatives o
   assert.match(definition.steps.section.prompt,/section\.evidenceIds/);
   assert.match(definition.steps.section.prompt,/Nunca retorne uma lista vazia/);
   assert.match(definition.steps.section.prompt,/não como nova fonte factual/);
+  for (const key of ['intro','section'] as const) {
+    // A short part is developed, never shortened again: each revision names its direction.
+    assert.match(definition.steps[key].prompt,/siga somente minChars, minWords, maxChars, targetChars e targetWords/);
+    assert.match(definition.steps[key].prompt,/Para ARTICLE_PART_SIZE_EXCEEDED, encurte/);
+    assert.match(definition.steps[key].prompt,/Para ARTICLE_PART_TOO_SHORT, substitua-o por uma versão mais desenvolvida, com ao menos minTotalWords palavras/);
+    assert.doesNotMatch(definition.steps[key].prompt,/previousDraft não cumpriu o contrato: substitua-o por uma versão mais curta/);
+  }
   assert.match(definition.steps.article.prompt,/targetChars e minChars não autorizam/);
   assert.match(definition.steps.carousel.prompt,/Use exclusivamente a versão do artigo aprovado/);
   assert.match(definition.steps.carousel.prompt,/inclusive na abertura/);
