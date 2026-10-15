@@ -8,6 +8,7 @@ import { createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
 import { withServerAssets } from '../adapters/http/server-assets.ts';
 import { committedCommand } from '../adapters/http/committed-command.ts';
+import { createWorkspaceRefresh } from '../adapters/http/workspace-refresh.ts';
 import { contentHash } from '../domain/text/hash.ts';
 import { createFixtures } from '../fixtures/index.ts';
 import { usedAssetIds } from '../domain/record.ts';
@@ -28,21 +29,18 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const ports = createEditorialEngine(current,ids);
   let disposed = false;
   const activeTab = Object.freeze({ status: 'active' as const });
-  let loading: Promise<void> | undefined;
   let lastRefresh = 0;
   let save: SaveState = { scope: 'remote',status: 'idle' };
   const saveListeners = new Set<(state: SaveState) => void>();
   const setSave = (state: SaveState) => { save = state; for (const listener of saveListeners) listener(save); };
   const localAssets = createIndexedDbAssetStore({ clock,ids,workspaceId: LOCAL_WORKSPACE,actorId: () => LOCAL_OPERATOR,reset: false });
-  const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(),() => current.deploymentMode === 'cloud');
+  const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(true),() => current.deploymentMode === 'cloud');
   const fixtures = createFixtures({ now: clock.now(),empty: true });
   const render = createLocalRenderService({ templates: fixtures.templates,renders: fixtures.templateRenders,
     descriptions: fixtures.templateDescriptions,library: fixtures.templateLibrary,loadCover: assetCoverLoader(assets),
     coverCredit: id => creditLine(assets.get(id)?.credit),samplePhoto: { assetId: fixtures.samplePhoto.assetId,credit: fixtures.samplePhoto.credit,load: servedCoverLoader(fixtures.samplePhoto.src) },
     samplePhotos: fixtures.samplePhotos.map(photo => ({ assetId: photo.assetId,credit: photo.credit,load: servedCoverLoader(photo.src) })),typefaces: options.typefaces });
-  const refresh = () => {
-    if (loading) return loading;
-    loading = requestWorkspace(current.syncToken).then(snapshot => {
+  const refresh = createWorkspaceRefresh(() => requestWorkspace(current.syncToken).then(snapshot => {
       if (disposed || snapshot.revision < current.revision) return;
       if ('unchanged' in snapshot) {
         current = { ...current,workerOnline: snapshot.workerOnline };
@@ -53,9 +51,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       assets.adoptSnapshot();
       if (changed) ports.store.transact(() => ok({ state: snapshot.state,value: undefined,persist: 'none',scope: 'external',productionIds: snapshot.state.productions.map(p => p.production.id) }));
       generation.accept(snapshot);
-    }).finally(() => { loading = undefined;lastRefresh = Date.now(); });
-    return loading;
-  };
+    }).finally(() => { lastRefresh = Date.now(); }));
   let writeTail: Promise<unknown> = Promise.resolve();
   let failedWrite: { method: string; args: unknown[]; requestId: string } | undefined;
   const rpc = <T,>(method: string,args: unknown[]): Promise<T> => {
@@ -65,7 +61,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       setSave({ scope: 'remote',status: 'saving' });
       try {
         await ready;
-        const result = await committedCommand(() => reporterRequest<T>('/workspace',payload),refresh);
+        const result = await committedCommand(() => reporterRequest<T>('/workspace',payload),() => refresh(true));
         failedWrite = undefined;
         setSave({ scope: 'remote',status: 'saved',savedAt: clock.now() });
         return result;
@@ -109,7 +105,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       try {
         await writeTail;
         if (failedWrite) { await reporterRequest('/workspace',failedWrite); failedWrite = undefined; }
-        await refresh(); setSave({ scope: 'remote',status: 'saved',savedAt: clock.now() }); return ok(save);
+        await refresh(true); setSave({ scope: 'remote',status: 'saved',savedAt: clock.now() }); return ok(save);
       } catch { return refuse('save_failed','Servidor indisponível. Suas alterações não foram descartadas.'); }
     } },
     tabs: { current: () => activeTab,subscribe: () => () => {},claim: () => { void refresh(); } },
