@@ -13,6 +13,30 @@ import { WORKER_MEDIA, WORKER_MEDIA_BUCKET, workerMediaKey, type MediaTool } fro
 const installed = new Map<MediaTool, Promise<string>>();
 const client = new S3Client({ forcePathStyle: true });
 
+export function workerMediaStream(body: unknown): Readable {
+  const stream = body as Partial<AsyncIterable<Uint8Array>> | undefined;
+  if (!stream || typeof stream !== 'object' || typeof stream[Symbol.asyncIterator] !== 'function') {
+    throw new FlowError('MEDIA_TOOL_BODY_UNAVAILABLE', 503);
+  }
+  // S3 can expose a host-provided stream. Consume the async-iterator contract
+  // rather than relying on the Node Readable constructor's identity.
+  return Readable.from(stream as AsyncIterable<Uint8Array>);
+}
+
+export function workerMediaFailure(error: unknown): FlowError {
+  if (error instanceof FlowError) return error;
+  const failure = error as { name?: string; code?: string } | null;
+  if (['AccessDenied','InvalidAccessKeyId','SignatureDoesNotMatch','ExpiredToken'].includes(failure?.name ?? '')) {
+    return new FlowError('MEDIA_TOOL_STORAGE_DENIED', 503);
+  }
+  if (['NoSuchKey','NotFound','NoSuchBucket'].includes(failure?.name ?? '')) return new FlowError('MEDIA_TOOL_OBJECT_MISSING', 503);
+  if (['AbortError','TimeoutError'].includes(failure?.name ?? '')) return new FlowError('MEDIA_TOOL_DOWNLOAD_TIMEOUT', 503);
+  if (['EACCES','EPERM','EROFS','ENOSPC','ENOSYS'].includes(failure?.code ?? '')) {
+    return new FlowError(`MEDIA_TOOL_FILESYSTEM_${failure!.code}`, 503);
+  }
+  return new FlowError('MEDIA_TOOL_DOWNLOAD_FAILED', 503);
+}
+
 export async function installWorkerMedia(tool: MediaTool, body: Readable, expected: { size: number; sha256: string } = WORKER_MEDIA[tool]) {
   const directory = await mkdtemp(join(tmpdir(), 'reporter-media-'));
   const destination = join(directory, tool), hash = createHash('sha256');
@@ -37,10 +61,8 @@ export function mediaExecutable(tool: MediaTool): Promise<string> {
   if (!pending) {
     pending = client.send(new GetObjectCommand({ Bucket: WORKER_MEDIA_BUCKET, Key: workerMediaKey(tool) }), {
       abortSignal: AbortSignal.timeout(90_000),
-    }).then(object => {
-      if (!(object.Body instanceof Readable)) throw new FlowError('MEDIA_TOOL_UNAVAILABLE', 503);
-      return installWorkerMedia(tool, object.Body);
-    }).catch(() => { installed.delete(tool); throw new FlowError('MEDIA_TOOL_UNAVAILABLE', 503); });
+    }).then(object => installWorkerMedia(tool, workerMediaStream(object.Body)))
+      .catch(error => { installed.delete(tool); throw workerMediaFailure(error); });
     installed.set(tool, pending);
   }
   return pending;

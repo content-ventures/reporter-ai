@@ -31,6 +31,11 @@ the hosted request shares Node's global `Request` constructor or clone behavior.
 Both routes retain the SDK's invocation-header/body validation. Rejected deliveries
 emit a bounded reason code to the function console for release diagnostics.
 
+Media downloads consume the S3 async-stream contract and retain exact size/hash
+verification. Readiness distinguishes object-storage access, missing objects,
+stream format, integrity, local filesystem and executable-launch failures with
+bounded error codes; release logs print those codes without provider details.
+
 ## Required GitHub production environment
 
 Variables: `NEON_PROJECT_ID`, `NEON_BRANCH_ID` (the intended production branch ID).
