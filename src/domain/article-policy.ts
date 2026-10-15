@@ -27,6 +27,8 @@ export function articleLengthIssue(stats: { characters: number; words: number },
 
 /** Only Unicode composition and whitespace vary; no fuzzy words, elisions or paraphrases. */
 export function literalQuoteText(text: string) { return text.normalize('NFC').replace(/\s+/gu, ' ').trim(); }
+/** A quotation may adapt only its closing punctuation to the sentence around it: “…a feira,” for “…a feira.”. */
+export function quotedWords(literal: string) { return literal.replace(/[\s.,;:!?…]+$/u, ''); }
 export function directQuotes(text: string): string[] {
   return [...text.matchAll(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu)].map(match => match[1] ?? match[2] ?? match[3]);
 }
@@ -56,12 +58,12 @@ export function articleQuotationIssue(paragraphs: readonly { text: string; evide
     const delimiters = paragraph.text.match(/[“”"«»]/gu)?.length ?? 0;
     if (delimiters !== quoted.length * 2) return 'UNSUPPORTED_ARTICLE_QUOTE';
     for (const quote of quoted) {
-      const literal = literalQuoteText(quote);
+      const literal = literalQuoteText(quote), words = quotedWords(literal);
       const supported=[...paragraph.evidenceIds.map(id=>evidence.get(id)??''),...(passages?.(paragraph.evidenceIds)??[])];
-      if (!literal || !supported.some(text=>literalQuoteText(text).includes(literal)))
+      if (!words || !supported.some(text=>literalQuoteText(text).includes(words)))
         return 'UNSUPPORTED_ARTICLE_QUOTE';
       // A quoted brand name is not one of the required substantive quotations.
-      if (countWords(literal) >= 4) distinct.add(literal);
+      if (countWords(words) >= 4) distinct.add(words);
     }
   }
   if (distinct.size < minimum) return 'ARTICLE_QUOTES_REQUIRED';
