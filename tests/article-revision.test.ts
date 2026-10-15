@@ -20,12 +20,12 @@ test('a first literal draft outside length can be measured for one revision but 
       limits: { minChars: 2500,maxChars: 4000,minWords: 500,maxWords: 800 },minQuotes: 2,evidence: new Map([['a',a],['b',b]]),
     } };
   try {
-    const first = await executePipelineStep({ ...input,deferLengthRevision: true });
+    const first = await executePipelineStep({ ...input,deferWritingRevision: true });
     assert.equal(first.needsRevision,true);
     assert.equal(await cacheRead(directory,'pipeline-'+traces.at(-1)!.hash),null);
     await assert.rejects(executePipelineStep(input),/ARTICLE_SIZE_TOO_SHORT/,'the final pass still has hard R1 limits');
     globalThis.fetch = async () => Response.json({ choices: [{ finish_reason: 'stop',message: { content: JSON.stringify({ ...value,intro: [{ text: '“Uma fala completamente inventada.”',evidenceIds: ['a'] }] }) } }] });
-    await assert.rejects(executePipelineStep({ ...input,deferLengthRevision: true }),/UNSUPPORTED_ARTICLE_QUOTE|ARTICLE_SIZE_TOO_SHORT/);
+    await assert.rejects(executePipelineStep({ ...input,deferWritingRevision: true }),/UNSUPPORTED_ARTICLE_QUOTE|ARTICLE_SIZE_TOO_SHORT/);
   } finally { globalThis.fetch = original;await rm(directory,{ recursive: true,force: true }); }
 });
 test('an oversized complete draft is revised once with real counts, never truncated or accepted', async () => {

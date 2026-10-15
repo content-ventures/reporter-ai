@@ -36,7 +36,7 @@ export function RunOutcomeToasts({ productions }: { productions: readonly Produc
     const kind = ANNOUNCED[update.meta.request.kind];
     if (!kind) return;
     const href = pieceHref(update.meta.productionId, kind);
-    if (pathname === href || pathname.startsWith(`${href}/`) || STAGE_ROUTE.test(pathname)) return;
+    if (pathname === '/productions/new' || pathname === href || pathname.startsWith(`${href}/`) || STAGE_ROUTE.test(pathname)) return;
     const title = productions.find((item) => item.id === update.meta.productionId)?.title;
     const open = { label: 'Abrir', onClick: () => router.push(href) };
     if (update.event.type === 'run.completed') {

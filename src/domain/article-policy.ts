@@ -1,6 +1,7 @@
 import { articleStats, blockText } from './article.ts';
 import type { ArticleBody } from './article.ts';
 import { resolveSourceRef } from './source.ts';
+import type { SourceRef } from './refs.ts';
 import type { Source } from './source.ts';
 import type { CheckResult } from './checks.ts';
 import { countWords } from './text/stats.ts';
@@ -29,8 +30,24 @@ export function literalQuoteText(text: string) { return text.normalize('NFC').re
 export function directQuotes(text: string): string[] {
   return [...text.matchAll(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu)].map(match => match[1] ?? match[2] ?? match[3]);
 }
+/** Join cited slices only when they touch inside the SAME immutable transcript segment.
+ * A missing sentence, source/version boundary or speaker turn cannot become a quotation. */
+export function contiguousSourcePassages(sources:readonly Source[],refs:readonly SourceRef[]):string[]{
+  const ranges=refs.flatMap(ref=>{
+    const found=resolveSourceRef(sources,ref);if(!found?.segment||ref.locator.type!=='segment')return[];
+    return[{group:JSON.stringify([ref.sourceId,ref.sourceVersion,ref.locator.segmentId]),text:found.segment.text,
+      from:ref.locator.from??0,to:ref.locator.to??found.segment.text.length}];
+  }).sort((a,b)=>a.group.localeCompare(b.group)||a.from-b.from);
+  const passages:string[]=[];let current:typeof ranges[number]|undefined;
+  for(const range of ranges){
+    if(current&&current.group===range.group&&(range.from<=current.to||!current.text.slice(current.to,range.from).trim()))current.to=Math.max(current.to,range.to);
+    else{if(current)passages.push(current.text.slice(current.from,current.to));current={...range};}
+  }
+  if(current)passages.push(current.text.slice(current.from,current.to));return passages;
+}
+
 export function articleQuotationIssue(paragraphs: readonly { text: string; evidenceIds: readonly string[] }[],
-  evidence: ReadonlyMap<string, string>, minimum = 0): ArticlePolicyIssue | undefined {
+  evidence: ReadonlyMap<string, string>, minimum = 0,passages?:(ids:readonly string[])=>readonly string[]): ArticlePolicyIssue | undefined {
   const distinct = new Set<string>();
   for (const paragraph of paragraphs) {
     if (paragraph.evidenceIds.some(id => !evidence.has(id))) return 'UNKNOWN_EVIDENCE';
@@ -40,7 +57,8 @@ export function articleQuotationIssue(paragraphs: readonly { text: string; evide
     if (delimiters !== quoted.length * 2) return 'UNSUPPORTED_ARTICLE_QUOTE';
     for (const quote of quoted) {
       const literal = literalQuoteText(quote);
-      if (!literal || !paragraph.evidenceIds.some(id => literalQuoteText(evidence.get(id) ?? '').includes(literal)))
+      const supported=[...paragraph.evidenceIds.map(id=>evidence.get(id)??''),...(passages?.(paragraph.evidenceIds)??[])];
+      if (!literal || !supported.some(text=>literalQuoteText(text).includes(literal)))
         return 'UNSUPPORTED_ARTICLE_QUOTE';
       // A quoted brand name is not one of the required substantive quotations.
       if (countWords(literal) >= 4) distinct.add(literal);
@@ -54,19 +72,19 @@ export function r1ArticleIssue(body: ArticleBody, sources: readonly Source[]): A
   return articleLengthIssue(articleStats(body), R1_ARTICLE_LIMITS) ?? r1ArticleQuotationIssue(body, sources);
 }
 export function r1ArticleQuotationIssue(body: ArticleBody, sources: readonly Source[]): ArticlePolicyIssue | undefined {
-  const evidence = new Map<string, string>();
+  const evidence = new Map<string, string>(),references=new Map<string,SourceRef>();
   const paragraphs = body.blocks.filter(block => block.type === 'paragraph' || block.type === 'quote' || block.type === 'heading' || block.type === 'list').map(block => {
     const evidenceIds = (block.sourceRefs ?? []).flatMap(ref => {
       const resolved = resolveSourceRef(sources, ref);
       if (!resolved) return [];
       const id = JSON.stringify(ref);
-      evidence.set(id, resolved.excerpt);
+      evidence.set(id, resolved.excerpt);references.set(id,ref);
       return [id];
     });
     const text = blockText(block);
     return { text: block.type === 'quote' && !directQuotes(text).length ? `“${text}”` : text, evidenceIds };
   });
-  return articleQuotationIssue(paragraphs, evidence, R1_ARTICLE_LIMITS.minQuotes);
+  return articleQuotationIssue(paragraphs, evidence, R1_ARTICLE_LIMITS.minQuotes,ids=>contiguousSourcePassages(sources,ids.flatMap(id=>references.get(id)?[references.get(id)!]:[])));
 }
 
 /** Shared by persisted read models and live, unsaved editor content. */

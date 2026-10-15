@@ -21,7 +21,7 @@ import { mapEditorialPassages } from './editorial-passages';
 import { planArticleImages } from './editorial-images';
 import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
-import { r1ArticleIssue, ARTICLE_POLICY_MESSAGES } from '../domain/article-policy.ts';
+import { contiguousSourcePassages, r1ArticleIssue, ARTICLE_POLICY_MESSAGES } from '../domain/article-policy.ts';
 import type { ArticlePolicyIssue } from '../domain/article-policy.ts';
 import { ARTICLE_ASSIST_KINDS, runArticleAssist } from './article-assist';
 import { citationsFromArticle, emphasizeArticleQuotes } from '../domain/citation-library.ts';
@@ -103,6 +103,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     const candidates = editorialCandidates(input.record);
     const byKey = new Map(candidates.map(c => [c.key,c]));
     const knownIds = new Set(byKey.keys());
+    const evidencePassages=(ids:readonly string[])=>contiguousSourcePassages(input.record.sources,ids.flatMap(id=>byKey.get(id)?[byKey.get(id)!.ref]:[]));
     const refs = (keys: string[]) => keys.map(key => {
       const candidate = byKey.get(key); if (!candidate) throw new FlowError('UNKNOWN_EVIDENCE',502);
       return candidate.ref;
@@ -139,8 +140,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       const expected = key === 'article' ? JSON.parse(values.outline) : key === 'section' ? JSON.parse(values.section) : undefined;
       const response = await executePipelineStep({ pipeline,key,index,variables: values,schema,directory,previousDirectory,factsDirectory,
         validateOutput: value => editorialResponseValid(key,value,knownIds,input.record.production.brief.sections,expected),
-        ...(key === 'article' && index === 0 || key === 'intro' || key === 'section' ? { deferLengthRevision: true } : {}),
-        ...(['article', 'intro', 'section'].includes(key) ? { writingContract: { evidence: new Map(candidates.map(candidate => [candidate.key, candidate.text])),
+        ...(key === 'article' && index === 0 || key === 'intro' || key === 'section' ? { deferWritingRevision: true } : {}),
+        ...(['article', 'intro', 'section'].includes(key) ? { writingContract: { evidencePassages,evidence: new Map(candidates.map(candidate => [candidate.key, candidate.text])),
           ...(key === 'article' ? { limits: sizing, minQuotes: sizing.minQuotes } : {}) } } : {}),
         signal: key === 'images' ? AbortSignal.any([combined,AbortSignal.timeout(30000)]) : combined,trace: trace => guarded([],trace).then(() => undefined),
         ...(streamText ? { onText: async (text: string) => { writingStages.set(stepId,text); await publishPreview(); } } : {}) });
@@ -201,7 +202,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         .map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}) })) });
       variables.outline = JSON.stringify(outline);
       if (pipeline.definition.articleMode === 'single') value = await writeCompleteArticle(outline, variables, sizing, call);
-      else value = await writeSequentialArticle(outline,variables,sizing,call);
+      else value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages);
     }
     if (job.kind === 'carousel.copy') {
       const piece = input.record.pieces.find(p => p.id === job.meta.pieceId);

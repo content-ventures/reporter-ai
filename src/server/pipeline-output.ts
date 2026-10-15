@@ -2,11 +2,11 @@ import 'server-only';
 import { z } from 'zod';
 import type { PipelineStepKey } from '../domain/pipeline.ts';
 import { PIPELINE_SENTENCE_PATTERN } from '../domain/pipeline.ts';
-import { articleLengthIssue, articleQuotationIssue } from '../domain/article-policy.ts';
+import { articleLengthIssue, articleQuotationIssue, literalQuoteText } from '../domain/article-policy.ts';
 import type { ArticleLengthLimits } from '../domain/article-policy.ts';
 import { countCharacters, textStats } from '../domain/text/stats.ts';
 
-export type WritingContract = { limits?: ArticleLengthLimits; evidence: ReadonlyMap<string, string>; minQuotes?: number };
+export type WritingContract = { limits?: ArticleLengthLimits; evidence: ReadonlyMap<string, string>; minQuotes?: number; evidencePassages?:(ids:readonly string[])=>readonly string[] };
 
 const ids = z.array(z.string());
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000).regex(new RegExp(PIPELINE_SENTENCE_PATTERN, 'u')), evidenceIds: ids.min(1).max(30) }).strict();
@@ -78,6 +78,28 @@ export function writtenArticleText(article: WrittenArticle, headings: boolean) {
     ...(headings ? [section.title] : []), ...section.paragraphs.map(p => p.text),
   ])].join('\n\n');
 }
+/** Restore source capitalization only when the quoted words and punctuation match exactly.
+ * References stay unchanged; paraphrases, typos and missing evidence remain invalid. */
+export function restoreLiteralQuoteCase(key:PipelineStepKey,value:unknown,evidence:ReadonlyMap<string,string>,passages?:(ids:readonly string[])=>readonly string[]){
+  if(!['intro','section','article'].includes(key)||!outputs[key as 'intro'|'section'|'article'].safeParse(value).success)return value;
+  const copy=structuredClone(value) as {paragraphs?:{text:string;evidenceIds:string[]}[];intro?:{text:string;evidenceIds:string[]}[];sections?:{paragraphs:{text:string;evidenceIds:string[]}[]}[]};
+  for(const paragraph of [...(copy.paragraphs??copy.intro??[]),...(copy.sections??[]).flatMap(section=>section.paragraphs)]){
+    paragraph.text=paragraph.text.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu,(match,a,b,c)=>{
+      const quote=a??b??c,literal=literalQuoteText(quote),folded=literal.toLocaleLowerCase('pt-BR');
+      const supported=[...paragraph.evidenceIds.map(id=>evidence.get(id)??''),...(passages?.(paragraph.evidenceIds)??[])];
+      if(supported.some(text=>literalQuoteText(text).includes(literal)))return match;
+      if(folded.length!==literal.length)return match;
+      for(const text of supported){
+        const source=literalQuoteText(text),lower=source.toLocaleLowerCase('pt-BR');
+        if(lower.length!==source.length)continue;const at=lower.indexOf(folded);
+        if(at>=0)return match.replace(quote,source.slice(at,at+literal.length));
+      }
+      return match;
+    });
+  }
+  return copy;
+}
+
 /** Run on fresh responses AND old checkpoints: an invalid result is never reusable. */
 export function writingContractIssue(key: PipelineStepKey, value: unknown, contract?: WritingContract, headings = true) {
   if (!contract || !['article', 'intro', 'section'].includes(key)) return undefined;
@@ -86,8 +108,8 @@ export function writingContractIssue(key: PipelineStepKey, value: unknown, contr
   if (key === 'article') {
     const article = result.data as WrittenArticle;
     return articleLengthIssue(textStats(writtenArticleText(article, headings)), contract.limits ?? {})
-      ?? articleQuotationIssue([...article.intro, ...article.sections.flatMap(section => section.paragraphs)], contract.evidence, contract.minQuotes);
+      ?? articleQuotationIssue([...article.intro, ...article.sections.flatMap(section => section.paragraphs)], contract.evidence, contract.minQuotes,contract.evidencePassages);
   }
   const part = result.data as { paragraphs: { text: string; evidenceIds: string[] }[] };
-  return articleQuotationIssue(part.paragraphs, contract.evidence);
+  return articleQuotationIssue(part.paragraphs, contract.evidence,0,contract.evidencePassages);
 }
