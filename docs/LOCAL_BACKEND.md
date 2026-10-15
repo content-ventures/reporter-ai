@@ -19,7 +19,8 @@ Both media commands must be on the worker's PATH. Run the app and worker from th
    To test the cloud backend from a local browser, run `pnpm dev` with
    `REPORTER_DEPLOYMENT_MODE=cloud` set explicitly.
 3. Run `pnpm install`, `pnpm db:up`, then `pnpm db:flow`.
-4. Run `pnpm worker` in one terminal and `pnpm dev:local` in another.
+4. Run `pnpm worker:local` in one terminal and `pnpm dev:local` in another. The local worker,
+   development app and `pnpm start:local` explicitly select Docker even when cloud credentials coexist.
 5. Open `http://127.0.0.1:3002/productions/new`.
 
 For visual acceptance without the Next.js development indicator, stop the app, run `pnpm build`,
