@@ -7,12 +7,11 @@ import { tmpdir } from 'node:os';
 import pg from 'pg';
 import { chromium,expect } from '@playwright/test';
 import { ATELIE_SUL_TRANSCRIPT } from '../src/fixtures/sources/atelie-sul.ts';
+import { acceptanceOrigin,assertStagingTarget } from './lib/staging-target.mjs';
 
-const branchId=process.env.REPORTER_ACCEPTANCE_BRANCH,project=process.env.NEON_PROJECT_ID,parent=process.env.NEON_BRANCH_ID;
-assert.ok(branchId?.startsWith('br-')&&branchId!==parent);
-const checked=await fetch(`https://console.neon.tech/api/v2/projects/${project}/branches/${branchId}`,{headers:{Authorization:`Bearer ${process.env.NEON_API_KEY}`}});
-assert.equal(checked.ok,true);const {branch}=await checked.json();assert.ok(branch.name.startsWith('acceptance-')&&branch.parent_id===parent&&branch.expires_at);
-const origin='https://reporter-ai-three.vercel.app',local=process.env.REPORTER_ACCEPTANCE_LOCAL_URL??'http://localhost:3001';
+// Real files through the candidate build against staging; the staging bucket's CORS allows this origin.
+const branch=await assertStagingTarget(),branchId=branch.id;
+const origin=acceptanceOrigin(),local=process.env.REPORTER_ACCEPTANCE_LOCAL_URL??'http://localhost:3001';
 assert.ok(['localhost','127.0.0.1'].includes(new URL(local).hostname));
 const portal='10000000-0000-0000-0000-000000000101',tenant='10000000-0000-0000-0000-000000000001';
 const directory=process.env.REPORTER_ACCEPTANCE_EVIDENCE_DIR??join(tmpdir(),'reporter-browser-'+branchId);await mkdir(directory,{recursive:true,mode:0o700});
@@ -37,7 +36,7 @@ try{
   const editor=await account('Editor',['editor']),context=await browser.newContext({viewport:{width:1440,height:1000}});
   contexts.push(context);
   // This context serves the candidate production build through a loopback reverse proxy.
-  // Every app-origin request is intercepted; no request reaches the production app.
+  // Every app-origin request is intercepted; no request reaches the deployed staging app.
   await context.route(origin+'/**',async route=>{
     try{
     const request=route.request(),url=new URL(request.url()),target=new URL(url.pathname+url.search,local);
@@ -57,17 +56,18 @@ try{
   await page.getByRole('button',{name:'Entrar',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Início',level:1,exact:true})).toBeVisible({timeout:60000});
   console.log('PASS actual Neon Auth login and isolated workspace authorization in browser.');
-  const configured=JSON.parse(await readFile(process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH,'utf8'));
+  // Staging keeps its own pipeline unless a reviewed definition is supplied for this run.
+  const configured=process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH?JSON.parse(await readFile(process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH,'utf8')):null;
   const pipelineHash=await page.evaluate(async({configured,requestId})=>{
     let settings=await (await fetch('/api/reporter/pipeline')).json();
     if(configured){
       const response=await fetch('/api/reporter/workspace',{method:'POST',headers:{'content-type':'application/json','x-reporter-client':'local'},body:JSON.stringify({method:'pipeline.save',args:[configured,settings.active.revision],requestId})});
-      const result=await response.json();if(!response.ok||!result.ok)throw new Error('Cannot load the production pipeline in acceptance.');
+      const result=await response.json();if(!response.ok||!result.ok)throw new Error('Cannot load the supplied pipeline in acceptance.');
       settings=await (await fetch('/api/reporter/pipeline')).json();
     }
     return settings.active.hash;
   },{configured,requestId:randomUUID()});
-  console.log('PASS browser acceptance uses the configured production pipeline.');
+  console.log('PASS browser acceptance uses the staging pipeline.');
   const results=[];
   const cases=process.env.REPORTER_ACCEPTANCE_BROWSER_CASES?.split(',')??['video','text','file'];
   for(const kind of cases){
