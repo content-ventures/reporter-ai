@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
 import { waitForWorkerSchedule } from './check-worker-schedule.mjs';
+import { waitForWorkerReadiness } from './check-worker-readiness.mjs';
 
 if(!process.env.GITHUB_ACTIONS || !process.env.GITHUB_ACTOR) throw new Error('Neon acceptance deployments must originate from the authenticated GitHub workflow.');
 for(const name of ['NEON_PROJECT_ID','NEON_BRANCH_ID','NEON_API_KEY','REPORTER_WORKER_PASSWORD','GROQ_API_KEY','OPENAI_API_KEY','ANTHROPIC_API_KEY','PIXABAY_API_KEY'])if(!process.env[name])throw new Error(`Missing ${name} for Neon acceptance.`);
@@ -43,8 +44,7 @@ try {
   const endpoint=deployed.NEON_FUNCTION_REPORTERWORKER_BASE_URL;if(!endpoint)throw new Error('Acceptance function URL missing.');
   keepBranch=process.env.REPORTER_ACCEPTANCE_SESSION==='true';
   if(keepBranch)console.log(`Isolated acceptance session: ${branch}; source ${process.env.GITHUB_SHA}. Expires in 24 hours.`);
-  const health=await fetch(endpoint,{headers:{'x-reporter-worker-key':process.env.REPORTER_WORKER_PASSWORD},signal:AbortSignal.timeout(180000)});const ready=await health.json();
-  if(!health.ok||ready.ok!==true)throw new Error('Acceptance worker readiness failed: '+String(ready.error??health.status));
+  await waitForWorkerReadiness(endpoint,process.env.REPORTER_WORKER_PASSWORD);
   const schedule=new pg.Client({connectionString:url.toString()});await schedule.connect();
   try{await waitForWorkerSchedule((...args)=>schedule.query(...args),new URL(endpoint).origin);}finally{await schedule.end();}
   console.log('PASS deployed worker media, database, storage and real scheduled invocation.');

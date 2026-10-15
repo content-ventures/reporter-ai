@@ -14,6 +14,18 @@ import { runRemoteIngest } from '../src/server/remote-ingest.ts';
 const MAX_INVOCATION_MS = 13*60*1000;
 const MAX_JOBS_PER_INVOCATION = 20;
 
+export async function workerDependency<T>(component: 'MEDIA'|'STORAGE'|'DATABASE',operation:()=>Promise<T>):Promise<T>{
+  try{return await operation();}catch(error){
+    if(error instanceof FlowError)throw error;
+    const failure=error as {code?:string;name?:string;$metadata?:{httpStatusCode?:number}};
+    const allowed=new Set(['ECONNREFUSED','ECONNRESET','ETIMEDOUT','ENOTFOUND','EACCES','EPERM','EROFS','ENOSYS','ERR_TLS_CERT_ALTNAME_INVALID','UNABLE_TO_VERIFY_LEAF_SIGNATURE','SELF_SIGNED_CERT_IN_CHAIN','DEPTH_ZERO_SELF_SIGNED_CERT']);
+    const code=failure?.code&&(/^[0-9A-Z]{5}$/.test(failure.code)||allowed.has(failure.code))?failure.code
+      :failure?.$metadata?.httpStatusCode?`HTTP_${failure.$metadata.httpStatusCode}`
+      :['TypeError','RangeError','AccessDenied','NoSuchBucket','InvalidAccessKeyId','SignatureDoesNotMatch','ExpiredToken'].includes(failure?.name??'')?failure.name!.toUpperCase():'UNAVAILABLE';
+    throw new FlowError(`WORKER_${component}_${code}`,503);
+  }
+}
+
 type WorkerDependencies = {
   ready?(): Promise<void>;
   rejectedTrigger?(code: string): void;
@@ -26,7 +38,7 @@ type WorkerDependencies = {
 };
 
 const dependencies: WorkerDependencies = {
-  ready: async () => { await Promise.all([checkUploadStorage(), checkMediaTools()]); },
+  ready: async () => { await Promise.all([workerDependency('STORAGE',checkUploadStorage),workerDependency('MEDIA',checkMediaTools)]); },
   rejectedTrigger: code => {
     // Neon captures console output. Keep diagnostics to a bounded operational
     // code: no header values, request body, URL, credentials or editorial data.
@@ -141,9 +153,12 @@ export function createReporterWorker(services: WorkerDependencies = dependencies
     if (!triggerPath && !triggerHeader && (request.method==='GET' || request.method==='POST') && await hasWorkerSecret(request)) {
       try {
         await services.ready?.();
-        await services.heartbeat(`reporter-health-${randomUUID()}`,endpoint);
+        await workerDependency('DATABASE',()=>services.heartbeat(`reporter-health-${randomUUID()}`,endpoint));
         return Response.json({ ok: true });
-      } catch (error) { return Response.json({ ok: false,error: safeCode(error) },{ status: 503 }); }
+      } catch (error) {
+        const code=safeCode(error);console.warn(JSON.stringify({component:'worker',message:'readiness_failed',error_code:code}));
+        return Response.json({ ok: false,error: code },{ status: 503 });
+      }
     }
     if (request.method!=='POST') {
       const method = ['GET','HEAD','OPTIONS','PUT','PATCH','DELETE'].includes(request.method) ? request.method : 'OTHER';
