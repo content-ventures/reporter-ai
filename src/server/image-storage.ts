@@ -12,7 +12,7 @@ import { storageRoot } from './storage.ts';
 import { FlowError } from './errors.ts';
 
 const bucket = 'reporter-source-media';
-const client = new S3Client({ forcePathStyle: true });
+const client = new S3Client({ forcePathStyle: true,requestChecksumCalculation: 'WHEN_REQUIRED' });
 export const imageFileKey = /^[a-f0-9]{64}\.(?:photo\.jpg|image)$/;
 const objectKey = /^images\/[0-9a-f-]{36}\/[a-f0-9]{64}\.(?:photo\.jpg|image)$/;
 function portal() { return process.env.REPORTER_FUNCTION_RUNTIME === 'true' ? cloudPortalId() : currentReporterContext().portal; }

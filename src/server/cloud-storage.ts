@@ -35,7 +35,7 @@ const uploadInputSchema = z.object({
 let client: S3Client | undefined;
 let corsConfigured: Promise<void> | undefined;
 function s3() {
-  client ??= new S3Client({ forcePathStyle: true });
+  client ??= new S3Client({ forcePathStyle: true,requestChecksumCalculation: 'WHEN_REQUIRED' });
   return client;
 }
 
