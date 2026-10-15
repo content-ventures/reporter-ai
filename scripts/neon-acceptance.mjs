@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { waitForWorkerSchedule } from './check-worker-schedule.mjs';
 import { waitForWorkerReadiness } from './check-worker-readiness.mjs';
+import { activePipelineDefinition, resetEditorialRows } from './lib/editorial-rows.mjs';
 
 if(!process.env.GITHUB_ACTIONS || !process.env.GITHUB_ACTOR) throw new Error('Neon acceptance deployments must originate from the authenticated GitHub workflow.');
 for(const name of ['NEON_PROJECT_ID','NEON_BRANCH_ID','NEON_API_KEY','REPORTER_WORKER_PASSWORD','GROQ_API_KEY','OPENAI_API_KEY','ANTHROPIC_API_KEY','PIXABAY_API_KEY'])if(!process.env[name])throw new Error(`Missing ${name} for Neon acceptance.`);
@@ -32,9 +33,10 @@ try {
   const url=new URL(owner);url.searchParams.set('sslmode','verify-full');const db=new pg.Client({connectionString:url.toString()});await db.connect();
   const pipelinePath=join(directory,'pipeline.json');
   try {
-    const stored=(await db.query("SELECT checkpoint->'pipeline'->'definition' AS definition FROM public.reporter_editorial_workspaces WHERE portal_id='10000000-0000-0000-0000-000000000101'")).rows[0]?.definition;
-    await writeFile(pipelinePath,JSON.stringify(stored??null),{mode:0o600});
-    await db.query('DELETE FROM public.reporter_worker_heartbeats');await db.query('DELETE FROM public.reporter_editorial_workspaces');
+    const stored=await activePipelineDefinition(db,'10000000-0000-0000-0000-000000000101');
+    await writeFile(pipelinePath,JSON.stringify(stored),{mode:0o600});
+    // The retired editorial document refuses writes; acceptance starts from empty editorial rows.
+    await db.query('DELETE FROM public.reporter_worker_heartbeats');await resetEditorialRows(db,'10000000-0000-0000-0000-000000000101');
   }finally{await db.end();}
   cli(['deploy','--project-id',project,'--branch',branch,'--env',file,'--no-env-pull']);
   cli(['env','pull','--project-id',project,'--branch',branch,'--file',join(directory,'deployed.env')]);

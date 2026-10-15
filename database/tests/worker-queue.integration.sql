@@ -16,7 +16,7 @@ SELECT pg_temp.assert_true(current_database()='reporter_ai_local','Reporter data
 -- Start from an idle queue without claiming or losing pre-existing user work.
 UPDATE core.integration_outbox SET available_at=clock_timestamp()+interval '1 day' WHERE processed_at IS NULL;
 UPDATE core.storage_objects SET reference=reference-'remote_url' WHERE status='pending' AND reference ? 'remote_url';
-UPDATE public.reporter_editorial_workspaces SET checkpoint=jsonb_set(checkpoint,'{jobs}','{}') WHERE checkpoint ? 'jobs';
+UPDATE public.reporter_ed_runs SET available_at=clock_timestamp()+interval '1 day';
 
 SET SESSION AUTHORIZATION reporter_worker;
 SELECT set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),

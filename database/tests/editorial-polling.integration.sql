@@ -1,21 +1,27 @@
+-- Polls read a small authorized stamp, never editorial rows; the worker gate follows runs. All rolls back.
+\set ON_ERROR_STOP on
 BEGIN;
-INSERT INTO public.reporter_editorial_workspaces(portal_id,revision,checkpoint)
-  VALUES('00000000-0000-0000-0000-000000000101',42,jsonb_build_object('large',repeat('x',1048576)))
-  ON CONFLICT(portal_id) DO UPDATE SET revision=42,checkpoint=excluded.checkpoint;
+-- Start from an idle queue without claiming pre-existing user work.
+UPDATE core.integration_outbox SET available_at=clock_timestamp()+interval '1 day' WHERE processed_at IS NULL;
+UPDATE core.storage_objects SET reference=reference-'remote_url' WHERE status='pending' AND reference ? 'remote_url';
+UPDATE public.reporter_ed_runs SET available_at=clock_timestamp()+interval '1 day';
+INSERT INTO public.reporter_ed_sync(portal_id,seq) VALUES('00000000-0000-0000-0000-000000000101',42)
+  ON CONFLICT(portal_id) DO UPDATE SET seq=42,floor_seq=0;
+INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,seq)
+  VALUES('00000000-0000-0000-0000-000000000101','polling-production','{"id":"polling-production"}',42);
+INSERT INTO public.reporter_ed_runs(portal_id,run_id,production_id,status,available_at,job,fold,seq)
+  VALUES('00000000-0000-0000-0000-000000000101','polling-run','polling-production','queued',clock_timestamp()-interval '1 second',
+    '{"meta":{"runId":"polling-run"},"kind":"article.draft"}','{"seq":1,"run":{"status":"queued"}}',42);
 SET SESSION AUTHORIZATION reporter_runtime;
 SELECT set_config('app.access_mode','user',true),set_config('app.module_key','reporter_ai',true),
   set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',true),
   set_config('app.portal_id','00000000-0000-0000-0000-000000000101',true),
   set_config('app.user_id','00000000-0000-0000-0000-000000000031',true);
 DO $$
-DECLARE result jsonb := public.reporter_editorial_status();
+DECLARE result jsonb := public.reporter_ed_status();
 BEGIN
-  IF (result->>'revision')::bigint<>42 OR length(result->>'membersHash')<>32
-    OR octet_length(result::text)>128 OR result ? 'checkpoint' THEN
-    RAISE EXCEPTION 'Polling read the full checkpoint or lost its revision';
-  END IF;
-  IF octet_length(public.reporter_editorial_load(false)::text)<1048576 THEN
-    RAISE EXCEPTION 'Large checkpoint fixture missing';
+  IF (result->>'seq')::bigint<>42 OR length(result->>'membersHash')<>32 OR octet_length(result::text)>128 THEN
+    RAISE EXCEPTION 'Polling lost its change number or read more than the stamp: %',result;
   END IF;
   PERFORM set_config('test.polling_members',result->>'membersHash',true);
 END $$;
@@ -24,60 +30,49 @@ UPDATE core.users SET name='Polling identity change' WHERE id='00000000-0000-000
 SET SESSION AUTHORIZATION reporter_runtime;
 DO $$
 BEGIN
-  IF public.reporter_editorial_status()->>'membersHash'=current_setting('test.polling_members') THEN
+  IF public.reporter_ed_status()->>'membersHash'=current_setting('test.polling_members') THEN
     RAISE EXCEPTION 'Membership updates would leave the browser stale';
   END IF;
   PERFORM set_config('app.portal_id','00000000-0000-0000-0000-000000000102',true);
   BEGIN
-    PERFORM public.reporter_editorial_status(); RAISE EXCEPTION 'Foreign portal accepted';
+    PERFORM public.reporter_ed_status(); RAISE EXCEPTION 'Foreign portal accepted';
   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
   PERFORM set_config('app.portal_id','00000000-0000-0000-0000-000000000101',true);
 END $$;
 RESET SESSION AUTHORIZATION;
-UPDATE public.reporter_editorial_workspaces SET checkpoint=jsonb_build_object(
-  'jobs',jsonb_build_object('test',jsonb_build_object('availableAt',0)),
-  'state',jsonb_build_object('runFolds',jsonb_build_object('test',jsonb_build_object('run',jsonb_build_object('status','queued')))))
-  WHERE portal_id='00000000-0000-0000-0000-000000000101';
+
 SET SESSION AUTHORIZATION reporter_worker;
 SELECT set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),
   set_config('app.portal_id','00000000-0000-0000-0000-000000000101',true);
-DO $$ BEGIN
-  IF NOT public.reporter_editorial_pending() THEN RAISE EXCEPTION 'Queued job was missed'; END IF;
+DO $$
+BEGIN
+  IF NOT public.reporter_worker_pending() THEN RAISE EXCEPTION 'Queued run was missed'; END IF;
   BEGIN
-    PERFORM public.reporter_editorial_status(); RAISE EXCEPTION 'Worker bypassed user authorization';
+    PERFORM public.reporter_ed_status(); RAISE EXCEPTION 'Worker bypassed user authorization';
   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
 RESET SESSION AUTHORIZATION;
-DO $$
-DECLARE available numeric := extract(epoch FROM clock_timestamp())*1000+3600000;
-BEGIN
-  UPDATE public.reporter_editorial_workspaces SET checkpoint=jsonb_set(checkpoint,'{jobs,test,availableAt}',to_jsonb(available))
-    WHERE portal_id='00000000-0000-0000-0000-000000000101';
-END $$;
+UPDATE public.reporter_ed_runs SET available_at=clock_timestamp()+interval '1 minute' WHERE run_id='polling-run';
 SET SESSION AUTHORIZATION reporter_worker;
-DO $$ BEGIN IF public.reporter_editorial_pending() THEN RAISE EXCEPTION 'Deferred job appeared claimable'; END IF; END $$;
+DO $$ BEGIN IF public.reporter_worker_pending() THEN RAISE EXCEPTION 'Deferred run appeared claimable'; END IF; END $$;
 RESET SESSION AUTHORIZATION;
-UPDATE public.reporter_editorial_workspaces SET checkpoint=jsonb_set(jsonb_set(checkpoint,'{jobs,test,availableAt}','0'),
-  '{jobs,test,lease}',jsonb_build_object('owner','other','fence','test','until',extract(epoch FROM clock_timestamp())*1000+3600000))
-  WHERE portal_id='00000000-0000-0000-0000-000000000101';
+UPDATE public.reporter_ed_runs SET available_at=clock_timestamp()-interval '1 minute',lease_owner='polling-worker',
+  lease_until=clock_timestamp()+interval '1 minute',lease_fence='polling-fence' WHERE run_id='polling-run';
 SET SESSION AUTHORIZATION reporter_worker;
-DO $$ BEGIN IF public.reporter_editorial_pending() THEN RAISE EXCEPTION 'Live lease appeared claimable'; END IF; END $$;
+DO $$ BEGIN IF public.reporter_worker_pending() THEN RAISE EXCEPTION 'Live lease appeared claimable'; END IF; END $$;
 RESET SESSION AUTHORIZATION;
-UPDATE public.reporter_editorial_workspaces SET checkpoint=jsonb_set(checkpoint,'{jobs,test,lease,until}','0')
-  WHERE portal_id='00000000-0000-0000-0000-000000000101';
+UPDATE public.reporter_ed_runs SET lease_until=clock_timestamp()-interval '1 second' WHERE run_id='polling-run';
 SET SESSION AUTHORIZATION reporter_worker;
-DO $$ BEGIN IF NOT public.reporter_editorial_pending() THEN RAISE EXCEPTION 'Expired lease was missed'; END IF; END $$;
+DO $$ BEGIN IF NOT public.reporter_worker_pending() THEN RAISE EXCEPTION 'Expired lease was missed'; END IF; END $$;
 RESET SESSION AUTHORIZATION;
-UPDATE public.reporter_editorial_workspaces SET checkpoint=jsonb_set(checkpoint,'{jobs,test,lease}','null')
-  WHERE portal_id='00000000-0000-0000-0000-000000000101';
+UPDATE public.reporter_ed_runs SET lease_owner=NULL,lease_until=NULL,lease_fence=NULL WHERE run_id='polling-run';
 SET SESSION AUTHORIZATION reporter_worker;
-DO $$ BEGIN IF NOT public.reporter_editorial_pending() THEN RAISE EXCEPTION 'Null lease hid a queued job'; END IF; END $$;
+DO $$ BEGIN IF NOT public.reporter_worker_pending() THEN RAISE EXCEPTION 'A released lease hid a queued run'; END IF; END $$;
 RESET SESSION AUTHORIZATION;
-UPDATE public.reporter_editorial_workspaces SET checkpoint=jsonb_set(checkpoint,'{state,runFolds,test,run,status}','"completed"')
-  WHERE portal_id='00000000-0000-0000-0000-000000000101';
+UPDATE public.reporter_ed_runs SET status='completed' WHERE run_id='polling-run';
 SET SESSION AUTHORIZATION reporter_worker;
-DO $$ BEGIN IF public.reporter_editorial_pending() THEN RAISE EXCEPTION 'Completed job appeared claimable'; END IF; END $$;
+DO $$ BEGIN IF public.reporter_worker_pending() THEN RAISE EXCEPTION 'Completed run appeared claimable'; END IF; END $$;
 RESET SESSION AUTHORIZATION;
-SELECT 'PASS bounded polling metadata, identity invalidation and portal authorization';
-SELECT 'PASS worker pending check respects job availability, lease expiry and completion';
+\echo PASS bounded polling metadata, identity invalidation and portal authorization
+\echo PASS worker pending check respects run availability, lease expiry and completion
 ROLLBACK;

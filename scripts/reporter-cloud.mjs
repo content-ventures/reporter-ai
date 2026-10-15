@@ -31,7 +31,7 @@ async function status(client) {
   const core = (await client.query("SELECT to_regnamespace('core') IS NOT NULL AS ready")).rows[0].ready;
   if (!core) return { database: (await client.query('SELECT current_database() AS database')).rows[0].database,schemaReady: false,cloudReady: false,boundUsers: 0 };
   const { rows } = await client.query(`SELECT current_database() AS database,
-    to_regclass('public.reporter_editorial_workspaces') IS NOT NULL AS schema_ready,
+    to_regclass('public.reporter_ed_sync') IS NOT NULL AS schema_ready,
     obj_description(to_regprocedure('public.reporter_session_context(text,text,text,text,boolean,uuid)'),'pg_proc') AS cloud_marker,
     (SELECT count(*)::int FROM core.users WHERE auth_subject IS NOT NULL) AS bound_users`);
   return { database: rows[0].database,schemaReady: rows[0].schema_ready,cloudReady: rows[0].cloud_marker === 'reporter-neon-cloud-v2',boundUsers: rows[0].bound_users };
