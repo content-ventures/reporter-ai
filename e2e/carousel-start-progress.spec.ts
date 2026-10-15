@@ -38,7 +38,7 @@ async function approvedArticle(page: Page) {
   const preparationSeen = new Promise<void>((resolve) => { observePreparation = resolve; });
   const generationGate = new Promise<void>((resolve) => { resolveGeneration = resolve; });
   const generationSeen = new Promise<void>((resolve) => { observeGeneration = resolve; });
-  await page.route('**/api/reporter/workspace', async (route) => {
+  await page.route(url => url.pathname === '/api/reporter/workspace', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ json: { state: engine.store.state, jobs: checkpoint.jobs, revision, model: 'openai/gpt-4.1', workerOnline: true } });
       return;

@@ -12,7 +12,7 @@ async function workspace(page: Page, refuseStart = false) {
   let revision = 0, creates = 0, starts = 0;
   let job: EditorialJob | undefined;
   await page.route('**/api/reporter/material/analysis', route => route.fulfill({ json: { title: 'Pauta sintética', participants: [], pipelineRevision: 1 } }));
-  await page.route('**/api/reporter/workspace', async route => {
+  await page.route(url => url.pathname === '/api/reporter/workspace', async route => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ json: { state: engine.store.state, jobs: checkpoint.jobs, revision, model: 'openai/gpt-4.1', workerOnline: true } });
       return;
