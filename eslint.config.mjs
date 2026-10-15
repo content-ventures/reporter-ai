@@ -18,6 +18,7 @@ const eslintConfig = defineConfig([
     ".claude/**",
     ".pnpm-store/**",
     ".reporter-local/**",
+    ".reporter-native/**",
   ]),
 ]);
 
