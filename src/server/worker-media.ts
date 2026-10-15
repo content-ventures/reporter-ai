@@ -1,7 +1,7 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { chmod, mkdtemp, rm, readFile, stat } from 'node:fs/promises';
+import { constants,createWriteStream } from 'node:fs';
+import { access,chmod,copyFile,mkdtemp,rm,readFile,stat,statfs } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -13,15 +13,34 @@ import { WORKER_MEDIA, WORKER_MEDIA_BUCKET, workerMediaKey, type MediaTool } fro
 
 const installed = new Map<MediaTool, Promise<string>>();
 const client = new S3Client({ forcePathStyle: true });
+const executableRoots=['/run','/dev/shm','/tmp','/dev'];
+let executionQueue=Promise.resolve(),lastExecutionRoot:string|undefined;
+
+/** The live mount policy takes precedence over a platform guide's example path. */
+export function executableMountCandidates(mounts:string){
+  const entries=mounts.split('\n').map(line=>line.split(' ')).filter(parts=>parts[1]);
+  return executableRoots.filter(root=>{
+    const mount=entries.filter(parts=>parts[1]==='/'||root===parts[1]||root.startsWith(parts[1]+'/')).sort((a,b)=>b[1].length-a[1].length)[0];
+    const options=mount?.[3]?.split(',')??[];return options.includes('rw')&&!options.includes('noexec');
+  });
+}
+
+async function executableRoot(bytes:number){
+  const mounts=await readFile('/proc/mounts','utf8');
+  for(const root of executableMountCandidates(mounts))try{
+    await access(root,constants.W_OK);const info=await statfs(root);
+    if(info.bavail*info.bsize>bytes+1024**2){lastExecutionRoot=root;return root;}
+  }catch{/* Try only fixed scratch mounts; never change mount flags. */}
+  throw new FlowError('MEDIA_TOOL_EXEC_ROOT_UNAVAILABLE',503);
+}
 
 /** Only fixed runtime paths and modes; never include storage URLs or user data. */
 export async function workerMediaDiagnostics(){
-  const root=process.env.REPORTER_FUNCTION_RUNTIME==='true'?'/run':tmpdir();
   const mounts=await readFile('/proc/mounts','utf8').catch(()=>'');
-  const mount=mounts.split('\n').map(line=>line.split(' ')).filter(parts=>parts[1]==='/'||parts[1]===root).map(parts=>({point:parts[1],options:parts[3]?.split(',').filter(option=>['rw','ro','noexec','exec','nosuid','nodev'].includes(option))}));
+  const mount=mounts.split('\n').map(line=>line.split(' ')).filter(parts=>parts[1]==='/'||executableRoots.includes(parts[1])).map(parts=>({point:parts[1],options:parts[3]?.split(',').filter(option=>['rw','ro','noexec','exec','nosuid','nodev'].includes(option))}));
   const tools=[];
   for(const[tool,pending]of installed){try{const path=await pending,info=await stat(path);tools.push({tool,mode:info.mode&0o777,bytes:info.size});}catch{/* The bounded failure code covers failed installation. */}}
-  return {root,mount,tools,platform:process.platform,arch:process.arch};
+  return {cacheRoot:tmpdir(),executionRoot:lastExecutionRoot,mount,tools,platform:process.platform,arch:process.arch};
 }
 
 export function workerMediaStream(body: unknown): Readable {
@@ -50,10 +69,7 @@ export function workerMediaFailure(error: unknown): FlowError {
 }
 
 export async function installWorkerMedia(tool: MediaTool, body: Readable, expected: { size: number; sha256: string } = WORKER_MEDIA[tool]) {
-  // Neon mounts /tmp with noexec. Keep executable bytes in its exec-enabled
-  // /run tmpfs; media inputs and scratch data can still use /tmp.
-  const root = process.env.REPORTER_FUNCTION_RUNTIME === 'true' ? '/run' : tmpdir();
-  const directory = await mkdtemp(join(root, 'reporter-media-'));
+  const directory = await mkdtemp(join(tmpdir(), 'reporter-media-'));
   const destination = join(directory, tool), hash = createHash('sha256');
   let size = 0;
   try {
@@ -63,12 +79,24 @@ export async function installWorkerMedia(tool: MediaTool, body: Readable, expect
       hash.update(chunk); callback(null, chunk);
     } }), createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
     if (size !== expected.size || hash.digest('hex') !== expected.sha256) throw new FlowError('MEDIA_TOOL_INTEGRITY', 503);
-    // The runtime's executable launcher must be able to traverse the directory.
-    // These are public, pinned tool bytes; inputs and credentials never live here.
-    const mode=process.env.REPORTER_FUNCTION_RUNTIME==='true'?0o755:0o700;
-    await chmod(directory,mode);await chmod(destination,mode);
+    await chmod(destination,0o700);
     return destination;
   } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
+}
+
+/** Stage one verified binary at a time; exec-enabled tmpfs may be small. */
+export async function withMediaExecutable<T>(tool:MediaTool,operation:(path:string)=>Promise<T>):Promise<T>{
+  const source=await mediaExecutable(tool);
+  if(process.env.REPORTER_FUNCTION_RUNTIME!=='true'||process.env[tool==='ffmpeg'?'REPORTER_FFMPEG':'REPORTER_FFPROBE'])return operation(source);
+  let release!:()=>void;const previous=executionQueue;executionQueue=new Promise<void>(resolve=>{release=resolve;});
+  await previous;let directory:string|undefined;
+  try{
+    directory=await mkdtemp(join(await executableRoot(WORKER_MEDIA[tool].size),'reporter-exec-'));
+    const destination=join(directory,tool);await copyFile(source,destination,constants.COPYFILE_EXCL);
+    await chmod(directory,0o755);await chmod(destination,0o755);
+    return await operation(destination);
+  }catch(error){throw workerMediaFailure(error);}
+  finally{try{if(directory)await rm(directory,{recursive:true,force:true});}finally{release();}}
 }
 
 export function mediaExecutable(tool: MediaTool): Promise<string> {

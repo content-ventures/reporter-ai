@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { z } from "zod";
 import { MAX_DURATION_SECONDS } from "../domain/reporter";
 import { FlowError } from "./errors";
-import { mediaExecutable } from './worker-media.ts';
+import { withMediaExecutable } from './worker-media.ts';
 
 function inputProtocols(source: string, remote: boolean) {
   const formats = ['-format_whitelist', 'mov,mp3,wav,flac,ogg,matroska,webm'];
@@ -14,7 +14,7 @@ function inputProtocols(source: string, remote: boolean) {
 }
 
 export async function checkMediaTools() {
-  await Promise.all((['ffmpeg', 'ffprobe'] as const).map(async tool => runMedia(await mediaExecutable(tool), ['-version'])));
+  await Promise.all((['ffmpeg', 'ffprobe'] as const).map(tool => withMediaExecutable(tool,path=>runMedia(path,['-version']))));
 }
 
 export async function runMedia(executable: string, args: string[], signal?: AbortSignal, timeout = 60000): Promise<string> {
@@ -42,8 +42,8 @@ export async function runMedia(executable: string, args: string[], signal?: Abor
 }
 
 export async function inspectMedia(path: string, signal?: AbortSignal, remote = false) {
-  const output = await runMedia(await mediaExecutable('ffprobe'),
-    ["-v", "error", ...inputProtocols(path, remote), "-show_format", "-show_streams", "-of", "json", path], signal);
+  const output = await withMediaExecutable('ffprobe',executable=>runMedia(executable,
+    ["-v", "error", ...inputProtocols(path, remote), "-show_format", "-show_streams", "-of", "json", path], signal));
   const parsed = z.object({
     format: z.object({ format_name: z.string(), duration: z.string() }),
     streams: z.array(z.object({ codec_type: z.string() })),
@@ -62,8 +62,8 @@ export async function inspectMedia(path: string, signal?: AbortSignal, remote = 
 }
 
 export async function prepareChunk(source: string, destination: string, start: number, duration: number, signal: AbortSignal, remote = false) {
-  await runMedia(await mediaExecutable('ffmpeg'), [
+  await withMediaExecutable('ffmpeg',executable=>runMedia(executable, [
     "-nostdin", "-v", "error", ...inputProtocols(source, remote), "-ss", String(start), "-i", source,
     "-t", String(duration), "-map", "0:a:0", "-vn", "-ar", "16000", "-ac", "1", "-c:a", "flac", "-y", destination,
-  ], signal, 180000);
+  ], signal, 180000));
 }

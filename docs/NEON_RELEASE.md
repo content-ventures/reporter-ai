@@ -19,7 +19,10 @@ Neon Functions run Linux ARM64 and cap compressed bundles at 10 MiB. The two pin
 executables live under content-addressed `worker-tools/` keys in the private source bucket,
 outside the `incoming/` storage-trigger prefix. Release provisioning verifies archive SHA512,
 binary SHA256 and ELF architecture. Each function isolate downloads and verifies the tools
-once, sets private executable permissions in `/run`, and shares concurrent installation calls.
+once into a private verified cache and shares concurrent installation calls. At execution, the
+worker checks live mount flags and writable/free space, then stages one public binary at a time
+in an exec-enabled scratch mount and removes it after the process exits. Serial staging keeps
+both binaries from filling a small tmpfs. Media inputs and credentials never enter that mount.
 The health endpoint executes both binaries, verifies the existing upload CORS, then registers its database
 heartbeat. The release then waits for a fresh real scheduled invocation, excluding health and
 diagnostic calls, so a missing/broken schedule cannot pass and fail again three minutes later.
@@ -37,8 +40,9 @@ Media downloads consume the S3 async-stream contract and retain exact size/hash
 verification. Readiness distinguishes object-storage access, missing objects,
 stream format, integrity, local filesystem and executable-launch failures with
 bounded error codes; release logs print those codes without provider details.
-Standalone executables install in `/run` in Neon Functions. `/tmp` remains for media data
-and caches because it is mounted `noexec`; changing file permissions there cannot enable execution.
+Do not assume `/run` permits execution: the October 15 runtime reported `noexec` there and in
+`/tmp`. The fixed candidate list checks the longest matching mount, including `/dev/shm` and
+`/dev`; it never changes mount flags. If none supports execution, readiness fails explicitly.
 The `validation_only` workflow can prepare an expiring real-file acceptance session with
 `prepare_session`. Only its isolated branch is retained, with a 24-hour expiry, for testing the
 original large file through the candidate app. Production releases always run the automated
@@ -84,6 +88,9 @@ authorizes access and obtains short-lived URLs through the authenticated worker 
 uploads go directly to storage and are decoded/hash-checked before their metadata is committed.
 Image reads stream through the authenticated same-origin app route, including exports, so private
 image retrieval does not require widening the bucket's browser CORS policy.
+Sequential writing gives an oversized part one measured revision through the same saved template.
+It preserves the source, preceding sections and literal-quote checks, records both provider calls,
+and never caches or publishes an oversized answer or clips a sentence to fit.
 Spotify enclosure imports use durable, leased storage registrations drained by the worker, so
 neither media nor image persistence depends on the Vercel filesystem or another browser's IndexedDB.
 
