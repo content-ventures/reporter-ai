@@ -53,7 +53,9 @@ async function snapshot(who='editor'){
   assert.ok(current?.state,'Initial acceptance snapshot missing');snapshots.set(who,current);return current;
 }
 async function record(id){const s=await snapshot(),engine=createEditorialEngine(s,{next:()=>randomUUID()});try{return engine.records.record(id);}finally{engine.store.dispose();}}
-async function waitRun(id){for(let n=0;n<180;n++){const s=await snapshot(),run=s.state.runFolds[id]?.run;if(run?.status==='completed')return;if(run?.status==='failed'||run?.status==='cancelled')throw new Error('Live generation failed: '+JSON.stringify(run.error));if(n%10===0)console.log('Waiting for deployed worker: '+(run?.steps?.find(step=>step.state==='current')?.id??run?.status));await delay(5000);}throw new Error('Live generation timed out.');}
+// Nothing schedules the worker more than hourly: like the app, the acceptance wakes it, and fails loudly if it cannot.
+async function wake(){const r=await fetch(new URL('/drain',process.env.REPORTER_WORKER_URL),{method:'POST',headers:{'x-reporter-worker-key':process.env.REPORTER_WORKER_PASSWORD},signal:AbortSignal.timeout(10000)});await r.body?.cancel();assert.equal(r.status,202,'Worker wake-up failed: HTTP '+r.status);}
+async function waitRun(id){await wake();for(let n=0;n<180;n++){const s=await snapshot(),run=s.state.runFolds[id]?.run;if(run?.status==='completed')return;if(run?.status==='failed'||run?.status==='cancelled')throw new Error('Live generation failed: '+JSON.stringify(run.error));if(n%10===0)console.log('Waiting for deployed worker: '+(run?.steps?.find(step=>step.state==='current')?.id??run?.status));if(n%6===5)await wake();await delay(5000);}throw new Error('Live generation timed out.');}
 
 const settings=await as('editor',()=>editorialPipeline());
 const configured=process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH?JSON.parse(await readFile(process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH,'utf8')):null;
@@ -94,7 +96,7 @@ for(const part of upload.parts){const start=(part.number-1)*upload.partSize;asse
 await uploadCall('/uploads/complete');if(speechDirectory)await rm(speechDirectory,{recursive:true,force:true});
 for(let n=0;n<360;n++){
   transcript=await as('editor',()=>transaction('runtime',async db=>(await db.query('SELECT public.reporter_local_transcript($1) AS value',[intake.id])).rows[0].value));
-  if(transcript.status==='ready')break;if(transcript.status==='failed')throw new Error('Live transcription failed: '+transcript.error_code);if(n%12===0)console.log('Waiting for transcription: '+JSON.stringify(transcript.job?.progress??transcript.status));await delay(5000);
+  if(transcript.status==='ready')break;if(transcript.status==='failed')throw new Error('Live transcription failed: '+transcript.error_code);if(n%12===0)console.log('Waiting for transcription: '+JSON.stringify(transcript.job?.progress??transcript.status));if(n%6===5)await wake();await delay(5000);
 }
 }
 assert.equal(transcript?.status,'ready','Live transcription did not finish');assert.ok(transcript.content.length>40);
