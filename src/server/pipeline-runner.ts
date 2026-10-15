@@ -92,17 +92,32 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
     return { maxCount: contract.maxItems, preferredCount, maxCharsEach: total, maxTotalChars: total,
       targetCharsEach, targetWordsEach: Math.max(1, Math.floor(targetCharsEach / 5.6)) };
   };
-  const intro = z.object({ paragraphs: z.array(paragraph).min(1).max(3) }).strict().parse(await call('intro',introSchema,
-    { ...variables,sizing: JSON.stringify({ ...sizing,introChars: budgets.intro,outputParagraphs: outputParagraphs(introSchema,budgets.intro) }) }));
+  const part=async(key:'intro'|'section',schema:object,values:PipelineVariables,budget?:number,index?:number)=>{
+    let value=await call(key,schema,values,index);
+    if(exceedsParagraphBudget(key,value,budget)){
+      const paragraphs=(value as {paragraphs:{text:string}[]}).paragraphs;
+      // Reuse the saved template with measured feedback. Never clip sentences,
+      // replace the operator's prompt, or restart already validated sections.
+      value=await call(key,schema,{...values,sizing:JSON.stringify({...JSON.parse(values.sizing),revisionFeedback:{
+        scope:'current_part',violation:'ARTICLE_PART_SIZE_EXCEEDED',
+        actualCharacters:paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0),
+        maxTotalChars:budget,targetTotalChars:Math.floor(budget!*0.98),previousDraft:value,
+      }})},index);
+    }
+    if(exceedsParagraphBudget(key,value,budget))throw new FlowError('ARTICLE_PART_SIZE_EXCEEDED',502,true,5);
+    return value;
+  };
+  const intro = z.object({ paragraphs: z.array(paragraph).min(1).max(3) }).strict().parse(await part('intro',introSchema,
+    { ...variables,sizing: JSON.stringify({ ...sizing,introChars: budgets.intro,outputParagraphs: outputParagraphs(introSchema,budgets.intro) }) },budgets.intro));
   const sections: { title: string; paragraphs: z.infer<typeof paragraph>[] }[] = [];
   for (const [index,section] of outline.sections.entries()) {
     const history = [...intro.paragraphs.map(p => p.text),...sections.flatMap(s => [s.title,...s.paragraphs.map(p => p.text)])].join('\n\n');
     const schema = articlePartSchema('section', budgets.sections[index]);
     Object.assign(schema.properties.title as object,{ enum: [section.title] });
     const drafted = z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict().parse(
-      await call('section',schema,{ ...variables,history,section: JSON.stringify({ ...section,index,last: index === outline.sections.length-1 }),
+      await part('section',schema,{ ...variables,history,section: JSON.stringify({ ...section,index,last: index === outline.sections.length-1 }),
         futureSections: JSON.stringify(outline.sections.slice(index+1)),sizing: JSON.stringify({ ...sizing,currentSection: { ...sizing.sections[index],budgetChars: budgets.sections[index] },
-          outputParagraphs: outputParagraphs(schema,budgets.sections[index]),charactersAlreadyWritten: countCharacters(history) }) },index));
+          outputParagraphs: outputParagraphs(schema,budgets.sections[index]),charactersAlreadyWritten: countCharacters(history) }) },budgets.sections[index],index));
     if (drafted.title !== section.title) throw new FlowError('OUTLINE_NOT_FOLLOWED',502);
     sections.push(drafted);
   }
@@ -116,7 +131,7 @@ export async function executePipelineStep(input: {
   onText?: (text: string) => Promise<void>;
   writingContract?: WritingContract;
   validateOutput?: (value: unknown) => boolean;
-  /** First full draft only: hand measured length mismatches to ONE revision, never cache them. */
+  /** Hand measured length mismatches to a bounded revision; never cache them. */
   deferLengthRevision?: boolean;
 }) {
   const step = input.pipeline.definition.steps[input.key];
@@ -162,7 +177,7 @@ export async function executePipelineStep(input: {
   if (!result) {
     result = await generateStructured('', '',input.schema,input.signal,{ ...step,systemPrompt,userPrompt,...(input.onText ? { onText: input.onText } : {}) });
     if (!valid(result.value)) {
-      needsRevision = Boolean(input.deferLengthRevision && input.key === 'article'
+      needsRevision = Boolean(input.deferLengthRevision && (input.key === 'article'||exceedsParagraphBudget(input.key,result.value,budget))
         && validPipelineOutput(input.key,result.value,input.schema,undefined,sizing.headings)
         && !writingContractIssue(input.key,result.value,input.writingContract ? { ...input.writingContract,limits: {} } : undefined,sizing.headings)
         && (input.validateOutput?.(result.value) ?? true));

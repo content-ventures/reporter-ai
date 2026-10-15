@@ -139,7 +139,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       const expected = key === 'article' ? JSON.parse(values.outline) : key === 'section' ? JSON.parse(values.section) : undefined;
       const response = await executePipelineStep({ pipeline,key,index,variables: values,schema,directory,previousDirectory,factsDirectory,
         validateOutput: value => editorialResponseValid(key,value,knownIds,input.record.production.brief.sections,expected),
-        ...(key === 'article' && index === 0 ? { deferLengthRevision: true } : {}),
+        ...(key === 'article' && index === 0 || key === 'intro' || key === 'section' ? { deferLengthRevision: true } : {}),
         ...(['article', 'intro', 'section'].includes(key) ? { writingContract: { evidence: new Map(candidates.map(candidate => [candidate.key, candidate.text])),
           ...(key === 'article' ? { limits: sizing, minQuotes: sizing.minQuotes } : {}) } } : {}),
         signal: key === 'images' ? AbortSignal.any([combined,AbortSignal.timeout(30000)]) : combined,trace: trace => guarded([],trace).then(() => undefined),

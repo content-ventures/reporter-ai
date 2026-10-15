@@ -15,6 +15,26 @@ process.env.REPORTER_LOCAL_MODE = 'true';
 process.env.GROQ_API_KEY = 'test-placeholder-not-a-real-key';
 const variables: PipelineVariables = { source: '[e1] Fonte sintética {{brief}}',brief: 'Pauta de teste',sizing: '{}',outline: '{}',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '' };
 
+test('sequential oversize parts receive one measured revision through the saved template',async()=>{
+  const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};
+  const oversized={title:'Section',paragraphs:[{text:'A complete but oversized sentence.',evidenceIds:['e1']}]};
+  const revised={title:'Section',paragraphs:[{text:'A fact.',evidenceIds:['e1']}]};
+  const requests:PipelineVariables[]=[];
+  const result=await writeSequentialArticle(outline,variables,{introChars:20,sections:[{budgetChars:10}]},async(key,_schema,values)=>{
+    if(key==='intro')return{paragraphs:[{text:'An intro.',evidenceIds:['e1']}]};
+    requests.push(values);return requests.length===1?oversized:revised;
+  });
+  assert.equal(requests.length,2);const feedback=JSON.parse(requests[1].sizing).revisionFeedback;
+  assert.deepEqual(feedback.previousDraft,oversized);assert.equal(feedback.maxTotalChars,10);
+  assert.equal(feedback.actualCharacters,oversized.paragraphs[0].text.length);
+  assert.equal(requests[1].source,requests[0].source);assert.equal(requests[1].history,requests[0].history);
+  assert.deepEqual(result.sections[0],revised);
+  let calls=0;
+  await assert.rejects(writeSequentialArticle(outline,variables,{introChars:20,sections:[{budgetChars:10}]},async key=>{
+    if(key==='intro')return{paragraphs:[{text:'An intro.',evidenceIds:['e1']}]};calls++;return oversized;
+  }),/ARTICLE_PART_SIZE_EXCEEDED/);assert.equal(calls,2,'an invalid revision must fail rather than loop or publish clipped prose');
+});
+
 test('near-target refinement is bounded to one call and uses measured data in the same editable template', async () => {
   const outline = { title: 'Fixture', sections: [{ title: 'Parte', evidenceIds: ['a'] }] };
   const value = (text: string) => ({ title: 'Fixture', intro: [{ text, evidenceIds: ['a'] }], sections: [{ title: 'Parte', paragraphs: [{ text: 'Um fato.', evidenceIds: ['a'] }] }] });
