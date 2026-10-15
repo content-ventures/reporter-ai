@@ -46,13 +46,14 @@ export async function transaction<T>(role: "runtime" | "worker", operation: (cli
   const client = await pool(role).connect();
   try {
     await client.query("BEGIN");
-    await client.query("SET LOCAL statement_timeout = '10s'");
+    // One round trip sets the timeout and the context; it answers with one integer, not the
+    // values it was sent, because every byte PostgreSQL returns is billed transfer.
     if (role === "runtime") {
       const context = currentReporterContext();
-      await client.query("SELECT set_config('app.access_mode','user',true),set_config('app.module_key','reporter_ai',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true),set_config('app.correlation_id',$4,true)",
+      await client.query("SELECT 1 AS applied FROM (SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode','user',true),set_config('app.module_key','reporter_ai',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true),set_config('app.correlation_id',$4,true)) settings",
         [context.tenant, context.portal, context.actor, requestId]);
     } else {
-      await client.query("SELECT set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),set_config('app.portal_id',$1,true),set_config('app.request_id',$2,true)",
+      await client.query("SELECT 1 AS applied FROM (SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),set_config('app.portal_id',$1,true),set_config('app.request_id',$2,true)) settings",
         [reporterDeploymentMode() === 'cloud' ? cloudPortalId() : '00000000-0000-0000-0000-000000000101',requestId]);
     }
     const result = await operation(client);
