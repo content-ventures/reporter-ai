@@ -118,7 +118,7 @@ The `Controlled production deployment` GitHub Action is manually dispatched afte
 2. Calculates the next valid `vX.Y.Z` from the validated Conventional Commits.
 3. Generates the release summary, detailed changes, changelog and public version history from those commits.
 4. Runs the complete gate again against the prepared release.
-5. Applies the idempotent Neon database migrations, deploys the `neon.ts` Function, bucket and triggers to the configured production branch, and calls the worker's health endpoint to verify its database heartbeat.
+5. Applies the idempotent Neon database migrations, deploys the `neon.ts` Function, bucket and triggers to the configured production branch, provisions the pinned ARM64 media executables in private Object Storage, and calls the worker's health endpoint to verify storage, media execution and its database heartbeat.
 6. Creates one `chore(release): vX.Y.Z` commit under the dispatching GitHub user's identity, an annotated version tag, and a GitHub Release.
 7. Pushes that release commit through GitHub; the Francal Vercel Git integration performs the production deployment.
 
@@ -131,7 +131,7 @@ The repository is private on GitHub Free. That plan offers no branch protection,
 - Releases: the human approval is the manual dispatch of `Controlled production deployment` from `main`. Its `production` environment carries no protection rule on this plan.
 - Actions: permit the controlled-release workflow to write the release commit and version tag.
 - Configure these identifiers as variables on the GitHub Actions `production` environment: `NEON_PROJECT_ID` and `NEON_BRANCH_ID`.
-- Configure these secrets on that same environment: `NEON_API_KEY`, `REPORTER_WORKER_PASSWORD`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `PIXABAY_API_KEY`. The release step injects them only while applying the Neon config, writes them to a mode-0600 temporary runner file for that step, and deletes that file on exit. The worker health check verifies the database connection and worker password before the Vercel release is pushed.
+- Configure these secrets on that same environment: `NEON_API_KEY`, `REPORTER_WORKER_PASSWORD`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `PIXABAY_API_KEY`. The existing aliases `OPEN_AI_API_KEY` and `CLAUDE_API_KEY` are also accepted. Before changing infrastructure, the release verifies every required setting and authenticates to the four provider APIs. The release step injects secrets only while applying the Neon config, writes them to a mode-0600 temporary runner file for that step, and deletes that file on exit. Worker readiness must confirm the database connection, upload CORS/storage permissions and actual media-tool execution before the Vercel release is pushed. See `docs/NEON_RELEASE.md` for verification and remaining environment setup.
 - Vercel app secrets remain managed in the Francal workspace. Never commit runtime secrets, copy them into release notes, or use a local Vercel identity as a deployment source.
 
 Making the repository public or moving to GitHub Pro would allow a `main` protection rule that requires the `Quality gate` checks; that is João's call.

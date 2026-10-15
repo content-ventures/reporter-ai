@@ -88,6 +88,12 @@ jobs:
       - name: Run complete gate
         run: pnpm gate
 
+      - name: Build the Neon ARM64 worker and validate its archive limits
+        run: node scripts/check-neon-bundle.mjs
+
+      - name: Verify pinned worker media tools
+        run: node scripts/provision-worker-media.mjs --check
+
       - name: Run backend contract tests
         run: pnpm test:backend
 

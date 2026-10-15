@@ -113,7 +113,8 @@ async function verifyCatalog(run, baseline) {
   return normalized;
 }
 
-async function verifyFreshBootstrap(source, baseline) {
+export async function verifyFreshBootstrap(source, baseline) {
+  source ??= await readFile(new URL('../database/tests/r1.integration.sql', import.meta.url), 'utf8');
   const name = "reporter-ai-local-bootstrap-check";
   const configuration = await readFile(resolve(root, "compose.reporter.yaml"), "utf8");
   const image = configuration.match(/^    image: (.+)$/m)?.[1];
