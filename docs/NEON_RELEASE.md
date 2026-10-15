@@ -55,7 +55,7 @@ Production releases first run the complete acceptance on a workflow-created, exp
 branch. Inherited triggers remain disabled until the candidate worker is deployed with the child
 database connection. The workflow provisions media tools, requires a fresh scheduled invocation,
 uploads synthetic speech through multipart storage, checks real Groq transcription, generates an
-article and carousel through OpenAI, approves both with a separate review-only member, reads an
+article and carousel through the saved production pipeline (or its default seed), approves both with a separate review-only member, reads an
 uploaded image as that reviewer and builds the browser export (Markdown, HTML, images, slide PNGs,
 JSON and manifest). The child branch is removed on completion. A failed acceptance stops before
 production migrations or deployment. `validation_only` runs the same acceptance without publishing.

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID,createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import sharp from 'sharp';
 import { runWithReporterContext } from '../src/server/request-context.ts';
@@ -8,7 +9,6 @@ import { editorialRpc,editorialWorkspace,editorialPipeline } from '../src/server
 import { prepareAssetUpload,completeAssetUpload } from '../src/server/image-assets.ts';
 import { readImageFile } from '../src/server/image-storage.ts';
 import { ATELIE_SUL_TRANSCRIPT } from '../src/fixtures/sources/atelie-sul.ts';
-import { defaultPipelineDefinition } from '../src/domain/pipeline.ts';
 import { markTextReviewed } from '../src/domain/article.ts';
 import { latestApproved } from '../src/domain/record.ts';
 import { createEditorialEngine } from '../src/runtime/editorial-engine.ts';
@@ -36,7 +36,8 @@ async function record(id){const s=await snapshot(),engine=createEditorialEngine(
 async function waitRun(id){for(let n=0;n<180;n++){const s=await snapshot(),run=s.state.runFolds[id]?.run;if(run?.status==='completed')return;if(run?.status==='failed'||run?.status==='cancelled')throw new Error('Live generation failed: '+JSON.stringify(run.error));if(n%10===0)console.log('Waiting for deployed worker: '+(run?.steps?.find(step=>step.state==='current')?.id??run?.status));await delay(5000);}throw new Error('Live generation timed out.');}
 
 const settings=await as('editor',()=>editorialPipeline());
-await rpc('editor','pipeline.save',defaultPipelineDefinition('openai/gpt-4.1'),settings.active?.revision??settings.revision);
+const configured=JSON.parse(await readFile(process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH,'utf8'));
+if(configured)await rpc('editor','pipeline.save',configured,settings.active.revision);
 // Exercise the deployed storage trigger, media executables and Groq transcription.
 const speech=await fetch('https://api.openai.com/v1/audio/speech',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'content-type':'application/json'},body:JSON.stringify({model:'gpt-4o-mini-tts',voice:'alloy',input:'Este é um material sintético de teste. A biblioteca prepara quatro oficinas gratuitas de leitura. A programação depende da confirmação dos voluntários. Nenhum resultado de público foi medido.'}),signal:AbortSignal.timeout(60000)});
 assert.equal(speech.ok,true,'Synthetic audio generation failed');const audio=Buffer.from(await speech.arrayBuffer()),sourceId=randomUUID(),uploadToken=randomUUID()+randomUUID();
@@ -55,7 +56,7 @@ console.log('PASS private multipart upload, actual storage trigger, media execut
 const created=await rpc('editor','createFromSource',{title:'Synthetic acceptance — Ateliê Sul',material:{text:'MATERIAL SINTÉTICO DE ACEITE. Pessoas, empresa e números fictícios.\n\n'+ATELIE_SUL_TRANSCRIPT,origin:'interview',authorized:true},brief:{sections:3,size:'standard',angle:'Relate a organização da produção e a expansão comercial, deixando explícito que se trata de uma simulação.'},plan:['article','carousel']});
 const article=created.pieces.find(piece=>piece.kind==='article');assert.ok(article);
 const draft=await rpc('editor','generation.start','article.draft',{productionId:created.productionId,pieceId:article.pieceId});await waitRun(draft.runId);
-console.log('PASS live article generation with deployed Neon worker and OpenAI.');
+console.log('PASS live article generation with deployed Neon worker and the production pipeline.');
 const bytes=await sharp({create:{width:2400,height:1350,channels:3,background:'#667788'}}).png().toBuffer();
 const prepared=await as('editor',()=>prepareAssetUpload({id:randomUUID(),fileName:'synthetic-acceptance.png',mime:'image/png',size:bytes.length,hash:createHash('sha256').update(bytes).digest('hex'),meta:{productionId:created.productionId,authorized:true,credit:'Imagem sintética de teste'}}));
 assert.equal((await fetch(prepared.url,{method:'PUT',headers:{'content-type':'image/png'},body:bytes})).ok,true);
@@ -81,7 +82,7 @@ await rpc('reviewer','decide',{pieceId:piece.id,subject:carouselReview.request.s
 console.log('PASS live carousel generation and second-user approval.');
 const state=await snapshot();
 const {validateExport}=await import('./neon-render-acceptance.mjs');
-await as('editor',()=>validateExport(state,created.productionId));
-await rpc('editor','recordDelivery',{productionId:created.productionId,selection:[approved.ref,carouselReview.request.subject],mode:'download',files:[{fileName:'acceptance.md',format:'md',versionId:approved.ref.versionId,ok:true}]});
+const exported=await as('editor',()=>validateExport(state,created.productionId));
+await rpc('editor','recordDelivery',{productionId:created.productionId,selection:exported.selection,mode:'download',files:exported.outcomes});
 console.log('PASS complete Neon editorial flow and delivery receipt.');
 const {pool}=await import('../src/server/database.ts');await Promise.all(['runtime','worker'].map(role=>pool(role).end()));
