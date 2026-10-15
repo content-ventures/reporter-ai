@@ -62,6 +62,9 @@ test('a drain stops when the queue empties, and reports leftovers at its job or 
   assert.deepEqual(await drainQueue('worker-test', new AbortController().signal, queue), { processed: 2, remaining: false, elapsedMs: 4 });
   const busy = { pending: async () => true, run: async () => true, now: () => now };
   assert.equal((await drainQueue('worker-test', new AbortController().signal, busy, { maxMs: 60_000, maxJobs: 2 })).remaining, true);
+  const yielded = { pending: async () => true, run: async () => 'yield' as const, now: () => now };
+  assert.deepEqual(await drainQueue('worker-test', new AbortController().signal, yielded), { processed: 0, remaining: true, elapsedMs: 0 },
+    'a yielded job continues in a fresh invocation instead of being claimed again here');
   const aborted = new AbortController(); aborted.abort();
   assert.equal((await drainQueue('worker-test', aborted.signal, busy)).processed, 0);
 });

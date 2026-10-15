@@ -65,3 +65,35 @@ test('media execution identifies missing and non-executable tools without exposi
     await assert.rejects(runMedia(path,['-version']),/MEDIA_TOOL_EXEC_EACCES/);
   } finally { await rm(directory,{recursive:true,force:true}); }
 });
+
+test('a later invocation resumes stored chunks and hands the job back before the budget ends', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reporter-cloud-resume-'));
+  const [first, second] = audioChunks(1300);
+  const part = (content: string, model = transcriptionModel()) => ({ provider: 'groq', model, provider_request_id: null,
+    usage_unit: 'audio_ms' as const, input_units: 1000, output_units: null, content, segments: null });
+  const saved: number[] = [];
+  let transcribed = 0;
+  const store = (chunks: [number, { start_ms: number; duration_ms: number; result: ReturnType<typeof part> }][]) => ({
+    read: async () => new Map(chunks), save: async (index: number) => { saved.push(index); },
+  });
+  const services = {
+    withCloudMediaSource: async <T>(url: string, _signal: AbortSignal, operation: (source: string) => Promise<T>) => operation(url),
+    signedSourceUrl: async () => 'https://storage.test/a.mp4', verifySource: async () => '',
+    inspectMedia: async () => ({ duration: 1300, contentType: 'video/mp4' }),
+    prepareChunk: async (_url: string, destination: string) => { await writeFile(destination, 'test'); },
+    transcribeChunk: async () => part(`New ${++transcribed}`),
+  };
+  const input = { provider: 's3', bucket: 'reporter-source-media', key: 'incoming/a.mp4', size: 1, content_type: 'video/mp4', language: 'pt-BR' };
+  const exact = { start_ms: Math.round(first.start * 1000), duration_ms: Math.round(first.duration * 1000) };
+  try {
+    await assert.rejects(processTranscript(input, directory, new AbortController().signal, async () => {}, services,
+      { store: store([[0, { ...exact, result: part('Stored 1') }]]), deadline: 1_000_000 + 60_000, now: () => 1_000_000 }), /BUDGET_YIELD/);
+    assert.equal(transcribed, 0, 'stored audio is reused and no new chunk starts inside the yield margin');
+    const done = await processTranscript(input, directory, new AbortController().signal, async () => {}, services, {
+      store: store([[0, { ...exact, result: part('Stored 1') }],
+        [1, { start_ms: Math.round(second.start * 1000) + 1, duration_ms: Math.round(second.duration * 1000), result: part('Shifted') }],
+        [2, { start_ms: 0, duration_ms: 1, result: part('Old model', 'whisper-old') }]]) });
+    assert.equal(done.content, 'Stored 1\n\nNew 1\n\nNew 2', 'a shifted window or another model is transcribed again');
+    assert.deepEqual(saved, [1, 2]);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
