@@ -135,7 +135,7 @@ jobs:
             echo "::error::Neon returned no owner connection for the ${{ inputs.environment }} target."
             exit 1
           fi
-          echo "::add-mask::$database_url"
+          node scripts/lib/mask-env.mjs --value "$database_url"
           export DATABASE_URL="$database_url" DATABASE_URL_UNPOOLED="$database_url"
 
           pull() {

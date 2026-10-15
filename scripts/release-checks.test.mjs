@@ -88,3 +88,10 @@ test('a release stops once the period transfer passes 60% of the quota', async (
     assert.equal(url, 'https://console.neon.tech/api/v2/projects/proj'); return Response.json({ project: { data_transfer_bytes: 1 } }); } });
   assert.equal(project.data_transfer_bytes, 1);
 });
+
+test('public logs hide pulled secrets and the hosts inside connection strings', async () => {
+  const { masks } = await import('./lib/mask-env.mjs');
+  assert.deepEqual(masks(['postgresql://owner:pw@ep-quiet-tree.us-east-1.aws.neon.tech/neondb', 'plain-secret', '']), [
+    '::add-mask::postgresql://owner:pw@ep-quiet-tree.us-east-1.aws.neon.tech/neondb',
+    '::add-mask::ep-quiet-tree.us-east-1.aws.neon.tech', '::add-mask::plain-secret']);
+});
