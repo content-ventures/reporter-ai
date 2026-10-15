@@ -19,11 +19,13 @@ Neon Functions run Linux ARM64 and cap compressed bundles at 10 MiB. The two pin
 executables live under content-addressed `worker-tools/` keys in the private source bucket,
 outside the `incoming/` storage-trigger prefix. Release provisioning verifies archive SHA512,
 binary SHA256 and ELF architecture. Each function isolate downloads and verifies the tools
-once, sets private executable permissions in `/tmp`, and shares concurrent installation calls.
-The health endpoint executes both binaries, configures upload CORS, then registers its database
+once, sets private executable permissions in `/run`, and shares concurrent installation calls.
+The health endpoint executes both binaries, verifies the existing upload CORS, then registers its database
 heartbeat. The release then waits for a fresh real scheduled invocation, excluding health and
 diagnostic calls, so a missing/broken schedule cannot pass and fail again three minutes later.
 A failure stops the release before the Vercel release commit is pushed.
+The worker registers its configured public HTTPS invocation origin, rather than the internal
+HTTP request URL supplied by the hosting runtime.
 
 Schedule and storage deliveries use `/triggers/schedule` and `/triggers/storage`.
 The handler passes headers and JSON directly to the Neon SDK, without assuming
@@ -52,8 +54,8 @@ database role. Never rotate or reset roles as a release side effect.
 
 Provider credential checks run before any infrastructure mutation. They authenticate using
 provider API metadata/search endpoints; they do not claim quota or access for every generation
-model. Worker health verifies database access, storage and media execution. End-to-end acceptance
-of the deployed application still follows a successful, explicitly approved release.
+model. Worker health verifies database access, storage and media execution. Candidate acceptance
+runs against an isolated Neon branch before any production release.
 
 ## Verification
 
@@ -65,10 +67,23 @@ article and carousel through the saved production pipeline (or its default seed)
 uploaded image as that reviewer and builds the browser export (Markdown, HTML, images, slide PNGs,
 JSON and manifest). The child branch is removed on completion. A failed acceptance stops before
 production migrations or deployment. `validation_only` runs the same acceptance without publishing.
+The article uses that uploaded source's actual transcript. The same acceptance also exercises
+pasted text and UTF-8 file ingestion through real material analysis and article generation.
+
+For an original large recording, prepare a session, then use `scripts/open-neon-acceptance.mjs`
+with its branch ID and the authenticated Neon environment. It writes a mode-0600 temporary
+environment file. Start the candidate production build on loopback with that environment and
+run `scripts/neon-browser-acceptance.mjs` with `REPORTER_ACCEPTANCE_MEDIA_PATH`. The script
+creates verified synthetic accounts on the isolated branch and signs in through the real app.
+A test-browser reverse proxy serves the candidate build under the app origin so browser CORS
+matches production; every app-origin request is intercepted before it reaches production.
+Screenshots and a result manifest are saved under the local temporary directory.
 
 Cloud images live under private `images/<portal>/<hash>` Object Storage keys. The Next.js server
 authorizes access and obtains short-lived URLs through the authenticated worker gateway; browser
 uploads go directly to storage and are decoded/hash-checked before their metadata is committed.
+Image reads stream through the authenticated same-origin app route, including exports, so private
+image retrieval does not require widening the bucket's browser CORS policy.
 Spotify enclosure imports use durable, leased storage registrations drained by the worker, so
 neither media nor image persistence depends on the Vercel filesystem or another browser's IndexedDB.
 
