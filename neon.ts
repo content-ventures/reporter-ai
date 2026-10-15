@@ -87,8 +87,11 @@ export default defineConfig({
   },
   functions,
   triggers: {
+    // Hourly safety sweep. The app wakes the worker on demand, so this only catches work
+    // whose wake-up was lost. The legacy name is kept on purpose: triggers are matched by
+    // name, and a renamed trigger would leave the old every-minute schedule firing.
     'reporter-editorial-every-minute': {
-      type: 'schedule',function: 'reporterworker',cron: '* * * * *',functionPath: '/triggers/schedule',enabled: true,
+      type: 'schedule',function: 'reporterworker',cron: '0 * * * *',functionPath: '/triggers/schedule',enabled: true,
     },
     'reporter-source-uploaded': {
       type: 'storage_object_created',function: 'reporterworker',bucket: 'reporter-source-media',
