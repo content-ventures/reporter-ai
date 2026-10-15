@@ -59,6 +59,26 @@ test('scheduled delivery is authenticated, heartbeats and returns the drained co
   assert.match(heartbeats[0],/^reporter-neon-/);
 });
 
+test('rejected trigger deliveries expose only bounded operational codes and never start work',async () => {
+  const codes: string[] = [];
+  let runs = 0;
+  const worker = createReporterWorker({
+    rejectedTrigger: code => { codes.push(code); },
+    heartbeat: async () => {},run: async () => { runs++; return false; },
+    startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => ({}),now: Date.now,
+  });
+  const get = await worker.fetch(new Request('https://worker.test/?secret=private-data'));
+  const post = await worker.fetch(new Request('https://worker.test/',{
+    method: 'POST',headers: { 'content-type': 'application/json' },body: JSON.stringify({ transcript: 'private editorial text' }),
+  }));
+  const malformed = await worker.fetch(new Request('https://worker.test/',{
+    method: 'POST',headers: { 'x-neon-trigger-invocation-id': 'private-header-value' },body: '{}',
+  }));
+  assert.equal(get.status,405); assert.equal(post.status,401); assert.equal(malformed.status,400);
+  assert.deepEqual(codes,['TRIGGER_GET_WITHOUT_HEADER','TRIGGER_POST_MISSING_HEADER','TRIGGER_POST_INVALID_BODY']);
+  assert.equal(runs,0);
+});
+
 test('health check requires the worker secret and reports database readiness',async () => {
   const previous = process.env.REPORTER_WORKER_PASSWORD;
   process.env.REPORTER_WORKER_PASSWORD = 'worker-secret';
