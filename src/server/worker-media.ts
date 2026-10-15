@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { ReadableStream } from 'node:stream/web';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { FlowError } from './errors.ts';
 import { WORKER_MEDIA, WORKER_MEDIA_BUCKET, workerMediaKey, type MediaTool } from './worker-media-manifest.ts';
@@ -14,22 +15,23 @@ const installed = new Map<MediaTool, Promise<string>>();
 const client = new S3Client({ forcePathStyle: true });
 
 export function workerMediaStream(body: unknown): Readable {
-  const stream = body as Partial<AsyncIterable<Uint8Array>> | undefined;
-  if (!stream || typeof stream !== 'object' || typeof stream[Symbol.asyncIterator] !== 'function') {
-    throw new FlowError('MEDIA_TOOL_BODY_UNAVAILABLE', 503);
+  const stream = body as (Partial<AsyncIterable<Uint8Array>> & { transformToWebStream?(): ReadableStream<Uint8Array> }) | undefined;
+  if (stream && typeof stream === 'object') {
+    if (typeof stream[Symbol.asyncIterator] === 'function') return Readable.from(stream as AsyncIterable<Uint8Array>);
+    if (typeof stream.transformToWebStream === 'function') return Readable.fromWeb(stream.transformToWebStream());
   }
   // S3 can expose a host-provided stream. Consume the async-iterator contract
   // rather than relying on the Node Readable constructor's identity.
-  return Readable.from(stream as AsyncIterable<Uint8Array>);
+  throw new FlowError('MEDIA_TOOL_BODY_UNAVAILABLE', 503);
 }
 
 export function workerMediaFailure(error: unknown): FlowError {
   if (error instanceof FlowError) return error;
-  const failure = error as { name?: string; code?: string } | null;
-  if (['AccessDenied','InvalidAccessKeyId','SignatureDoesNotMatch','ExpiredToken'].includes(failure?.name ?? '')) {
+  const failure = error as { name?: string; code?: string; $metadata?: { httpStatusCode?: number } } | null;
+  if (failure?.$metadata?.httpStatusCode === 403 || ['AccessDenied','InvalidAccessKeyId','SignatureDoesNotMatch','ExpiredToken'].includes(failure?.name ?? '')) {
     return new FlowError('MEDIA_TOOL_STORAGE_DENIED', 503);
   }
-  if (['NoSuchKey','NotFound','NoSuchBucket'].includes(failure?.name ?? '')) return new FlowError('MEDIA_TOOL_OBJECT_MISSING', 503);
+  if (failure?.$metadata?.httpStatusCode === 404 || ['NoSuchKey','NotFound','NoSuchBucket'].includes(failure?.name ?? '')) return new FlowError('MEDIA_TOOL_OBJECT_MISSING', 503);
   if (['AbortError','TimeoutError'].includes(failure?.name ?? '')) return new FlowError('MEDIA_TOOL_DOWNLOAD_TIMEOUT', 503);
   if (['EACCES','EPERM','EROFS','ENOSPC','ENOSYS'].includes(failure?.code ?? '')) {
     return new FlowError(`MEDIA_TOOL_FILESYSTEM_${failure!.code}`, 503);

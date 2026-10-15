@@ -8,7 +8,7 @@ export function safeCode(error: unknown): string {
   if (error instanceof FlowError) return error.code;
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
   if (["40001","42501","23514","22023","55000","ECONNREFUSED","ENOENT"].includes(code)) return code;
-  if (error instanceof Error && ["LOCAL_MODE_DISABLED","GROQ_KEY_MISSING","OPENAI_KEY_MISSING","ANTHROPIC_KEY_MISSING","DATABASE_CONFIGURATION"].includes(error.message)) return error.message;
+  if (error instanceof Error && ["LOCAL_MODE_DISABLED","GROQ_KEY_MISSING","OPENAI_KEY_MISSING","ANTHROPIC_KEY_MISSING","DATABASE_CONFIGURATION","AUTH_CONTEXT_MISSING"].includes(error.message)) return error.message;
   return "INTERNAL_ERROR";
 }
 
@@ -37,9 +37,12 @@ export function logEvent(component: string, message: string, attributes: { reque
   // unbounded records or block an accepted editorial transaction.
   try {
     if (process.stdout.writableLength > 65536 || process.stdout.destroyed) return;
-    process.stdout.write(JSON.stringify({
+    const entry = JSON.stringify({
     timestamp: new Date().toISOString(), level: clean.error_code ? "error" : "info",
-    environment: "local", service: "reporter-ai", component, message, schema_version: 1, ...clean,
-    }) + "\n");
+    environment: process.env.REPORTER_DEPLOYMENT_MODE === 'cloud' ? 'cloud' : 'local', service: "reporter-ai", component, message, schema_version: 1, ...clean,
+    });
+    if (process.env.REPORTER_FUNCTION_RUNTIME === 'true') {
+      if (clean.error_code) console.error(entry); else console.log(entry);
+    } else process.stdout.write(entry + '\n');
   } catch { /* Diagnostic failure must not replace a business transaction. */ }
 }

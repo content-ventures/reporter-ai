@@ -59,6 +59,8 @@ const functions = {
     env: {
       REPORTER_DEPLOYMENT_MODE: 'cloud',
       REPORTER_FUNCTION_RUNTIME: 'true',
+      REPORTER_SOURCE_COMMIT: process.env.GITHUB_SHA || 'local-validation',
+      REPORTER_DEPLOYMENT_ACTOR: process.env.GITHUB_ACTOR || 'local-validation',
       REPORTER_DEFAULT_PORTAL_ID: '10000000-0000-0000-0000-000000000101',
       REPORTER_APP_ORIGIN: 'https://reporter-ai-three.vercel.app',
       REPORTER_WORKER_DATABASE_URL: workerDatabaseUrl(),
