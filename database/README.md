@@ -62,6 +62,9 @@ Reporter AI owns all schemas, tables, helpers, logins and queues in this databas
 5. `local/40-local-roles.sql`: distinct local logins and the schema-readiness marker.
 6. `migrations/003-local-flow.sql`: local intake/import and narrow API/worker bridges.
 7. `local/60-local-operator.sql`: synthetic development operator with local editorial permissions.
+8. `migrations/004`, `011`, `012` and `014`–`016`: the former editorial document, polling, queue status with
+   resumable transcription chunks, and the editorial rows with their import. `scripts/lib/migrations.mjs` is the
+   single ordered list for Docker, Neon and the tests; `pnpm db:flow` replays its idempotent part on a volume.
 
 The synthetic storage record does not contain real media bytes. Do not use local seed data
 or local credentials in production. The English `core` and `public` schemas are our own
@@ -189,6 +192,38 @@ before production. Version them through migrations if the agreed contract change
 - Source metadata up to 16 KiB, request parameters up to 4 KiB,
   worker result envelope up to 4 MiB; provider metadata up to 256 characters.
 
+## Editorial rows
+
+The approved UI's editorial state lives in `reporter_ed_*` rows (migration 014): production headers and their
+parts (pieces, versions, decisions, reviews, run summaries, suggestions, deliveries), sources, runs with their
+jobs and event streams, items (people, members, activity, feedback, image assets, citations, the visual library),
+pipeline snapshots and command receipts. No document holds a whole portal, so nothing grows with the workspace.
+
+- A command loads only the rows its scope names (`src/server/editorial-scope.ts`), locking productions and runs
+  in a fixed order, runs the unchanged engine and writes back only rows whose content changed. `reporter_ed_commit`
+  is the transaction's last call: it stamps every written row with the portal's next change number, so numbers
+  follow commit order. Its receipt is written first; a repeated request replays it.
+- Browsers poll `reporter_ed_status()`, a stamp of under 128 bytes, then read `reporter_ed_changes(since)` (only
+  rows stamped after their number, deletions as tombstones) or a snapshot when their number is below the delta
+  floor or the workspace row changed (migration 015).
+- The worker claims a run with `reporter_ed_claim` (`FOR UPDATE SKIP LOCKED`) and renews its fenced lease with
+  `reporter_ed_renew`; neither is a browser-visible change. `reporter_ed_compact()` runs after drains that did
+  work, at most every ten minutes: finished runs keep their fold but drop their events after an hour, receipts
+  expire after seven days and old tombstones go.
+- Migration 016 imports each portal's former `reporter_editorial_workspaces` document once, in document order,
+  and stops if the rows would not export back to the same content. A trigger then refuses every write to that
+  table, so an old app instance fails loudly instead of writing where nothing reads.
+- `database/rollback/editorial-rows.sql` is the emergency way back for an app rolled back to a release that
+  reads the document. Run it once with psql as the database owner, with the worker stopped: in one transaction it
+  writes the rows back into each document, clears them and restores the previous queue gate. Replaying 016 later
+  imports the restored documents again.
+
+`pnpm db:test` covers scoped loads, stamped commits, deltas, claims, the import round trip and the fence, and
+rehearses a rollback followed by a re-import in the disposable bootstrap only. `pnpm test:rehearsal` runs every
+port contract over HTTP on these rows, checking after each command that the browser's merged deltas equal a
+fresh snapshot, and holds idle polls, renames, autosaves and worker preview events to transfer budgets that do
+not grow with the workspace, up to 1,000 productions.
+
 ## Verification and remaining R1 work
 
 `pnpm db:test` checks actual PostgreSQL under runtime/worker session authorization.
@@ -221,7 +256,8 @@ the application process.
 Cloud signup does not grant editorial access. Provision a known person explicitly after they choose their
 login e-mail: `pnpm db:cloud:grant -- --email person@example.com --name "Person" --role admin`. The verified
 Neon Auth subject is bound to that pre-provisioned record on first sign-in. Migration 005 creates the Reporter
-workspace, role catalog, auth-session resolver and database-backed worker heartbeat; it does not seed a person.
+workspace, role catalog and auth-session resolver; it does not seed a person. Its worker heartbeat table no longer
+gates uploads or generation: since migration 013 the worker is woken on demand and the queue reports stalls.
 
 Large cloud uploads remain disabled until private Neon Object Storage and direct multipart upload are deployed.
 The transitional cloud worker can be run from a controlled machine with its own private cache, but is not the

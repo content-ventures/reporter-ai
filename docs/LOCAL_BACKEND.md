@@ -168,17 +168,18 @@ these settings govern the approved connected UI's editorial jobs.
 ## Persistence and boundaries
 
 Files stay privately in ignored `.reporter-local/`, never `public/`. Existing storage metadata,
-`reporter_transcripts` and the outbox handle intake/audio. Migration 004 adds one server-owned
-`reporter_editorial_workspaces` JSONB aggregate for the approved UI's documents, versions, approvals,
-activity, feedback, editorial jobs and bounded idempotency receipts. Named server commands enforce
-the tested domain rules under scoped SQL functions and a revision; browsers cannot upload a replacement
-aggregate. Its serialized writes and 32 MiB bound are a local-pilot bridge, not a scaling strategy.
+`reporter_transcripts` and the outbox handle intake/audio. The approved UI's documents, versions,
+approvals, activity, feedback, editorial jobs and bounded idempotency receipts are server-owned
+`reporter_ed_*` rows (migrations 014–016, described in `database/README.md`). Named server commands
+enforce the tested domain rules under scoped SQL functions; each loads only the rows it needs and
+writes only the rows it changed, and browsers cannot upload replacement state. Migration 004's single
+JSONB document per portal is retired by migration 016 and kept read-only for an emergency rollback.
 
 Legacy `reporter_articles`/`reporter_carousels` APIs and data are preserved, but **new UI documents
 are not mirrored into those tables**. The installed 20 tables include the existing Reporter foundation,
 not 20 new editorial entities. Choose and migrate a canonical normalized model before multiuser release.
 Logs in the existing UI read persisted semantic activity; sanitized technical logs go to stdout.
-The aggregate is not a permanent immutable compliance audit ledger.
+The editorial rows are not a permanent immutable compliance audit ledger.
 
 Provider article bodies are committed atomically after validation. The editor reads that server
 draft rather than replaying provider block events as browser-side writes; regeneration must not
@@ -640,7 +641,7 @@ The R1 Citações menu projects literal quotations already used in authorized ar
 and supports additional manually selected transcript passages. Generated quotations are emphasized
 in the article without changing text, counts or source references. Each entry retains the transcript
 version, segment, content hash, available timestamp and production. The library stores editorial
-curation in the existing PostgreSQL checkpoint JSONB; no new table or login was introduced.
+curation as citation rows among the editorial rows; no login was introduced.
 Participant introductions are not evidence of voice attribution: authors must be verified from
 speaker-labelled material or explicitly confirmed by an editor. Unknown podcast/date/location/link
 remain visibly unknown. Only a verified literal passage with confirmed author and a written relevance
