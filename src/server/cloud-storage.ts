@@ -134,6 +134,9 @@ export async function completeCloudUpload(sourceId: string,token: string) {
     Bucket: input.bucket,Key: input.key,UploadId: input.upload_id,
     MultipartUpload: { Parts: parts.map(({ ETag,PartNumber }) => ({ ETag,PartNumber })) },
   }));
+  // Registering here (idempotent with the storage trigger) queues transcription even if
+  // the storage delivery is lost or late.
+  await finalizeUploadedObject(input.bucket,input.key);
   return { accepted: true,sourceId: input.source_id };
 }
 

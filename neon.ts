@@ -13,6 +13,8 @@ const requiredAny = (...names: string[]) => {
   if (!value) throw new Error(`${names.join(' or ')} is required to deploy Reporter AI Functions`);
   return value;
 };
+// Known once the function exists on the branch: `neon env pull` exposes it for later deploys.
+const workerBaseUrl = () => process.env.REPORTER_WORKER_URL?.trim() || process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL?.trim();
 const workerDatabaseUrl = () => {
   const url = new URL(required('DATABASE_URL'));
   url.username = 'reporter_worker';
@@ -65,8 +67,8 @@ const functions = {
       REPORTER_SOURCE_COMMIT: process.env.GITHUB_SHA || 'local-validation',
       REPORTER_DEPLOYMENT_ACTOR: process.env.GITHUB_ACTOR || 'local-validation',
       REPORTER_DEFAULT_PORTAL_ID: '10000000-0000-0000-0000-000000000101',
-      REPORTER_APP_ORIGIN: 'https://reporter-ai-three.vercel.app',
-      ...(process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL?{REPORTER_WORKER_ENDPOINT:process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL}:{}),
+      REPORTER_APP_ORIGINS: required('REPORTER_APP_ORIGINS'),
+      ...(workerBaseUrl()?{REPORTER_WORKER_URL:workerBaseUrl()}:{}),
       REPORTER_WORKER_DATABASE_URL: workerDatabaseUrl(),
       REPORTER_WORKER_PASSWORD: required('REPORTER_WORKER_PASSWORD'),
       GROQ_API_KEY: required('GROQ_API_KEY'),

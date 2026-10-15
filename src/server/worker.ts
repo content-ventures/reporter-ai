@@ -2,7 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { assertLocalMode,groqKey } from './config.ts';
-import { pool,transaction } from './database.ts';
+import { pool } from './database.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { runEditorialJob } from './editorial-worker.ts';
 import { logEvent,safeCode } from './errors.ts';
@@ -18,9 +18,8 @@ async function main() {
   if (local) assertLocalMode();
   groqKey();
   const root = await storageRoot();
-  const heartbeat = () => (local
-    ? cacheWrite(root,'worker',{ timestamp: Date.now(),owner })
-    : transaction('worker',async client => { await client.query('SELECT public.reporter_worker_heartbeat($1)',[owner]); })).catch(() => {});
+  // Local mode tells the app it is running through a file; cloud work is woken on demand.
+  const heartbeat = () => local ? cacheWrite(root,'worker',{ timestamp: Date.now(),owner }).catch(() => {}) : Promise.resolve();
   await heartbeat();
   const timer = setInterval(heartbeat,5000);
   logEvent('worker','worker_started');

@@ -1,212 +1,177 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createReporterWorker, drainEditorialQueue } from '../functions/reporter-worker.ts';
+import { createReporterWorker, type WorkerDependencies } from '../functions/reporter-worker.ts';
 import { cloudPortalId } from '../src/server/config.ts';
+import { createDrainScheduler, drainQueue, type DrainResult } from '../src/server/worker-drain.ts';
 
-test('cloud portal accepts the deterministic UUID used by the Reporter AI seed',() => {
+const SOURCE_KEY = 'incoming/10000000-0000-0000-0000-000000000101/550e8400-e29b-41d4-a716-446655440000.mp3';
+const IDLE: DrainResult = { processed: 0, remaining: false, elapsedMs: 0 };
+
+/** A worker whose every dependency is observable; deferred work is awaited explicitly. */
+function harness(overrides: Partial<WorkerDependencies> = {}) {
+  const calls = { drains: 0, pings: 0, chains: [] as number[], finalized: [] as string[][], rejected: [] as string[] };
+  const deferred: Promise<unknown>[] = [];
+  let now = 1_000_000;
+  const services: WorkerDependencies = {
+    ready: async () => {},
+    ping: async () => { calls.pings++; },
+    rejectedTrigger: code => { calls.rejected.push(code); },
+    drain: async () => { calls.drains++; return IDLE; },
+    chain: async depth => { calls.chains.push(depth); },
+    defer: work => { deferred.push(work); },
+    startUpload: async () => ({ partSize: 16, parts: [] }),
+    completeUpload: async () => ({ accepted: true }),
+    finalizeObject: async (bucket, key) => { calls.finalized.push([bucket, key]); return {}; },
+    now: () => now,
+    ...overrides,
+  };
+  return { worker: createReporterWorker(services), calls, settle: () => Promise.all(deferred), advance: (ms: number) => { now += ms; } };
+}
+
+function withEnv(values: Record<string, string>, run: () => Promise<void>) {
+  const previous = Object.fromEntries(Object.keys(values).map(name => [name, process.env[name]]));
+  Object.assign(process.env, values);
+  return run().finally(() => {
+    for (const [name, value] of Object.entries(previous)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
+  });
+}
+
+const schedule = (id = 'schedule-invocation') => new Request('https://worker.test/triggers/schedule', { method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-neon-trigger-invocation-id': id },
+  body: JSON.stringify({ version: 1, invocation_id: id, trigger: { type: 'schedule', id: 'trigger', name: 'sweep' },
+    data: { scheduled_at: '2026-10-15T12:00:00Z' } }) });
+
+test('cloud portal accepts the deterministic UUID used by the Reporter AI seed', () => {
   const previous = process.env.REPORTER_DEFAULT_PORTAL_ID;
   process.env.REPORTER_DEFAULT_PORTAL_ID = '10000000-0000-0000-0000-000000000101';
-  try { assert.equal(cloudPortalId(),'10000000-0000-0000-0000-000000000101'); }
-  finally {
-    if (previous === undefined) delete process.env.REPORTER_DEFAULT_PORTAL_ID;
-    else process.env.REPORTER_DEFAULT_PORTAL_ID = previous;
-  }
+  try { assert.equal(cloudPortalId(), '10000000-0000-0000-0000-000000000101'); }
+  finally { if (previous === undefined) delete process.env.REPORTER_DEFAULT_PORTAL_ID; else process.env.REPORTER_DEFAULT_PORTAL_ID = previous; }
 });
 
-test('scheduled worker heartbeats once and drains bounded editorial work',async () => {
-  let heartbeats = 0,runs = 0,now = 1000;
-  const result = await drainEditorialQueue('worker-test','https://worker.test',new AbortController().signal,{
-    heartbeat: async () => { heartbeats++; },
-    run: async () => ++runs < 3,
-    startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => ({}),
-    now: () => now++,
-  });
-  assert.deepEqual(result,{ processed: 2,elapsedMs: 4 });
-  assert.equal(heartbeats,1);
-  assert.equal(runs,3);
-});
-
-test('scheduled worker stops before starting work when already aborted',async () => {
-  const controller = new AbortController();controller.abort();
+test('an empty queue costs one pending check and starts no job', async () => {
   let runs = 0;
-  const result = await drainEditorialQueue('worker-test','https://worker.test',controller.signal,{
-    heartbeat: async () => {},run: async () => { runs++;return true; },
-    startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => ({}),now: () => 1000,
-  });
-  assert.equal(result.processed,0);
-  assert.equal(runs,0);
+  const result = await drainQueue('worker-test', new AbortController().signal,
+    { pending: async () => false, run: async () => { runs++; return true; }, now: () => 0 });
+  assert.deepEqual(result, { processed: 0, remaining: false, elapsedMs: 0 });
+  assert.equal(runs, 0);
 });
 
-test('scheduled delivery is authenticated, heartbeats and returns the drained count',async () => {
-  const heartbeats: string[] = [];
-  const worker = createReporterWorker({
-    heartbeat: async owner => { heartbeats.push(owner); },
-    run: async () => false,
-    startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => ({}),
-    now: () => 1000,
-  });
-  const invocationId = 'test-invocation';
-  const response = await worker.fetch(new Request('https://worker.test/',{
-    method: 'POST',headers: { 'content-type': 'application/json','x-neon-trigger-invocation-id': invocationId },
-    body: JSON.stringify({ version: 1,invocation_id: invocationId,
-      trigger: { type: 'schedule',id: 'trigger-test',name: 'every-minute' },
-      data: { scheduled_at: '2026-10-13T18:00:00Z' },
-    }),
-  }));
-  assert.equal(response.status,200);
-  assert.deepEqual(await response.json(),{ ok: true,processed: 0 });
-  assert.equal(heartbeats.length,1);
-  assert.match(heartbeats[0],/^reporter-neon-/);
+test('a drain stops when the queue empties, and reports leftovers at its job or time budget', async () => {
+  let runs = 0, now = 0;
+  const queue = { pending: async () => true, run: async () => ++runs < 3, now: () => now++ };
+  assert.deepEqual(await drainQueue('worker-test', new AbortController().signal, queue), { processed: 2, remaining: false, elapsedMs: 4 });
+  const busy = { pending: async () => true, run: async () => true, now: () => now };
+  assert.equal((await drainQueue('worker-test', new AbortController().signal, busy, { maxMs: 60_000, maxJobs: 2 })).remaining, true);
+  const aborted = new AbortController(); aborted.abort();
+  assert.equal((await drainQueue('worker-test', aborted.signal, busy)).processed, 0);
 });
 
-test('rejected trigger deliveries expose only bounded operational codes and never start work',async () => {
-  const codes: string[] = [];
-  let runs = 0;
-  const worker = createReporterWorker({
-    rejectedTrigger: code => { codes.push(code); },
-    heartbeat: async () => {},run: async () => { runs++; return false; },
-    startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => ({}),now: Date.now,
-  });
-  const get = await worker.fetch(new Request('https://worker.test/?secret=private-data'));
-  const post = await worker.fetch(new Request('https://worker.test/',{
-    method: 'POST',headers: { 'content-type': 'application/json' },body: JSON.stringify({ transcript: 'private editorial text' }),
-  }));
-  const malformed = await worker.fetch(new Request('https://worker.test/',{
-    method: 'POST',headers: { 'x-neon-trigger-invocation-id': 'private-header-value' },body: '{}',
-  }));
-  assert.equal(get.status,405); assert.equal(post.status,401); assert.equal(malformed.status,400);
-  assert.deepEqual(codes,['TRIGGER_GET_WITHOUT_HEADER','TRIGGER_POST_MISSING_HEADER','TRIGGER_POST_INVALID_BODY']);
-  assert.equal(runs,0);
+test('one drain runs per isolate; a kick during it buys exactly one more pass', async () => {
+  let release!: () => void, passes = 0;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const scheduleDrain = createDrainScheduler({ drain: async () => { passes++; if (passes === 1) await gate; return IDLE; }, chain: async () => {} });
+  const first = scheduleDrain(), second = scheduleDrain(), third = scheduleDrain();
+  assert.equal(first, second); assert.equal(second, third);
+  release(); await first;
+  assert.equal(passes, 2);
 });
 
-test('native trigger routes accept hosted Request objects without instanceof or clone dependencies',async () => {
-  let runs = 0,reads = 0;
-  const heartbeats: string[] = [];
-  const worker = createReporterWorker({
-    heartbeat: async owner => { heartbeats.push(owner); },run: async () => { runs++; return false; },
-    startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => ({}),now: Date.now,
-  });
-  const request = {
-    url: 'https://worker.test/triggers/schedule',method: 'POST',
-    headers: new Headers({ 'x-neon-trigger-invocation-id': 'native-invocation' }),
-    clone: () => { throw new Error('Hosted request cannot be cloned'); },
-    json: async () => { reads++; return { version: 1,invocation_id: 'native-invocation',
-      trigger: { type: 'schedule',id: 'schedule-id',name: 'every-minute' },
-      data: { scheduled_at: '2026-10-15T11:00:00Z' } }; },
-  } as unknown as Request;
-  assert.equal(request instanceof Request,false);
-  const response = await worker.fetch(request);
-  assert.equal(response.status,200); assert.equal(reads,1); assert.equal(runs,1);
-  assert.match(heartbeats[0],/^reporter-neon-/);
+test('work left at the budget continues in a new invocation, up to the chain limit', async () => {
+  const chained: number[] = [];
+  const busy = createDrainScheduler({ drain: async () => ({ processed: 20, remaining: true, elapsedMs: 1 }),
+    chain: async depth => { chained.push(depth); }, maxDepth: 2 });
+  await busy(0); await busy(1); await busy(2);
+  assert.deepEqual(chained, [1, 2]);
 });
 
-test('dedicated trigger routes reject a mismatched delivery type before processing work',async () => {
-  let runs = 0,finalized = 0;
-  const worker = createReporterWorker({ heartbeat: async () => {},run: async () => { runs++; return false; },
-    startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => { finalized++; },now: Date.now });
-  const response = await worker.fetch(new Request('https://worker.test/triggers/storage',{
-    method: 'POST',headers: { 'x-neon-trigger-invocation-id': 'schedule-invocation','content-type': 'application/json' },
-    body: JSON.stringify({version:1,invocation_id:'schedule-invocation',
-      trigger:{type:'schedule',id:'schedule-id',name:'every-minute'},data:{scheduled_at:'2026-10-15T11:00:00Z'}}),
-  }));
-  assert.equal(response.status,400); assert.equal(runs,0); assert.equal(finalized,0);
+test('the drain route requires the worker secret, answers at once and drains in the background', () => withEnv({ REPORTER_WORKER_PASSWORD: 'worker-secret' }, async () => {
+  const { worker, calls, settle } = harness();
+  assert.equal((await worker.fetch(new Request('https://worker.test/drain', { method: 'POST' }))).status, 401);
+  assert.equal(calls.drains, 0);
+  const response = await worker.fetch(new Request('https://worker.test/drain', { method: 'POST', headers: { 'x-reporter-worker-key': 'worker-secret' } }));
+  assert.equal(response.status, 202);
+  await settle();
+  assert.equal(calls.drains, 1);
+  const waited = await worker.fetch(new Request('https://worker.test/drain?wait=1', { method: 'POST', headers: { 'x-reporter-worker-key': 'worker-secret' } }));
+  assert.deepEqual(await waited.json(), { ok: true, ...IDLE });
+}));
+
+test('schedule deliveries sweep at most once every few minutes and forged ones never reach the database', async () => {
+  const { worker, calls, settle, advance } = harness();
+  assert.equal((await worker.fetch(schedule('first'))).status, 202);
+  assert.equal((await worker.fetch(schedule('second'))).status, 202);
+  await settle();
+  assert.equal(calls.drains, 1, 'a burst of deliveries is one sweep');
+  advance(5 * 60 * 1000);
+  await worker.fetch(schedule('later')); await settle();
+  assert.equal(calls.drains, 2);
+  const forged = [
+    new Request('https://worker.test/triggers/schedule', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"transcript":"private"}' }),
+    new Request('https://worker.test/triggers/schedule', { method: 'POST', headers: { 'x-neon-trigger-invocation-id': 'private-header' }, body: '{}' }),
+    new Request('https://worker.test/triggers/schedule?secret=private'),
+    new Request('https://worker.test/?secret=private'),
+  ];
+  const statuses = [];
+  for (const request of forged) statuses.push((await worker.fetch(request)).status);
+  await settle();
+  assert.deepEqual(statuses, [401, 400, 405, 404]);
+  assert.deepEqual(calls.rejected, ['TRIGGER_MISSING_HEADER', 'TRIGGER_INVALID_BODY', 'TRIGGER_METHOD', 'UNKNOWN_ROUTE']);
+  assert.deepEqual([calls.drains, calls.pings], [2, 0], 'forged deliveries start no work and read nothing');
 });
 
-test('health check requires the worker secret and reports database readiness',async () => {
-  const previous = process.env.REPORTER_WORKER_PASSWORD;
-  process.env.REPORTER_WORKER_PASSWORD = 'worker-secret';
-  try {
-    let heartbeats = 0;
-    const worker = createReporterWorker({ heartbeat: async () => { heartbeats++; },run: async () => false,
-      startUpload: async () => ({}),completeUpload: async () => ({}),finalizeObject: async () => ({}),now: Date.now });
-    const denied = await worker.fetch(new Request('https://worker.test/',{ method: 'POST' }));
-    const ready = await worker.fetch(new Request('https://worker.test/',{
-      method: 'POST',headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ health_secret: 'worker-secret' }),
-    }));
-    assert.equal(denied.status,401);
-    assert.equal(ready.status,200);
-    assert.equal(heartbeats,1);
-  } finally {
-    if (previous === undefined) delete process.env.REPORTER_WORKER_PASSWORD;
-    else process.env.REPORTER_WORKER_PASSWORD = previous;
-  }
+test('trigger routes accept hosted Request objects without instanceof or clone dependencies', async () => {
+  const { worker, calls, settle } = harness();
+  const body = { version: 1, invocation_id: 'native', trigger: { type: 'schedule', id: 'trigger', name: 'sweep' }, data: { scheduled_at: '2026-10-15T12:00:00Z' } };
+  const request = { url: 'https://worker.test/triggers/schedule', method: 'POST',
+    headers: new Headers({ 'x-neon-trigger-invocation-id': 'native' }),
+    clone: () => { throw new Error('Hosted request cannot be cloned'); }, json: async () => body } as unknown as Request;
+  assert.equal(request instanceof Request, false);
+  assert.equal((await worker.fetch(request)).status, 202);
+  await settle();
+  assert.equal(calls.drains, 1);
 });
 
-test('release health check refuses readiness if storage or media tools fail and does not publish a healthy heartbeat', async () => {
-  const previous = process.env.REPORTER_WORKER_PASSWORD;
-  process.env.REPORTER_WORKER_PASSWORD = 'worker-secret';
-  try {
-    let heartbeats = 0;
-    const worker = createReporterWorker({ ready: async () => { throw new Error('private infrastructure detail'); },
-      heartbeat: async () => { heartbeats++; }, run: async () => false,
-      startUpload: async () => ({}), completeUpload: async () => ({}), finalizeObject: async () => ({}), now: Date.now });
-    const response = await worker.fetch(new Request('https://worker.test/', { headers: { 'x-reporter-worker-key': 'worker-secret' } }));
-    assert.equal(response.status, 503); assert.equal(heartbeats, 0);
-    assert.deepEqual(await response.json(), { ok: false, error: 'INTERNAL_ERROR' });
-  } finally {
-    if (previous === undefined) delete process.env.REPORTER_WORKER_PASSWORD; else process.env.REPORTER_WORKER_PASSWORD = previous;
-  }
+test('a storage delivery finalizes only source objects, then starts transcription', async () => {
+  const { worker, calls, settle } = harness();
+  const delivery = (key: string, type = 'storage_object_created') => new Request('https://worker.test/triggers/storage', { method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-neon-trigger-invocation-id': 'storage' },
+    body: JSON.stringify({ version: 1, invocation_id: 'storage', trigger: { type, id: 'trigger', name: 'source-created' },
+      data: type === 'schedule' ? { scheduled_at: '2026-10-15T12:00:00Z' } : { bucket_name: 'reporter-source-media', object_key: key } }) });
+  assert.equal((await worker.fetch(delivery('images/portal/hash.png'))).status, 400);
+  assert.equal((await worker.fetch(delivery(SOURCE_KEY, 'schedule'))).status, 400);
+  assert.equal(calls.finalized.length, 0);
+  assert.equal((await worker.fetch(delivery(SOURCE_KEY))).status, 200);
+  await settle();
+  assert.deepEqual(calls.finalized, [['reporter-source-media', SOURCE_KEY]]);
+  assert.equal(calls.drains, 1);
 });
 
-test('hosted HTTP requests register the configured public HTTPS endpoint',async()=>{
-  const secret=process.env.REPORTER_WORKER_PASSWORD,endpoint=process.env.REPORTER_WORKER_ENDPOINT;
-  process.env.REPORTER_WORKER_PASSWORD='worker-secret';process.env.REPORTER_WORKER_ENDPOINT='https://branch-worker.compute.example/';
-  try{
-    let registered;
-    const worker=createReporterWorker({heartbeat:async(_owner,url)=>{registered=url;},run:async()=>false,
-      startUpload:async()=>({}),completeUpload:async()=>({}),finalizeObject:async()=>({}),now:Date.now});
-    const response=await worker.fetch(new Request('http://127.0.0.1:8080/',{headers:{'x-reporter-worker-key':'worker-secret'}}));
-    assert.equal(response.status,200);assert.equal(registered,'https://branch-worker.compute.example');
-  }finally{
-    if(secret===undefined)delete process.env.REPORTER_WORKER_PASSWORD;else process.env.REPORTER_WORKER_PASSWORD=secret;
-    if(endpoint===undefined)delete process.env.REPORTER_WORKER_ENDPOINT;else process.env.REPORTER_WORKER_ENDPOINT=endpoint;
-  }
-});
+test('browser uploads require a configured origin, and completing one starts transcription', () => withEnv({ REPORTER_APP_ORIGINS: 'https://reporter.test,https://staging.reporter.test' }, async () => {
+  const seen: unknown[][] = [], sourceId = '550e8400-e29b-41d4-a716-446655440000';
+  const { worker, calls, settle } = harness({ startUpload: async (...args) => { seen.push(args); return { partSize: 16, parts: [] }; } });
+  const request = (path: string, origin: string) => new Request('https://worker.test' + path, { method: 'POST',
+    headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ sourceId, token: 'x'.repeat(32) }) });
+  assert.equal((await worker.fetch(request('/uploads/start', 'https://evil.test'))).status, 403);
+  const accepted = await worker.fetch(request('/uploads/start', 'https://staging.reporter.test'));
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.headers.get('access-control-allow-origin'), 'https://staging.reporter.test');
+  assert.deepEqual(seen, [[sourceId, 'x'.repeat(32)]]);
+  assert.equal(calls.drains, 0, 'starting an upload queues nothing');
+  assert.equal((await worker.fetch(request('/uploads/complete', 'https://reporter.test'))).status, 200);
+  await settle();
+  assert.equal(calls.drains, 1);
+}));
 
-test('browser upload session requires the configured app origin and delegates only the opaque token',async () => {
-  const previous = process.env.REPORTER_APP_ORIGIN;
-  process.env.REPORTER_APP_ORIGIN = 'https://reporter.test';
-  try {
-    const seen: unknown[][] = [],sourceId = '550e8400-e29b-41d4-a716-446655440000';
-    const worker = createReporterWorker({ heartbeat: async () => {},run: async () => false,
-      startUpload: async (...args) => { seen.push(args);return { partSize: 16,parts: [] }; },
-      completeUpload: async () => ({}),finalizeObject: async () => ({}),now: Date.now });
-    const denied = await worker.fetch(new Request('https://worker.test/uploads/start',{ method: 'POST',
-      headers: { origin: 'https://evil.test','content-type': 'application/json' },body: '{}' }));
-    const accepted = await worker.fetch(new Request('https://worker.test/uploads/start',{ method: 'POST',
-      headers: { origin: 'https://reporter.test','content-type': 'application/json' },
-      body: JSON.stringify({ sourceId,token: 'x'.repeat(32) }) }));
-    assert.equal(denied.status,403);
-    assert.equal(accepted.status,200);
-    assert.deepEqual(seen,[[sourceId,'x'.repeat(32)]]);
-    assert.equal(accepted.headers.get('access-control-allow-origin'),'https://reporter.test');
-  } finally {
-    if (previous===undefined) delete process.env.REPORTER_APP_ORIGIN;
-    else process.env.REPORTER_APP_ORIGIN = previous;
-  }
-});
-
-test('storage trigger finalizes the private object before transcription can be claimed',async () => {
-  const finalized: string[][] = [];
-  const worker = createReporterWorker({ heartbeat: async () => {},run: async () => false,
-    startUpload: async () => ({}),completeUpload: async () => ({}),
-    finalizeObject: async (bucket,key) => { finalized.push([bucket,key]);return {}; },now: Date.now });
-  const invocationId = 'storage-invocation';
-  const response = await worker.fetch(new Request('https://worker.test/',{ method: 'POST',
-    headers: { 'content-type': 'application/json','x-neon-trigger-invocation-id': invocationId },
-    body: JSON.stringify({ version: 1,invocation_id: invocationId,
-      trigger: { type: 'storage_object_created',id: 'storage-trigger',name: 'source-created' },
-      data: { bucket_name: 'reporter-source-media',object_key: 'incoming/portal/source.mp3' },
-    }) }));
-  assert.equal(response.status,200);
-  assert.deepEqual(finalized,[['reporter-source-media','incoming/portal/source.mp3']]);
-});
-
-test('scheduled delivery accepts a runtime Request wrapper without a global Request prototype',async()=>{
-  let calls=0;
-  const worker=createReporterWorker({heartbeat:async()=>{calls++;},run:async()=>false,startUpload:async()=>({}),completeUpload:async()=>({}),finalizeObject:async()=>({}),now:Date.now});
-  const body={version:1,invocation_id:'foreign-request',trigger:{type:'schedule',id:'trigger',name:'minute'},data:{scheduled_at:'2026-10-15T12:00:00Z'}};
-  const wrapped={url:'https://worker.test/',method:'POST',headers:new Headers({'x-neon-trigger-invocation-id':'foreign-request'}),json:async()=>body};
-  const response=await worker.fetch(wrapped as Request);assert.equal(response.status,200);assert.equal(calls,1);
-});
+test('the health check requires the secret, proves database reachability and writes nothing', () => withEnv({ REPORTER_WORKER_PASSWORD: 'worker-secret' }, async () => {
+  const { worker, calls } = harness();
+  assert.equal((await worker.fetch(new Request('https://worker.test/', { method: 'POST' }))).status, 404);
+  const ready = await worker.fetch(new Request('https://worker.test/', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ health_secret: 'worker-secret' }) }));
+  assert.equal(ready.status, 200);
+  assert.deepEqual([calls.pings, calls.drains], [1, 0]);
+  const failing = harness({ ready: async () => { throw new Error('private infrastructure detail'); } });
+  const response = await failing.worker.fetch(new Request('https://worker.test/', { headers: { 'x-reporter-worker-key': 'worker-secret' } }));
+  assert.equal(response.status, 503);
+  assert.equal(failing.calls.pings, 0);
+  assert.deepEqual(await response.json(), { ok: false, error: 'INTERNAL_ERROR' });
+}));

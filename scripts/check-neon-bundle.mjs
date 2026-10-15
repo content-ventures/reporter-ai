@@ -6,6 +6,7 @@ for (const name of ['REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'OPENAI_API_KEY'
   process.env[name] = 'bundle-validation-only';
 }
 process.env.DATABASE_URL = 'postgresql://owner:placeholder@localhost/test';
+process.env.REPORTER_APP_ORIGINS = 'https://reporter.invalid';
 const { bundleWorker } = await import('../neon.ts');
 const entries = await bundleWorker({ slug: 'reporterworker', source: './functions/reporter-worker.ts' });
 const zip = await zipFunctionBundle('reporterworker', entries);
