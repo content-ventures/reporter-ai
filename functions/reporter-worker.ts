@@ -2,7 +2,8 @@ import { randomUUID,timingSafeEqual } from 'node:crypto';
 import { attachDatabasePool } from '@neon/functions';
 import { parseTriggerDelivery } from '@neon/functions/triggers';
 import { z } from 'zod';
-import { completeCloudUpload,finalizeUploadedObject,startCloudUpload } from '../src/server/cloud-storage.ts';
+import { checkUploadStorage,completeCloudUpload,finalizeUploadedObject,startCloudUpload } from '../src/server/cloud-storage.ts';
+import { checkMediaTools } from '../src/server/media.ts';
 import { pool,transaction } from '../src/server/database.ts';
 import { runEditorialJob } from '../src/server/editorial-worker.ts';
 import { FlowError,logEvent,safeCode } from '../src/server/errors.ts';
@@ -12,6 +13,7 @@ const MAX_INVOCATION_MS = 13*60*1000;
 const MAX_JOBS_PER_INVOCATION = 20;
 
 type WorkerDependencies = {
+  ready?(): Promise<void>;
   heartbeat(owner: string,endpoint: string): Promise<void>;
   run(owner: string,signal: AbortSignal): Promise<boolean>;
   startUpload(sourceId: string,token: string): Promise<unknown>;
@@ -21,6 +23,7 @@ type WorkerDependencies = {
 };
 
 const dependencies: WorkerDependencies = {
+  ready: async () => { await Promise.all([checkUploadStorage(), checkMediaTools()]); },
   heartbeat: (owner,endpoint) => transaction('worker',async client => {
     await client.query('SELECT public.reporter_worker_register($1,$2)',[owner,endpoint]);
   }),
@@ -111,6 +114,7 @@ export function createReporterWorker(services: WorkerDependencies = dependencies
     const endpoint = url.origin;
     if ((request.method==='GET' || request.method==='POST') && await hasWorkerSecret(request)) {
       try {
+        await services.ready?.();
         await services.heartbeat(`reporter-health-${randomUUID()}`,endpoint);
         return Response.json({ ok: true });
       } catch (error) { return Response.json({ ok: false,error: safeCode(error) },{ status: 503 }); }

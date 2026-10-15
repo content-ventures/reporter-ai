@@ -2,11 +2,12 @@ import 'server-only';
 import { rm,stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { audioChunks,MAX_DURATION_SECONDS,mergeSegments,type Segment } from '../domain/reporter.ts';
+import { audioChunks,mergeSegments,type Segment } from '../domain/reporter.ts';
 import { signedSourceUrl } from './cloud-storage.ts';
+import { withCloudMediaSource } from './cloud-media-source.ts';
 import { transaction } from './database.ts';
 import { FlowError,logEvent,safeCode } from './errors.ts';
-import { generateEditorial,transcribeChunk,transcribeUrl,transcriptionModel,type ProviderResult } from './groq.ts';
+import { generateEditorial,transcribeChunk,transcriptionModel,type ProviderResult } from './groq.ts';
 import { inspectMedia,prepareChunk } from './media.ts';
 import { cacheRead,cacheWrite,verifySource,workDirectory } from './storage.ts';
 
@@ -20,29 +21,17 @@ async function jobCommand(name: string,values: unknown[]) {
   return transaction('worker',async client => (await client.query('SELECT * FROM public.'+name+'('+values.map((_,i) => '$'+(i+1)).join(',')+')',values)).rows);
 }
 
-async function processTranscript(input: unknown,directory: string,signal: AbortSignal,progress: (phase: string,done: number,total: number) => Promise<void>) {
+export async function processTranscript(input: unknown,directory: string,signal: AbortSignal,progress: (phase: string,done: number,total: number) => Promise<void>, services = {
+  signedSourceUrl, verifySource, inspectMedia, prepareChunk, transcribeChunk, withCloudMediaSource,
+}) {
   const media = z.discriminatedUnion('provider',[
     z.object({ key: z.string(),size: z.union([z.string(),z.number()]),checksum_sha256: z.string(),content_type: z.string(),provider: z.literal('local'),language: z.string() }),
     z.object({ key: z.string(),bucket: z.string(),size: z.union([z.string(),z.number()]),content_type: z.string(),provider: z.literal('s3'),language: z.string() }),
   ]).parse(input);
-  if (media.provider==='s3') {
-    await progress('transcribing',0,1);
-    let result = await cacheRead<ProviderResult>(directory,'source');
-    if (!result || result.model!==transcriptionModel()) {
-      result = await transcribeUrl(await signedSourceUrl(media.bucket,media.key),media.language,signal);
-      if (result.input_units!==null && result.input_units>MAX_DURATION_SECONDS*1000) throw new FlowError('MEDIA_DURATION',422);
-      await cacheWrite(directory,'source',result);
-    }
-    await progress('transcribing',1,1);
-    if (!result.content?.trim()) throw new FlowError('NO_SPEECH_DETECTED',422);
-    if (Buffer.byteLength(result.content)>1048576 || Buffer.byteLength(JSON.stringify(result.segments ?? []))>2097152) {
-      throw new FlowError('TRANSCRIPT_TOO_LARGE',422);
-    }
-    return result;
-  }
   await progress('preparing',0,1);
-  const source = await verifySource(media.key,Number(media.size),media.checksum_sha256);
-  const { duration } = await inspectMedia(source,signal);
+  const remote = media.provider === 's3';
+  const transcribe = async (source: string) => {
+  const { duration } = await services.inspectMedia(source,signal,remote);
   const chunks = audioChunks(duration);
   let segments: Segment[] = [],allTimed = true,units: number | null = 0;
   const textParts: string[] = [];
@@ -54,9 +43,9 @@ async function processTranscript(input: unknown,directory: string,signal: AbortS
     if (!result || result.model!==transcriptionModel()) {
       const chunkPath = join(directory,'chunk-'+i+'.flac');
       try {
-        await prepareChunk(source,chunkPath,chunks[i].start,chunks[i].duration,signal);
+        await services.prepareChunk(source,chunkPath,chunks[i].start,chunks[i].duration,signal,remote);
         if (!(await stat(chunkPath)).size) throw new FlowError('EMPTY_AUDIO',422);
-        result = await transcribeChunk(chunkPath,media.language,signal);
+        result = await services.transcribeChunk(chunkPath,media.language,signal);
         await cacheWrite(directory,'chunk-'+i,result);
       } finally { await rm(chunkPath,{ force: true }).catch(() => {}); }
     }
@@ -72,6 +61,10 @@ async function processTranscript(input: unknown,directory: string,signal: AbortS
   if (Buffer.byteLength(content)>1048576 || Buffer.byteLength(JSON.stringify(segments))>2097152) throw new FlowError('TRANSCRIPT_TOO_LARGE',422);
   return { content,segments: allTimed ? segments : null,provider: 'groq',model: transcriptionModel(),
     provider_request_id: requestId,usage_unit: 'audio_ms' as const,input_units: units,output_units: null };
+  };
+  return media.provider === 's3'
+    ? services.withCloudMediaSource(await services.signedSourceUrl(media.bucket, media.key), signal, transcribe)
+    : transcribe(await services.verifySource(media.key, Number(media.size), media.checksum_sha256));
 }
 
 async function processJob(job: Job,owner: string,signal: AbortSignal): Promise<ProviderResult> {
