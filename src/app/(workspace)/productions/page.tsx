@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { ProductionsScreen } from "@/features/productions/productions-screen";
+import { ProductionsKanbanScreen } from "@/features/productions/productions-kanban";
 
 export const metadata: Metadata = { title: "Produções" };
 
 export default function ProductionsPage() {
-  return <ProductionsScreen />;
+  return <ProductionsKanbanScreen />;
 }

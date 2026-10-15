@@ -1,3 +1,6 @@
+import { mkdtemp, rm, truncate, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { VIEWPORTS, expectNoHorizontalOverflow } from './support';
 
@@ -106,6 +109,39 @@ for (const viewport of VIEWPORTS) {
       analyzed.resolve();
       await expect(page.getByRole('dialog', { name: 'Material pronto' })).toBeVisible();
       await expectNoHorizontalOverflow(page);
+    });
+
+    test('arquivo grande mantém nome, aviso e ações dentro do modal', async ({ page }) => {
+      const directory = await mkdtemp(join(tmpdir(), 'reporter-progress-'));
+      const name = `YTDown.com_YouTube_Media_${'PodcastSeafoodBrasil'.repeat(7)}_001_1080p.mp4`;
+      const path = join(directory, name);
+      const upload = deferred();
+      try {
+        await writeFile(path, '');
+        await truncate(path, 101 * 1024 ** 2);
+        await page.route('**/api/reporter/uploads', async route => {
+          await upload.promise;
+          await route.abort();
+        });
+        await page.goto('/productions/new');
+        await page.getByRole('radio', { name: 'Arquivo', exact: true }).click();
+        await page.locator('input[type="file"]').setInputFiles(path);
+        const dialog = page.getByRole('dialog', { name: 'Preparando material' });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByText(name, { exact: false })).toBeVisible();
+        await expect(dialog.getByText('O envio depende da sua conexão. Mantenha esta página aberta até terminar.')).toBeVisible();
+        const overflow = await dialog.evaluate(element => [element, ...element.querySelectorAll<HTMLElement>('*')]
+          .filter(node => !node.closest('[aria-hidden="true"]') && getComputedStyle(node).clipPath === 'none' && node.clientWidth > 1 && node.scrollWidth > node.clientWidth + 1)
+          .map(node => ({ tag: node.tagName, text: node.textContent, className: node.className, width: node.clientWidth, scroll: node.scrollWidth })));
+        expect(overflow, 'nenhum conteúdo cortado ou com rolagem horizontal no modal').toEqual([]);
+        await expectNoHorizontalOverflow(page);
+        await page.screenshot({ path: test.info().outputPath('material-progress.png') });
+        await dialog.getByRole('button', { name: 'Acompanhar na página' }).click();
+        await expect(dialog).toBeHidden();
+      } finally {
+        upload.resolve();
+        await rm(directory, { recursive: true, force: true });
+      }
     });
 
     test('upload mostra bytes reais e passa à espera da transcrição', async ({ page }) => {

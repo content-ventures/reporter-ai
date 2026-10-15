@@ -386,7 +386,7 @@ export function NewProductionScreen() {
           <PageHeader
             variant="frame"
             title="Nova produção"
-            steps={
+            toolbar={
               <Stepper
                 label="Passos da nova produção"
                 steps={STEP_ITEMS}

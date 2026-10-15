@@ -130,7 +130,7 @@ function ApprovalsView({ tab, onTab }: { tab: ApprovalsTab; onTab: (tab: Approva
   return (
     <>
       <PageHeader title={APPROVALS_COPY.title} />
-      <FilterBar filters={false} tabs={<Tabs label="Aprovações" value={tab} items={tabItems} onChange={onTab} />} />
+      <FilterBar spacing="comfortable" filters={false} tabs={<Tabs label="Aprovações" value={tab} items={tabItems} onChange={onTab} />} />
       <PageStack>
         <ApprovalsBody tab={tab} rows={page?.items ?? []} mode={mode} error={error} />
       </PageStack>

@@ -63,6 +63,7 @@ export function TemplateBrowser({
   return (
     <PageStack>
       <FilterBar
+        spacing={mode === 'browse' ? 'comfortable' : 'compact'}
         tabs={
           <Tabs<CarouselFormatId>
             label="Formato"

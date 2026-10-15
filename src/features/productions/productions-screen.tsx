@@ -388,6 +388,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
         }
       />
       <FilterBar
+        spacing="comfortable"
         tabs={<Tabs label="Produções por status" value={params.tab} items={tabItems} onChange={(tab) => setParams({ tab }, { history: 'push' })} />}
         search={
           <SearchField
