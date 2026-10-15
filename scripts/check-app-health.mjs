@@ -23,7 +23,12 @@ export function healthProblems(health, expected = {}) {
   return problems;
 }
 
-/** Polls the public probe until the deployment reports the expected release, read-only. */
+/**
+ * Polls the public probe until the deployment reports the expected release, read-only.
+ * @param {string | URL} baseUrl
+ * @param {{ version?: string, commit?: string, worker?: string }} [expected]
+ * @param {{ attempts?: number, sleep?: (ms: number) => Promise<unknown>, request?: (url: URL, init: RequestInit) => Promise<Response> }} [options]
+ */
 export async function waitForAppHealth(baseUrl, expected = {}, { attempts = 60, sleep = delay, request = fetch } = {}) {
   let last = 'unreachable';
   for (let attempt = 0; attempt < attempts; attempt++) {
