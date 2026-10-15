@@ -187,3 +187,11 @@ test('storage trigger finalizes the private object before transcription can be c
   assert.equal(response.status,200);
   assert.deepEqual(finalized,[['reporter-source-media','incoming/portal/source.mp3']]);
 });
+
+test('scheduled delivery accepts a runtime Request wrapper without a global Request prototype',async()=>{
+  let calls=0;
+  const worker=createReporterWorker({heartbeat:async()=>{calls++;},run:async()=>false,startUpload:async()=>({}),completeUpload:async()=>({}),finalizeObject:async()=>({}),now:Date.now});
+  const body={version:1,invocation_id:'foreign-request',trigger:{type:'schedule',id:'trigger',name:'minute'},data:{scheduled_at:'2026-10-15T12:00:00Z'}};
+  const wrapped={url:'https://worker.test/',method:'POST',headers:new Headers({'x-neon-trigger-invocation-id':'foreign-request'}),json:async()=>body};
+  const response=await worker.fetch(wrapped as Request);assert.equal(response.status,200);assert.equal(calls,1);
+});

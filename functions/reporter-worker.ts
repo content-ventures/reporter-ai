@@ -8,6 +8,7 @@ import { pool,transaction } from '../src/server/database.ts';
 import { runEditorialJob } from '../src/server/editorial-worker.ts';
 import { FlowError,logEvent,safeCode } from '../src/server/errors.ts';
 import { runReporterJob } from '../src/server/reporter-worker-jobs.ts';
+import { workerImageObject } from '../src/server/image-storage.ts';
 
 const MAX_INVOCATION_MS = 13*60*1000;
 const MAX_JOBS_PER_INVOCATION = 20;
@@ -124,6 +125,13 @@ async function parseWorkerTrigger(request: Request) {
 export function createReporterWorker(services: WorkerDependencies = dependencies) {
   return { async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/objects') {
+      if (request.method !== 'POST' || !await hasWorkerSecret(request)) return new Response('Unauthorized',{status:401});
+      try {
+        const input = z.object({ action: z.enum(['read','prepare','write']),key: z.string().max(200),mime: z.string().optional(),bytes: z.string().max(14*1024**2).optional() }).strict().parse(await request.json());
+        return Response.json(await workerImageObject(input));
+      } catch (error) { return Response.json({error:safeCode(error)},{status:error instanceof FlowError?error.status:503}); }
+    }
     if (url.pathname==='/uploads/start') return uploadRequest(request,services,'start');
     if (url.pathname==='/uploads/complete') return uploadRequest(request,services,'complete');
     const endpoint = url.origin;

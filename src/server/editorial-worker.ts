@@ -263,7 +263,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       let resolved = { body: { ...body,...illustrated },assets: [] as ServerImageAsset[],filled: 0,codes: [] as string[] };
       try {
         await guarded([{ type: 'step.started',stepId: 'images',meta: 'Buscando fotos pertinentes no Pixabay' }]);
-        resolved = await illustrateArticle({ ...body,...illustrated },job.meta.productionId,AbortSignal.any([combined,AbortSignal.timeout(45000)]));
+        resolved = await illustrateArticle({ ...body,...illustrated },job.meta.productionId,AbortSignal.any([combined,AbortSignal.timeout(45000)]),undefined,
+          {portal:input.record.production.workspaceId,actor:input.record.production.createdBy});
         await guarded([{ type: 'step.completed',stepId: 'images',meta: resolved.codes.includes('PIXABAY_ORIGINAL_REQUIRED')
           ? 'O Pixabay precisa liberar os originais; o texto foi preservado.' : `${resolved.filled} imagens selecionadas · revisão editorial necessária` }]);
       } catch (error) { if (combined.aborted) throw error; }

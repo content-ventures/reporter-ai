@@ -122,6 +122,7 @@ export function createEditorialEngine(checkpoint: EditorialCheckpoint, ids: IdGe
   return createLocalPorts({
     seed: () => ({ ...state, records: state.productions.map(p => assembleRecord(state, p)) }),
     clock: systemClock(), ids, templates: CAROUSEL_TEMPLATES,
+    assets: id => checkpoint.imageAssets?.find(entry => entry.asset.id === id)?.asset,
     flow: flowById(DEFAULT_FLOW_ID) ?? R1_FLOW, gates: gatesFor(), recoverOrphanedRuns: false,
   });
 }

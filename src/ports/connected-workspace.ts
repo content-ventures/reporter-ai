@@ -11,7 +11,7 @@ import type { BannerDraft, LibraryImage } from '../domain/visual-library.ts';
 import type { Citation } from '../domain/citation-library.ts';
 import type { ImageAsset } from '../domain/asset.ts';
 
-export type ServerImageAsset = { productionId: string; asset: ImageAsset };
+export type ServerImageAsset = { productionId: string; asset: ImageAsset; fileKey?: string };
 
 /** Server-owned aggregate. Browser copies are read projections, never write payloads. */
 export type EditorialState = {
@@ -32,4 +32,4 @@ export type EditorialJob = {
   lease?: { owner: string; until: number; fence: string };
 };
 export type EditorialCheckpoint = { state: EditorialState; jobs: Record<string, EditorialJob>; pipeline?: PipelineRevision; pipelineHistory?: PipelineRevision[]; visuals?: { images: LibraryImage[]; banners: BannerDraft[] }; citations?: Citation[]; imageAssets?: ServerImageAsset[]; receipts?: Record<string,{ hash: string; result: unknown; projection?: 'pipeline' }> };
-export type ConnectedWorkspace = EditorialCheckpoint & { revision: number; model: string; workerOnline: boolean };
+export type ConnectedWorkspace = EditorialCheckpoint & { revision: number; model: string; workerOnline: boolean; deploymentMode?: 'cloud' | 'local' };

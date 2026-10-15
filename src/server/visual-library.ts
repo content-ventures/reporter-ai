@@ -1,7 +1,5 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
-import { lstat, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import sharp from 'sharp';
 import { z } from 'zod';
 import type { BannerContent, BannerDraft, LibraryImage, StockImage } from '../domain/visual-library';
@@ -11,7 +9,9 @@ import { directQuotes, literalQuoteText, r1ArticleQuotationIssue } from '../doma
 import { editorialTransaction } from './editorial';
 import { stockProviders, searchStock, stockDetails, downloadStock, trackStockSelection } from './stock-images';
 import { bannerSchema, renderBanner } from './banner-render';
-import { storageRoot } from './storage';
+import { readImageFile, writeImageFile, imageFileUrl } from './image-storage.ts';
+import { reporterDeploymentMode } from './deployment.ts';
+import { prepareAssetUpload,completeAssetUpload,importLinkedAsset,uploadedAssetUrl } from './image-assets.ts';
 import { FlowError } from './errors';
 import { hasAnyRole } from '../domain/workspace';
 import { contentHash } from '../domain/text/hash';
@@ -22,14 +22,12 @@ import { illustrateArticle } from './article-illustration';
 const UUID = z.string().uuid(), provider = z.enum(['openverse','pexels','unsplash','pixabay']);
 async function imageBytes(image: LibraryImage): Promise<Buffer> {
   if (!/^[a-f0-9]{64}\.photo\.jpg$/.test(image.fileKey)) throw new FlowError('UNSAFE_STORAGE',500);
-  const path = join(await storageRoot(),image.fileKey),info = await lstat(path);
-  if (!info.isFile() || info.isSymbolicLink() || info.size > 10*1024**2) throw new FlowError('IMAGE_UNAVAILABLE',422);
-  const bytes = await readFile(path);
+  const bytes = await readImageFile(image.fileKey);
   if (createHash('sha256').update(bytes).digest('hex') !== image.fileKey.slice(0,64)) throw new FlowError('IMAGE_UNAVAILABLE',422);
   return bytes;
 }
 export async function visualLibrary() {
-  return (await editorialTransaction('runtime',async checkpoint => ({
+  return (await editorialTransaction(process.env.REPORTER_FUNCTION_RUNTIME === 'true' ? 'worker' : 'runtime',async checkpoint => ({
     images: checkpoint.visuals?.images ?? [],banners: checkpoint.visuals?.banners ?? [],providers: stockProviders(),
   }),false)).value;
 }
@@ -50,9 +48,8 @@ export async function importStockImage(selectedProvider: StockImage['provider'],
   await trackStockSelection(details,fetcher);
   signal?.throwIfAborted();
   const hash = createHash('sha256').update(bytes).digest('hex'),fileKey = hash+'.photo.jpg';
-  try { await writeFile(join(await storageRoot(),fileKey),bytes,{ mode: 0o600,flag: 'wx' }); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-  return (await editorialTransaction('runtime',async checkpoint => {
+  await writeImageFile(fileKey,bytes);
+  return (await editorialTransaction(process.env.REPORTER_FUNCTION_RUNTIME === 'true' ? 'worker' : 'runtime',async checkpoint => {
     signal?.throwIfAborted();
     const library = checkpoint.visuals ??= { images: [],banners: [] };
     const duplicate = library.images.find(image => image.provider === input.provider && image.providerId === input.id);
@@ -121,6 +118,13 @@ function file(bytes: Uint8Array | string,mime: string,name?: string) {
   } });
 }
 export async function handleVisualLibrary(request: Request,path: string[],readJson: (request: Request) => Promise<unknown>) {
+  if (request.method === 'GET' && path.length === 3 && path[0] === 'assets' && path[2] === 'file') return Response.redirect(await uploadedAssetUrl(UUID.parse(path[1])),302);
+  if (request.method === 'POST' && path.length === 2 && path[0] === 'assets') {
+    const body = await readJson(request);
+    if (path[1] === 'prepare') return json(await prepareAssetUpload(body));
+    if (path[1] === 'complete') return json(await completeAssetUpload(body));
+    if (path[1] === 'link') return json(await importLinkedAsset(body,request.signal));
+  }
   if (request.method === 'GET') {
     if (!path.length) return json(await visualLibrary());
     if (path.length === 1 && path[0] === 'search') {
@@ -133,6 +137,7 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
       const image = (await visualLibrary()).images.find(item => item.id === UUID.parse(path[1]));
       if (!image) throw new FlowError('NOT_FOUND',404);
       if (image.provider === 'unsplash') return Response.redirect(image.imageUrl,302);
+      if (reporterDeploymentMode() === 'cloud') return Response.redirect(await imageFileUrl(image.fileKey),302);
       return file(await imageBytes(image),'image/jpeg');
     }
     if (path.length === 3 && path[0] === 'banners' && ['png','svg','json'].includes(path[2])) {
