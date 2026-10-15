@@ -7,6 +7,7 @@ import { bannerContentKey, initialBanner, isCoverResolution } from '../domain/vi
 import { blockText } from '../domain/article';
 import { directQuotes, literalQuoteText, r1ArticleQuotationIssue } from '../domain/article-policy';
 import { editorialTransaction } from './editorial';
+import type { EditorialScope } from './editorial-store';
 import { stockProviders, searchStock, stockDetails, downloadStock, trackStockSelection } from './stock-images';
 import { bannerSchema, renderBanner } from './banner-render';
 import { readImageFile, writeImageFile } from './image-storage.ts';
@@ -25,10 +26,13 @@ async function imageBytes(image: LibraryImage): Promise<Buffer> {
   if (createHash('sha256').update(bytes).digest('hex') !== image.fileKey.slice(0,64)) throw new FlowError('IMAGE_UNAVAILABLE',422);
   return bytes;
 }
+// The library is workspace-wide and independent of productions; none are read.
+const LIBRARY_SCOPE: EditorialScope = { pipelines: false,items: { library_image: 'all',banner: 'all' } };
+const libraryRole = () => process.env.REPORTER_FUNCTION_RUNTIME === 'true' ? 'worker' : 'runtime';
 export async function visualLibrary() {
-  return (await editorialTransaction(process.env.REPORTER_FUNCTION_RUNTIME === 'true' ? 'worker' : 'runtime',async checkpoint => ({
+  return (await editorialTransaction(libraryRole(),async checkpoint => ({
     images: checkpoint.visuals?.images ?? [],banners: checkpoint.visuals?.banners ?? [],providers: stockProviders(),
-  }),false)).value;
+  }),false,'reporter.edit',LIBRARY_SCOPE)).value;
 }
 async function importImage(value: unknown) {
   const input = z.object({ provider,id: z.string().min(1).max(64),confirmed: z.literal(true) }).strict().parse(value);
@@ -48,7 +52,7 @@ export async function importStockImage(selectedProvider: StockImage['provider'],
   signal?.throwIfAborted();
   const hash = createHash('sha256').update(bytes).digest('hex'),fileKey = hash+'.photo.jpg';
   await writeImageFile(fileKey,bytes);
-  return (await editorialTransaction(process.env.REPORTER_FUNCTION_RUNTIME === 'true' ? 'worker' : 'runtime',async checkpoint => {
+  return (await editorialTransaction(libraryRole(),async checkpoint => {
     signal?.throwIfAborted();
     const library = checkpoint.visuals ??= { images: [],banners: [] };
     const duplicate = library.images.find(image => image.provider === input.provider && image.providerId === input.id);
@@ -57,7 +61,7 @@ export async function importStockImage(selectedProvider: StockImage['provider'],
     const image: LibraryImage = { ...details,id: crypto.randomUUID(),fileKey,bytes: bytes.length,width,height,
       createdAt: new Date().toISOString(),authorized: true };
     library.images.unshift(image); return image;
-  })).value;
+  },true,'reporter.edit',{ pipelines: false,items: { library_image: 'all' } })).value;
 }
 /** Validate real decoded pixels, not only dimensions declared by a provider. No storage writes. */
 export async function normalizeLibraryPhoto(details: StockImage,original: Buffer) {
@@ -77,15 +81,16 @@ async function bannerPhoto(content: BannerContent) {
   return { bytes: await imageBytes(image),attribution: image.attribution,licenseUrl: image.licenseUrl,sourceUrl: image.sourceUrl,creditRequired: image.provider !== 'pixabay' };
 }
 async function articleSeed(productionId: string) {
+  const id = UUID.parse(productionId);
   return (await editorialTransaction('runtime',async (_checkpoint,engine) => {
-    const record = engine.records.record(UUID.parse(productionId));
+    const record = engine.records.record(id);
     if (!record) throw new FlowError('NOT_FOUND',404);
     const body = record.pieces.find(piece => piece.kind === 'article')?.draft.body;
     if (body?.type !== 'article') throw new FlowError('NOT_FOUND',404);
     const quotes = r1ArticleQuotationIssue(body,record.sources) ? [] : body.blocks.flatMap(block => directQuotes(blockText(block))).filter(quote => quote.length <= 200);
     return { content: { ...initialBanner(),template: 'editorial' as const,title: body.title,productionId },quotes,
       sourceState: 'Rascunho do artigo; banner ainda precisa de revisão editorial.' };
-  },false)).value;
+  },false,'reporter.edit',{ productions: [id],parts: ['piece'],runs: 'none',pipelines: false })).value;
 }
 async function validateBannerSource(content: BannerContent) {
   if (content.productionId) {
@@ -106,7 +111,7 @@ async function saveBanner(value: unknown) {
     if (!previous && library.banners.length >= 500) throw new FlowError('LIBRARY_FULL',422);
     const next: BannerDraft = { id: input.id,revision: input.revision+1,content: input.content,updatedAt: new Date().toISOString() };
     library.banners = [next,...library.banners.filter(banner => banner.id !== input.id)]; return next;
-  })).value;
+  },true,'reporter.edit',{ pipelines: false,items: { banner: 'all' } })).value;
 }
 const json = (value: unknown) => Response.json(value,{ headers: { 'Cache-Control': 'no-store','X-Content-Type-Options': 'nosniff' } });
 function file(bytes: Uint8Array | string,mime: string,name?: string) {
@@ -167,7 +172,7 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
         if (pendingReview(record,piece.id) || record.runs.some(isRunActive)) throw new FlowError('ARTICLE_LOCKED',409);
         if (piece.draft.revision !== input.revision || contentHash(piece.draft.body) !== input.bodyHash) throw new FlowError('IMAGE_DRAFT_CONFLICT',409);
         return { pieceId: piece.id,body: piece.draft.body };
-      },false)).value;
+      },false,'reporter.edit',{ productions: [input.productionId],runs: 'none',pipelines: false })).value;
       const resolved = await illustrateArticle(selected.body,input.productionId,AbortSignal.any([request.signal,AbortSignal.timeout(60000)]));
       return json((await editorialTransaction('runtime',async (checkpoint,engine) => {
         const member = checkpoint.state.members.find(member => member.personId === checkpoint.state.sessionPersonId);
@@ -179,7 +184,7 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
         if (!saved.ok) throw new FlowError('IMAGE_DRAFT_CONFLICT',409);
         checkpoint.imageAssets = [...(checkpoint.imageAssets ?? []),...resolved.assets];
         return { filled: resolved.filled,codes: resolved.codes,revision: saved.value.revision };
-      })).value);
+      },true,'reporter.edit',{ productions: [input.productionId],parts: ['piece','review','decision','run'],sources: 'none',runs: 'none' })).value);
     }
     if (path[0] === 'assets') {
       const input = z.object({ id: UUID,patch: z.object({ credit: z.string().max(500).optional(),rights: z.object({ authorized: z.boolean(),note: z.string().max(2000).optional() }).strict().optional() }).strict() }).strict().parse(body);
@@ -189,7 +194,7 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
         const entry = checkpoint.imageAssets?.find(entry => entry.asset.id === input.id);
         if (!entry) throw new FlowError('IMAGE_UNAVAILABLE',404);
         entry.asset = { ...entry.asset,...input.patch };return entry.asset;
-      })).value);
+      },true,'reporter.edit',{ pipelines: false,items: { image_asset: [input.id] } })).value);
     }
     if (path[0] === 'images') return json(await importImage(body));
     if (path[0] === 'banners') return json(await saveBanner(body));

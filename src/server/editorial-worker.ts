@@ -14,6 +14,7 @@ import { splitSource } from '../domain/reporter.ts';
 import { isRunActive } from '../domain/run.ts';
 import { draftSizeInstructions } from '../registries/sizing.ts';
 import { editorialTransaction } from './editorial';
+import type { EditorialScope } from './editorial-store';
 import { transaction } from './database';
 import { generateStructured } from './groq';
 import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, editorialPassageSize } from './pipeline-runner';
@@ -38,48 +39,65 @@ const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceId
 
 /** Claim and renew under a DB transaction; a stale worker cannot commit a result. */
 export async function runEditorialJob(owner: string, signal: AbortSignal): Promise<boolean> {
-  const pending = await transaction('worker', async client =>
-    Boolean((await client.query('SELECT public.reporter_editorial_pending() AS pending')).rows[0].pending));
-  if (!pending) return false;
+  // The claim leases one run in SQL (SKIP LOCKED); afterwards only its production is loaded.
+  const claim = await transaction('worker', async client => (await client.query('SELECT public.reporter_ed_claim($1,$2) AS claim',
+    [owner,60000])).rows[0].claim as { runId: string; productionId: string; attempts: number; lease: { fence: string } } | null);
+  if (!claim) return false;
+  // Settling a run and checking its sources and plan need the production; progress needs only
+  // this run and its summary, so a preview never re-reads the transcript or the pipeline.
+  const scope: EditorialScope = { productions: [claim.productionId],runs: [claim.runId],items: { citation: 'production' } };
+  const light: EditorialScope = { productions: [claim.productionId],parts: ['run'],partIds: [claim.runId],sources: 'none',
+    runs: [claim.runId],items: { person: [],image_asset: [],feedback: [] } };
+  const progress: EditorialScope = { ...light,pipelines: false };
   const claimed = await editorialTransaction('worker', async (checkpoint,engine) => {
-    const job = Object.values(checkpoint.jobs).find(job => isRunActive(engine.store.state.runFolds[job.meta.runId]?.run)
-      && job.availableAt <= Date.now() && (!job.lease || job.lease.until < Date.now()));
-    if (!job) return undefined;
-    job.lease = { owner,until: Date.now()+60000,fence: randomUUID() }; job.attempts++;
+    const job = checkpoint.jobs[claim.runId];
+    if (!job || job.lease?.fence !== claim.lease.fence || !isRunActive(engine.store.state.runFolds[claim.runId]?.run)) return undefined;
     if (job.attempts > 8) { appendEditorialEvent(engine,job,{ type: 'run.failed',error: { code: 'RETRY_EXHAUSTED',message: 'Limite de tentativas atingido. Tente uma nova geração.',retryable: false } }); delete job.lease; return undefined; }
     return structuredClone(job);
-  });
+  },true,'reporter.edit',claim.attempts > 8 ? scope : light);
   const job = claimed.value;
-  if (!job) return false;
+  if (!job) return true;
   const controller = new AbortController();
   const combined = AbortSignal.any([signal,controller.signal]);
-  const guarded = async (events: RunEventPayload[],call?: PipelineCall, additions?: { citations: Citation[]; assets: ServerImageAsset[] }) => editorialTransaction('worker',async (checkpoint,engine) => {
-    const current = checkpoint.jobs[job.meta.runId];
-    if (!current?.lease || current.lease.fence !== job.lease?.fence || current.lease.until < Date.now()
-      || !isRunActive(engine.store.state.runFolds[job.meta.runId]?.run)) throw new FlowError('LEASE_LOST',409,true);
-    const record = engine.records.record(job.meta.productionId);
-    const run = engine.store.state.runFolds[job.meta.runId].run;
-    if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
-    if (job.contextHash && editorialContextHash(record,job.meta.pieceId,run.inputs) !== job.contextHash) throw new FlowError('PLAN_CHANGED',409);
-    current.lease.until = Date.now()+60000;
-    if (call) {
-      current.calls ??= [];
-      const index = current.calls.findIndex(previous => previous.hash === call.hash);
-      if (index < 0) current.calls.push(call); else current.calls[index] = call;
-    }
-    for (const event of events) appendEditorialEvent(engine,current,event);
-    if (additions) {
-      const existing = new Map((checkpoint.citations ?? []).map(citation => [citation.id,citation]));
-      for (const citation of additions.citations) if (!existing.has(citation.id) && existing.size < 5000) existing.set(citation.id,citation);
-      checkpoint.citations = [...existing.values()];
-      checkpoint.imageAssets = [...(checkpoint.imageAssets ?? []),...additions.assets];
-    }
-  });
+  let checkedAt = Date.now();
+  const guarded = async (events: RunEventPayload[],call?: PipelineCall, additions?: { citations: Citation[]; assets: ServerImageAsset[] }) => {
+    // Sources and plan are re-read at most once a minute and always before the result settles.
+    const full = Boolean(additions) || events.some(event => event.type === 'run.completed') || Date.now()-checkedAt >= 60000;
+    const committed = await editorialTransaction('worker',async (checkpoint,engine) => {
+      const current = checkpoint.jobs[job.meta.runId];
+      if (!current?.lease || current.lease.fence !== job.lease?.fence || current.lease.until < Date.now()
+        || !isRunActive(engine.store.state.runFolds[job.meta.runId]?.run)) throw new FlowError('LEASE_LOST',409,true);
+      if (full) {
+        const record = engine.records.record(job.meta.productionId);
+        const run = engine.store.state.runFolds[job.meta.runId].run;
+        if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
+        if (job.contextHash && editorialContextHash(record,job.meta.pieceId,run.inputs) !== job.contextHash) throw new FlowError('PLAN_CHANGED',409);
+      }
+      current.lease.until = Date.now()+60000;
+      if (call) {
+        current.calls ??= [];
+        const index = current.calls.findIndex(previous => previous.hash === call.hash);
+        if (index < 0) current.calls.push(call); else current.calls[index] = call;
+      }
+      for (const event of events) appendEditorialEvent(engine,current,event);
+      if (additions) {
+        const existing = new Map((checkpoint.citations ?? []).map(citation => [citation.id,citation]));
+        for (const citation of additions.citations) if (!existing.has(citation.id) && existing.size < 5000) existing.set(citation.id,citation);
+        checkpoint.citations = [...existing.values()];
+        checkpoint.imageAssets = [...(checkpoint.imageAssets ?? []),...additions.assets];
+      }
+    },true,'reporter.edit',full ? scope : progress);
+    if (full) checkedAt = Date.now();
+    return committed;
+  };
   let renewing = false;
   let lastStepId = 'source';
+  // Renewal is worker bookkeeping in SQL; browsers are not told about it.
   const timer = setInterval(() => {
     if (renewing) return; renewing = true;
-    void guarded([]).catch(() => controller.abort()).finally(() => { renewing = false; });
+    void transaction('worker',async client => (await client.query('SELECT public.reporter_ed_renew($1,$2,$3,$4) AS renewed',
+      [job.meta.runId,owner,job.lease!.fence,60000])).rows[0].renewed === true)
+      .then(renewed => { if (!renewed) controller.abort(); }).catch(() => controller.abort()).finally(() => { renewing = false; });
   },15000);
   try {
     if (!job.pipeline) throw new FlowError('PIPELINE_SNAPSHOT_MISSING',422);
@@ -93,14 +111,14 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       const record = engine.records.record(job.meta.productionId);
       if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
       return { record,templates: editorialTemplates() };
-    },false)).value;
+    },false,'reporter.edit',scope)).value;
     if (ARTICLE_ASSIST_KINDS.has(job.kind)) {
       lastStepId = 'assist';
       const response = await runArticleAssist(job,input.record,combined,guarded);
       await editorialTransaction('worker',async checkpoint => {
         const current = checkpoint.jobs[job.meta.runId];
         if (current?.lease?.fence === job.lease?.fence) current.provider = { name: response.provider,model: response.model,requestId: response.provider_request_id };
-      });
+      },true,'reporter.edit',progress);
       logEvent('worker','editorial_completed',{ generation_id: job.meta.runId });
       return true;
     }
@@ -305,7 +323,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     await editorialTransaction('worker',async checkpoint => {
       const current = checkpoint.jobs[job.meta.runId];
       if (current?.lease?.fence === job.lease?.fence && result) current.provider = { name: result.provider, model: result.model, requestId: result.provider_request_id };
-    });
+    },true,'reporter.edit',progress);
     logEvent('worker','editorial_completed',{ generation_id: job.meta.runId });
   } catch (error) {
     const code = error instanceof z.ZodError ? 'INVALID_PROVIDER_OUTPUT' : safeCode(error);
@@ -335,7 +353,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
           appendEditorialEvent(engine,current,{ type: 'step.failed',stepId: lastStepId,error });
           appendEditorialEvent(engine,current,{ type: 'run.failed',error });
         }
-      });
+      },true,'reporter.edit',scope);
     } catch { /* Lease loss never authorizes a stale result. */ }
     logEvent('worker','editorial_failed',{ generation_id: job.meta.runId,error_code: code });
   } finally { clearInterval(timer); }

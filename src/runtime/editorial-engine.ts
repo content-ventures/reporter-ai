@@ -24,6 +24,8 @@ import type { Result } from '../domain/result.ts';
 import type { StoreState } from '../adapters/local/store/state.ts';
 import type { Role } from '../domain/workspace.ts';
 import { toSessionMember } from '../adapters/local/store/people.ts';
+// The server composes the engine and the row codec through this module only.
+export { assembleCheckpoint, diffRows, hasChanges, ScopeViolation, splitCheckpoint } from './editorial-sync.ts';
 
 export const LOCAL_OPERATOR = '00000000-0000-0000-0000-000000000031';
 export const LOCAL_WORKSPACE = '00000000-0000-0000-0000-000000000101';

@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import { z } from 'zod';
 import type { ImageAsset } from '../domain/asset.ts';
 import { editorialTransaction } from './editorial.ts';
+import type { EditorialScope } from './editorial-store.ts';
 import { currentReporterContext } from './request-context.ts';
 import { prepareImageFile, readImageFile, writeImageFile } from './image-storage.ts';
 import { FlowError } from './errors.ts';
@@ -27,13 +28,16 @@ function verify(value:string) {
   if (input.expires < Date.now() || input.actor !== context.actor || input.portal !== context.portal) throw new FlowError('ORIGIN_DENIED',403);
   return input;
 }
+// Asset commands read the production header and the named rows, never the article or transcript.
+const assetScope = (productionId: string | undefined, items: EditorialScope['items']): EditorialScope => ({
+  productions: productionId ? [productionId] : [],parts: [],sources: 'none',runs: 'none',pipelines: false,items });
 async function authorize(productionId:string) {
   return (await editorialTransaction('runtime',async (checkpoint,engine) => {
     const member = checkpoint.state.members.find(member => member.personId === checkpoint.state.sessionPersonId);
     if (!hasAnyRole(member,['editor','admin'])) throw new FlowError('CITATION_FORBIDDEN',403);
     const record = engine.records.record(productionId);if (!record) throw new FlowError('NOT_FOUND',404);
     return checkpoint.visuals?.images ?? [];
-  },false)).value;
+  },false,'reporter.edit',assetScope(productionId,{ library_image: 'all' }))).value;
 }
 async function saveAsset(input:{id:string;fileName:string;meta:z.infer<typeof metaSchema>},fileKey:string,bytes:Buffer,origin?:ImageAsset['origin']) {
   const decoded = await sharp(bytes,{limitInputPixels:40000000}).metadata();
@@ -49,7 +53,8 @@ async function saveAsset(input:{id:string;fileName:string;meta:z.infer<typeof me
     if (image) asset.provenance = {...image,libraryId:image.id};
     _checkpoint.imageAssets = [...(_checkpoint.imageAssets ?? []),{productionId:input.meta.productionId,asset,fileKey}];
     return asset;
-  })).value;
+  },true,'reporter.edit',assetScope(input.meta.productionId,{ image_asset: [input.id],
+    library_image: input.meta.provenance ? [input.meta.provenance.libraryId] : [] }))).value;
 }
 export async function prepareAssetUpload(value:unknown) {
   const input = preparedSchema.omit({actor:true,portal:true,expires:true}).parse(value);await authorize(input.meta.productionId);
@@ -78,7 +83,8 @@ export async function importLinkedAsset(value:unknown,signal:AbortSignal) {
   return saveAsset({id:randomUUID(),fileName:'imagem',meta:input.meta},fileKey,bytes,{type:'url',url:input.url});
 }
 export async function uploadedAssetFile(id:string) {
-  const entry=(await editorialTransaction('runtime',async checkpoint=>checkpoint.imageAssets?.find(entry=>entry.asset.id===id),false)).value;
+  const entry=(await editorialTransaction('runtime',async checkpoint=>checkpoint.imageAssets?.find(entry=>entry.asset.id===id),false,
+    'reporter.edit',assetScope(undefined,{ image_asset: [id] }))).value;
   if (!entry?.fileKey) throw new FlowError('IMAGE_UNAVAILABLE',404);
   return {bytes:await readImageFile(entry.fileKey),mime:entry.asset.mime??'image/jpeg'};
 }

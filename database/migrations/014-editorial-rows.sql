@@ -146,11 +146,14 @@ DECLARE
   write boolean := coalesce((p_scope->>'write')::boolean,false);
   portal uuid := core.reporter_ed_portal(write);
   everything boolean := p_scope->'productions'='"all"'::jsonb;
-  ids text[]; kinds text[]; run_ids text[]; loaded jsonb;
+  ids text[]; kinds text[]; run_ids text[]; loaded jsonb; current_seq bigint;
 BEGIN
   IF jsonb_typeof(p_scope) IS DISTINCT FROM 'object' OR octet_length(p_scope::text)>262144 THEN
     RAISE EXCEPTION 'Invalid editorial scope' USING ERRCODE='22023'; END IF;
   INSERT INTO public.reporter_ed_sync(portal_id) VALUES(portal) ON CONFLICT DO NOTHING;
+  -- The number is read before any row: a later commit may show up too (deltas resend it),
+  -- but nothing stamped at or below this number can be missing from what follows.
+  SELECT seq INTO current_seq FROM public.reporter_ed_sync WHERE portal_id=portal;
   IF write AND coalesce((p_scope->>'workspace_lock')::boolean,false) THEN
     PERFORM 1 FROM public.reporter_ed_workspace WHERE portal_id=portal FOR UPDATE;
   END IF;
@@ -171,26 +174,34 @@ BEGIN
   END IF;
   kinds := CASE WHEN jsonb_typeof(p_scope->'parts')='array' THEN ARRAY(SELECT jsonb_array_elements_text(p_scope->'parts'))
     ELSE ARRAY['piece','version','decision','review','run','suggestion','delivery'] END;
+  -- Runs of the loaded productions, unless the scope names exactly which runs (or "none"),
+  -- plus, for the pipeline view, the most recent runs.
   SELECT array_agg(run_id ORDER BY run_id) INTO run_ids FROM public.reporter_ed_runs
-    WHERE portal_id=portal AND (production_id=ANY(ids) OR run_id IN (SELECT jsonb_array_elements_text(coalesce(p_scope->'runs','[]'))));
+    WHERE portal_id=portal AND (production_id=ANY(ids) AND coalesce(jsonb_typeof(p_scope->'runs'),'null')='null'
+      OR run_id IN (SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(p_scope->'runs')='array' THEN p_scope->'runs' ELSE '[]' END))
+      OR run_id IN (SELECT r.run_id FROM public.reporter_ed_runs r WHERE r.portal_id=portal AND r.job IS NOT NULL
+        ORDER BY r.created_at DESC LIMIT coalesce((p_scope->>'recent_runs')::int,0)));
   run_ids := coalesce(run_ids,'{}');
   IF write THEN PERFORM 1 FROM public.reporter_ed_runs WHERE portal_id=portal AND run_id=ANY(run_ids) ORDER BY run_id FOR UPDATE; END IF;
   SELECT jsonb_build_object(
-    'seq',(SELECT seq FROM public.reporter_ed_sync WHERE portal_id=portal),
+    'seq',current_seq,
     'workspace',(SELECT doc FROM public.reporter_ed_workspace WHERE portal_id=portal),
     'productions',coalesce((SELECT jsonb_agg(jsonb_build_object('id',production_id,'ordinal',ordinal,'doc',doc,
       'sourceIds',to_jsonb(source_ids),'archived',archived) ORDER BY ordinal) FROM public.reporter_ed_productions
       WHERE portal_id=portal AND production_id=ANY(ids)),'[]'),
     'parts',coalesce((SELECT jsonb_agg(jsonb_build_object('kind',kind,'id',part_id,'productionId',production_id,'ordinal',ordinal,'doc',doc) ORDER BY ordinal)
-      FROM public.reporter_ed_parts WHERE portal_id=portal AND production_id=ANY(ids) AND kind=ANY(kinds) AND NOT deleted),'[]'),
+      FROM public.reporter_ed_parts WHERE portal_id=portal AND production_id=ANY(ids) AND kind=ANY(kinds) AND NOT deleted
+        AND (jsonb_typeof(p_scope->'part_ids') IS DISTINCT FROM 'array' OR part_id IN (SELECT jsonb_array_elements_text(p_scope->'part_ids')))),'[]'),
     'sources',coalesce((SELECT jsonb_agg(jsonb_build_object('id',source_id,'ordinal',ordinal,'doc',doc) ORDER BY ordinal)
       FROM public.reporter_ed_sources s WHERE s.portal_id=portal AND (p_scope->'sources'='"all"'::jsonb
-        OR s.source_id IN (SELECT unnest(source_ids) FROM public.reporter_ed_productions WHERE portal_id=portal AND production_id=ANY(ids))
+        OR p_scope->'sources' IS DISTINCT FROM '"none"'::jsonb
+          AND s.source_id IN (SELECT unnest(source_ids) FROM public.reporter_ed_productions WHERE portal_id=portal AND production_id=ANY(ids))
         OR s.source_id IN (SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(p_scope->'sources')='array' THEN p_scope->'sources' ELSE '[]' END)))),'[]'),
     'runs',coalesce((SELECT jsonb_agg(jsonb_build_object('id',run_id,'productionId',production_id,'status',status,
       'availableAt',(extract(epoch FROM available_at)*1000)::bigint,'lease',CASE WHEN lease_owner IS NULL THEN NULL ELSE jsonb_build_object(
         'owner',lease_owner,'until',(extract(epoch FROM lease_until)*1000)::bigint,'fence',lease_fence) END,
-      'attempts',attempts,'job',CASE WHEN coalesce((p_scope->>'jobs')::boolean,true) THEN job END,'fold',fold) ORDER BY created_at,run_id)
+      'attempts',attempts,'job',CASE WHEN coalesce((p_scope->>'jobs')::boolean,true) THEN job
+        WHEN job IS NOT NULL THEN jsonb_build_object('meta',job->'meta','kind',job->'kind') END,'fold',fold) ORDER BY created_at,run_id)
       FROM public.reporter_ed_runs WHERE portal_id=portal AND run_id=ANY(run_ids)),'[]'),
     'events',coalesce((SELECT jsonb_agg(jsonb_build_object('runId',e.run_id,'event',e.event) ORDER BY e.run_id,e.event_seq)
       FROM public.reporter_ed_run_events e JOIN public.reporter_ed_runs r ON (r.portal_id,r.run_id)=(e.portal_id,e.run_id)
@@ -202,13 +213,13 @@ BEGIN
         p_scope->'items'->i.kind='"all"'::jsonb
         OR p_scope->'items'->i.kind='"production"'::jsonb AND (i.production_id IS NULL OR i.production_id=ANY(ids))
         OR i.item_id IN (SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(p_scope->'items'->i.kind)='array' THEN p_scope->'items'->i.kind ELSE '[]' END)))),'[]'),
-    'pipelines',coalesce((SELECT jsonb_agg(jsonb_build_object('hash',hash,'doc',doc)) FROM public.reporter_ed_pipelines
-      WHERE portal_id=portal AND hash IN (SELECT jsonb_array_elements_text(coalesce(p_scope->'pipelines','[]'))
-        UNION SELECT doc->>'pipelineHash' FROM public.reporter_ed_workspace WHERE portal_id=portal
+    -- Progress writes skip the pipeline snapshots; their hashes ride along unchanged.
+    'pipelines',CASE WHEN p_scope->'pipelines'='false'::jsonb THEN '[]'::jsonb ELSE coalesce((SELECT jsonb_agg(jsonb_build_object('hash',hash,'doc',doc)) FROM public.reporter_ed_pipelines
+      WHERE portal_id=portal AND hash IN (SELECT doc->>'pipelineHash' FROM public.reporter_ed_workspace WHERE portal_id=portal
         UNION SELECT jsonb_array_elements_text(coalesce(doc->'historyHashes','[]')) FROM public.reporter_ed_workspace
           WHERE portal_id=portal AND coalesce((p_scope->>'history')::boolean,false)
         UNION SELECT job->>'pipelineHash' FROM public.reporter_ed_runs WHERE portal_id=portal AND run_id=ANY(run_ids)
-          AND coalesce((p_scope->>'jobs')::boolean,true))),'[]'),
+          AND coalesce((p_scope->>'jobs')::boolean,true))),'[]') END,
     'receipt',(SELECT jsonb_build_object('hash',r.hash,'result',r.result) FROM public.reporter_ed_receipts r
       WHERE r.portal_id=portal AND r.request_id=p_scope->>'receipt')
   ) INTO loaded;

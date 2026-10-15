@@ -174,7 +174,9 @@ test('starting a generation wakes the worker, which completes it without any sch
   await settle();
   step('generation settled');
   const done = await api<{ state: { runFolds: Record<string, { run: { status: string } }> } }>('workspace');
-  const [job] = await owner<{ job: unknown }>("SELECT checkpoint->'jobs'->$1 AS job FROM public.reporter_editorial_workspaces", [started.body.value.runId]);
+  const [job] = await owner<{ job: unknown }>(`SELECT jsonb_build_object('attempts',r.attempts,'availableAt',(extract(epoch FROM r.available_at)*1000)::bigint,
+    'calls',r.job->'calls','events',coalesce((SELECT jsonb_agg(e.event ORDER BY e.event_seq) FROM public.reporter_ed_run_events e
+      WHERE (e.portal_id,e.run_id)=(r.portal_id,r.run_id)),'[]')) AS job FROM public.reporter_ed_runs r WHERE r.run_id=$1`, [started.body.value.runId]);
   const trace = job.job as { attempts?: number; availableAt?: number; events?: { type: string; error?: unknown; stepId?: string }[]; calls?: unknown[] };
   assert.equal(done.body.state.runFolds[started.body.value.runId].run.status, 'completed', JSON.stringify({ attempts: trace.attempts,
     availableAt: trace.availableAt, calls: trace.calls, events: trace.events?.map(event => [event.type, event.stepId, event.error]) }));
@@ -200,7 +202,7 @@ test('an idle system reads one flag per sweep and writes nothing; forged deliver
   step('idle: unchanged poll');
   const idle = await api<{ unchanged?: boolean; stalled?: boolean }>(`workspace?since=${encodeURIComponent(polled.body.syncToken)}`);
   assert.equal(idle.body.unchanged, true);
-  assert.equal(queries.statements().some(entry => /reporter_editorial_load|reporter_queue_status|reporter_worker_online/.test(entry.sql)), false,
-    'an idle poll reads only the revision stamp and the session');
+  assert.equal(queries.statements().some(entry => /reporter_ed_load|reporter_ed_changes|reporter_queue_status|reporter_worker_online/.test(entry.sql)), false,
+    'an idle poll reads only the change stamp and the session');
   queries.stop();
 });

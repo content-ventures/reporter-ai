@@ -6,6 +6,7 @@ import type { EditorialCheckpoint } from '../ports/connected-workspace.ts';
 import { canOpenProduction } from '../domain/production.ts';
 import { hasAnyRole } from '../domain/workspace.ts';
 import { editorialTransaction } from './editorial';
+import type { EditorialScope } from './editorial-store';
 import { FlowError } from './errors';
 
 /** Read projection over existing articles + curated entries; GET never mutates the workspace. */
@@ -40,9 +41,11 @@ const schema = z.object({ id: z.string().regex(/^[a-f0-9]{16}$/).optional(), bas
     text: z.string().trim().min(24).max(1200),personId: z.string().min(1).max(128).optional(),authorConfirmed: z.boolean(),
     relevance: z.string().trim().max(600),podcastName: optionalText(160),podcastUrl: optionalText(2000),recordedOn: optionalText(10),location: optionalText(160),
   }).strict() }).strict();
+// Citations come from article drafts and versions plus curated entries; runs are never read.
+const CITATION_SCOPE: EditorialScope = { productions: 'all',parts: ['piece','version'],runs: 'none',pipelines: false,items: { citation: 'all' } };
 export async function handleCitationLibrary(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>) {
   if (path.length) throw new FlowError('NOT_FOUND',404);
-  if (request.method === 'GET') return Response.json((await editorialTransaction('runtime',async checkpoint => citationRegistry(checkpoint),false)).value,{ headers: { 'Cache-Control': 'no-store' } });
+  if (request.method === 'GET') return Response.json((await editorialTransaction('runtime',async checkpoint => citationRegistry(checkpoint),false,'reporter.edit',CITATION_SCOPE)).value,{ headers: { 'Cache-Control': 'no-store' } });
   if (request.method !== 'POST') throw new FlowError('NOT_FOUND',404);
   const payload = schema.parse(await readJson(request));
   const value = (await editorialTransaction('runtime',async checkpoint => {
@@ -77,6 +80,6 @@ export async function handleCitationLibrary(request: Request, path: string[], re
     if (!saved.some(item => item.id === id) && saved.length >= 5000) throw new FlowError('LIBRARY_FULL',422);
     checkpoint.citations = [...saved.filter(item => item.id !== id),next];
     return citationView(next,source,checkpoint.state.people);
-  })).value;
+  },true,'reporter.edit',CITATION_SCOPE)).value;
   return Response.json(value,{ headers: { 'Cache-Control': 'no-store' } });
 }
