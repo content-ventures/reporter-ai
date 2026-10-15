@@ -20,7 +20,7 @@ const workerDatabaseUrl = () => {
   return url.toString();
 };
 
-const bundleWorker: FunctionBundler = async fn => {
+export const bundleWorker: FunctionBundler = async fn => {
   const { traceNativePackages } = await import('@neon/config-runtime/v1');
   const result = await build({
     entryPoints: [fn.source],

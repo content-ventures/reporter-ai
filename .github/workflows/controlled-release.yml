@@ -35,6 +35,18 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate release configuration and provider credentials
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
+          REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+        run: node scripts/check-release-services.mjs
+
       - name: Validate approved source
         run: pnpm gate
 
@@ -57,8 +69,8 @@ jobs:
           NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
           REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
           set -euo pipefail
@@ -99,18 +111,24 @@ jobs:
           # Pull the newly deployed function URL into the temporary env file and
           # prove the worker can authenticate to Postgres and register a heartbeat.
           neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --file "$env_file"
+          node --env-file="$env_file" scripts/provision-worker-media.mjs
           node --env-file="$env_file" --input-type=module <<'NODE'
           const endpoint = process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL;
           const secret = process.env.REPORTER_WORKER_PASSWORD;
           if (!endpoint || !secret) throw new Error('Neon worker health check is missing its function URL or password.');
-          const response = await fetch(endpoint, {
-            headers: { 'x-reporter-worker-key': secret },
-            signal: AbortSignal.timeout(20_000),
-          });
-          if (!response.ok) throw new Error(`Neon worker health check failed with HTTP ${response.status}.`);
-          const payload = await response.json();
-          if (payload.ok !== true) throw new Error('Neon worker did not confirm its database heartbeat.');
-          console.log('Neon worker health check passed.');
+          let ready = false;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const response = await fetch(endpoint, {
+                headers: { 'x-reporter-worker-key': secret },
+                signal: AbortSignal.timeout(120_000),
+              });
+              const payload = await response.json();
+              if (response.ok && payload.ok === true) { ready = true; break; }
+            } catch { /* Retry a cold function without printing secret-bearing URLs. */ }
+          }
+          if (!ready) throw new Error('Neon worker readiness failed: database, upload storage or media tools unavailable.');
+          console.log('Neon worker database, upload storage and media tools are ready.');
           NODE
 
       - name: Commit and tag release
