@@ -339,6 +339,25 @@ export function foldRun(events: readonly RunEvent[], initial?: RunFold): RunFold
   return fold;
 }
 
+/** Keep event cursors stable while discarding superseded, unvalidated previews. */
+export function compactRunPreviews(events: readonly RunEvent[]): RunEvent[] {
+  let article = true, assist = true;
+  const compacted = [...events];
+  for (let index = compacted.length - 1; index >= 0; index--) {
+    const event = compacted[index];
+    if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.cancelled') {
+      article = false; assist = false;
+    } else if (event.type === 'article.preview') {
+      if (!article && event.body) compacted[index] = { ...event, body: null };
+      article = false;
+    } else if (event.type === 'assist.preview') {
+      if (!assist && (event.reply || event.proposals.length)) compacted[index] = { ...event, reply: '', proposals: [] };
+      assist = false;
+    }
+  }
+  return compacted;
+}
+
 /**
  * The structure a run proposed (Nova produção, "Estrutura"; "Ver estrutura" in the studio): the
  * probable title, the introduction and the sections with their budgets and quotes, the size and

@@ -136,7 +136,7 @@ export async function handleReporter(request: Request, path: string[]) {
     if (path[0] === 'visuals') return await handleVisualLibrary(request,path.slice(1),jsonBody);
     if (request.method === 'GET' && path.length === 1 && path[0] === 'pipeline') return reply(await editorialPipeline());
     if (path[0] === 'workspace' && path.length === 1) {
-      if (request.method === 'GET') return reply(await editorialWorkspace());
+      if (request.method === 'GET') return reply(await editorialWorkspace(new URL(request.url).searchParams.get('since') ?? undefined));
       if (request.method === 'POST') return reply(await editorialRpc(await jsonBody(request)));
     }
     if (request.method === "GET" && path.length === 0) {

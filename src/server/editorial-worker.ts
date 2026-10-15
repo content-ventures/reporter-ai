@@ -14,6 +14,7 @@ import { splitSource } from '../domain/reporter.ts';
 import { isRunActive } from '../domain/run.ts';
 import { draftSizeInstructions } from '../registries/sizing.ts';
 import { editorialTransaction } from './editorial';
+import { transaction } from './database';
 import { generateStructured } from './groq';
 import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, editorialPassageSize } from './pipeline-runner';
 import { workDirectory, sourcePreparationDirectory } from './storage';
@@ -37,6 +38,9 @@ const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceId
 
 /** Claim and renew under a DB transaction; a stale worker cannot commit a result. */
 export async function runEditorialJob(owner: string, signal: AbortSignal): Promise<boolean> {
+  const pending = await transaction('worker', async client =>
+    Boolean((await client.query('SELECT public.reporter_editorial_pending() AS pending')).rows[0].pending));
+  if (!pending) return false;
   const claimed = await editorialTransaction('worker', async (checkpoint,engine) => {
     const job = Object.values(checkpoint.jobs).find(job => isRunActive(engine.store.state.runFolds[job.meta.runId]?.run)
       && job.availableAt <= Date.now() && (!job.lease || job.lease.until < Date.now()));
@@ -121,7 +125,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     const writingStages = new Map<string,string>();
     let previewAt = 0,previewHash = '';
     const publishPreview = async (force = false) => {
-      if (!requestedOutline || !force && Date.now()-previewAt < 350) return;
+      if (!requestedOutline || !force && Date.now()-previewAt < 1500) return;
       const body = articlePreview(job.meta.runId,requestedOutline,sizing.headings,writingStages);
       const hash = JSON.stringify(body);
       if (!body.blocks.length || hash === previewHash) return;
