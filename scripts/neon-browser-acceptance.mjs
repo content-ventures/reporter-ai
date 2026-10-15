@@ -55,7 +55,7 @@ try{
   await page.getByRole('textbox',{name:'E-mail',exact:true}).fill(editor.email);
   await page.getByLabel('Senha',{exact:true}).fill(editor.password);
   await page.getByRole('button',{name:'Entrar',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Qual história vamos entregar hoje?'})).toBeVisible({timeout:60000});
+  await expect(page.getByRole('heading',{name:'Início',level:1,exact:true})).toBeVisible({timeout:60000});
   console.log('PASS actual Neon Auth login and isolated workspace authorization in browser.');
   const configured=JSON.parse(await readFile(process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH,'utf8'));
   const pipelineHash=await page.evaluate(async({configured,requestId})=>{
