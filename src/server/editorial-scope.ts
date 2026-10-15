@@ -14,20 +14,29 @@ function feedbackScope(target: unknown): EditorialScope {
 /**
  * The rows each named command needs. Single-production commands load that production; the
  * autosave loads only what its lock check reads. Anything unrecognised loads everything,
- * which is always correct, never fast.
+ * which is always correct, never fast. Only generation and the pipeline editor read the
+ * pipeline snapshots.
  */
 export function scopeForRpc(method: string, args: readonly unknown[]): EditorialScope {
   switch (method) {
-    case 'session.selectLocalRole': case 'updatePerson': case 'createBlank': return {};
     case 'pipeline.save': return { history: true, recentRuns: 20, workspaceLock: true };
     case 'generation.start': return { productions: text(field(args[1], 'productionId')) };
-    case 'generation.cancel': case 'generation.retry': case 'decideSuggestion':
-    case 'createVersion': case 'restoreVersion': case 'withdrawReview': return { entities: text(args[0]) };
+    case 'generation.retry': return { entities: text(args[0]) };
+    default: { const scope = commandScope(method, args); return scope === FULL_SCOPE ? scope : { ...scope, pipelines: false }; }
+  }
+}
+
+function commandScope(method: string, args: readonly unknown[]): EditorialScope {
+  switch (method) {
+    case 'session.selectLocalRole': case 'updatePerson': case 'createBlank': return {};
+    case 'generation.cancel': case 'decideSuggestion': case 'createVersion': case 'restoreVersion': case 'withdrawReview':
+      return { entities: text(args[0]) };
     case 'saveDraft': return { entities: text(args[0]), parts: ['piece', 'review', 'decision'], sources: 'none', runs: 'none' };
     // Without an explicit assignee, the suggestion reads the sender's earlier requests everywhere.
     case 'requestReview': return field(args[1], 'assigneeId') ? { entities: text(args[0]) } : FULL_SCOPE;
     case 'decide': return { entities: text(field(args[0], 'pieceId')) };
-    case 'rename': case 'updateBrief': return { productions: text(args[0]) };
+    // A title or brief change touches the production header only.
+    case 'rename': case 'updateBrief': return { productions: text(args[0]), parts: [], sources: 'none', runs: 'none' };
     case 'derive': case 'recordDelivery': return { productions: text(field(args[0], 'productionId')) };
     case 'archive': return { productions: Array.isArray(args[0]) ? args[0].filter((id): id is string => typeof id === 'string') : [] };
     case 'createFromSource': return { sources: text(field(args[0], 'reuseSourceId')) };

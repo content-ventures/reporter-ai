@@ -37,18 +37,25 @@ const object = (properties: Record<string,unknown>) => ({ type: 'object',additio
 const string = { type: 'string' }, strings = { type: 'array',items: string };
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceIds: z.array(z.string()).min(1).max(30) }).strict();
 
+/**
+ * What a claimed run's transactions read. Settling it and checking its sources and plan need the
+ * production; progress needs only this run and its summary, so a preview never re-reads the
+ * transcript or the pipeline.
+ */
+export function editorialWorkerScopes(runId: string, productionId: string) {
+  const settle: EditorialScope = { productions: [productionId],runs: [runId],items: { citation: 'production' } };
+  const light: EditorialScope = { productions: [productionId],parts: ['run'],partIds: [runId],sources: 'none',
+    runs: [runId],items: { person: [],image_asset: [],feedback: [] } };
+  return { settle,light,progress: { ...light,pipelines: false } as EditorialScope };
+}
+
 /** Claim and renew under a DB transaction; a stale worker cannot commit a result. */
 export async function runEditorialJob(owner: string, signal: AbortSignal): Promise<boolean> {
   // The claim leases one run in SQL (SKIP LOCKED); afterwards only its production is loaded.
   const claim = await transaction('worker', async client => (await client.query('SELECT public.reporter_ed_claim($1,$2) AS claim',
     [owner,60000])).rows[0].claim as { runId: string; productionId: string; attempts: number; lease: { fence: string } } | null);
   if (!claim) return false;
-  // Settling a run and checking its sources and plan need the production; progress needs only
-  // this run and its summary, so a preview never re-reads the transcript or the pipeline.
-  const scope: EditorialScope = { productions: [claim.productionId],runs: [claim.runId],items: { citation: 'production' } };
-  const light: EditorialScope = { productions: [claim.productionId],parts: ['run'],partIds: [claim.runId],sources: 'none',
-    runs: [claim.runId],items: { person: [],image_asset: [],feedback: [] } };
-  const progress: EditorialScope = { ...light,pipelines: false };
+  const { settle: scope,light,progress } = editorialWorkerScopes(claim.runId,claim.productionId);
   const claimed = await editorialTransaction('worker', async (checkpoint,engine) => {
     const job = checkpoint.jobs[claim.runId];
     if (!job || job.lease?.fence !== claim.lease.fence || !isRunActive(engine.store.state.runFolds[claim.runId]?.run)) return undefined;

@@ -73,7 +73,7 @@ function recordQueries() {
     restore.push(() => { (pool as { connect: unknown }).connect = connect; });
   }
   let recording = true;
-  const scaffolding = /^(BEGIN|COMMIT|ROLLBACK|SET LOCAL|SELECT set_config)/;
+  const scaffolding = /^(BEGIN|COMMIT|ROLLBACK|SELECT 1 AS applied FROM \(SELECT set_config)/;
   return { statements: () => seen.filter(entry => !scaffolding.test(entry.sql.trim())),
     stop: () => { recording = false; restore.forEach(undo => undo()); } };
 }
