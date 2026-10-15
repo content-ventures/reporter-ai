@@ -19,7 +19,7 @@ export async function validateExport(snapshot,productionId) {
       const exporter=createLocalExportService({clock,getRecord:id=>engine.records.record(id),render,assets});
       const result=await exporter.build({productionId});
       if(!result.ok)throw new Error(result.refusal.code);
-      const report={status:result.value.status,files:result.value.files.map(file=>({format:file.format,status:file.status,bytes:file.bytes,error:file.error?.code})),outcomes:result.value.outcomes};
+      const report={status:result.value.status,selection:result.value.plan.selection,files:result.value.files.map(file=>({format:file.format,status:file.status,bytes:file.bytes,error:file.error?.code})),outcomes:result.value.outcomes};
       assets.dispose();engine.store.dispose();return report;
     };`},bundle:true,platform:'browser',format:'iife',write:false});
   const urls={};for(const entry of snapshot.imageAssets??[])if(entry.fileKey)urls[entry.asset.id]=await imageFileUrl(entry.fileKey);

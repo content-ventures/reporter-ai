@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp,rm } from 'node:fs/promises';
+import { mkdtemp,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
@@ -27,7 +27,12 @@ try {
   const {appendFile}=await import('node:fs/promises');await appendFile(file,`DATABASE_URL=${JSON.stringify(owner)}\nDATABASE_URL_UNPOOLED=${JSON.stringify(owner)}\nREPORTER_DATABASE_URL=${JSON.stringify(runtime.toString())}\nREPORTER_WORKER_DATABASE_URL=${JSON.stringify(worker.toString())}\n`);
   for(const args of [['--env-file='+file,'scripts/reporter-cloud.mjs','migrate']]){const r=spawnSync(process.execPath,args,{stdio:'inherit'});if(r.status!==0)throw new Error('Acceptance migrations failed.');}
   const url=new URL(owner);url.searchParams.set('sslmode','verify-full');const db=new pg.Client({connectionString:url.toString()});await db.connect();
-  try {await db.query('DELETE FROM public.reporter_worker_heartbeats');await db.query('DELETE FROM public.reporter_editorial_workspaces');}finally{await db.end();}
+  const pipelinePath=join(directory,'pipeline.json');
+  try {
+    const stored=(await db.query("SELECT checkpoint->'pipeline'->'definition' AS definition FROM public.reporter_editorial_workspaces WHERE portal_id='10000000-0000-0000-0000-000000000101'")).rows[0]?.definition;
+    await writeFile(pipelinePath,JSON.stringify(stored??null),{mode:0o600});
+    await db.query('DELETE FROM public.reporter_worker_heartbeats');await db.query('DELETE FROM public.reporter_editorial_workspaces');
+  }finally{await db.end();}
   cli(['deploy','--project-id',project,'--branch',branch,'--env',file,'--no-env-pull']);
   cli(['env','pull','--project-id',project,'--branch',branch,'--file',join(directory,'deployed.env')]);
   const {parseEnv}=await import('node:util'),{readFile}=await import('node:fs/promises');const deployed=parseEnv(await readFile(join(directory,'deployed.env'),'utf8'));
@@ -39,7 +44,7 @@ try {
   const schedule=new pg.Client({connectionString:url.toString()});await schedule.connect();
   try{await waitForWorkerSchedule((...args)=>schedule.query(...args),new URL(endpoint).origin);}finally{await schedule.end();}
   console.log('PASS deployed worker media, database, storage and real scheduled invocation.');
-  const flow=spawnSync(process.execPath,['--env-file='+file,'--conditions=react-server','--import','tsx','scripts/neon-flow-acceptance.mjs'],{stdio:'inherit',env:{...process.env,REPORTER_ACCEPTANCE_BRANCH:branch}});
+  const flow=spawnSync(process.execPath,['--env-file='+file,'--conditions=react-server','--import','tsx','scripts/neon-flow-acceptance.mjs'],{stdio:'inherit',env:{...process.env,REPORTER_ACCEPTANCE_BRANCH:branch,REPORTER_ACCEPTANCE_PIPELINE_PATH:pipelinePath}});
   if(flow.status!==0)throw new Error('Full Neon flow acceptance failed.');
   console.log(`PASS full Neon acceptance for ${process.env.GITHUB_SHA}.`);
 } finally {
