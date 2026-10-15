@@ -95,16 +95,15 @@ most two measured revisions through the saved template; invalid answers are neve
 published and sentences are never clipped. Quote validation accepts adjacent cited ranges only
 inside the same immutable source segment, rejects gaps and source/version changes, and restores
 source capitalization only when the quoted words and punctuation already match exactly.
-Workspace polling reads an authorized revision/membership stamp without selecting the JSON
-checkpoint. Unchanged responses contain only that stamp and worker readiness; idle browsers poll
-every 15 seconds and active generations every second. Membership and session identity changes
-invalidate the stamp even when no editorial command advances the revision. Worker previews are
-published at most every 1.5 seconds, retain only their latest payload while active, and discard
-ephemeral payloads at completion without changing event cursors or final versions. Existing
-checkpoints are compacted on their next authorized write. Fresh sessions also receive the durable
-image inventory needed for review and export. Idle worker invocations query only a boolean pending
-check, honoring delayed retries and active leases; they load the workspace only when a job may be
-claimable. The existing transaction lock and fencing still decide which worker actually claims it.
+Workspace polling reads an authorized change stamp (`reporter_ed_status`) without selecting any
+editorial row. Unchanged responses contain only that stamp; a browser that knows a recent change
+number receives only the rows stamped after it, and a full snapshot otherwise. Idle browsers poll
+every 15 seconds and active generations every second; a hidden tab stops polling. Membership and
+session identity changes invalidate the stamp even when no editorial command advances it. Worker
+previews are published at most every 1.5 seconds, and each progress write reads only its own run.
+Fresh sessions also receive the durable image inventory needed for review and export. Idle worker
+invocations run one boolean pending check, honoring delayed retries and active leases; a drain
+claims runs in SQL with `SKIP LOCKED`, and fenced leases decide which worker may commit a result.
 Spotify enclosure imports use durable, leased storage registrations drained by the worker, so
 neither media nor image persistence depends on the Vercel filesystem or another browser's IndexedDB.
 
