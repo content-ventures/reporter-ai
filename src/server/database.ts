@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { attachDatabasePool } from '@vercel/functions';
 import type { Role } from '../domain/workspace.ts';
-import { assertLocalMode, cloudDatabaseUrl, cloudPortalId, databasePassword } from "./config";
+import { assertLocalMode, cloudDatabaseUrl, cloudPortalId, databasePassword, localDatabasePort } from "./config";
 import { reporterDeploymentMode } from './deployment.ts';
 import { currentReporterContext, type ReporterRequestContext } from './request-context.ts';
 
@@ -15,7 +15,7 @@ export function pool(role: "runtime" | "worker") {
   const local = reporterDeploymentMode() === 'local';
   if (local) assertLocalMode();
   const created = local ? new Pool({
-      host: "127.0.0.1", port: 55432, database: "reporter_ai_local", user: "reporter_" + role,
+      host: "127.0.0.1", port: localDatabasePort(), database: "reporter_ai_local", user: "reporter_" + role,
       password: databasePassword(role), max: role === "worker" ? 3 : 5,
       connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, application_name: "reporter-ai-" + role,
     }) : new Pool({

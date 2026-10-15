@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
-const project = "reporter-ai-local";
+// A second checkout (another worktree) runs its own isolated database by naming a distinct
+// project and port; the defaults keep the original single local database unchanged.
+const project = process.env.REPORTER_DB_PROJECT?.trim() || "reporter-ai-local";
+export const port = Number(process.env.REPORTER_DB_PORT?.trim() || 55432);
+if (!/^reporter-ai-local(?:-[a-z0-9]+)*$/.test(project)) throw new Error("REPORTER_DB_PROJECT must start with reporter-ai-local");
+if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("REPORTER_DB_PORT must be a TCP port from 1024 to 65535");
 const composeFile = resolve(root, "compose.reporter.yaml");
 const envFile = resolve(root, ".env.reporter-db");
 // Docker Desktop uses `desktop-linux` on the developer machine. GitHub-hosted runners expose
@@ -21,6 +26,7 @@ export function docker(args, options = {}) {
   delete env.DOCKER_CONTEXT;
   // Compose must read only this project's credentials, not another app's env.
   for (const key of Object.keys(env)) if (key.startsWith("REPORTER_")) delete env[key];
+  env.REPORTER_DB_PORT = String(port);
   const result = spawnSync("docker", ["--context", context, ...args], {
     cwd: root, env, encoding: "utf8", maxBuffer: 8 * 1024 * 1024,
     ...options,
@@ -91,8 +97,8 @@ async function validate() {
 async function portIsFree() {
   await new Promise((accept, reject) => {
     const server = createServer();
-    server.once("error", () => reject(new Error("Port 55432 is occupied; no existing service will be stopped")));
-    server.listen(55432, "127.0.0.1", () => server.close(accept));
+    server.once("error", () => reject(new Error(`Port ${port} is occupied; no existing service will be stopped`)));
+    server.listen(port, "127.0.0.1", () => server.close(accept));
   });
 }
 
@@ -104,7 +110,7 @@ export async function main() {
     const running = existing && docker(["inspect", existing, "--format", "{{.State.Running}}"]).trim() === "true";
     if (!running) await portIsFree();
     compose(["up", "--detach", "--wait", "--wait-timeout", "90", "postgres"], { stdio: "inherit" });
-    console.log("Reporter PostgreSQL ready: 127.0.0.1:55432 / reporter_ai_local. Credentials: .env.reporter-db");
+    console.log(`Reporter PostgreSQL ready: 127.0.0.1:${port} / reporter_ai_local. Credentials: .env.reporter-db`);
   } else if (command === "flow") {
     for (const path of ["database/migrations/003-local-flow.sql","database/local/60-local-operator.sql","database/migrations/004-editorial-workspace.sql","database/migrations/011-editorial-polling.sql"])
       sql("reporter_admin", await readFile(resolve(root, path), "utf8"));
