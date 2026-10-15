@@ -108,7 +108,9 @@ async function configureRoles(client) {
     REPORTER_DATABASE_URL: roleUrl(owner,'reporter_runtime',runtimePassword),
     REPORTER_WORKER_DATABASE_URL: roleUrl(owner,'reporter_worker',workerPassword),
   };
-  for (const file of ['.env.local','.env.development.local']) {
+  // A staging bootstrap writes to its own file instead of this checkout's local settings.
+  const targets = option('write') ? [option('write')] : ['.env.local','.env.development.local'];
+  for (const file of targets) {
     let source = await readFile(file,'utf8').catch(() => '');
     for (const [name,value] of Object.entries(values)) {
       const line = `${name}=${value}`;
@@ -117,7 +119,7 @@ async function configureRoles(client) {
     }
     await writeFile(file,source,{ mode: 0o600 });
   }
-  console.log('Cloud runtime and worker roles configured in ignored local env files.');
+  console.log(`Cloud runtime and worker roles configured; passwords written only to ${targets.join(' and ')}.`);
 }
 
 function option(name) {
@@ -154,5 +156,5 @@ try {
   else if (command === 'roles') await configureRoles(client);
   else if (command === 'grant') await grant(client);
   else if (command === 'status') console.log(JSON.stringify(await status(client),null,2));
-  else throw new Error('Use: status | migrate | roles --rotate | grant --email ... [--name ...] [--role ...]');
+  else throw new Error('Use: status | migrate | roles --rotate [--write file] | grant --email ... [--name ...] [--role ...]');
 } finally { await client.end(); }

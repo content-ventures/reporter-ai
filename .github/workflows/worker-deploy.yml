@@ -1,14 +1,31 @@
 name: Deploy the Neon worker
 
 # Called by the controlled release, first for staging and then for production. Each GitHub
-# environment holds its own Neon target, worker password and allowed app origins.
+# environment holds its own Neon target, worker password and allowed app origins. Dispatched by
+# hand, it redeploys a released tag: the way back for the worker after a bad release.
 on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment of the Neon target
+        type: choice
+        options: [staging, production]
+        required: true
+      ref:
+        description: Released tag or commit whose worker to redeploy
+        type: string
+        required: true
   workflow_call:
     inputs:
       environment:
         description: GitHub environment of the Neon target (staging or production)
         type: string
         required: true
+      ref:
+        description: Commit whose worker to deploy; the calling commit when empty
+        type: string
+        required: false
+        default: ''
     outputs:
       worker_fingerprint:
         description: Fingerprint of the deployed worker URL, as the app's health probe reports it
@@ -45,8 +62,27 @@ jobs:
             if [[ -n "$value" ]]; then echo "::add-mask::$value"; fi
           done
 
-      - name: Check out the release source
+      - name: Check out the worker source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      # Releases before on-demand draining scheduled the worker every minute, which kept the
+      # database awake and exhausted the Free plan. Such a source is never deployed again.
+      - name: Refuse a worker that would wake the database every minute
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const source = await readFile('neon.ts', 'utf8');
+          const declared = await readFile('scripts/lib/worker-triggers.mjs', 'utf8').catch(() => '');
+          const crons = [...`${source}\n${declared}`.matchAll(/cron:\s*'([^']+)'/g)].map(match => match[1]);
+          const frequent = crons.filter(cron => !/^[0-5]?\d$/.test(cron.trim().split(/\s+/)[0]));
+          if (!declared || frequent.length) {
+            console.error(`::error::This source schedules the worker more often than hourly (${frequent.join(', ') || 'no shared trigger declaration'}); it cannot be deployed.`);
+            process.exit(1);
+          }
+          console.log(`Schedules: ${crons.join(', ')}`);
+          NODE
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
