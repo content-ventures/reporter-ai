@@ -3,7 +3,7 @@ import { applyRunUpdate } from '../adapters/local/generation/record-sync.ts';
 import { CAROUSEL_TEMPLATES } from '../fixtures/templates/catalog.ts';
 import { DEFAULT_FLOW_ID, flowById, gatesFor } from '../registries/index.ts';
 import { R1_FLOW } from '../domain/stage.ts';
-import { foldRun, stampRunEvent } from '../domain/run-events.ts';
+import { compactRunPreviews, foldRun, stampRunEvent } from '../domain/run-events.ts';
 import type { RunEventPayload } from '../domain/run-events.ts';
 import type { EditorialCheckpoint, EditorialJob } from '../ports/connected-workspace.ts';
 import type { IdGenerator } from '../ports/system.ts';
@@ -129,6 +129,7 @@ export function createEditorialEngine(checkpoint: EditorialCheckpoint, ids: IdGe
 export function appendEditorialEvent(engine: ReturnType<typeof createEditorialEngine>, job: EditorialJob, payload: RunEventPayload) {
   const event = stampRunEvent(payload, job.meta.runId, job.events.length + 1, new Date().toISOString());
   job.events.push(event);
+  job.events = compactRunPreviews(job.events);
   const fold = foldRun(job.events);
   if (!fold) throw new Error('INVALID_RUN_STREAM');
   const result = engine.records.apply(job.meta.productionId, (record, ctx) => applyRunUpdate(record, {

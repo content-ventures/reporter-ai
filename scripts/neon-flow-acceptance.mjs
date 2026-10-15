@@ -43,7 +43,13 @@ try {
 }finally{await owner.end();}
 const as=(who,fn)=>runWithReporterContext(actors[who],fn);
 async function rpc(who,method,...args){const r=await as(who,()=>editorialRpc({method,args,requestId:randomUUID()}));assert.equal(r.ok,true,`${method}: ${r.refusal?.code}: ${r.refusal?.message}`);return r.value;}
-async function snapshot(who='editor'){return as(who,()=>editorialWorkspace());}
+const snapshots=new Map();
+async function snapshot(who='editor'){
+  const previous=snapshots.get(who);
+  const update=await as(who,()=>editorialWorkspace(previous?.syncToken));
+  const current='unchanged' in update?{...previous,workerOnline:update.workerOnline}:update;
+  assert.ok(current?.state,'Initial acceptance snapshot missing');snapshots.set(who,current);return current;
+}
 async function record(id){const s=await snapshot(),engine=createEditorialEngine(s,{next:randomUUID});try{return engine.records.record(id);}finally{engine.store.dispose();}}
 async function waitRun(id){for(let n=0;n<180;n++){const s=await snapshot(),run=s.state.runFolds[id]?.run;if(run?.status==='completed')return;if(run?.status==='failed'||run?.status==='cancelled')throw new Error('Live generation failed: '+JSON.stringify(run.error));if(n%10===0)console.log('Waiting for deployed worker: '+(run?.steps?.find(step=>step.state==='current')?.id??run?.status));await delay(5000);}throw new Error('Live generation timed out.');}
 

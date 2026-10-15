@@ -3,7 +3,7 @@ import { createIndexedDbAssetStore } from '../adapters/local/assets/index.ts';
 import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
 import { assetCoverLoader, createLocalRenderService, servedCoverLoader } from '../adapters/local/render/index.ts';
-import { reporterRequest, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
+import { reporterRequest, requestWorkspace, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
 import { createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
 import { withServerAssets } from '../adapters/http/server-assets.ts';
@@ -19,6 +19,7 @@ import type { ProductionCommands } from '../ports/production-commands.ts';
 import type { ProductionQueries } from '../ports/production-queries.ts';
 import type { Runtime } from './runtime.ts';
 import type { PipelineView } from '../domain/pipeline.ts';
+import { isRunActive } from '../domain/run.ts';
 
 /** Approved screens, server-owned state, real Groq jobs. Demo snapshots remain untouched. */
 export function createConnectedRuntime(options: { typefaces?: Readonly<Record<string,string>> } = {}): Runtime {
@@ -28,6 +29,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   let disposed = false;
   const activeTab = Object.freeze({ status: 'active' as const });
   let loading: Promise<void> | undefined;
+  let lastRefresh = 0;
   let save: SaveState = { scope: 'remote',status: 'idle' };
   const saveListeners = new Set<(state: SaveState) => void>();
   const setSave = (state: SaveState) => { save = state; for (const listener of saveListeners) listener(save); };
@@ -40,14 +42,18 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     samplePhotos: fixtures.samplePhotos.map(photo => ({ assetId: photo.assetId,credit: photo.credit,load: servedCoverLoader(photo.src) })),typefaces: options.typefaces });
   const refresh = () => {
     if (loading) return loading;
-    loading = reporterRequest<ConnectedWorkspace>().then(snapshot => {
+    loading = requestWorkspace(current.syncToken).then(snapshot => {
       if (disposed || snapshot.revision < current.revision) return;
-      const changed = snapshot.revision !== current.revision;
+      if ('unchanged' in snapshot) {
+        current = { ...current,workerOnline: snapshot.workerOnline };
+        return;
+      }
+      const changed = snapshot.revision !== current.revision || snapshot.syncToken !== current.syncToken;
       current = snapshot;
       assets.adoptSnapshot();
       if (changed) ports.store.transact(() => ok({ state: snapshot.state,value: undefined,persist: 'none',scope: 'external',productionIds: snapshot.state.productions.map(p => p.production.id) }));
       generation.accept(snapshot);
-    }).finally(() => { loading = undefined; });
+    }).finally(() => { loading = undefined;lastRefresh = Date.now(); });
     return loading;
   };
   let writeTail: Promise<unknown> = Promise.resolve();
@@ -79,7 +85,10 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const exporter = createLocalExportService({ clock,getRecord: id => ports.records.record(id),render,assets });
   const ready = Promise.all([refresh(),assets.ready()]).then(() => undefined);
   // Polls only this application's same-origin endpoint; generation survives leaving the page.
-  const timer = setInterval(() => { if (!disposed) void refresh().catch(() => {}); },1000);
+  const timer = setInterval(() => {
+    const active = Object.values(current.state.runFolds).some(fold => isRunActive(fold.run));
+    if (!disposed && Date.now()-lastRefresh >= (active ? 1000 : 15000)) void refresh().catch(() => {});
+  },1000);
   const unwatchAssets = assets.subscribe(change => { if (change.kind !== 'health') ports.store.transact(state => ok({ state,value: undefined,persist: 'none',scope: 'assets',productionIds: change.productionIds })); });
   return {
     mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest),generation: generation.service,render,export: exporter,assets,audit,

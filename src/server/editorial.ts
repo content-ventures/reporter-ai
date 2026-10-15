@@ -13,7 +13,7 @@ import { hasAnyRole } from '../domain/workspace.ts';
 import { GENERATION_LABELS, RUN_KIND_OF, GENERATION_KINDS } from '../ports/generation.ts';
 import type { GenerationKind, GenerationRequest, RunMeta } from '../ports/generation.ts';
 import type { OutlineInput } from '../ports/generation.ts';
-import type { EditorialCheckpoint, ConnectedWorkspace, EditorialJob } from '../ports/connected-workspace.ts';
+import type { EditorialCheckpoint, ConnectedWorkspace, EditorialJob, WorkspaceRefresh } from '../ports/connected-workspace.ts';
 import { transaction } from './database';
 import { workerHeartbeat } from './storage';
 import { FlowError } from './errors';
@@ -25,6 +25,7 @@ import { citationDay, podcastLink } from '../domain/citation-library.ts';
 import { currentReporterContext } from './request-context.ts';
 import type { EditorialIdentity } from '../runtime/editorial-engine.ts';
 import { reporterDeploymentMode } from './deployment.ts';
+import { compactRunPreviews } from '../domain/run-events.ts';
 
 const ids = { next: () => randomUUID() };
 const identifier = z.string().min(1).max(128);
@@ -58,6 +59,7 @@ export async function editorialTransaction<T>(role: 'runtime' | 'worker', change
     }
     if (identity) adoptEditorialIdentity(checkpoint,identity);
     const before = contentHash(checkpoint);
+    for (const job of Object.values(checkpoint.jobs)) job.events = compactRunPreviews(job.events);
     const engine = createEditorialEngine(checkpoint, ids);
     try {
       const value = await change(checkpoint, engine, client);
@@ -69,9 +71,16 @@ export async function editorialTransaction<T>(role: 'runtime' | 'worker', change
   });
 }
 
-export async function editorialWorkspace(): Promise<ConnectedWorkspace> {
+export async function editorialWorkspace(): Promise<ConnectedWorkspace>;
+export async function editorialWorkspace(since: string | undefined): Promise<WorkspaceRefresh>;
+export async function editorialWorkspace(since?: string): Promise<WorkspaceRefresh> {
+  const status = await transaction('runtime', async client =>
+    (await client.query('SELECT public.reporter_editorial_status() AS value')).rows[0].value as { revision: number; membersHash: string });
+  const token = (revision: number) => contentHash({ revision,membersHash: status.membersHash,context: currentReporterContext() });
+  const syncToken = token(Number(status.revision));
+  if (since === syncToken) return { unchanged: true,revision: Number(status.revision),syncToken,workerOnline: await workerHeartbeat() };
   const result = await editorialTransaction('runtime', async () => undefined, false);
-  return { state: result.checkpoint.state,jobs: result.checkpoint.jobs,revision: result.revision,model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline: await workerHeartbeat(),deploymentMode:reporterDeploymentMode() };
+  return { state: result.checkpoint.state,jobs: result.checkpoint.jobs,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline: await workerHeartbeat(),deploymentMode:reporterDeploymentMode() };
 }
 
 export async function editorialPipeline() {

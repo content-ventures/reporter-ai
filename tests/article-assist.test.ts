@@ -180,13 +180,21 @@ test('real orchestration consumes the exact saved assistant prompt and provider 
   appendEditorialEvent(f.engine,job,{ type: 'run.started',kind: RUN_KIND_OF[kind],productionId: f.record.production.id,pieceId: f.pieceId,
     prompt: { key: 'test',version: '1',hash: pipeline.hash },model: { alias: 'openai/gpt-4.1',label: 'OpenAI',engine: 'provider' },
     inputs: [],steps: [{ id: 'source',label: 'Fonte' },{ id: 'assist',label: 'Proposta' },{ id: 'validate',label: 'Validação' }],createdBy: 'test' });
+  let sawPreview = false;
   try {
-    await runArticleAssist(job,f.record,new AbortController().signal,async events => { for (const event of events) appendEditorialEvent(f.engine,job,event); },directory);
+    await runArticleAssist(job,f.record,new AbortController().signal,async events => {
+      for (const event of events) {
+        if (event.type === 'assist.preview' && event.reply) sawPreview = true;
+        appendEditorialEvent(f.engine,job,event);
+      }
+    },directory);
     const record = f.engine.records.record(f.record.production.id)!;
     assert.equal(contentHash(record.pieces),before);
     assert.equal(record.suggestions.length,1);
     assert.equal(record.suggestions[0].state,'ready');
-    assert.ok(job.events.some(event => event.type === 'assist.preview' && event.reply));
+    assert.equal(sawPreview,true, 'provider deltas reached the active preview');
+    assert.ok(job.events.some(event => event.type === 'assist.preview'));
+    assert.ok(job.events.every(event => event.type !== 'assist.preview' || !event.reply && !event.proposals.length), 'terminal runs discard ephemeral preview payloads');
     assert.equal(f.engine.store.state.runFolds[runId].assistPreview,undefined);
     assert.equal(requests[0].stream,true);
     const messages = requests[0].input as { content: string }[];

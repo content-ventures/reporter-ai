@@ -2,7 +2,7 @@ import { applyRunEvent, foldRun } from '../../domain/run-events.ts';
 import { isRunActive } from '../../domain/run.ts';
 import { ok, refuse } from '../../domain/result.ts';
 import type { RunEvent } from '../../domain/run-events.ts';
-import type { ConnectedWorkspace } from '../../ports/connected-workspace.ts';
+import type { ConnectedWorkspace, WorkspaceRefresh } from '../../ports/connected-workspace.ts';
 import type { GenerationService, RunListener, RunSnapshot } from '../../ports/generation.ts';
 import type { SourceIngest, MaterialInsights } from '../../ports/source-ingest.ts';
 import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES } from '../../domain/reporter.ts';
@@ -42,6 +42,10 @@ export async function reporterRequest<T>(path = '/workspace', body?: unknown, si
     throw new ReporterHttpError(typeof value.message === 'string' ? value.message : 'O servidor do Reporter AI não respondeu.',code,response.status);
   }
   return value as T;
+}
+
+export function requestWorkspace(syncToken?: string): Promise<WorkspaceRefresh> {
+  return reporterRequest('/workspace'+(syncToken ? '?since='+encodeURIComponent(syncToken) : ''));
 }
 
 export function createHttpGeneration(deps: { current(): ConnectedWorkspace; refresh(): Promise<void>; rpc<T>(method: string,args: unknown[]): Promise<T> }) {

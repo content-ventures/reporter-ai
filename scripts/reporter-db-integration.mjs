@@ -121,9 +121,9 @@ export async function verifyFreshBootstrap(source, baseline) {
   if (!image?.startsWith("postgres:17.9@sha256:")) throw new Error("Unexpected verification image");
   const files = ["database/reporter-foundation.sql", "database/reporter-r1.sql",
     "database/reporter-r1-commands.sql", "database/local/30-local-seed.sql", "database/local/40-local-roles.sql",
-    "database/migrations/003-local-flow.sql", "database/local/60-local-operator.sql", "database/migrations/004-editorial-workspace.sql"];
+    "database/migrations/003-local-flow.sql", "database/local/60-local-operator.sql", "database/migrations/004-editorial-workspace.sql", "database/migrations/011-editorial-polling.sql"];
   const destinations = ["00-reporter-foundation.sql", "10-reporter-r1.sql", "20-reporter-r1-commands.sql",
-    "30-local-seed.sql", "40-local-roles.sql", "50-local-flow.sql", "60-local-operator.sql", "70-editorial-workspace.sql"];
+    "30-local-seed.sql", "40-local-roles.sql", "50-local-flow.sql", "60-local-operator.sql", "70-editorial-workspace.sql", "80-editorial-polling.sql"];
   // No persistent volume, published port, external network or existing database.
   // A name collision fails at docker run; it never stops a pre-existing container.
   const id = docker(["run", "--detach", "--name", name, "--network", "none",
@@ -166,12 +166,14 @@ export async function verifyFreshBootstrap(source, baseline) {
     const editorial = await readFile(resolve(root, "database/migrations/004-editorial-workspace.sql"), "utf8");
     run(editorial); run(editorial);
     run(await readFile(resolve(root, "database/tests/editorial.integration.sql"), "utf8"));
+    console.log(run(await readFile(resolve(root, "database/tests/editorial-polling.integration.sql"), "utf8")).split('\n').filter(line => line.startsWith('PASS ')).join('\n'));
     await verifyCatalog(run, baseline);
     console.log("PASS fresh official-entrypoint bootstrap and PostgreSQL integration suite");
     await verifyConcurrency(id);
     for (const path of ["database/migrations/005-neon-cloud.sql","database/migrations/006-cloud-auth-context.sql",
       "database/migrations/007-neon-scheduled-worker.sql","database/migrations/008-neon-object-storage.sql",
-      "database/migrations/009-cloud-runtime-recovery.sql","database/migrations/010-remote-link-ingest.sql"]) {
+      "database/migrations/009-cloud-runtime-recovery.sql","database/migrations/010-remote-link-ingest.sql",
+      "database/migrations/011-editorial-polling.sql"]) {
       const migration = await readFile(resolve(root,path),"utf8");
       run(migration);run(migration);
     }
@@ -181,6 +183,7 @@ export async function verifyFreshBootstrap(source, baseline) {
     }
     console.log('PASS cloud migrations replay and private multipart intake');
     console.log(run(await readFile(resolve(root,'database/tests/cloud-review.integration.sql'),'utf8')).split('\n').filter(line=>line.startsWith('PASS ')).join('\n'));
+    console.log(run(await readFile(resolve(root, 'database/tests/editorial-polling.integration.sql'), 'utf8')).split('\n').filter(line => line.startsWith('PASS ')).join('\n'));
   } finally {
     // Remove only the exact disposable ID created by this invocation. Its private
     // tmpfs contains synthetic test data; no persistent/user volume is removed.

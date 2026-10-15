@@ -23,6 +23,7 @@ services:
       - ./database/migrations/003-local-flow.sql:/docker-entrypoint-initdb.d/50-local-flow.sql:ro
       - ./database/local/60-local-operator.sql:/docker-entrypoint-initdb.d/60-local-operator.sql:ro
       - ./database/migrations/004-editorial-workspace.sql:/docker-entrypoint-initdb.d/70-editorial-workspace.sql:ro
+      - ./database/migrations/011-editorial-polling.sql:/docker-entrypoint-initdb.d/80-editorial-polling.sql:ro
     networks:
       - reporter
     healthcheck:
