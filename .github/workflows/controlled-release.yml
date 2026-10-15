@@ -130,6 +130,7 @@ jobs:
           if (!ready) throw new Error('Neon worker readiness failed: database, upload storage or media tools unavailable.');
           console.log('Neon worker database, upload storage and media tools are ready.');
           NODE
+          node --env-file="$env_file" scripts/check-worker-schedule.mjs
 
       - name: Commit and tag release
         env:
