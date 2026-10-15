@@ -7,7 +7,7 @@ import { defaultPipelineDefinition, pipelineRevision, PIPELINE_SCHEMAS } from '.
 import type { PipelineVariables, PipelineCall } from '../src/domain/pipeline.ts';
 import { parsePipelineDefinition } from '../src/server/pipeline.ts';
 import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, editorialPassageSize, articlePartSchema, articleWritingBudgets, completeArticleSchema } from '../src/server/pipeline-runner.ts';
-import { validPipelineOutput, writingContractIssue } from '../src/server/pipeline-output.ts';
+import { restoreLiteralQuoteCase, validPipelineOutput, writingContractIssue } from '../src/server/pipeline-output.ts';
 import { editorialReceipt } from '../src/server/editorial.ts';
 import { cacheRead, cacheWrite } from '../src/server/storage.ts';
 
@@ -15,12 +15,12 @@ process.env.REPORTER_LOCAL_MODE = 'true';
 process.env.GROQ_API_KEY = 'test-placeholder-not-a-real-key';
 const variables: PipelineVariables = { source: '[e1] Fonte sintética {{brief}}',brief: 'Pauta de teste',sizing: '{}',outline: '{}',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '' };
 
-test('sequential oversize parts receive one measured revision through the saved template',async()=>{
+test('sequential oversize parts receive bounded measured revisions through the saved template',async()=>{
   const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};
   const oversized={title:'Section',paragraphs:[{text:'A complete but oversized sentence.',evidenceIds:['e1']}]};
   const revised={title:'Section',paragraphs:[{text:'A fact.',evidenceIds:['e1']}]};
   const requests:PipelineVariables[]=[];
-  const result=await writeSequentialArticle(outline,variables,{introChars:20,sections:[{budgetChars:10}]},async(key,_schema,values)=>{
+  const result=await writeSequentialArticle(outline,variables,{introChars:9,sections:[{budgetChars:10}]},async(key,_schema,values)=>{
     if(key==='intro')return{paragraphs:[{text:'An intro.',evidenceIds:['e1']}]};
     requests.push(values);return requests.length===1?oversized:revised;
   });
@@ -30,9 +30,36 @@ test('sequential oversize parts receive one measured revision through the saved 
   assert.equal(requests[1].source,requests[0].source);assert.equal(requests[1].history,requests[0].history);
   assert.deepEqual(result.sections[0],revised);
   let calls=0;
-  await assert.rejects(writeSequentialArticle(outline,variables,{introChars:20,sections:[{budgetChars:10}]},async key=>{
+  await assert.rejects(writeSequentialArticle(outline,variables,{introChars:9,sections:[{budgetChars:10}]},async key=>{
     if(key==='intro')return{paragraphs:[{text:'An intro.',evidenceIds:['e1']}]};calls++;return oversized;
-  }),/ARTICLE_PART_SIZE_EXCEEDED/);assert.equal(calls,2,'an invalid revision must fail rather than loop or publish clipped prose');
+  }),/ARTICLE_PART_SIZE_EXCEEDED/);assert.equal(calls,3,'two invalid revisions must fail rather than loop or publish clipped prose');
+});
+
+test('a paraphrased quotation is revised within its part and an unsupported revision stays blocked',async()=>{
+  const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};
+  const evidence=new Map([['e1','The source confirms this exact statement.']]);
+  const invalid={title:'Section',paragraphs:[{text:'The speaker said “A fabricated statement.”',evidenceIds:['e1']}]};
+  const valid={title:'Section',paragraphs:[{text:'The speaker said “The source confirms this exact statement.”',evidenceIds:['e1']}]};
+  const requests:PipelineVariables[]=[];
+  const result=await writeSequentialArticle(outline,variables,{introChars:100,sections:[{budgetChars:200}]},async(key,_schema,input)=>{
+    if(key==='intro')return{paragraphs:[{text:'A supported introduction.',evidenceIds:['e1']}]};
+    requests.push(input);return requests.length===1?invalid:valid;
+  },evidence);
+  assert.deepEqual(result.sections[0],valid);assert.equal(requests.length,2);
+  assert.equal(JSON.parse(requests[1].sizing).revisionFeedback.violation,'UNSUPPORTED_ARTICLE_QUOTE');
+  await assert.rejects(writeSequentialArticle(outline,variables,{introChars:100,sections:[{budgetChars:200}]},async key=>key==='intro'
+    ?{paragraphs:[{text:'A supported introduction.',evidenceIds:['e1']}]}:invalid,evidence),/UNSUPPORTED_ARTICLE_QUOTE/);
+});
+
+test('source capitalization is restored without accepting paraphrases or changing references',()=>{
+  const evidence=new Map([['e1','Diversificar exige trabalho. Sem inventar fatos.']]);
+  const part={title:'Section',paragraphs:[{text:'A fonte diz: “diversificar exige trabalho.”',evidenceIds:['e1']}]};
+  const restored=restoreLiteralQuoteCase('section',part,evidence) as typeof part;
+  assert.equal(restored.paragraphs[0].text,'A fonte diz: “Diversificar exige trabalho.”');
+  assert.deepEqual(restored.paragraphs[0].evidenceIds,['e1']);assert.notEqual(restored,part);
+  assert.equal(writingContractIssue('section',restored,{evidence}),undefined);
+  const fabricated={...part,paragraphs:[{text:'“Diversificar nunca exige trabalho.”',evidenceIds:['e1']}]};
+  assert.equal(writingContractIssue('section',restoreLiteralQuoteCase('section',fabricated,evidence),{evidence}),'UNSUPPORTED_ARTICLE_QUOTE');
 });
 
 test('near-target refinement is bounded to one call and uses measured data in the same editable template', async () => {
@@ -240,7 +267,8 @@ test('sequential writing passes the actual intro, previous sections and future s
   assert.deepEqual(JSON.parse(calls[2].variables.futureSections),[]);
   assert.equal(JSON.parse(calls[2].variables.section).last,true);
   assert.equal(JSON.parse(calls[2].variables.sizing).currentSection.budgetChars,800);
-  assert.deepEqual(JSON.parse(calls[2].variables.sizing).outputParagraphs,{maxCount:10,preferredCount:2,maxCharsEach:800,maxTotalChars:800,targetCharsEach:392,targetWordsEach:70},'prompt develops two paragraphs near the actual budget, not 70 percent of one compact paragraph');
+  assert.equal(JSON.parse(calls[2].variables.sizing).outputParagraphs.targetCharsEach,392);
+  assert.ok(JSON.parse(calls[2].variables.sizing).outputParagraphs.maxTotalChars>800,'unused introduction space remains available without increasing the section target');
   assert.equal(result.title,outline.title);
   assert.equal(result.sections[1].paragraphs[0].text,'Segundo texto real');
 });

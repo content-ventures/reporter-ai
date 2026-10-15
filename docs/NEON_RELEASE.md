@@ -84,9 +84,12 @@ authorizes access and obtains short-lived URLs through the authenticated worker 
 uploads go directly to storage and are decoded/hash-checked before their metadata is committed.
 Image reads stream through the authenticated same-origin app route, including exports, so private
 image retrieval does not require widening the bucket's browser CORS policy.
-Sequential writing gives an oversized part one measured revision through the same saved template.
-It preserves the source, preceding sections and literal-quote checks, records both provider calls,
-and never caches or publishes an oversized answer or clips a sentence to fit.
+Sequential writing separates each part's target from the whole article's limits and carries
+unused character space forward without increasing the total ceiling. A failed part receives at
+most two measured revisions through the saved template; invalid answers are never cached or
+published and sentences are never clipped. Quote validation accepts adjacent cited ranges only
+inside the same immutable source segment, rejects gaps and source/version changes, and restores
+source capitalization only when the quoted words and punctuation already match exactly.
 Spotify enclosure imports use durable, leased storage registrations drained by the worker, so
 neither media nor image persistence depends on the Vercel filesystem or another browser's IndexedDB.
 

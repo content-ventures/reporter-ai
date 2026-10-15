@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { articleLengthIssue, articleQuotationIssue, literalQuoteText, R1_ARTICLE_LIMITS, r1ArticleIssue } from './article-policy.ts';
+import { contiguousSourcePassages, articleLengthIssue, articleQuotationIssue, literalQuoteText, R1_ARTICLE_LIMITS, r1ArticleIssue } from './article-policy.ts';
 import { articleStats, headingBlock, listBlock, paragraphBlock } from './article.ts';
 import { createKit, sampleSource } from './testing/scenario.ts';
 
@@ -46,4 +46,22 @@ test('edited drafts cannot bypass R1 by inflating the title or removing quote pr
     assert.equal(r1ArticleIssue({ ...supported, blocks: [...supported.blocks, extra] }, [source]), 'UNSUPPORTED_ARTICLE_QUOTE', 'headings and lists cannot hide invented quotations');
   }
   assert.equal(r1ArticleIssue({ ...supported, blocks: supported.blocks.map(block => ({ ...block, sourceRefs: [] })) }, [source]), 'UNSUPPORTED_ARTICLE_QUOTE');
+});
+
+test('a literal quotation may cross adjacent cited sentences in one source segment, never a gap',()=>{
+  const source=sampleSource(createKit()),first='A primeira fala confirma o fato.',second='A segunda registra outros detalhes.',third='A terceira encerra a explicação.';
+  const segment=source.versions[0].content.segments[0];segment.text=[first,second,third].join(' ');
+  const reference=(from:number,to:number)=>({kind:'source' as const,sourceId:source.id,sourceVersion:1,locator:{type:'segment' as const,segmentId:segment.id,from,to}});
+  const refs=[reference(0,first.length),reference(first.length+1,first.length+1+second.length),reference(first.length+second.length+2,segment.text.length)];
+  const evidence=new Map(refs.map((ref,i)=>[String(i),segment.text.slice(ref.locator.from,ref.locator.to)]));
+  const passages=(ids:readonly string[])=>contiguousSourcePassages([source],ids.map(id=>refs[Number(id)]));
+  const quote={text:`“${first} ${second}”`,evidenceIds:['0','1']};
+  assert.equal(articleQuotationIssue([quote],evidence,0,passages),undefined);
+  assert.equal(articleQuotationIssue([{...quote,evidenceIds:['0']}],evidence,0,passages),'UNSUPPORTED_ARTICLE_QUOTE');
+  assert.equal(articleQuotationIssue([{text:`“${first} ${third}”`,evidenceIds:['0','2']}],evidence,0,passages),'UNSUPPORTED_ARTICLE_QUOTE');
+  const foreign={...source,id:'another-source'};
+  assert.deepEqual(contiguousSourcePassages([source,foreign],[refs[0],{...refs[1],sourceId:foreign.id}]).sort(),[first,second].sort(),'different sources cannot be spliced into one quote');
+  const filler=Array(510).fill('fato').join(' ')+'.';
+  const body={type:'article' as const,title:'Título',blocks:[paragraphBlock('body',filler),paragraphBlock('q1',quote.text,{sourceRefs:refs.slice(0,2)}),paragraphBlock('q2',`“${third}”`,{sourceRefs:[refs[2]]})]};
+  assert.equal(r1ArticleIssue(body,[source]),undefined,'the final persisted article uses the same literal range validation');
 });

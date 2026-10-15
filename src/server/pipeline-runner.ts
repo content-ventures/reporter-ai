@@ -6,10 +6,10 @@ import type { PipelineRevision, PipelineStepKey, PipelineVariables, PipelineCall
 import { cacheRead, cacheWrite } from './storage';
 import { generateStructured } from './groq';
 import { FlowError, safeCode } from './errors';
-import { validPipelineOutput, exceedsParagraphBudget, exceedsArticleBudget, writingContractIssue, writtenArticleText } from './pipeline-output';
+import { restoreLiteralQuoteCase, validPipelineOutput, exceedsParagraphBudget, exceedsArticleBudget, writingContractIssue, writtenArticleText } from './pipeline-output';
 import type { WritingContract } from './pipeline-output';
 import { countCharacters, textStats } from '../domain/text/stats.ts';
-import { articleLengthIssue } from '../domain/article-policy.ts';
+import { articleLengthIssue, articleQuotationIssue } from '../domain/article-policy.ts';
 
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceIds: z.array(z.string()).min(1).max(30) }).strict();
 type Outline = { title: string; sections: { title: string; evidenceIds: string[] }[] };
@@ -37,6 +37,8 @@ function budgetParagraphs(schema: object, budget?: number) {
 export function articlePartSchema(key: 'intro' | 'section', budget?: number) {
   const schema = structuredClone(PIPELINE_SCHEMAS[key]);
   schema.properties.paragraphs = budgetParagraphs(schema.properties.paragraphs as object, budget);
+  // Two developed paragraphs match the writing contract without forcing a word cut.
+  (schema.properties.paragraphs as {maxItems:number}).maxItems=2;
   return schema;
 }
 export function completeArticleSchema(outline: Outline, sizing: WritingSize) {
@@ -81,44 +83,69 @@ export async function writeCompleteArticle(outline: Outline, variables: Pipeline
 /** Every section receives the actual preceding output, never a guessed continuation. */
 export async function writeSequentialArticle(outline: Outline,variables: PipelineVariables,
   sizing: WritingSize,
-  call: (key: PipelineStepKey,schema: object,variables: PipelineVariables,index?: number) => Promise<unknown>) {
+  call: (key: PipelineStepKey,schema: object,variables: PipelineVariables,index?: number) => Promise<unknown>,
+  evidence?:ReadonlyMap<string,string>,evidencePassages?:(ids:readonly string[])=>readonly string[]) {
   const budgets = articleWritingBudgets(outline, sizing);
   const introSchema = articlePartSchema('intro', budgets.intro);
-  const outputParagraphs = (schema: ReturnType<typeof articlePartSchema>, budget?: number) => {
+  const outputParagraphs = (schema: ReturnType<typeof articlePartSchema>, budget?: number, maximum=budget) => {
     const contract = schema.properties.paragraphs as { maxItems: number; items: { properties: { text: { maxLength: number } } } };
     const total = budget ?? contract.items.properties.text.maxLength;
     const preferredCount = 2;
     const targetCharsEach = Math.floor(total * 0.98 / preferredCount);
-    return { maxCount: contract.maxItems, preferredCount, maxCharsEach: total, maxTotalChars: total,
-      targetCharsEach, targetWordsEach: Math.max(1, Math.floor(targetCharsEach / 5.6)) };
+    return { maxCount: contract.maxItems, preferredCount, maxCharsEach: maximum??total, maxTotalChars: maximum??total,
+      targetCharsEach, targetWordsEach: Math.max(1, Math.floor(targetCharsEach / 6.5)) };
   };
+  const partSizing=(budget:number|undefined,extra:object,maximum=budget)=>({
+    scope:'current_part',maxChars:maximum,targetChars:budget===undefined?undefined:Math.floor(budget*0.98),
+    targetWords:budget===undefined?undefined:Math.floor(budget*0.98/6.5),
+    articleLimits:{minChars:sizing.minChars,maxChars:sizing.maxChars,minWords:sizing.minWords,maxWords:sizing.maxWords,
+      targetChars:sizing.targetChars,targetWords:sizing.targetWords,minQuotes:(sizing as WritingSize&{minQuotes?:number}).minQuotes},
+    headings:sizing.headings,...extra,
+  });
   const part=async(key:'intro'|'section',schema:object,values:PipelineVariables,budget?:number,index?:number)=>{
+    const issue=(value:unknown)=>exceedsParagraphBudget(key,value,budget)?'ARTICLE_PART_SIZE_EXCEEDED'
+      :evidence?articleQuotationIssue((value as {paragraphs:{text:string;evidenceIds:string[]}[]}).paragraphs,evidence,0,evidencePassages):undefined;
     let value=await call(key,schema,values,index);
-    if(exceedsParagraphBudget(key,value,budget)){
+    let requested=values;
+    for(let revision=1;issue(value)&&revision<=2;revision++){
+      const violation=issue(value)!;
       const paragraphs=(value as {paragraphs:{text:string}[]}).paragraphs;
-      // Reuse the saved template with measured feedback. Never clip sentences,
-      // replace the operator's prompt, or restart already validated sections.
-      value=await call(key,schema,{...values,sizing:JSON.stringify({...JSON.parse(values.sizing),revisionFeedback:{
-        scope:'current_part',violation:'ARTICLE_PART_SIZE_EXCEEDED',
-        actualCharacters:paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0),
-        maxTotalChars:budget,targetTotalChars:Math.floor(budget!*0.98),previousDraft:value,
-      }})},index);
+      const actual=textStats(paragraphs.map(p=>p.text).join(' '));
+      const sizing=JSON.parse(requested.sizing);
+      const previousTarget=sizing.targetChars??budget??actual.characters;
+      const targetTotalChars=violation==='ARTICLE_PART_SIZE_EXCEEDED'
+        ?Math.floor((budget??actual.characters)*0.95*Math.min(1,previousTarget/actual.characters))
+        :Math.min(budget??actual.characters,previousTarget);
+      const count=sizing.outputParagraphs.preferredCount;
+      // Revise only this part through the saved template, with measured feedback
+      // and safer per-paragraph targets. Source and preceding prose stay unchanged.
+      requested={...values,sizing:JSON.stringify({...sizing,
+        targetChars:targetTotalChars,targetWords:Math.floor(targetTotalChars/Math.max(1,actual.characters/Math.max(1,actual.words))),
+        outputParagraphs:{...sizing.outputParagraphs,targetCharsEach:Math.floor(targetTotalChars/count),
+          targetWordsEach:Math.max(1,Math.floor(targetTotalChars/count/Math.max(1,actual.characters/Math.max(1,actual.words))))},
+        revisionFeedback:{scope:'current_part',attempt:revision,maxAttempts:2,violation,actualCharacters:paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0),
+          actualWords:actual.words,maxTotalChars:budget,targetTotalChars,previousDraft:value},
+      })};
+      value=await call(key,schema,requested,index);
     }
-    if(exceedsParagraphBudget(key,value,budget))throw new FlowError('ARTICLE_PART_SIZE_EXCEEDED',502,true,5);
+    const unresolved=issue(value);if(unresolved)throw new FlowError(unresolved,502);
     return value;
   };
   const intro = z.object({ paragraphs: z.array(paragraph).min(1).max(3) }).strict().parse(await part('intro',introSchema,
-    { ...variables,sizing: JSON.stringify({ ...sizing,introChars: budgets.intro,outputParagraphs: outputParagraphs(introSchema,budgets.intro) }) },budgets.intro));
+    { ...variables,sizing: JSON.stringify(partSizing(budgets.intro,{introChars:budgets.intro,outputParagraphs:outputParagraphs(introSchema,budgets.intro)})) },budgets.intro));
   const sections: { title: string; paragraphs: z.infer<typeof paragraph>[] }[] = [];
+  let carry=Math.max(0,(budgets.intro??0)-intro.paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0));
   for (const [index,section] of outline.sections.entries()) {
     const history = [...intro.paragraphs.map(p => p.text),...sections.flatMap(s => [s.title,...s.paragraphs.map(p => p.text)])].join('\n\n');
-    const schema = articlePartSchema('section', budgets.sections[index]);
+    const target=budgets.sections[index],maximum=target===undefined?undefined:target+carry;
+    const schema = articlePartSchema('section', maximum);
     Object.assign(schema.properties.title as object,{ enum: [section.title] });
     const drafted = z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict().parse(
       await part('section',schema,{ ...variables,history,section: JSON.stringify({ ...section,index,last: index === outline.sections.length-1 }),
-        futureSections: JSON.stringify(outline.sections.slice(index+1)),sizing: JSON.stringify({ ...sizing,currentSection: { ...sizing.sections[index],budgetChars: budgets.sections[index] },
-          outputParagraphs: outputParagraphs(schema,budgets.sections[index]),charactersAlreadyWritten: countCharacters(history) }) },budgets.sections[index],index));
+        futureSections: JSON.stringify(outline.sections.slice(index+1)),sizing: JSON.stringify(partSizing(budgets.sections[index],{currentSection: { ...sizing.sections[index],budgetChars:target,maxChars:maximum },
+          outputParagraphs: outputParagraphs(schema,target,maximum),charactersAlreadyWritten: countCharacters(history) },maximum)) },maximum,index));
     if (drafted.title !== section.title) throw new FlowError('OUTLINE_NOT_FOLLOWED',502);
+    carry=Math.max(0,(maximum??0)-drafted.paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0));
     sections.push(drafted);
   }
   return { title: outline.title,intro: intro.paragraphs,sections };
@@ -131,8 +158,8 @@ export async function executePipelineStep(input: {
   onText?: (text: string) => Promise<void>;
   writingContract?: WritingContract;
   validateOutput?: (value: unknown) => boolean;
-  /** Hand measured length mismatches to a bounded revision; never cache them. */
-  deferLengthRevision?: boolean;
+  /** Hand repairable writing failures to one bounded revision; never cache them. */
+  deferWritingRevision?: boolean;
 }) {
   const step = input.pipeline.definition.steps[input.key];
   if (!step) throw new FlowError('PIPELINE_STAGE_MISSING',503);
@@ -146,7 +173,7 @@ export async function executePipelineStep(input: {
       : input.key === 'assist' ? { validation: 'article-assist-scope-quotes-and-size-v1' } : {}) });
   const cacheKey = 'pipeline-'+hash;
   const sizing = JSON.parse(input.variables.sizing || '{}');
-  const budget = input.key === 'intro' ? sizing.introChars : input.key === 'section' ? sizing.currentSection?.budgetChars
+  const budget = input.key === 'intro' ? sizing.introChars : input.key === 'section' ? sizing.currentSection?.maxChars??sizing.currentSection?.budgetChars
     : input.key === 'article' ? sizing.maxChars : undefined;
   const valid = (value: unknown) => validPipelineOutput(input.key,value,input.schema,budget,sizing.headings)
     && !writingContractIssue(input.key, value, input.writingContract, sizing.headings)
@@ -176,11 +203,13 @@ export async function executePipelineStep(input: {
   let needsRevision = false;
   if (!result) {
     result = await generateStructured('', '',input.schema,input.signal,{ ...step,systemPrompt,userPrompt,...(input.onText ? { onText: input.onText } : {}) });
+    if(input.writingContract)result.value=restoreLiteralQuoteCase(input.key,result.value,input.writingContract.evidence,input.writingContract.evidencePassages);
     if (!valid(result.value)) {
-      needsRevision = Boolean(input.deferLengthRevision && (input.key === 'article'||exceedsParagraphBudget(input.key,result.value,budget))
+      const literalIssue=writingContractIssue(input.key,result.value,input.writingContract ? {...input.writingContract,limits:{}}:undefined,sizing.headings);
+      const repairableQuote=['intro','section'].includes(input.key)&&literalIssue==='UNSUPPORTED_ARTICLE_QUOTE';
+      needsRevision = Boolean(input.deferWritingRevision && (input.key === 'article'||exceedsParagraphBudget(input.key,result.value,budget)||repairableQuote)
         && validPipelineOutput(input.key,result.value,input.schema,undefined,sizing.headings)
-        && !writingContractIssue(input.key,result.value,input.writingContract ? { ...input.writingContract,limits: {} } : undefined,sizing.headings)
-        && (input.validateOutput?.(result.value) ?? true));
+        && (!literalIssue||repairableQuote) && (input.validateOutput?.(result.value) ?? true));
       if (!needsRevision) throw new FlowError(writingContractIssue(input.key, result.value, input.writingContract, sizing.headings)
       ?? (exceedsParagraphBudget(input.key,result.value,budget)
       ? 'ARTICLE_PART_SIZE_EXCEEDED' : input.key === 'article' && exceedsArticleBudget(result.value,budget,sizing.headings)
