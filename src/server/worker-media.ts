@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 export type MediaTool = 'ffmpeg'|'ffprobe';
 const loader='/lib/ld-linux-aarch64.so.1';
-const bundledPath=(tool:MediaTool)=>fileURLToPath(new URL(`./bin/${tool}`,import.meta.url));
+const packageRoot=dirname(fileURLToPath(import.meta.url));
+const bundledPath=(tool:MediaTool)=>join(packageRoot,'bin',tool);
 
 export function mediaExecutable(tool:MediaTool):Promise<string>{
   const configured=process.env[tool==='ffmpeg'?'REPORTER_FFMPEG':'REPORTER_FFPROBE'];
@@ -33,5 +34,5 @@ export async function workerMediaDiagnostics(){
     catch{return {tool,missing:true};}
   }));
   return {platform:process.platform,arch:process.arch,loaderAvailable:await access(loader).then(()=>true,()=>false),
-    version:(await readFile(new URL('./FFmpeg-VERSION.txt',import.meta.url),'utf8').catch(()=>'missing')).trim(),tools};
+    version:(await readFile(join(packageRoot,'FFmpeg-VERSION.txt'),'utf8').catch(()=>'missing')).trim(),tools};
 }
