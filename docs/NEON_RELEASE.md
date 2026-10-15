@@ -76,9 +76,12 @@ uploads go directly to storage and are decoded/hash-checked before their metadat
 Image reads stream through the authenticated same-origin app route, including exports, so private
 image retrieval does not require widening the bucket's browser CORS policy.
 Sequential writing separates each part's target from the whole article's limits and carries
-unused character space forward without increasing the total ceiling. A failed part receives at
-most two measured revisions through the saved template; invalid answers are never cached or
-published and sentences are never clipped. Quote validation accepts adjacent cited ranges only
+unused character space forward without increasing the total ceiling. Each part also receives its
+share of the article's minimum characters and words. A part below its share is developed once
+through the saved template, and whatever it still misses raises the next part's minimums and
+budget. A failed part receives at most two measured revisions; a revision that breaks the hard
+contract never replaces a valid draft, invalid answers are never cached or published and
+sentences are never clipped. Quote validation accepts adjacent cited ranges only
 inside the same immutable source segment, rejects gaps and source/version changes, and restores
 source capitalization only when the quoted words and punctuation already match exactly.
 Workspace polling reads an authorized change stamp (`reporter_ed_status`) without selecting any

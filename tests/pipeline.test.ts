@@ -6,8 +6,11 @@ import { join } from 'node:path';
 import { defaultPipelineDefinition, pipelineRevision, PIPELINE_SCHEMAS } from '../src/domain/pipeline.ts';
 import type { PipelineVariables, PipelineCall } from '../src/domain/pipeline.ts';
 import { parsePipelineDefinition } from '../src/server/pipeline.ts';
-import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, editorialPassageSize, articlePartSchema, articleWritingBudgets, completeArticleSchema } from '../src/server/pipeline-runner.ts';
-import { restoreLiteralQuoteCase, validPipelineOutput, writingContractIssue } from '../src/server/pipeline-output.ts';
+import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, editorialPassageSize, articlePartFloors, articlePartSchema, articleWritingBudgets, completeArticleSchema } from '../src/server/pipeline-runner.ts';
+import { restoreLiteralQuoteCase, validPipelineOutput, writingContractIssue, writtenArticleText } from '../src/server/pipeline-output.ts';
+import { draftSizeInstructions } from '../src/registries/sizing.ts';
+import { articleLengthIssue, R1_ARTICLE_LIMITS } from '../src/domain/article-policy.ts';
+import { countCharacters, countWords, textStats } from '../src/domain/text/stats.ts';
 import { editorialReceipt } from '../src/server/editorial.ts';
 import { cacheRead, cacheWrite } from '../src/server/storage.ts';
 
@@ -153,7 +156,8 @@ test('pauta character budgets become validated per-part contracts before cache o
   const schema = articlePartSchema('section', 900);
   assert.equal((schema.properties.paragraphs as { items: { properties: { text: { maxLength: number } } } }).items.properties.text.maxLength,5000,'transport grammar must not force a phrase cut at the editorial budget');
   assert.equal(validPipelineOutput('section', { title: 'Fixture', paragraphs: [{ text: 'X'.repeat(900)+'.', evidenceIds: ['e1'] }] }, schema,900), false);
-  assert.equal(validPipelineOutput('section', { title: 'Fixture', paragraphs: Array(3).fill({ text: 'Valid', evidenceIds: ['e1'] }) }, schema), false);
+  assert.equal(validPipelineOutput('section', { title: 'Fixture', paragraphs: Array(4).fill({ text: 'Valid.', evidenceIds: ['e1'] }) }, schema), false);
+  assert.equal(validPipelineOutput('section', { title: 'Fixture', paragraphs: Array(3).fill({ text: 'Valid.', evidenceIds: ['e1'] }) }, schema), true,'three short paragraphs fit a part');
   assert.equal(validPipelineOutput('section', { title: 'Fixture', paragraphs: Array(2).fill({ text: 'X'.repeat(449) + '.', evidenceIds: ['e1'] }) }, schema,900), true,'multiple complete paragraphs can develop the actual budget');
   assert.equal(validPipelineOutput('section', { title: 'Fixture', paragraphs: [{ text: 'X'.repeat(600)+'.',evidenceIds: ['e1'] },{ text: 'Y'.repeat(300)+'.',evidenceIds: ['e1'] }] },schema,900),false,'the sum, not a sentence cut, enforces the part budget');
   assert.equal(validPipelineOutput('section', { title: 'Fixture', paragraphs: [{ text: 'X'.repeat(650)+'.',evidenceIds: ['e1'] }] },schema,900),true,'a complete sentence may exceed the old 450-character split');
@@ -296,7 +300,7 @@ test('sequential writing passes the actual intro, previous sections and future s
   assert.deepEqual(JSON.parse(calls[2].variables.futureSections),[]);
   assert.equal(JSON.parse(calls[2].variables.section).last,true);
   assert.equal(JSON.parse(calls[2].variables.sizing).currentSection.budgetChars,800);
-  assert.equal(JSON.parse(calls[2].variables.sizing).outputParagraphs.targetCharsEach,392);
+  assert.equal(JSON.parse(calls[2].variables.sizing).outputParagraphs.targetCharsEach,261);
   assert.ok(JSON.parse(calls[2].variables.sizing).outputParagraphs.maxTotalChars>800,'unused introduction space remains available without increasing the section target');
   assert.equal(result.title,outline.title);
   assert.equal(result.sections[1].paragraphs[0].text,'Segundo texto real');
@@ -346,4 +350,74 @@ test('a failed provider call is traced as failed without raw provider text or a 
     assert.equal(traces[1].errorCode,'GROQ_INPUT_REJECTED');
     assert.ok(!JSON.stringify(traces).includes('private provider'));
   } finally { globalThis.fetch = original; await rm(directory,{ recursive: true,force: true }); }
+});
+
+const R1_OUTLINE={ title: 'Café de encosta',sections: ['Torra','Venda','Planos'].map(title=>({ title,evidenceIds: ['e1'] })) };
+const sentence='A cooperativa ampliou a torra própria e vendeu lotes menores para cafeterias da região.';
+/** A provider that writes whole sentences toward the requested word target, scaled by its effort. */
+const writer=(effort:(key:string,violation?:string)=>number)=>async(key:string,_schema:object,values:PipelineVariables)=>{
+  const sizing=JSON.parse(values.sizing),count=Math.max(1,Math.floor(sizing.targetWords*effort(key,sizing.revisionFeedback?.violation)/countWords(sentence)));
+  const paragraphs=[Math.ceil(count/2),Math.floor(count/2)].filter(Boolean).map(sentences=>({ text: Array(sentences).fill(sentence).join(' '),evidenceIds: ['e1'] }));
+  return key==='section'?{ title: JSON.parse(values.section).title,paragraphs }:{ paragraphs };
+};
+
+test('each part carries its share of the R1 minimums, with intertítulos counted as body',()=>{
+  const sizing=draftSizeInstructions({ size: 'standard',sections: 3 });
+  const outline={ title: 'Fixture',sections: ['Prazo de reposição curta','Grade bem montada','Argumentos de venda'].map(title=>({ title,evidenceIds: ['e1'] })) };
+  const floors=articlePartFloors(outline,sizing)!,budgets=articleWritingBudgets(outline,sizing),titles=outline.sections.map(section=>section.title);
+  assert.ok(floors.reduce((sum,floor)=>sum+floor.chars,0)+titles.reduce((sum,title)=>sum+countCharacters(title),0)>=R1_ARTICLE_LIMITS.minChars);
+  assert.ok(floors.reduce((sum,floor)=>sum+floor.words,0)+titles.reduce((sum,title)=>sum+countWords(title),0)>=R1_ARTICLE_LIMITS.minWords);
+  [budgets.intro,...budgets.sections].forEach((budget,index)=>assert.ok(floors[index].chars<budget!,'a share never fills its whole budget'));
+  assert.equal(articlePartFloors(outline,{ sections: sizing.sections,introChars: sizing.introChars }),undefined,'a size without minimums keeps its previous contract');
+});
+
+test('parts below their share of the R1 minimums are developed once through the saved template',async()=>{
+  const sizing=draftSizeInstructions({ size: 'standard',sections: 3 }),floors=articlePartFloors(R1_OUTLINE,sizing)!;
+  // Like the measured provider, it writes about 60% of what it is asked until told the part is short.
+  const provider=writer((_key,violation)=>violation==='ARTICLE_PART_TOO_SHORT'?1:0.6);
+  const calls:{ key: string; index?: number; values: PipelineVariables }[]=[];
+  const article=await writeSequentialArticle(R1_OUTLINE,variables,sizing,async(key,schema,values,index)=>{ calls.push({ key,index,values });return provider(key,schema,values); });
+  const stats=textStats(writtenArticleText(article,sizing.headings));
+  assert.equal(articleLengthIssue(stats,sizing),undefined,`the article meets R1: ${stats.words} words, ${stats.characters} characters`);
+  const opening=JSON.parse(calls[0].values.sizing);
+  assert.equal(opening.minWords,floors[0].words);assert.equal(opening.minChars,floors[0].chars);
+  const developed=calls.filter(call=>JSON.parse(call.values.sizing).revisionFeedback);
+  assert.deepEqual(developed.map(call=>call.key+(call.index??'')),['intro','section0','section1'],'once per short part; the surplus already covers the last share');
+  const feedback=JSON.parse(developed[0].values.sizing).revisionFeedback;
+  assert.equal(feedback.violation,'ARTICLE_PART_TOO_SHORT');assert.equal(feedback.minTotalWords,floors[0].words);
+  assert.ok(feedback.actualWords<floors[0].words);assert.deepEqual(feedback.previousDraft,await provider('intro',{},calls[0].values));
+  assert.equal(developed[0].values.source,calls[0].values.source);
+});
+
+test('a part that stays short hands its shortfall to the next section, and spare room never raises a target',async()=>{
+  const sizing=draftSizeInstructions({ size: 'standard',sections: 3 }),floors=articlePartFloors(R1_OUTLINE,sizing)!,budgets=articleWritingBudgets(R1_OUTLINE,sizing);
+  // The opening stays at 30% of its target even when developed; sections write what they are asked.
+  const provider=writer(key=>key==='intro'?0.3:1);
+  const calls:{ key: string; sizing: { minWords: number; maxChars: number; targetWords: number; currentSection: { budgetChars: number } } }[]=[];
+  const article=await writeSequentialArticle(R1_OUTLINE,variables,sizing,async(key,schema,values)=>{ calls.push({ key,sizing: JSON.parse(values.sizing) });return provider(key,schema,values); });
+  const [first,second]=calls.filter(call=>call.key==='section');
+  assert.equal(calls.filter(call=>call.key==='intro').length,2,'the opening is developed once, then kept');
+  const missing=floors[0].words-textStats(article.intro.map(p=>p.text).join(' ')).words;
+  assert.ok(missing>0);
+  assert.equal(first.sizing.minWords,floors[1].words+missing,'the next section owes what the opening missed');
+  assert.ok(first.sizing.currentSection.budgetChars>budgets.sections[0]!&&first.sizing.targetWords>Math.floor(budgets.sections[0]!*0.98/6.5));
+  assert.equal(second.sizing.currentSection.budgetChars,budgets.sections[1],'spare room never raises a target');
+  assert.ok(second.sizing.maxChars>budgets.sections[1]!,'it only raises the ceiling');
+  const stats=textStats(writtenArticleText(article,sizing.headings));
+  assert.equal(articleLengthIssue(stats,sizing),undefined,`the article meets R1: ${stats.words} words, ${stats.characters} characters`);
+});
+
+test('a development that breaks the hard contract never replaces a valid short draft',async()=>{
+  const outline={ title: 'Artigo',sections: [{ title: 'Seção',evidenceIds: ['e1'] }] };
+  const short={ title: 'Seção',paragraphs: [{ text: 'Uma frase curta e completa.',evidenceIds: ['e1'] }] };
+  const oversized={ title: 'Seção',paragraphs: [{ text: Array(3).fill(sentence).join(' '),evidenceIds: ['e1'] }] };
+  const violations:string[]=[];
+  const article=await writeSequentialArticle(outline,variables,{ introChars: 100,sections: [{ budgetChars: 200 }],minChars: 150,minWords: 30 },async(key,_schema,values)=>{
+    if(key==='intro')return { paragraphs: [{ text: sentence,evidenceIds: ['e1'] }] };
+    const violation=JSON.parse(values.sizing).revisionFeedback?.violation;
+    if(violation)violations.push(violation);
+    return violation?oversized:short;
+  });
+  assert.deepEqual(violations,['ARTICLE_PART_TOO_SHORT','ARTICLE_PART_SIZE_EXCEEDED']);
+  assert.deepEqual(article.sections[0],short,'the valid draft is kept; the final R1 check decides the article');
 });

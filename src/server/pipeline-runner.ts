@@ -8,7 +8,7 @@ import { generateStructured } from './groq';
 import { FlowError, safeCode } from './errors';
 import { restoreLiteralQuoteCase, validPipelineOutput, exceedsParagraphBudget, exceedsArticleBudget, writingContractIssue, writtenArticleText } from './pipeline-output';
 import type { WritingContract } from './pipeline-output';
-import { countCharacters, textStats } from '../domain/text/stats.ts';
+import { countCharacters, countWords, textStats } from '../domain/text/stats.ts';
 import { articleLengthIssue, articleQuotationIssue } from '../domain/article-policy.ts';
 
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceIds: z.array(z.string()).min(1).max(30) }).strict();
@@ -24,6 +24,17 @@ export function articleWritingBudgets(outline: Outline, sizing: WritingSize) {
   const budget = (chars?: number) => chars === undefined ? undefined : Math.max(1, Math.floor(chars * scale));
   return { intro: budget(sizing.introChars), sections: outline.sections.map((_section, index) => budget(sizing.sections[index]?.budgetChars)) };
 }
+type PartFloor = { chars: number; words: number };
+/** Each part's share of the article minimums, in proportion to its budget. Intertítulos count as body. */
+export function articlePartFloors(outline: Outline, sizing: WritingSize, budgets = articleWritingBudgets(outline, sizing)): PartFloor[] | undefined {
+  const parts = [budgets.intro, ...budgets.sections];
+  if (sizing.minChars === undefined && sizing.minWords === undefined || parts.some(budget => budget === undefined)) return undefined;
+  const headings = sizing.headings ? outline.sections.map(section => section.title) : [];
+  const body = { chars: Math.max(0, (sizing.minChars ?? 0) - headings.reduce((sum, title) => sum + countCharacters(title), 0)),
+    words: Math.max(0, (sizing.minWords ?? 0) - headings.reduce((sum, title) => sum + countWords(title), 0)) };
+  const total = parts.reduce<number>((sum, budget) => sum + budget!, 0);
+  return parts.map(budget => ({ chars: Math.ceil(body.chars * budget! / total), words: Math.ceil(body.words * budget! / total) }));
+}
 function budgetParagraphs(schema: object, budget?: number) {
   if (budget === undefined) return structuredClone(schema);
   const paragraphs = structuredClone(schema) as { maxItems: number; items: { properties: { text: { maxLength: number } } } };
@@ -37,8 +48,9 @@ function budgetParagraphs(schema: object, budget?: number) {
 export function articlePartSchema(key: 'intro' | 'section', budget?: number) {
   const schema = structuredClone(PIPELINE_SCHEMAS[key]);
   schema.properties.paragraphs = budgetParagraphs(schema.properties.paragraphs as object, budget);
-  // Two developed paragraphs match the writing contract without forcing a word cut.
-  (schema.properties.paragraphs as {maxItems:number}).maxItems=2;
+  // Three paragraphs of one to three sentences reach a part's target without long, padded sentences;
+  // two left the provider about two thirds short of it.
+  (schema.properties.paragraphs as {maxItems:number}).maxItems=3;
   return schema;
 }
 export function completeArticleSchema(outline: Outline, sizing: WritingSize) {
@@ -86,11 +98,12 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   call: (key: PipelineStepKey,schema: object,variables: PipelineVariables,index?: number) => Promise<unknown>,
   evidence?:ReadonlyMap<string,string>,evidencePassages?:(ids:readonly string[])=>readonly string[]) {
   const budgets = articleWritingBudgets(outline, sizing);
+  const floors = articlePartFloors(outline, sizing, budgets);
   const introSchema = articlePartSchema('intro', budgets.intro);
   const outputParagraphs = (schema: ReturnType<typeof articlePartSchema>, budget?: number, maximum=budget) => {
     const contract = schema.properties.paragraphs as { maxItems: number; items: { properties: { text: { maxLength: number } } } };
     const total = budget ?? contract.items.properties.text.maxLength;
-    const preferredCount = 2;
+    const preferredCount = contract.maxItems;
     const targetCharsEach = Math.floor(total * 0.98 / preferredCount);
     return { maxCount: contract.maxItems, preferredCount, maxCharsEach: maximum??total, maxTotalChars: maximum??total,
       targetCharsEach, targetWordsEach: Math.max(1, Math.floor(targetCharsEach / 6.5)) };
@@ -102,54 +115,77 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
       targetChars:sizing.targetChars,targetWords:sizing.targetWords,minQuotes:(sizing as WritingSize&{minQuotes?:number}).minQuotes},
     headings:sizing.headings,...extra,
   });
-  const part=async(key:'intro'|'section',schema:object,values:PipelineVariables,budget?:number,index?:number)=>{
-    const issue=(value:unknown)=>exceedsParagraphBudget(key,value,budget)?'ARTICLE_PART_SIZE_EXCEEDED'
-      :evidence?articleQuotationIssue((value as {paragraphs:{text:string;evidenceIds:string[]}[]}).paragraphs,evidence,0,evidencePassages):undefined;
+  const measured=(paragraphs:readonly {text:string}[])=>({chars:paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0),
+    words:paragraphs.reduce((sum,p)=>sum+countWords(p.text),0)});
+  const minimums=(floor?:PartFloor)=>floor?{minChars:floor.chars,minWords:floor.words}:{};
+  const part=async(key:'intro'|'section',schema:object,values:PipelineVariables,budget?:number,index?:number,floor?:PartFloor)=>{
+    const paragraphsOf=(value:unknown)=>(value as {paragraphs:{text:string;evidenceIds:string[]}[]}).paragraphs;
+    const hard=(value:unknown)=>exceedsParagraphBudget(key,value,budget)?'ARTICLE_PART_SIZE_EXCEEDED'
+      :evidence?articleQuotationIssue(paragraphsOf(value),evidence,0,evidencePassages):undefined;
+    const short=(value:unknown)=>{if(!floor)return false;const size=measured(paragraphsOf(value));return size.chars<floor.chars||size.words<floor.words;};
     let value=await call(key,schema,values,index);
-    let requested=values;
-    for(let revision=1;issue(value)&&revision<=2;revision++){
-      const violation=issue(value)!;
-      const paragraphs=(value as {paragraphs:{text:string}[]}).paragraphs;
+    let requested=values,developed=false;
+    // A development that breaks the hard contract never replaces a valid, merely short draft.
+    let kept=hard(value)?undefined:value;
+    for(let revision=1;revision<=2;revision++){
+      // One development per part: a part that stays short passes its shortfall to the next one.
+      const violation:string|undefined=hard(value)??(!developed&&short(value)?'ARTICLE_PART_TOO_SHORT':undefined);
+      if(!violation)break;
+      developed||=violation==='ARTICLE_PART_TOO_SHORT';
+      const paragraphs=paragraphsOf(value);
       const actual=textStats(paragraphs.map(p=>p.text).join(' '));
+      const ratio=Math.max(1,actual.characters/Math.max(1,actual.words));
       const sizing=JSON.parse(requested.sizing);
       const previousTarget=sizing.targetChars??budget??actual.characters;
       const targetTotalChars=violation==='ARTICLE_PART_SIZE_EXCEEDED'
         ?Math.floor((budget??actual.characters)*0.95*Math.min(1,previousTarget/actual.characters))
-        :Math.min(budget??actual.characters,previousTarget);
+        :violation==='ARTICLE_PART_TOO_SHORT'
+          ?Math.min(Math.floor((budget??Infinity)*0.98),Math.max(previousTarget,floor!.chars,Math.ceil(floor!.words*ratio)))
+          :Math.min(budget??actual.characters,previousTarget);
+      const targetWords=Math.max(violation==='ARTICLE_PART_TOO_SHORT'?floor!.words:0,Math.floor(targetTotalChars/ratio));
       const count=sizing.outputParagraphs.preferredCount;
       // Revise only this part through the saved template, with measured feedback
       // and safer per-paragraph targets. Source and preceding prose stay unchanged.
-      requested={...values,sizing:JSON.stringify({...sizing,
-        targetChars:targetTotalChars,targetWords:Math.floor(targetTotalChars/Math.max(1,actual.characters/Math.max(1,actual.words))),
+      requested={...values,sizing:JSON.stringify({...sizing,targetChars:targetTotalChars,targetWords,
         // Saved templates also reference these targets. Leaving the original
         // allocation here contradicted the measured revision target above.
         ...(key==='intro'?{introChars:targetTotalChars}
           :{currentSection:{...sizing.currentSection,budgetChars:targetTotalChars}}),
-        outputParagraphs:{...sizing.outputParagraphs,targetCharsEach:Math.floor(targetTotalChars/count),
-          targetWordsEach:Math.max(1,Math.floor(targetTotalChars/count/Math.max(1,actual.characters/Math.max(1,actual.words))))},
-        revisionFeedback:{scope:'current_part',attempt:revision,maxAttempts:2,violation,actualCharacters:paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0),
-          actualWords:actual.words,maxTotalChars:budget,targetTotalChars,previousDraft:value},
+        outputParagraphs:{...sizing.outputParagraphs,targetCharsEach:Math.floor(targetTotalChars/count),targetWordsEach:Math.max(1,Math.floor(targetWords/count))},
+        revisionFeedback:{scope:'current_part',attempt:revision,maxAttempts:2,violation,actualCharacters:measured(paragraphs).chars,actualWords:actual.words,
+          ...(floor?{minTotalChars:floor.chars,minTotalWords:floor.words}:{}),maxTotalChars:budget,targetTotalChars,previousDraft:value},
       })};
       value=await call(key,schema,requested,index);
+      if(!hard(value)&&(!kept||measured(paragraphsOf(value)).words>measured(paragraphsOf(kept)).words))kept=value;
     }
-    const unresolved=issue(value);if(unresolved)throw new FlowError(unresolved,502);
-    return value;
+    const unresolved=hard(value);
+    if(unresolved&&!kept)throw new FlowError(unresolved,502);
+    return unresolved||short(value)?kept:value;
   };
   const intro = z.object({ paragraphs: z.array(paragraph).min(1).max(3) }).strict().parse(await part('intro',introSchema,
-    { ...variables,sizing: JSON.stringify(partSizing(budgets.intro,{introChars:budgets.intro,outputParagraphs:outputParagraphs(introSchema,budgets.intro)})) },budgets.intro));
+    { ...variables,sizing: JSON.stringify(partSizing(budgets.intro,{introChars:budgets.intro,outputParagraphs:outputParagraphs(introSchema,budgets.intro),...minimums(floors?.[0])})) },
+    budgets.intro,undefined,floors?.[0]));
   const sections: { title: string; paragraphs: z.infer<typeof paragraph>[] }[] = [];
-  let carry=Math.max(0,(budgets.intro??0)-intro.paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0));
+  const opening=measured(intro.paragraphs);
+  let carry=Math.max(0,(budgets.intro??0)-opening.chars);
+  // How far the written parts are above (+) or below (−) their shares of the article minimums.
+  let balance=floors?{chars:opening.chars-floors[0].chars,words:opening.words-floors[0].words}:{chars:0,words:0};
   for (const [index,section] of outline.sections.entries()) {
     const history = [...intro.paragraphs.map(p => p.text),...sections.flatMap(s => [s.title,...s.paragraphs.map(p => p.text)])].join('\n\n');
     const target=budgets.sections[index],maximum=target===undefined?undefined:target+carry;
+    // A shortfall raises this section's minimums and budget; spare room only raises its ceiling.
+    const share=floors?.[index+1],floor=share&&{chars:Math.max(0,share.chars-balance.chars),words:Math.max(0,share.words-balance.words)};
+    const goal=target===undefined?undefined:Math.min(maximum!,target+Math.max(0,-balance.chars,Math.ceil(-balance.words*6.5)));
     const schema = articlePartSchema('section', maximum);
     Object.assign(schema.properties.title as object,{ enum: [section.title] });
     const drafted = z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict().parse(
       await part('section',schema,{ ...variables,history,section: JSON.stringify({ ...section,index,last: index === outline.sections.length-1 }),
-        futureSections: JSON.stringify(outline.sections.slice(index+1)),sizing: JSON.stringify(partSizing(budgets.sections[index],{currentSection: { ...sizing.sections[index],budgetChars:target,maxChars:maximum },
-          outputParagraphs: outputParagraphs(schema,target,maximum),charactersAlreadyWritten: countCharacters(history) },maximum)) },maximum,index));
+        futureSections: JSON.stringify(outline.sections.slice(index+1)),sizing: JSON.stringify(partSizing(goal,{currentSection: { ...sizing.sections[index],budgetChars:goal,maxChars:maximum },
+          outputParagraphs: outputParagraphs(schema,goal,maximum),charactersAlreadyWritten: countCharacters(history),...minimums(floor) },maximum)) },maximum,index,floor));
     if (drafted.title !== section.title) throw new FlowError('OUTLINE_NOT_FOLLOWED',502);
-    carry=Math.max(0,(maximum??0)-drafted.paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0));
+    const written=measured(drafted.paragraphs);
+    carry=Math.max(0,(maximum??0)-written.chars);
+    if(share)balance={chars:balance.chars+written.chars-share.chars,words:balance.words+written.words-share.words};
     sections.push(drafted);
   }
   return { title: outline.title,intro: intro.paragraphs,sections };
