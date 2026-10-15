@@ -40,10 +40,11 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     descriptions: fixtures.templateDescriptions,library: fixtures.templateLibrary,loadCover: assetCoverLoader(assets),
     coverCredit: id => creditLine(assets.get(id)?.credit),samplePhoto: { assetId: fixtures.samplePhoto.assetId,credit: fixtures.samplePhoto.credit,load: servedCoverLoader(fixtures.samplePhoto.src) },
     samplePhotos: fixtures.samplePhotos.map(photo => ({ assetId: photo.assetId,credit: photo.credit,load: servedCoverLoader(photo.src) })),typefaces: options.typefaces });
-  const refresh = createWorkspaceRefresh(() => requestWorkspace(current.syncToken).then(snapshot => {
+  const runActive = () => Object.values(current.state.runFolds).some(fold => isRunActive(fold.run));
+  const refresh = createWorkspaceRefresh(() => requestWorkspace(current.syncToken,runActive()).then(snapshot => {
       if (disposed || snapshot.revision < current.revision) return;
       if ('unchanged' in snapshot) {
-        current = { ...current,workerOnline: snapshot.workerOnline };
+        current = { ...current,workerOnline: snapshot.workerOnline,stalled: snapshot.stalled };
         return;
       }
       const changed = snapshot.revision !== current.revision || snapshot.syncToken !== current.syncToken;
@@ -81,9 +82,10 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const exporter = createLocalExportService({ clock,getRecord: id => ports.records.record(id),render,assets });
   const ready = Promise.all([refresh(),assets.ready()]).then(() => undefined);
   // Polls only this application's same-origin endpoint; generation survives leaving the page.
+  // A hidden tab stops polling, so a forgotten tab does not keep the database awake.
   const timer = setInterval(() => {
-    const active = Object.values(current.state.runFolds).some(fold => isRunActive(fold.run));
-    if (!disposed && Date.now()-lastRefresh >= (active ? 1000 : 15000)) void refresh().catch(() => {});
+    if (disposed || globalThis.document?.visibilityState === 'hidden') return;
+    if (Date.now()-lastRefresh >= (runActive() ? 1000 : 15000)) void refresh().catch(() => {});
   },1000);
   const unwatchAssets = assets.subscribe(change => { if (change.kind !== 'health') ports.store.transact(state => ok({ state,value: undefined,persist: 'none',scope: 'assets',productionIds: change.productionIds })); });
   return {

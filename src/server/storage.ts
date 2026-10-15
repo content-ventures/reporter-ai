@@ -10,10 +10,9 @@ import { pipeline } from "node:stream/promises";
 import busboy from "busboy";
 import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES } from "../domain/reporter";
 import { UUID } from "./reporter-schema";
-import { FlowError, logEvent, safeCode } from "./errors";
+import { FlowError } from "./errors";
 import { inspectMedia } from "./media";
 import { reporterDeploymentMode } from './deployment.ts';
-import { transaction } from './database.ts';
 import { storageRootPath } from './storage-root.ts';
 
 export async function storageRoot() {
@@ -67,12 +66,9 @@ export async function cacheWrite(directory: string, name: string, value: unknown
   await writeFile(temporary, JSON.stringify(value), { mode: 0o600, flag: "wx" });
   await rename(temporary, join(directory, name + ".json"));
 }
-export async function workerHeartbeat() {
-  if (reporterDeploymentMode() === 'cloud') {
-    try {
-      return await transaction('runtime',async client => Boolean((await client.query('SELECT public.reporter_worker_online() AS online')).rows[0]?.online));
-    } catch (error) { logEvent('api','worker_readiness_failed',{ error_code: safeCode(error) }); return false; }
-  }
+/** Local mode needs `pnpm worker:local` running; the cloud worker is woken on demand. */
+export async function workerAvailable() {
+  if (reporterDeploymentMode() === 'cloud') return true;
   try {
     const heartbeat = JSON.parse(await readFile(join(await storageRoot(), "worker.json"), "utf8"));
     return Number.isFinite(heartbeat.timestamp) && Date.now() - heartbeat.timestamp < 15000;

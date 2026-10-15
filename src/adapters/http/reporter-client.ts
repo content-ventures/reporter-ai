@@ -44,8 +44,10 @@ export async function reporterRequest<T>(path = '/workspace', body?: unknown, si
   return value as T;
 }
 
-export function requestWorkspace(syncToken?: string): Promise<WorkspaceRefresh> {
-  return reporterRequest('/workspace'+(syncToken ? '?since='+encodeURIComponent(syncToken) : ''));
+/** `active` asks the server to also report whether a running generation is stalled. */
+export function requestWorkspace(syncToken?: string, active = false): Promise<WorkspaceRefresh> {
+  const query = [syncToken ? 'since='+encodeURIComponent(syncToken) : '', active ? 'active=1' : ''].filter(Boolean).join('&');
+  return reporterRequest('/workspace'+(query ? '?'+query : ''));
 }
 
 export function createHttpGeneration(deps: { current(): ConnectedWorkspace; refresh(): Promise<void>; rpc<T>(method: string,args: unknown[]): Promise<T> }) {
@@ -178,7 +180,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
         }
         for (;;) {
           options.signal?.throwIfAborted();
-          const state = await reporterRequest<{ transcript: Transcript; worker_online: boolean }>('/transcripts/'+known.id,undefined,options.signal);
+          const state = await reporterRequest<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+known.id,undefined,options.signal);
           const transcript = state.transcript;
           if (!transcript) return refuse('read_failed','Transcrição não encontrada.');
           if (transcript.status==='ready') {
@@ -198,7 +200,8 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           }
           if (!state.worker_online) return refuse('read_failed','O worker está desligado. Inicie pnpm worker e tente de novo; o episódio já está salvo.');
           const progress = transcript.job?.progress;
-          options.onStatus?.({ phase: progress?.phase==='transcribing' ? 'transcribing' : 'preparing',
+          if (state.stalled) options.onStatus?.({ phase: 'preparing',message: 'Aguardando processamento' });
+          else options.onStatus?.({ phase: progress?.phase==='transcribing' ? 'transcribing' : 'preparing',
             message: progress?.phase==='transcribing' ? 'Transcrevendo áudio' : 'Importando áudio do episódio',
             ...(progress?.phase==='transcribing' ? { done: progress.done,total: progress.total } : {}) });
           options.onProgress?.(progress?.total ? Math.round(progress.done/progress.total*90) : 8,
@@ -286,7 +289,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
         }
         for (;;) {
           options.signal?.throwIfAborted();
-          const state = await reporterRequest<{ transcript: Transcript; worker_online: boolean }>('/transcripts/'+upload.id,undefined,options.signal);
+          const state = await reporterRequest<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+upload.id,undefined,options.signal);
           const transcript = state.transcript;
           if (!transcript) return refuse('read_failed','Transcrição não encontrada.');
           if (transcript.status === 'ready') {
@@ -305,7 +308,8 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           }
           if (!state.worker_online) return refuse('read_failed','O worker está desligado. Inicie pnpm worker e tente de novo; o arquivo já está salvo.');
           const progress = transcript.job?.progress;
-          options.onStatus?.({ phase: progress?.phase==='transcribing' ? 'transcribing' : 'preparing',
+          if (state.stalled) options.onStatus?.({ phase: 'preparing',message: 'Aguardando processamento' });
+          else options.onStatus?.({ phase: progress?.phase==='transcribing' ? 'transcribing' : 'preparing',
             message: progress?.phase==='transcribing' ? 'Transcrevendo áudio' : 'Preparando áudio para transcrição',
             ...(progress?.phase==='transcribing' ? { done: progress.done,total: progress.total } : {}) });
           options.onProgress?.(progress?.total ? 90+Math.round(progress.done/progress.total*9) : 89,

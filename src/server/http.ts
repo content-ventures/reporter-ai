@@ -6,7 +6,9 @@ import { UUID, articleEditSchema, carouselEditSchema, createSchema, revisionSche
 import { assertLocalMode, localContext } from "./config";
 import { command, resolveReporterContext, transaction } from "./database";
 import { FlowError, logEvent, safeCode } from "./errors";
-import { receiveFile, workerHeartbeat } from "./storage";
+import { receiveFile, workerAvailable } from "./storage";
+import { IDLE_QUEUE, queueStatus } from "./queue-status.ts";
+import { workerUrl } from "./worker-config.ts";
 import { ingestSourceLink } from './source-link';
 import { editorialWorkspace, editorialRpc, editorialPipeline } from './editorial';
 import { analyzeMaterial } from './material-analysis';
@@ -106,6 +108,7 @@ const messages: Record<string, string> = {
   CLOUD_UPLOAD_PENDING: 'O upload de arquivos grandes ainda não está liberado neste ambiente. Cole uma transcrição por enquanto.',
   UPLOAD_WORKER_UNAVAILABLE: 'O serviço de upload está inicializando. Aguarde alguns segundos e tente novamente.',
   UPLOAD_CONFIGURATION: 'O armazenamento de arquivos ainda não está configurado.',
+  WORKER_CONFIGURATION: 'O processamento ainda não está configurado neste ambiente.',
   LOCAL_MODE_DISABLED: "Este fluxo só está disponível no modo local de desenvolvimento.",
   LOCAL_ACCESS_ONLY: "Acesso permitido apenas neste computador.", ORIGIN_DENIED: "Origem não autorizada.",
   ECONNREFUSED: "Banco indisponível. Inicie o PostgreSQL do Reporter AI.",
@@ -136,18 +139,24 @@ export async function handleReporter(request: Request, path: string[]) {
     if (path[0] === 'visuals') return await handleVisualLibrary(request,path.slice(1),jsonBody);
     if (request.method === 'GET' && path.length === 1 && path[0] === 'pipeline') return reply(await editorialPipeline());
     if (path[0] === 'workspace' && path.length === 1) {
-      if (request.method === 'GET') return reply(await editorialWorkspace(new URL(request.url).searchParams.get('since') ?? undefined));
+      if (request.method === 'GET') {
+        const query = new URL(request.url).searchParams;
+        return reply(await editorialWorkspace(query.get('since') ?? undefined,{ active: query.get('active') === '1' }));
+      }
       if (request.method === 'POST') return reply(await editorialRpc(await jsonBody(request)));
     }
     if (request.method === "GET" && path.length === 0) {
       const state = await transaction("runtime", async client => (await client.query("SELECT public.reporter_local_state() AS state")).rows[0].state, requestId);
-      return reply({ ...state, worker_online: await workerHeartbeat(), groq_configured: Boolean(process.env.GROQ_API_KEY?.trim()) });
+      return reply({ ...state, worker_online: await workerAvailable(), groq_configured: Boolean(process.env.GROQ_API_KEY?.trim()) });
     }
     if (request.method === 'GET' && path.length === 2 && path[0] === 'transcripts') {
       const id = UUID.parse(path[1]);
-      const transcript = await transaction('runtime',async client => (await client.query('SELECT public.reporter_local_transcript($1) AS value',[id])).rows[0].value,requestId);
+      const { transcript,queue } = await transaction('runtime',async client => {
+        const value = (await client.query('SELECT public.reporter_local_transcript($1) AS value',[id])).rows[0].value;
+        return { transcript: value,queue: ['queued','processing'].includes(value?.status) ? await queueStatus(client,`transcript:${id}`) : IDLE_QUEUE };
+      },requestId);
       if (!transcript) throw new FlowError('NOT_FOUND',404);
-      return reply({ transcript,worker_online: await workerHeartbeat() });
+      return reply({ transcript,worker_online: await workerAvailable(),stalled: queue.stalled });
     }
     if (request.method !== "POST") return reply({ error: "NOT_FOUND", message: "Rota não encontrada." }, 404);
     if (path.length===1 && path[0]==='uploads') {
@@ -167,7 +176,10 @@ export async function handleReporter(request: Request, path: string[]) {
         'SELECT public.reporter_prepare_cloud_upload($1,$2,$3,$4,$5,$6,$7) AS value',
         [input.sourceId,input.name.normalize('NFC'),input.size,contentType,objectKey,tokenHash,key],
       )).rows[0].value,requestId);
-      return reply({ mode: 'cloud',...value },202);
+      // The configured worker URL wins; the SQL value only covers an unconfigured environment.
+      const endpoint = workerUrl() ?? value.upload_endpoint;
+      if (!endpoint) throw new FlowError('UPLOAD_CONFIGURATION',503);
+      return reply({ mode: 'cloud',...value,upload_endpoint: endpoint },202);
     }
     if (path.length === 1 && path[0] === "files") {
       if (reporterDeploymentMode() === 'cloud') throw new FlowError('CLOUD_UPLOAD_PENDING',503);
