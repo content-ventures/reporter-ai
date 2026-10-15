@@ -54,9 +54,9 @@ const ROUTES: readonly RouteCase[] = [
   { name: "Entrega · artigo final", path: "/productions/prod-bella-passo/delivery?view=article", ready: (page) => page.getByRole("list", { name: "Aprovação" }) },
   { name: "Produção abre a etapa atual", path: "/productions/prod-lume", landsOn: "/productions/prod-lume/carousel", ready: heading(/Lume/) },
   { name: "Modelos", path: "/library/templates", ready: (page) => page.getByRole("button", { name: "Seafood Manchete", exact: true }).first() },
-  { name: "Novidades", path: "/whats-new", ready: heading("Novidades") },
+  { name: "Versões", path: "/whats-new", ready: heading("Versões") },
   { name: "Logs", path: "/admin/audit", ready: heading("Logs") },
-  { name: "Versões redireciona para Novidades", path: "/versions", landsOn: "/whats-new", ready: heading("Novidades") },
+  { name: "Endereço antigo de versões", path: "/versions", landsOn: "/whats-new", ready: heading("Versões") },
   { name: "Produção inexistente", path: "/productions/prod-inexistente/article", ready: heading("Produção não encontrada") },
   {
     name: "Página inexistente",
@@ -88,73 +88,31 @@ for (const viewport of VIEWPORTS) {
       });
     }
 
-    test("visão geral: continuar no estúdio original, filtrar produções, consultar equipe e manter o período", async ({ page }, testInfo) => {
+    test("visão geral: retomar produção, consultar pendências, abrir kanban e manter o período", async ({ page }, testInfo) => {
       const errors = watchErrors(page);
       await page.goto("/");
-      const featured = page.getByRole("article", { name: /^Continuar: Estúdio Norte/ });
-      await expect(featured.getByRole("region", { name: "Abertura do artigo em edição" })).toContainText("O Estúdio Norte");
-      await expect(page.getByRole("heading", { name: /Bella Passo lança calçado infantil/ })).toBeVisible();
-      await expect(page.getByRole("img", { name: "Par de tênis infantis da Bella Passo visto de cima", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Início", level: 1, exact: true })).toBeVisible();
+      const resume = page.getByRole("article", { name: /^Continuar:/ });
+      const continueLink = resume.getByRole("link", { name: /^Continuar: Estúdio Norte/ });
+      await expect(continueLink).toBeVisible();
+      await expect(page.getByRole("region", { name: "Produções por etapa", exact: true })).toBeVisible();
+      await expect(page.getByRole("list", { name: "Precisa de você", exact: true })).toContainText("Casa Forma");
+      await expect(page.getByRole("list", { name: "Últimas movimentações", exact: true })).toBeVisible();
       await expectLoaded(page);
-      const storyCards = page.getByRole("tabpanel", { name: /^Todas/ }).getByRole("article");
-      await expect(storyCards).toHaveCount(4);
-      // Also cover the narrow cards in a four-column desktop layout.
-      if (viewport.width >= 1024) {
-        await page.setViewportSize({ width: 1760, height: viewport.height });
-        const rows = await storyCards.evaluateAll((cards) => new Set(cards.map((card) => card.getBoundingClientRect().top)).size);
-        expect(rows, "quatro cards na mesma linha").toBe(1);
-      }
-      const sizes = await storyCards.evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height));
-      expect(Math.max(...sizes) - Math.min(...sizes), "cards com altura padronizada").toBeLessThanOrEqual(1);
-      expect(Math.max(...sizes), "cards compactos").toBeLessThan(220);
-      const innerScrolls = await storyCards.evaluateAll((cards) => cards.flatMap((card) =>
-        Array.from(card.querySelectorAll<HTMLElement>("*")).filter((element) => {
-          const css = getComputedStyle(element);
-          return (/(auto|scroll)/.test(css.overflowY) && element.scrollHeight > element.clientHeight + 1)
-            || (/(auto|scroll)/.test(css.overflowX) && element.scrollWidth > element.clientWidth + 1);
-        }).map((element) => element.getAttribute("aria-label") ?? element.tagName)
-      ));
-      expect(innerScrolls, "cards sem rolagem interna").toEqual([]);
+      await expectHeadingOutline(page);
       await expectNoHorizontalOverflow(page);
       const screenshot = testInfo.outputPath("overview.png");
       await page.screenshot({ path: screenshot, fullPage: true });
       await testInfo.attach("Início", { path: screenshot, contentType: "image/png" });
-      if (viewport.width >= 1024) await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.getByRole("button", { name: "Ver movimentações recentes" }).click();
-      await expect(page.getByRole("list", { name: "Últimas movimentações", exact: true })).toBeVisible();
-      await page.getByRole("link", { name: "Ler artigo", exact: true }).click();
-      await page.waitForURL("/productions/prod-bella-passo/delivery?view=article");
-      await expect(page.getByRole("list", { name: "Aprovação", exact: true })).toBeVisible();
-      await page.goBack();
 
-      await page.getByRole("tab", { name: /^Material/ }).click();
-      const material = page.getByRole("tabpanel", { name: /^Material/ });
-      await expect(material.getByRole("article", { name: /Couro Nobre/ })).toBeVisible();
-      await expect(material.getByRole("article")).toHaveCount(1);
-      await material.getByRole("link", { name: /^Autorizar:/ }).click();
-      await page.waitForURL("/productions/prod-couro-nobre/source");
-      await expect(page.getByRole("heading", { name: /Couro Nobre/, level: 1 })).toBeVisible();
-      await page.goBack();
-      const approvalTab = page.getByRole("tab", { name: /^Aprovação/ });
-      await approvalTab.click();
-      await expect(page.getByRole("tabpanel", { name: /^Aprovação/ })).toContainText("Aurora");
-      await approvalTab.press("ArrowRight");
-      await expect(page.getByRole("tab", { name: /^Carrossel/ })).toBeFocused();
-      await expect(page.getByRole("tabpanel", { name: /^Carrossel/ })).toContainText("Lume");
-      await expectNoHorizontalOverflow(page);
-      await page.getByRole("tab", { name: /^Todas/ }).click();
-
-      await featured.getByRole("link", { name: /^Continuar:/ }).click();
+      await continueLink.click();
       await page.waitForURL("/productions/prod-estudio-norte/article");
       await expect(page.getByRole("textbox", { name: "Texto do artigo" })).toBeVisible();
-
       await page.goBack();
-      await page.getByRole("link", { name: "Ver prioridades" }).click();
-      await expect(page.getByRole("heading", { name: "Precisa de você", exact: true })).toBeInViewport();
-      await page.getByRole("radio", { name: "Equipe", exact: true }).click();
-      await expect(page.getByRole("list", { name: "Equipe", exact: true })).toContainText("Bella Passo");
-      await page.getByRole("radio", { name: "Para mim", exact: true }).click();
-      await expect(page.getByRole("list", { name: "Precisa de você", exact: true })).toContainText("Casa Forma");
+      await page.getByRole("link", { name: "Abrir kanban", exact: true }).click();
+      await page.waitForURL("/productions");
+      await expect(page.getByRole("heading", { name: "Produções", level: 1 })).toBeVisible();
+      await page.goBack();
 
       await page.getByRole("radio", { name: "30 dias", exact: true }).click();
       await expect(page).toHaveURL((url) => url.searchParams.get("range") === "30d");
@@ -196,10 +154,8 @@ for (const viewport of VIEWPORTS) {
       await expect(editor).toContainText(opening);
       await expect(page.getByRole("button", { name: "Enviar para aprovação", exact: true }).first()).toBeVisible();
       await page.goto("/");
-      const continued = page.getByRole("article", { name: "Continuar: Artigo sem título", exact: true });
-      await expect(continued).toContainText(opening);
-      await expect(continued).not.toContainText("Simulação local");
-      await continued.getByRole("link", { name: /^Continuar:/ }).click();
+      const continued = page.getByRole("article", { name: /^Continuar:/ });
+      await continued.getByRole("link", { name: "Continuar: Artigo sem título", exact: true }).click();
       await expect(page).toHaveURL(address);
       await expect(editor).toContainText(opening);
       await expectNoHorizontalOverflow(page);

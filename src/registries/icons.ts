@@ -2,7 +2,7 @@
  * Icon names used by the registries. They are plain string keys so registries stay pure data;
  * the UI maps each key to the export of the same name in the Design System icon module
  * (`@content-ventures/design-system/v3/icons`). A test checks every key exists there.
- * `Sparkles` is reserved for AI actions (README §6); `Megaphone` marks "Novidades"; `BadgeCheck`
+ * `Sparkles` is reserved for AI actions (README §6); `Megaphone` marks "Versões"; `BadgeCheck`
  * marks "Aprovações" and `Inbox` the "Início" queue (the DS has no house icon).
  */
 export type IconKey =

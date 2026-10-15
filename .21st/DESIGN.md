@@ -42,6 +42,9 @@
 - Studios use the full width with one line of chrome above the text.
 - Status colours are reserved for state; meters and sparklines are neutral by default.
 - Every AI output carries the "Simulação local" label while the product runs on the local simulation.
-- The writer overview is based on `release-one-experience`: a photographic card resumes the real next action beside the original personal/team queues. Preserve every R1 screen, route and workflow state. See `docs/EDITORIAL_OVERVIEW.md` for scope and references.
-- The user selected an editorial, visual overview with stories in focus. Use real article headlines and openings, images already present in the article, a prominent story to continue and a delivery-stage story to read. The original priorities and stage filters remain; recent activity is secondary and collapsible. No new workflow state is introduced.
-- Story previews use compact, equally sized cards with short headlines and openings. The DS ListItem truncates each with ellipses; cards have no internal scroll areas, and metadata/actions stay aligned. The separately requested “Escrever do zero” entry opens an empty article in the existing studio alongside transcript creation.
+
+- Início uses the user-approved editorial dashboard direction: a featured production with its next action, recent production cards, a right column for pending actions and stage counts, and visual carousel model previews. On phones, pending actions follow the feature and model previews use a compact two-column grid. Keep Nova produção, Escrever do zero and Abrir kanban accessible; preserve permissions, data and period selection. Use public DS components only and keep this revision local.
+
+- Prompt management starts with uniform large worker cards. Each opens its ordered flow; clickable prompt nodes open the editor. The header identifies the current worker, and reload/activation actions stay inside it. Shared instructions appear within workers. Article and carousel remain separate; conditional and on-demand stages are explicit.
+
+- The user requires R2 UI previews inside the existing workspace navigation alongside Início, Produções and Modelos, not in a separate prototype app. Publish the explicitly labeled R2 demonstration navigation and screens alongside R1, as approved on October 15, 2026; keep domain/worker release gates on R1 and all R2 interactions demonstrative. Preserve the shared header, account, breadcrumbs, command palette and admin-only CMS access. Review before integrating into existing production editors or delivery.

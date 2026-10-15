@@ -6,9 +6,9 @@ import type { ReleaseId } from './release.ts';
 
 /**
  * Menu registry (PLAN §2, hierarchy D9). The sidebar (`menuFor`) puts what works today on top, in
- * one unlabeled section (Início, Produções, Aprovações, Modelos, Logs), then ONE collapsed group
+ * one unlabeled section, then ONE collapsed group
  * "Em breve" with every item of a later release in release order (no link: their routes keep
- * answering 404 until the release ships), and "Novidades" at the bottom. ⌘K, the active item and
+ * answering 404 until the release ships), and Logs, Prompts and Versões at the bottom. ⌘K, the active item and
  * the trail use only released items (`navigationFor`, `activeNavItem`). Role filtering comes
  * first: nobody sees an item they will not have access to, not even as "Em breve".
  * `NAV_GROUPS` stays the product map (where an item belongs once its release ships; ⌘K keywords).
@@ -53,6 +53,10 @@ export type NavItem = {
   icon: IconKey;
   href: string;
   group: NavGroupId;
+  /** Override the sidebar placement while keeping the product group used by ⌘K. */
+  placement?: NavPlacement;
+  /** Keep implemented destinations out of navigation until their product scope is approved. */
+  hidden?: boolean;
   since: ReleaseId;
   /** `exact` for `/`; `prefix` keeps the item active on nested routes (`/productions/123`). */
   match: 'exact' | 'prefix';
@@ -121,6 +125,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     match: 'prefix',
     features: ['F1.3', 'F1.6'],
     badge: 'awaiting-approval',
+    hidden: true,
     roles: DECIDERS,
   },
   {
@@ -192,11 +197,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
   },
   {
     id: 'images',label: 'Imagens',icon: 'Image',href: '/images',group: 'library',since: 'R1',match: 'prefix',
+    hidden: true,
     features: ['F1.2','F2.9','F6.9','F6.10'],hint: 'Fotos editoriais com origem e licença',
   },
-  { id: 'banners',label: 'Banners',icon: 'LayoutTemplate',href: '/banners',group: 'library',since: 'R1',match: 'prefix',features: ['F1.5'],hint: 'Composições editoriais com exportação local' },
+  { id: 'banners',label: 'Banners',icon: 'LayoutTemplate',href: '/banners',group: 'library',since: 'R1',match: 'prefix',hidden: true,features: ['F1.5'],hint: 'Composições editoriais com exportação local' },
   {
     id: 'quotes',
+    hidden: true,
     label: 'Citações',
     icon: 'Quote',
     href: '/quotes',
@@ -286,6 +293,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     icon: 'Shield',
     href: '/admin/audit',
     group: 'administration',
+    placement: 'utility',
     since: 'R1',
     match: 'prefix',
     features: ['F1.7'],
@@ -297,6 +305,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     icon: 'Terminal',
     href: '/config',
     group: 'administration',
+    placement: 'utility',
     since: 'R1',
     match: 'prefix',
     // Local generation controls for F1.2; not a claim of complete multiworkspace F7.6.
@@ -328,8 +337,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     hint: 'Clientes, membros e marca',
     roles: ADMINS,
   },
-  // "Novidades" (release notes). "Versões" now means content versions only (critique #36).
-  { id: 'whats-new', label: 'Novidades', icon: 'Megaphone', href: '/whats-new', group: 'utility', since: 'R0', match: 'prefix', features: [] },
+  // Product version history keeps its existing release-notes route.
+  { id: 'whats-new', label: 'Versões', icon: 'Megaphone', href: '/whats-new', group: 'utility', since: 'R0', match: 'prefix', features: [] },
 ];
 
 /** `/versions` was the prototype's release-notes route; it now redirects (`src/app/versions/page.tsx`). */
@@ -359,8 +368,18 @@ export const MENU_GROUPS: Readonly<Record<MenuGroupId, MenuGroup>> = {
 /** Who is looking at the menu; without one, role-restricted items stay hidden. */
 export type NavViewer = { roles: readonly Role[] };
 
-/** Whether a viewer may see an item (items without `roles` are for everyone). */
-export function isNavItemVisible(item: Pick<NavItem, 'roles'>, viewer?: NavViewer): boolean {
+/** Only the UI demonstration expands navigation; domain/worker release gates stay on R1. */
+export type NavigationOptions = { previewR2?: boolean };
+function navigationEntries(options: NavigationOptions): readonly NavItem[] {
+  if (!options.previewR2) return NAV_ITEMS;
+  return NAV_ITEMS.map(item => item.id === 'images' || item.id === 'quotes'
+    ? { ...item, hidden: false, since: 'R2' as const }
+    : item.id === 'integrations' ? { ...item, label: 'CMS do portal' } : item);
+}
+
+/** Scope is checked before roles; approved items without `roles` are for everyone. */
+export function isNavItemVisible(item: Pick<NavItem, 'roles' | 'hidden'>, viewer?: NavViewer): boolean {
+  if (item.hidden) return false;
   if (!item.roles?.length) return true;
   return Boolean(viewer?.roles.some((role) => item.roles?.includes(role)));
 }
@@ -384,19 +403,24 @@ function sections<T extends NavItem>(groups: readonly NavGroup[], items: readonl
     .filter((section) => section.items.length > 0);
 }
 
-function placementOf(item: Pick<NavItem, 'group'>): NavPlacement {
-  return NAV_GROUPS.find((group) => group.id === item.group)?.placement ?? 'main';
+function placementOf(item: Pick<NavItem, 'group' | 'placement'>): NavPlacement {
+  return item.placement ?? NAV_GROUPS.find((group) => group.id === item.group)?.placement ?? 'main';
 }
 
 /**
  * The sidebar for a viewer (D9): the released items in registry order (one unlabeled section),
  * then "Em breve" with every later item the viewer may see in release order (registry order
- * within a release; each keeps its reason and never gets a link), then the utilities (Novidades).
+ * within a release; each keeps its reason and never gets a link), then Logs, Prompts and Versões.
  * Empty sections are left out.
  */
-export function menuFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer): MenuSection[] {
-  const visible = NAV_ITEMS.filter((item) => isNavItemVisible(item, viewer));
+export function menuFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer, options: NavigationOptions = {}): MenuSection[] {
+  if (options.previewR2) release = 'R2';
+  const visible = navigationEntries(options).filter((item) => isNavItemVisible(item, viewer));
   const released = visible.filter((item) => isReleased(item.since, release));
+  if (options.previewR2) {
+    const order = ['overview', 'productions', 'templates', 'news', 'images', 'quotes', 'archive', 'editorial-map', 'writing-guide', 'integrations'];
+    released.sort((a, b) => (order.indexOf(a.id) < 0 ? 99 : order.indexOf(a.id)) - (order.indexOf(b.id) < 0 ? 99 : order.indexOf(b.id)));
+  }
   const soon = visible
     .filter((item) => !isReleased(item.since, release))
     .map((item, order) => ({ item, order }))
@@ -411,8 +435,9 @@ export function menuFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer
 }
 
 /** Released destinations only (⌘K "Ir para"): groups with at least one visible item, in registry order. */
-export function navigationFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer): NavSection[] {
-  const items = availableIn(NAV_ITEMS, release).filter((item) => isNavItemVisible(item, viewer));
+export function navigationFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer, options: NavigationOptions = {}): NavSection[] {
+  if (options.previewR2) release = 'R2';
+  const items = availableIn(navigationEntries(options), release).filter((item) => isNavItemVisible(item, viewer));
   return sections(availableIn(NAV_GROUPS, release), items);
 }
 
@@ -423,8 +448,9 @@ function matches(item: NavItem, pathname: string): boolean {
 }
 
 /** The menu item to highlight for a pathname (longest matching href wins); "Em breve" items never match. */
-export function activeNavItem(pathname: string, release: ReleaseId = CURRENT_RELEASE): NavItem | undefined {
-  return availableIn(NAV_ITEMS, release)
+export function activeNavItem(pathname: string, release: ReleaseId = CURRENT_RELEASE, options: NavigationOptions = {}): NavItem | undefined {
+  if (options.previewR2) release = 'R2';
+  return availableIn(navigationEntries(options), release)
     .filter((item) => matches(item, pathname))
     .sort((a, b) => b.href.length - a.href.length)[0];
 }
