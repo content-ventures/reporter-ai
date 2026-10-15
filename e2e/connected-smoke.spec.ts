@@ -34,9 +34,9 @@ for (const viewport of VIEWPORTS) {
       for (const [path, heading] of [
         ["/", "Início"],
         ["/productions", "Produções"],
-        ["/quotes", "Citações"],
+        ["/quotes", "Banco de citações"],
         ["/images", "Imagens"],
-        ["/config", "Engenharia de prompts"],
+        ["/config", "Prompts"],
       ] as const) {
         await page.goto(path);
         await expectShell(page, heading);
