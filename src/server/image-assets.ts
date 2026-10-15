@@ -13,7 +13,9 @@ import { remoteResponse } from './storage.ts';
 const metaSchema = z.object({ productionId: z.string().uuid(),authorized: z.boolean(),credit: z.string().max(500).optional(),note: z.string().max(2000).optional(),
   provenance: z.object({libraryId:z.string().uuid()}).passthrough().optional() }).strict();
 const mimeSchema = z.enum(['image/jpeg','image/png','image/webp','image/gif']);
-const preparedSchema = z.object({ id:z.string().uuid(),fileName:z.string().min(1).max(255),mime:mimeSchema,size:z.number().int().min(1).max(10*1024**2),hash:z.string().regex(/^[a-f0-9]{64}$/),meta:metaSchema,actor:z.string().uuid(),portal:z.string().uuid(),expires:z.number() }).strict();
+// Seeded database identities are GUIDs without RFC UUID version/variant bits.
+// Their signed values must still match the authenticated request context exactly.
+const preparedSchema = z.object({ id:z.string().uuid(),fileName:z.string().min(1).max(255),mime:mimeSchema,size:z.number().int().min(1).max(10*1024**2),hash:z.string().regex(/^[a-f0-9]{64}$/),meta:metaSchema,actor:z.guid(),portal:z.guid(),expires:z.number() }).strict();
 function secret() { const value = process.env.REPORTER_WORKER_PASSWORD;if (!value) throw new FlowError('UPLOAD_CONFIGURATION',503);return value; }
 function sign(value:string) { return createHmac('sha256',secret()).update(value).digest('base64url'); }
 function token(input:z.infer<typeof preparedSchema>) { const value = Buffer.from(JSON.stringify(input)).toString('base64url');return value+'.'+sign(value); }
