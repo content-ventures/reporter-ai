@@ -63,6 +63,7 @@ const functions = {
       REPORTER_DEPLOYMENT_ACTOR: process.env.GITHUB_ACTOR || 'local-validation',
       REPORTER_DEFAULT_PORTAL_ID: '10000000-0000-0000-0000-000000000101',
       REPORTER_APP_ORIGIN: 'https://reporter-ai-three.vercel.app',
+      ...(process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL?{REPORTER_WORKER_ENDPOINT:process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL}:{}),
       REPORTER_WORKER_DATABASE_URL: workerDatabaseUrl(),
       REPORTER_WORKER_PASSWORD: required('REPORTER_WORKER_PASSWORD'),
       GROQ_API_KEY: required('GROQ_API_KEY'),

@@ -6,7 +6,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   ListPartsCommand,
-  PutBucketCorsCommand,
+  GetBucketCorsCommand,
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
@@ -50,9 +50,11 @@ function allowedOrigin() {
 }
 
 async function ensureUploadCors() {
-  corsConfigured ??= s3().send(new PutBucketCorsCommand({ Bucket: SOURCE_BUCKET,CORSConfiguration: { CORSRules: [{
-    AllowedOrigins: [allowedOrigin()],AllowedMethods: ['PUT','GET'],AllowedHeaders: ['*'],ExposeHeaders: ['ETag'],MaxAgeSeconds: 3600,
-  }] } })).then(() => undefined).catch(error => {
+  corsConfigured ??= s3().send(new GetBucketCorsCommand({ Bucket: SOURCE_BUCKET })).then(result => {
+    const origin=allowedOrigin();
+    if(!result.CORSRules?.some(rule=>rule.AllowedOrigins?.includes(origin)&&rule.AllowedMethods?.includes('PUT')&&rule.AllowedHeaders?.includes('*')&&rule.ExposeHeaders?.some(header=>header.toLowerCase()==='etag')))
+      throw new FlowError('UPLOAD_CONFIGURATION',503);
+  }).catch(error => {
     corsConfigured = undefined;
     throw error;
   });

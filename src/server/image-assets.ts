@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { ImageAsset } from '../domain/asset.ts';
 import { editorialTransaction } from './editorial.ts';
 import { currentReporterContext } from './request-context.ts';
-import { prepareImageFile, readImageFile, imageFileUrl, writeImageFile } from './image-storage.ts';
+import { prepareImageFile, readImageFile, writeImageFile } from './image-storage.ts';
 import { FlowError } from './errors.ts';
 import { hasAnyRole } from '../domain/workspace.ts';
 import { remoteResponse } from './storage.ts';
@@ -75,8 +75,8 @@ export async function importLinkedAsset(value:unknown,signal:AbortSignal) {
   }
   return saveAsset({id:randomUUID(),fileName:'imagem',meta:input.meta},fileKey,bytes,{type:'url',url:input.url});
 }
-export async function uploadedAssetUrl(id:string) {
+export async function uploadedAssetFile(id:string) {
   const entry=(await editorialTransaction('runtime',async checkpoint=>checkpoint.imageAssets?.find(entry=>entry.asset.id===id),false)).value;
   if (!entry?.fileKey) throw new FlowError('IMAGE_UNAVAILABLE',404);
-  return imageFileUrl(entry.fileKey);
+  return {bytes:await readImageFile(entry.fileKey),mime:entry.asset.mime??'image/jpeg'};
 }

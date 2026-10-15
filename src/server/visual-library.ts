@@ -9,9 +9,8 @@ import { directQuotes, literalQuoteText, r1ArticleQuotationIssue } from '../doma
 import { editorialTransaction } from './editorial';
 import { stockProviders, searchStock, stockDetails, downloadStock, trackStockSelection } from './stock-images';
 import { bannerSchema, renderBanner } from './banner-render';
-import { readImageFile, writeImageFile, imageFileUrl } from './image-storage.ts';
-import { reporterDeploymentMode } from './deployment.ts';
-import { prepareAssetUpload,completeAssetUpload,importLinkedAsset,uploadedAssetUrl } from './image-assets.ts';
+import { readImageFile, writeImageFile } from './image-storage.ts';
+import { prepareAssetUpload,completeAssetUpload,importLinkedAsset,uploadedAssetFile } from './image-assets.ts';
 import { FlowError } from './errors';
 import { hasAnyRole } from '../domain/workspace';
 import { contentHash } from '../domain/text/hash';
@@ -111,14 +110,21 @@ async function saveBanner(value: unknown) {
 }
 const json = (value: unknown) => Response.json(value,{ headers: { 'Cache-Control': 'no-store','X-Content-Type-Options': 'nosniff' } });
 function file(bytes: Uint8Array | string,mime: string,name?: string) {
-  return new Response(typeof bytes === 'string' ? bytes : new Uint8Array(bytes),{ headers: {
+  let offset=0;
+  const body=typeof bytes==='string'?bytes:new ReadableStream<Uint8Array>({pull(controller){
+    if(offset>=bytes.length){controller.close();return;}
+    const next=bytes.subarray(offset,offset+65536);offset+=next.length;controller.enqueue(new Uint8Array(next));
+  }});
+  return new Response(body,{ headers: {
     'Content-Type': mime,'Cache-Control': 'no-store','X-Content-Type-Options': 'nosniff',
     'Content-Security-Policy': "default-src 'none'; img-src data:; sandbox",
     ...(name ? { 'Content-Disposition': `attachment; filename="${name}"` } : {}),
   } });
 }
 export async function handleVisualLibrary(request: Request,path: string[],readJson: (request: Request) => Promise<unknown>) {
-  if (request.method === 'GET' && path.length === 3 && path[0] === 'assets' && path[2] === 'file') return Response.redirect(await uploadedAssetUrl(UUID.parse(path[1])),302);
+  if (request.method === 'GET' && path.length === 3 && path[0] === 'assets' && path[2] === 'file') {
+    const image=await uploadedAssetFile(UUID.parse(path[1]));return file(image.bytes,image.mime);
+  }
   if (request.method === 'POST' && path.length === 2 && path[0] === 'assets') {
     const body = await readJson(request);
     if (path[1] === 'prepare') return json(await prepareAssetUpload(body));
@@ -137,7 +143,6 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
       const image = (await visualLibrary()).images.find(item => item.id === UUID.parse(path[1]));
       if (!image) throw new FlowError('NOT_FOUND',404);
       if (image.provider === 'unsplash') return Response.redirect(image.imageUrl,302);
-      if (reporterDeploymentMode() === 'cloud') return Response.redirect(await imageFileUrl(image.fileKey),302);
       return file(await imageBytes(image),'image/jpeg');
     }
     if (path.length === 3 && path[0] === 'banners' && ['png','svg','json'].includes(path[2])) {

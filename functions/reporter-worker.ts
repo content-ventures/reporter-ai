@@ -147,7 +147,9 @@ export function createReporterWorker(services: WorkerDependencies = dependencies
     }
     if (url.pathname==='/uploads/start') return uploadRequest(request,services,'start');
     if (url.pathname==='/uploads/complete') return uploadRequest(request,services,'complete');
-    const endpoint = url.origin;
+    // The hosted request URL may describe the internal HTTP hop. Persist the
+    // public HTTPS invocation URL from deployment configuration instead.
+    const endpoint = new URL(process.env.REPORTER_WORKER_ENDPOINT || request.url).origin;
     const triggerHeader = request.headers.get('x-neon-trigger-invocation-id')?.trim();
     const triggerPath = url.pathname==='/triggers/schedule' || url.pathname==='/triggers/storage';
     if (!triggerPath && !triggerHeader && (request.method==='GET' || request.method==='POST') && await hasWorkerSecret(request)) {
