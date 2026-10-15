@@ -21,7 +21,9 @@ outside the `incoming/` storage-trigger prefix. Release provisioning verifies ar
 binary SHA256 and ELF architecture. Each function isolate downloads and verifies the tools
 once, sets private executable permissions in `/tmp`, and shares concurrent installation calls.
 The health endpoint executes both binaries, configures upload CORS, then registers its database
-heartbeat. A failure stops the release before the Vercel release commit is pushed.
+heartbeat. The release then waits for a fresh real scheduled invocation, excluding health and
+diagnostic calls, so a missing/broken schedule cannot pass and fail again three minutes later.
+A failure stops the release before the Vercel release commit is pushed.
 
 ## Required GitHub production environment
 
