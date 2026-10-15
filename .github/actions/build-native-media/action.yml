@@ -18,6 +18,6 @@ runs:
           --env REPORTER_NATIVE_CROSS=true \
           node:24-bookworm-slim bash -ec '
             apt-get update -qq
-            apt-get install -y --no-install-recommends ca-certificates curl xz-utils gnupg ripgrep make pkg-config gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+            apt-get install -y --no-install-recommends ca-certificates curl xz-utils gnupg ripgrep make pkg-config gcc libc6-dev gcc-aarch64-linux-gnu libc6-dev-arm64-cross
             bash scripts/build-native-media.sh
           '
