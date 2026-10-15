@@ -27,8 +27,20 @@ export function articleLengthIssue(stats: { characters: number; words: number },
 
 /** Only Unicode composition and whitespace vary; no fuzzy words, elisions or paraphrases. */
 export function literalQuoteText(text: string) { return text.normalize('NFC').replace(/\s+/gu, ' ').trim(); }
-/** A quotation may adapt only its closing punctuation to the sentence around it: “…a feira,” for “…a feira.”. */
-export function quotedWords(literal: string) { return literal.replace(/[\s.,;:!?…]+$/u, ''); }
+/** A quotation may adapt only a closing period, comma, semicolon, colon or ellipsis to the sentence
+ * around it: “…a feira,” for “…a feira.”. A closing "?" or "!" carries meaning and must match. */
+export function quotedWords(literal: string) { return literal.replace(/[\s.,;:…]+$/u, ''); }
+/** The quoted words appear in the source as whole words: never a cut word, nor "R$ 1.200" for "R$ 1.200.000". */
+export function quotedIn(source: string, words: string) {
+  if (!words) return false;
+  for (let at = source.indexOf(words); at >= 0; at = source.indexOf(words, at + 1)) {
+    const before = source[at - 1] ?? '', rest = source.slice(at + words.length);
+    if (/[\p{L}\p{N}]/u.test(before) || /^[\p{L}\p{N}]/u.test(rest)) continue;
+    if (/\p{N}$/u.test(words) && /^[.,]\p{N}/u.test(rest)) continue;
+    return true;
+  }
+  return false;
+}
 export function directQuotes(text: string): string[] {
   return [...text.matchAll(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu)].map(match => match[1] ?? match[2] ?? match[3]);
 }
@@ -59,7 +71,7 @@ export function unquoteUnsupported<T extends { text: string; evidenceIds: readon
       return { ...paragraph, text: paragraph.text.replace(/[“”"«»]/gu, '') };
     return { ...paragraph, text: paragraph.text.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu, (match, a, b, c) => {
       const words = quotedWords(literalQuoteText(a ?? b ?? c));
-      return words && supported.some(source => source.includes(words)) ? match : a ?? b ?? c;
+      return supported.some(source => quotedIn(source, words)) ? match : a ?? b ?? c;
     }) };
   });
 }
@@ -76,7 +88,7 @@ export function articleQuotationIssue(paragraphs: readonly { text: string; evide
     for (const quote of quoted) {
       const literal = literalQuoteText(quote), words = quotedWords(literal);
       const supported=[...paragraph.evidenceIds.map(id=>evidence.get(id)??''),...(passages?.(paragraph.evidenceIds)??[])];
-      if (!words || !supported.some(text=>literalQuoteText(text).includes(words)))
+      if (!supported.some(text=>quotedIn(literalQuoteText(text),words)))
         return 'UNSUPPORTED_ARTICLE_QUOTE';
       // A quoted brand name is not one of the required substantive quotations.
       if (countWords(words) >= 4) distinct.add(words);

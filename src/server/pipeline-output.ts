@@ -2,7 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import type { PipelineStepKey } from '../domain/pipeline.ts';
 import { PIPELINE_SENTENCE_PATTERN } from '../domain/pipeline.ts';
-import { articleLengthIssue, articleQuotationIssue, literalQuoteText } from '../domain/article-policy.ts';
+import { articleLengthIssue, articleQuotationIssue, literalQuoteText, quotedIn, quotedWords } from '../domain/article-policy.ts';
 import type { ArticleLengthLimits } from '../domain/article-policy.ts';
 import { countCharacters, textStats } from '../domain/text/stats.ts';
 
@@ -85,14 +85,15 @@ export function restoreLiteralQuoteCase(key:PipelineStepKey,value:unknown,eviden
   const copy=structuredClone(value) as {paragraphs?:{text:string;evidenceIds:string[]}[];intro?:{text:string;evidenceIds:string[]}[];sections?:{paragraphs:{text:string;evidenceIds:string[]}[]}[]};
   for(const paragraph of [...(copy.paragraphs??copy.intro??[]),...(copy.sections??[]).flatMap(section=>section.paragraphs)]){
     paragraph.text=paragraph.text.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu,(match,a,b,c)=>{
-      const quote=a??b??c,literal=literalQuoteText(quote),folded=literal.toLocaleLowerCase('pt-BR');
+      // Only the words are compared: a closing comma for the source's period is not a change.
+      const quote=a??b??c,literal=literalQuoteText(quote),words=quotedWords(literal),folded=words.toLocaleLowerCase('pt-BR');
       const supported=[...paragraph.evidenceIds.map(id=>evidence.get(id)??''),...(passages?.(paragraph.evidenceIds)??[])];
-      if(supported.some(text=>literalQuoteText(text).includes(literal)))return match;
-      if(folded.length!==literal.length)return match;
+      if(supported.some(text=>quotedIn(literalQuoteText(text),words)))return match;
+      if(folded.length!==words.length)return match;
       for(const text of supported){
         const source=literalQuoteText(text),lower=source.toLocaleLowerCase('pt-BR');
         if(lower.length!==source.length)continue;const at=lower.indexOf(folded);
-        if(at>=0)return match.replace(quote,source.slice(at,at+literal.length));
+        if(at>=0&&quotedIn(source,source.slice(at,at+words.length)))return match.replace(quote,source.slice(at,at+words.length)+literal.slice(words.length));
       }
       return match;
     });

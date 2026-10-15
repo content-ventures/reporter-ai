@@ -165,6 +165,8 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
+          # This job installs no pnpm; v5 would otherwise cache the package manager named in package.json.
+          package-manager-cache: false
 
       # The Vercel Git integration builds the release commit; production passes only when it
       # serves that version and commit, with every setting present and the new worker wired.
