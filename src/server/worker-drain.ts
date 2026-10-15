@@ -10,6 +10,7 @@ import { workerUrl } from './worker-config.ts';
 export const MAX_INVOCATION_MS = 13 * 60 * 1000;
 export const MAX_JOBS_PER_INVOCATION = 20;
 export const MAX_DRAIN_CHAIN = 8;
+export const COMPACT_INTERVAL_MS = 10 * 60 * 1000;
 
 export type DrainResult = { processed: number; remaining: boolean; elapsedMs: number };
 export type DrainServices = {
@@ -17,7 +18,20 @@ export type DrainServices = {
   /** true: one job ran; false: nothing claimable; 'yield': stop and continue in a fresh invocation. */
   run(owner: string, signal: AbortSignal, deadline: number): Promise<boolean | 'yield'>;
   now(): number;
+  /** Housekeeping after work; never called by a drain that found nothing to do. */
+  compact?(): Promise<void>;
 };
+
+let compactedAt = Number.NEGATIVE_INFINITY;
+/**
+ * Drops finished runs' event streams, expired receipts and old tombstones, at most every ten
+ * minutes per isolate. It rides on drains that did work, so an idle database is never woken.
+ */
+export async function compactEditorialRows(now = Date.now()) {
+  if (now - compactedAt < COMPACT_INTERVAL_MS) return;
+  compactedAt = now;
+  await transaction('worker', client => client.query('SELECT public.reporter_ed_compact()'));
+}
 
 export const drainServices: DrainServices = {
   pending: () => transaction('worker', async client =>
@@ -25,6 +39,7 @@ export const drainServices: DrainServices = {
   run: async (owner, signal, deadline) => await runRemoteIngest(owner, signal)
     || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal),
   now: Date.now,
+  compact: () => compactEditorialRows(),
 };
 
 /** One bounded pass over claimable work. An empty queue costs one read and writes nothing. */
@@ -33,14 +48,17 @@ export async function drainQueue(owner: string, signal: AbortSignal, services: D
   const startedAt = services.now(), deadline = startedAt + limits.maxMs;
   const result = (processed: number, remaining: boolean) => ({ processed, remaining, elapsedMs: services.now() - startedAt });
   if (signal.aborted || !await services.pending()) return result(0, false);
-  let processed = 0;
+  let processed = 0, remaining = true;
   while (!signal.aborted && processed < limits.maxJobs && services.now() < deadline) {
     const ran = await services.run(owner, signal, deadline);
-    if (ran === 'yield') return result(processed, true);
-    if (!ran) return result(processed, false);
+    if (ran === 'yield') break;
+    if (!ran) { remaining = false; break; }
     processed++;
   }
-  return result(processed, true);
+  if (processed > 0 && !signal.aborted) {
+    await services.compact?.().catch(error => logEvent('worker', 'compaction_failed', { error_code: safeCode(error) }));
+  }
+  return result(processed, remaining);
 }
 
 export type DrainScheduler = (depth?: number) => Promise<DrainResult>;

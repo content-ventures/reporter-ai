@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReporterWorker, type WorkerDependencies } from '../functions/reporter-worker.ts';
 import { cloudPortalId } from '../src/server/config.ts';
-import { createDrainScheduler, drainQueue, type DrainResult } from '../src/server/worker-drain.ts';
+import type { Pool } from 'pg';
+import { COMPACT_INTERVAL_MS, compactEditorialRows, createDrainScheduler, drainQueue, type DrainResult } from '../src/server/worker-drain.ts';
 
 const SOURCE_KEY = 'incoming/10000000-0000-0000-0000-000000000101/550e8400-e29b-41d4-a716-446655440000.mp3';
 const IDLE: DrainResult = { processed: 0, remaining: false, elapsedMs: 0 };
@@ -67,6 +68,34 @@ test('a drain stops when the queue empties, and reports leftovers at its job or 
     'a yielded job continues in a fresh invocation instead of being claimed again here');
   const aborted = new AbortController(); aborted.abort();
   assert.equal((await drainQueue('worker-test', aborted.signal, busy)).processed, 0);
+});
+
+test('housekeeping follows a drain that did work, never an idle one, and never fails it', async () => {
+  let compactions = 0, runs = 0;
+  const compact = async () => { compactions++; };
+  await drainQueue('worker-test', new AbortController().signal, { pending: async () => false, run: async () => true, now: () => 0, compact });
+  assert.equal(compactions, 0, 'an idle drain stays a single read');
+  await drainQueue('worker-test', new AbortController().signal, { pending: async () => true, run: async () => ++runs < 2, now: () => 0, compact });
+  assert.equal(compactions, 1);
+  const failing = await drainQueue('worker-test', new AbortController().signal, { pending: async () => true, run: async () => ++runs < 4, now: () => 0,
+    compact: async () => { throw new Error('compaction unavailable'); } });
+  assert.deepEqual([failing.processed, failing.remaining], [1, false]);
+});
+
+test('compaction runs at most once every ten minutes per isolate', async () => {
+  const globals = globalThis as typeof globalThis & { reporterPools?: Partial<Record<'runtime' | 'worker', Pool>> };
+  const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
+  const statements: string[] = [];
+  process.env.REPORTER_DEPLOYMENT_MODE = 'local';
+  globals.reporterPools = { worker: { connect: async () => ({ release() {}, async query(sql: string) { statements.push(sql); return { rows: [] }; } }) } as unknown as Pool };
+  try {
+    const start = 2_000_000_000_000;
+    for (const at of [start, start + 60_000, start + COMPACT_INTERVAL_MS]) await compactEditorialRows(at);
+    assert.equal(statements.filter(sql => sql.includes('reporter_ed_compact')).length, 2);
+  } finally {
+    globals.reporterPools = previous;
+    if (previousMode === undefined) delete process.env.REPORTER_DEPLOYMENT_MODE; else process.env.REPORTER_DEPLOYMENT_MODE = previousMode;
+  }
 });
 
 test('one drain runs per isolate; a kick during it buys exactly one more pass', async () => {

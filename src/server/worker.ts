@@ -7,6 +7,7 @@ import { reporterDeploymentMode } from './deployment.ts';
 import { runEditorialJob } from './editorial-worker.ts';
 import { logEvent,safeCode } from './errors.ts';
 import { runReporterJob } from './reporter-worker-jobs.ts';
+import { compactEditorialRows } from './worker-drain.ts';
 import { cacheWrite,storageRoot } from './storage.ts';
 
 const owner = 'reporter-'+randomUUID();
@@ -27,8 +28,10 @@ async function main() {
     while (!stopping) {
       try {
         active = new AbortController();
-        if (!await runReporterJob(owner,active.signal) && !await runEditorialJob(owner,active.signal)) await delay(1000);
+        const ran = await runReporterJob(owner,active.signal) || await runEditorialJob(owner,active.signal);
         active = undefined;
+        if (ran) await compactEditorialRows().catch(error => logEvent('worker','compaction_failed',{ error_code: safeCode(error) }));
+        else await delay(1000);
       } catch (error) {
         active = undefined;
         logEvent('worker','queue_unavailable',{ error_code: safeCode(error) });
