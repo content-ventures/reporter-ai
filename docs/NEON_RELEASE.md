@@ -51,6 +51,21 @@ of the deployed application still follows a successful, explicitly approved rele
 
 ## Verification
 
+Production releases first run the complete acceptance on a workflow-created, expiring Neon child
+branch. Inherited triggers remain disabled until the candidate worker is deployed with the child
+database connection. The workflow provisions media tools, requires a fresh scheduled invocation,
+uploads synthetic speech through multipart storage, checks real Groq transcription, generates an
+article and carousel through OpenAI, approves both with a separate review-only member, reads an
+uploaded image as that reviewer and builds the browser export (Markdown, HTML, images, slide PNGs,
+JSON and manifest). The child branch is removed on completion. A failed acceptance stops before
+production migrations or deployment. `validation_only` runs the same acceptance without publishing.
+
+Cloud images live under private `images/<portal>/<hash>` Object Storage keys. The Next.js server
+authorizes access and obtains short-lived URLs through the authenticated worker gateway; browser
+uploads go directly to storage and are decoded/hash-checked before their metadata is committed.
+Spotify enclosure imports use durable, leased storage registrations drained by the worker, so
+neither media nor image persistence depends on the Vercel filesystem or another browser's IndexedDB.
+
 - `pnpm gate`: policies, lint, types, application tests and production compilation.
 - `pnpm test:backend`: cloud chunking, cache reuse, failure cleanup, binary integrity, HTTPS
   range forwarding/cleanup and failed readiness, plus the existing backend contracts.
