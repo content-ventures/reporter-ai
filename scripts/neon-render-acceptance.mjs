@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { chromium } from '@playwright/test';
 import { handleVisualLibrary } from '../src/server/visual-library.ts';
 import { currentReporterContext,runWithReporterContext } from '../src/server/request-context.ts';
 
-export async function validateExport(snapshot,productionId) {
-  const bundled=await build({stdin:{resolveDir:process.cwd(),contents:`
+export async function validateExport(snapshot,productionId,readAsset) {
+  const bundled=await build({stdin:{resolveDir:fileURLToPath(new URL('../',import.meta.url)),contents:`
     import {createEditorialEngine} from './src/runtime/editorial-engine.ts';
     import {createMemoryAssetStore} from './src/adapters/local/assets/index.ts';
     import {createLocalRenderService,assetCoverLoader} from './src/adapters/local/render/index.ts';
@@ -26,10 +27,11 @@ export async function validateExport(snapshot,productionId) {
   const context=currentReporterContext(),urls={};for(const entry of snapshot.imageAssets??[])if(entry.fileKey)urls[entry.asset.id]='/api/reporter/visuals/assets/'+entry.asset.id+'/file';
   const browser=await chromium.launch({headless:true});
   try {
-    const page=await browser.newPage();await page.route('https://reporter-ai-three.vercel.app/acceptance-export',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><html><body>Isolated export acceptance</body></html>'}));
+    const page=await browser.newPage();await page.route('**/*',route=>route.abort());
+    await page.route('https://reporter-ai-three.vercel.app/acceptance-export',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><html><body>Isolated export acceptance</body></html>'}));
     await page.route('https://reporter-ai-three.vercel.app/api/reporter/visuals/assets/*/file',async route=>{
       const id=new URL(route.request().url()).pathname.split('/').at(-2);
-      const response=await runWithReporterContext(context,()=>handleVisualLibrary(new Request(route.request().url()),['assets',id,'file'],async()=>({})));
+      const response=readAsset?await readAsset(id):await runWithReporterContext(context,()=>handleVisualLibrary(new Request(route.request().url()),['assets',id,'file'],async()=>({})));
       await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
     });
     await page.goto('https://reporter-ai-three.vercel.app/acceptance-export');await page.addScriptTag({content:bundled.outputFiles[0].text});

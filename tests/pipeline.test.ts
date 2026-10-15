@@ -35,6 +35,35 @@ test('sequential oversize parts receive bounded measured revisions through the s
   }),/ARTICLE_PART_SIZE_EXCEEDED/);assert.equal(calls,3,'two invalid revisions must fail rather than loop or publish clipped prose');
 });
 
+test('part revision replaces every editorial target while retaining the hard ceiling',async()=>{
+  const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};
+  const calls=new Map<string,number>();
+  await writeSequentialArticle(outline,variables,{introChars:100,sections:[{budgetChars:100}]},async(key,_schema,values)=>{
+    const sizing=JSON.parse(values.sizing),attempt=(calls.get(key)??0)+1;calls.set(key,attempt);
+    if(attempt===1)return {...(key==='section'?{title:'Section'}:{}),paragraphs:[{text:'Fato completo. '.repeat(10).trim(),evidenceIds:['e1']}]};
+    assert.equal(sizing.maxChars,100);
+    assert.equal(key==='intro'?sizing.introChars:sizing.currentSection.budgetChars,sizing.targetChars,
+      'the saved prompt must not ask for the old, larger target during a measured revision');
+    assert.equal(sizing.outputParagraphs.maxTotalChars,100);
+    assert.equal(sizing.revisionFeedback.targetTotalChars,sizing.targetChars);
+    assert.ok(sizing.targetChars<100);
+    return {...(key==='section'?{title:'Section'}:{}),paragraphs:[{text:'x'.repeat(99)+'.',evidenceIds:['e1']}]};
+  });
+  assert.deepEqual([...calls.values()],[2,2]);
+});
+
+test('intro revision validates against the hard ceiling, not its reduced writing target',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'reporter-intro-revision-'));
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({paragraphs:[{text:'x'.repeat(74)+'.',evidenceIds:['e1']}]})}}]});
+  try{
+    const response=await executePipelineStep({pipeline:pipelineRevision(defaultPipelineDefinition()),key:'intro',
+      schema:articlePartSchema('intro',100),variables:{...variables,sizing:JSON.stringify({introChars:50,targetChars:50,maxChars:100})},
+      directory,signal:new AbortController().signal,trace:async()=>{},deferWritingRevision:true});
+    assert.equal(response.needsRevision,false);
+  }finally{globalThis.fetch=original;await rm(directory,{recursive:true,force:true});}
+});
+
 test('a paraphrased quotation is revised within its part and an unsupported revision stays blocked',async()=>{
   const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};
   const evidence=new Map([['e1','The source confirms this exact statement.']]);

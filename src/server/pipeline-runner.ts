@@ -121,6 +121,10 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
       // and safer per-paragraph targets. Source and preceding prose stay unchanged.
       requested={...values,sizing:JSON.stringify({...sizing,
         targetChars:targetTotalChars,targetWords:Math.floor(targetTotalChars/Math.max(1,actual.characters/Math.max(1,actual.words))),
+        // Saved templates also reference these targets. Leaving the original
+        // allocation here contradicted the measured revision target above.
+        ...(key==='intro'?{introChars:targetTotalChars}
+          :{currentSection:{...sizing.currentSection,budgetChars:targetTotalChars}}),
         outputParagraphs:{...sizing.outputParagraphs,targetCharsEach:Math.floor(targetTotalChars/count),
           targetWordsEach:Math.max(1,Math.floor(targetTotalChars/count/Math.max(1,actual.characters/Math.max(1,actual.words))))},
         revisionFeedback:{scope:'current_part',attempt:revision,maxAttempts:2,violation,actualCharacters:paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0),
@@ -173,7 +177,7 @@ export async function executePipelineStep(input: {
       : input.key === 'assist' ? { validation: 'article-assist-scope-quotes-and-size-v1' } : {}) });
   const cacheKey = 'pipeline-'+hash;
   const sizing = JSON.parse(input.variables.sizing || '{}');
-  const budget = input.key === 'intro' ? sizing.introChars : input.key === 'section' ? sizing.currentSection?.maxChars??sizing.currentSection?.budgetChars
+  const budget = input.key === 'intro' ? sizing.maxChars??sizing.introChars : input.key === 'section' ? sizing.currentSection?.maxChars??sizing.currentSection?.budgetChars
     : input.key === 'article' ? sizing.maxChars : undefined;
   const valid = (value: unknown) => validPipelineOutput(input.key,value,input.schema,budget,sizing.headings)
     && !writingContractIssue(input.key, value, input.writingContract, sizing.headings)
