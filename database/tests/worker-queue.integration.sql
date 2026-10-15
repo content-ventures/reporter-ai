@@ -103,31 +103,24 @@ SELECT pg_temp.assert_true(NOT has_table_privilege('reporter_worker','public.rep
 \echo PASS queue status, stall window and drain gate without worker heartbeats
 \echo PASS fenced transcript chunks resume across invocations and yields keep attempts
 
-INSERT INTO public.reporter_editorial_workspaces(portal_id,revision,checkpoint)
-  VALUES('00000000-0000-0000-0000-000000000101',1,'{}'::jsonb) ON CONFLICT(portal_id) DO NOTHING;
-UPDATE public.reporter_editorial_workspaces SET checkpoint=checkpoint||jsonb_build_object(
-  'jobs',jsonb_build_object('queue-test',jsonb_build_object('availableAt',0)),
-  'state',coalesce(checkpoint->'state','{}'::jsonb)||jsonb_build_object('runFolds',
-    coalesce(checkpoint->'state'->'runFolds','{}'::jsonb)||jsonb_build_object('queue-test',jsonb_build_object('run',jsonb_build_object('status','queued')))))
-  WHERE portal_id='00000000-0000-0000-0000-000000000101';
+UPDATE public.reporter_ed_runs SET available_at=clock_timestamp()+interval '1 day';
 SET SESSION AUTHORIZATION reporter_runtime;
 SELECT set_config('app.access_mode','user',true),set_config('app.module_key','reporter_ai',true),
   set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',true),
   set_config('app.portal_id','00000000-0000-0000-0000-000000000101',true),
-  set_config('app.user_id','00000000-0000-0000-0000-000000000031',true);
+  set_config('app.user_id','00000000-0000-0000-0000-000000000031',true),
+  set_config('app.editorial_permission','reporter.edit',true);
+SELECT pg_temp.assert_true(public.reporter_queue_status('editorial')='{"pending":false,"stalled":false}'::jsonb,'no claimable editorial run');
+SELECT public.reporter_ed_commit(jsonb_build_object(
+  'productions',jsonb_build_array(jsonb_build_object('id','queue-production','doc',jsonb_build_object('id','queue-production'),'sourceIds','[]'::jsonb,'archived',false)),
+  'runs',jsonb_build_array(jsonb_build_object('id','queue-run','productionId','queue-production','status','queued','availableAt',0,'attempts',0,
+    'job',jsonb_build_object('kind','article.draft'),'fold',jsonb_build_object('seq',1)))));
 SELECT pg_temp.assert_true(public.reporter_queue_status('editorial')='{"pending":true,"stalled":true}'::jsonb,
-  'an editorial job queued long ago reads as stalled');
+  'an editorial run queued long ago reads as stalled');
 RESET SESSION AUTHORIZATION;
-DO $$ BEGIN
-  UPDATE public.reporter_editorial_workspaces SET checkpoint=jsonb_set(checkpoint,'{jobs,queue-test,lease}',
-    jsonb_build_object('owner','queue-test','fence','queue-test','until',extract(epoch FROM clock_timestamp())*1000+60000))
-    WHERE portal_id='00000000-0000-0000-0000-000000000101';
-END $$;
+UPDATE public.reporter_ed_runs SET lease_owner='queue-test',lease_until=clock_timestamp()+interval '1 minute',lease_fence='queue-test'
+  WHERE run_id='queue-run';
 SET SESSION AUTHORIZATION reporter_runtime;
-SELECT set_config('app.access_mode','user',true),set_config('app.module_key','reporter_ai',true),
-  set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',true),
-  set_config('app.portal_id','00000000-0000-0000-0000-000000000101',true),
-  set_config('app.user_id','00000000-0000-0000-0000-000000000031',true);
 SELECT pg_temp.assert_true(public.reporter_queue_status('editorial')='{"pending":false,"stalled":false}'::jsonb,
   'a live editorial lease is neither pending nor stalled');
 RESET SESSION AUTHORIZATION;

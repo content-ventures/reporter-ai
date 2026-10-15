@@ -88,7 +88,7 @@ COMMIT;`);
 
 function queuePasses(output) {
   const passes = output.split("\n").filter(line => line.startsWith("PASS "));
-  if (passes.length !== 3) throw new Error("Not all worker queue integration groups completed");
+  if (passes.length !== 3) throw new Error("Not all queue and editorial-row integration groups completed");
   return passes.join("\n");
 }
 
@@ -171,6 +171,7 @@ export async function verifyFreshBootstrap(source, baseline) {
     run(await readFile(resolve(root, "database/tests/editorial.integration.sql"), "utf8"));
     console.log(run(await readFile(resolve(root, "database/tests/editorial-polling.integration.sql"), "utf8")).split('\n').filter(line => line.startsWith('PASS ')).join('\n'));
     console.log(queuePasses(run(await readFile(resolve(root, "database/tests/worker-queue.integration.sql"), "utf8"))));
+    console.log(queuePasses(run(await readFile(resolve(root, "database/tests/editorial-rows.integration.sql"), "utf8"))));
     await verifyCatalog(run, baseline);
     console.log("PASS fresh official-entrypoint bootstrap and PostgreSQL integration suite");
     await verifyConcurrency(id);
@@ -211,5 +212,6 @@ export async function runIntegration() {
   if (flowChecks.length !== 4) throw new Error("Not all local-flow integration groups completed");
   console.log(sql("reporter_admin", await readFile(resolve(root, "database/tests/editorial.integration.sql"), "utf8")).split("\n").filter(line => line.startsWith("PASS ")).join("\n"));
   console.log(queuePasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/worker-queue.integration.sql"), "utf8"))));
+  console.log(queuePasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/editorial-rows.integration.sql"), "utf8"))));
   await verifyFreshBootstrap(source, baseline);
 }
