@@ -1,57 +1,53 @@
-'use client';
+"use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  Accordion, Badge, Button, ButtonGroup, ConfirmDialog, DescriptionList, ErrorState, Field, FieldGroup, List, ListItem,
-  MetaList, NumberField, PageHeader, PageStack, Panel, Section, Select, SplitLayout, SwitchRow,
-  Tabs, Textarea, Timeline, toast, type TimelineEntry,
+  Accordion, Alert, Badge, Breadcrumb, Button, ButtonGroup, ConfirmDialog, DescriptionList, EmptyState, ErrorState, Field, FieldGroup,
+  MetaList, PageHeader, PageStack, Panel, Section, Select, Tabs, Timeline, toast,
 } from '@content-ventures/design-system/v3';
 import { RotateCw, Save } from '@content-ventures/design-system/v3/icons';
-import { PIPELINE_MODELS, PIPELINE_SCHEMAS, PIPELINE_STEP_KEYS, PIPELINE_STEP_LABELS, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, pipelineModelProvider, pipelineModelReasons, pipelineTokenLimit, TEXT_PROVIDER_LABELS, withArticleAssist } from '@/domain/pipeline';
+import { PIPELINE_STEP_KEYS, PIPELINE_STEP_LABELS, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, withArticleAssist } from '@/domain/pipeline';
 import type { PipelineDefinition, PipelineStepKey, PipelineView } from '@/domain/pipeline';
 import { useRuntime } from '@/state';
-import { useLeaveGuard } from '@/ui/shell';
+import { useBreadcrumb, useLeaveGuard } from '@/ui/shell';
+import { useMediaQuery } from '@/ui/use-media-query';
+import { PipelineCatalog, promptChanged, type PromptKey } from './pipeline-catalog';
+import { PipelineWorkers } from './pipeline-workers';
+import { PIPELINE_WORKERS, type PipelineWorkerKey } from '@/domain/pipeline-workers';
+import { PipelineEditor } from './pipeline-editor';
 
-type Tab = 'system' | PipelineStepKey;
-const TAB_LABELS = { material: 'Material',facts: 'Fonte',outline: 'Outline',quotes: 'Evidências',intro: 'Introdução',section: 'Seções',article: 'Artigo completo',assist: 'Assistente',images: 'Imagens',carousel: 'Carrossel' };
-const TAB_ITEMS = [{ value: 'system' as const,label: 'Sistema' },...PIPELINE_STEP_KEYS.map(value => ({ value,label: TAB_LABELS[value] }))];
-const modelOptions = PIPELINE_MODELS.map(value => ({ value,label: pipelineModelLabel(value) }));
-const VARIABLE_LABELS = {
-  source: 'Fonte autorizada com ids de evidência',brief: 'Pauta e número de seções',sizing: 'Orçamentos e limite de caracteres',
-  outline: 'Estrutura proposta ou revisada',section: 'Seção atual ou ação e alvos do assistente',history: 'Texto realmente escrito até agora',
-  futureSections: 'Seções ainda não redigidas',layouts: 'Slots e limites do modelo visual',approvedArticle: 'Versão exata do artigo aprovado',
-};
-const RUN_STATUS: Record<string,string> = { completed: 'Concluída',failed: 'Falhou',cancelled: 'Cancelada',running: 'Em andamento',queued: 'Na fila' };
-
-function orchestration(definition: PipelineDefinition): TimelineEntry[] {
-  const titles = [
-    ['Arquivo e transcrição', 'Groq Whisper; arquivos de texto são importados.'],
-    ['Identificar tema e participantes', 'Título interno e apresentações com evidência textual. Não identifica vozes; a pessoa confirma os dados.'],
-    ['Preparar fonte', 'O prompt de fontes longas é executado somente quando precisa dividir o material.'],
-    ['Criar outline', 'Pauta e evidências da transcrição.'],
-    ...(definition.curateQuotes ? [['Selecionar evidências e citações', 'Curadoria por parte, sem inventar falas.']] : []),
-    ['Revisar estrutura', 'Decisão da pessoa na interface de criação.'],
-    ...(definition.articleMode === 'sequential'
-      ? [['Escrever introdução', 'Até três parágrafos.'], ['Escrever cada seção', 'Repete conforme a pauta; recebe o texto anterior e as seções futuras.']]
-      : [['Escrever artigo completo', 'Uma chamada com a estrutura revisada; no máximo uma revisão com a contagem real para buscar a meta superior.']]),
-    ['Validar saída', 'JSON, estrutura, 2.500–4.000 caracteres, 500–800 palavras e ao menos duas citações literais distintas, conferidas nas evidências. Não substitui revisão factual humana.'],
-    ['Buscar imagens', 'A IA planeja capa e até duas fotos no corpo; o motor busca no Pixabay e guarda os originais de pelo menos 2400 × 1350 px. Fotos são ilustrativas e precisam de revisão. Sem acesso ao original, preserva o artigo e informa o impedimento.'],
-    ['Guardar citações', 'Falas literais usadas no artigo entram no banco com sua versão da transcrição. Autoria e relevância precisam de conferência editorial.'],
-    ['Editar com o assistente', 'Encurtar, reescrever e pedir ajustes: propostas validadas, sem alterar o rascunho até você aceitar.'],
-    ['Revisar e aprovar artigo', 'Aprovação manual de uma versão exata.'],
-    ['Escrever carrossel', 'Somente o artigo aprovado e os slots do modelo visual.'],
-  ];
-  return titles.map(([title,description],index) => ({ id: String(index),title,description,state: 'upcoming' }));
-}
+const RUN_STATUS: Record<string, string> = { completed: 'Concluída', failed: 'Falhou', cancelled: 'Cancelada', running: 'Em andamento', queued: 'Na fila' };
+const savedDate = (date: string | null) => date ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(date)) : 'Configuração inicial';
+const PAGE_TABS = { workers: 'Workers', prompts: 'Todos os prompts', history: 'Histórico', runs: 'Execuções' };
+type PageTab = keyof typeof PAGE_TABS;
 
 export function PipelineScreen() {
   const { runtime,error: runtimeError } = useRuntime();
   const port = runtime?.pipeline;
   const router = useRouter();
+  const narrow = useMediaQuery('(max-width: 640px)');
   const [view,setView] = useState<PipelineView>();
   const [draft,setDraft] = useState<PipelineDefinition>();
-  const [tab,setTab] = useState<Tab>('outline');
+  const [tab,setTab] = useState<PromptKey>('outline');
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const pageTab: PageTab = requestedTab && Object.hasOwn(PAGE_TABS, requestedTab) ? requestedTab as PageTab : 'workers';
+  const currentWorker = pageTab === 'workers' ? PIPELINE_WORKERS.find(item => item.key === searchParams.get('worker')) : undefined;
+  const worker = currentWorker?.key;
+  function navigate(nextTab: PageTab, nextWorker?: PipelineWorkerKey) {
+    const query = new URLSearchParams(window.location.search);
+    query.delete('tab'); query.delete('worker');
+    if (nextTab !== 'workers') query.set('tab', nextTab);
+    if (nextWorker) query.set('worker', nextWorker);
+    const href = query.size ? `/config?${query}` : '/config';
+    if (href !== `${window.location.pathname}${window.location.search}`) window.history.pushState(null, '', href);
+  }
+  useBreadcrumb(currentWorker
+    ? [{ label: 'Prompts', href: '/config' }, { label: currentWorker.title }]
+    : pageTab !== 'workers' ? [{ label: 'Prompts', href: '/config' }, { label: PAGE_TABS[pageTab] }] : [{ label: 'Prompts' }]);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<'active' | string>();
   const [failure,setFailure] = useState<string>();
   const [loading,setLoading] = useState(false);
   const [saving,setSaving] = useState(false);
@@ -85,7 +81,11 @@ export function PipelineScreen() {
     },3000);
     return () => { live = false; window.clearInterval(timer); };
   },[port]);
-  useLeaveGuard(dirty || saving,href => setExitTo(href));
+  useLeaveGuard(dirty || saving, href => {
+    // Internal tabs and breadcrumbs keep this screen mounted, including its draft.
+    if (new URL(href, window.location.origin).pathname === '/config') router.push(href);
+    else setExitTo(href);
+  });
   useEffect(() => {
     if (!dirty && !saving) return;
     const guard = (event: BeforeUnloadEvent) => { if (!departing.current) event.preventDefault(); };
@@ -109,71 +109,74 @@ export function PipelineScreen() {
     if (tab === 'system') return;
     setDraft(previous => previous ? { ...previous,steps: { ...previous.steps,[tab]: { ...previous.steps[tab],...patch } } } : previous);
   };
-  if (runtimeError || (failure && !view)) return <ErrorState heading="h1" title="Não foi possível abrir a configuração" description={failure ?? runtimeError?.message} onRetry={() => void load()} size="page" />;
-  if (runtime && !port) return <ErrorState heading="h1" title="Configuração disponível no motor conectado" description="Esta sessão usa a antiga simulação do front-end." size="page" />;
-  if (!view || !draft) return <PageStack><PageHeader title="Engenharia de prompts" /><Panel><Section title="Configuração"><List label="Carregamento"><ListItem title={loading ? 'Carregando prompts do servidor…' : 'Conectando ao motor…'} /></List></Section></Panel></PageStack>;
+  if (runtimeError || (failure && !view)) return <ErrorState heading="h1" title="Não foi possível abrir os prompts" description={failure ?? runtimeError?.message} onRetry={() => void load()} size="page" />;
+  if (runtime && !port) return <ErrorState heading="h1" title="Prompts disponíveis no motor conectado" description="Esta sessão usa a antiga simulação do front-end." size="page" />;
+  if (!view || !draft) return <PageStack><PageHeader title="Prompts" /><Panel><Section title="Carregando prompts"><DescriptionList items={[]} loading /></Section></Panel></PageStack>;
 
-  const selected = tab === 'system' ? undefined : draft.steps[tab];
-  const inactive = tab === 'quotes' && !draft.curateQuotes || tab === 'article' && draft.articleMode === 'sequential'
-    || (tab === 'intro' || tab === 'section') && draft.articleMode === 'single';
-  const schema = tab === 'system' ? undefined : tab === 'carousel'
-    ? 'O schema é calculado com os layouts da produção: slides com chaves numéricas, slots exatos do modelo e sourceBlockIds do artigo aprovado. Os limites de cada slot fazem parte desse schema.'
-    : JSON.stringify(PIPELINE_SCHEMAS[tab],null,2);
-  return (
-    <>
-      <PageStack>
-        <PageHeader title="Engenharia de prompts" description="Salve para ativar nas próximas gerações. Execuções em andamento mantêm a revisão com que começaram."
-          status={<Badge tone={dirty ? 'amber' : 'gray'}>{dirty ? 'Alterações não ativadas' : `Revisão ${view.active.revision} ativa`}</Badge>}
-          actions={<ButtonGroup label="Configuração"><Button variant="primary" icon={Save} loading={saving} disabled={!dirty || Boolean(templateError)} onClick={() => void save()}>Salvar e ativar</Button><Button icon={RotateCw} disabled={saving || loading || dirty} onClick={() => void load()}>Recarregar</Button></ButtonGroup>} />
-        <SplitLayout asideLabel="Variáveis e contrato" main={
-          <>
-            <Panel padding="lg">
-              <Section title="Execução">
-                <FieldGroup label="Orquestração" columns={1} error={failure}>
-                  <Field label="Redação do artigo">{props => <Select {...props} value={draft.articleMode} disabled={saving} onChange={value => update({ articleMode: value as PipelineDefinition['articleMode'] })} options={[{ value: 'sequential',label: 'Por introdução e seções (base Make)' },{ value: 'single',label: 'Artigo completo em uma chamada' }]} />}</Field>
-                  <SwitchRow label="Fazer curadoria antes de revisar o outline" checked={draft.curateQuotes} onCheckedChange={curateQuotes => update({ curateQuotes })} disabled={saving} />
-                  <Accordion items={[{ id: 'sequence',title: dirty ? 'Ver sequência do rascunho' : 'Ver sequência ativa',content: <Timeline variant="dots" label="Sequência do fluxo" items={orchestration(draft)} /> }]} />
-                </FieldGroup>
-              </Section>
-              <Section title="Prompts">
-                <Tabs<Tab> label="Etapas da engenharia de prompts" items={TAB_ITEMS} value={tab} onChange={setTab} />
-                {inactive && <MetaList items={['Etapa não executada no modo selecionado. O prompt fica salvo para quando ela for ativada.']} />}
-                <FieldGroup label={tab === 'system' ? 'Mensagem compartilhada' : PIPELINE_STEP_LABELS[tab]} columns={1} error={templateError}>
-                  {selected && <FieldGroup label={TEXT_PROVIDER_LABELS[pipelineModelProvider(selected.model)]} columns={3}>
-                    <Field label="Modelo" error={view.providers?.[pipelineModelProvider(selected.model)] === false ? 'Configure a chave deste provedor no servidor.' : undefined}>{props => <Select {...props} value={selected.model} options={modelOptions} disabled={saving} onChange={model => updateStep({ model: model as typeof selected.model, temperature: Math.min(selected.temperature, pipelineModelProvider(model) === 'anthropic' ? 1 : 2) })} />}</Field>
-                    {pipelineModelReasons(selected.model) ? <DescriptionList items={[{ label: 'Raciocínio',value: 'Baixo · sem temperatura' }]} /> : <Field label="Temperatura">{props => <NumberField id={props.id} aria-describedby={props.describedBy} invalid={props.invalid} value={selected.temperature} decimals={1} min={0} max={pipelineModelProvider(selected.model) === 'anthropic' ? 1 : 2} step={0.1} disabled={saving} onChange={value => { if (value !== null) updateStep({ temperature: value }); }} />}</Field>}
-                    <Field label="Máximo de tokens" hint={pipelineModelReasons(selected.model) ? 'Inclui o raciocínio e o texto produzido.' : undefined}>{props => <NumberField id={props.id} aria-describedby={props.describedBy} invalid={props.invalid} value={selected.maxTokens} min={512} max={pipelineTokenLimit(selected.model)} step={256} disabled={saving} onChange={value => { if (value !== null) updateStep({ maxTokens: value }); }} />}</Field>
-                  </FieldGroup>}
-                  <Field label={tab === 'system' ? 'Mensagem de sistema' : 'Prompt da etapa'} hint={tab === 'system' ? 'Enviada exatamente como escrita, sem prefixo oculto.' : 'As variáveis são substituídas pelos dados reais da produção; não há outro prompt editorial acrescentado.'}>
-                    {props => <Textarea id={props.id} aria-describedby={props.describedBy} invalid={props.invalid} rows={14} value={selected?.prompt ?? draft.systemPrompt} disabled={saving} maxLength={selected ? 20000 : 12000} onChange={event => selected ? updateStep({ prompt: event.target.value }) : update({ systemPrompt: event.target.value })} />}
-                  </Field>
-                  {schema && <Accordion items={[{ id: 'output',title: 'Ver contrato de saída',content: <Field label="Formato esperado pelo motor">{props => <Textarea id={props.id} readOnly rows={8} value={schema} />}</Field> }]} />}
-                </FieldGroup>
-              </Section>
-            </Panel>
-            <Panel padding="lg"><Section title="Revisões" meta={`${view.history.length} anteriores`}>
-              <FieldGroup label="Recuperar configuração" columns={1}>
-                <Field label="Revisão anterior">{props => <Select {...props} value={historyRevision} onChange={setHistoryRevision} options={[...view.history].reverse().map(revision => ({ value: String(revision.revision),label: `Revisão ${revision.revision} · #${revision.hash.slice(0,8)}` }))} disabled={!view.history.length || saving} placeholder="Selecione uma revisão" />}</Field>
-                <Button disabled={!historyRevision || saving} onClick={() => { const selected = view.history.find(revision => String(revision.revision) === historyRevision); if (selected) setDraft(structuredClone({ ...selected.definition,steps: { ...view.active.definition.steps,...selected.definition.steps } })); }}>Carregar como rascunho</Button>
-                {dirty && <Button disabled={saving} onClick={() => { setDraft(structuredClone(view.active.definition)); setFailure(undefined); }}>Descartar alterações</Button>}
-              </FieldGroup>
-            </Section></Panel>
-            <Panel padding="lg"><Section title="Execuções reais" meta="Revisão e chamadas usadas pelo worker">
-              {view.runs.length ? <Accordion items={view.runs.map(run => ({ id: run.runId,title: run.label,meta: `v${run.pipelineRevision} · ${RUN_STATUS[run.status] ?? run.status}`,content: <>
-                <MetaList items={[`Execução ${run.runId}`,`Configuração v${run.pipelineRevision} · #${run.pipelineHash.slice(0,8)}`]} />
-                <Timeline variant="dots" label="Chamadas da execução" items={run.calls.map(call => ({ id: call.hash,title: PIPELINE_STEP_LABELS[call.key]+(call.index === undefined ? '' : ` · ${call.index+1}`),
-                  description: `${call.model} · #${call.hash.slice(0,8)}${call.cached ? ' · checkpoint reutilizado' : ''}${call.errorCode ? ' · '+call.errorCode : ''}`,state: call.status === 'completed' ? 'done' : call.status === 'failed' ? 'blocked' : 'current',date: call.status === 'completed' ? 'Respondida' : call.status === 'failed' ? 'Falhou' : 'Aguardando resposta' }))} />
-              </> }))} /> : <List label="Execuções"><ListItem title="Nenhuma geração com a configuração versionada ainda." /></List>}
-            </Section></Panel>
-          </>
-        } aside={
-          <Panel>
-            <Section title="Variáveis"><List label="Variáveis dos prompts">{Object.entries(VARIABLE_LABELS).map(([key,description]) => <ListItem key={key} title={`{{${key}}}`} description={description} />)}</List></Section>
-            <Section title="Contrato do motor"><DescriptionList labelWidth={100} items={[{ label: 'Fonte',value: 'Transcrição autorizada' },{ label: 'Corpo',value: '2.500–4.000 caracteres com espaços · 500–800 palavras' },{ label: 'Meta',value: '3.900 caracteres · cerca de 700 palavras, sem repetição' },{ label: 'Citações',value: 'Mínimo de 2 distintas, literais e referenciadas. Sem atribuir vozes não identificadas.' },{ label: 'Validação',value: 'Obrigatória antes de salvar. Alterar o prompt não desativa essas regras.' },{ label: 'Aprovação',value: 'Manual, por versão' },{ label: 'Carrossel',value: 'Somente artigo aprovado' },{ label: 'Chave da API',value: 'Somente no servidor' }]} /></Section>
-          </Panel>
-        } />
-      </PageStack>
-      <ConfirmDialog open={Boolean(exitTo)} onClose={() => setExitTo(undefined)} title="Sair sem ativar os prompts?" description="As alterações desta página ainda não foram salvas. A configuração ativa continua a mesma." confirmLabel="Descartar e sair" cancelLabel="Continuar editando" tone="danger" onConfirm={() => { departing.current = true; const href = exitTo; setExitTo(undefined); if (href) router.push(href); }} />
-    </>
-  );
+  const changed = (['system', ...PIPELINE_STEP_KEYS] as PromptKey[]).filter(key => promptChanged(key, draft, view.active.definition));
+  const flowChanged = draft.articleMode !== view.active.definition.articleMode || draft.curateQuotes !== view.active.definition.curateQuotes;
+  function reset(target: string) {
+    if (!view) return;
+    const definition = target === 'active' ? view.active.definition : view.history.find(revision => String(revision.revision) === target)?.definition;
+    if (definition) {
+      setDraft(withArticleAssist(structuredClone({ ...definition, steps: { ...view.active.definition.steps, ...definition.steps } })));
+      setFailure(undefined);
+      if (target !== 'active') toast(`Revisão ${target} carregada para edição`, { description: 'Salve e ative para usá-la nas próximas gerações.' });
+    }
+    setResetTarget(undefined);
+  }
+  return <>
+    <PageStack>
+      {narrow && currentWorker && <Breadcrumb variant="compact" items={[{ label: 'Prompts', href: '/config' }, { label: currentWorker.title }]} />}
+      <PageHeader title={currentWorker?.title ?? 'Prompts'}
+        description={currentWorker?.description ?? 'Gerencie os workers, edite seus prompts e acompanhe as execuções.'}
+        status={<Badge tone={dirty ? 'amber' : 'gray'}>{dirty ? 'Alterações não ativadas' : `Revisão ${view.active.revision} ativa`}</Badge>}
+        actions={currentWorker ? <ButtonGroup label="Configuração">
+          {dirty && <Button disabled={saving} onClick={() => setResetTarget('active')}>Descartar alterações</Button>}
+          <Button icon={RotateCw} disabled={saving || loading || dirty} onClick={() => void load()}>Recarregar</Button>
+          <Button variant="primary" icon={Save} loading={saving} disabled={!dirty || Boolean(templateError)} onClick={() => void save()}>Salvar e ativar</Button>
+        </ButtonGroup> : undefined} />
+      {failure && <Alert tone="danger" title="Não foi possível salvar">{failure}</Alert>}
+      {templateError && <Alert tone="danger" title="Revise as variáveis do prompt">{templateError}</Alert>}
+      <Tabs label="Gerenciar prompts" value={pageTab} onChange={value => navigate(value)} items={[
+        { value: 'workers', label: 'Workers', count: PIPELINE_WORKERS.length }, { value: 'prompts', label: 'Todos os prompts', count: PIPELINE_STEP_KEYS.length + 1 },
+        { value: 'history', label: 'Histórico', count: view.history.length }, { value: 'runs', label: 'Execuções', count: view.runs.length },
+      ]} />
+      {dirty && <MetaList items={[`${changed.length} ${changed.length === 1 ? 'prompt alterado' : 'prompts alterados'}`, ...(flowChanged ? ['Fluxo alterado'] : [])]} />}
+      {pageTab === 'prompts' && <PipelineCatalog draft={draft} active={view.active.definition} onEdit={key => { setTab(key); setEditorOpen(true); }} />}
+      {pageTab === 'workers' && <PipelineWorkers worker={worker} onSelect={value => navigate('workers', value)} draft={draft} active={view.active.definition}
+        saving={saving} onUpdate={update} onEdit={key => { setTab(key); setEditorOpen(true); }} />}
+      {pageTab === 'history' && <Panel><Section title="Histórico de configurações" meta={`Revisão ${view.active.revision} ativa`}>
+        <PageStack>
+          <DescriptionList items={[{ label: 'Ativada em', value: savedDate(view.active.savedAt) }]} />
+          {view.history.length ? <FieldGroup label="Recuperar uma revisão" hint="Carregar uma revisão não a ativa. Você pode editar e depois salvar como uma nova revisão." columns={1}>
+            <Field label="Revisão anterior">{props => <Select {...props} value={historyRevision} onChange={setHistoryRevision}
+              options={[...view.history].reverse().map(revision => ({ value: String(revision.revision), label: `Revisão ${revision.revision} · ${savedDate(revision.savedAt)}` }))}
+              disabled={saving} placeholder="Selecione uma revisão" />}</Field>
+            <Button disabled={!historyRevision || saving} onClick={() => dirty ? setResetTarget(historyRevision) : reset(historyRevision)}>Carregar para edição</Button>
+          </FieldGroup> : <EmptyState size="inline" title="Nenhuma revisão anterior" />}
+        </PageStack>
+      </Section></Panel>}
+      {pageTab === 'runs' && <Panel><Section title="Execuções da IA">
+        {view.runs.length ? <Accordion items={view.runs.map(run => ({ id: run.runId, title: run.label,
+          meta: `Revisão ${run.pipelineRevision} · ${RUN_STATUS[run.status] ?? run.status}`, content: <PageStack>
+            <Timeline variant="dots" label="Etapas executadas" items={run.calls.map((call, index) => ({ id: `${call.hash}-${index}`,
+              title: PIPELINE_STEP_LABELS[call.key] + (call.index === undefined ? '' : ` · ${call.index + 1}`),
+              description: `${pipelineModelLabel(call.model)}${call.cached ? ' · resultado reutilizado' : ''}${call.errorCode ? ' · ' + call.errorCode : ''}`,
+              state: call.status === 'completed' ? 'done' : call.status === 'failed' ? 'blocked' : 'current',
+              date: call.status === 'completed' ? 'Respondida' : call.status === 'failed' ? 'Falhou' : 'Aguardando resposta',
+            }))} />
+            <Accordion items={[{ id: 'technical', title: 'Identificadores técnicos', content: <DescriptionList items={[
+              { label: 'Execução', value: run.runId }, { label: 'Configuração', value: run.pipelineHash },
+            ]} /> }]} />
+          </PageStack> }))} /> : <EmptyState size="inline" title="Nenhuma execução registrada" />}
+      </Section></Panel>}
+    </PageStack>
+    {editorOpen && <PipelineEditor promptKey={tab} draft={draft} view={view} saving={saving} dirty={dirty} invalid={Boolean(templateError)} error={templateError ?? failure}
+      onClose={() => setEditorOpen(false)} onUpdate={update} onUpdateStep={updateStep} onSave={() => void save()} />}
+    <ConfirmDialog open={Boolean(resetTarget)} onClose={() => setResetTarget(undefined)} title={resetTarget === 'active' ? 'Descartar as alterações?' : 'Substituir as alterações pela revisão selecionada?'}
+      description="As alterações ainda não ativadas serão descartadas. A configuração ativa permanece a mesma." confirmLabel={resetTarget === 'active' ? 'Descartar alterações' : 'Carregar revisão'} cancelLabel="Continuar editando" tone="danger"
+      onConfirm={() => { if (resetTarget) reset(resetTarget); }} />
+    <ConfirmDialog open={Boolean(exitTo)} onClose={() => setExitTo(undefined)} title="Sair sem ativar os prompts?" description="As alterações desta página ainda não foram salvas. A configuração ativa continua a mesma." confirmLabel="Descartar e sair" cancelLabel="Continuar editando" tone="danger" onConfirm={() => { departing.current = true; const href = exitTo; setExitTo(undefined); if (href) router.push(href); }} />
+  </>;
 }

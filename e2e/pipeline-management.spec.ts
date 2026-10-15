@@ -1,0 +1,115 @@
+import { expect, test } from '@playwright/test';
+import { defaultPipelineDefinition, pipelineRevision, type PipelineDefinition, type PipelineView } from '../src/domain/pipeline.ts';
+import { emptyEditorialCheckpoint } from '../src/runtime/editorial-engine.ts';
+import { VIEWPORTS, expectHeadingOutline, expectNoHorizontalOverflow, watchErrors } from './support';
+
+for (const viewport of VIEWPORTS) {
+  test.describe(`prompt management at ${viewport.name}`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height },
+      ...(viewport.width < 768 ? { isMobile: true, hasTouch: true } : {}) });
+
+    test('searches, edits, validates, retries activation and restores history as a draft', async ({ page }) => {
+      const errors = watchErrors(page);
+      const definition = defaultPipelineDefinition();
+      const previous = structuredClone(definition);
+      previous.systemPrompt += '\nRevisão anterior de teste.';
+      let view: PipelineView = { active: pipelineRevision(definition, 2), history: [pipelineRevision(previous, 1)], runs: [], providers: { openai: true, groq: true, anthropic: true } };
+      let saves = 0;
+      const checkpoint = emptyEditorialCheckpoint();
+      await page.route('**/api/reporter/pipeline', route => route.fulfill({ json: view }));
+      await page.route('**/api/reporter/workspace', async route => {
+        if (route.request().method() === 'POST') {
+          const payload = route.request().postDataJSON();
+          expect(payload.method).toBe('pipeline.save');
+          expect(payload.args[1]).toBe(2);
+          saves++;
+          if (saves === 1) return route.fulfill({ json: { ok: false, refusal: { code: 'conflict', message: 'Falha simulada; tente novamente.' } } });
+          view = { ...view, active: pipelineRevision(payload.args[0] as PipelineDefinition, 3), history: [...view.history, view.active] };
+          return route.fulfill({ json: { ok: true, value: view } });
+        }
+        return route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } });
+      });
+      await page.goto('/config');
+      await expect(page.getByRole('button', { name: 'Recarregar', exact: true })).toHaveCount(0);
+      await page.screenshot({ path: test.info().outputPath('workers.png'), fullPage: true });
+      await page.getByRole('button', { name: 'Abrir worker Gerar artigo' }).click();
+      await expect(page.getByRole('heading', { name: 'Gerar artigo', level: 1 })).toBeVisible();
+      await expect(page).toHaveURL(/\?worker=article$/);
+      await expect(page.getByRole('tab', { name: /^Workers/ })).toBeVisible();
+      await page.goBack();
+      await expect(page.getByRole('heading', { name: 'Prompts', level: 1 })).toBeVisible();
+      await page.goForward();
+      await expect(page.getByRole('heading', { name: 'Gerar artigo', level: 1 })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Recarregar', exact: true })).toBeVisible();
+      const flow = page.getByRole('list', { name: 'Fluxo do worker Gerar artigo' });
+      await expect(flow.getByTestId('worker-node-facts')).toBeVisible();
+      await expect(flow.getByTestId('worker-node-images')).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      await page.screenshot({ path: test.info().outputPath('article-flow.png'), fullPage: true });
+      await flow.getByRole('button', { name: 'Editar Estrutura do artigo' }).click();
+      await expect(page.getByRole('dialog', { name: 'Estrutura do artigo', exact: true })).toBeVisible();
+      await page.getByRole('dialog', { name: 'Estrutura do artigo', exact: true }).getByRole('button', { name: 'Fechar edição' }).click();
+      await page.getByRole('navigation', { name: 'Trilha de navegação' }).getByRole('link', { name: 'Prompts', exact: true }).click();
+      await page.getByRole('button', { name: 'Abrir worker Gerar carrossel' }).click();
+      await expect(page.getByTestId('worker-node-carousel')).toBeVisible();
+      await expect(page.getByTestId('worker-node-outline')).toHaveCount(0);
+      await expectNoHorizontalOverflow(page);
+      await page.getByRole('navigation', { name: 'Trilha de navegação' }).getByRole('link', { name: 'Prompts', exact: true }).click();
+      await page.getByRole('tab', { name: /^Todos os prompts/ }).click();
+      await expect(page.getByRole('heading', { name: 'Prompts', level: 1 })).toBeVisible();
+      await expect(page).toHaveURL(/\?tab=prompts$/);
+      const search = page.getByRole('searchbox', { name: 'Buscar prompts' });
+      await expect(search).toBeVisible();
+      await expectHeadingOutline(page);
+      await expectNoHorizontalOverflow(page);
+      await page.screenshot({ path: test.info().outputPath('prompts.png'), fullPage: true });
+      await search.fill('nao-existe');
+      await expect(page.getByText('Nenhum prompt encontrado', { exact: true })).toBeVisible();
+      await search.fill('estrutura');
+      await expect(page.getByRole('button', { name: /^Editar / })).toHaveCount(1);
+      await page.getByRole('button', { name: 'Editar Estrutura do artigo', exact: true }).click();
+      const editor = page.getByRole('dialog', { name: 'Estrutura do artigo', exact: true });
+      const prompt = editor.getByRole('textbox', { name: 'Instruções do prompt' });
+      await expect(prompt).toHaveValue(definition.steps.outline.prompt);
+      await prompt.fill('Sem variáveis');
+      await expect(editor.getByRole('button', { name: 'Salvar e ativar tudo', exact: true })).toBeDisabled();
+      const edited = definition.steps.outline.prompt + '\nUse linguagem clara.';
+      await prompt.fill(edited);
+      await editor.getByRole('button', { name: 'Fechar edição' }).click();
+      await page.getByRole('button', { name: 'Editar Estrutura do artigo', exact: true }).click();
+      await expect(prompt).toHaveValue(edited);
+      await expectNoHorizontalOverflow(page);
+      await page.screenshot({ path: test.info().outputPath('prompt-editor.png'), fullPage: true });
+      await editor.getByRole('button', { name: 'Salvar e ativar tudo', exact: true }).click();
+      await expect(editor.getByText('Falha simulada; tente novamente.')).toBeVisible();
+      await expect(editor.getByRole('button', { name: 'Salvar e ativar tudo', exact: true })).toBeEnabled();
+      await editor.getByRole('button', { name: 'Salvar e ativar tudo', exact: true }).click();
+      await expect(editor.getByText('Revisão 3 ativa', { exact: true })).toBeVisible();
+      expect(saves).toBe(2);
+      expect(view.active.definition.steps.outline.prompt).toBe(edited);
+      await editor.getByRole('button', { name: 'Fechar edição' }).click();
+      await page.getByRole('tab', { name: /^Histórico/ }).click();
+      await page.getByRole('combobox', { name: 'Revisão anterior' }).click();
+      await page.getByRole('option', { name: /^Revisão 1/ }).click();
+      await page.getByRole('button', { name: 'Carregar para edição' }).click();
+      await expect(page.getByText('Alterações não ativadas', { exact: true })).toBeVisible();
+      expect(saves).toBe(2);
+      await page.getByRole('tab', { name: /^Workers/ }).click();
+      await page.getByRole('button', { name: 'Abrir worker Gerar artigo' }).click();
+      await page.getByRole('navigation', { name: 'Trilha de navegação' }).getByRole('link', { name: 'Prompts', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Prompts', level: 1 })).toBeVisible();
+      await expect(page.getByText('Alterações não ativadas', { exact: true })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Sair sem ativar os prompts?' })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Abrir worker Gerar artigo' }).click();
+      await page.getByRole('button', { name: 'Descartar alterações', exact: true }).click();
+      const confirm = page.getByRole('dialog', { name: 'Descartar as alterações?', exact: true });
+      await confirm.getByRole('button', { name: 'Continuar editando' }).click();
+      await expect(confirm).not.toBeVisible();
+      await expect(page.getByText('Alterações não ativadas', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Descartar alterações', exact: true }).click();
+      await confirm.getByRole('button', { name: 'Descartar alterações', exact: true }).click();
+      await expect(page.getByText('Revisão 3 ativa', { exact: true }).first()).toBeVisible();
+      expect(errors).toEqual([]);
+    });
+  });
+}
