@@ -22,7 +22,10 @@ function ownerUrl() {
 }
 
 async function connect() {
-  const client = new Client({ connectionString: ownerUrl().toString(),application_name: 'reporter-ai-cloud-maintenance' });
+  const url = ownerUrl();
+  // .env.local may hold another environment's owner URL: name the target before touching it.
+  console.log(`Target database: ${url.hostname}/${url.pathname.slice(1)}`);
+  const client = new Client({ connectionString: url.toString(),application_name: 'reporter-ai-cloud-maintenance' });
   await client.connect();
   return client;
 }
