@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { randomBytes,randomUUID } from 'node:crypto';
-import { writeFile,mkdir } from 'node:fs/promises';
+import { createHash,randomBytes,randomUUID } from 'node:crypto';
+import { writeFile,mkdir,readFile,stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createReadStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import pg from 'pg';
 import { chromium,expect } from '@playwright/test';
@@ -31,7 +32,7 @@ async function account(label,roles){
   return {email,password,actor,name};
 }
 
-const browser=await chromium.launch({headless:true}),contexts=[];
+const browser=await chromium.launch({headless:true}),contexts=[];let activePage;
 try{
   const editor=await account('Editor',['editor']),context=await browser.newContext({viewport:{width:1440,height:1000}});
   contexts.push(context);
@@ -47,7 +48,7 @@ try{
     await route.fulfill({response,headers:resultHeaders});
     }catch{await route.abort().catch(()=>{});}
   });
-  const page=await context.newPage(),errors=[];
+  const page=await context.newPage(),errors=[];activePage=page;
   page.on('pageerror',error=>errors.push(error.name));
   page.on('response',response=>{if(response.url().includes('/api/reporter/')&&response.status()>=400)console.log('App API failure',new URL(response.url()).pathname,response.status());});
   await page.goto(origin+'/auth/sign-in');
@@ -56,6 +57,17 @@ try{
   await page.getByRole('button',{name:'Entrar',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Qual história vamos entregar hoje?'})).toBeVisible({timeout:60000});
   console.log('PASS actual Neon Auth login and isolated workspace authorization in browser.');
+  const configured=JSON.parse(await readFile(process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH,'utf8'));
+  const pipelineHash=await page.evaluate(async({configured,requestId})=>{
+    let settings=await (await fetch('/api/reporter/pipeline')).json();
+    if(configured){
+      const response=await fetch('/api/reporter/workspace',{method:'POST',headers:{'content-type':'application/json','x-reporter-client':'local'},body:JSON.stringify({method:'pipeline.save',args:[configured,settings.active.revision],requestId})});
+      const result=await response.json();if(!response.ok||!result.ok)throw new Error('Cannot load the production pipeline in acceptance.');
+      settings=await (await fetch('/api/reporter/pipeline')).json();
+    }
+    return settings.active.hash;
+  },{configured,requestId:randomUUID()});
+  console.log('PASS browser acceptance uses the configured production pipeline.');
   const results=[];
   const cases=process.env.REPORTER_ACCEPTANCE_BROWSER_CASES?.split(',')??['video','text','file'];
   for(const kind of cases){
@@ -87,10 +99,19 @@ try{
     await page.reload();await expect(page.getByRole('textbox',{name:'Texto do artigo'})).toBeVisible();
     const text=await page.getByRole('textbox',{name:'Texto do artigo'}).innerText();assert.ok(text.length>2000);
     await page.screenshot({path:join(directory,kind+'-article.png'),fullPage:true});
-    results.push({kind,productionId,characters:text.length});console.log('PASS browser source to completed article and reload',kind);
+    let source;
+    if(kind==='video'){
+      const rows=(await db.query("SELECT id,key,size,status FROM core.storage_objects WHERE owner_user_id=$1 AND purpose='reporter-source' ORDER BY created_at DESC LIMIT 1",[editor.actor])).rows;
+      assert.equal(rows.length,1);source=rows[0];
+      const expected=await stat(process.env.REPORTER_ACCEPTANCE_MEDIA_PATH);assert.equal(Number(source.size),expected.size);assert.equal(source.status,'completed');
+      const transcript=(await db.query('SELECT status,length(content) AS characters FROM public.reporter_transcripts WHERE source_object_id=$1',[source.id])).rows[0];
+      assert.equal(transcript.status,'ready');assert.ok(transcript.characters>40);source.transcriptCharacters=transcript.characters;
+      const hash=createHash('sha256');for await(const chunk of createReadStream(process.env.REPORTER_ACCEPTANCE_MEDIA_PATH))hash.update(chunk);source.sha256=hash.digest('hex');
+    }
+    results.push({kind,productionId,characters:text.length,...(source?{source}: {})});console.log('PASS browser source to completed article and reload',kind);
   }
   assert.deepEqual(errors,[],'Unexpected browser errors');
-  await writeFile(join(directory,'results.json'),JSON.stringify({branch:branchId,commit:process.env.REPORTER_ACCEPTANCE_COMMIT,results,passedAt:new Date().toISOString()},null,2),{mode:0o600});
+  await writeFile(join(directory,'results.json'),JSON.stringify({branch:branchId,commit:process.env.REPORTER_ACCEPTANCE_COMMIT,pipelineHash,results,passedAt:new Date().toISOString()},null,2),{mode:0o600});
   console.log('Browser acceptance evidence: '+join(directory,'results.json'));
-}catch(error){console.error('Browser acceptance failed: '+String(error.message).split('\n')[0].slice(0,180));process.exitCode=1;}
+}catch(error){await activePage?.screenshot({path:join(directory,'failure.png'),fullPage:true}).catch(()=>{});console.error('Browser acceptance failed: '+String(error.message).split('\n')[0].slice(0,180));process.exitCode=1;}
 finally{await Promise.allSettled(contexts.map(context=>context.unrouteAll({behavior:'ignoreErrors'})));await browser.close();await db.end();}
