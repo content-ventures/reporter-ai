@@ -1,6 +1,9 @@
 'use client';
 
-import { LiveRegion, Section, Segmented, SidebarAccount, useShell, type MenuSection } from '@content-ventures/design-system/v3';
+import { SidebarAccount, ThemeV3, useShell, type MenuSection } from '@content-ventures/design-system/v3';
+import { UserRound } from '@content-ventures/design-system/v3/icons';
+import { ACCOUNT_HREF } from '../routes';
+import { requestLeave } from './leave-guard';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { PersonAvatar } from '../person-avatar';
@@ -13,8 +16,8 @@ import { localRoleMenu, memberDetail, useActAs } from './act-as';
  */
 export function ShellAccount() {
   const router = useRouter();
+  const { closeNav } = useShell();
   const session = useActAs();
-  const { collapsed } = useShell();
   const { current, members, actAs } = session;
   if (!current) return null;
   const sections: MenuSection[] =
@@ -39,18 +42,12 @@ export function ShellAccount() {
     onSelect: () => { void authClient.signOut().finally(() => router.replace('/auth/sign-in')); },
   }] }];
   const profile = session.localProfiles.find(profile => profile.id === session.selectedProfile);
-  return <>
+  // Keep the account popover in the sidebar layer when the mobile drawer is open.
+  return <ThemeV3>
     <SidebarAccount name={current.name} src={current.avatarUrl}
       detail={profile ? `Perfil de teste: ${profile.label}` : memberDetail(current)}
-      sections={[...sections, ...localRoleMenu(session), ...cloudSections]} />
-    {session.localProfiles.length && !collapsed ? <Section meta={session.switchingRole ? 'Trocando perfil…' : 'Perfil de teste · local'}>
-      <Segmented label="Perfil de teste" size="sm" full value={session.selectedProfile ?? ''}
-        options={session.localProfiles.map(profile => ({ value: profile.id, label: profile.label }))}
-        onChange={id => {
-          const next = session.localProfiles.find(profile => profile.id === id);
-          if (next && next.id !== session.selectedProfile) void session.selectRole(next);
-        }} />
-      <LiveRegion message={session.switchingRole ? 'Trocando perfil de teste.' : profile ? `Perfil de teste ativo: ${profile.label}` : ''} />
-    </Section> : null}
-  </>;
+      sections={[{ items: [{ label: 'Meu perfil', icon: UserRound, onSelect: () => {
+        if (requestLeave(ACCOUNT_HREF)) { closeNav(); router.push(ACCOUNT_HREF); }
+      } }] }, ...sections, ...localRoleMenu(session), ...cloudSections]} />
+  </ThemeV3>;
 }

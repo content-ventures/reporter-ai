@@ -9,6 +9,7 @@ import { pieceKind, pieceKindBySlug } from '@/registries';
  */
 
 export const OVERVIEW_HREF = '/';
+export const ACCOUNT_HREF = '/account';
 export const PRODUCTIONS_HREF = '/productions';
 export const NEW_PRODUCTION_HREF = '/productions/new';
 export const WHATS_NEW_HREF = '/whats-new';

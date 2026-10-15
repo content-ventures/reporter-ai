@@ -7,6 +7,8 @@ import { useCallback, useSyncExternalStore } from 'react';
  * guarded: a private window or blocked storage just falls back to the default.
  */
 
+export const SIDEBAR_COLLAPSED_KEY = 'reporter:ui:sidebar-collapsed';
+
 const listeners = new Map<string, Set<() => void>>();
 const cache = new Map<string, boolean>();
 
