@@ -7,6 +7,10 @@ on:
         description: Validate the complete flow on an isolated Neon branch without publishing production
         type: boolean
         default: false
+      prepare_session:
+        description: Keep an expiring isolated Neon branch for real-file browser acceptance
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -30,6 +34,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      REPORTER_ACCEPTANCE_SESSION: ${{ inputs.prepare_session && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -40,7 +40,10 @@ export function workerMediaFailure(error: unknown): FlowError {
 }
 
 export async function installWorkerMedia(tool: MediaTool, body: Readable, expected: { size: number; sha256: string } = WORKER_MEDIA[tool]) {
-  const directory = await mkdtemp(join(tmpdir(), 'reporter-media-'));
+  // Neon mounts /tmp with noexec. Keep executable bytes in its exec-enabled
+  // /run tmpfs; media inputs and scratch data can still use /tmp.
+  const root = process.env.REPORTER_FUNCTION_RUNTIME === 'true' ? '/run' : tmpdir();
+  const directory = await mkdtemp(join(root, 'reporter-media-'));
   const destination = join(directory, tool), hash = createHash('sha256');
   let size = 0;
   try {

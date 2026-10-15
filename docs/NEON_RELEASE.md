@@ -35,6 +35,12 @@ Media downloads consume the S3 async-stream contract and retain exact size/hash
 verification. Readiness distinguishes object-storage access, missing objects,
 stream format, integrity, local filesystem and executable-launch failures with
 bounded error codes; release logs print those codes without provider details.
+Standalone executables install in `/run` in Neon Functions. `/tmp` remains for media data
+and caches because it is mounted `noexec`; changing file permissions there cannot enable execution.
+The `validation_only` workflow can prepare an expiring real-file acceptance session with
+`prepare_session`. Only its isolated branch is retained, with a 24-hour expiry, for testing the
+original large file through the candidate app. Production releases always run the automated
+acceptance and never use this retention option.
 
 ## Required GitHub production environment
 
