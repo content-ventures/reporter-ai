@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { paragraphBlock } from '../../domain/article.ts';
+import { ARTICLE_POLICY_MESSAGES } from '../../domain/article-policy.ts';
 import type { VersionRef } from '../../domain/refs.ts';
 import type { RequestReviewInput } from '../production-commands.ts';
 import { approvedArticle, approvePiece, createSample, firstNameOf, localDay, sampleArticle, sampleCarousel, unwrap, withPorts, writeDraft } from './fixture.ts';
@@ -130,7 +131,8 @@ export function reviewPortsContract(name: string, make: PortsFactory): void {
         assert.equal(detail.guards.pieces.article?.approve.allowed, false);
         const refused = await ports.commands.decide({ pieceId: sample.articleId, subject: version.ref, decision: 'approved' });
         assert.equal(refused.ok, false);
-        if (!refused.ok) assert.equal(refused.refusal.code, 'forbidden_role');
+        // A server refuses in SQL before the engine could name the role.
+        if (!refused.ok) assert.equal(refused.refusal.code, ports.validatesBeforeEngine ? 'forbidden' : 'forbidden_role');
       });
     });
 
@@ -441,7 +443,8 @@ export function reviewPortsContract(name: string, make: PortsFactory): void {
         const wrongQuote = { ...body, blocks: body.blocks.map((block) => (block.id === 'b-q1' ? { ...block, inlines: [{ text: 'Uma frase que ninguém disse na entrevista.' }] } : block)) };
         await writeDraft(ports, sample.articleId, wrongQuote as typeof body);
         const quote = await ports.commands.requestReview(sample.articleId);
-        assert.deepEqual(quote.ok ? 'sent' : [quote.refusal.code, quote.refusal.message], ['send_blocked', '1 citação não confere com a entrevista.']);
+        assert.deepEqual(quote.ok ? 'sent' : [quote.refusal.code, quote.refusal.message], ['send_blocked',
+          ports.enforcesR1Articles ? ARTICLE_POLICY_MESSAGES.UNSUPPORTED_ARTICLE_QUOTE : '1 citação não confere com a entrevista.']);
 
         if (ports.simulate?.suggestion) {
           await writeDraft(ports, sample.articleId, body);

@@ -49,6 +49,10 @@ export type PortsUnderTest = {
     suggestion?(pieceId: PieceId, input: { target: TextRange[]; proposal: SuggestionProposal; label?: string }): Promise<string>;
   };
   dispose?(): void | Promise<void>;
+  /** The server applies the R1 article rules before a send, so sample articles must meet them. */
+  enforcesR1Articles?: boolean;
+  /** The server checks input shape and roles before the engine; those refusals carry its codes. */
+  validatesBeforeEngine?: boolean;
 };
 
 export type PortsFactory = () => PortsUnderTest | Promise<PortsUnderTest>;
@@ -97,6 +101,19 @@ export async function createSample(ports: PortsUnderTest, overrides: Partial<New
   return { productionId: created.productionId, sourceId: created.sourceId, articleId: article.pieceId };
 }
 
+// Unquoted context that brings a sample to the R1 limits (2.500–4.000 characters, 500–800 words).
+const R1_CONTEXT = [
+  'A cooperativa reúne hoje produtores de três comunidades rurais, que dividem a mesma estrutura de secagem, armazenamento e transporte. A organização coletiva permitiu negociar preços melhores com fornecedores de insumos e reduzir perdas na colheita. Cada família continua responsável pela própria lavoura, mas as decisões sobre investimentos passam por uma assembleia mensal aberta a todos os associados.',
+  'Antes da torrefação própria, o grão saía da região sem identificação de origem e era misturado a lotes de outras procedências. Com a mudança, cada saca passou a ter rastreio por talhão, data de colheita e método de secagem. Essa informação aparece na embalagem e ajuda a explicar ao consumidor por que o café de encosta tem sabor diferente.',
+  'O processo de torra é feito em pequenos lotes, em um galpão alugado na entrada da cidade. Dois jovens da comunidade foram treinados para operar o torrador e acompanhar as curvas de temperatura em planilhas simples. A cooperativa registra cada lote e guarda amostras para comparar resultados ao longo do ano.',
+  'A venda direta mudou a relação com os clientes. Parte da produção segue para cafeterias da capital, que compram volumes fixos todos os meses, e outra parte é vendida em feiras regionais. Os associados contam que o contato com quem prepara o café trouxe sugestões práticas, como embalagens menores e moagens específicas.',
+  'Os desafios ainda são grandes. O custo do frete encarece as entregas para cidades distantes, e a cooperativa depende de um único torrador, o que cria risco em caso de manutenção. Para reduzir essa dependência, o grupo estuda uma parceria com uma escola técnica da região, que poderia ceder equipamento e espaço para aulas práticas.',
+  'A cafeteria-escola planejada para a praça central deve funcionar também como ponto de venda e vitrine da produção local. A ideia é oferecer cursos curtos de preparo, degustação e atendimento, com turmas pequenas e horários compatíveis com a rotina de quem trabalha na lavoura. O projeto ainda depende de autorização da prefeitura.',
+  'Para os associados mais antigos, a principal conquista foi permanecer no campo com renda estável. Muitas famílias viam os filhos partirem para outras cidades em busca de trabalho, e agora parte desses jovens encontra ocupação na própria cooperativa, seja na torra, na logística ou no atendimento aos clientes.',
+  'A colheita continua manual nas áreas mais íngremes, onde máquinas não conseguem entrar. Os grupos de colhedores se revezam ao longo das semanas e escolhem apenas os frutos maduros, o que aumenta o trabalho, mas melhora a bebida. Depois da colheita, o café descansa em terreiros cobertos e é revirado várias vezes ao dia.',
+  'A cooperativa também investiu em formação. Técnicos visitam as propriedades a cada estação para orientar o manejo do solo, a poda e o controle de pragas com menos defensivos. As famílias anotam o que aplicam em cada talhão, e esse histórico ajuda a planejar a safra seguinte e a responder às perguntas dos compradores.',
+];
+
 /** An article that cites the material by real segment ids (variant changes the wording). */
 export async function sampleArticle(ports: PortsUnderTest, sourceId: SourceId, variant = 0): Promise<ArticleBody> {
   const detail = unwrap(await ports.queries.source(sourceId), 'source');
@@ -104,6 +121,7 @@ export async function sampleArticle(ports: PortsUnderTest, sourceId: SourceId, v
   const answer = (index: number) => segments.filter((segment) => segment.speaker === 'Helena Duarte')[index];
   const first = answer(0);
   const second = answer(1);
+  const third = answer(2);
   const ref = (segmentId: string) => [segmentRef(sourceId, detail.version.number, segmentId)];
   return {
     type: 'article',
@@ -114,6 +132,12 @@ export async function sampleArticle(ports: PortsUnderTest, sourceId: SourceId, v
       }),
       headingBlock('b-h1', 'A virada da torrefação', 2),
       quoteBlock('b-q1', 'A torrefação mudou a nossa margem.', { sourceRefs: second ? ref(second.id) : [] }),
+      ...(ports.enforcesR1Articles ? [
+        ...R1_CONTEXT.map((text, index) => paragraphBlock(`b-r1-${index}`, text)),
+        quoteBlock('b-q2', 'Queremos abrir uma cafeteria-escola na praça da cidade e formar baristas da própria comunidade.', {
+          sourceRefs: third ? ref(third.id) : [],
+        }),
+      ] : []),
     ],
   };
 }
