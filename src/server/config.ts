@@ -37,6 +37,13 @@ export function cloudPortalId() {
   return value;
 }
 
+/** The local Docker database port; another checkout may run its own on a distinct port. */
+export function localDatabasePort() {
+  const port = Number(process.env.REPORTER_DB_PORT?.trim() || 55432);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("DATABASE_CONFIGURATION");
+  return port;
+}
+
 export function databasePassword(role: "runtime" | "worker") {
   const key = role === "runtime" ? "REPORTER_RUNTIME_PASSWORD" : "REPORTER_WORKER_PASSWORD";
   // Local Docker credentials have their own ignored file. Cloud credentials may coexist in

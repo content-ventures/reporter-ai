@@ -29,6 +29,10 @@ and binds it to loopback, not to the public Internet.
 
 Docker project: `reporter-ai-local`; database: `reporter_ai_local`; port: `127.0.0.1:55432`;
 volume: `reporter-ai-local_postgres_data`; network: `reporter-ai-local_reporter`.
+A second checkout (another worktree) runs its own isolated database by exporting, for every
+`db:*`, app and worker command, `REPORTER_DB_PROJECT=reporter-ai-local-<name>` and a free
+`REPORTER_DB_PORT`, with its own `.env.reporter-db`. Helpers refuse a container that belongs
+to another checkout, so one checkout never migrates or reads another's data.
 Helpers verify the exact container/configuration/volume/network before access. They never globally
 prune Docker, delete an existing user volume or touch another project. `db:flow` preserves data.
 

@@ -12,7 +12,7 @@ services:
       REPORTER_WORKER_PASSWORD: ${REPORTER_WORKER_PASSWORD:?Set REPORTER_WORKER_PASSWORD in .env.reporter-db}
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
     ports:
-      - "127.0.0.1:55432:5432"
+      - "127.0.0.1:${REPORTER_DB_PORT:-55432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/reporter-foundation.sql:/docker-entrypoint-initdb.d/00-reporter-foundation.sql:ro
