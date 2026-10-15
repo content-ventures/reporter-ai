@@ -14,15 +14,16 @@ export const MAX_DRAIN_CHAIN = 8;
 export type DrainResult = { processed: number; remaining: boolean; elapsedMs: number };
 export type DrainServices = {
   pending(): Promise<boolean>;
-  run(owner: string, signal: AbortSignal, deadline: number): Promise<boolean>;
+  /** true: one job ran; false: nothing claimable; 'yield': stop and continue in a fresh invocation. */
+  run(owner: string, signal: AbortSignal, deadline: number): Promise<boolean | 'yield'>;
   now(): number;
 };
 
 export const drainServices: DrainServices = {
   pending: () => transaction('worker', async client =>
     (await client.query('SELECT public.reporter_worker_pending() AS pending')).rows[0]?.pending === true),
-  run: async (owner, signal) => await runRemoteIngest(owner, signal)
-    || await runReporterJob(owner, signal) || await runEditorialJob(owner, signal),
+  run: async (owner, signal, deadline) => await runRemoteIngest(owner, signal)
+    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal),
   now: Date.now,
 };
 
@@ -34,7 +35,9 @@ export async function drainQueue(owner: string, signal: AbortSignal, services: D
   if (signal.aborted || !await services.pending()) return result(0, false);
   let processed = 0;
   while (!signal.aborted && processed < limits.maxJobs && services.now() < deadline) {
-    if (!await services.run(owner, signal, deadline)) return result(processed, false);
+    const ran = await services.run(owner, signal, deadline);
+    if (ran === 'yield') return result(processed, true);
+    if (!ran) return result(processed, false);
     processed++;
   }
   return result(processed, true);
