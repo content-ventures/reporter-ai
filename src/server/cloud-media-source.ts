@@ -5,11 +5,19 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { FlowError } from './errors.ts';
 
+/** Plain HTTP is accepted only from a loopback storage endpoint (the local cloud rehearsal). */
+function loopbackStorage(target: URL) {
+  const configured = process.env.AWS_ENDPOINT_URL_S3?.trim();
+  if (!configured) return false;
+  const storage = new URL(configured);
+  return storage.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(storage.hostname) && storage.origin === target.origin;
+}
+
 /** A private loopback bridge lets Node own DNS and verified TLS. FFmpeg reads
  * byte ranges without downloading the original into memory or local storage. */
 export async function withCloudMediaSource<T>(source: string, signal: AbortSignal, operation: (url: string) => Promise<T>): Promise<T> {
   const target = new URL(source);
-  if (target.protocol !== 'https:' || target.username || target.password) throw new FlowError('SOURCE_UNAVAILABLE', 422);
+  if (target.protocol !== 'https:' && !loopbackStorage(target) || target.username || target.password) throw new FlowError('SOURCE_UNAVAILABLE', 422);
   const path = '/' + randomUUID();
   const server = createServer(async (request, response) => {
     if (request.url !== path || !['GET', 'HEAD'].includes(request.method ?? '')) { response.writeHead(404).end(); return; }

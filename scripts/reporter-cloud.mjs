@@ -16,7 +16,8 @@ function ownerUrl() {
   if (!value) throw new Error('DATABASE_URL_UNPOOLED is required');
   const url = new URL(value);
   if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') throw new Error('Expected a PostgreSQL URL');
-  url.searchParams.set('sslmode','verify-full');
+  // Neon requires verified TLS; only a loopback rehearsal database may connect without it.
+  if (!['127.0.0.1','localhost','[::1]'].includes(url.hostname)) url.searchParams.set('sslmode','verify-full');
   return url;
 }
 
