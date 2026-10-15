@@ -29,6 +29,10 @@ test('mandatory quotations are distinct, substantive, literal and tied to the SA
   assert.equal(articleQuotationIssue([quote('A fonte (...) o fato.')], evidence), 'UNSUPPORTED_ARTICLE_QUOTE');
   assert.equal(literalQuoteText('Ola\u0301\n mundo'), 'Olá mundo');
   assert.equal(articleQuotationIssue([quote('A fonte CONFIRMA o fato.')], evidence), 'UNSUPPORTED_ARTICLE_QUOTE', 'case and words are not silently rewritten');
+  // Measured on staging: the model ends a quotation with a comma to continue its own sentence.
+  assert.equal(articleQuotationIssue([quote('A fonte confirma o fato,')], evidence), undefined, 'only the closing punctuation may adapt');
+  assert.equal(articleQuotationIssue([quote('A fonte confirma o fato,'), quote(a)], evidence, 2), 'ARTICLE_QUOTES_REQUIRED', 'the same words are one quotation');
+  assert.equal(articleQuotationIssue([quote('A fonte nega o fato,')], evidence), 'UNSUPPORTED_ARTICLE_QUOTE');
 });
 
 test('edited drafts cannot bypass R1 by inflating the title or removing quote provenance', () => {
