@@ -10,6 +10,7 @@ This document defines the mandatory workflow for human and AI-assisted developme
 - Pull requests and merges are created by the authenticated GitHub user after explicit approval. Bots may validate the work but may not impersonate the user.
 - Vercel Preview and production deployments originate only from the Francal workspace's GitHub integration. The Vercel CLI, a local Vercel token and the macOS user's Vercel identity are forbidden.
 - The hooks validate the configured author and committer before commit and push. CI validates the author and committer of every delivered commit. A mismatched identity blocks the delivery.
+- PR commits retain the strict numeric noreply rule for both identities. On a `main` push only, GitHub's rebase may use the merging account's configured email as committer. CI accepts it only after the GitHub API confirms the exact commit metadata, the author's numeric noreply account, the committer's association with the workflow actor, and a merged PR targeting this repository's `main`. Unassociated identities, API errors and ordinary local/PR personal emails still fail. See [GitHub rebase behavior](https://docs.github.com/en/pull-requests/reference/pull-request-merges).
 
 ## Branches
 
