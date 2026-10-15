@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Button, LiveRegion, Progress, ProgressSteps, ResponsiveDialog, Section, formatBytes } from '@content-ventures/design-system/v3';
+import { Button, PageStack, LiveRegion, Prose, Progress, ProgressSteps, ResponsiveDialog, Section, formatBytes } from '@content-ventures/design-system/v3';
 import type { materialProgress } from './material-progress';
 
 type ProgressState = NonNullable<ReturnType<typeof materialProgress>>;
@@ -24,7 +24,7 @@ export function MaterialProgressDialog({ open, progress, onClose, onCancel, onRe
   const source = progress ? [progress.name,progress.size !== undefined ? formatBytes(progress.size) : undefined].filter(Boolean).join(' · ') : undefined;
   const upload = progress?.upload;
   return (
-    <ResponsiveDialog open={open && Boolean(progress)} onClose={onClose} title={title} description={source} size="sm"
+    <ResponsiveDialog open={open && Boolean(progress)} onClose={onClose} title={title} size="md"
       footer={status === 'error' ? (
         <>
           <Button variant="ghost" onClick={onClose}>Voltar ao material</Button>
@@ -41,11 +41,14 @@ export function MaterialProgressDialog({ open, progress, onClose, onCancel, onRe
     >
       {progress ? (
         <Section>
-          <ProgressSteps label="Preparo do material" steps={progress.steps} />
-          {status !== 'error' ? <Progress aria-label={status === 'ready' ? 'Material pronto' : upload ? 'Envio do arquivo' : 'Processamento do material'}
-            value={status === 'ready' ? 100 : upload?.percent}
-            valueText={upload ? `${formatBytes(upload.sent)} de ${formatBytes(upload.total)} · ${upload.percent}%` : undefined} /> : null}
-          {progress.largeUpload ? <Section meta="O envio depende da sua conexão. Mantenha esta página aberta até terminar." /> : null}
+          <PageStack>
+            <Prose variant="compact" measure="wide">{source}</Prose>
+            <ProgressSteps label="Preparo do material" steps={progress.steps} />
+            {status !== 'error' ? <Progress aria-label={status === 'ready' ? 'Material pronto' : upload ? 'Envio do arquivo' : 'Processamento do material'}
+              value={status === 'ready' ? 100 : upload?.percent}
+              valueText={upload ? `${formatBytes(upload.sent)} de ${formatBytes(upload.total)} · ${upload.percent}%` : undefined} /> : null}
+            {progress.largeUpload ? <Prose variant="compact" measure="wide">O envio depende da sua conexão. Mantenha esta página aberta até terminar.</Prose> : null}
+          </PageStack>
           <LiveRegion message={status === 'ready' ? 'Material pronto para revisar os falantes e continuar.' : status === 'error' ? 'O preparo do material falhou. Tente novamente.' : ''} />
         </Section>
       ) : null}

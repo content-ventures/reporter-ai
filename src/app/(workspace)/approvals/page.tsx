@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { ApprovalsScreen } from "@/features/approval/approvals-screen";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Aprovações" };
+export const metadata: Metadata = { title: "Produções" };
 
 export default function ApprovalsPage() {
-  return <ApprovalsScreen />;
+  redirect("/productions");
 }

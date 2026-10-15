@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { MenuSection } from '@content-ventures/design-system/v3';
-import { ClipboardList, History as HistoryIcon, LayoutTemplate, ListTree, RotateCcw, Send, Sparkles, Undo2 } from '@content-ventures/design-system/v3/icons';
+import { ClipboardList, History as HistoryIcon, ListTree, RotateCcw, Send, Sparkles, Undo2 } from '@content-ventures/design-system/v3/icons';
 import { ProductionHeader, ProductionPrimaryBar, type HeaderPrimary } from '@/features/production/production-frame';
 import { ApprovalBanner, GenerationBanner, StatusBadge, StatusBanner, useWithdrawReview } from '@/ui';
 import { deliveryHref, materialHref, pieceHref, reviewHref } from '@/ui/routes';
@@ -77,7 +77,6 @@ function useStudioMenu(): MenuSection[] {
     ...(studio.production.sources.length > 0 ? [{ label: 'Ver estrutura', icon: ListTree, onSelect: () => panes.openDialog('structure') }] : []),
     { label: 'Histórico de versões', icon: HistoryIcon, onSelect: () => panes.openDialog('history') },
     { label: 'Como a IA escreveu', icon: Sparkles, onSelect: () => panes.openDialog('trace') },
-    { label: 'Criar banner do artigo salvo',icon: LayoutTemplate,onSelect: () => { window.open('/banners?production='+encodeURIComponent(studio.production.id),'_blank','noopener,noreferrer'); } },
     ...(studio.canEdit && !studio.empty && studio.production.sources.length > 0
       ? [
           {

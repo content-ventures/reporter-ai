@@ -32,7 +32,7 @@ for (const viewport of VIEWPORTS) {
       const errors = watchErrors(page);
 
       for (const [path, heading] of [
-        ["/", "Qual história vamos entregar hoje?"],
+        ["/", "Início"],
         ["/productions", "Produções"],
         ["/quotes", "Citações"],
         ["/images", "Imagens"],
