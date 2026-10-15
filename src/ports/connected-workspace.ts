@@ -32,5 +32,5 @@ export type EditorialJob = {
   lease?: { owner: string; until: number; fence: string };
 };
 export type EditorialCheckpoint = { state: EditorialState; jobs: Record<string, EditorialJob>; pipeline?: PipelineRevision; pipelineHistory?: PipelineRevision[]; visuals?: { images: LibraryImage[]; banners: BannerDraft[] }; citations?: Citation[]; imageAssets?: ServerImageAsset[]; receipts?: Record<string,{ hash: string; result: unknown; projection?: 'pipeline' }> };
-export type ConnectedWorkspace = EditorialCheckpoint & { revision: number; model: string; workerOnline: boolean; deploymentMode?: 'cloud' | 'local'; syncToken?: string };
-export type WorkspaceRefresh = ConnectedWorkspace | { unchanged: true; revision: number; syncToken: string; workerOnline: boolean };
+export type ConnectedWorkspace = EditorialCheckpoint & { revision: number; model: string; workerOnline: boolean; stalled?: boolean; deploymentMode?: 'cloud' | 'local'; syncToken?: string };
+export type WorkspaceRefresh = ConnectedWorkspace | { unchanged: true; revision: number; syncToken: string; workerOnline: boolean; stalled?: boolean };

@@ -11,6 +11,7 @@ import { runReporterJob } from '../src/server/reporter-worker-jobs.ts';
 import { workerImageObject } from '../src/server/image-storage.ts';
 import { runRemoteIngest } from '../src/server/remote-ingest.ts';
 import { workerMediaDiagnostics } from '../src/server/worker-media.ts';
+import { appOrigins } from '../src/server/worker-config.ts';
 
 const MAX_INVOCATION_MS = 13*60*1000;
 const MAX_JOBS_PER_INVOCATION = 20;
@@ -92,10 +93,9 @@ async function hasWorkerSecret(request: Request) {
   } catch { return false; }
 }
 
-function appOrigin() { return process.env.REPORTER_APP_ORIGIN?.trim() ?? ''; }
 function uploadCors(request: Request) {
   const origin = request.headers.get('origin');
-  if (!origin || origin!==appOrigin()) throw new FlowError('ORIGIN_DENIED',403);
+  if (!origin || !appOrigins().includes(origin)) throw new FlowError('ORIGIN_DENIED',403);
   return { 'access-control-allow-origin': origin,'access-control-allow-methods': 'POST,OPTIONS',
     'access-control-allow-headers': 'content-type','access-control-max-age': '3600','vary': 'Origin',
     'cache-control': 'no-store','x-content-type-options': 'nosniff' };

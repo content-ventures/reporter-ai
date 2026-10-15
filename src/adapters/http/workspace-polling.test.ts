@@ -18,7 +18,10 @@ test('workspace polling sends the server stamp and preserves lightweight readine
     assert.deepEqual(await requestWorkspace('known'), { unchanged: true, revision: 42, syncToken: 'known', workerOnline: false });
     await requestWorkspace();
     await requestWorkspace('invalid & token');
-    assert.deepEqual(calls, ['/api/reporter/workspace?since=known', '/api/reporter/workspace', '/api/reporter/workspace?since=invalid%20%26%20token']);
+    await requestWorkspace('known', true);
+    await requestWorkspace(undefined, true);
+    assert.deepEqual(calls, ['/api/reporter/workspace?since=known', '/api/reporter/workspace', '/api/reporter/workspace?since=invalid%20%26%20token',
+      '/api/reporter/workspace?since=known&active=1', '/api/reporter/workspace?active=1']);
   } finally { globalThis.fetch = original; }
 });
 

@@ -15,7 +15,8 @@ import type { GenerationKind, GenerationRequest, RunMeta } from '../ports/genera
 import type { OutlineInput } from '../ports/generation.ts';
 import type { EditorialCheckpoint, ConnectedWorkspace, EditorialJob, WorkspaceRefresh } from '../ports/connected-workspace.ts';
 import { transaction } from './database';
-import { workerHeartbeat } from './storage';
+import { workerAvailable } from './storage';
+import { IDLE_QUEUE, queueStatus } from './queue-status.ts';
 import { FlowError } from './errors';
 import { activePipeline, pipelineView, parsePipelineDefinition } from './pipeline';
 import { assertLocalMode, providerConfigured } from './config';
@@ -72,15 +73,19 @@ export async function editorialTransaction<T>(role: 'runtime' | 'worker', change
 }
 
 export async function editorialWorkspace(): Promise<ConnectedWorkspace>;
-export async function editorialWorkspace(since: string | undefined): Promise<WorkspaceRefresh>;
-export async function editorialWorkspace(since?: string): Promise<WorkspaceRefresh> {
-  const status = await transaction('runtime', async client =>
-    (await client.query('SELECT public.reporter_editorial_status() AS value')).rows[0].value as { revision: number; membersHash: string });
+export async function editorialWorkspace(since: string | undefined, options?: { active?: boolean }): Promise<WorkspaceRefresh>;
+export async function editorialWorkspace(since?: string, options: { active?: boolean } = {}): Promise<WorkspaceRefresh> {
+  // The queue is read only while the browser follows a run, so idle polls stay a single stamp.
+  const { status, queue } = await transaction('runtime', async client => ({
+    status: (await client.query('SELECT public.reporter_editorial_status() AS value')).rows[0].value as { revision: number; membersHash: string },
+    queue: options.active ? await queueStatus(client, 'editorial') : IDLE_QUEUE,
+  }));
+  const workerOnline = await workerAvailable();
   const token = (revision: number) => contentHash({ revision,membersHash: status.membersHash,context: currentReporterContext() });
   const syncToken = token(Number(status.revision));
-  if (since === syncToken) return { unchanged: true,revision: Number(status.revision),syncToken,workerOnline: await workerHeartbeat() };
+  if (since === syncToken) return { unchanged: true,revision: Number(status.revision),syncToken,workerOnline,stalled: queue.stalled };
   const result = await editorialTransaction('runtime', async () => undefined, false);
-  return { state: result.checkpoint.state,jobs: result.checkpoint.jobs,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline: await workerHeartbeat(),deploymentMode:reporterDeploymentMode() };
+  return { state: result.checkpoint.state,jobs: result.checkpoint.jobs,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline,stalled: queue.stalled,deploymentMode:reporterDeploymentMode() };
 }
 
 export async function editorialPipeline() {
@@ -178,10 +183,8 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
 
 export async function editorialRpc(payload: unknown) {
   const { method,args,requestId } = rpcSchema.parse(payload);
-  if (['generation.start', 'generation.retry'].includes(method) && !await workerHeartbeat()) {
-    return refuse('provider_unavailable', reporterDeploymentMode() === 'cloud'
-      ? 'O serviço de geração está indisponível. Tente novamente após a recuperação do serviço.'
-      : 'Inicie o worker do Reporter AI antes de gerar.');
+  if (['generation.start', 'generation.retry'].includes(method) && !await workerAvailable()) {
+    return refuse('provider_unavailable', 'Inicie o worker do Reporter AI antes de gerar.');
   }
   return (await editorialTransaction('runtime', async (checkpoint,engine,client) => {
     const hash = contentHash({ method,args });

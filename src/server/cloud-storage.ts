@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { MAX_UPLOAD_BYTES } from '../domain/reporter.ts';
 import { transaction } from './database.ts';
 import { FlowError } from './errors.ts';
+import { appOrigins } from './worker-config.ts';
 
 export const SOURCE_BUCKET = 'reporter-source-media';
 export const MULTIPART_PART_BYTES = 16 * 1024 ** 2;
@@ -39,21 +40,18 @@ function s3() {
   return client;
 }
 
-function allowedOrigin() {
-  const origin = process.env.REPORTER_APP_ORIGIN?.trim();
-  if (!origin) throw new FlowError('UPLOAD_CONFIGURATION',503);
-  const parsed = new URL(origin);
-  if (parsed.protocol !== 'https:' || parsed.origin !== origin || parsed.username || parsed.password) {
-    throw new FlowError('UPLOAD_CONFIGURATION',503);
-  }
-  return origin;
+function allowedOrigins() {
+  const origins = appOrigins();
+  if (!origins.length) throw new FlowError('UPLOAD_CONFIGURATION',503);
+  return origins;
 }
 
 async function ensureUploadCors() {
   corsConfigured ??= s3().send(new GetBucketCorsCommand({ Bucket: SOURCE_BUCKET })).then(result => {
-    const origin=allowedOrigin();
-    if(!result.CORSRules?.some(rule=>rule.AllowedOrigins?.includes(origin)&&rule.AllowedMethods?.includes('PUT')&&rule.AllowedHeaders?.includes('*')&&rule.ExposeHeaders?.some(header=>header.toLowerCase()==='etag')))
-      throw new FlowError('UPLOAD_CONFIGURATION',503);
+    // Every configured app origin must be able to PUT parts and read their ETag.
+    for(const origin of allowedOrigins())
+      if(!result.CORSRules?.some(rule=>rule.AllowedOrigins?.includes(origin)&&rule.AllowedMethods?.includes('PUT')&&rule.AllowedHeaders?.includes('*')&&rule.ExposeHeaders?.some(header=>header.toLowerCase()==='etag')))
+        throw new FlowError('UPLOAD_CONFIGURATION',503);
   }).catch(error => {
     corsConfigured = undefined;
     throw error;

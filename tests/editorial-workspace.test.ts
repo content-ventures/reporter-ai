@@ -67,3 +67,34 @@ test('an idle worker never loads or saves the editorial checkpoint', async () =>
     if (previousMode === undefined) delete process.env.REPORTER_DEPLOYMENT_MODE; else process.env.REPORTER_DEPLOYMENT_MODE = previousMode;
   }
 });
+
+test('only polls that follow a running generation read the queue, and cloud polls never read worker liveness', async () => {
+  const globals = globalThis as typeof globalThis & { reporterPools?: Partial<Record<'runtime' | 'worker', Pool>> };
+  const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
+  const checkpoint = emptyEditorialCheckpoint();
+  const queries: string[] = [];
+  const client = { release() {}, async query(sql: string) {
+    queries.push(sql);
+    if (sql.includes('reporter_editorial_status')) return { rows: [{ value: { revision: 7, membersHash: 'members' } }] };
+    if (sql.includes('reporter_queue_status')) return { rows: [{ value: { pending: true, stalled: true } }] };
+    if (sql.includes('reporter_editorial_load')) return { rows: [{ value: { revision: 7, checkpoint: structuredClone(checkpoint) } }] };
+    if (sql.includes('reporter_worker_online')) throw new Error('Cloud polls must not read worker liveness');
+    if (sql.includes('reporter_workspace_members')) return { rows: [{ members: [] }] };
+    return { rows: [] };
+  } };
+  process.env.REPORTER_DEPLOYMENT_MODE = 'cloud';
+  globals.reporterPools = { runtime: { connect: async () => client } as unknown as Pool };
+  try {
+    const context = { ...localContext, roles: [...localContext.roles] };
+    const first = await runWithReporterContext(context, () => editorialWorkspace());
+    const idle = await runWithReporterContext(context, () => editorialWorkspace(first.syncToken));
+    assert.equal(queries.filter(sql => sql.includes('reporter_queue_status')).length, 0, 'an idle poll reads only the revision stamp');
+    assert.deepEqual([idle.workerOnline, idle.stalled], [true, false]);
+    const active = await runWithReporterContext(context, () => editorialWorkspace(first.syncToken, { active: true }));
+    assert.equal(queries.filter(sql => sql.includes('reporter_queue_status')).length, 1);
+    assert.deepEqual([active.workerOnline, active.stalled], [true, true], 'a stalled run is reported without blocking generation');
+  } finally {
+    globals.reporterPools = previous;
+    if (previousMode === undefined) delete process.env.REPORTER_DEPLOYMENT_MODE; else process.env.REPORTER_DEPLOYMENT_MODE = previousMode;
+  }
+});

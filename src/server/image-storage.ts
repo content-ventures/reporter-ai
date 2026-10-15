@@ -10,6 +10,7 @@ import { cloudPortalId } from './config.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { storageRoot } from './storage.ts';
 import { FlowError } from './errors.ts';
+import { workerUrl } from './worker-config.ts';
 
 const bucket = 'reporter-source-media';
 const client = new S3Client({ forcePathStyle: true,requestChecksumCalculation: 'WHEN_REQUIRED' });
@@ -35,9 +36,9 @@ export async function workerImageObject(input: { action: 'read' | 'prepare' | 'w
 
 async function gateway(input: Parameters<typeof workerImageObject>[0]) {
   if (process.env.REPORTER_FUNCTION_RUNTIME === 'true') return workerImageObject(input);
-  const endpoint = await transaction('runtime',async db => (await db.query('SELECT public.reporter_object_endpoint() AS endpoint')).rows[0]?.endpoint);
+  const endpoint = workerUrl() ?? await transaction('runtime',async db => (await db.query('SELECT public.reporter_object_endpoint() AS endpoint')).rows[0]?.endpoint);
   if (!endpoint || !process.env.REPORTER_WORKER_PASSWORD) throw new FlowError('UPLOAD_CONFIGURATION',503);
-  const response = await fetch(new URL('/objects',endpoint), { method: 'POST',headers: {
+  const response = await fetch(endpoint.replace(/\/+$/,'')+'/objects', { method: 'POST',headers: {
     'content-type': 'application/json','x-reporter-worker-key': process.env.REPORTER_WORKER_PASSWORD,
   },body: JSON.stringify(input),signal: AbortSignal.timeout(60000) });
   if (!response.ok) throw new FlowError('IMAGE_UNAVAILABLE',503);
