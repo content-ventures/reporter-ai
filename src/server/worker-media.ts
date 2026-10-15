@@ -1,7 +1,7 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { chmod, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -13,6 +13,16 @@ import { WORKER_MEDIA, WORKER_MEDIA_BUCKET, workerMediaKey, type MediaTool } fro
 
 const installed = new Map<MediaTool, Promise<string>>();
 const client = new S3Client({ forcePathStyle: true });
+
+/** Only fixed runtime paths and modes; never include storage URLs or user data. */
+export async function workerMediaDiagnostics(){
+  const root=process.env.REPORTER_FUNCTION_RUNTIME==='true'?'/run':tmpdir();
+  const mounts=await readFile('/proc/mounts','utf8').catch(()=>'');
+  const mount=mounts.split('\n').map(line=>line.split(' ')).filter(parts=>parts[1]==='/'||parts[1]===root).map(parts=>({point:parts[1],options:parts[3]?.split(',').filter(option=>['rw','ro','noexec','exec','nosuid','nodev'].includes(option))}));
+  const tools=[];
+  for(const[tool,pending]of installed){try{const path=await pending,info=await stat(path);tools.push({tool,mode:info.mode&0o777,bytes:info.size});}catch{/* The bounded failure code covers failed installation. */}}
+  return {root,mount,tools,platform:process.platform,arch:process.arch};
+}
 
 export function workerMediaStream(body: unknown): Readable {
   const stream = body as (Partial<AsyncIterable<Uint8Array>> & { transformToWebStream?(): ReadableStream<Uint8Array> }) | undefined;
@@ -53,7 +63,10 @@ export async function installWorkerMedia(tool: MediaTool, body: Readable, expect
       hash.update(chunk); callback(null, chunk);
     } }), createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
     if (size !== expected.size || hash.digest('hex') !== expected.sha256) throw new FlowError('MEDIA_TOOL_INTEGRITY', 503);
-    await chmod(destination, 0o700);
+    // The runtime's executable launcher must be able to traverse the directory.
+    // These are public, pinned tool bytes; inputs and credentials never live here.
+    const mode=process.env.REPORTER_FUNCTION_RUNTIME==='true'?0o755:0o700;
+    await chmod(directory,mode);await chmod(destination,mode);
     return destination;
   } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
 }
