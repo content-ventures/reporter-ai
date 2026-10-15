@@ -18,6 +18,7 @@ import { handleCitationLibrary } from './citation-library';
 import { reporterDeploymentMode } from './deployment.ts';
 import { reporterIdentity } from './auth.ts';
 import { runWithReporterContext, type ReporterRequestContext } from './request-context.ts';
+import { appHealth } from './app-config.ts';
 
 const LOOPBACK = new Set(["localhost","127.0.0.1","[::1]"]);
 export function guardLocalRequest(request: Request) {
@@ -145,6 +146,8 @@ export async function handleReporter(request: Request, path: string[], deps: { d
   const kick = () => defer(() => kickWorker());
   const heal = (stalled: boolean | undefined) => { if (stalled && shouldHealStall()) kick(); };
   try {
+    // The release probe is public: booleans and versions only, no session and no database.
+    if (request.method === 'GET' && path.length === 1 && path[0] === 'health') return reply(appHealth());
     const context = await guardReporterRequest(request, deps.identify);
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
