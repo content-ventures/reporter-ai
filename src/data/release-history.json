@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.2.0",
+  "currentVersion": "0.3.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,368 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.3.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-15",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 88 validated changes: harden quotation tolerance and the last-resort cut; repair a part the provider will not revise; move every action to its first node 24 release.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Fixed",
+          "description": "Deploy Neon worker during releases"
+        },
+        {
+          "type": "Fixed",
+          "description": "Process cloud recordings in bounded audio chunks"
+        },
+        {
+          "type": "Fixed",
+          "description": "Validate worker artifacts and service readiness"
+        },
+        {
+          "type": "Fixed",
+          "description": "Require a fresh scheduled worker before publishing"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep app worker and smoke on the local database"
+        },
+        {
+          "type": "Fixed",
+          "description": "Verify GitHub rebase committer identity"
+        },
+        {
+          "type": "Fixed",
+          "description": "Log rejected trigger deliveries"
+        },
+        {
+          "type": "Fixed",
+          "description": "Parse native trigger deliveries directly"
+        },
+        {
+          "type": "Fixed",
+          "description": "Support hosted media streams and preserve failures"
+        },
+        {
+          "type": "Fixed",
+          "description": "Accept runtime streams and expose safe media failures"
+        },
+        {
+          "type": "Fixed",
+          "description": "Persist images and authorize independent reviewers"
+        },
+        {
+          "type": "Fixed",
+          "description": "Queue remote podcast imports in Neon storage"
+        },
+        {
+          "type": "Fixed",
+          "description": "Sign browser uploads without empty payload checksums"
+        },
+        {
+          "type": "Fixed",
+          "description": "Validate the full Neon flow before production"
+        },
+        {
+          "type": "Fixed",
+          "description": "Verify the saved production pipeline and actual exports"
+        },
+        {
+          "type": "Fixed",
+          "description": "Execute media tools and bootstrap Neon acceptance"
+        },
+        {
+          "type": "Fixed",
+          "description": "Verify original sources and diagnose hosted readiness"
+        },
+        {
+          "type": "Fixed",
+          "description": "Register public endpoints and preserve private image reads"
+        },
+        {
+          "type": "Fixed",
+          "description": "Allow native launcher access to verified media tools"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Exercise authenticated original-file browser acceptance"
+        },
+        {
+          "type": "Fixed",
+          "description": "Revise oversized sections with measured feedback"
+        },
+        {
+          "type": "Fixed",
+          "description": "Stage verified tools on executable runtime mounts"
+        },
+        {
+          "type": "Fixed",
+          "description": "Bundle signed ARM64 media tools for immutable execution"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Exclude generated native sources from application lint"
+        },
+        {
+          "type": "Fixed",
+          "description": "Resolve packaged paths and bound audio sample width"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Install the host compiler for cross-build helpers"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Record original media and production pipeline evidence"
+        },
+        {
+          "type": "Fixed",
+          "description": "Honor shared budgets and contiguous literal evidence"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Reuse verified originals and synthesize fixtures offline"
+        },
+        {
+          "type": "Improved",
+          "description": "Bound workspace polling and preview traffic"
+        },
+        {
+          "type": "Fixed",
+          "description": "Refresh committed writes after pending polls"
+        },
+        {
+          "type": "Added",
+          "description": "Organize the editorial dashboard around active work"
+        },
+        {
+          "type": "Added",
+          "description": "Organize editable prompts by worker flow"
+        },
+        {
+          "type": "Added",
+          "description": "Unify stages in a scrollable approval kanban"
+        },
+        {
+          "type": "Added",
+          "description": "Add profile details and browser preferences"
+        },
+        {
+          "type": "Added",
+          "description": "Add demonstrative editorial settings and source libraries"
+        },
+        {
+          "type": "Added",
+          "description": "Publish the simulated news research and drafting flow"
+        },
+        {
+          "type": "Added",
+          "description": "Integrate R2 demonstrations into the shared workspace"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover published navigation and account menu flows"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Pin design system v0.2.1"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve accessible heading hierarchy"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Recognize the updated home screen"
+        },
+        {
+          "type": "Fixed",
+          "description": "Accept seeded database identities in upload tokens"
+        },
+        {
+          "type": "Fixed",
+          "description": "Adapt Node UUID generation to engine callbacks"
+        },
+        {
+          "type": "Fixed",
+          "description": "Validate the full flow before paid acceptance"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Run an isolated database per checkout"
+        },
+        {
+          "type": "Added",
+          "description": "Report queue stalls and resume transcription chunks"
+        },
+        {
+          "type": "Changed",
+          "description": "Replace worker freshness gates with stall status"
+        },
+        {
+          "type": "Added",
+          "description": "Drain on demand with bounded self-chaining"
+        },
+        {
+          "type": "Added",
+          "description": "Wake the worker after enqueue and heal stalls"
+        },
+        {
+          "type": "Improved",
+          "description": "Replace the minute schedule with an hourly sweep"
+        },
+        {
+          "type": "Added",
+          "description": "Resume chunk results from Postgres"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Match workspace mocks by path"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Add local rehearsal infrastructure"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Rehearse the cloud flow and idle cost"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Run the cloud rehearsal"
+        },
+        {
+          "type": "Changed",
+          "description": "Append run events onto the stored fold"
+        },
+        {
+          "type": "Added",
+          "description": "Add editorial rows, deltas and run claims"
+        },
+        {
+          "type": "Added",
+          "description": "Split, diff and merge workspace rows"
+        },
+        {
+          "type": "Added",
+          "description": "Merge editorial row deltas into the workspace"
+        },
+        {
+          "type": "Added",
+          "description": "Run commands and the worker on scoped row reads"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Read editorial rows in polling, review and tooling"
+        },
+        {
+          "type": "Added",
+          "description": "Import editorial documents into rows and retire them"
+        },
+        {
+          "type": "Added",
+          "description": "Compact editorial rows after drains that did work"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Run the port contracts over HTTP on editorial rows"
+        },
+        {
+          "type": "Improved",
+          "description": "Trim per-transaction reads billed as transfer"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Hold each command to a transfer budget at any size"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe editorial rows, the import and the rollback"
+        },
+        {
+          "type": "Fixed",
+          "description": "Diff row writes against a frozen baseline"
+        },
+        {
+          "type": "Added",
+          "description": "Expose a public health probe and a read-only release check"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Retire the Vercel CLI env writer and guard role rotation"
+        },
+        {
+          "type": "Fixed",
+          "description": "Type the release check's injectable options"
+        },
+        {
+          "type": "Added",
+          "description": "Verify the deployed worker without waiting for heartbeats"
+        },
+        {
+          "type": "Added",
+          "description": "Accept candidates on a persistent staging project"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Stage, accept, release and verify production in order"
+        },
+        {
+          "type": "Added",
+          "description": "Redeploy a released worker, never an every-minute one"
+        },
+        {
+          "type": "Fixed",
+          "description": "Name the cloud target and hide its host in public logs"
+        },
+        {
+          "type": "Documentation",
+          "description": "Add the release runbook and retire heartbeat-era notes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Develop short article parts toward the R1 minimums"
+        },
+        {
+          "type": "Documentation",
+          "description": "Run staging as a branch of the production project"
+        },
+        {
+          "type": "Fixed",
+          "description": "Give the staging env pull its owner connection"
+        },
+        {
+          "type": "Fixed",
+          "description": "Wake the staging worker while waiting for its work"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Retire the offline preflight built on the single document"
+        },
+        {
+          "type": "Fixed",
+          "description": "Bound article parts by the article's remaining room"
+        },
+        {
+          "type": "Fixed",
+          "description": "Let a literal quotation adapt its closing punctuation"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Move every action to its first Node 24 release"
+        },
+        {
+          "type": "Fixed",
+          "description": "Repair a part the provider will not revise"
+        },
+        {
+          "type": "Fixed",
+          "description": "Harden quotation tolerance and the last-resort cut"
+        }
+      ]
+    },
     {
       "version": "0.2.0",
       "roadmapRelease": "R0",
