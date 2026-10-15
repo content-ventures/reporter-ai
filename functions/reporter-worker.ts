@@ -9,6 +9,7 @@ import { runEditorialJob } from '../src/server/editorial-worker.ts';
 import { FlowError,logEvent,safeCode } from '../src/server/errors.ts';
 import { runReporterJob } from '../src/server/reporter-worker-jobs.ts';
 import { workerImageObject } from '../src/server/image-storage.ts';
+import { runRemoteIngest } from '../src/server/remote-ingest.ts';
 
 const MAX_INVOCATION_MS = 13*60*1000;
 const MAX_JOBS_PER_INVOCATION = 20;
@@ -34,7 +35,7 @@ const dependencies: WorkerDependencies = {
   heartbeat: (owner,endpoint) => transaction('worker',async client => {
     await client.query('SELECT public.reporter_worker_register($1,$2)',[owner,endpoint]);
   }),
-  run: async (owner,signal) => await runReporterJob(owner,signal) || await runEditorialJob(owner,signal),
+  run: async (owner,signal) => await runRemoteIngest(owner,signal) || await runReporterJob(owner,signal) || await runEditorialJob(owner,signal),
   startUpload: startCloudUpload,
   completeUpload: completeCloudUpload,
   finalizeObject: finalizeUploadedObject,

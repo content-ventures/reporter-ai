@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { MAX_TEXT_BYTES } from '../domain/reporter';
 import { captionsToSrt, parseSourceLink, sourceTitleScore } from '../domain/source-link';
 import { FlowError } from './errors';
-import { receiveRemoteFile } from './storage';
+import { receiveRemoteFile,remoteResponse } from './storage';
+import { reporterDeploymentMode } from './deployment.ts';
 
 const OEmbed = z.object({ title: z.string().min(1).max(500) }).passthrough();
 const AppleEpisode = z.object({
@@ -51,7 +52,15 @@ async function spotifyEpisode(value: string, signal: AbortSignal) {
   if ((best.item.trackTimeMillis ?? 0)>3*60*60*1000) throw new FlowError('MEDIA_DURATION',422);
   const extension = ['mp3','m4a','mp4','wav','ogg','flac','webm'].includes((best.item.episodeFileExtension ?? '').toLowerCase())
     ? '.'+(best.item.episodeFileExtension ?? '').toLowerCase() : '.mp3';
-  const file = await receiveRemoteFile(best.item.episodeUrl,safeName(best.item.trackName,extension),signal);
+  const fileName=safeName(best.item.trackName,extension);
+  if (reporterDeploymentMode() === 'cloud') {
+    const response=await remoteResponse(best.item.episodeUrl,signal),size=Number(response.headers.get('content-length'));
+    await response.body?.cancel();
+    if (!Number.isSafeInteger(size) || size < 1 || size > 2*1024**3) throw new FlowError('REMOTE_MEDIA_UNAVAILABLE',422);
+    return {kind:'remote' as const,provider:'spotify' as const,sourceUrl,title:best.item.trackName,programName:best.item.collectionName,
+      fileName,size,remoteUrl:best.item.episodeUrl,extension:extension.slice(1)};
+  }
+  const file = await receiveRemoteFile(best.item.episodeUrl,fileName,signal);
   return { kind: 'processing' as const,provider: 'spotify' as const,sourceUrl,title: best.item.trackName,
     programName: best.item.collectionName,file };
 }
