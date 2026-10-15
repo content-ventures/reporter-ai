@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { defaultPipelineDefinition, pipelineRevision, PIPELINE_SCHEMAS } from '../src/domain/pipeline.ts';
 import type { PipelineVariables, PipelineCall } from '../src/domain/pipeline.ts';
 import { parsePipelineDefinition } from '../src/server/pipeline.ts';
-import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, editorialPassageSize, articlePartFloors, articlePartSchema, articleWritingBudgets, completeArticleSchema } from '../src/server/pipeline-runner.ts';
+import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, editorialPassageSize, articlePartFloors, articlePartSchema, articleSentences, articleWritingBudgets, completeArticleSchema } from '../src/server/pipeline-runner.ts';
 import { restoreLiteralQuoteCase, validPipelineOutput, writingContractIssue, writtenArticleText } from '../src/server/pipeline-output.ts';
 import { draftSizeInstructions } from '../src/registries/sizing.ts';
 import { articleLengthIssue, R1_ARTICLE_LIMITS } from '../src/domain/article-policy.ts';
@@ -87,6 +87,12 @@ test('a paraphrased quotation is revised within its part, and one that stays uns
   assert.equal(repaired.sections[0].paragraphs[0].text,'The speaker said A fabricated statement.','never presented as a literal quotation');
 });
 
+test('the last-resort cut never splits a number, an address or an abbreviation',()=>{
+  assert.deepEqual(articleSentences('A cooperativa faturou R$ 1.200.000 em 2.500 lojas. O Dr. Silva confirmou em www.ateliesul.com.br. “Vamos crescer.” Depois, saiu.'),
+    ['A cooperativa faturou R$ 1.200.000 em 2.500 lojas.','O Dr. Silva confirmou em www.ateliesul.com.br.','“Vamos crescer.”','Depois, saiu.']);
+  assert.deepEqual(articleSentences('Ela disse: “Crescemos. Vamos exportar.” E saiu.'),['Ela disse: “Crescemos. Vamos exportar.”','E saiu.'],'a quotation is never cut open');
+});
+
 test('a part that stays above its ceiling keeps whole paragraphs, never a cut sentence',async()=>{
   const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};
   const paragraph=(text:string)=>({text,evidenceIds:['e1']});
@@ -105,6 +111,11 @@ test('source capitalization is restored without accepting paraphrases or changin
   assert.equal(writingContractIssue('section',restored,{evidence}),undefined);
   const fabricated={...part,paragraphs:[{text:'“Diversificar nunca exige trabalho.”',evidenceIds:['e1']}]};
   assert.equal(writingContractIssue('section',restoreLiteralQuoteCase('section',fabricated,evidence),{evidence}),'UNSUPPORTED_ARTICLE_QUOTE');
+  // Measured on staging: a lowercase start and a closing comma together.
+  const continued={...part,paragraphs:[{text:'Para ela, “diversificar exige trabalho,” e paciência.',evidenceIds:['e1']}]};
+  const fixed=restoreLiteralQuoteCase('section',continued,evidence) as typeof part;
+  assert.equal(fixed.paragraphs[0].text,'Para ela, “Diversificar exige trabalho,” e paciência.');
+  assert.equal(writingContractIssue('section',fixed,{evidence}),undefined);
 });
 
 test('near-target refinement is bounded to one call and uses measured data in the same editable template', async () => {

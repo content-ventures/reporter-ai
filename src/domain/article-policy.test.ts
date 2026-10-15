@@ -33,6 +33,13 @@ test('mandatory quotations are distinct, substantive, literal and tied to the SA
   assert.equal(articleQuotationIssue([quote('A fonte confirma o fato,')], evidence), undefined, 'only the closing punctuation may adapt');
   assert.equal(articleQuotationIssue([quote('A fonte confirma o fato,'), quote(a)], evidence, 2), 'ARTICLE_QUOTES_REQUIRED', 'the same words are one quotation');
   assert.equal(articleQuotationIssue([quote('A fonte nega o fato,')], evidence), 'UNSUPPORTED_ARTICLE_QUOTE');
+  // A question or an exclamation changes the meaning; a cut word or number is not the source's.
+  const asked = new Map([['q', 'Quem vai pagar a conta? Custa R$ 1.200.000 ao ano.']]);
+  assert.equal(articleQuotationIssue([{ text: 'Ele disse: “Quem vai pagar a conta!”', evidenceIds: ['q'] }], asked), 'UNSUPPORTED_ARTICLE_QUOTE');
+  assert.equal(articleQuotationIssue([{ text: 'Ele disse: “Quem vai pagar a conta?”', evidenceIds: ['q'] }], asked), undefined);
+  assert.equal(articleQuotationIssue([{ text: 'Ele disse: “Custa R$ 1.200.”', evidenceIds: ['q'] }], asked), 'UNSUPPORTED_ARTICLE_QUOTE');
+  assert.equal(articleQuotationIssue([{ text: 'Ele disse: “Custa R$ 1.200.000 ao ano,”', evidenceIds: ['q'] }], asked), undefined);
+  assert.equal(articleQuotationIssue([{ text: 'Ele disse: “uem vai pagar a conta?”', evidenceIds: ['q'] }], asked), 'UNSUPPORTED_ARTICLE_QUOTE');
 });
 
 test('edited drafts cannot bypass R1 by inflating the title or removing quote provenance', () => {

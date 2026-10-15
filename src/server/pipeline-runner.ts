@@ -27,6 +27,20 @@ export function articleWritingBudgets(outline: Outline, sizing: WritingSize) {
 type PartFloor = { chars: number; words: number };
 /** Measured on staging with gpt-oss-120b: a paragraph runs 300 to 400 characters whatever its target. */
 const PARAGRAPH_CHARS = 300, LONG_PARAGRAPH_CHARS = 400;
+/** Complete sentences: a stop followed by a space and a capital. "2.500", "R$ 1.200.000", URLs and common
+ * abbreviations ("Dr.", "Sra.") never end one. */
+const ABBREVIATION = /(?:^|\s)(?:Sr|Sra|Srta|Dr|Dra|Prof|Profa|Eng|Exmo|Exma|Me|Ma|etc|vs|nº|n\.º|art|pág|cap)\.[”"'’»)]*$/iu;
+export function articleSentences(text: string): string[] {
+  return text.trim().split(/(?<=[.!?…][”"'’»)]*)\s+(?=[\p{Lu}“"«(])/u).reduce<string[]>((sentences, piece) => {
+    // Never end a sentence inside an abbreviation or an open quotation.
+    const previous = sentences[sentences.length - 1] ?? '';
+    const open = (previous.match(/“/gu)?.length ?? 0) > (previous.match(/”/gu)?.length ?? 0)
+      || (previous.match(/«/gu)?.length ?? 0) > (previous.match(/»/gu)?.length ?? 0) || (previous.match(/"/gu)?.length ?? 0) % 2 === 1;
+    if (sentences.length && (ABBREVIATION.test(previous) || open)) sentences[sentences.length - 1] += ` ${piece}`;
+    else sentences.push(piece);
+    return sentences;
+  }, []);
+}
 /** As many paragraphs as the target asks for and the ceiling holds, from one to the contract's limit. */
 function paragraphCount(target: number, maximum: number, limit: number) {
   return Math.max(1, Math.min(limit, Math.round(target / PARAGRAPH_CHARS), Math.floor(maximum / LONG_PARAGRAPH_CHARS)));
@@ -135,9 +149,9 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
       if(budget!==undefined){
         while(paragraphs.length>1&&measured(paragraphs).chars>budget)paragraphs=paragraphs.slice(0,-1);
         if(measured(paragraphs).chars>budget){
-          const sentences=paragraphs[0].text.match(/[^.!?]+[.!?]+[”"'’»)]*\s*/gu)??[paragraphs[0].text];
-          while(sentences.length>1&&countCharacters(sentences.join('').trim())>budget)sentences.pop();
-          paragraphs[0]={...paragraphs[0],text:sentences.join('').trim()};
+          const sentences=articleSentences(paragraphs[0].text);
+          while(sentences.length>1&&countCharacters(sentences.join(' '))>budget)sentences.pop();
+          paragraphs[0]={...paragraphs[0],text:sentences.join(' ')};
         }
       }
       return {...(draft as object),paragraphs};
