@@ -1,9 +1,10 @@
 # Neon worker release and verification
 
-An application build does not deploy the Neon worker. Cloud upload registration requires a
-recent worker endpoint in PostgreSQL; without it, `/api/reporter/uploads` returns 503 before
-uploading any bytes. The controlled release now deploys the database migrations, bucket,
-function and schedule/storage triggers before handing the release commit to Vercel.
+An application build does not deploy the Neon worker. The controlled release deploys the
+migrations, bucket CORS, function and triggers on staging, accepts them there, then repeats the
+deployment on production before handing the release commit to Vercel. The app wakes the worker on
+demand through `REPORTER_WORKER_URL`; an hourly schedule only catches a lost wake-up. Setup,
+stages and rollback are in [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md).
 
 ## Large recordings
 
@@ -13,7 +14,8 @@ Cloud recordings now use the same overlapping ten-minute, mono 16 kHz, 16-bit FL
 recordings, each under 24 MB. Only these audio chunks are sent to Groq. Conversion reads the
 private original through a per-job loopback byte-range bridge; Node verifies upstream HTTPS
 and handles DNS, and the original is never buffered in full or saved to the function's disk.
-Failed chunks are removed and validated completed chunks can be reused by a retry.
+Each completed chunk is stored in PostgreSQL under the job's lease, so a retry or a new invocation
+resumes where the last one stopped; a job near its time budget yields without spending an attempt.
 
 Neon Functions run Linux ARM64 and cap compressed bundles at 10 MiB. CI cross-compiles a
 minimal shared-library FFmpeg 9.0.2 build from the official release, verifying its signature
@@ -23,14 +25,13 @@ The hosted runtime mounts every writable location with `noexec` and delivers pac
 0644. The system ARM64 ELF loader reads the bundled tools and their bundled libraries directly
 from the executable, read-only package mount. No runtime download, writable executable staging
 or mount-policy change is required. Local workers continue using their configured/system tools.
-The health endpoint executes both binaries, verifies the existing upload CORS, then registers its database
-heartbeat. The release then waits for a fresh real scheduled invocation, excluding health and
-diagnostic calls, so a missing/broken schedule cannot pass and fail again three minutes later.
-A failure stops the release before the Vercel release commit is pushed.
-The worker registers its configured public HTTPS invocation origin, rather than the internal
-HTTP request URL supplied by the hosting runtime.
+Readiness executes both binaries, verifies the upload CORS and reaches PostgreSQL; nothing is
+registered. After a deployment the release lists the branch's live triggers, refusing any
+undeclared one or any schedule faster than hourly, and asks the worker for one complete drain
+pass, recording its receipt. A failure stops the release before the Vercel release commit is pushed.
 
-Schedule and storage deliveries use `/triggers/schedule` and `/triggers/storage`.
+Schedule and storage deliveries use `/triggers/schedule` and `/triggers/storage`; a schedule
+delivery starts at most one sweep per isolate every five minutes, and a forged one reads nothing.
 The handler passes headers and JSON directly to the Neon SDK, without assuming
 the hosted request shares Node's global `Request` constructor or clone behavior.
 Both routes retain the SDK's invocation-header/body validation. Rejected deliveries
@@ -39,50 +40,35 @@ emit a bounded reason code to the function console for release diagnostics.
 Readiness executes both media tools and returns bounded launch error codes. Authenticated
 failure diagnostics include the package version, fixed tool sizes/modes, platform and loader
 availability, without provider URLs, credentials or user material.
-The `validation_only` workflow can prepare an expiring real-file acceptance session with
-`prepare_session`. Only its isolated branch is retained, with a 24-hour expiry, for testing the
-original large file through the candidate app. Production releases always run the automated
-acceptance and never use this retention option.
+`validation_only` deploys and accepts on staging without touching production, from any branch.
 
-## Required GitHub production environment
+## GitHub environments
 
-Variables: `NEON_PROJECT_ID`, `NEON_BRANCH_ID` (the intended production branch ID).
-Secrets: `NEON_API_KEY`, `REPORTER_WORKER_PASSWORD`, `GROQ_API_KEY`, `OPENAI_API_KEY`,
-`ANTHROPIC_API_KEY`, `PIXABAY_API_KEY`. The OpenAI/Anthropic aliases `OPEN_AI_API_KEY` and
-`CLAUDE_API_KEY` are accepted. The worker password must match the existing `reporter_worker`
-database role. Never rotate or reset roles as a release side effect.
-
-Provider credential checks run before any infrastructure mutation. They authenticate using
-provider API metadata/search endpoints; they do not claim quota or access for every generation
-model. Worker health verifies database access, storage and media execution. Candidate acceptance
-runs against an isolated Neon branch before any production release.
+The `staging` and `production` environments, their variables and secrets are listed in
+[RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md). The worker password must match the existing
+`reporter_worker` role; roles are never rotated by a release. Provider credential checks run before
+any infrastructure change and authenticate with metadata or search endpoints; they do not prove
+quota for every generation model.
 
 ## Verification
 
-Production releases first run the complete acceptance on a workflow-created, expiring Neon child
-branch. Inherited triggers remain disabled until the candidate worker is deployed with the child
-database connection. The workflow builds the media tools, requires a fresh scheduled invocation,
-generates synthetic speech offline with espeak-ng, uploads it through multipart storage, checks real Groq transcription, generates an
-article and carousel through the saved production pipeline (or its default seed), approves both with a separate review-only member, reads an
-uploaded image as that reviewer and builds the browser export (Markdown, HTML, images, slide PNGs,
-JSON and manifest). The child branch is removed on completion. A failed acceptance stops before
-production migrations or deployment. `validation_only` runs the same acceptance without publishing.
-The article uses that uploaded source's actual transcript. The same acceptance also exercises
-pasted text and UTF-8 file ingestion through real material analysis and article generation.
+Acceptance runs on the persistent staging project, never on production and without creating a
+branch. The core path generates synthetic speech offline with espeak-ng, uploads 20 seconds through
+multipart storage and the storage trigger, checks real Groq transcription, then generates one
+article from the fixture interview through staging's saved pipeline and has a separate review-only
+member approve it. `REPORTER_ACCEPTANCE_SCOPE=full` adds an uploaded image read by the reviewer,
+the carousel and its approval, the browser export (Markdown, HTML, images, slide PNGs, JSON and
+manifest) and pasted-text and UTF-8 file ingestion.
 
-For an original large recording, prepare a session, then use `scripts/open-neon-acceptance.mjs`
-with its branch ID and the authenticated Neon environment. It writes a mode-0600 temporary
-environment file. Start the candidate production build on loopback with that environment and
-run `scripts/neon-browser-acceptance.mjs` with `REPORTER_ACCEPTANCE_MEDIA_PATH`. The script
-creates verified synthetic accounts on the isolated branch and signs in through the real app.
-A test-browser reverse proxy serves the candidate build under the app origin so browser CORS
-matches production; every app-origin request is intercepted before it reaches production.
-Screenshots and a result manifest are saved under the local temporary directory. A distinct evidence directory can be selected with
-`REPORTER_ACCEPTANCE_EVIDENCE_DIR`. After the browser has completed the original upload and
-transcription, `REPORTER_ACCEPTANCE_TRANSCRIPT_ID` lets the complete editorial acceptance reuse
-that exact transcript. It verifies the completed private source on the same isolated branch and,
-when supplied, its exact `REPORTER_ACCEPTANCE_MEDIA_BYTES`, then checks article generation,
-second-user approval, carousel and export. It never accepts a transcript from production.
+For an original large recording, write a staging environment with `node scripts/staging-env.mjs
+<file>`, start the candidate production build on loopback with it, and run
+`scripts/neon-browser-acceptance.mjs` with `REPORTER_ACCEPTANCE_MEDIA_PATH`. The script creates
+verified synthetic accounts on staging and signs in through the real app. A test-browser reverse
+proxy serves the candidate build under the first staging origin so browser CORS matches the
+staging bucket. Screenshots and a result manifest are saved under the local temporary directory,
+or under `REPORTER_ACCEPTANCE_EVIDENCE_DIR`. Afterwards `REPORTER_ACCEPTANCE_TRANSCRIPT_ID` lets the
+editorial acceptance reuse that exact transcript, checking the completed private source and, when
+supplied, its exact `REPORTER_ACCEPTANCE_MEDIA_BYTES`.
 
 Cloud images live under private `images/<portal>/<hash>` Object Storage keys. The Next.js server
 authorizes access and obtains short-lived URLs through the authenticated worker gateway; browser
