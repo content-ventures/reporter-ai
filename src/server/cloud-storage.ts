@@ -51,7 +51,7 @@ function allowedOrigin() {
 
 async function ensureUploadCors() {
   corsConfigured ??= s3().send(new PutBucketCorsCommand({ Bucket: SOURCE_BUCKET,CORSConfiguration: { CORSRules: [{
-    AllowedOrigins: [allowedOrigin()],AllowedMethods: ['PUT'],AllowedHeaders: ['*'],ExposeHeaders: ['ETag'],MaxAgeSeconds: 3600,
+    AllowedOrigins: [allowedOrigin()],AllowedMethods: ['PUT','GET'],AllowedHeaders: ['*'],ExposeHeaders: ['ETag'],MaxAgeSeconds: 3600,
   }] } })).then(() => undefined).catch(error => {
     corsConfigured = undefined;
     throw error;

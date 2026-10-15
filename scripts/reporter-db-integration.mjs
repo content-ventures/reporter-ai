@@ -170,7 +170,8 @@ export async function verifyFreshBootstrap(source, baseline) {
     console.log("PASS fresh official-entrypoint bootstrap and PostgreSQL integration suite");
     await verifyConcurrency(id);
     for (const path of ["database/migrations/005-neon-cloud.sql","database/migrations/006-cloud-auth-context.sql",
-      "database/migrations/007-neon-scheduled-worker.sql","database/migrations/008-neon-object-storage.sql"]) {
+      "database/migrations/007-neon-scheduled-worker.sql","database/migrations/008-neon-object-storage.sql",
+      "database/migrations/009-cloud-runtime-recovery.sql"]) {
       const migration = await readFile(resolve(root,path),"utf8");
       run(migration);run(migration);
     }
@@ -179,6 +180,7 @@ export async function verifyFreshBootstrap(source, baseline) {
       throw new Error('Cloud upload integration did not complete');
     }
     console.log('PASS cloud migrations replay and private multipart intake');
+    console.log(run(await readFile(resolve(root,'database/tests/cloud-review.integration.sql'),'utf8')).split('\n').filter(line=>line.startsWith('PASS ')).join('\n'));
   } finally {
     // Remove only the exact disposable ID created by this invocation. Its private
     // tmpfs contains synthetic test data; no persistent/user volume is removed.

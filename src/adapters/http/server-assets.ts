@@ -5,20 +5,38 @@ import { ok, refuse } from '../../domain/result.ts';
 import { reporterRequest } from './reporter-client.ts';
 import { contentHash } from '../../domain/text/hash.ts';
 import type { AssetChange } from '../../ports/assets.ts';
+import { validateImageFile } from '../../domain/asset.ts';
 
 /** Same asset contract for local uploads and server-owned photos, including real export bytes. */
-export function withServerAssets(local: AssetStore,current: () => readonly ServerImageAsset[],refresh: () => Promise<void> = async () => {}): AssetStore & { adoptSnapshot(): void } {
+export function withServerAssets(local: AssetStore,current: () => readonly ServerImageAsset[],refresh: () => Promise<void> = async () => {},remoteUploads: () => boolean = () => false): AssetStore & { adoptSnapshot(): void } {
   const listeners = new Set<(change: AssetChange) => void>();
   let signature = contentHash(current());
   const entry = (id: string) => current().find(entry => entry.asset.id === id);
   const source = (id: string) => {
     const image = entry(id)?.asset.provenance;
-    if (!image) return undefined;
-    const path = libraryImageUrl(image.libraryId);
+    const item = entry(id);
+    if (!image && !item?.fileKey) return item?.asset.origin.type === 'url' ? item.asset.origin.url : undefined;
+    const path = item?.fileKey ? '/api/reporter/visuals/assets/'+id+'/file' : libraryImageUrl(image!.libraryId);
     const origin = (globalThis as { location?: { origin?: string } }).location?.origin;
     return origin && origin !== 'null' ? new URL(path,origin).href : path;
   };
   return { ...local,
+    async put(input,meta) {
+      if (!remoteUploads()) return local.put(input,meta);
+      try {
+        let asset:ServerImageAsset['asset'];
+        if (input.type === 'url') asset = await reporterRequest('/visuals/assets/link',{url:input.url,meta});
+        else {
+          const valid=validateImageFile({name:input.fileName,type:input.file.type,size:input.file.size});if(!valid.ok)return valid;
+          const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256',await input.file.arrayBuffer()))].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+          const prepared=await reporterRequest<{url:string;token:string}>('/visuals/assets/prepare',{id:crypto.randomUUID(),fileName:input.fileName,mime:valid.value.mime,size:input.file.size,hash,meta});
+          const uploaded=await fetch(prepared.url,{method:'PUT',headers:{'content-type':valid.value.mime},body:input.file,signal:AbortSignal.timeout(120000)});
+          if(!uploaded.ok)throw new Error('Não foi possível enviar a imagem. Tente novamente.');
+          asset=await reporterRequest('/visuals/assets/complete',{token:prepared.token});
+        }
+        await refresh();return ok(asset);
+      }catch(error){return refuse('unavailable',error instanceof Error?error.message:'Não foi possível salvar a imagem no servidor.');}
+    },
     get scope() { return local.scope; },
     subscribe(listener) { listeners.add(listener);const off = local.subscribe(listener);return () => { listeners.delete(listener);off(); }; },
     adoptSnapshot() {

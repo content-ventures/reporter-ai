@@ -10,7 +10,7 @@ import { pipeline } from "node:stream/promises";
 import busboy from "busboy";
 import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES } from "../domain/reporter";
 import { UUID } from "./reporter-schema";
-import { FlowError } from "./errors";
+import { FlowError, logEvent, safeCode } from "./errors";
 import { inspectMedia } from "./media";
 import { reporterDeploymentMode } from './deployment.ts';
 import { transaction } from './database.ts';
@@ -71,7 +71,7 @@ export async function workerHeartbeat() {
   if (reporterDeploymentMode() === 'cloud') {
     try {
       return await transaction('runtime',async client => Boolean((await client.query('SELECT public.reporter_worker_online() AS online')).rows[0]?.online));
-    } catch { return false; }
+    } catch (error) { logEvent('api','worker_readiness_failed',{ error_code: safeCode(error) }); return false; }
   }
   try {
     const heartbeat = JSON.parse(await readFile(join(await storageRoot(), "worker.json"), "utf8"));
@@ -171,7 +171,7 @@ async function safeRemoteUrl(value: string): Promise<URL> {
   return url;
 }
 
-async function remoteResponse(source: string, signal: AbortSignal): Promise<Response> {
+export async function remoteResponse(source: string, signal: AbortSignal): Promise<Response> {
   let url = await safeRemoteUrl(source);
   for (let redirect=0; redirect<=5; redirect++) {
     const response = await fetch(url,{ redirect: 'manual',signal,headers: { 'user-agent': 'ReporterAI/1.0 (+local podcast import)' } });

@@ -5,7 +5,7 @@ import { foldForMatch } from '../domain/text/normalize.ts';
 import type { LibraryImage, StockImage } from '../domain/visual-library.ts';
 import { isCoverResolution, libraryImageNote, publicationImageCredit } from '../domain/visual-library.ts';
 import type { ServerImageAsset } from '../ports/connected-workspace.ts';
-import { localContext } from './config';
+import { currentReporterContext } from './request-context.ts';
 import { importStockImage } from './visual-library';
 import { searchStock } from './stock-images';
 import { safeCode } from './errors';
@@ -49,7 +49,8 @@ const defaults: Dependencies = {
   importImage: (image,signal) => importStockImage('pixabay',image.providerId,signal),
 };
 /** At most three planned images. No invented URLs, low-resolution upscale or legacy fallback. */
-export async function illustrateArticle(body: ArticleBody,productionId: string,signal: AbortSignal,dependencies: Dependencies = defaults) {
+export async function illustrateArticle(body: ArticleBody,productionId: string,signal: AbortSignal,dependencies: Dependencies = defaults,identity?: {portal:string;actor:string}) {
+  const attribution = identity ?? currentReporterContext();
   const result = structuredClone(body), assets: ServerImageAsset[] = [], used = new Set<string>(), queries = new Map<string,StockImage[]>();
   const codes: string[] = [];
   const fill = async (slot: ImageSlot) => {
@@ -69,9 +70,9 @@ export async function illustrateArticle(body: ArticleBody,productionId: string,s
             if (!isCoverResolution(image) || image.provider !== 'pixabay' || image.downloadLimited) continue;
             used.add(image.providerId);
             const assetId = randomUUID();
-            assets.push({ productionId,asset: { id: assetId,workspaceId: localContext.portal,kind: 'image',origin: { type: 'archive',archiveId: image.id },
+            assets.push({ productionId,fileKey:image.fileKey,asset: { id: assetId,workspaceId: attribution.portal,kind: 'image',origin: { type: 'archive',archiveId: image.id },
               mime: 'image/jpeg',width: image.width,height: image.height,bytes: image.bytes,credit: publicationImageCredit(image),
-              rights: { authorized: true,note: libraryImageNote(image) },createdAt: new Date().toISOString(),createdBy: localContext.actor,
+              rights: { authorized: true,note: libraryImageNote(image) },createdAt: new Date().toISOString(),createdBy: attribution.actor,
               provenance: { ...image,libraryId: image.id } } });
             return { image: { assetId,alt: image.title,caption: `Imagem ilustrativa: ${image.title}.` } };
           } catch (error) { if (signal.aborted) throw error;code = safeCode(error); }

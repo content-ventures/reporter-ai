@@ -16,3 +16,9 @@ test('server photos resolve in a fresh browser without a prior IndexedDB record 
   assert.ok(changes.includes('loaded'));
   assets.dispose();
 });
+test('uploaded server images resolve in a fresh browser with no local bytes',async()=>{
+  const local=createMemoryAssetStore({clock:{now:()=>new Date().toISOString()},ids:{next:()=> 'unused'},workspaceId:'workspace',actorId:()=> 'editor'});
+  const entries:ServerImageAsset[]=[{productionId:'production',fileKey:'a'.repeat(64)+'.image',asset:{id:'uploaded',kind:'image',workspaceId:'workspace',origin:{type:'upload',fileName:'photo.png'},rights:{authorized:true},createdAt:new Date().toISOString(),createdBy:'editor'}}];
+  const assets=withServerAssets(local,()=>entries);await assets.ready();
+  assert.equal(await assets.objectUrl('uploaded'),'/api/reporter/visuals/assets/uploaded/file');assert.equal(local.get('uploaded'),undefined);assert.equal(assets.list('production').length,1);assets.dispose();
+});

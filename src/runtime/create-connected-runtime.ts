@@ -32,7 +32,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const saveListeners = new Set<(state: SaveState) => void>();
   const setSave = (state: SaveState) => { save = state; for (const listener of saveListeners) listener(save); };
   const localAssets = createIndexedDbAssetStore({ clock,ids,workspaceId: LOCAL_WORKSPACE,actorId: () => LOCAL_OPERATOR,reset: false });
-  const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh());
+  const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(),() => current.deploymentMode === 'cloud');
   const fixtures = createFixtures({ now: clock.now(),empty: true });
   const render = createLocalRenderService({ templates: fixtures.templates,renders: fixtures.templateRenders,
     descriptions: fixtures.templateDescriptions,library: fixtures.templateLibrary,loadCover: assetCoverLoader(assets),

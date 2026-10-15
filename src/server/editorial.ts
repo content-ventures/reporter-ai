@@ -23,6 +23,7 @@ import { r1ArticleIssue, ARTICLE_POLICY_MESSAGES } from '../domain/article-polic
 import { ARTICLE_ASSIST_KINDS, validateArticleAssistInput } from './article-assist';
 import { citationDay, podcastLink } from '../domain/citation-library.ts';
 import { currentReporterContext } from './request-context.ts';
+import type { EditorialIdentity } from '../runtime/editorial-engine.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 
 const ids = { next: () => randomUUID() };
@@ -41,14 +42,20 @@ export function editorialReceipt(method: string,hash: string,result: unknown,rev
 
 export async function editorialTransaction<T>(role: 'runtime' | 'worker', change: (
   checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, client: PoolClient,
-) => Promise<T>, mutate = true): Promise<{ value: T; revision: number; checkpoint: EditorialCheckpoint }> {
+) => Promise<T>, mutate = true, permission: 'reporter.edit' | 'reporter.review' = 'reporter.edit'): Promise<{ value: T; revision: number; checkpoint: EditorialCheckpoint }> {
   return transaction(role, async client => {
+    if (role === 'runtime') await client.query("SELECT set_config('app.editorial_permission',$1,true)",[permission]);
     const row = (await client.query('SELECT public.reporter_editorial_load($1) AS value', [mutate])).rows[0].value;
     const context = role === 'runtime' ? currentReporterContext() : undefined;
     const identity = context ? { workspaceId: context.portal,workspaceName: context.workspaceName,workspaceSlug: context.workspaceSlug,
       personId: context.actor,name: context.name,email: context.email,avatarUrl: context.image,roles: context.roles,
       ...(reporterDeploymentMode() === 'local' ? { localOperator: true as const } : {}) } : undefined;
     const checkpoint: EditorialCheckpoint = row.checkpoint.state ? row.checkpoint : emptyEditorialCheckpoint(identity);
+    if (identity && reporterDeploymentMode() === 'cloud') {
+      const members=(await client.query('SELECT public.reporter_workspace_members() AS members')).rows[0].members as EditorialIdentity[];
+      checkpoint.state.members=[];
+      for(const member of members) adoptEditorialIdentity(checkpoint,member);
+    }
     if (identity) adoptEditorialIdentity(checkpoint,identity);
     const before = contentHash(checkpoint);
     const engine = createEditorialEngine(checkpoint, ids);
@@ -64,7 +71,7 @@ export async function editorialTransaction<T>(role: 'runtime' | 'worker', change
 
 export async function editorialWorkspace(): Promise<ConnectedWorkspace> {
   const result = await editorialTransaction('runtime', async () => undefined, false);
-  return { state: result.checkpoint.state,jobs: result.checkpoint.jobs,revision: result.revision,model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline: await workerHeartbeat() };
+  return { state: result.checkpoint.state,jobs: result.checkpoint.jobs,revision: result.revision,model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline: await workerHeartbeat(),deploymentMode:reporterDeploymentMode() };
 }
 
 export async function editorialPipeline() {
@@ -163,7 +170,9 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
 export async function editorialRpc(payload: unknown) {
   const { method,args,requestId } = rpcSchema.parse(payload);
   if (['generation.start', 'generation.retry'].includes(method) && !await workerHeartbeat()) {
-    return refuse('provider_unavailable', 'Inicie o worker do Reporter AI antes de gerar.');
+    return refuse('provider_unavailable', reporterDeploymentMode() === 'cloud'
+      ? 'O serviço de geração está indisponível. Tente novamente após a recuperação do serviço.'
+      : 'Inicie o worker do Reporter AI antes de gerar.');
   }
   return (await editorialTransaction('runtime', async (checkpoint,engine,client) => {
     const hash = contentHash({ method,args });
@@ -248,5 +257,5 @@ export async function editorialRpc(payload: unknown) {
     const keys = Object.keys(checkpoint.receipts);
     for (const key of keys.slice(0,Math.max(0,keys.length-1000))) delete checkpoint.receipts[key];
     return result;
-  })).value;
+  },true,method === 'decide' ? 'reporter.review' : 'reporter.edit')).value;
 }
