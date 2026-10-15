@@ -117,6 +117,35 @@ jobs:
         if: always()
         run: pnpm db:stop
 
+  rehearsal:
+    name: Cloud rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      # The production SQL, worker and media conversion against loopback storage and
+      # stand-in providers: no Neon, no provider keys, no network beyond the runner.
+      - name: Rehearse the cloud flow
+        run: pnpm test:rehearsal
+
   smoke:
     name: Smoke e2e
     needs: quality
