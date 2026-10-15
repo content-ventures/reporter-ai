@@ -95,20 +95,6 @@ export async function transcribeChunk(path: string, language: string, signal: Ab
   return transcriptResult(data,requestId,model);
 }
 
-/** Groq fetches large private media from a short-lived Neon URL, so the
- * recording never crosses a Vercel request body and the Function does not
- * need to buffer gigabytes or bundle ffmpeg. */
-export async function transcribeUrl(url: string,language: string,signal: AbortSignal): Promise<ProviderResult> {
-  const parsed = new URL(url);
-  if (parsed.protocol!=='https:' || parsed.username || parsed.password) throw new FlowError('SOURCE_UNAVAILABLE',422);
-  const model = checkedTranscriptionModel();
-  const { data,requestId } = await request('audio/transcriptions',{
-    url,model,language: language.split('-')[0],response_format: 'verbose_json',temperature: 0,
-    timestamp_granularities: ['segment'],
-  },signal,12*60*1000);
-  return transcriptResult(data,requestId,model);
-}
-
 const objectSchema = (properties: Record<string, unknown>) => ({ type: "object", additionalProperties: false, properties, required: Object.keys(properties) });
 const articleJson = objectSchema({ title: { type: "string" }, content: { type: "string" } });
 const carouselJson = objectSchema({ title: { type: "string" }, slides: { type: "array", items: objectSchema({ title: { type: "string" }, body: { type: "string" } }) } });

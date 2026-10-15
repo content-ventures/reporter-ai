@@ -80,6 +80,22 @@ test('health check requires the worker secret and reports database readiness',as
   }
 });
 
+test('release health check refuses readiness if storage or media tools fail and does not publish a healthy heartbeat', async () => {
+  const previous = process.env.REPORTER_WORKER_PASSWORD;
+  process.env.REPORTER_WORKER_PASSWORD = 'worker-secret';
+  try {
+    let heartbeats = 0;
+    const worker = createReporterWorker({ ready: async () => { throw new Error('private infrastructure detail'); },
+      heartbeat: async () => { heartbeats++; }, run: async () => false,
+      startUpload: async () => ({}), completeUpload: async () => ({}), finalizeObject: async () => ({}), now: Date.now });
+    const response = await worker.fetch(new Request('https://worker.test/', { headers: { 'x-reporter-worker-key': 'worker-secret' } }));
+    assert.equal(response.status, 503); assert.equal(heartbeats, 0);
+    assert.deepEqual(await response.json(), { ok: false, error: 'INTERNAL_ERROR' });
+  } finally {
+    if (previous === undefined) delete process.env.REPORTER_WORKER_PASSWORD; else process.env.REPORTER_WORKER_PASSWORD = previous;
+  }
+});
+
 test('browser upload session requires the configured app origin and delegates only the opaque token',async () => {
   const previous = process.env.REPORTER_APP_ORIGIN;
   process.env.REPORTER_APP_ORIGIN = 'https://reporter.test';

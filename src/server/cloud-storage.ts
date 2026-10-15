@@ -59,6 +59,11 @@ async function ensureUploadCors() {
   await corsConfigured;
 }
 
+export async function checkUploadStorage() {
+  // The same permission and origin configuration used by /uploads/start.
+  await ensureUploadCors();
+}
+
 async function authorizedUpload(sourceId: string,token: string) {
   return uploadInputSchema.parse(await transaction('worker',async db => (await db.query(
     'SELECT public.reporter_cloud_upload_input($1,$2) AS value',[sourceId,token],
