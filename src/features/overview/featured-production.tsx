@@ -1,74 +1,44 @@
 'use client';
 
-import { ButtonLink, Card, CardHeader, EditableTitle, EmptyState, Grid, MediaFrame, MetaList, Overline, PageStack, Prose, SkeletonText } from '@content-ventures/design-system/v3';
-import { ArrowRight, CheckCircle2 } from '@content-ventures/design-system/v3/icons';
+import { Badge, ButtonLink, Card, CardHeader, EditableTitle, Grid, MediaFrame, MetaList, PageStack, Prose, SkeletonText } from '@content-ventures/design-system/v3';
+import { ArrowRight, Plus } from '@content-ventures/design-system/v3/icons';
 import type { InProgressItem } from '@/ports';
 import { PersonAvatar } from '@/ui/person-avatar';
-import { PRODUCTIONS_HREF, stepTargetHref } from '@/ui/routes';
-import { useNow } from '@/ui/time';
-import { inProgressLine } from './desk-copy';
+import { NEW_PRODUCTION_HREF, productionHref, stepTargetHref } from '@/ui/routes';
+import { StartWritingButton } from '@/features/new-production/start-writing-button';
 import { storyOpening, useStoryPreview } from './use-story-preview';
 
-/** Lead with the writer's actual headline and opening; the action stays on the R1 journey. */
 export function FeaturedProduction({ item, loading }: { item: InProgressItem | undefined; loading: boolean }) {
-  if (item?.nextStep) return <ProductionCard item={item} />;
-  if (loading) {
-    return (
-      <Card loading aria-label="Carregando produção para continuar" padding="lg">
-        <PageStack>
-          <Grid columns="1:1" collapseBelow={640}>
-            <MediaFrame ratio="4/3" alt="" state="loading" />
-            <SkeletonText lines={3} />
-          </Grid>
-        </PageStack>
-      </Card>
-    );
-  }
-  return (
-    <Card padding="lg">
-      <EmptyState
-        size="panel"
-        icon={CheckCircle2}
-        title="Espaço para a próxima história"
-        description="Confira suas prioridades ou comece uma nova produção."
-        actions={<ButtonLink href={PRODUCTIONS_HREF}>Ver produções</ButtonLink>}
-      />
-    </Card>
-  );
+  if (item) return <ProductionCard item={item} />;
+  if (loading) return <Card loading padding="lg" aria-label="Carregando produção para continuar"><SkeletonText lines={5} /></Card>;
+  return <Card padding="lg"><Grid columns="3:2" collapseBelow={640} align="start">
+    <PageStack>
+      <CardHeader titleAs="h2" size="md" title="Sua próxima história começa aqui" />
+      <Prose variant="read" measure="wide">Transforme uma transcrição em artigo e carrossel, com revisão em cada etapa.</Prose>
+      <MetaList items={[<ButtonLink key="create" href={NEW_PRODUCTION_HREF} variant="primary" icon={Plus}>Começar produção</ButtonLink>, <StartWritingButton key="write" />]} />
+    </PageStack>
+    <MediaFrame ratio="16/9" src="/editorial/writing.jpg" alt="" />
+  </Grid></Card>;
 }
 
 function ProductionCard({ item }: { item: InProgressItem }) {
   const story = useStoryPreview(item);
-  const now = useNow();
   const step = item.nextStep;
-  const action = step && (
-    <ButtonLink size="sm" href={stepTargetHref(item.productionId, step.target)} icon={ArrowRight} aria-label={`${step.label}: ${item.productionTitle}`}>
-      {step.label}
-    </ButtonLink>
-  );
-
-  return (
-    <Card as="article" padding="lg" aria-label={`Continuar: ${item.productionTitle}`}>
-      <PageStack>
-        <Overline>Continue de onde parou</Overline>
-        <Grid columns="1:1" collapseBelow={640} align="start">
-          <MediaFrame
-            ratio="4/3"
-            src={story.image ? story.src : '/editorial/writing.jpg'}
-            alt={story.alt}
-            state={story.loading || story.imageLoading ? 'loading' : undefined}
-            caption={story.caption}
-          />
-          <PageStack>
-            <EditableTitle value={story.title} as="h2" size="document" label="Título do artigo em edição" readOnly onCommit={() => undefined} />
-            {story.loading ? <SkeletonText lines={3} /> : story.text && (
-              <Prose variant="read" size="sm" align="start" measure="wide" label="Abertura do artigo em edição">{storyOpening(story.text, 290)}</Prose>
-            )}
-            <MetaList size="sm" items={[story.simulated ? 'Simulação local' : undefined]} />
-          </PageStack>
-        </Grid>
-        <CardHeader title={item.owner.name} titleAs="h3" leading={<PersonAvatar person={item.owner} size="sm" decorative />} description={inProgressLine(item, now)} actions={action} />
-      </PageStack>
-    </Card>
-  );
+  return <Card as="article" padding="lg" aria-label={`Continuar: ${item.productionTitle}`}>
+    <PageStack>
+      <CardHeader titleAs="h2" size="md" title="Continuar de onde parou" />
+      <Grid columns="3:2" collapseBelow={640} align="start">
+        <PageStack>
+          <MetaList items={[<Badge key="status" tone="blue" size="sm">{item.situation.line}</Badge>]} />
+          <EditableTitle value={story.title} as="h3" size="page" label="Título da produção em destaque" readOnly onCommit={() => undefined} />
+          {story.loading ? <SkeletonText lines={2} /> : story.text && <Prose variant="compact" measure="wide">{storyOpening(story.text, 180)}</Prose>}
+          <MetaList size="sm" items={[<PersonAvatar key="avatar" person={item.owner} size="xs" decorative />, item.owner.name, story.simulated ? 'Simulação local' : undefined]} />
+          <MetaList items={[<ButtonLink key="continue" variant="primary" href={step ? stepTargetHref(item.productionId, step.target) : productionHref(item.productionId)} icon={ArrowRight}
+            aria-label={`${step?.label ?? 'Abrir'}: ${item.productionTitle}`}>{step?.label ?? 'Abrir produção'}</ButtonLink>]} />
+        </PageStack>
+        <MediaFrame ratio="16/9" src={story.image ? story.src : '/editorial/writing.jpg'} alt={story.alt}
+          state={story.loading || story.imageLoading ? 'loading' : undefined} caption={story.caption} />
+      </Grid>
+    </PageStack>
+  </Card>;
 }

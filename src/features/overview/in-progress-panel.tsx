@@ -1,45 +1,39 @@
 'use client';
 
-import { List, ListItem, ListItemSkeleton, Panel, Section, TextLink } from '@content-ventures/design-system/v3';
+import { Card, CardHeader, CardLink, EmptyState, Grid, MediaFrame, MetaList, PageStack, Panel, Prose, Section, SkeletonText, TextLink } from '@content-ventures/design-system/v3';
 import type { DeskView, InProgressItem } from '@/ports';
-import { formatCount } from '@/ui/format';
-import { PRODUCTIONS_HREF } from '@/ui/routes';
+import { PersonAvatar } from '@/ui/person-avatar';
+import { PRODUCTIONS_HREF, productionHref, stepTargetHref } from '@/ui/routes';
 import { useNow } from '@/ui/time';
-import { inProgressLine } from './desk-copy';
-import { ProgressAction } from './next-step-action';
+import { formatAgo } from '@/ui/approval-copy';
+import { storyOpening, useStoryPreview } from './use-story-preview';
 
-/**
- * "Em andamento" (D1, COPY §1.3): the viewer's own active productions that are not already a row
- * of "Precisa de você" (everyone's when they own none), newest activity first, each with its step
- * in newsroom words and its size while on the article ("Artigo · Rascunho · 1,6 de 2 laudas · há
- * 20 min") and a quiet "Continuar" / "Abrir". The production already offered by the empty queue's
- * "Continuar" card is not repeated here. "Ver todas" opens Produções.
- */
-export function InProgressPanel({ desk, featuredId }: { desk: DeskView | undefined; featuredId?: InProgressItem['productionId'] }) {
+function ProductionPreview({ item }: { item: InProgressItem }) {
+  const story = useStoryPreview(item);
   const now = useNow();
-  const card = featuredId ?? (desk && desk.needsYou === 0 ? desk.continueWith?.productionId : undefined);
-  const items = desk?.inProgress.filter((item) => item.productionId !== card) ?? [];
-  const total = desk ? desk.inProgressTotal - (card && desk.inProgress.some((item) => item.productionId === card) ? 1 : 0) : 0;
-  if (desk && items.length === 0) return null;
-  return (
-    <Panel>
-      <Section
-        title="Em andamento"
-        meta={desk ? formatCount(total) : undefined}
-        action={
-          <TextLink size="sm" href={PRODUCTIONS_HREF}>
-            Ver todas
-          </TextLink>
-        }
-      >
-        <List label="Em andamento" framed={false} bleed>
-          {desk
-            ? items.map((item) => (
-                <ListItem key={item.productionId} title={item.productionTitle} description={inProgressLine(item, now)} trailing={<ProgressAction item={item} />} />
-              ))
-            : [0, 1, 2].map((index) => <ListItemSkeleton key={index} leading={false} />)}
-        </List>
-      </Section>
-    </Panel>
-  );
+  const href = item.nextStep ? stepTargetHref(item.productionId, item.nextStep.target) : productionHref(item.productionId);
+  return <Card interactive padding="md">
+    <PageStack>
+      {story.image && <MediaFrame ratio="16/9" src={story.src} alt={story.alt}
+        state={story.imageLoading ? 'loading' : undefined} />}
+      <CardHeader titleAs="h3" size="md" title={<CardLink href={href}>{item.productionTitle}</CardLink>}
+        description={item.situation.line} />
+      {story.text && <Prose variant="compact" measure="wide">{storyOpening(story.text, 110)}</Prose>}
+      <MetaList size="sm" items={[
+        <PersonAvatar key="avatar" person={item.owner} size="xs" decorative />, item.owner.name,
+        now ? formatAgo(item.updatedAt, now) : undefined,
+      ]} />
+    </PageStack>
+  </Card>;
+}
+
+/** Recent work excludes the production already featured above it. */
+export function InProgressPanel({ desk }: { desk: DeskView | undefined }) {
+  const featured = desk?.continueWith ?? desk?.inProgress[0];
+  const items = desk?.inProgress.filter(item => item.productionId !== featured?.productionId).slice(0, 4);
+  return <Panel><Section title="Produções recentes" action={<TextLink size="sm" href={PRODUCTIONS_HREF}>Ver todas</TextLink>}>
+    {!desk ? <SkeletonText lines={4} /> : items?.length ? <Grid columns="1:1" collapseBelow={640}>
+      {items.map(item => <ProductionPreview key={item.productionId} item={item} />)}
+    </Grid> : <EmptyState size="inline" title="Nenhuma outra produção em andamento" />}
+  </Section></Panel>;
 }

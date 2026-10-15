@@ -2,29 +2,25 @@
 
 import { Suspense, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Accordion, Button, ButtonLink, EmptyState, ErrorState, PageHeader, PageStack, SplitLayout } from '@content-ventures/design-system/v3';
-import { Inbox, Plus } from '@content-ventures/design-system/v3/icons';
+import { ButtonLink, ErrorState, PageHeader, PageStack, SplitLayout, MetricStrip, Panel, Section, TextLink } from '@content-ventures/design-system/v3';
+import { Plus } from '@content-ventures/design-system/v3/icons';
 import type { OverviewData } from '@/ports';
 import { dashboardWidgetsFor } from '@/registries';
-import { useOverview, useSession, useSimulation } from '@/state';
-import { NEW_PRODUCTION_HREF } from '@/ui/routes';
+import { useOverview, useSession } from '@/state';
+import { NEW_PRODUCTION_HREF, PRODUCTIONS_HREF } from '@/ui/routes';
 import { StartWritingButton } from '@/features/new-production/start-writing-button';
+import { usePhone } from '@/ui/use-phone';
 import { useNow } from '@/ui/time';
 import { deskSummary } from './desk-copy';
 import { InProgressPanel } from './in-progress-panel';
 import { NeedsYouPanel } from './needs-you-panel';
-import { FeaturedProduction } from './featured-production';
-import { ProductionDesk } from './production-desk';
 import { RecentActivity } from './recent-activity';
-import { ReadyStory } from './ready-story';
 import { parseRange, type OverviewRangeKey } from './overview-format';
+import { FeaturedProduction } from './featured-production';
+import { TemplateStrip } from './template-strip';
 import { WeekLine } from './week-line';
 
-/**
- * An editorial desk: real story headlines and openings, continuation and delivery preview,
- * alongside the original personal/team queue. All actions use the existing R1 journey routes.
- * The read model, role-specific queues, live updates and URL window remain unchanged.
- */
+/** Start work, resume a production and resolve the viewer’s pending actions. */
 
 type BodyProps = { range: OverviewRangeKey; onRangeChange: (range: OverviewRangeKey) => void };
 
@@ -32,7 +28,14 @@ type BodyProps = { range: OverviewRangeKey; onRangeChange: (range: OverviewRange
 const WIDGETS = new Set(dashboardWidgetsFor().map((widget) => widget.id));
 const shows = (id: string) => WIDGETS.has(id);
 
-const TITLE = 'Qual história vamos entregar hoje?';
+const TITLE = 'Início';
+const STAGES = [
+  { stage: 'material', label: 'Material' },
+  { stage: 'writing', label: 'Artigo' },
+  { stage: 'approval', label: 'Aprovação' },
+  { stage: 'carousel', label: 'Carrossel' },
+  { stage: 'delivery', label: 'Entrega' },
+] as const;
 
 function NewProductionButton() {
   return (
@@ -52,7 +55,7 @@ function useSummary(data: OverviewData | undefined): string | undefined {
 
 function OverviewBody({ range, onRangeChange }: BodyProps) {
   const query = useOverview(range);
-  const simulation = useSimulation();
+  const phone = usePhone();
   // Switching the window keeps the last answer on screen until the new one arrives (no skeleton flash).
   const [last, setLast] = useState<OverviewData | undefined>(undefined);
   if (query.status === 'ready' && query.data !== last) setLast(query.data);
@@ -60,8 +63,6 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
   const summary = useSummary(data);
   // The week line names the window of the data on screen until the new window arrives.
   const shownRange = data?.range ?? range;
-  const featured = shows('in-progress') ? data?.desk.continueWith : undefined;
-  const ready = data?.desk.team.find((group) => group.stage === 'delivery')?.items[0];
 
   if (query.status === 'error' && data === undefined) {
     return (
@@ -72,26 +73,15 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
     );
   }
 
-  if (data?.empty) {
-    return (
-      <PageStack>
-        <PageHeader title={TITLE} />
-        <EmptyState
-          size="page"
-          icon={Inbox}
-          title="Nenhuma produção ainda"
-          description="Crie uma produção com transcrição ou comece um artigo do zero."
-          actions={
-            <>
-              <NewProductionButton />
-              <StartWritingButton />
-              {simulation.available && <Button onClick={simulation.reset}>Carregar exemplo</Button>}
-            </>
-          }
-        />
-      </PageStack>
-    );
-  }
+  const featured = <FeaturedProduction item={data?.desk.continueWith ?? data?.desk.inProgress[0]} loading={!data} />;
+  const recent = shows('in-progress') && !data?.empty && <InProgressPanel desk={data?.desk} />;
+  const pending = shows('needs-you') && <NeedsYouPanel desk={data?.desk} />;
+  const activity = shows('team') && <RecentActivity items={data?.activity} />;
+  const stages = shows('team') && <Panel><Section title="Produções por etapa" action={<TextLink href={PRODUCTIONS_HREF} size="sm">Abrir kanban</TextLink>}>
+    <MetricStrip label="Contagem por etapa" items={STAGES.map(({ stage, label }) => ({ label,
+      value: data?.desk.team.find(group => group.stage === stage)?.items.length ?? 0, loading: !data,
+    }))} />
+  </Section></Panel>;
 
   return (
     <PageStack>
@@ -103,32 +93,13 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
           <>
             <NewProductionButton />
             <StartWritingButton />
-            {shows('needs-you') && <ButtonLink href="#priorities">Ver prioridades</ButtonLink>}
           </>
         }
       />
-      <SplitLayout
-        asideLabel="Prioridades da sua produção"
-        main={
-          <>
-            {shows('in-progress') && <FeaturedProduction item={featured} loading={!data} />}
-            {shows('in-progress') && <InProgressPanel desk={data?.desk} featuredId={featured?.productionId} />}
-            {shows('team') && <ProductionDesk desk={data?.desk} featuredId={featured?.productionId} />}
-          </>
-        }
-        aside={
-          shows('needs-you') && (
-            <PageStack>
-              {shows('team') && ready && <ReadyStory item={ready} />}
-              <PageStack id="priorities" tabIndex={-1}>
-                <NeedsYouPanel desk={data?.desk} team={shows('team')} featuredId={featured?.productionId} />
-              </PageStack>
-            </PageStack>
-          )
-        }
-      />
+      {phone ? <PageStack>{featured}{pending}{recent}<TemplateStrip />{stages}{activity}</PageStack>
+        : <SplitLayout main={<>{featured}{recent}<TemplateStrip /></>} asideLabel="Sua mesa de trabalho"
+            aside={<>{pending}{stages}{activity}</>} />}
       {shows('week') && data && <WeekLine week={data.desk.week} shownRange={shownRange} range={range} onRangeChange={onRangeChange} />}
-      {shows('team') && <Accordion items={[{ id: 'activity', title: 'Ver movimentações recentes', content: <RecentActivity items={data?.activity} /> }]} />}
     </PageStack>
   );
 }
