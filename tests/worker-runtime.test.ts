@@ -1,18 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Readable } from 'node:stream';
-import { workerMediaStream,executableMountCandidates } from '../src/server/worker-media.ts';
+import { fileURLToPath } from 'node:url';
+import { mediaCommand } from '../src/server/worker-media.ts';
 
-test('runtime mount policy rejects noexec /run and /tmp even when both are writable',()=>{
-  const mounts=['overlay / overlay ro 0 0','tmpfs /run tmpfs rw,noexec,nosuid 0 0','tmpfs /tmp tmpfs rw,noexec 0 0','tmpfs /dev tmpfs rw,nosuid 0 0','tmpfs /dev/shm tmpfs rw,noexec 0 0'].join('\n');
-  assert.deepEqual(executableMountCandidates(mounts),['/dev']);
-  assert.deepEqual(executableMountCandidates(mounts.replace('rw,nosuid','rw,nosuid,noexec')),[]);
+test('hosted tools run from the immutable package through the fixed ARM64 loader',()=>{
+  const path=fileURLToPath(new URL('../src/server/bin/ffmpeg',import.meta.url));
+  const args=['-i','/tmp/user material.mp4','-vn'];
+  const command=mediaCommand(path,args,true);
+  assert.equal(command.executable,'/lib/ld-linux-aarch64.so.1');
+  assert.deepEqual(command.args,['--library-path',fileURLToPath(new URL('../src/server/bin/lib',import.meta.url)),path,...args]);
+  assert.deepEqual(mediaCommand(path,args,false),{executable:path,args});
 });
 
-test('worker media accepts the SDK Web-stream body used across runtime boundaries',async()=>{
-  const stream=workerMediaStream({transformToWebStream:()=>new ReadableStream({start(controller){controller.enqueue(Buffer.from('verified-media'));controller.close();}})});
-  const chunks=[];for await(const chunk of stream)chunks.push(chunk);
-  assert.equal(Buffer.concat(chunks).toString(),'verified-media');
-  assert.equal(workerMediaStream(Readable.from('node')).readable,true);
-  assert.throws(()=>workerMediaStream(undefined),/MEDIA_TOOL_BODY_UNAVAILABLE/);
+test('configured and arbitrary paths never acquire the hosted ELF launcher',()=>{
+  for(const path of ['ffmpeg','/tmp/ffmpeg','/opt/custom/ffmpeg','/tmp/media; false']){
+    const args=['-version'];assert.deepEqual(mediaCommand(path,args,true),{executable:path,args});
+  }
 });

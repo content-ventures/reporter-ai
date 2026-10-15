@@ -15,14 +15,14 @@ private original through a per-job loopback byte-range bridge; Node verifies ups
 and handles DNS, and the original is never buffered in full or saved to the function's disk.
 Failed chunks are removed and validated completed chunks can be reused by a retry.
 
-Neon Functions run Linux ARM64 and cap compressed bundles at 10 MiB. The two pinned media
-executables live under content-addressed `worker-tools/` keys in the private source bucket,
-outside the `incoming/` storage-trigger prefix. Release provisioning verifies archive SHA512,
-binary SHA256 and ELF architecture. Each function isolate downloads and verifies the tools
-once into a private verified cache and shares concurrent installation calls. At execution, the
-worker checks live mount flags and writable/free space, then stages one public binary at a time
-in an exec-enabled scratch mount and removes it after the process exits. Serial staging keeps
-both binaries from filling a small tmpfs. Media inputs and credentials never enter that mount.
+Neon Functions run Linux ARM64 and cap compressed bundles at 10 MiB. CI cross-compiles a
+minimal shared-library FFmpeg 9.0.2 build from the official release, verifying its signature
+against the pinned FFmpeg release key. The tools, required libraries, version and LGPL license
+are included in the immutable function package; the archive gate enforces both Neon size limits.
+The hosted runtime mounts every writable location with `noexec` and delivers package files as
+0644. The system ARM64 ELF loader reads the bundled tools and their bundled libraries directly
+from the executable, read-only package mount. No runtime download, writable executable staging
+or mount-policy change is required. Local workers continue using their configured/system tools.
 The health endpoint executes both binaries, verifies the existing upload CORS, then registers its database
 heartbeat. The release then waits for a fresh real scheduled invocation, excluding health and
 diagnostic calls, so a missing/broken schedule cannot pass and fail again three minutes later.
@@ -36,13 +36,9 @@ the hosted request shares Node's global `Request` constructor or clone behavior.
 Both routes retain the SDK's invocation-header/body validation. Rejected deliveries
 emit a bounded reason code to the function console for release diagnostics.
 
-Media downloads consume the S3 async-stream contract and retain exact size/hash
-verification. Readiness distinguishes object-storage access, missing objects,
-stream format, integrity, local filesystem and executable-launch failures with
-bounded error codes; release logs print those codes without provider details.
-Do not assume `/run` permits execution: the October 15 runtime reported `noexec` there and in
-`/tmp`. The fixed candidate list checks the longest matching mount, including `/dev/shm` and
-`/dev`; it never changes mount flags. If none supports execution, readiness fails explicitly.
+Readiness executes both media tools and returns bounded launch error codes. Authenticated
+failure diagnostics include the package version, fixed tool sizes/modes, platform and loader
+availability, without provider URLs, credentials or user material.
 The `validation_only` workflow can prepare an expiring real-file acceptance session with
 `prepare_session`. Only its isolated branch is retained, with a 24-hour expiry, for testing the
 original large file through the candidate app. Production releases always run the automated
@@ -65,7 +61,7 @@ runs against an isolated Neon branch before any production release.
 
 Production releases first run the complete acceptance on a workflow-created, expiring Neon child
 branch. Inherited triggers remain disabled until the candidate worker is deployed with the child
-database connection. The workflow provisions media tools, requires a fresh scheduled invocation,
+database connection. The workflow builds the media tools, requires a fresh scheduled invocation,
 uploads synthetic speech through multipart storage, checks real Groq transcription, generates an
 article and carousel through the saved production pipeline (or its default seed), approves both with a separate review-only member, reads an
 uploaded image as that reviewer and builds the browser export (Markdown, HTML, images, slide PNGs,
@@ -95,13 +91,14 @@ Spotify enclosure imports use durable, leased storage registrations drained by t
 neither media nor image persistence depends on the Vercel filesystem or another browser's IndexedDB.
 
 - `pnpm gate`: policies, lint, types, application tests and production compilation.
-- `pnpm test:backend`: cloud chunking, cache reuse, failure cleanup, binary integrity, HTTPS
+- `pnpm test:backend`: cloud chunking, cache reuse, failure cleanup, immutable package launching, HTTPS
   range forwarding/cleanup and failed readiness, plus the existing backend contracts.
 - `node scripts/check-neon-bundle.mjs`: builds the real worker with staged Linux ARM64 native
   packages and enforces Neon's compressed/uncompressed archive limits. CI runs this independently
   of the Next.js build.
-- `node scripts/provision-worker-media.mjs --check`: downloads and verifies the pinned tool
-  distributions without uploading anything. CI runs this too.
+- `bash scripts/build-native-media.sh`: builds the minimal ARM64 tools from signed FFmpeg sources
+  in a Debian bookworm build environment. CI uses the shared build action and caches only the
+  public compiled package. Cross-compilation uses `REPORTER_NATIVE_CROSS=true`.
 - `node --input-type=module -e 'import {verifyFreshBootstrap} from "./scripts/reporter-db-integration.mjs"; await verifyFreshBootstrap();'`:
   disposable official PostgreSQL bootstrap, migration replay, concurrency and private multipart
   intake tests. Does not reuse or modify the existing local Docker database.

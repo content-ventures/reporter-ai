@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
 import { defineConfig } from '@neon/config/v1';
 import type { FunctionBundler, FunctionDef } from '@neon/config/v1';
+import { nativeMediaAssets } from './scripts/native-media-assets.mjs';
 
 const required = (name: string) => {
   const value = process.env[name]?.trim();
@@ -25,6 +26,7 @@ export const bundleWorker: FunctionBundler = async fn => {
   const result = await build({
     entryPoints: [fn.source],
     bundle: true,
+    minify: true,
     platform: 'node',
     format: 'esm',
     target: 'node24',
@@ -49,6 +51,7 @@ export const bundleWorker: FunctionBundler = async fn => {
   return {
     'index.mjs': result.outputFiles[0].contents,
     ...staged.entries,
+    ...await nativeMediaAssets(),
   };
 };
 

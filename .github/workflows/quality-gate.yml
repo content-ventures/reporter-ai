@@ -18,7 +18,7 @@ concurrency:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -89,11 +89,10 @@ jobs:
       - name: Run complete gate
         run: pnpm gate
 
+      - uses: ./.github/actions/build-native-media
+
       - name: Build the Neon ARM64 worker and validate its archive limits
         run: node scripts/check-neon-bundle.mjs
-
-      - name: Verify pinned worker media tools
-        run: node scripts/provision-worker-media.mjs --check
 
       - name: Run backend contract tests
         run: pnpm test:backend
