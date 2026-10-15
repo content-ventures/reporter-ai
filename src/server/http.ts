@@ -190,6 +190,13 @@ export async function handleReporter(request: Request, path: string[]) {
       const input = z.object({ url: z.string().trim().url().max(2000) }).strict().parse(await jsonBody(request));
       const imported = await ingestSourceLink(input.url,request.signal);
       if (imported.kind==='ready') return reply(imported);
+      if (imported.kind === 'remote') {
+        const id=randomUUID(),token=randomUUID()+randomUUID(),objectKey=`incoming/${context.portal}/${id}.${imported.extension}`;
+        const contentType=({mp3:'audio/mpeg',m4a:'audio/mp4',mp4:'video/mp4',wav:'audio/wav',ogg:'audio/ogg',flac:'audio/flac',webm:'video/webm'} as Record<string,string>)[imported.extension];
+        const value=await transaction('runtime',async client=>(await client.query('SELECT public.reporter_prepare_remote_link($1,$2,$3,$4,$5,$6,$7,$8) AS value',
+          [id,imported.fileName,imported.size,contentType,objectKey,createHash('sha256').update(token).digest('hex'),key,imported.remoteUrl])).rows[0].value,requestId);
+        return reply({kind:'processing',provider:imported.provider,sourceUrl:imported.sourceUrl,title:imported.title,programName:imported.programName,fileName:imported.fileName,bytes:imported.size,id:value.id},202);
+      }
       const file = imported.file;
       let removeDuplicate = false;
       try {

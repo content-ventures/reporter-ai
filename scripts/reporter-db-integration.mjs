@@ -171,7 +171,7 @@ export async function verifyFreshBootstrap(source, baseline) {
     await verifyConcurrency(id);
     for (const path of ["database/migrations/005-neon-cloud.sql","database/migrations/006-cloud-auth-context.sql",
       "database/migrations/007-neon-scheduled-worker.sql","database/migrations/008-neon-object-storage.sql",
-      "database/migrations/009-cloud-runtime-recovery.sql"]) {
+      "database/migrations/009-cloud-runtime-recovery.sql","database/migrations/010-remote-link-ingest.sql"]) {
       const migration = await readFile(resolve(root,path),"utf8");
       run(migration);run(migration);
     }

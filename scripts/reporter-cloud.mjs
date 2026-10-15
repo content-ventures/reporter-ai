@@ -19,6 +19,7 @@ const files = [
   'database/migrations/007-neon-scheduled-worker.sql',
   'database/migrations/008-neon-object-storage.sql',
   'database/migrations/009-cloud-runtime-recovery.sql',
+  'database/migrations/010-remote-link-ingest.sql',
 ];
 
 function ownerUrl() {
