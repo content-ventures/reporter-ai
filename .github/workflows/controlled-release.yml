@@ -47,6 +47,7 @@ jobs:
       - uses: ./.github/actions/build-native-media
       - run: node scripts/check-neon-bundle.mjs
       - run: pnpm test:backend
+      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends espeak-ng
       - run: pnpm exec playwright install --with-deps chromium
       - run: npm install --global --no-audit --no-fund neon@6.3.0
       - name: Validate deployed Neon worker and complete editorial flow
@@ -110,6 +111,8 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends espeak-ng
           pnpm exec playwright install --with-deps chromium
           node scripts/neon-acceptance.mjs
 

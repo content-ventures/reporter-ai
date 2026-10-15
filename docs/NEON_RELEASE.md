@@ -62,7 +62,7 @@ runs against an isolated Neon branch before any production release.
 Production releases first run the complete acceptance on a workflow-created, expiring Neon child
 branch. Inherited triggers remain disabled until the candidate worker is deployed with the child
 database connection. The workflow builds the media tools, requires a fresh scheduled invocation,
-uploads synthetic speech through multipart storage, checks real Groq transcription, generates an
+generates synthetic speech offline with espeak-ng, uploads it through multipart storage, checks real Groq transcription, generates an
 article and carousel through the saved production pipeline (or its default seed), approves both with a separate review-only member, reads an
 uploaded image as that reviewer and builds the browser export (Markdown, HTML, images, slide PNGs,
 JSON and manifest). The child branch is removed on completion. A failed acceptance stops before
@@ -77,7 +77,12 @@ run `scripts/neon-browser-acceptance.mjs` with `REPORTER_ACCEPTANCE_MEDIA_PATH`.
 creates verified synthetic accounts on the isolated branch and signs in through the real app.
 A test-browser reverse proxy serves the candidate build under the app origin so browser CORS
 matches production; every app-origin request is intercepted before it reaches production.
-Screenshots and a result manifest are saved under the local temporary directory.
+Screenshots and a result manifest are saved under the local temporary directory. A distinct evidence directory can be selected with
+`REPORTER_ACCEPTANCE_EVIDENCE_DIR`. After the browser has completed the original upload and
+transcription, `REPORTER_ACCEPTANCE_TRANSCRIPT_ID` lets the complete editorial acceptance reuse
+that exact transcript. It verifies the completed private source on the same isolated branch and,
+when supplied, its exact `REPORTER_ACCEPTANCE_MEDIA_BYTES`, then checks article generation,
+second-user approval, carousel and export. It never accepts a transcript from production.
 
 Cloud images live under private `images/<portal>/<hash>` Object Storage keys. The Next.js server
 authorizes access and obtains short-lived URLs through the authenticated worker gateway; browser

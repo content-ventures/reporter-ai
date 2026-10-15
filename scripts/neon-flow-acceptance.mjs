@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { randomUUID,createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { readFile } from 'node:fs/promises';
+import { readFile,mkdtemp,rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { openAsBlob } from 'node:fs';
 import { basename,extname } from 'node:path';
 import pg from 'pg';
@@ -47,16 +50,32 @@ async function waitRun(id){for(let n=0;n<180;n++){const s=await snapshot(),run=s
 const settings=await as('editor',()=>editorialPipeline());
 const configured=JSON.parse(await readFile(process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH,'utf8'));
 if(configured)await rpc('editor','pipeline.save',configured,settings.active.revision);
+let transcript;
+if(process.env.REPORTER_ACCEPTANCE_TRANSCRIPT_ID){
+  const id=process.env.REPORTER_ACCEPTANCE_TRANSCRIPT_ID;assert.match(id,/^[0-9a-f-]{36}$/);
+  const check=new pg.Client({connectionString:url.toString()});
+  try{await check.connect();await check.query('BEGIN READ ONLY');
+    const source=(await check.query("SELECT s.size,s.status,s.provider,s.key FROM public.reporter_transcripts t JOIN core.storage_objects s ON s.id=t.source_object_id WHERE t.id=$1 AND t.portal_id=$2",[id,portal])).rows[0];
+    assert.ok(source&&source.status==='completed'&&source.provider==='s3'&&source.key.startsWith('incoming/'+portal+'/'));
+    if(process.env.REPORTER_ACCEPTANCE_MEDIA_BYTES)assert.equal(Number(source.size),Number(process.env.REPORTER_ACCEPTANCE_MEDIA_BYTES));
+    await check.query('ROLLBACK');
+  }finally{await check.end();}
+  transcript=await as('editor',()=>transaction('runtime',async db=>(await db.query('SELECT public.reporter_local_transcript($1) AS value',[id])).rows[0].value));
+  console.log('PASS verified original multipart source and completed transcript from the same isolated browser acceptance.');
+}else{
 // Exercise the deployed storage trigger, media executables and Groq transcription.
-let audio,fileName='synthetic-acceptance.mp3',contentType='audio/mpeg';
+let audio,speechDirectory,fileName='synthetic-acceptance.mp3',contentType='audio/mpeg';
 if(process.env.REPORTER_ACCEPTANCE_MEDIA_PATH){
   fileName=basename(process.env.REPORTER_ACCEPTANCE_MEDIA_PATH).normalize('NFC');
   contentType=extname(fileName).toLowerCase()==='.mp4'?'video/mp4':'audio/mpeg';
   audio=await openAsBlob(process.env.REPORTER_ACCEPTANCE_MEDIA_PATH,{type:contentType});
   if(process.env.REPORTER_ACCEPTANCE_MEDIA_BYTES)assert.equal(audio.size,Number(process.env.REPORTER_ACCEPTANCE_MEDIA_BYTES),'Original media size differs');
 }else{
-  const speech=await fetch('https://api.openai.com/v1/audio/speech',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'content-type':'application/json'},body:JSON.stringify({model:'gpt-4o-mini-tts',voice:'alloy',input:'Material sintético de teste. '+ATELIE_SUL_TRANSCRIPT.slice(0,3500)}),signal:AbortSignal.timeout(120000)});
-  assert.equal(speech.ok,true,'Synthetic audio generation failed');audio=await speech.blob();
+  speechDirectory=await mkdtemp(join(tmpdir(),'reporter-synthetic-speech-'));
+  const path=join(speechDirectory,'speech.wav');
+  const speech=spawnSync('espeak-ng',['--stdin','-v','pt-br','-s','150','-w',path],{input:'Material sintético de teste. '+ATELIE_SUL_TRANSCRIPT.slice(0,6000),encoding:'utf8',timeout:120000});
+  if(speech.status!==0){await rm(speechDirectory,{recursive:true,force:true});throw new Error('Synthetic acceptance requires the offline espeak-ng fixture generator.');}
+  fileName='synthetic-acceptance.wav';contentType='audio/wav';audio=await openAsBlob(path,{type:contentType});
 }
 const sourceId=randomUUID(),uploadToken=randomUUID()+randomUUID(),objectKey=`incoming/${portal}/${sourceId}${extname(fileName).toLowerCase()}`;
 const intake=await as('editor',()=>transaction('runtime',async db=>(await db.query('SELECT public.reporter_prepare_cloud_upload($1,$2,$3,$4,$5,$6,$7) AS value',
@@ -64,13 +83,14 @@ const intake=await as('editor',()=>transaction('runtime',async db=>(await db.que
 async function uploadCall(path){const r=await fetch(new URL(path,process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL),{method:'POST',headers:{origin:'https://reporter-ai-three.vercel.app','content-type':'application/json'},body:JSON.stringify({sourceId,token:uploadToken}),signal:AbortSignal.timeout(120000)});assert.equal(r.ok,true,'Deployed '+path+' failed');return r.json();}
 const upload=await uploadCall('/uploads/start');
 for(const part of upload.parts){const start=(part.number-1)*upload.partSize;assert.equal((await fetch(part.url,{method:'PUT',body:audio.slice(start,Math.min(audio.size,start+upload.partSize))})).ok,true);console.log(`Uploaded part ${part.number}/${upload.parts.length} (${audio.size} original bytes).`);}
-await uploadCall('/uploads/complete');let transcript;
+await uploadCall('/uploads/complete');if(speechDirectory)await rm(speechDirectory,{recursive:true,force:true});
 for(let n=0;n<360;n++){
   transcript=await as('editor',()=>transaction('runtime',async db=>(await db.query('SELECT public.reporter_local_transcript($1) AS value',[intake.id])).rows[0].value));
   if(transcript.status==='ready')break;if(transcript.status==='failed')throw new Error('Live transcription failed: '+transcript.error_code);if(n%12===0)console.log('Waiting for transcription: '+JSON.stringify(transcript.job?.progress??transcript.status));await delay(5000);
 }
+}
 assert.equal(transcript?.status,'ready','Live transcription did not finish');assert.ok(transcript.content.length>40);
-console.log('PASS private multipart upload, actual storage trigger, media execution and live Groq transcription.');
+console.log('PASS private multipart source, actual storage trigger, media execution and completed transcription.');
 const sourceText=transcriptFileText(transcript);
 const insights=await as('editor',()=>analyzeMaterial(sourceText,{fileName:'transcript.srt'}));
 assert.ok(insights.title.length>3);console.log('PASS real material analysis of the uploaded source.');
