@@ -10,6 +10,7 @@ import type { PipelineRevision, PipelineCall } from '../domain/pipeline.ts';
 import type { BannerDraft, LibraryImage } from '../domain/visual-library.ts';
 import type { Citation } from '../domain/citation-library.ts';
 import type { ImageAsset } from '../domain/asset.ts';
+import type { WorkspaceDelta } from './editorial-rows.ts';
 
 export type ServerImageAsset = { productionId: string; asset: ImageAsset; fileKey?: string };
 
@@ -33,4 +34,6 @@ export type EditorialJob = {
 };
 export type EditorialCheckpoint = { state: EditorialState; jobs: Record<string, EditorialJob>; pipeline?: PipelineRevision; pipelineHistory?: PipelineRevision[]; visuals?: { images: LibraryImage[]; banners: BannerDraft[] }; citations?: Citation[]; imageAssets?: ServerImageAsset[]; receipts?: Record<string,{ hash: string; result: unknown; projection?: 'pipeline' }> };
 export type ConnectedWorkspace = EditorialCheckpoint & { revision: number; model: string; workerOnline: boolean; stalled?: boolean; deploymentMode?: 'cloud' | 'local'; syncToken?: string };
-export type WorkspaceRefresh = ConnectedWorkspace | { unchanged: true; revision: number; syncToken: string; workerOnline: boolean; stalled?: boolean };
+/** Rows changed since the browser's change number; the browser merges them into its workspace. */
+export type WorkspaceDeltaRefresh = Omit<WorkspaceDelta, 'seq'> & { delta: true; revision: number; syncToken: string; workerOnline: boolean; stalled?: boolean };
+export type WorkspaceRefresh = ConnectedWorkspace | WorkspaceDeltaRefresh | { unchanged: true; revision: number; syncToken: string; workerOnline: boolean; stalled?: boolean };
