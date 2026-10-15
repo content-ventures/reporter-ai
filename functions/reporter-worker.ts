@@ -14,6 +14,7 @@ const MAX_JOBS_PER_INVOCATION = 20;
 
 type WorkerDependencies = {
   ready?(): Promise<void>;
+  rejectedTrigger?(code: string): void;
   heartbeat(owner: string,endpoint: string): Promise<void>;
   run(owner: string,signal: AbortSignal): Promise<boolean>;
   startUpload(sourceId: string,token: string): Promise<unknown>;
@@ -24,6 +25,11 @@ type WorkerDependencies = {
 
 const dependencies: WorkerDependencies = {
   ready: async () => { await Promise.all([checkUploadStorage(), checkMediaTools()]); },
+  rejectedTrigger: code => {
+    // Neon captures console output. Keep diagnostics to a bounded operational
+    // code: no header values, request body, URL, credentials or editorial data.
+    console.warn(JSON.stringify({ component: 'worker',message: 'trigger_rejected',error_code: code }));
+  },
   heartbeat: (owner,endpoint) => transaction('worker',async client => {
     await client.query('SELECT public.reporter_worker_register($1,$2)',[owner,endpoint]);
   }),
@@ -121,11 +127,14 @@ export function createReporterWorker(services: WorkerDependencies = dependencies
     }
     const triggerHeader = request.headers.get('x-neon-trigger-invocation-id')?.trim();
     if (request.method!=='POST') {
+      const method = ['GET','HEAD','OPTIONS','PUT','PATCH','DELETE'].includes(request.method) ? request.method : 'OTHER';
+      services.rejectedTrigger?.(`TRIGGER_${method}_${triggerHeader ? 'WITH' : 'WITHOUT'}_HEADER`);
       if (triggerHeader) await diagnosticHeartbeat('reporter-trigger-invalid-method',endpoint,services);
       return new Response('Method Not Allowed',{ status: 405 });
     }
     const parsed = await parseTriggerDelivery(request);
     if (!parsed.ok) {
+      services.rejectedTrigger?.(`TRIGGER_POST_${parsed.error.toUpperCase()}`);
       if (triggerHeader) await diagnosticHeartbeat(`reporter-trigger-${parsed.error}`,endpoint,services);
       return new Response(parsed.error,{ status: parsed.error==='invalid_body' ? 400 : 401 });
     }
