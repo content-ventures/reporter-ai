@@ -14,12 +14,10 @@ import { editorialRpc,editorialWorkspace,editorialPipeline } from '../src/server
 import { prepareAssetUpload,completeAssetUpload } from '../src/server/image-assets.ts';
 import { readImageFile } from '../src/server/image-storage.ts';
 import { ATELIE_SUL_TRANSCRIPT } from '../src/fixtures/sources/atelie-sul.ts';
-import { markTextReviewed } from '../src/domain/article.ts';
-import { latestApproved } from '../src/domain/record.ts';
 import { createEditorialEngine } from '../src/runtime/editorial-engine.ts';
 import { transaction } from '../src/server/database.ts';
 import { analyzeMaterial } from '../src/server/material-analysis.ts';
-import { createHttpIngest,transcriptFileText } from '../src/adapters/http/reporter-client.ts';
+import { transcriptFileText } from '../src/adapters/http/reporter-client.ts';
 
 const acceptanceBranch=process.env.REPORTER_ACCEPTANCE_BRANCH;
 if(!acceptanceBranch?.startsWith('br-')||acceptanceBranch===process.env.NEON_BRANCH_ID) throw new Error('This acceptance writes only to an isolated workflow-created Neon branch.');
@@ -98,49 +96,20 @@ for(let n=0;n<360;n++){
 assert.equal(transcript?.status,'ready','Live transcription did not finish');assert.ok(transcript.content.length>40);
 console.log('PASS private multipart source, actual storage trigger, media execution and completed transcription.');
 const sourceText=transcriptFileText(transcript);
-const insights=await as('editor',()=>analyzeMaterial(sourceText,{fileName:'transcript.srt'}));
-assert.ok(insights.title.length>3);console.log('PASS real material analysis of the uploaded source.');
-const created=await rpc('editor','createFromSource',{title:'Acceptance — '+insights.title,material:{text:sourceText,transcriptId:transcript.id,format:'auto',origin:'interview',authorized:true},brief:{sections:3,size:'standard',angle:'Apresente os principais pontos da entrevista, usando apenas informações e citações verificáveis no material.'},plan:['article','carousel']});
-const article=created.pieces.find(piece=>piece.kind==='article');assert.ok(article);
-const draft=await rpc('editor','generation.start','article.draft',{productionId:created.productionId,pieceId:article.pieceId});await waitRun(draft.runId);
-console.log('PASS live article generation with deployed Neon worker and the production pipeline.');
-const bytes=await sharp({create:{width:2400,height:1350,channels:3,background:'#667788'}}).png().toBuffer();
-const prepared=await as('editor',()=>prepareAssetUpload({id:randomUUID(),fileName:'synthetic-acceptance.png',mime:'image/png',size:bytes.length,hash:createHash('sha256').update(bytes).digest('hex'),meta:{productionId:created.productionId,authorized:true,credit:'Imagem sintética de teste'}}));
-assert.equal((await fetch(prepared.url,{method:'PUT',headers:{'content-type':'image/png'},body:bytes})).ok,true);
-const image=await as('editor',()=>completeAssetUpload({token:prepared.token}));
-const fresh=await snapshot('reviewer'),stored=fresh.imageAssets.find(entry=>entry.asset.id===image.id);assert.ok(stored?.fileKey);
-assert.equal(createHash('sha256').update(await as('reviewer',()=>readImageFile(stored.fileKey))).digest('hex'),createHash('sha256').update(bytes).digest('hex'));
-console.log('PASS durable image upload and fresh reviewer retrieval from Neon Object Storage.');
-let current=await record(created.productionId),piece=current.pieces.find(piece=>piece.id===article.pieceId);
-const body=markTextReviewed(piece.draft.body);body.cover={assetId:image.id,alt:'Imagem sintética de aceite'};delete body.coverSlot;
-body.blocks=body.blocks.map(block=>block.type==='figure'&&block.slot?{...block,slot:undefined,image:{assetId:image.id,alt:'Imagem sintética de aceite'}}:block);
-await rpc('editor','saveDraft',piece.id,body,piece.draft.revision);
-const requested=await rpc('editor','requestReview',piece.id,{assigneeId:actors.reviewer.actor});
-await rpc('reviewer','decide',{pieceId:piece.id,subject:requested.request.subject,decision:'approved',displayedHash:requested.request.subject.hash});
-console.log('PASS exact article approval by a second user without editing permission.');
-current=await record(created.productionId);const approved=latestApproved(current,piece.id);assert.ok(approved);
-await rpc('editor','derive',{productionId:created.productionId,kind:'carousel',from:approved.ref,templateId:'tpl-seafood-headline',rebase:true});
-current=await record(created.productionId);piece=current.pieces.find(piece=>piece.kind==='carousel');assert.ok(piece);
-const carousel=await rpc('editor','generation.start','carousel.copy',{productionId:created.productionId,pieceId:piece.id,from:approved.ref});await waitRun(carousel.runId);
-current=await record(created.productionId);piece=current.pieces.find(candidate=>candidate.id===piece.id);
-await rpc('editor','saveDraft',piece.id,{...piece.draft.body,slides:piece.draft.body.slides.map(slide=>({...slide,ai:'reviewed'}))},piece.draft.revision);
-const carouselReview=await rpc('editor','requestReview',piece.id,{assigneeId:actors.reviewer.actor});
-await rpc('reviewer','decide',{pieceId:piece.id,subject:carouselReview.request.subject,decision:'approved',displayedHash:carouselReview.request.subject.hash});
-console.log('PASS live carousel generation and second-user approval.');
-const state=await snapshot();
+const {acceptEditorialFlow}=await import('./editorial-flow-acceptance.mjs');
 const {validateExport}=await import('./neon-render-acceptance.mjs');
-const exported=await as('editor',()=>validateExport(state,created.productionId));
-await rpc('editor','recordDelivery',{productionId:created.productionId,selection:exported.selection,mode:'download',files:exported.outcomes});
-console.log('PASS complete Neon editorial flow and delivery receipt.');
-const ingest=createHttpIngest({limits:{extensions:['.txt','.md','.srt','.vtt']}});
-const textFile=await ingest.read(new File([ATELIE_SUL_TRANSCRIPT],'acceptance.txt',{type:'text/plain'}));
-assert.equal(textFile.ok,true);assert.equal(textFile.value.text,ATELIE_SUL_TRANSCRIPT);
-for(const [label,text] of [['pasted text',ATELIE_SUL_TRANSCRIPT],['UTF-8 file',textFile.value.text]]){
-  const analyzed=await as('editor',()=>analyzeMaterial(text,{format:'auto'}));
-  const production=await rpc('editor','createFromSource',{title:`Acceptance ${label} — ${analyzed.title}`,material:{text,format:'auto',origin:'interview',authorized:true},brief:{sections:3,size:'standard',angle:'Relate os pontos principais da fonte, sem acrescentar fatos externos.'},plan:['article']});
-  const piece=production.pieces.find(p=>p.kind==='article');
-  const run=await rpc('editor','generation.start','article.draft',{productionId:production.productionId,pieceId:piece.pieceId});await waitRun(run.runId);
-  const result=await record(production.productionId);assert.ok(result.pieces.find(p=>p.id===piece.pieceId)?.draft.body.blocks.length);
-  console.log(`PASS ${label}, actual analysis and live article generation.`);
-}
+await acceptEditorialFlow({rpc,snapshot,record,waitRun,reviewerId:actors.reviewer.actor,sourceText,transcriptId:transcript.id,
+  analyzeMaterial:(...args)=>as('editor',()=>analyzeMaterial(...args)),
+  validateExport:(...args)=>as('editor',()=>validateExport(...args)),
+  uploadImage:async productionId=>{
+    const bytes=await sharp({create:{width:2400,height:1350,channels:3,background:'#667788'}}).png().toBuffer();
+    const prepared=await as('editor',()=>prepareAssetUpload({id:randomUUID(),fileName:'synthetic-acceptance.png',mime:'image/png',size:bytes.length,hash:createHash('sha256').update(bytes).digest('hex'),meta:{productionId,authorized:true,credit:'Imagem sintética de teste'}}));
+    assert.equal((await fetch(prepared.url,{method:'PUT',headers:{'content-type':'image/png'},body:bytes})).ok,true);
+    const image=await as('editor',()=>completeAssetUpload({token:prepared.token}));
+    const fresh=await snapshot('reviewer'),stored=fresh.imageAssets.find(entry=>entry.asset.id===image.id);assert.ok(stored?.fileKey);
+    assert.equal(createHash('sha256').update(await as('reviewer',()=>readImageFile(stored.fileKey))).digest('hex'),createHash('sha256').update(bytes).digest('hex'));
+    console.log('PASS durable image upload and fresh reviewer retrieval from Neon Object Storage.');
+    return image;
+  },
+});
 const {pool}=await import('../src/server/database.ts');await Promise.all(['runtime','worker'].map(role=>pool(role).end()));
