@@ -44,6 +44,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm gate
+      - uses: ./.github/actions/build-native-media
+      - run: node scripts/check-neon-bundle.mjs
       - run: pnpm test:backend
       - run: pnpm exec playwright install --with-deps chromium
       - run: npm install --global --no-audit --no-fund neon@6.3.0
@@ -88,6 +90,11 @@ jobs:
 
       - name: Validate approved source
         run: pnpm gate
+
+      - uses: ./.github/actions/build-native-media
+
+      - name: Validate the complete worker archive
+        run: node scripts/check-neon-bundle.mjs
 
       - name: Install Neon CLI
         run: npm install --global --no-audit --no-fund neon@6.3.0
@@ -164,7 +171,6 @@ jobs:
           # Pull the newly deployed function URL into the temporary env file and
           # prove the worker can authenticate to Postgres and register a heartbeat.
           neon env pull --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --file "$env_file"
-          node --env-file="$env_file" scripts/provision-worker-media.mjs
           node --env-file="$env_file" --input-type=module <<'NODE'
           import { waitForWorkerReadiness } from './scripts/check-worker-readiness.mjs';
           const endpoint = process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL;

@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { z } from "zod";
 import { MAX_DURATION_SECONDS } from "../domain/reporter";
 import { FlowError } from "./errors";
-import { withMediaExecutable } from './worker-media.ts';
+import { mediaCommand, withMediaExecutable } from './worker-media.ts';
 
 function inputProtocols(source: string, remote: boolean) {
   const formats = ['-format_whitelist', 'mov,mp3,wav,flac,ogg,matroska,webm'];
@@ -19,7 +19,8 @@ export async function checkMediaTools() {
 
 export async function runMedia(executable: string, args: string[], signal?: AbortSignal, timeout = 60000): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { shell: false, signal, stdio: ["ignore", "pipe", "ignore"] });
+    const command = mediaCommand(executable,args);
+    const child = spawn(command.executable, command.args, { shell: false, signal, stdio: ["ignore", "pipe", "ignore"] });
     let output = "", oversized = false;
     const timer = setTimeout(() => child.kill("SIGKILL"), timeout);
     child.stdout.on("data", data => {

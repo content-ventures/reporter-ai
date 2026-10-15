@@ -31,18 +31,21 @@ async function account(label,roles){
   return {email,password,actor,name};
 }
 
-const browser=await chromium.launch({headless:true});
+const browser=await chromium.launch({headless:true}),contexts=[];
 try{
   const editor=await account('Editor',['editor']),context=await browser.newContext({viewport:{width:1440,height:1000}});
+  contexts.push(context);
   // This context serves the candidate production build through a loopback reverse proxy.
   // Every app-origin request is intercepted; no request reaches the production app.
   await context.route(origin+'/**',async route=>{
+    try{
     const request=route.request(),url=new URL(request.url()),target=new URL(url.pathname+url.search,local);
     const headers=await request.allHeaders();headers.host=new URL(local).host;
     if(url.pathname.startsWith('/api/reporter')&&headers.origin)headers.origin=new URL(local).origin;
     const response=await route.fetch({url:target.toString(),headers,maxRedirects:0,timeout:240000});
     const resultHeaders=response.headers();if(resultHeaders.location?.startsWith(local))resultHeaders.location=resultHeaders.location.replace(local,origin);
     await route.fulfill({response,headers:resultHeaders});
+    }catch{await route.abort().catch(()=>{});}
   });
   const page=await context.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.name));
@@ -76,7 +79,9 @@ try{
     await expect.poll(async()=>{
       return page.evaluate(async id=>{
         const response=await fetch('/api/reporter/workspace');if(!response.ok)return false;const state=await response.json();
-        return Object.values(state.jobs).some(job=>job.meta.productionId===id&&state.state.runFolds[job.meta.runId]?.run.status==='completed');
+        const runs=Object.values(state.jobs).filter(job=>job.meta.productionId===id).map(job=>state.state.runFolds[job.meta.runId]?.run);
+        const failed=runs.find(run=>run?.status==='failed');if(failed)throw new Error('GENERATION_FAILED: '+(failed.error?.code??'UNKNOWN'));
+        return runs.some(run=>run?.status==='completed');
       },productionId);
     },{timeout:15*60000,intervals:[5000]}).toBe(true);
     await page.reload();await expect(page.getByRole('textbox',{name:'Texto do artigo'})).toBeVisible();
@@ -87,4 +92,5 @@ try{
   assert.deepEqual(errors,[],'Unexpected browser errors');
   await writeFile(join(directory,'results.json'),JSON.stringify({branch:branchId,commit:process.env.REPORTER_ACCEPTANCE_COMMIT,results,passedAt:new Date().toISOString()},null,2),{mode:0o600});
   console.log('Browser acceptance evidence: '+join(directory,'results.json'));
-}finally{await browser.close();await db.end();}
+}catch(error){console.error('Browser acceptance failed: '+String(error.message).split('\n')[0].slice(0,180));process.exitCode=1;}
+finally{await Promise.allSettled(contexts.map(context=>context.unrouteAll({behavior:'ignoreErrors'})));await browser.close();await db.end();}

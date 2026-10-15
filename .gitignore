@@ -54,3 +54,4 @@ next-env.d.ts
 /.agents/
 /skills-lock.json
 .neon
+/.reporter-native/

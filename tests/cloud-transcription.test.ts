@@ -1,15 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { Readable } from 'node:stream';
+import { join } from 'node:path';
 import { audioChunks } from '../src/domain/reporter.ts';
 import { processTranscript } from '../src/server/reporter-worker-jobs.ts';
-import { installWorkerMedia, workerMediaFailure, workerMediaStream } from '../src/server/worker-media.ts';
 import { runMedia } from '../src/server/media.ts';
-import { FlowError } from '../src/server/errors.ts';
 import { transcriptionModel } from '../src/server/groq.ts';
 
 test('406 MiB cloud media is transcribed in bounded overlapping chunks and a retry reuses completed parts', async () => {
@@ -59,49 +55,6 @@ test('cloud chunks are removed when a provider rejects the recording', async () 
     }), /provider unavailable/);
     await assert.rejects(stat(join(directory, 'chunk-0.flac')), { code: 'ENOENT' });
   } finally { await rm(directory, { recursive: true, force: true }); }
-});
-
-test('worker media is executable only after its exact length and SHA256 are verified', async () => {
-  const bytes = Buffer.from('synthetic executable');
-  const expected = { size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
-  const path = await installWorkerMedia('ffmpeg', Readable.from([bytes]), expected);
-  try {
-    assert.deepEqual(await readFile(path), bytes); assert.equal((await stat(path)).mode & 0o777, 0o700);
-  } finally { await rm(dirname(path), { recursive: true, force: true }); }
-  for (const body of [Buffer.from('corrupted executable'), Buffer.alloc(100), Buffer.alloc(0)]) {
-    await assert.rejects(installWorkerMedia('ffmpeg', Readable.from([body]), expected), /MEDIA_TOOL_INTEGRITY/);
-  }
-});
-
-test('media installation consumes hosted async streams without a Node Readable identity', async () => {
-  const bytes = Buffer.from('verified streamed bytes');
-  const expected = { size: bytes.length,sha256: createHash('sha256').update(bytes).digest('hex') };
-  const hosted = { async *[Symbol.asyncIterator]() { yield bytes.subarray(0,5); yield bytes.subarray(5); } };
-  assert.equal(hosted instanceof Readable,false);
-  const web = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(bytes); controller.close(); } });
-  for (const body of [hosted,web]) {
-    const path = await installWorkerMedia('ffmpeg',workerMediaStream(body),expected);
-    try { assert.deepEqual(await readFile(path),bytes); }
-    finally { await rm(dirname(path),{recursive:true,force:true}); }
-  }
-  for (const body of [undefined,null,'private-provider-detail',{}]) {
-    assert.throws(() => workerMediaStream(body),/MEDIA_TOOL_BODY_UNAVAILABLE/);
-  }
-});
-
-test('media diagnostics preserve integrity and separate storage, download and filesystem failures', () => {
-  const integrity = new FlowError('MEDIA_TOOL_INTEGRITY',503);
-  assert.equal(workerMediaFailure(integrity),integrity);
-  for (const [failure,expected] of [
-    [{name:'AccessDenied'},'MEDIA_TOOL_STORAGE_DENIED'],
-    [{name:'NoSuchKey'},'MEDIA_TOOL_OBJECT_MISSING'],
-    [{name:'TimeoutError'},'MEDIA_TOOL_DOWNLOAD_TIMEOUT'],
-    [{code:'EACCES'},'MEDIA_TOOL_FILESYSTEM_EACCES'],
-    [{message:'private-provider-detail'},'MEDIA_TOOL_DOWNLOAD_FAILED'],
-  ] as const) {
-    assert.equal(workerMediaFailure(failure).code,expected);
-    assert.equal(workerMediaFailure(failure).status,503);
-  }
 });
 
 test('media execution identifies missing and non-executable tools without exposing their paths',async () => {

@@ -119,7 +119,7 @@ The `Controlled production deployment` GitHub Action is manually dispatched afte
 2. Calculates the next valid `vX.Y.Z` from the validated Conventional Commits.
 3. Generates the release summary, detailed changes, changelog and public version history from those commits.
 4. Runs the complete gate again against the prepared release.
-5. Applies the idempotent Neon database migrations, deploys the `neon.ts` Function, bucket and triggers to the configured production branch, provisions the pinned ARM64 media executables in private Object Storage, verifies storage/media/database readiness and waits for a fresh heartbeat from a real scheduled invocation.
+5. Applies the idempotent Neon database migrations, deploys the `neon.ts` Function, bucket and triggers to the configured production branch, includes the verified ARM64 media tools in the immutable function package, verifies storage/media/database readiness and waits for a fresh heartbeat from a real scheduled invocation.
 6. Creates one `chore(release): vX.Y.Z` commit under the dispatching GitHub user's identity, an annotated version tag, and a GitHub Release.
 7. Pushes that release commit through GitHub; the Francal Vercel Git integration performs the production deployment.
 

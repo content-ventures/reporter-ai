@@ -1,0 +1,23 @@
+name: Build native media
+description: Build signed FFmpeg sources for the Neon Linux ARM64 runtime
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      id: native-cache
+      with:
+        path: .reporter-native/bundle
+        key: native-media-bookworm-arm64-${{ hashFiles('scripts/build-native-media.sh') }}
+    - name: Cross-compile the minimal ARM64 media tools
+      if: steps.native-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        docker run --rm \
+          --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace" \
+          --workdir /workspace \
+          --env REPORTER_NATIVE_CROSS=true \
+          node:24-bookworm-slim bash -ec '
+            apt-get update -qq
+            apt-get install -y --no-install-recommends ca-certificates curl xz-utils gnupg ripgrep make pkg-config gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+            bash scripts/build-native-media.sh
+          '

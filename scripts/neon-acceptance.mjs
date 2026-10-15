@@ -40,7 +40,6 @@ try {
   cli(['env','pull','--project-id',project,'--branch',branch,'--file',join(directory,'deployed.env')]);
   const {parseEnv}=await import('node:util'),{readFile}=await import('node:fs/promises');const deployed=parseEnv(await readFile(join(directory,'deployed.env'),'utf8'));
   await appendFile(file,Object.entries(deployed).filter(([name])=>name.startsWith('AWS_')||name.startsWith('NEON_FUNCTION_')).map(([k,v])=>`${k}=${JSON.stringify(v)}`).join('\n')+'\n');
-  const provision=spawnSync(process.execPath,['--env-file='+file,'scripts/provision-worker-media.mjs'],{stdio:'inherit'});if(provision.status!==0)throw new Error('Acceptance media provisioning failed.');
   const endpoint=deployed.NEON_FUNCTION_REPORTERWORKER_BASE_URL;if(!endpoint)throw new Error('Acceptance function URL missing.');
   keepBranch=process.env.REPORTER_ACCEPTANCE_SESSION==='true';
   if(keepBranch)console.log(`Isolated acceptance session: ${branch}; source ${process.env.GITHUB_SHA}. Expires in 24 hours.`);
