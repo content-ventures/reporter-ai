@@ -3,25 +3,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import nextEnv from '@next/env';
 import pg from 'pg';
+import { CLOUD, CLOUD_BASE_FILES } from './lib/migrations.mjs';
 
 const { loadEnvConfig } = nextEnv;
 loadEnvConfig(process.cwd());
 const { Client } = pg;
 const command = process.argv[2] ?? 'status';
-const files = [
-  'database/reporter-foundation.sql',
-  'database/reporter-r1.sql',
-  'database/reporter-r1-commands.sql',
-  'database/migrations/003-local-flow.sql',
-  'database/migrations/004-editorial-workspace.sql',
-  'database/migrations/005-neon-cloud.sql',
-  'database/migrations/006-cloud-auth-context.sql',
-  'database/migrations/007-neon-scheduled-worker.sql',
-  'database/migrations/008-neon-object-storage.sql',
-  'database/migrations/009-cloud-runtime-recovery.sql',
-  'database/migrations/010-remote-link-ingest.sql',
-  'database/migrations/011-editorial-polling.sql',
-];
+const files = CLOUD;
 
 function ownerUrl() {
   const value = process.env.DATABASE_URL_UNPOOLED?.trim() || process.env.DATABASE_URL?.trim();
@@ -51,7 +39,7 @@ async function status(client) {
 async function migrate(client) {
   const core = (await client.query("SELECT to_regnamespace('core') IS NOT NULL AS ready")).rows[0].ready;
   const r1 = core && (await client.query("SELECT to_regclass('public.reporter_transcripts') IS NOT NULL AS ready")).rows[0].ready;
-  const selected = !core ? files : !r1 ? files.slice(1) : files.slice(3);
+  const selected = !core ? files : !r1 ? files.slice(1) : files.slice(CLOUD_BASE_FILES);
   let executorMembershipBefore;
   let ownerRoleName;
   let migrationError;

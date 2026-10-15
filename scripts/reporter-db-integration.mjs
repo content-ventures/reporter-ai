@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { context, docker, root, sql } from "./reporter-db.mjs";
+import { CLOUD_REPLAY, LOCAL_CATALOG, LOCAL_INIT } from "./lib/migrations.mjs";
 
 const userContext = `SELECT set_config('app.access_mode','user',true),set_config('app.module_key','reporter_ai',true),
   set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',true),
@@ -85,6 +86,12 @@ COMMIT;`);
 }
 
 
+function queuePasses(output) {
+  const passes = output.split("\n").filter(line => line.startsWith("PASS "));
+  if (passes.length !== 3) throw new Error("Not all worker queue integration groups completed");
+  return passes.join("\n");
+}
+
 async function verifyCatalog(run, baseline) {
   const actual = JSON.parse(run(`SELECT jsonb_agg(jsonb_build_object(
     'name',n.nspname||'.'||c.relname,
@@ -103,8 +110,7 @@ async function verifyCatalog(run, baseline) {
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname IN ('core','public') AND c.relkind='r';`));
   const { default: assert } = await import("node:assert/strict");
-  const files = ['database/reporter-foundation.sql','database/reporter-r1.sql','database/migrations/004-editorial-workspace.sql'];
-  const ddl = (await Promise.all(files.map(file => readFile(resolve(root,file),'utf8')))).join('\n');
+  const ddl = (await Promise.all(LOCAL_CATALOG.map(file => readFile(resolve(root,file),'utf8')))).join('\n');
   const expected = [...ddl.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+\.[a-z_]+)/gi)].map(match => match[1]);
   assert.deepEqual(actual.map(table => table.name).sort(), [...new Set(expected)].sort(), 'SQL table catalog');
   const normalized = actual.map(table => ({ ...table, constraints: (table.constraints ?? []).sort(), indexes: (table.indexes ?? []).sort(), references: (table.references ?? []).sort((a,b) => a.constraint.localeCompare(b.constraint)) })).sort((a,b) => a.name.localeCompare(b.name));
@@ -119,11 +125,8 @@ export async function verifyFreshBootstrap(source, baseline) {
   const configuration = await readFile(resolve(root, "compose.reporter.yaml"), "utf8");
   const image = configuration.match(/^    image: (.+)$/m)?.[1];
   if (!image?.startsWith("postgres:17.9@sha256:")) throw new Error("Unexpected verification image");
-  const files = ["database/reporter-foundation.sql", "database/reporter-r1.sql",
-    "database/reporter-r1-commands.sql", "database/local/30-local-seed.sql", "database/local/40-local-roles.sql",
-    "database/migrations/003-local-flow.sql", "database/local/60-local-operator.sql", "database/migrations/004-editorial-workspace.sql", "database/migrations/011-editorial-polling.sql"];
-  const destinations = ["00-reporter-foundation.sql", "10-reporter-r1.sql", "20-reporter-r1-commands.sql",
-    "30-local-seed.sql", "40-local-roles.sql", "50-local-flow.sql", "60-local-operator.sql", "70-editorial-workspace.sql", "80-editorial-polling.sql"];
+  const files = LOCAL_INIT.map(([file]) => file);
+  const destinations = LOCAL_INIT.map(([, destination]) => destination);
   // No persistent volume, published port, external network or existing database.
   // A name collision fails at docker run; it never stops a pre-existing container.
   const id = docker(["run", "--detach", "--name", name, "--network", "none",
@@ -167,13 +170,11 @@ export async function verifyFreshBootstrap(source, baseline) {
     run(editorial); run(editorial);
     run(await readFile(resolve(root, "database/tests/editorial.integration.sql"), "utf8"));
     console.log(run(await readFile(resolve(root, "database/tests/editorial-polling.integration.sql"), "utf8")).split('\n').filter(line => line.startsWith('PASS ')).join('\n'));
+    console.log(queuePasses(run(await readFile(resolve(root, "database/tests/worker-queue.integration.sql"), "utf8"))));
     await verifyCatalog(run, baseline);
     console.log("PASS fresh official-entrypoint bootstrap and PostgreSQL integration suite");
     await verifyConcurrency(id);
-    for (const path of ["database/migrations/005-neon-cloud.sql","database/migrations/006-cloud-auth-context.sql",
-      "database/migrations/007-neon-scheduled-worker.sql","database/migrations/008-neon-object-storage.sql",
-      "database/migrations/009-cloud-runtime-recovery.sql","database/migrations/010-remote-link-ingest.sql",
-      "database/migrations/011-editorial-polling.sql"]) {
+    for (const path of CLOUD_REPLAY) {
       const migration = await readFile(resolve(root,path),"utf8");
       run(migration);run(migration);
     }
@@ -182,6 +183,11 @@ export async function verifyFreshBootstrap(source, baseline) {
       throw new Error('Cloud upload integration did not complete');
     }
     console.log('PASS cloud migrations replay and private multipart intake');
+    const onDemand = run(await readFile(resolve(root,"database/tests/cloud-on-demand.integration.sql"),"utf8"));
+    if (!onDemand.includes('PASS cloud intake without worker heartbeats and stall-based online status')) {
+      throw new Error('Cloud on-demand intake integration did not complete');
+    }
+    console.log('PASS cloud intake without worker heartbeats and stall-based online status');
     console.log(run(await readFile(resolve(root,'database/tests/cloud-review.integration.sql'),'utf8')).split('\n').filter(line=>line.startsWith('PASS ')).join('\n'));
     console.log(run(await readFile(resolve(root, 'database/tests/editorial-polling.integration.sql'), 'utf8')).split('\n').filter(line => line.startsWith('PASS ')).join('\n'));
   } finally {
@@ -204,5 +210,6 @@ export async function runIntegration() {
   for (const check of flowChecks) console.log(check);
   if (flowChecks.length !== 4) throw new Error("Not all local-flow integration groups completed");
   console.log(sql("reporter_admin", await readFile(resolve(root, "database/tests/editorial.integration.sql"), "utf8")).split("\n").filter(line => line.startsWith("PASS ")).join("\n"));
+  console.log(queuePasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/worker-queue.integration.sql"), "utf8"))));
   await verifyFreshBootstrap(source, baseline);
 }

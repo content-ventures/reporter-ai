@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { LOCAL_FLOW } from "./lib/migrations.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 // A second checkout (another worktree) runs its own isolated database by naming a distinct
@@ -112,8 +113,7 @@ export async function main() {
     compose(["up", "--detach", "--wait", "--wait-timeout", "90", "postgres"], { stdio: "inherit" });
     console.log(`Reporter PostgreSQL ready: 127.0.0.1:${port} / reporter_ai_local. Credentials: .env.reporter-db`);
   } else if (command === "flow") {
-    for (const path of ["database/migrations/003-local-flow.sql","database/local/60-local-operator.sql","database/migrations/004-editorial-workspace.sql","database/migrations/011-editorial-polling.sql"])
-      sql("reporter_admin", await readFile(resolve(root, path), "utf8"));
+    for (const path of LOCAL_FLOW) sql("reporter_admin", await readFile(resolve(root, path), "utf8"));
     console.log("Reporter local-flow migration applied. Existing data preserved.");
   } else if (command === "migrate") {
     const source = await readFile(resolve(root, "database/migrations/002-standalone.sql"), "utf8");
