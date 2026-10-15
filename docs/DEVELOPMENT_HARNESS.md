@@ -113,15 +113,17 @@ The release automation and SemVer mapping are documented with the version-histor
 
 ## Controlled release workflow
 
-The `Controlled production deployment` GitHub Action is manually dispatched after explicit approval, runs only from `main`, and does the following in order:
+The `Controlled production deployment` GitHub Action is manually dispatched after explicit approval. With `validation_only` it may run from a reviewed branch and stops after step 2; otherwise it runs only from `main` and does the following in order:
 
 1. Runs the complete quality gate on the approved source.
-2. Calculates the next valid `vX.Y.Z` from the validated Conventional Commits.
-3. Generates the release summary, detailed changes, changelog and public version history from those commits.
-4. Runs the complete gate again against the prepared release.
-5. Applies the idempotent Neon database migrations, deploys the `neon.ts` Function, bucket and triggers to the configured production branch, includes the verified ARM64 media tools in the immutable function package, verifies storage/media/database readiness and waits for a fresh heartbeat from a real scheduled invocation.
-6. Creates one `chore(release): vX.Y.Z` commit under the dispatching GitHub user's identity, an annotated version tag, and a GitHub Release.
-7. Pushes that release commit through GitHub; the Francal Vercel Git integration performs the production deployment.
+2. Deploys the worker to the separate staging Neon project and runs the staging acceptance there. A worker deployment refuses destructive migrations and stops when the period's Neon transfer passes 60% of the quota. It then migrates, deploys the `neon.ts` Function with the verified ARM64 media tools, writes the upload CORS and checks readiness. Finally it checks that only the declared triggers are live, none faster than hourly, and records a drain receipt.
+3. Repeats that worker deployment on the production branch.
+4. Calculates the next valid `vX.Y.Z` from the validated Conventional Commits and generates the release summary, detailed changes, changelog and public version history from those commits.
+5. Runs the complete gate again against the prepared release.
+6. Creates one `chore(release): vX.Y.Z` commit under the dispatching GitHub user's identity, an annotated version tag and a GitHub Release, and pushes them. The Francal Vercel Git integration performs the production deployment.
+7. Waits until production serves that version and commit, with every setting present and the new worker wired.
+
+Setup, failure handling and rollback are in `docs/RELEASE_RUNBOOK.md`.
 
 ## Repository setup
 
@@ -131,8 +133,7 @@ The repository is private on GitHub Free. That plan offers no branch protection,
 - Branch protection: the local `pre-push` hook (installed by `pnpm install`, restorable with `pnpm harness:setup`) blocks direct pushes to `main` and runs `pnpm gate`. The `Quality gate` checks are reviewed on every PR before merging; nothing enforces them on the server.
 - Releases: the human approval is the manual dispatch of `Controlled production deployment` from `main`. Its `production` environment carries no protection rule on this plan.
 - Actions: permit the controlled-release workflow to write the release commit and version tag.
-- Configure these identifiers as variables on the GitHub Actions `production` environment: `NEON_PROJECT_ID` and `NEON_BRANCH_ID`.
-- Configure these secrets on that same environment: `NEON_API_KEY`, `REPORTER_WORKER_PASSWORD`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `PIXABAY_API_KEY`. The existing aliases `OPEN_AI_API_KEY` and `CLAUDE_API_KEY` are also accepted. Before changing infrastructure, the release verifies every required setting and authenticates to the four provider APIs. The release step injects secrets only while applying the Neon config, writes them to a mode-0600 temporary runner file for that step, and deletes that file on exit. Worker readiness must confirm the database connection, upload CORS/storage permissions and actual media-tool execution before the Vercel release is pushed. See `docs/NEON_RELEASE.md` for verification and remaining environment setup.
+- Configure the GitHub Actions `staging` and `production` environments with the variables and secrets listed in `docs/RELEASE_RUNBOOK.md`. The existing aliases `OPEN_AI_API_KEY` and `CLAUDE_API_KEY` are also accepted. Before changing infrastructure, the release verifies every required setting and authenticates to the four provider APIs. The release step injects secrets only while applying the Neon config, writes them to a mode-0600 temporary runner file for that step, and deletes that file on exit. Worker readiness must confirm the database connection, upload CORS/storage permissions and actual media-tool execution before the Vercel release is pushed. See `docs/NEON_RELEASE.md` for verification and remaining environment setup.
 - Vercel app secrets remain managed in the Francal workspace. Never commit runtime secrets, copy them into release notes, or use a local Vercel identity as a deployment source.
 
 Making the repository public or moving to GitHub Pro would allow a `main` protection rule that requires the `Quality gate` checks; that is João's call.
