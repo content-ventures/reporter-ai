@@ -92,6 +92,48 @@ function queuePasses(output) {
   return passes.join("\n");
 }
 
+function importPasses(output) {
+  const passes = output.split("\n").filter(line => line.startsWith("PASS "));
+  if (passes.length !== 2) throw new Error("Not all editorial import integration groups completed");
+  return passes.join("\n");
+}
+
+// Rehearses the emergency rollback on the disposable database only: rows written after the
+// import go back into the document, and replaying 016 imports that document again.
+async function verifyRollback(run) {
+  const portal = "00000000-0000-0000-0000-000000000102";
+  const production = (id, title) => ({ production: { id, title, sourceIds: [] }, pieces: [], versions: [], decisions: [],
+    reviewRequests: [], runs: [], suggestions: [], deliveries: [] });
+  const document = JSON.stringify({ jobs: {}, state: { workspace: { id: portal, name: "Reversão", slug: "reversao", createdAt: "2026-10-01T00:00:00Z" },
+    people: [{ id: "rollback-person", name: "Ana" }], members: [{ workspaceId: portal, personId: "rollback-person", roles: ["editor"] }],
+    sessionPersonId: "rollback-person", sources: [], activity: [], feedback: [], history: [], runFolds: {},
+    productions: [production("rollback-before", "Antes")] } });
+  run(`BEGIN;
+ALTER TABLE public.reporter_editorial_workspaces DISABLE TRIGGER reporter_editorial_retired;
+INSERT INTO public.reporter_editorial_workspaces(portal_id,revision,checkpoint) VALUES('${portal}',3,'${document}'::jsonb)
+  ON CONFLICT(portal_id) DO UPDATE SET revision=3,checkpoint=excluded.checkpoint;
+ALTER TABLE public.reporter_editorial_workspaces ENABLE TRIGGER reporter_editorial_retired;
+UPDATE public.reporter_ed_sync SET migrated_at=NULL WHERE portal_id='${portal}';
+SELECT core.reporter_ed_import_checkpoint('${portal}');
+INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,seq) VALUES('${portal}','rollback-after',
+  '${JSON.stringify(production("rollback-after", "Depois").production)}',(SELECT seq FROM public.reporter_ed_sync WHERE portal_id='${portal}'));
+COMMIT;`);
+  run(await readFile(resolve(root, "database/rollback/editorial-rows.sql"), "utf8"));
+  const restored = run(`SELECT (SELECT jsonb_path_query_array(checkpoint,'$.state.productions[*].production.id')='["rollback-before","rollback-after"]'
+      AND revision=4 FROM public.reporter_editorial_workspaces WHERE portal_id='${portal}')
+    AND NOT EXISTS(SELECT 1 FROM public.reporter_ed_productions WHERE portal_id='${portal}')
+    AND (SELECT migrated_at IS NULL FROM public.reporter_ed_sync WHERE portal_id='${portal}')
+    AND NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='reporter_editorial_retired');`).trim();
+  if (restored !== "t") throw new Error("The rollback did not restore the editorial document from rows");
+  run(await readFile(resolve(root, "database/migrations/016-editorial-rows-data.sql"), "utf8"));
+  const imported = run(`SELECT (SELECT array_agg(production_id ORDER BY ordinal)=ARRAY['rollback-before','rollback-after']
+      FROM public.reporter_ed_productions WHERE portal_id='${portal}')
+    AND (SELECT migrated_at IS NOT NULL FROM public.reporter_ed_sync WHERE portal_id='${portal}')
+    AND EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='reporter_editorial_retired');`).trim();
+  if (imported !== "t") throw new Error("Replaying 016 after a rollback did not import the restored document");
+  console.log("PASS editorial rows roll back to the document and import again");
+}
+
 async function verifyCatalog(run, baseline) {
   const actual = JSON.parse(run(`SELECT jsonb_agg(jsonb_build_object(
     'name',n.nspname||'.'||c.relname,
@@ -168,7 +210,8 @@ export async function verifyFreshBootstrap(source, baseline) {
     run(await readFile(resolve(root, "database/tests/local-flow.integration.sql"), "utf8"));
     const editorial = await readFile(resolve(root, "database/migrations/004-editorial-workspace.sql"), "utf8");
     run(editorial); run(editorial);
-    run(await readFile(resolve(root, "database/tests/editorial.integration.sql"), "utf8"));
+    // Replaying 004 above must keep the retired document fenced.
+    console.log(importPasses(run(await readFile(resolve(root, "database/tests/editorial-import.integration.sql"), "utf8"))));
     console.log(run(await readFile(resolve(root, "database/tests/editorial-polling.integration.sql"), "utf8")).split('\n').filter(line => line.startsWith('PASS ')).join('\n'));
     console.log(queuePasses(run(await readFile(resolve(root, "database/tests/worker-queue.integration.sql"), "utf8"))));
     console.log(queuePasses(run(await readFile(resolve(root, "database/tests/editorial-rows.integration.sql"), "utf8"))));
@@ -191,6 +234,7 @@ export async function verifyFreshBootstrap(source, baseline) {
     console.log('PASS cloud intake without worker heartbeats and stall-based online status');
     console.log(run(await readFile(resolve(root,'database/tests/cloud-review.integration.sql'),'utf8')).split('\n').filter(line=>line.startsWith('PASS ')).join('\n'));
     console.log(run(await readFile(resolve(root, 'database/tests/editorial-polling.integration.sql'), 'utf8')).split('\n').filter(line => line.startsWith('PASS ')).join('\n'));
+    await verifyRollback(run);
   } finally {
     // Remove only the exact disposable ID created by this invocation. Its private
     // tmpfs contains synthetic test data; no persistent/user volume is removed.
@@ -210,7 +254,7 @@ export async function runIntegration() {
   const flowChecks = flow.split("\n").filter(line => line.startsWith("PASS "));
   for (const check of flowChecks) console.log(check);
   if (flowChecks.length !== 4) throw new Error("Not all local-flow integration groups completed");
-  console.log(sql("reporter_admin", await readFile(resolve(root, "database/tests/editorial.integration.sql"), "utf8")).split("\n").filter(line => line.startsWith("PASS ")).join("\n"));
+  console.log(importPasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/editorial-import.integration.sql"), "utf8"))));
   console.log(queuePasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/worker-queue.integration.sql"), "utf8"))));
   console.log(queuePasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/editorial-rows.integration.sql"), "utf8"))));
   await verifyFreshBootstrap(source, baseline);
