@@ -360,7 +360,6 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
 
   // ── Actions ─────────────────────────────────────────────────────────────────────────
   const [sending, setSending] = useState(false);
-  const [stopping, setStopping] = useState(false);
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
   const [traceOpen, setTraceOpen] = useState<boolean | null>(null);
 
@@ -419,13 +418,6 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     setPicked(false);
     setTraceOpen(null);
     onRunStarted(started.value.runId);
-  };
-
-  const stop = async () => {
-    if (!runId) return;
-    setStopping(true);
-    await commands.generation.cancel(runId);
-    setStopping(false);
   };
 
   const lastRun = carousel.lastRun;
@@ -505,10 +497,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     ...(saveStatus === 'error' ? { onRetry: () => void commands.save.retry() } : {}),
   };
   const generateAction: CarouselGenerateAction = {
-    running,
-    stopping,
     ...(regenerateReason ? { reason: regenerateReason } : {}),
-    onStop: () => void stop(),
     onRegenerate: () => setConfirmRegenerate(true),
   };
   const reviewAction: CarouselReviewAction = {
@@ -551,9 +540,6 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
             onView={setView}
             onTemplates={() => setPicking(true)}
             lockedReason={lockedReason}
-            running={running}
-            stopping={stopping}
-            onStop={() => void stop()}
             onRegenerate={() => setConfirmRegenerate(true)}
             regenerateReason={regenerateReason}
             generate={narrow}

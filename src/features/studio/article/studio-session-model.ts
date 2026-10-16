@@ -124,7 +124,7 @@ export type StudioPrimary = { kind: StudioPrimaryKind; label: string; blockedRea
 export type StudioPrimaryInput = {
   /** The article's status. */
   status: PieceStatus;
-  /** The AI writes the text right now (the banner carries "Parar"). */
+  /** The AI writes the text right now. */
   generating: boolean;
   generationFailed?: boolean;
   approval?: Pick<PieceApproval, 'state' | 'viewer' | 'send' | 'decision'>;

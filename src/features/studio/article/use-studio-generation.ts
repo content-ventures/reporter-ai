@@ -34,7 +34,7 @@ export function useStudioGeneration({ production, piece }: { production: Product
 
 export type StudioGeneration = ReturnType<typeof useStudioGeneration>;
 
-/** "Reescrever o artigo do zero", "Parar" and "Tentar de novo" of the generation on screen. */
+/** "Reescrever o artigo do zero" and "Tentar de novo" of the generation on screen. */
 export function useGenerationActions({
   commands,
   productionId,
@@ -65,12 +65,6 @@ export function useGenerationActions({
     setStarted({ runId: result.value.runId, mode: hasText ? 'replace' : 'append' });
   }, [prepare, commands, productionId, pieceId, setLocalTitle, setStarted]);
 
-  const stopGeneration = useCallback(async () => {
-    if (!runId) return;
-    const result = await commands.generation.cancel(runId);
-    if (!result.ok) toast('Não foi possível parar', { tone: 'error', description: result.refusal.message });
-  }, [commands, runId]);
-
   const retryGeneration = useCallback(
     async (stepId?: string) => {
       if (!runId) return;
@@ -84,5 +78,5 @@ export function useGenerationActions({
     [commands, runId, streamMode, live, setStarted],
   );
 
-  return { generate, stopGeneration, retryGeneration };
+  return { generate, retryGeneration };
 }

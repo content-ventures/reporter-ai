@@ -8,8 +8,8 @@ import { generationFeedback, type FeedbackRun } from './generation-feedback';
 
 /**
  * The AI at work, above the text: "A IA está escrevendo · parte 2 de 4. Você pode ler enquanto
- * isso. · Parar" while the run writes, "A IA parou ao escrever a parte 2 de 4. O que já foi
- * escrito está salvo. · Tentar de novo" when it failed. Nothing for a finished run, one the
+ * isso." while the run writes (no verb: the run goes to the end), "A IA parou ao escrever a
+ * parte 2 de 4. O que já foi escrito está salvo. · Tentar de novo" when it failed. Nothing for a finished run, one the
  * person stopped or a reload interrupted (not failures), or one waiting for the person (the
  * screen that resumes it asks its own question). The screen has no header primary meanwhile:
  * the notice verb is the only action (CONTRACT R6).
@@ -19,20 +19,18 @@ export type GenerationBannerProps = {
   /** The piece's latest run (`RunView`, or any run with its steps). */
   run: FeedbackRun | undefined;
   subject: ApprovalSubject;
-  /** "Parar" (absent: no verb, e.g. a reader who cannot edit). */
-  onStop?: () => void;
   /** "Tentar de novo" (absent: no verb). */
   onRetry?: () => void;
-  /** The verb is running (stopping or starting the retry). */
+  /** The verb is running (starting the retry). */
   busy?: boolean;
 };
 
-export function GenerationBanner({ run, subject, onStop, onRetry, busy = false }: GenerationBannerProps): ReactElement | null {
+export function GenerationBanner({ run, subject, onRetry, busy = false }: GenerationBannerProps): ReactElement | null {
   if (!run) return null;
   const parts = writingParts(run);
   if (run.status === 'queued' || run.status === 'running') {
     return (
-      <StatusBanner kind="writing" busy action={onStop ? { label: NOTICE_VERBS.stop, onClick: onStop, loading: busy } : undefined}>
+      <StatusBanner kind="writing" busy>
         {run.model?.engine === 'provider' ? generationFeedback(run).notice : writingNotice(subject, parts)}
       </StatusBanner>
     );

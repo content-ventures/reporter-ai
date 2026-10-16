@@ -76,21 +76,8 @@ export function EditorCanvas() {
 function StreamingStatus() {
   const { generation } = useStudio();
   const feedback = useGenerationFeedback(generation.run);
-  return <>
-    <MetaList size="sm" label="Estado da redação" items={[feedback?.detail ?? feedback?.label ?? 'Escrevendo',feedback?.elapsed,
-      'Prévia em tempo real'].filter(Boolean) as string[]} />
-    <StopGenerationButton />
-  </>;
-}
-
-function StopGenerationButton() {
-  const studio = useStudio();
-  const [stopping,setStopping] = useState(false);
-  if (!studio.canEdit) return null;
-  return <Button size="sm" loading={stopping} onClick={() => {
-    setStopping(true);
-    void studio.actions.stopGeneration().finally(() => setStopping(false));
-  }}>Parar</Button>;
+  return <MetaList size="sm" label="Estado da redação" items={[feedback?.detail ?? feedback?.label ?? 'Escrevendo',feedback?.elapsed,
+    'Prévia em tempo real'].filter(Boolean) as string[]} />;
 }
 
 function ArticleTitle() {
@@ -128,7 +115,6 @@ function PendingArticle() {
     <Progress aria-label="Preparando o artigo" />
     <SkeletonText lines={4} lineHeight={28} label="Aguardando os primeiros parágrafos" />
     <SkeletonText lines={3} lineHeight={28} />
-    <StopGenerationButton />
     <LiveRegion message={feedback?.label ?? 'Preparando o artigo'} />
   </PageStack>;
   if (count === 0) return null;
@@ -140,7 +126,6 @@ function PendingArticle() {
           <SkeletonText lines={3} lineHeight={28} label="Seção a escrever" />
         </PageStack>
       ))}
-      <StopGenerationButton />
     </PageStack>
   );
 }
