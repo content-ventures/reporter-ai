@@ -295,8 +295,8 @@ export function reviewPortsContract(name: string, make: PortsFactory): void {
         const before = unwrap(await ports.queries.get(sample.productionId)).approvals.article;
         assert.equal(before?.state, 'none');
         assert.equal(before?.send.guard.allowed, true);
-        assert.deepEqual(before?.send.approvers.map((person) => person.id), [ports.people.approver], 'article approvers, never the sender');
-        assert.equal(before?.send.suggestedAssigneeId, ports.people.approver, 'the only approver comes prefilled');
+        assert.deepEqual(new Set(before?.send.approvers.map((person) => person.id)), new Set([ports.people.approver, ports.people.editor]), 'article approvers, and the admin sender, who runs the flow alone');
+        assert.equal(before?.send.suggestedAssigneeId, ports.people.editor, 'an admin approves their own first send');
         assert.equal(before?.send.isResend, false);
         assert.equal(before?.viewer.canSend, true);
 
@@ -308,7 +308,6 @@ export function reviewPortsContract(name: string, make: PortsFactory): void {
           return result.ok ? '' : result.refusal.message;
         };
         assert.equal(await refused({ assigneeId: 'person-nobody' }, 'unknown_assignee'), 'Pessoa não encontrada.');
-        assert.equal(await refused({ assigneeId: ports.people.editor }, 'self_assign'), 'Escolha outra pessoa para aprovar.');
         if (ports.people.editorOnly) {
           const name = await firstNameOf(ports, ports.people.editorOnly);
           assert.equal(await refused({ assigneeId: ports.people.editorOnly }, 'assignee_cannot_approve'), `${name} não aprova esta peça.`);
@@ -383,11 +382,11 @@ export function reviewPortsContract(name: string, make: PortsFactory): void {
       });
     });
 
-    it('never lets the sender decide on their own send (two-person gate, admins included)', () =>
+    it('never lets the sender decide on a send they gave someone else (two-person gate, admins included)', () =>
       withPorts(make, async (ports) => {
         const sample = await createSample(ports);
         await writeDraft(ports, sample.articleId, await sampleArticle(ports, sample.sourceId));
-        const { version } = unwrap(await ports.commands.requestReview(sample.articleId));
+        const { version } = unwrap(await ports.commands.requestReview(sample.articleId, { assigneeId: ports.people.approver }));
         const review = unwrap(await ports.queries.review(sample.articleId));
         assert.equal(review.approval.viewer.canDecide, false);
         assert.equal(review.guards.approve.allowed ? 'allowed' : review.guards.approve.code, 'self_decision');
@@ -400,6 +399,19 @@ export function reviewPortsContract(name: string, make: PortsFactory): void {
         await ports.actAs(ports.people.approver);
         assert.equal(unwrap(await ports.queries.review(sample.articleId)).approval.viewer.canDecide, true);
         unwrap(await ports.commands.decide({ pieceId: sample.articleId, subject: version.ref, decision: 'approved', displayedHash: version.ref.hash }));
+      }));
+
+    it('lets an admin send to themselves and approve, running the flow alone', () =>
+      withPorts(make, async (ports) => {
+        const sample = await createSample(ports);
+        await writeDraft(ports, sample.articleId, await sampleArticle(ports, sample.sourceId));
+        const { request, version } = unwrap(await ports.commands.requestReview(sample.articleId, { assigneeId: ports.people.editor }));
+        assert.equal(request.assigneeId, ports.people.editor);
+        const review = unwrap(await ports.queries.review(sample.articleId));
+        assert.equal(review.approval.viewer.canDecide, true);
+        assert.deepEqual((await ports.queries.approvals('to_approve')).items.map((item) => item.pieceId), [sample.articleId], 'in their own queue');
+        unwrap(await ports.commands.decide({ pieceId: sample.articleId, subject: version.ref, decision: 'approved', displayedHash: version.ref.hash }));
+        assert.equal(unwrap(await ports.queries.get(sample.productionId)).approvals.article?.state, 'approved');
       }));
 
     it('keeps an approval when the text changes afterwards and asks to resend ("Aprovação desatualizada")', () =>

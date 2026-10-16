@@ -397,7 +397,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     }
     const { assigneeId } = result.value.request;
     const assignee = assigneeId ? people.data?.find((person) => person.id === assigneeId) : undefined;
-    moves.sent({ productionId: production.id, pieceId: carousel.id, kind: 'carousel', assigneeName: assignee?.name });
+    moves.sent({ productionId: production.id, pieceId: carousel.id, kind: 'carousel', assigneeId, assigneeName: assignee?.name });
   };
 
   const regenerate = async () => {

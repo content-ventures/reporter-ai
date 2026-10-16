@@ -39,7 +39,7 @@ export function StudioDialogs() {
           onMarkReviewed={studio.actions.markTextReviewed}
           prepare={studio.prepareSend}
           onSent={({ assignee }) =>
-            moves.sent({ productionId: studio.production.id, pieceId: approval.pieceId, kind: 'article', assigneeName: assignee.name })
+            moves.sent({ productionId: studio.production.id, pieceId: approval.pieceId, kind: 'article', assigneeId: assignee.id, assigneeName: assignee.name })
           }
         />
       ) : null}

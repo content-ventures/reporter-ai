@@ -15,6 +15,7 @@ import { hasAnyRole } from '../../../domain/workspace.ts';
 import type { Member } from '../../../domain/workspace.ts';
 import { firstNameOf } from './people.ts';
 import type { StoreState } from './state.ts';
+import { decidesOwnSends } from '../../../domain/rules/decide.ts';
 
 /**
  * "Antes de enviar" for one piece, shared by the commands (they refuse a "Falta"), the guards and
@@ -70,17 +71,18 @@ export function sendRefusal(items: readonly SendItem[]): { code: SendRefusalCode
   }
 }
 
-/** Members who may decide at the gate, without `exclude` (the sender never decides on their send). */
+/** Members who may decide at the gate, without `exclude` (the sender, unless they decide their own sends). */
 export function gateMembers(state: Pick<StoreState, 'members'>, gate: GateDefinition, exclude?: PersonId): Member[] {
-  // The loopback operator can receive a request while editing, then switch to the approver
-  // profile to decide. canDecide still requires the currently selected approval role.
-  return state.members.filter((member) => (member.personId !== exclude || member.localOperator)
+  // An admin runs the whole flow alone. The loopback operator can receive a request while
+  // editing, then switch to the approver profile to decide; canDecide still requires that role.
+  return state.members.filter((member) => (member.personId !== exclude || decidesOwnSends(member))
     && (member.localOperator === true || hasAnyRole(member, gate.roles)));
 }
 
 /**
- * "Quem aprova" prefilled: the last decider of this piece, else whom the sender last sent to at
- * this gate (any production), else the only member who can approve. Always someone in `approvers`.
+ * "Quem aprova" prefilled: the last decider of this piece, else whom the sender last sent to at this
+ * gate (any production), else an admin sender themselves (who runs the flow alone), else the only
+ * member who can approve. Always someone in `approvers`.
  */
 export function suggestedAssignee(
   state: Pick<StoreState, 'members' | 'productions'>,
@@ -103,6 +105,9 @@ export function suggestedAssignee(
       .sort((a, b) => Date.parse(a.requestedAt) - Date.parse(b.requestedAt));
     const last = sent[sent.length - 1]?.assigneeId;
     if (last) return last;
+    // No history at this gate: an admin approves their own send, running the flow alone.
+    const sender = state.members.find((member) => member.personId === senderId);
+    if (approvers.has(senderId) && hasAnyRole(sender, ['admin'])) return senderId;
   }
   return approvers.size === 1 ? [...approvers][0] : undefined;
 }

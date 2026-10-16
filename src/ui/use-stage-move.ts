@@ -4,9 +4,9 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast, type ToastAction } from '@content-ventures/design-system/v3';
 import type { PieceId, PieceKind, ProductionId } from '@/domain';
-import { useCommands } from '@/state';
+import { useCommands, useSession } from '@/state';
 import { movedToast, NOTICE_VERBS, withdrawnToast } from './approval-copy';
-import { boardHref, pieceHref } from './routes';
+import { boardHref, pieceHref, reviewHref } from './routes';
 import { notifyRefusal } from './permission-dialog';
 
 /** Long enough to read who acts now once the board opens (the DS default is 5 s). */
@@ -17,9 +17,10 @@ export type StageMoveToast = { title: string; description: string };
 export type StageMove = {
   /**
    * After a send: "Enviado para Pedro" · "Agora é só aguardar a aprovação." with "Retirar envio",
-   * which takes the send back and reopens the piece for editing. Then the board.
+   * which takes the send back and reopens the piece for editing. Then the board. Sent to oneself
+   * (an admin running the flow alone), the review opens instead: there is nobody to wait for.
    */
-  sent: (input: { productionId: ProductionId; pieceId: PieceId; kind: PieceKind; assigneeName?: string | null }) => void;
+  sent: (input: { productionId: ProductionId; pieceId: PieceId; kind: PieceKind; assigneeId?: string | null; assigneeName?: string | null }) => void;
   /** After a decision: the toast (from `movedToast`) with at most one action, then the board. */
   decided: (input: { productionId: ProductionId; copy: StageMoveToast; action?: ToastAction }) => void;
 };
@@ -32,13 +33,20 @@ export type StageMove = {
 export function useStageMove(): StageMove {
   const router = useRouter();
   const commands = useCommands();
+  const viewerId = useSession().data?.current?.id;
   return useMemo(() => {
     const land = (productionId: ProductionId, copy: StageMoveToast, action?: ToastAction) => {
       toast(copy.title, { description: copy.description, duration: MOVED_TOAST_MS, ...(action ? { action } : {}) });
       router.push(boardHref(productionId));
     };
     return {
-      sent({ productionId, pieceId, kind, assigneeName }) {
+      sent({ productionId, pieceId, kind, assigneeId, assigneeName }) {
+        if (assigneeId && assigneeId === viewerId) {
+          const copy = movedToast({ transition: { kind: 'sent' }, viewerIsActor: true });
+          toast(copy.title, { description: copy.description, duration: MOVED_TOAST_MS });
+          router.push(reviewHref(productionId, kind));
+          return;
+        }
         const withdraw = async () => {
           const result = await commands.production.withdrawReview(pieceId);
           if (!result.ok) {
@@ -58,5 +66,5 @@ export function useStageMove(): StageMove {
         land(productionId, copy, action);
       },
     };
-  }, [commands, router]);
+  }, [commands, router, viewerId]);
 }

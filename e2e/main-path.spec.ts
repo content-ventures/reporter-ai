@@ -94,6 +94,8 @@ test("caminho principal: da transcrição ao pacote exportado", async ({ page })
     await send.click();
     const sendDialog = page.getByRole("dialog", { name: "Enviar para aprovação" });
     await sendDialog.getByRole("button", { name: "Marcar como revisado" }).click();
+    // João is admin and would approve his own send; this path is the two-person one.
+    await choose(page, "Quem aprova", /Pedro/);
     const submit = sendDialog.getByRole("button", { name: /^Enviar para / });
     await expect(submit).toBeEnabled();
     await submit.click();

@@ -188,6 +188,8 @@ test('the local operator manually requests and approves one exact version; norma
   assert.ok((await engine.commands.derive({ productionId: created.value.productionId,kind: 'carousel',from: subject })).ok);
   engine.store.dispose();
   const ordinary = emptyEditorialCheckpoint(); delete ordinary.state.members[0].localOperator;
+  // Without admin (who runs the flow alone), the two-person gate holds.
+  ordinary.state.members[0].roles = ordinary.state.members[0].roles.filter(role => role !== 'admin');
   const normal = createEditorialEngine(ordinary,ids);
   const p = await normal.commands.createFromSource(input); assert.ok(p.ok);
   const id = p.value.pieces.find(piece => piece.kind === 'article')!.pieceId;

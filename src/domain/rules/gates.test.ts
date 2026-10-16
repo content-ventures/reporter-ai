@@ -42,13 +42,21 @@ const runningRun = (pieceId: string): GenerationRun => ({
 });
 
 describe('canDecide', () => {
-  test('never lets the sender decide on their own pending send, admins included (R3)', () => {
+  test('never lets the sender decide on their own pending send, unless an admin who kept it (R3)', () => {
     const { kit, record, v1, ref } = articleInReview();
     requestReview(record, kit, v1);
-    const own = canDecide({ ...record, member: MEMBERS[JOAO] }, { gate: ARTICLE_GATE, subject: ref, decision: 'approved' });
+    // The same sender without the admin role: the two-person gate holds.
+    const editor = { ...MEMBERS[JOAO], roles: ['editor', 'approver'] as const };
+    const own = canDecide({ ...record, member: { ...editor, roles: [...editor.roles] } }, { gate: ARTICLE_GATE, subject: ref, decision: 'approved' });
     assert.equal(!own.ok && own.refusal.code, 'self_decision');
     assert.equal(!own.ok && own.refusal.message, 'Quem enviou não aprova o próprio envio.');
     assert.equal(REQUESTER_MAY_DECIDE, false, 'a named policy, so it can be relaxed later');
+    // An admin runs the flow alone: their own send, to nobody else, is theirs to decide.
+    assert.equal(canDecide({ ...record, member: MEMBERS[JOAO] }, { gate: ARTICLE_GATE, subject: ref, decision: 'approved' }).ok, true);
+    // Sent to someone else, the admin waits like anyone.
+    const toPedro = { ...record, reviewRequests: record.reviewRequests.map((request) => ({ ...request, assigneeId: PEDRO })) };
+    const delegated = canDecide({ ...toPedro, member: MEMBERS[JOAO] }, { gate: ARTICLE_GATE, subject: ref, decision: 'approved' });
+    assert.equal(!delegated.ok && delegated.refusal.code, 'self_decision');
     assert.equal(canDecide({ ...record, member: MEMBERS[PEDRO] }, { gate: ARTICLE_GATE, subject: ref, decision: 'approved' }).ok, true);
     // Once decided, the send no longer waits: nothing to refuse.
     recordDecision(record, kit, v1, 'changes_requested', { note: 'Rever o título.' });

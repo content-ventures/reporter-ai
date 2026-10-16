@@ -67,7 +67,10 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
   invalidate an in-flight result instead of silently associating it with older provenance.
 
 The fixed server-owned `Operador local` is a development identity, not a login. It can manually
-approve its own request only in this pilot. Ordinary membership retains the original two-person rule.
+approve its own request only in this pilot. Ordinary membership retains the original two-person rule,
+except for admins: an admin may name themselves in **Quem aprova** (the default when they have no
+sending history at that gate) and approve that send, running the whole flow alone. An admin who
+sends to someone else waits for that person.
 
 The local operator starts with the **Admin** test profile. A **Perfil de teste** selector at the
 bottom-left of the sidebar offers **Editor**, **Aprovador** and **Admin**, without sign-out or
@@ -114,7 +117,8 @@ The selected roles persist across requests, reloads and local tabs. A local Edit
 Editor still cannot approve. The approval queue and next-step actions follow the current profile.
 The server grants this capability only to the trusted loopback identity in the fixed local workspace
 and explicitly refuses profile selection in cloud mode. Cloud membership roles replace checkpoint
-roles and never gain the local approval exception. Normal members retain the two-person rule.
+roles and never gain the local approval exception. Normal members retain the two-person rule; admins
+approve what they sent to themselves.
 
 Approval continues the journey instead of leaving a dead end: an editor/all-roles operator goes
 from the exact approved article to **Criar carrossel** (even before a carousel piece exists), then

@@ -4,7 +4,7 @@ import type { Decision, ReviewRequest } from '../../../domain/decision.ts';
 import type { Piece } from '../../../domain/piece.ts';
 import { findVersion, latestApproved, pendingReview, pieceDecisions } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
-import { REQUESTER_MAY_DECIDE } from '../../../domain/rules/decide.ts';
+import { REQUESTER_MAY_DECIDE, decidesOwnRequest } from '../../../domain/rules/decide.ts';
 import { toVersionView } from '../../../domain/views.ts';
 import type { ProductionView } from '../../../domain/views.ts';
 import { can } from '../../../domain/permissions.ts';
@@ -104,7 +104,7 @@ export function pieceApproval(ctx: ReadContext, record: ProductionRecord, piece:
     viewer: {
       canEdit,
       canSend: can(viewer, 'piece.send'),
-      canDecide: hasAnyRole(viewer, gate.roles) && (REQUESTER_MAY_DECIDE || viewer?.localOperator === true || !isRequester),
+      canDecide: hasAnyRole(viewer, gate.roles) && (REQUESTER_MAY_DECIDE || decidesOwnRequest(viewer, pending) || !isRequester),
       canWithdraw: pending !== undefined && (isRequester || hasAnyRole(viewer, ['admin'])),
       isRequester,
       isAssignee: pending?.assigneeId !== undefined && pending.assigneeId === viewer?.personId,
