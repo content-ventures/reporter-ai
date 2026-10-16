@@ -17,7 +17,7 @@ export function ReporterBrand({ signature = false, endorsed = false }: { signatu
     : signature
       ? { src: '/brand/reporter-ai-powered.svg', width: 264, height: 78 }
       : endorsed
-        ? { src: '/brand/reporter-ai-powered.svg', width: 160, height: 47 }
+        ? { src: '/brand/reporter-ai-powered.svg', width: 144, height: 43 }
         : { src: '/brand/reporter-ai.svg', width: 180, height: 49 };
   const powered = signature || (endorsed && !compact);
 
