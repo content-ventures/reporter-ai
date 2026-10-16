@@ -243,7 +243,7 @@ function ProductionsKanban() {
         {query.status === 'error' && !page ? errorState(query) : archivedQuery.status === 'error' && !archivedPage ? errorState(archivedQuery) : (
           <>
             <VisuallyHidden role="heading" aria-level={2}>Etapas de produção e aprovações</VisuallyHidden>
-            <KanbanBoard label="Etapas de produção e aprovações">
+            <KanbanBoard label="Etapas de produção e aprovações" fill>
               {LANES.map((lane) => {
                 const laneRows = boardGroups[lane.id];
                 const count = lane.id === 'archived' ? archivedPage?.counts.archived ?? 0 : laneRows.length;
