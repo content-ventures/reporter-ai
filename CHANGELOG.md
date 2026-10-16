@@ -4,6 +4,17 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-16
+
+### Added
+
+- Apply the approved Reporter AI identity and icons.
+- Add branded metadata and public indexing rules.
+
+### Fixed
+
+- Improve compact endorsement readability.
+
 ## [0.3.0] - 2026-10-15
 
 ### Fixed

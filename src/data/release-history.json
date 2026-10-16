@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.3.0",
+  "currentVersion": "0.4.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,28 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.4.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-16",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 3 validated changes: improve compact endorsement readability; add branded metadata and public indexing rules; apply the approved reporter ai identity and icons.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Apply the approved Reporter AI identity and icons"
+        },
+        {
+          "type": "Added",
+          "description": "Add branded metadata and public indexing rules"
+        },
+        {
+          "type": "Fixed",
+          "description": "Improve compact endorsement readability"
+        }
+      ]
+    },
     {
       "version": "0.3.0",
       "roadmapRelease": "R0",
