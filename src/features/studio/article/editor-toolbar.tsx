@@ -67,7 +67,7 @@ const TOOL_LABELS: Partial<Record<string, string>> = {
 
 /**
  * The "IA" menus (toolbar and selection): "Trecho" — Mais direto · Encurtar · Reescrever
- * (Didático, Formal, Expandir com a entrevista, Virar lista) · Pedir… — and, with `document`,
+ * (Didático, Formal, Expandir com a entrevista, Virar lista) · Pedir à IA — and, with `document`,
  * "Artigo inteiro": the article-wide tools that apply to the text on screen (`documentTools`).
  */
 export function aiMenuItems(
@@ -84,7 +84,7 @@ export function aiMenuItems(
     item('rewrite.direct'),
     item('shorten'),
     { label: 'Reescrever', items: rewrite },
-    options.onAsk ? { label: 'Pedir…', onSelect: options.onAsk } : null,
+    options.onAsk ? { label: 'Pedir à IA', onSelect: options.onAsk } : null,
   ]);
   const document = present((options.document ?? []).map((entry) => item(entry.id, entry.label)));
   return { passage, rewrite, document };

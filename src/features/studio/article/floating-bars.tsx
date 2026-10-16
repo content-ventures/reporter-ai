@@ -61,7 +61,7 @@ import { clip, closestExcerpt, suggestionDelta } from './studio-model';
 
 /**
  * Floating layers over the text (PLAN §3.5 "IA inline"), one at a time:
- * 1. the selection bar — B I link | ✦ Reescrever ▾ · Encurtar · Perguntar à IA;
+ * 1. the selection bar — B I link | ✦ Mais direto · Encurtar · Reescrever ▾ · Pedir à IA;
  * 2. the suggestion bar under the passage the AI is rewriting (opened by its card, the status line
  *    or the caret entering the passage) — Aceitar (⌘↵) · Descartar (Esc) · Tentar de novo,
  *    "Simulação local" in its label; the proposal reads in the paragraph itself;
@@ -182,7 +182,7 @@ function SelectionBar({ open, selection, onDismiss, onLink }: { open: boolean; s
       <ToolbarButton label="Encurtar" icon={Scissors} showLabel onClick={() => run('shorten')} />
       <ToolbarMenu label="Reescrever" icon={Pencil} showLabel keep sections={[{ items: rewrite }]} />
       <ToolbarButton
-        label="Pedir…"
+        label="Pedir à IA"
         icon={MessageSquareText}
         showLabel
         onClick={() => {
