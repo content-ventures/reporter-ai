@@ -4,6 +4,72 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-16
+
+### Maintenance
+
+- Pin design system v0.3.0.
+- Enforce breadcrumb-only navigation.
+- Follow the board after each stage move.
+- Cover the capability pre-check of the command wrapper.
+- Read the production trail only on restricted productions.
+
+### Added
+
+- Fill the window with the kanban board.
+- Navigate productions by breadcrumbs.
+- Name who acts next on a production.
+- Approve with a confirmation and open the board.
+- Open the board after sending for approval.
+- Say the production is complete after the download.
+- Mark link import as coming soon.
+- Point out the moved production on the board.
+- Reduce the photo bank to a search and its photos.
+- Add an AI image generator to both runtimes.
+- Offer "Gerar com IA" in the picker and on suggestions.
+- Deliver generated articles illustrated with AI images.
+- Add one capability table to the domain.
+- Enforce capabilities in the shared store commands.
+- Answer every role refusal with one FORBIDDEN error.
+- Report permission limits in one popup instead of red text.
+- Hide creation from roles that cannot create.
+- Open the article and carousel read-only for reviewers.
+- Hide production edits and delivery from reviewers.
+- Let the acting member edit their own profile.
+- Store each member's self-edited profile.
+- Edit name, cargo and photo on Meu perfil.
+- Let an admin run the whole flow alone.
+- Show the Powered by lockup in the menu.
+- Organize the home around greeting, stages and work.
+
+### Fixed
+
+- Keep every level above the current one a trail link.
+- Read spread and aliased page headers in the policy.
+- Align the recorded navigation rule with the tree.
+- Drop the stop actions while the AI writes.
+- Spell out the ask action in the text bars.
+- Keep the cover suggestion under its actions.
+- Keep the title and text bars closed for reviewers.
+- Set the menu lockup a little smaller.
+- Set the menu lockup smaller still.
+- Name the product Reporter IA everywhere.
+- Apply the Reporter IA artwork.
+
+### Documentation
+
+- Land the acceptance script on the board after each move.
+- Document the role matrix and the permission popup.
+- List where production origins are configured.
+
+### Improved
+
+- Read the photo library only when the picker opens.
+
+### Changed
+
+- Send refused actions through notifyRefusal.
+
 ## [0.4.0] - 2026-10-16
 
 ### Added

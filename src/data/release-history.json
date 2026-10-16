@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.4.0",
+  "currentVersion": "0.5.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,200 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.5.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-16",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 46 validated changes: organize the home around greeting, stages and work; list where production origins are configured; apply the reporter ia artwork.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Maintenance",
+          "description": "Pin design system v0.3.0"
+        },
+        {
+          "type": "Added",
+          "description": "Fill the window with the kanban board"
+        },
+        {
+          "type": "Added",
+          "description": "Navigate productions by breadcrumbs"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Enforce breadcrumb-only navigation"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep every level above the current one a trail link"
+        },
+        {
+          "type": "Fixed",
+          "description": "Read spread and aliased page headers in the policy"
+        },
+        {
+          "type": "Fixed",
+          "description": "Align the recorded navigation rule with the tree"
+        },
+        {
+          "type": "Added",
+          "description": "Name who acts next on a production"
+        },
+        {
+          "type": "Added",
+          "description": "Approve with a confirmation and open the board"
+        },
+        {
+          "type": "Added",
+          "description": "Open the board after sending for approval"
+        },
+        {
+          "type": "Added",
+          "description": "Say the production is complete after the download"
+        },
+        {
+          "type": "Added",
+          "description": "Mark link import as coming soon"
+        },
+        {
+          "type": "Added",
+          "description": "Point out the moved production on the board"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Follow the board after each stage move"
+        },
+        {
+          "type": "Documentation",
+          "description": "Land the acceptance script on the board after each move"
+        },
+        {
+          "type": "Fixed",
+          "description": "Drop the stop actions while the AI writes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Spell out the ask action in the text bars"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep the cover suggestion under its actions"
+        },
+        {
+          "type": "Added",
+          "description": "Reduce the photo bank to a search and its photos"
+        },
+        {
+          "type": "Added",
+          "description": "Add an AI image generator to both runtimes"
+        },
+        {
+          "type": "Added",
+          "description": "Offer \"Gerar com IA\" in the picker and on suggestions"
+        },
+        {
+          "type": "Added",
+          "description": "Deliver generated articles illustrated with AI images"
+        },
+        {
+          "type": "Improved",
+          "description": "Read the photo library only when the picker opens"
+        },
+        {
+          "type": "Added",
+          "description": "Add one capability table to the domain"
+        },
+        {
+          "type": "Added",
+          "description": "Enforce capabilities in the shared store commands"
+        },
+        {
+          "type": "Added",
+          "description": "Answer every role refusal with one FORBIDDEN error"
+        },
+        {
+          "type": "Added",
+          "description": "Report permission limits in one popup instead of red text"
+        },
+        {
+          "type": "Changed",
+          "description": "Send refused actions through notifyRefusal"
+        },
+        {
+          "type": "Added",
+          "description": "Hide creation from roles that cannot create"
+        },
+        {
+          "type": "Added",
+          "description": "Open the article and carousel read-only for reviewers"
+        },
+        {
+          "type": "Added",
+          "description": "Hide production edits and delivery from reviewers"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep the title and text bars closed for reviewers"
+        },
+        {
+          "type": "Documentation",
+          "description": "Document the role matrix and the permission popup"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover the capability pre-check of the command wrapper"
+        },
+        {
+          "type": "Added",
+          "description": "Let the acting member edit their own profile"
+        },
+        {
+          "type": "Added",
+          "description": "Store each member's self-edited profile"
+        },
+        {
+          "type": "Added",
+          "description": "Edit name, cargo and photo on Meu perfil"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Read the production trail only on restricted productions"
+        },
+        {
+          "type": "Added",
+          "description": "Let an admin run the whole flow alone"
+        },
+        {
+          "type": "Added",
+          "description": "Show the Powered by lockup in the menu"
+        },
+        {
+          "type": "Fixed",
+          "description": "Set the menu lockup a little smaller"
+        },
+        {
+          "type": "Fixed",
+          "description": "Set the menu lockup smaller still"
+        },
+        {
+          "type": "Fixed",
+          "description": "Name the product Reporter IA everywhere"
+        },
+        {
+          "type": "Fixed",
+          "description": "Apply the Reporter IA artwork"
+        },
+        {
+          "type": "Documentation",
+          "description": "List where production origins are configured"
+        },
+        {
+          "type": "Added",
+          "description": "Organize the home around greeting, stages and work"
+        }
+      ]
+    },
     {
       "version": "0.4.0",
       "roadmapRelease": "R0",
