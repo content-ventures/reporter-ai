@@ -144,7 +144,7 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
   const lookup = useAssetLookup();
   // "Biblioteca" only while a photo bank works (a key and real originals; never Pixabay);
   // "Gerar com IA" wherever the runtime generates images.
-  const banks = usePhotoBanks().length;
+  const banks = usePhotoBanks(request !== null).length;
   const generates = Boolean(useRuntime().runtime?.imageGeneration);
   const sources = useMemo(
     () => pickerSources().filter((source) => (source.id !== 'archive' || banks > 0) && (source.id !== 'generate' || generates)),

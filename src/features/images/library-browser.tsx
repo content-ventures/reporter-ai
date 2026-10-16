@@ -4,23 +4,24 @@ import { Alert, Badge, Button, ButtonLink, Card, CardHeader, EmptyState, Grid, M
 import { bankImages, libraryImageSource, photoBanks, type LibraryImage, type StockImage, type StockProvider, type VisualLibraryView } from '@/domain/visual-library';
 import { useRuntime } from '@/state';
 
-/** The connected library (read once per mount); undefined while it loads or without a backend. */
-function useLibraryView() {
+/** The connected library, read once when first `enabled`; undefined while it loads or without a backend. */
+function useLibraryView(enabled = true) {
   const { runtime } = useRuntime(),port = runtime?.visuals;
   const [view,setView] = useState<VisualLibraryView>();
   const [failure,setFailure] = useState<string>();
+  const loaded = view !== undefined;
   useEffect(() => {
-    if (!port) return;
+    if (!port || !enabled || loaded) return;
     let live = true;
     void port.get().then(value => { if (live) setView(value); }).catch(error => { if (live) setFailure(error instanceof Error ? error.message : 'Não foi possível abrir a biblioteca.'); });
     return () => { live = false; };
-  },[port]);
+  },[port,enabled,loaded]);
   return { view,setView,failure };
 }
 
-/** Photo banks that work here (a key and real originals); empty while loading or without any. */
-export function usePhotoBanks(): StockProvider[] {
-  return photoBanks(useLibraryView().view);
+/** Photo banks that work here (a key and real originals); empty until `enabled`, while loading or without any. */
+export function usePhotoBanks(enabled = true): StockProvider[] {
+  return photoBanks(useLibraryView(enabled).view);
 }
 
 const keyOf = (image: StockImage) => image.provider+':'+image.providerId;
