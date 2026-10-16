@@ -33,7 +33,7 @@ export function ReviewHistory({ open, onClose, kind, versions, approval, people 
           title: event.title,
           date: event.meta,
           dateTime: event.at,
-          marker: <PersonAvatar personId={event.personId} name={event.personId ? 'Alguém' : 'Reporter AI'} size="xs" decorative />,
+          marker: <PersonAvatar personId={event.personId} name={event.personId ? 'Alguém' : 'Reporter IA'} size="xs" decorative />,
         };
         if (event.note) entry.quote = event.note;
         return entry;

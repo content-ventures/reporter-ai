@@ -59,7 +59,7 @@ async function reporterResponse<T>(response: Response): Promise<T> {
       if (code === 'AUTH_REQUIRED') window.location.replace('/auth/sign-in');
       else if (code === 'ACCESS_PENDING' || code === 'EMAIL_NOT_VERIFIED') window.location.replace('/auth/pending');
     }
-    throw new ReporterHttpError(typeof value.message === 'string' ? value.message : 'O servidor do Reporter AI não respondeu.',code,response.status);
+    throw new ReporterHttpError(typeof value.message === 'string' ? value.message : 'O servidor do Reporter IA não respondeu.',code,response.status);
   }
   return value as T;
 }

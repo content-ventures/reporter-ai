@@ -96,12 +96,12 @@ export function validatePipelineTemplates(definition: PipelineDefinition): strin
   if (/\{\{[\s\S]*?\}\}/.test(definition.systemPrompt)) return 'A mensagem de sistema não recebe variáveis; use-as no prompt da etapa.';
 }
 
-/** Editorial preset 2.0: Make's sequential mechanics, grounded in the Reporter AI's actual inputs. */
+/** Editorial preset 2.0: Make's sequential mechanics, grounded in the Reporter IA's actual inputs. */
 export function defaultPipelineDefinition(model: PipelineModel = 'openai/gpt-oss-120b'): PipelineDefinition {
   const step = (prompt: string, temperature = 0.3): PipelineStep => ({ prompt, model, temperature, maxTokens: 4096 });
   return {
     articleMode: 'sequential', curateQuotes: true,
-    systemPrompt: `Reporter AI — prompts editoriais 2.0.
+    systemPrompt: `Reporter IA — prompts editoriais 2.0.
 Você é um editor jornalístico brasileiro. Escreva em português do Brasil, com clareza, precisão e voz ativa. Entregue informação, não texto publicitário.
 
 FIDELIDADE À FONTE
