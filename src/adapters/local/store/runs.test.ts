@@ -212,11 +212,11 @@ describe('run ledger (generation write path)', () => {
 
   it('records the acting member chosen through the session', async () => {
     const ports = createTestPorts();
-    const switched = await ports.session.actAs?.(TEST_PEOPLE.approver);
+    const switched = await ports.session.actAs?.(TEST_PEOPLE.editorOnly);
     assert.ok(switched?.ok);
     const { productionId } = await production(ports);
     const detail = await ports.queries.get(productionId);
     assert.ok(detail.ok);
-    assert.equal(detail.value.owner.id, TEST_PEOPLE.approver);
+    assert.equal(detail.value.owner.id, TEST_PEOPLE.editorOnly);
   });
 });

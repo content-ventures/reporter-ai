@@ -52,6 +52,9 @@ describe('votes on AI output', () => {
     const target = { kind: 'production' as const, productionId };
     assert.ok((await ports.feedback.vote({ target, value: 'up' })).ok);
     assert.ok((await ports.session.actAs?.(TEST_PEOPLE.approver))?.ok);
+    const refused = await ports.feedback.vote({ target, value: 'down' });
+    assert.equal(!refused.ok && refused.refusal.code, 'forbidden', 'only who edits votes on the AI output');
+    assert.ok((await ports.session.actAs?.(TEST_PEOPLE.editorOnly))?.ok);
     assert.ok((await ports.feedback.vote({ target, value: 'down' })).ok);
     assert.equal((await ports.feedback.list({ target, votes: true })).length, 2, 'each person has their own vote');
     assert.equal((await ports.feedback.list({ target, mine: true, votes: true }))[0].vote, 'down');

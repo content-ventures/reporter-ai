@@ -1,4 +1,6 @@
 import type { AssetId, PersonId } from '../domain/ids.ts';
+import { can, forbidden } from '../domain/permissions.ts';
+import type { Capability } from '../domain/permissions.ts';
 import { refuse } from '../domain/result.ts';
 import type { Result } from '../domain/result.ts';
 import type { AssetRefusal, AssetStore, UnusedAssets } from '../ports/assets.ts';
@@ -84,19 +86,24 @@ const readOnly = (runtime: Runtime): boolean => runtime.tabs?.current().status =
 
 /**
  * A port whose methods resolve the runtime first, then call the same method on it. Methods in
- * `writes` are refused while this tab is read-only (another tab saved over its work).
+ * `writes` are refused while this tab is read-only (another tab saved over its work). Methods in
+ * `needs` are refused, with nothing called, for a member without the capability: the ports that
+ * never reach the store commands (generation, material intake, images) answer like the commands.
  */
 function deferred<T extends object>(
   whenReady: () => Promise<Runtime>,
   pick: (runtime: Runtime) => T,
   methods: Methods<T>,
   writes: ReadonlySet<string> | 'all' = new Set(),
+  needs: Partial<Record<keyof T, Capability>> = {},
 ): T {
   const port: Record<string, AnyMethod> = {};
   for (const name of Object.keys(methods)) {
     port[name] = async (...args: unknown[]) => {
       const runtime = await whenReady();
       if ((writes === 'all' || writes.has(name)) && readOnly(runtime)) return READ_ONLY_REFUSAL;
+      const capability = needs[name as keyof T];
+      if (capability && !can(await runtime.session.current(), capability)) return forbidden(capability);
       const target = pick(runtime) as unknown as Record<string, AnyMethod>;
       return target[name](...args);
     };
@@ -107,13 +114,15 @@ function deferred<T extends object>(
 export function createCommands(whenReady: () => Promise<Runtime>): Commands {
   return {
     production: deferred<ProductionCommands>(whenReady, (runtime) => runtime.commands, PRODUCTION_METHODS, 'all'),
-    generation: deferred<Commands['generation']>(whenReady, (runtime) => runtime.generation, GENERATION_METHODS, new Set(['start', 'retry', 'resume'])),
+    generation: deferred<Commands['generation']>(whenReady, (runtime) => runtime.generation, GENERATION_METHODS, new Set(['start', 'retry', 'resume']),
+      { start: 'piece.edit', retry: 'piece.edit', resume: 'piece.edit', cancel: 'piece.edit' }),
     export: deferred<Commands['export']>(whenReady, (runtime) => runtime.export, EXPORT_METHODS),
-    ingest: deferred<Commands['ingest']>(whenReady, (runtime) => runtime.ingest, INGEST_METHODS),
+    ingest: deferred<Commands['ingest']>(whenReady, (runtime) => runtime.ingest, INGEST_METHODS, new Set(),
+      { read: 'production.create', readLink: 'production.create', analyze: 'production.create' }),
     feedback: deferred<Commands['feedback']>(whenReady, (runtime) => runtime.feedback, { record: true, vote: true }, 'all'),
     render: deferred<Commands['render']>(whenReady, (runtime) => runtime.render, { render: true, thumbnail: true, preview: true }),
     assets: {
-      ...deferred<Pick<AssetStore, 'put' | 'update'>>(whenReady, (runtime) => runtime.assets, { put: true, update: true }),
+      ...deferred<Pick<AssetStore, 'put' | 'update'>>(whenReady, (runtime) => runtime.assets, { put: true, update: true }, new Set(), { put: 'piece.edit', update: 'piece.edit' }),
       async unused(inUse = []) {
         const runtime = await whenReady();
         return runtime.assets.unused(new Set([...runtime.usedAssetIds(), ...inUse]));
