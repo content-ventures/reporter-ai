@@ -22,7 +22,7 @@ import {
 import { assetOriginLabel, imageCreditRequired, type AssetId, type BlockId, type ImageAsset, type ImageRef, type ProductionId } from '@/domain';
 import type { FigurePlacement } from '@/editor';
 import type { UnusedAssets } from '@/ports';
-import { imageSource, imageSourcesFor, type ImageSourceId } from '@/registries';
+import { imageSource, imageSourcesFor, type ImageSourceEntry, type ImageSourceId } from '@/registries';
 import { useAssetLookup, useAssetUrl, useCommands } from '@/state';
 import { formatCount, plural } from '@/ui/format';
 import { ICONS } from '@/ui/icons';
@@ -39,6 +39,7 @@ import {
   type PickerMode,
 } from './image-model';
 import { IMAGE_SOURCE_PANELS, type SourceRefusal } from './image-sources';
+import { usePhotoBanks } from '@/features/images/library-browser';
 
 /**
  * Image picker (DS `Drawer`): "Inserir imagem", "Imagem de destaque" and "Legenda e crédito".
@@ -111,10 +112,9 @@ function initialDrafts(file?: File): Drafts {
   return drafts;
 }
 
-function formFor(request: PickerRequest, asset: ImageAsset | undefined): Form {
+function formFor(request: PickerRequest, asset: ImageAsset | undefined, sources: readonly ImageSourceEntry[]): Form {
   const editing = request.mode === 'edit';
   const fields = fieldsOf(request.current ?? request.prefill, editing ? asset : undefined);
-  const sources = pickerSources();
   // A pasted or dropped file opens the tab that takes files; a request may name its source.
   const tab =
     (request.file ? sources.find((source) => IMAGE_SOURCE_PANELS[source.id]?.takesFiles) : undefined) ??
@@ -136,7 +136,9 @@ export type ImagePickerProps = {
 export function ImagePicker({ request, productionId, onClose, onDone, inUse }: ImagePickerProps) {
   const commands = useCommands();
   const lookup = useAssetLookup();
-  const sources = useMemo(() => pickerSources(), []);
+  // "Biblioteca" only while a photo bank works (a key and real originals); never Pixabay.
+  const banks = usePhotoBanks().length;
+  const sources = useMemo(() => pickerSources().filter((source) => source.id !== 'archive' || banks > 0), [banks]);
   const [session, setSession] = useState<number | null>(null);
   const [form, setForm] = useState<Form>({ mode: 'choose', tab: sources[0]?.id ?? 'upload', drafts: {}, fields: EMPTY_FIELDS, initial: EMPTY_FIELDS });
   const [saving, setSaving] = useState(false);
@@ -148,7 +150,7 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
     setSession(request?.key ?? null);
     if (request) {
       setShown(request);
-      setForm(formFor(request, request.current ? lookup(request.current.assetId) : undefined));
+      setForm(formFor(request, request.current ? lookup(request.current.assetId) : undefined, sources));
       setSaving(false);
       setDiscarding(false);
       setFreeable(null);
@@ -365,7 +367,11 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
               />
             )}
           </Field>
-          <Field label="Crédito" optional={form.mode === 'choose' && form.tab === 'archive' ? form.creditOptional : !imageCreditRequired(currentAsset)} hint={form.mode === 'choose' && form.tab === 'archive' ? form.creditOptional ? 'Pixabay: crédito não obrigatório. A origem e a licença ficam registradas internamente.' : 'Crédito da fonte preservado. Confira a licença e o contexto antes de autorizar o uso.' : imageCreditRequired(currentAsset) ? creditHint(form.fields.credit) : 'Pixabay: crédito não obrigatório.'}>
+          <Field
+            label="Crédito"
+            optional={form.mode === 'choose' && form.tab === 'archive' ? form.creditOptional : !imageCreditRequired(currentAsset)}
+            hint={form.mode === 'choose' && form.tab === 'archive' ? undefined : imageCreditRequired(currentAsset) ? creditHint(form.fields.credit) : undefined}
+          >
             {({ id: fieldId, describedBy }) => (
               <Input
                 id={fieldId}
