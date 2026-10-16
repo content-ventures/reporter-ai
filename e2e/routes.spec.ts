@@ -243,7 +243,7 @@ for (const viewport of VIEWPORTS) {
       ] as const) {
         await page.goto(path);
         await expect(heading(title)(page)).toBeVisible();
-        if (path.startsWith("/productions/")) {
+        if (path.startsWith("/productions/prod-")) {
           // A restricted production keeps the default trail "Produções › Material": its title never shows.
           // (A phone hides the levels above the current one, so the link is read hidden or not.)
           const nav = page.getByRole("navigation", { name: "Trilha de navegação" });
