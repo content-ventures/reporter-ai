@@ -88,7 +88,7 @@ export function validateEditorialOutline(record: ProductionRecord, outline: Outl
   return normalizeOutline(outline,{ size: record.production.brief.size,material: readMaterial(record.sources),defaultTitle: () => record.production.title });
 }
 export type EditorialIdentity = { workspaceId: string;workspaceName: string;workspaceSlug: string;personId: string;name: string;email?: string;avatarUrl?: string;roles: Role[];localOperator?: boolean };
-const LOCAL_IDENTITY: EditorialIdentity = { workspaceId: LOCAL_WORKSPACE,workspaceName: 'Repórter AI',workspaceSlug: 'reporter-ai-local',personId: LOCAL_OPERATOR,
+const LOCAL_IDENTITY: EditorialIdentity = { workspaceId: LOCAL_WORKSPACE,workspaceName: 'Reporter AI',workspaceSlug: 'reporter-ai-local',personId: LOCAL_OPERATOR,
   name: 'Operador local',email: 'operator@reporter.local.invalid',roles: ['admin','editor','approver','creative_reviewer'],localOperator: true };
 
 export function emptyEditorialCheckpoint(identity: EditorialIdentity = LOCAL_IDENTITY): EditorialCheckpoint {

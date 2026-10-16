@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect } from 'react';
+import { PRODUCT_NAME } from '@/lib/brand';
 
-export const PRODUCT_NAME = 'Reporter IA';
+export { PRODUCT_NAME } from '@/lib/brand';
 
 /**
- * Titles that depend on client data ("Ateliê Sul · Artigo · Reporter IA"). Static routes use the
+ * Titles that depend on client data ("Ateliê Sul · Artigo · Reporter AI"). Static routes use the
  * `metadata` export of their page; this refines it once the runtime answers. Next streams route
  * metadata after the page commits, so the hook keeps its title while mounted (it re-applies it
  * when the head's `<title>` changes) and lets the route title back on unmount.

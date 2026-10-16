@@ -79,7 +79,7 @@ export const localContext = {
   tenant: "00000000-0000-0000-0000-000000000001",
   portal: "00000000-0000-0000-0000-000000000101",
   actor: "00000000-0000-0000-0000-000000000031",
-  workspaceName: 'Repórter AI',
+  workspaceName: 'Reporter AI',
   workspaceSlug: 'reporter-ai-local',
   name: 'Operador local',
   email: 'operator@reporter.local.invalid',
