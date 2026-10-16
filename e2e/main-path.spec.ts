@@ -1,10 +1,11 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { chooseCard, expectNoHorizontalOverflow, watchErrors } from "./support";
 
 /**
  * Main path of R1 · Experiência (PLAN §8): paste a transcript → link the speakers → authorise →
  * generate the article → edit → send → approve → choose a carousel model → generate the carousel →
- * send → approve → the export package, with no console error on the way. Runs on a fresh
+ * send → approve → the export package, with no console error on the way. Every send and approval
+ * lands on the board, where whoever acts next opens their step from the card. Runs on a fresh
  * workspace (new context).
  */
 
@@ -36,11 +37,22 @@ async function actAs(page: Page, name: string): Promise<void> {
   await expect(page.getByText(`Você entrou como ${name}`).first()).toBeVisible();
 }
 
+/**
+ * A stage move ends on the board: the card is marked in its new column, the move is announced with
+ * who acts now ("…: Aprovação · com Pedro"), and the address drops `destaque`.
+ */
+async function expectMoved(page: Page, column: string, announcement: string): Promise<Locator> {
+  await page.waitForURL((url) => url.pathname === "/productions");
+  const card = page.getByRole("region", { name: column, exact: true }).getByRole("listitem", { name: TITLE });
+  await expect(card).toHaveAttribute("data-arrived", "true");
+  await expect(page.getByRole("status").filter({ hasText: `${TITLE}: ${announcement}` })).toHaveCount(1);
+  await expect(page).toHaveURL((url) => url.pathname === "/productions" && !url.searchParams.has("destaque"));
+  return card;
+}
+
 test("caminho principal: da transcrição ao pacote exportado", async ({ page }) => {
   test.setTimeout(240_000);
   const errors = watchErrors(page);
-  let articleUrl = "";
-  let carouselUrl = "";
   await page.setViewportSize({ width: 1440, height: 900 });
 
   await test.step("colar a transcrição e ligar os falantes", async () => {
@@ -63,7 +75,6 @@ test("caminho principal: da transcrição ao pacote exportado", async ({ page })
     await expect(page.getByRole("radio", { name: /^Padrão/ })).toBeChecked();
     await page.getByRole("button", { name: "Gerar artigo", exact: true }).click();
     await page.waitForURL(/\/productions\/[^/]+\/article$/);
-    articleUrl = page.url();
   });
 
   const send = page.getByRole("button", { name: "Enviar para aprovação" }).first();
@@ -86,18 +97,20 @@ test("caminho principal: da transcrição ao pacote exportado", async ({ page })
     const submit = sendDialog.getByRole("button", { name: /^Enviar para / });
     await expect(submit).toBeEnabled();
     await submit.click();
+    const sent = await expectMoved(page, "Aprovação", "Aprovação · com Pedro");
     await actAs(page, "Pedro");
-    await page.getByRole("link", { name: "Revisar artigo" }).click();
+    await sent.getByRole("link", { name: "Revisar", exact: true }).click();
     await page.waitForURL(/\/article\/review$/);
+    // Approving takes one confirmation, with no note.
     await page.getByRole("button", { name: "Aprovar artigo" }).first().click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByRole("button", { name: /^Aprovar e / }).click();
+    const dialog = page.getByRole("dialog", { name: "Aprovar o artigo?" });
+    await expect(dialog).toContainText("Depois, João cria o carrossel.");
+    await dialog.getByRole("button", { name: "Aprovar artigo", exact: true }).click();
     await expect(dialog).toBeHidden();
+    const approved = await expectMoved(page, "Carrossel", "Carrossel · com João");
     await actAs(page, "João");
-    await page.goto(articleUrl);
-    await page.getByRole("link", { name: "Criar carrossel" }).click();
+    await approved.getByRole("link", { name: "Criar carrossel", exact: true }).click();
     await page.waitForURL(/\/carousel$/);
-    carouselUrl = page.url();
   });
 
   await test.step("escolher o modelo, gerar, enviar e aprovar o carrossel", async () => {
@@ -115,15 +128,19 @@ test("caminho principal: da transcrição ao pacote exportado", async ({ page })
     await expect(coverTitle).not.toHaveValue(/(,|\s)diz$/);
     await expect(coverTitle).not.toHaveValue("");
     await sendCarousel.click();
+    // The carousel goes to the creative reviewer.
+    const sent = await expectMoved(page, "Carrossel", "Carrossel · com Juliana");
+    await actAs(page, "Juliana Prates");
+    await sent.getByRole("link", { name: "Revisar", exact: true }).click();
     await page.waitForURL(/\/carousel\/review$/);
-    await actAs(page, "Pedro");
     await page.getByRole("button", { name: "Aprovar carrossel" }).first().click();
-    const approveCarousel = page.getByRole("dialog");
-    await approveCarousel.getByRole("button", { name: /^Aprovar e / }).click();
+    const approveCarousel = page.getByRole("dialog", { name: "Aprovar o carrossel?" });
+    await expect(approveCarousel).toContainText("Depois, João baixa o pacote.");
+    await approveCarousel.getByRole("button", { name: "Aprovar carrossel", exact: true }).click();
     await expect(approveCarousel).toBeHidden();
+    const approved = await expectMoved(page, "Entrega", "Entrega · com João");
     await actAs(page, "João");
-    await page.goto(carouselUrl);
-    await page.getByRole("link", { name: "Ir para entrega" }).click();
+    await approved.getByRole("link", { name: "Baixar pacote", exact: true }).click();
     await page.waitForURL(/\/delivery$/);
   });
 
@@ -137,6 +154,7 @@ test("caminho principal: da transcrição ao pacote exportado", async ({ page })
     page.on("download", (download) => downloads.push(download.suggestedFilename()));
     await page.getByRole("button", { name: "Baixar pacote" }).first().click();
     await expect(page.getByText(`Pacote baixado · ${files} arquivos`).first()).toBeVisible();
+    await expect(page.getByText("Produção concluída.").first()).toBeVisible();
     await expect.poll(() => downloads.length, { timeout: 30_000 }).toBe(files);
     await expectNoHorizontalOverflow(page);
   });

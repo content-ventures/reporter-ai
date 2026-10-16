@@ -58,6 +58,12 @@ async function expectProductionTrail(page: Page, route: RouteCase, phone: boolea
 const ROUTES: readonly RouteCase[] = [
   { name: "Visão geral", path: "/", ready: text("Precisa de você"), live: true },
   { name: "Produções", path: "/productions", ready: heading("Produções") },
+  // After a stage move (`boardHref`): the moved card is marked (DS `[data-arrived]`) where it stands.
+  {
+    name: "Produções com o cartão movido",
+    path: "/productions?destaque=prod-aurora",
+    ready: (page) => page.getByRole("region", { name: "Aprovação", exact: true }).getByRole("listitem", { name: /Aurora/ }).and(page.locator("[data-arrived]")),
+  },
   { name: "Nova produção", path: "/productions/new", ready: (page) => page.getByRole("button", { name: "Usar exemplo" }).first() },
   { name: "Material", path: "/productions/prod-estudio-norte/source", ready: heading(/Estúdio Norte/), trail: { title: { name: /Estúdio Norte/, href: "/productions/prod-estudio-norte/article" }, stage: "Material" } },
   { name: "Material sem autorização", path: "/productions/prod-couro-nobre/source", ready: heading(/Couro Nobre/), trail: { title: { name: /Couro Nobre/, href: "/productions/prod-couro-nobre/source" }, stage: "Material" } },
