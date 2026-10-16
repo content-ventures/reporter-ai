@@ -19,7 +19,9 @@ import type { StockImage } from '../domain/visual-library.ts';
  */
 export type AssetInput =
   | { type: 'upload'; file: Blob; fileName: string }
-  | { type: 'url'; url: string; width?: number; height?: number };
+  | { type: 'url'; url: string; width?: number; height?: number }
+  /** "Gerar com IA": the bytes the generator returned and the description they came from. */
+  | { type: 'generated'; file: Blob; prompt: string };
 
 export type AssetMeta = {
   productionId: ProductionId;

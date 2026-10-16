@@ -1,5 +1,6 @@
 import { blockText } from '../../../domain/article.ts';
-import type { ArticleBlock } from '../../../domain/article.ts';
+import type { ArticleBlock, ImageSlot } from '../../../domain/article.ts';
+import type { ImageRef } from '../../../domain/asset.ts';
 import type { RunId, StepId } from '../../../domain/ids.ts';
 import { applyRunEvent, foldRun, stampRunEvent } from '../../../domain/run-events.ts';
 import type { AwaitingInputRequest, RunEvent, RunEventPayload, RunFold, StreamBlockShape } from '../../../domain/run-events.ts';
@@ -212,6 +213,8 @@ export type RunApi = {
   /** Ends the run (and an open child) as cancelled; the partial output stays in the fold. */
   cancel(child?: RunChannel): void;
   complete(): void;
+  /** An image generated for a suggestion and stored; undefined when that fails (it stays a suggestion). */
+  illustrate(slot: ImageSlot): Promise<ImageRef | undefined>;
 };
 
 export type RunApiDeps = {
@@ -223,6 +226,7 @@ export type RunApiDeps = {
   reuse?: Reuse;
   failAt?: StepId;
   openChild: ChildOpener;
+  illustrate?: (slot: ImageSlot) => Promise<ImageRef | undefined>;
 };
 
 function shapeOf(block: ArticleBlock): StreamBlockShape {
@@ -352,6 +356,10 @@ export function createRunApi(deps: RunApiDeps): RunApi {
     },
     complete() {
       emit({ type: 'run.completed' });
+    },
+    async illustrate(slot) {
+      if (!deps.illustrate || aborted()) return undefined;
+      return deps.illustrate(slot).catch(() => undefined);
     },
   };
 }

@@ -20,8 +20,8 @@ export type AssetOrigin =
   | { type: 'url'; url: string }
   /** R2 "Acervo" (F2.9). */
   | { type: 'archive'; archiveId: string }
-  /** R6 "Gerar com IA" (F6.10). */
-  | { type: 'generated'; runId: RunId };
+  /** "Gerar com IA" (F6.10): the description it was made from ("Gerar de novo" starts from it). */
+  | { type: 'generated'; prompt: string; runId?: RunId };
 
 export type AssetOriginType = AssetOrigin['type'];
 
@@ -234,6 +234,14 @@ export function assetOriginLabel(origin: AssetOrigin): string {
     case 'generated':
       return ASSET_ORIGIN_LABELS.generated;
   }
+}
+
+/** Credit every AI image carries (README §6: AI images are labelled as such). */
+export const AI_IMAGE_CREDIT = 'Gerada com IA';
+
+/** The description an AI image was made from, for "Gerar de novo". */
+export function generatedPrompt(asset: Pick<ImageAsset, 'origin'> | undefined): string | undefined {
+  return asset?.origin.type === 'generated' ? asset.origin.prompt : undefined;
 }
 
 export type ImageIssue = 'missing_asset' | 'missing_credit' | 'not_authorized';

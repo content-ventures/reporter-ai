@@ -10,13 +10,16 @@ import { prepareImageFile, readImageFile, writeImageFile } from './image-storage
 import { FlowError } from './errors.ts';
 import { hasAnyRole } from '../domain/workspace.ts';
 import { remoteResponse } from './storage.ts';
+import { IMAGE_PROMPT_MAX } from '../domain/image-generation.ts';
 
 const metaSchema = z.object({ productionId: z.string().uuid(),authorized: z.boolean(),credit: z.string().max(500).optional(),note: z.string().max(2000).optional(),
   provenance: z.object({libraryId:z.string().uuid()}).passthrough().optional() }).strict();
 const mimeSchema = z.enum(['image/jpeg','image/png','image/webp','image/gif']);
 // Seeded database identities are GUIDs without RFC UUID version/variant bits.
 // Their signed values must still match the authenticated request context exactly.
-const preparedSchema = z.object({ id:z.string().uuid(),fileName:z.string().min(1).max(255),mime:mimeSchema,size:z.number().int().min(1).max(10*1024**2),hash:z.string().regex(/^[a-f0-9]{64}$/),meta:metaSchema,actor:z.guid(),portal:z.guid(),expires:z.number() }).strict();
+const preparedSchema = z.object({ id:z.string().uuid(),fileName:z.string().min(1).max(255),mime:mimeSchema,size:z.number().int().min(1).max(10*1024**2),hash:z.string().regex(/^[a-f0-9]{64}$/),meta:metaSchema,
+  /** "Gerar com IA": the description the image was made from (origin `generated`). */
+  prompt:z.string().trim().min(1).max(IMAGE_PROMPT_MAX).optional(),actor:z.guid(),portal:z.guid(),expires:z.number() }).strict();
 function secret() { const value = process.env.REPORTER_WORKER_PASSWORD;if (!value) throw new FlowError('UPLOAD_CONFIGURATION',503);return value; }
 function sign(value:string) { return createHmac('sha256',secret()).update(value).digest('base64url'); }
 function token(input:z.infer<typeof preparedSchema>) { const value = Buffer.from(JSON.stringify(input)).toString('base64url');return value+'.'+sign(value); }
@@ -65,7 +68,7 @@ export async function completeAssetUpload(value:unknown) {
   const input = verify(z.object({token:z.string().max(12000)}).strict().parse(value).token);await authorize(input.meta.productionId);
   const fileKey = input.hash+'.image',bytes = await readImageFile(fileKey);
   if (bytes.length !== input.size) throw new FlowError('SOURCE_CHANGED',422);
-  return saveAsset(input,fileKey,bytes);
+  return saveAsset(input,fileKey,bytes,input.prompt ? {type:'generated',prompt:input.prompt} : undefined);
 }
 export async function importLinkedAsset(value:unknown,signal:AbortSignal) {
   const input = z.object({url:z.string().url().max(2000),meta:metaSchema}).strict().parse(value);

@@ -59,7 +59,7 @@ function servedUrl(src: string): string {
 }
 
 /** `fetch` of an address the app serves; undefined without `fetch` (Node) or on any failure. */
-async function fetchBlob(src: string): Promise<Blob | undefined> {
+export async function fetchBlob(src: string): Promise<Blob | undefined> {
   const run = (globalThis as { fetch?: (input: string) => Promise<{ ok: boolean; blob(): Promise<Blob> }> }).fetch;
   if (!run) return undefined;
   try {
@@ -262,7 +262,7 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
     return { id: asset.id, productionId: meta.productionId, asset };
   }
 
-  async function putFile(file: Blob, fileName: string, meta: AssetMeta): Promise<Result<ImageAsset, AssetRefusal>> {
+  async function putFile(file: Blob, fileName: string, meta: AssetMeta, origin?: ImageAsset['origin']): Promise<Result<ImageAsset, AssetRefusal>> {
     const checked = validateImageFile({ name: fileName, type: file.type, size: file.size });
     if (!checked.ok) return checked;
     const header = await readHeader(file);
@@ -270,7 +270,7 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
     const sniffed = sniffImage(header);
     if (!sniffed) return refuse('unsupported_type', 'O arquivo não é uma imagem JPG, PNG, WebP ou GIF.');
     const size = sniffed.width && sniffed.height ? { width: sniffed.width, height: sniffed.height } : await measure(file);
-    const asset = baseAsset(meta, { type: 'upload', fileName: fileName.trim() || 'imagem' });
+    const asset = baseAsset(meta, origin ?? { type: 'upload', fileName: fileName.trim() || 'imagem' });
     asset.mime = sniffed.mime;
     asset.bytes = file.size;
     if (size) {
@@ -339,6 +339,8 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
           return putFile(input.file, input.fileName, meta);
         case 'url':
           return putUrl(input, meta);
+        case 'generated':
+          return putFile(input.file, 'imagem-gerada.jpg', meta, { type: 'generated', prompt: input.prompt });
       }
     },
     get: (assetId) => records.get(assetId)?.asset,

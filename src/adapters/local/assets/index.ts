@@ -33,4 +33,5 @@ export type { AssetBackend, MemoryBackend, MemoryBackendOptions, StoredAsset } f
 export { ASSET_DB_NAME, ASSET_DB_VERSION, browserIndexedDb, indexedDbBackend } from './indexeddb.ts';
 export type { IdbFactory } from './indexeddb.ts';
 export { sniffImage } from './image-sniff.ts';
+export { createStandInImageGenerator } from './stand-in-images.ts';
 export { sha256Hex, sha256Sync } from './sha256.ts';

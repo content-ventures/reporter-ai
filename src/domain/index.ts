@@ -22,6 +22,7 @@ export * from './run-events.ts';
 export * from './suggestion.ts';
 export * from './delivery.ts';
 export * from './asset.ts';
+export * from './image-generation.ts';
 export * from './feedback.ts';
 export * from './activity.ts';
 export * from './audit.ts';
