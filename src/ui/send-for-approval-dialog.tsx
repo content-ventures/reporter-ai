@@ -63,7 +63,11 @@ export type SendForApprovalDialogProps = {
   onMarkReviewed?: () => void;
   /** Flush the autosave before sending; `false` aborts. */
   prepare?: () => Promise<boolean>;
-  onSent?: (result: RequestedReview) => void;
+  /**
+   * After the send, with the person asked. The caller says so itself (`useStageMove`), so the
+   * dialog's own "Enviado para Pedro" toast is left out; without it the dialog toasts.
+   */
+  onSent?: (sent: { result: RequestedReview; assignee: PersonSummary }) => void;
 };
 
 /** Long enough for the dialog (160 ms) or the sheet (200 ms) to leave before the screen moves. */
@@ -196,8 +200,8 @@ export function SendForApprovalDialog({ open, onClose, approval, onJump, onMarkR
       else toast('Não foi enviado', { tone: 'error', description: message });
       return;
     }
-    toast(sentToast(chosen.name));
-    onSent?.(result.value);
+    if (onSent) onSent({ result: result.value, assignee: chosen });
+    else toast(sentToast(chosen.name));
     onClose();
   }
 
