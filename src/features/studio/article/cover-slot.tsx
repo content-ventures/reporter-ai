@@ -101,8 +101,8 @@ function EmptyCover({ rootRef }: { rootRef: (node: HTMLElement | null) => void }
 
 /**
  * No cover yet, but the generation suggested one: "Adicionar imagem de destaque" (the picker starts
- * from the suggestion; a dropped image file opens it with the file), what to show, and "Remover
- * sugestão" (the toast brings it back). The cover stays optional (D04).
+ * from the suggestion; a dropped image file opens it with the file) and "Remover sugestão" (the
+ * toast brings it back) on one line, what to show under them. The cover stays optional (D04).
  */
 function SuggestedCover({ subject, rootRef }: { subject: string; rootRef: (node: HTMLElement | null) => void }) {
   const studio = useStudio();
@@ -113,8 +113,6 @@ function SuggestedCover({ subject, rootRef }: { subject: string; rootRef: (node:
   const add = (file?: File) => {
     if (!locked && !readOnly) studio.images.fillSlot(COVER_BLOCK_ID, file ? { file } : { tab: 'upload' });
   };
-  // One line on a desktop; on a phone what to show goes under the actions, whole.
-  const suggestion = <MetaList size="sm" items={[`Sugestão: ${subject}`]} />;
   const toolbar = (
     <Toolbar ref={rootRef} label="Imagem de destaque" size={phone ? 'md' : 'sm'}>
       <ToolbarButton
@@ -136,7 +134,6 @@ function SuggestedCover({ subject, rootRef }: { subject: string; rootRef: (node:
           add(files.find((file) => file.type.startsWith('image/')) ?? files[0]);
         }}
       />
-      {phone ? null : suggestion}
       <ToolbarButton
         label="Remover sugestão"
         icon={X}
@@ -146,13 +143,12 @@ function SuggestedCover({ subject, rootRef }: { subject: string; rootRef: (node:
       />
     </Toolbar>
   );
-  return phone ? (
+  // The actions on one line and what to show under them, whole, at every width.
+  return (
     <>
       {toolbar}
-      {suggestion}
+      <MetaList size="sm" items={[`Sugestão: ${subject}`]} />
     </>
-  ) : (
-    toolbar
   );
 }
 
