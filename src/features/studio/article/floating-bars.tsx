@@ -85,14 +85,15 @@ export function FloatingBars({ onLink }: { onLink: () => void }) {
     setSeenSelection(selectionKey);
     if (dismissedSelection !== null) setDismissedSelection(null);
   }
-  // A read-only tab (A10) offers no edits on a selection.
-  const selectionOpen = Boolean(editor) && !selection.empty && dismissedSelection !== selectionKey && !studio.generation.active && !studio.readOnly;
+  // A read-only tab (A10), or someone who only reads (an approver), gets no bar that edits.
+  const writable = studio.canEdit && !studio.readOnly;
+  const selectionOpen = Boolean(editor) && !selection.empty && dismissedSelection !== selectionKey && !studio.generation.active && writable;
 
   const suggestion = studio.focusedSuggestion;
   const pendingRun = studio.suggestionFocus?.runId && !suggestion && studio.activeAssist?.id === studio.suggestionFocus.runId ? studio.suggestionFocus : null;
   const suggestionKey = suggestion?.id ?? (pendingRun ? `run-${pendingRun.runId}` : null);
   // Focusing a card (or a new inline request) is a new focus, which brings a dismissed bar back.
-  const suggestionOpen = !selectionOpen && suggestionKey !== null && !studio.suggestionBarHidden;
+  const suggestionOpen = writable && !selectionOpen && suggestionKey !== null && !studio.suggestionBarHidden;
 
   const selected = useSelectedFigure(editor);
   // A suggested image nobody filled (an image slot) has its own bar.
@@ -107,7 +108,7 @@ export function FloatingBars({ onLink }: { onLink: () => void }) {
     if (dismissedFigure !== null) setDismissedFigure(null);
   }
   const figureOpen =
-    !selectionOpen && !suggestionOpen && figure !== null && dismissedFigure !== figureKey && !studio.generation.active && studio.images.picker === null;
+    writable && !selectionOpen && !suggestionOpen && figure !== null && dismissedFigure !== figureKey && !studio.generation.active && studio.images.picker === null;
 
   const [dismissedSlot, setDismissedSlot] = useState<string | null>(null);
   const slotKey = slot ? `${slot.blockId}:${slot.pos}:${studio.figureReveal}` : null;
@@ -123,7 +124,7 @@ export function FloatingBars({ onLink }: { onLink: () => void }) {
     slot !== null &&
     dismissedSlot !== slotKey &&
     !studio.generation.active &&
-    !studio.readOnly &&
+    writable &&
     studio.images.picker === null;
 
   // The caret in a quotation the material does not back ("Falta"): what the source says, at hand.
@@ -138,7 +139,7 @@ export function FloatingBars({ onLink }: { onLink: () => void }) {
     setSeenQuote(quoteKey);
     if (dismissedQuote !== null) setDismissedQuote(null);
   }
-  const quoteOpen = !selectionOpen && !suggestionOpen && !figureOpen && !slotOpen && quote !== undefined && dismissedQuote !== quoteKey && !studio.generation.active;
+  const quoteOpen = writable && !selectionOpen && !suggestionOpen && !figureOpen && !slotOpen && quote !== undefined && dismissedQuote !== quoteKey && !studio.generation.active;
 
   // The block under a bar opens room for it, so the bar never covers the next line (A06.3).
   const suggestionBlock = suggestionOpen ? suggestionBarBlock(editor, suggestion, studio.suggestionFocus?.target) : null;

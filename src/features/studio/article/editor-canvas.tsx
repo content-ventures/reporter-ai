@@ -92,7 +92,7 @@ function ArticleTitle() {
       value={studio.title}
       placeholder={generatingTitle ? 'Gerando título…' : 'Título do artigo'}
       maxLength={140}
-      readOnly={generatingTitle || studio.readOnly || studio.generation.active}
+      readOnly={generatingTitle || !studio.canEdit || studio.readOnly || studio.generation.active}
       onCommit={studio.commitTitle}
     />
   );
