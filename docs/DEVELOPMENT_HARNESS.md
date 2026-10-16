@@ -58,6 +58,7 @@ Reporter IA R1 is a full-stack application: Next.js UI and route handlers, durab
 - `src/domain` and `src/ports` are framework-free `.ts`: no React, Next, Design System or `@/` imports; only relative `.ts` imports inside `domain`/`ports`. Port contract suites (`src/ports/**/*.contract.ts`) and tests may also import `node:test` and `node:assert`.
 - `src/adapters` and `src/fixtures` are imported only by `src/runtime` and tests. `src/runtime/create-runtime.ts` is the single composition root.
 - UI layers (`src/app`, `src/components`, `src/features`, `src/ui`, `src/editor`, `src/state`) never import `src/adapters` or `src/fixtures`.
+- `src/ui` imports from `src/features` only `src/features/production/trail.ts` (the production trail for the shell's default): a pure module with relative `.ts` imports and no React, so the edge cannot form a cycle.
 - Only `src/state` and app layout-level providers (`src/app/**/layout.tsx`, `providers.tsx`) import `src/runtime`.
 - Modules in `domain`, `ports`, `adapters`, `fixtures`, `registries` and `runtime` use relative imports with the `.ts` extension so `node --test` runs them without a build step.
 - Registries gate by release (`since`); screens read the entries of `CURRENT_RELEASE`. The sidebar is the one place that shows later releases: `menuFor` returns the whole R1–R7 map, and items of a later release render as the DS `NavItem.soon` ("Em breve", no link, a tip with what the screen will do and which release brings it). Their routes do not exist until the release ships. `navigationFor` (⌘K "Ir para"), the active item and the trail use released items only. Role filtering comes before "Em breve": a member never sees an item their role will not open.
@@ -74,6 +75,7 @@ Reporter IA R1 is a full-stack application: Next.js UI and route handlers, durab
 - Release summaries and change descriptions remain required because they provide the audit trail, but each change should be stated once.
 - During review, remove supporting copy first. Restore only the text whose absence creates a concrete comprehension or action problem.
 - Copy reduction must not change spacing, padding, hierarchy, or responsive behavior.
+- Page navigation is the TopBar trail (breadcrumbs) only: `pnpm harness:content` rejects `PageHeader back` and props spread on a `PageHeader`. Recovery actions inside error and access states and in-flow steps stay.
 
 ## Quality gates
 

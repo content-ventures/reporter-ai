@@ -101,7 +101,7 @@ export function CarouselGenerateButton({ action, compact = false, size }: { acti
 /** Header tools: panes, focus mode, generation and the primary action (PageHeader actions slot). */
 export function CarouselHeaderActions({ generate, review }: { generate: CarouselGenerateAction; review: CarouselReviewAction }) {
   const focusMode = useFocusMode();
-  // A laptop keeps the room for the journey Stepper: "Gerar nova versão" becomes an icon with its tip.
+  // A laptop keeps the room for the journey menu: "Gerar nova versão" becomes an icon with its tip.
   const roomy = useMediaQuery('(min-width: 1600px)');
   return (
     <>
