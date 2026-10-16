@@ -1,4 +1,3 @@
-import type { Crumb } from '@content-ventures/design-system/v3';
 import { gateById, pieceKind } from '../../registries/index.ts';
 import type { ProductionRoute } from '../../ui/routes.ts';
 
@@ -28,7 +27,10 @@ export function stageCrumbLabel(route: ProductionRoute): string | undefined {
   }
 }
 
-export type TrailLinks = {
+/** One trail level, the shape of the DS `Crumb` it feeds (declared here so the module stays relative-only). */
+type TrailCrumb = { label: string; href?: string };
+
+type TrailLinks = {
   /** The Produções list. */
   productions: string;
   /** The production's title and the stage it is on (absent while it loads). */
@@ -37,13 +39,16 @@ export type TrailLinks = {
 
 /**
  * "Produções › <título> › <etapa>": every level but the last is a link. Without the title (loading,
- * the shell's default) "Produções › <etapa>"; on the index "Produções › <título>".
+ * the shell's default) "Produções › <etapa>"; on the index "Produções › <título>". With neither, a
+ * neutral leaf keeps "Produções" a link: "Produção" on the index (loading, restricted, not found)
+ * and "Página não encontrada" on an unknown sub-route (its 404).
  */
-export function productionTrail(route: ProductionRoute, links: TrailLinks): Crumb[] {
+export function productionTrail(route: ProductionRoute, links: TrailLinks): TrailCrumb[] {
   const stage = stageCrumbLabel(route);
-  const crumbs: Crumb[] = [{ label: 'Produções', href: links.productions }];
+  const crumbs: TrailCrumb[] = [{ label: 'Produções', href: links.productions }];
   if (links.title) crumbs.push(stage ? { label: links.title.label, href: links.title.href } : { label: links.title.label });
   if (stage) crumbs.push({ label: stage });
+  else if (!links.title) crumbs.push({ label: route.kind === 'unknown' ? 'Página não encontrada' : 'Produção' });
   return crumbs;
 }
 

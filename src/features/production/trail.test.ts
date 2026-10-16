@@ -41,8 +41,14 @@ describe('production trail (breadcrumbs only, no back link)', () => {
       { label: 'Produções', href: '/productions' },
       { label: 'Aprovação do carrossel' },
     ]);
-    assert.deepEqual(productionTrail({ kind: 'index' }, LINKS), [{ label: 'Produções', href: '/productions' }]);
-    assert.deepEqual(productionTrail({ kind: 'unknown' }, LINKS), [{ label: 'Produções', href: '/productions' }]);
+  });
+
+  it('with neither title nor stage a neutral leaf keeps Produções a link (index while loading or refused, 404)', () => {
+    assert.deepEqual(productionTrail({ kind: 'index' }, LINKS), [{ label: 'Produções', href: '/productions' }, { label: 'Produção' }]);
+    assert.deepEqual(productionTrail({ kind: 'unknown' }, LINKS), [
+      { label: 'Produções', href: '/productions' },
+      { label: 'Página não encontrada' },
+    ]);
   });
 
   it('on the index the title is the current level', () => {
