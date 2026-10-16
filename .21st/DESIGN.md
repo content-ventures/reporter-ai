@@ -21,10 +21,11 @@
 - Application frame: `AppShell → Sidebar + TopBar + content`
 - Structured content: `Panel → Section → content`
 - List pages: `PageHeader → FilterBar → DataTable → Pagination`, details in a `Drawer`; Logs adds a `MetricStrip` below the filters
-- Production stages: `PageHeader variant="frame"` with the title, status, `Stepper`, stage actions and the overflow menu on one line
+- Production stages: `PageHeader variant="frame"` with the title, status, the journey `Menu` ("Artigo · 2 de 5"), stage actions and the overflow menu on one line, and no `back`
 - Studios: `AppShell bleed → WorkspaceLayout docked` (source | text | copilot), a `Toolbar` ending in `SaveIndicator`, and the document in `Prose`
 - Creation pages: `FixedFrame` with the form, a live preview aside and the action footer
 - Navigation uses the public DS menu, search, account, notification and command palette components.
+- Page navigation is the `TopBar` trail only (breadcrumbs): every level but the current one is a link. Nothing uses `PageHeader back` or another back link.
 
 ## Constraints
 
@@ -40,6 +41,7 @@
 
 - The sidebar shows the whole R1–R7 product map. Items of a later release use the DS `NavItem.soon` ("Em breve", no link, the reason in the tip: what the screen will do and which release brings it); ⌘K, the active item and the trail use released items only. Role filtering comes first: Administração items show only to admins, even as "Em breve".
 - Studios use the full width with one line of chrome above the text.
+- Navigation is always by breadcrumbs (João, October 16, 2026). Every production stage shows "Produções › <título da produção> › <etapa>" (Material, Artigo, Aprovação do artigo, Carrossel, Aprovação do carrossel, Entrega); the title opens the stage the production is on, and deciders start at Produções too. Overlays and drawers add no level. `scripts/check-content-density.mjs` rejects `PageHeader back`. Recovery actions inside error and access states ("Ver produções") and in-flow steps ("Voltar às aprovações") stay. On phones the DS TopBar shows the first and the current level; Reporter adds no in-page breadcrumb.
 - Status colours are reserved for state; meters and sparklines are neutral by default.
 - Every AI output carries the "Simulação local" label while the product runs on the local simulation.
 

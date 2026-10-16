@@ -70,7 +70,8 @@
       "AppShell → Sidebar + TopBar + content",
       "Panel → Section → content",
       "PageHeader → FilterBar → DataTable → Pagination, details in a Drawer",
-      "Production stage: PageHeader variant=frame with title, status, Stepper and actions on one line",
+      "Production stage: PageHeader variant=frame with title, status, the journey Menu and actions on one line, no back",
+      "Page navigation: the TopBar trail only (breadcrumbs), e.g. Produções › <título> › <etapa>",
       "Studio: AppShell bleed → WorkspaceLayout docked → Toolbar (SaveIndicator at the end) + Prose",
       "Creation page: FixedFrame with form, live preview aside and action footer"
     ]
@@ -81,7 +82,8 @@
       "Search the Design System before composing product components; add missing pieces to the DS with a specimen and a test",
       "Preserve structural component spacing and responsive behavior",
       "Use DS Tooltip for every hint; style in-document markers through Prose data-* hooks and DS proseWidgets",
-      "Write UI copy in Brazilian Portuguese; buttons start with a verb"
+      "Write UI copy in Brazilian Portuguese; buttons start with a verb",
+      "Navigate between pages only through the TopBar trail (breadcrumbs); every level but the current one is a link"
     ],
     "avoid": [
       "Local visual primitives, tokens, fonts, icons, themes or substitute UI libraries",
@@ -90,10 +92,12 @@
       "Native title attributes",
       "Decorative side borders or per-paragraph boxes",
       "Filler copy: extra eyebrows, subtitles, hints or notices",
-      "Hover handlers that scroll the transcript"
+      "Hover handlers that scroll the transcript",
+      "PageHeader back or any other page back link"
     ]
   },
   "decisions": [
+    "João requires navigation always by breadcrumbs (October 16, 2026). The TopBar trail is the only page navigation: every production stage shows \"Produções › <título da produção> › <etapa>\" with every level but the current one a link, the title opening the stage the production is on, and deciders also starting at Produções. Overlays and drawers add no level. Nothing uses PageHeader back or a header back link; scripts/check-content-density.mjs rejects it. Recovery actions inside error and access states (\"Ver produções\") and in-flow steps (\"Voltar às aprovações\") stay. On phones the DS TopBar shows the first and the current level; Reporter adds no in-page breadcrumb.",
     "The user requires R2 UI previews inside the existing workspace navigation alongside Início, Produções and Modelos, not in a separate prototype app. Enable only the demonstrative R2 navigation and screens; keep domain/worker release gates on R1 and all R2 interactions demonstrative. Preserve the shared header, account, breadcrumbs, command palette and admin-only CMS access. Review before integrating into existing production editors or delivery.",
     "The user approved an editorial home inspired by the supplied content, video and course dashboards: one featured production with its real text, cover when available and next action; consistent recent-production cards; personal pending actions and stage counts on the right; visual carousel model previews. On phones, pending actions follow the featured production and model previews stay compact. Reuse public DS components, preserve permissions and period selection, and keep all work local.",
     "The user chose worker-first prompt management: uniform large cards for Gerar artigo and Gerar carrossel open an ordered, read-only workflow with clickable prompt nodes and a side editor. The page header follows the selected worker; reload and activation actions belong inside the worker. Shared instructions remain inside worker details. Keep conditional execution, manual review boundaries and on-demand editing explicit. Use only public DS components; all changes stay local until remote actions are authorized.",
@@ -108,7 +112,7 @@
     "The product shell uses the complete DS navigation pattern",
     "The visible menu contains only routes available to the user in the current release; Logs shows only to admins",
     "Studios use the full width with one line of chrome above the text",
-    "Every production stage shares one compact header line with the Stepper",
+    "Every production stage shares one compact header line with the journey menu",
     "Status colours are reserved for state; meters and sparklines are neutral by default",
     "AI output carries the Simulação local label while the product runs on the local simulation",
     "Reporter consumes DS 0.2.0 from the editorial-studio branch until the version is tagged and pinned",
