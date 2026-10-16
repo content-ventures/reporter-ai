@@ -1,4 +1,6 @@
 import { AUDIT_READER_ROLES } from '../domain/audit.ts';
+import { CAPABILITY_ROLES } from '../domain/permissions.ts';
+import type { Capability } from '../domain/permissions.ts';
 import type { Role } from '../domain/workspace.ts';
 import type { IconKey } from './icons.ts';
 import { availableIn, CURRENT_RELEASE, isReleased, RELEASE_NAMES, releaseIndex } from './release.ts';
@@ -71,7 +73,7 @@ export type NavItem = {
 
 export type NavRedirect = { from: string; to: string; permanent: boolean };
 
-const ADMINS: readonly Role[] = ['admin'];
+const ADMINS: readonly Role[] = CAPABILITY_ROLES['pipeline.edit'];
 /** Who decides at a gate (article: approver; carousel: creative reviewer; admin both). */
 const DECIDERS: readonly Role[] = ['approver', 'creative_reviewer', 'admin'];
 
@@ -344,11 +346,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
 /** `/versions` was the prototype's release-notes route; it now redirects (`src/app/versions/page.tsx`). */
 export const NAV_REDIRECTS: readonly NavRedirect[] = [{ from: '/versions', to: '/whats-new', permanent: true }];
 
-export type PrimaryAction = { id: string; label: string; icon: IconKey; href: string; since: ReleaseId };
+/** `capability`: only a member who holds it sees the action (an approver never sees "Nova produção"). */
+export type PrimaryAction = { id: string; label: string; icon: IconKey; href: string; since: ReleaseId; capability: Capability };
 
 /** Primary actions live in PageHeader and ⌘K, not in the menu. */
 export const PRIMARY_ACTIONS: readonly PrimaryAction[] = [
-  { id: 'new-production', label: 'Nova produção', icon: 'Plus', href: '/productions/new', since: 'R1' },
+  { id: 'new-production', label: 'Nova produção', icon: 'Plus', href: '/productions/new', since: 'R1', capability: 'production.create' },
 ];
 
 export type NavSection = { group: NavGroup; items: NavItem[] };

@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Button,
-  ButtonLink,
   Badge,
   ConfirmDialog,
   ErrorState,
@@ -26,14 +25,14 @@ import {
   useKanbanDrag,
   VisuallyHidden,
 } from '@content-ventures/design-system/v3';
-import { Archive, ArrowUpRight, BadgeCheck, ChevronDown, FileText, GalleryHorizontal, Inbox, MoreHorizontal, Package, Plus } from '@content-ventures/design-system/v3/icons';
+import { Archive, ArrowUpRight, BadgeCheck, ChevronDown, FileText, GalleryHorizontal, Inbox, MoreHorizontal, Package } from '@content-ventures/design-system/v3/icons';
 import type { ProductionListItem, ProductionListPage } from '@/ports';
 import { firstName, NEXT_STEP_LABELS } from '@/domain';
 import type { StageView } from '@/domain/stage';
 import type { KanbanMove } from '@content-ventures/design-system/v3';
 import { useCommands, useProductions, useSession, type QueryState } from '@/state';
 import { usePerson } from '@/ui/person-avatar';
-import { NEW_PRODUCTION_HREF } from '@/ui/routes';
+import { NewProductionLink } from '@/features/new-production/new-production-link';
 import { RelativeTime } from '@/ui/time';
 import { Avatar } from '@content-ventures/design-system/v3';
 import { nextStepHref, rowHref, SituationCell, productionMeta } from './production-cells';
@@ -222,7 +221,7 @@ function ProductionsKanban() {
     <>
       <PageHeader
         title="Produções"
-        actions={<ButtonLink href={NEW_PRODUCTION_HREF} variant="primary" icon={Plus}>Nova produção</ButtonLink>}
+        actions={<NewProductionLink />}
       />
       <FilterBar
         spacing="comfortable"

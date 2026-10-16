@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { CommandPalette, toast, type CommandGroup, type CommandItem } from '@content-ventures/design-system/v3';
 import { Database, Eraser, ListChecks, RotateCcw, Timer, TriangleAlert, type LucideIcon } from '@content-ventures/design-system/v3/icons';
+import { can } from '@/domain';
 import type { ProductionListItem, SimulationScenario } from '@/ports';
 import { availableIn, navigationFor, PRIMARY_ACTIONS, SOURCE_ORIGIN_LABELS } from '@/registries';
 import { useAuditControls, useSession, useSimulation } from '@/state';
@@ -75,7 +76,7 @@ export function ShellCommandPalette({
     const actions: CommandGroup = {
       label: 'Ações',
       showWhenEmpty: true,
-      items: availableIn(PRIMARY_ACTIONS).map((action) => ({
+      items: availableIn(PRIMARY_ACTIONS).filter((action) => can(roles, action.capability)).map((action) => ({
         id: `action-${action.id}`,
         label: action.label,
         icon: iconFor(action.icon),
@@ -100,7 +101,8 @@ export function ShellCommandPalette({
       showWhenEmpty: false,
       items: productions.map((item) => productionCommand(item, go)),
     };
-    const result = [actions, ...registered.map((group) => ({ showWhenEmpty: true, ...group })), navigation, list];
+    // A role with no primary action gets no empty "Ações" group.
+    const result = [...(actions.items.length ? [actions] : []), ...registered.map((group) => ({ showWhenEmpty: true, ...group })), navigation, list];
     if (localProfiles.length) result.push({
       label: 'Testar papel · ambiente local', showWhenEmpty: true,
       items: localProfiles.map(profile => ({

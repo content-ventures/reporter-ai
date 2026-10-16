@@ -2,12 +2,12 @@
 
 import { Suspense, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { ButtonLink, ErrorState, PageHeader, PageStack, SplitLayout, MetricStrip, Panel, Section, TextLink } from '@content-ventures/design-system/v3';
-import { Plus } from '@content-ventures/design-system/v3/icons';
+import { ErrorState, PageHeader, PageStack, SplitLayout, MetricStrip, Panel, Section, TextLink } from '@content-ventures/design-system/v3';
 import type { OverviewData } from '@/ports';
 import { dashboardWidgetsFor } from '@/registries';
 import { useOverview, useSession } from '@/state';
-import { NEW_PRODUCTION_HREF, PRODUCTIONS_HREF } from '@/ui/routes';
+import { PRODUCTIONS_HREF } from '@/ui/routes';
+import { NewProductionLink } from '@/features/new-production/new-production-link';
 import { StartWritingButton } from '@/features/new-production/start-writing-button';
 import { usePhone } from '@/ui/use-phone';
 import { useNow } from '@/ui/time';
@@ -37,14 +37,6 @@ const STAGES = [
   { stage: 'delivery', label: 'Entrega' },
 ] as const;
 
-function NewProductionButton() {
-  return (
-    <ButtonLink href={NEW_PRODUCTION_HREF} variant="primary" icon={Plus}>
-      Nova produção
-    </ButtonLink>
-  );
-}
-
 /** "Bom dia, Pedro. 2 peças esperam sua aprovação." once the desk, the viewer and the clock exist. */
 function useSummary(data: OverviewData | undefined): string | undefined {
   const session = useSession();
@@ -67,7 +59,7 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
   if (query.status === 'error' && data === undefined) {
     return (
       <PageStack>
-        <PageHeader title={TITLE} actions={<><NewProductionButton /><StartWritingButton /></>} />
+        <PageHeader title={TITLE} actions={<><NewProductionLink /><StartWritingButton /></>} />
         <ErrorState size="panel" title="Não foi possível carregar o Início" description={query.error?.message} onRetry={query.retry} />
       </PageStack>
     );
@@ -91,7 +83,7 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
         description={summary ?? ' '}
         actions={
           <>
-            <NewProductionButton />
+            <NewProductionLink />
             <StartWritingButton />
           </>
         }

@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  Accordion, Alert, Badge, Button, ButtonGroup, ConfirmDialog, DescriptionList, EmptyState, ErrorState, Field, FieldGroup,
+  AccessState, Accordion, Alert, Badge, Button, ButtonGroup, ConfirmDialog, DescriptionList, EmptyState, ErrorState, Field, FieldGroup,
   MetaList, PageHeader, PageStack, Panel, Section, Select, Tabs, Timeline, toast,
 } from '@content-ventures/design-system/v3';
 import { RotateCw, Save } from '@content-ventures/design-system/v3/icons';
 import { PIPELINE_STEP_KEYS, PIPELINE_STEP_LABELS, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, withArticleAssist } from '@/domain/pipeline';
 import type { PipelineDefinition, PipelineStepKey, PipelineView } from '@/domain/pipeline';
-import { useRuntime } from '@/state';
+import { useCan, useRuntime, useSession } from '@/state';
 import { useBreadcrumb, useLeaveGuard } from '@/ui/shell';
 import { PipelineCatalog, promptChanged, type PromptKey } from './pipeline-catalog';
 import { PipelineWorkers } from './pipeline-workers';
@@ -21,7 +21,16 @@ const savedDate = (date: string | null) => date ? new Intl.DateTimeFormat('pt-BR
 const PAGE_TABS = { workers: 'Workers', prompts: 'Todos os prompts', history: 'Histórico', runs: 'Execuções' };
 type PageTab = keyof typeof PAGE_TABS;
 
+/** Prompts are admin-only (the server refuses the save too): a deep link answers AccessState. */
 export function PipelineScreen() {
+  const session = useSession();
+  const edits = useCan('pipeline.edit');
+  if (!session.data) return null;
+  if (!edits) return <AccessState kind="restricted" heading="h1" title="Prompts restritos a administradores" />;
+  return <PipelineConfig />;
+}
+
+function PipelineConfig() {
   const { runtime,error: runtimeError } = useRuntime();
   const port = runtime?.pipeline;
   const router = useRouter();

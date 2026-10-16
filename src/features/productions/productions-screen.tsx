@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import {
   BulkBar,
   Button,
-  ButtonLink,
   ConfirmDialog,
   DataTable,
   EmptyState,
@@ -28,11 +27,11 @@ import {
   type Column,
   type TabItem,
 } from '@content-ventures/design-system/v3';
-import { Archive, ArrowUpRight, ChevronDown, LayoutList, ListFilter, Plus, SearchX } from '@content-ventures/design-system/v3/icons';
+import { Archive, ArrowUpRight, ChevronDown, LayoutList, ListFilter, SearchX } from '@content-ventures/design-system/v3/icons';
 import type { ListTab, ProductionListItem, ProductionListPage } from '@/ports';
 import { useCommands, useProductions, useSession, useSimulation, type QueryState } from '@/state';
 import { plural } from '@/ui/format';
-import { NEW_PRODUCTION_HREF } from '@/ui/routes';
+import { NewProductionLink } from '@/features/new-production/new-production-link';
 import { useCommandGroup } from '@/ui/shell';
 import { RelativeTime } from '@/ui/time';
 import { usePhone } from '@/ui/use-phone';
@@ -382,11 +381,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
     <>
       <PageHeader
         title="Produções"
-        actions={
-          <ButtonLink href={NEW_PRODUCTION_HREF} variant="primary" icon={Plus}>
-            Nova produção
-          </ButtonLink>
-        }
+        actions={<NewProductionLink />}
       />
       <FilterBar
         spacing="comfortable"
@@ -520,9 +515,7 @@ function emptyState({ params, counts, searching, filterCount, setParams, clearAl
         title="Nenhuma produção ainda"
         actions={
           <>
-            <ButtonLink href={NEW_PRODUCTION_HREF} variant="primary" size="sm" icon={Plus}>
-              Nova produção
-            </ButtonLink>
+            <NewProductionLink size="sm" />
             {simulation.available && (
               <Button size="sm" onClick={simulation.reset}>
                 Carregar exemplo
