@@ -4,7 +4,8 @@ import { createIndexedDbAssetStore } from '../adapters/local/assets/index.ts';
 import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
 import { assetCoverLoader, createLocalRenderService, servedCoverLoader } from '../adapters/local/render/index.ts';
-import { isForbidden, reporterRequest, requestWorkspace, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
+import { isForbidden, ReporterHttpError, reporterRequest, reporterUpload, requestWorkspace, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
+import { avatarImage } from '../adapters/local/assets/avatar-image.ts';
 import { createHttpImageGenerator, createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
 import { withServerAssets } from '../adapters/http/server-assets.ts';
@@ -15,6 +16,9 @@ import { createFixtures } from '../fixtures/index.ts';
 import { usedAssetIds } from '../domain/record.ts';
 import { creditLine } from '../domain/asset.ts';
 import { ok, refuse } from '../domain/result.ts';
+import type { Result } from '../domain/result.ts';
+import { validateProfilePatch, type ProfileRefusal } from '../domain/profile.ts';
+import type { SessionMember } from '../ports/session.ts';
 import type { ConnectedWorkspace } from '../ports/connected-workspace.ts';
 import type { SaveState } from '../ports/save-status.ts';
 import type { ProductionCommands } from '../ports/production-commands.ts';
@@ -104,6 +108,20 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     if (disposed || globalThis.document?.visibilityState === 'hidden') return;
     if (Date.now()-lastRefresh >= (runActive() ? 1000 : 15000)) void refresh().catch(() => {});
   },1000);
+  // "Meu perfil": the server writes only the signed-in member; the next snapshot brings it back.
+  const profileWrite = async (write: () => Promise<unknown>): Promise<Result<SessionMember,ProfileRefusal>> => {
+    await ready;
+    try { await write(); }
+    catch (error) {
+      const code = error instanceof ReporterHttpError ? error.code : '';
+      return refuse(code === 'PROFILE_NAME_REQUIRED' ? 'empty_name' : code === 'PROFILE_TOO_LONG' ? 'too_long' : code.startsWith('AVATAR_') ? 'invalid_image' : 'unavailable',
+        error instanceof Error ? error.message : 'Não foi possível salvar seu perfil.');
+    }
+    await refresh(true).catch(() => {});
+    ports.store.transact(state => ok({ state,value: undefined,persist: 'none',scope: 'session',productionIds: [] }));
+    const member = await ports.session.current();
+    return member ? ok(member) : refuse('unavailable','Nenhuma conta conectada.');
+  };
   const unwatchAssets = assets.subscribe(change => { if (change.kind !== 'health') ports.store.transact(state => ok({ state,value: undefined,persist: 'none',scope: 'assets',productionIds: change.productionIds })); });
   return {
     mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest),generation: generation.service,render,export: exporter,assets,audit,
@@ -118,6 +136,15 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       members: async () => { await ready; return ports.session.members(); },
       localRoleProfiles: async () => { await ready; return editorialLocalRoleProfiles(ports.store.state); },
       selectLocalRole: profile => rpc('session.selectLocalRole', [profile]),
+      updateProfile: async patch => {
+        const valid = validateProfilePatch(patch);
+        return valid.ok ? profileWrite(() => reporterRequest('/profile',valid.value)) : valid;
+      },
+      setAvatar: async input => {
+        if (!input) return profileWrite(() => reporterRequest('/profile',{ avatar: null }));
+        const image = await avatarImage(input);
+        return image.ok ? profileWrite(() => reporterUpload('/profile/avatar',image.value)) : image;
+      },
       subscribe: ports.session.subscribe,
     },
     feedback: { record: input => rpc('recordFeedback',[input]),vote: input => rpc('feedback.vote',[input]),list: async query => { await ready; return ports.feedback.list(query); } },

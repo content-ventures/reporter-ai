@@ -41,6 +41,17 @@ export async function reporterRequest<T>(path = '/workspace', body?: unknown, si
     headers: { 'x-reporter-client': 'local',...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     cache: 'no-store',...(body === undefined ? {} : { body: JSON.stringify(body) }),signal: signal ?? AbortSignal.timeout(30000),
   });
+  return reporterResponse<T>(response);
+}
+
+/** A raw file body (a profile photo), with the same errors as `reporterRequest`. */
+export async function reporterUpload<T>(path: string, file: Blob): Promise<T> {
+  const response = await fetch('/api/reporter'+path,{ method: 'POST',cache: 'no-store',body: file,signal: AbortSignal.timeout(60000),
+    headers: { 'x-reporter-client': 'local','content-type': file.type || 'application/octet-stream' } });
+  return reporterResponse<T>(response);
+}
+
+async function reporterResponse<T>(response: Response): Promise<T> {
   const value = await responseValue(response);
   if (!response.ok) {
     const code = typeof value.error==='string' ? value.error : 'REQUEST_FAILED';

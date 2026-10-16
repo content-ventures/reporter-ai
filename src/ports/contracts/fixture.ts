@@ -53,6 +53,8 @@ export type PortsUnderTest = {
   enforcesR1Articles?: boolean;
   /** The server checks input shape and roles before the engine; those refusals carry its codes. */
   validatesBeforeEngine?: boolean;
+  /** `false` when this run has no object storage for profile photos (removing one is still tested). */
+  storesAvatars?: boolean;
 };
 
 export type PortsFactory = () => PortsUnderTest | Promise<PortsUnderTest>;
