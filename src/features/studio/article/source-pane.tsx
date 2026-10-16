@@ -26,12 +26,13 @@ export function MaterialTab() {
   const usedIds = useMemo(() => [...new Set([...studio.facts.usedSegmentIds, ...picked])], [studio.facts.usedSegmentIds, picked]);
   const active = studio.link?.segmentId ?? (selecting ? (picked[picked.length - 1] ?? null) : null);
   const { insertQuote, addExcerpt } = studio.actions;
+  const canEdit = studio.canEdit;
   const actions = useMemo<TranscriptAction[]>(
-    () => [
+    () => canEdit ? [
       { id: 'quote', label: 'Inserir citação', icon: Quote, onSelect: (selection) => insertQuote(selection) },
       { id: 'ask', label: 'Pedir à IA', icon: MessageSquareText, onSelect: (selection) => addExcerpt(selection, true) },
-    ],
-    [insertQuote, addExcerpt],
+    ] : [],
+    [canEdit, insertQuote, addExcerpt],
   );
   if (studio.sourceError) {
     return <ErrorState size="panel" title="Não foi possível abrir o material" onRetry={studio.sourceError.retry} />;

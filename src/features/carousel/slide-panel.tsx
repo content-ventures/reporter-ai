@@ -57,6 +57,8 @@ export type SlidePanelProps = {
   fits: readonly SlotFit[];
   /** Fields and actions locked (generation running), with the reason. */
   lockedReason?: string;
+  /** Someone who only reads (an approver): the texts without the AI tools or a reason under each field. */
+  readOnly?: boolean;
   onSlotChange: (slotId: string, value: string) => void;
   /** Approved article version the slides come from. */
   article: ArticleBody | undefined;
@@ -88,13 +90,13 @@ export function SlidePanel(props: SlidePanelProps) {
   return (
     <>
       <SlotFields {...props} slide={slide} layout={layout} />
-      <AssistSection {...props} slide={slide} layout={layout} />
+      {props.readOnly ? null : <AssistSection {...props} slide={slide} layout={layout} />}
       <OriginSection {...props} slide={slide} />
     </>
   );
 }
 
-function SlotFields({ slide, index, layout, fits, lockedReason, onSlotChange }: SlidePanelProps & { slide: Slide; layout: SlideLayout }) {
+function SlotFields({ slide, index, layout, fits, lockedReason, readOnly = false, onSlotChange }: SlidePanelProps & { slide: Slide; layout: SlideLayout }) {
   const issues = fits.filter((fit) => fit.overflow).length + layout.slots.filter((slot) => slot.required && !slide.slots[slot.id]?.trim()).length;
   return (
     <Section title={`Slide ${index + 1} · ${layout.label}`} meta={issues > 0 ? (issues === 1 ? '1 aviso' : `${issues} avisos`) : undefined}>
@@ -109,7 +111,7 @@ function SlotFields({ slide, index, layout, fits, lockedReason, onSlotChange }: 
             required={slot.required}
             meta={<Counter value={value.length} max={slot.maxChars} />}
             // Why the field is read-only reads under it (a native title is not seen on touch or by keyboard).
-            hint={lockedReason}
+            hint={readOnly ? undefined : lockedReason}
             notice={fit?.overflow ? fit.message : undefined}
             error={missing ? 'Falta' : undefined}
           >
@@ -120,7 +122,7 @@ function SlotFields({ slide, index, layout, fits, lockedReason, onSlotChange }: 
                   aria-describedby={describedBy}
                   invalid={invalid}
                   value={value}
-                  readOnly={Boolean(lockedReason)}
+                  readOnly={readOnly || Boolean(lockedReason)}
                   onChange={(event) => onSlotChange(slot.id, event.target.value)}
                 />
               ) : (
@@ -129,7 +131,7 @@ function SlotFields({ slide, index, layout, fits, lockedReason, onSlotChange }: 
                   aria-describedby={describedBy}
                   invalid={invalid}
                   value={value}
-                  readOnly={Boolean(lockedReason)}
+                  readOnly={readOnly || Boolean(lockedReason)}
                   autoSize={{ minRows: slot.role === 'title' ? 1 : 2, maxRows: 8 }}
                   onChange={(event) => onSlotChange(slot.id, event.target.value)}
                 />

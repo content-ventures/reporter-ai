@@ -187,7 +187,7 @@ function EmptyDraft() {
         icon={stopped ? RotateCcw : FileText}
         title={title}
         meta={meta}
-        actions={
+        actions={!studio.canEdit ? undefined : (
           <>
             {resume ? (
               <Button variant="primary" icon={RotateCcw} onClick={() => void studio.actions.retryGeneration(failedStep?.id)}>
@@ -201,7 +201,7 @@ function EmptyDraft() {
               <Button onClick={() => studio.editor?.commands.focus('start')}>Escrever do zero</Button>
             )}
           </>
-        }
+        )}
       />
     </PageStack>
   );

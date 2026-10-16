@@ -113,7 +113,7 @@ export function ReviewNoteTurn() {
       icon={MessageSquareText}
       label={reviewer?.name ?? 'Revisão'}
       meta={['Ajustes solicitados', when].filter(Boolean).join(' · ')}
-      actions={
+      actions={!studio.canEdit ? undefined : (
         <Button
           size="sm"
           variant="primary"
@@ -140,7 +140,7 @@ export function ReviewNoteTurn() {
         >
           Aplicar nota com IA
         </Button>
-      }
+      )}
     >
       {note.note ?? ''}
       {anchors.length > 0 ? (

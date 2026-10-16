@@ -86,8 +86,9 @@ function AssistantTab() {
     <Conversation
       ref={conversation}
       label="Conversa com o Assistente"
-      empty={hasTurns ? undefined : <EmptyState icon={Sparkles} title="Pergunte sobre a entrevista ou peça uma mudança no texto." />}
-      footer={<Composer />}
+      empty={hasTurns ? undefined : <EmptyState icon={Sparkles} title={studio.canEdit ? 'Pergunte sobre a entrevista ou peça uma mudança no texto.' : 'Nenhum pedido ao Assistente.'} />}
+      // Someone who only reads (an approver) follows the conversation but asks nothing.
+      footer={studio.canEdit ? <Composer /> : undefined}
     >
       {studio.generation.run ? <GenerationTurn key="generation" /> : null}
       {studio.thread.map((turn) => (

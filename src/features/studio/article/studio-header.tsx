@@ -112,7 +112,7 @@ function useStudioNotice(): ReactNode {
   }
   if (studio.articleStatus.kind === 'production' && studio.empty) {
     return (
-      <StatusBanner kind="unauthorized" action={{ label: 'Autorizar', href: materialHref(production.id) }}>
+      <StatusBanner kind="unauthorized" {...(studio.canEdit ? { action: { label: 'Autorizar', href: materialHref(production.id) } } : {})}>
         Falta a autorização dos falantes.
       </StatusBanner>
     );
