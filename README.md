@@ -136,11 +136,11 @@ Use o build de produção, nunca o `pnpm dev`: o indicador do Next cobre a troca
 1. Abra `/?reset=1` em cada aparelho. Cada aparelho guarda os próprios dados.
 2. Visão geral: Ateliê Sul aparece em "Gerando agora"; Aurora, em "Aguardando você".
 3. Nova produção: "Usar exemplo", ligue os falantes, marque a autorização e clique em "Gerar artigo". Acompanhe a geração no estúdio.
-4. Estúdio do Estúdio Norte: aceite ou descarte a sugestão (⌘↵ e Esc), corrija a citação com "Usar texto da fonte", salve com ⌘S e envie para aprovação.
-5. Menu da conta › Entrar como Pedro. Revisão da Aurora: compare as versões e aprove, ou devolva com nota.
+4. Estúdio do Estúdio Norte: aceite ou descarte a sugestão (⌘↵ e Esc), corrija a citação com "Usar texto da fonte", salve com ⌘S e envie para aprovação. O quadro abre com o cartão em Aprovação: "Agora: Pedro".
+5. Menu da conta › Entrar como Pedro. Revisão da Aurora: compare as versões e aprove (só a confirmação), ou devolva com nota. O quadro abre e diz quem continua.
 6. Casa Forma: a nota de Pedro ancorada no texto e "Aplicar nota com IA".
 7. Horizonte: "Tentar de novo a partir desta etapa" continua a geração interrompida.
-8. Lume: revise e aprove o carrossel.
+8. Lume: revise e aprove o carrossel. No quadro, o cartão vai para Entrega.
 9. Pátio Couro: escolha entre "Atualizar carrossel" e "Exportar com artigo v2".
 10. Bella Passo: leia o "Artigo final" (capa e duas imagens preenchidas), baixe o pacote e confira a rastreabilidade e o retorno do piloto.
 11. Como João, abra Administração › Logs. Como Pedro, o item não aparece e a rota mostra acesso restrito.
