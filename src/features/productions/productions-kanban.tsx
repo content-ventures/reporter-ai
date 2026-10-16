@@ -30,7 +30,7 @@ import type { ProductionListItem, ProductionListPage } from '@/ports';
 import { firstName, NEXT_STEP_LABELS } from '@/domain';
 import type { StageView } from '@/domain/stage';
 import type { KanbanMove } from '@content-ventures/design-system/v3';
-import { useCommands, useProductions, useSession, type QueryState } from '@/state';
+import { useCan, useCommands, useProductions, useSession, type QueryState } from '@/state';
 import { usePerson } from '@/ui/person-avatar';
 import { NewProductionLink } from '@/features/new-production/new-production-link';
 import { RelativeTime } from '@/ui/time';
@@ -150,6 +150,8 @@ function ProductionsKanban() {
     ids: boardGroups[lane.id].map((item) => item.id),
     label: lane.title,
   }));
+  // Moving cards (archive, next stage) is for who edits; others only open them.
+  const canArchive = useCan('production.archive');
   const drag = useKanbanDrag<LaneId>({
     lanes: dragLanes,
     onMove: moveCard,
@@ -194,7 +196,7 @@ function ProductionsKanban() {
         sections={[{
           items: [
             { label: 'Abrir produção', icon: ArrowUpRight, onSelect: () => router.push(rowHref(item)) },
-            ...(!item.archived ? [{
+            ...(!item.archived && canArchive ? [{
               label: 'Arquivar',
               icon: Archive,
               disabled: Boolean(item.liveRun) || archiving,
@@ -287,7 +289,7 @@ function ProductionsKanban() {
                       return (
                         <KanbanCard
                           key={item.id}
-                          {...(!item.archived ? drag.cardProps(item.id, lane.id) : {})}
+                          {...(!item.archived && canArchive ? drag.cardProps(item.id, lane.id) : {})}
                           title={item.title}
                           summary={productionMeta(item)}
                           menu={cardMenu(item)}

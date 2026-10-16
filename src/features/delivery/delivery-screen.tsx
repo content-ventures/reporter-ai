@@ -24,7 +24,7 @@ import {
 import { BookOpen, Download, Lock, Package, TriangleAlert } from '@content-ventures/design-system/v3/icons';
 import { PIECE_LABELS, type MixedVersionsDetails, type PieceKind, type ProductionId, type VersionRef } from '@/domain';
 import type { DeliveryView, PackageFile, PieceView } from '@/ports';
-import { useCommands, useDelivery, useRuntime, useSimulation } from '@/state';
+import { useCan, useCommands, useDelivery, useRuntime, useSimulation } from '@/state';
 import { plural } from '@/ui/format';
 import { pieceHref, reviewHref } from '@/ui/routes';
 import { useCommandGroup } from '@/ui/shell';
@@ -197,6 +197,9 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
   const commands = useCommands();
   const { runtime } = useRuntime();
   const simulation = useSimulation();
+  // Downloading the package and the pilot feedback are for who edits; others read what leaves.
+  const canDeliver = useCan('delivery.record');
+  const canGiveFeedback = useCan('feedback.record');
   const [override, setOverride] = useState<VersionRef[] | undefined>();
   const delivery = useDelivery(productionId, override);
   const view = delivery.data;
@@ -278,7 +281,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
   const reading = tab === 'article' && articleItem !== undefined;
 
   const commandItems = [
-    ...(exportable ? [{ id: 'delivery-download', label: 'Baixar pacote', icon: Download, onSelect: () => void exportPackage() }] : []),
+    ...(exportable && canDeliver ? [{ id: 'delivery-download', label: 'Baixar pacote', icon: Download, onSelect: () => void exportPackage() }] : []),
     ...(articleItem
       ? [
           reading
@@ -344,7 +347,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
   const imageWarning = imageWarningLine(imageWarnings(pkg.plan?.files ?? view.files));
   const overrideTitle = override ? `Pacote com ${view.items.map((item) => `${item.label.toLowerCase()} v${item.version.number}`).join(' e ')}` : undefined;
 
-  const download =
+  const download = !canDeliver ? null :
     pkg.status === 'refused' ? (
       // Unavailable with its reason (a bare disabled button says nothing).
       <Tooltip content={pkg.refusal?.message ?? 'Não foi possível montar o pacote.'}>
@@ -413,7 +416,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
           aside={
             <>
               <DeliveryAside view={view} runs={traceRuns(view.items, view.provenance.runs, detail.runs)} celebrate={celebrate} templateName={templateName} />
-              {view.latestDelivery ? <PilotFeedbackPanel productionId={productionId} durations={view.stageDurations} /> : null}
+              {view.latestDelivery && canGiveFeedback ? <PilotFeedbackPanel productionId={productionId} durations={view.stageDurations} /> : null}
             </>
           }
         />

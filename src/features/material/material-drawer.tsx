@@ -17,7 +17,9 @@ import {
   type SelectOption,
 } from '@content-ventures/design-system/v3';
 import type { PersonSummary, SpeakerMapping, SourceDetail } from '@/ports';
+import type { Refusal } from '@/domain';
 import { useCommands, usePeople } from '@/state';
+import { isPermissionRefusal, notifyRefusal } from '@/ui/permission-dialog';
 import { plural } from '@/ui/format';
 import { EMPTY_PERSON, NEW_PERSON, NO_PERSON, UNSET, type PersonFields } from './material-model';
 
@@ -132,13 +134,16 @@ export function MaterialDrawer({ open, onClose, detail }: { open: boolean; onClo
 
     setSaving(true);
     setFailure(undefined);
-    const stop = (message: string) => {
+    // A permission limit closes the drawer and opens the popup; other refusals stay in it.
+    const stop = (refusal: Pick<Refusal, 'code' | 'message'>) => {
       setSaving(false);
-      setFailure(message);
+      if (!isPermissionRefusal(refusal)) return setFailure(refusal.message);
+      onClose();
+      notifyRefusal(undefined, refusal);
     };
     for (const [personId, fields] of editedPeople) {
       const result = await commands.production.updatePerson(personId, { title: fields.title.trim() || null, organization: fields.organization.trim() || null });
-      if (!result.ok) return stop(result.refusal.message);
+      if (!result.ok) return stop(result.refusal);
     }
     if (mappingChanged) {
       const mapping: SpeakerMapping[] = labels.map((label) => {
@@ -151,11 +156,11 @@ export function MaterialDrawer({ open, onClose, detail }: { open: boolean; onClo
         return { label, personId: value === UNSET ? null : value };
       });
       const result = await commands.production.updateSpeakers(detail.source.id, mapping);
-      if (!result.ok) return stop(result.refusal.message);
+      if (!result.ok) return stop(result.refusal);
     }
     if (draft.authorized !== initial.authorized) {
       const result = await commands.production.setMaterialAuthorization(detail.source.id, draft.authorized);
-      if (!result.ok) return stop(result.refusal.message);
+      if (!result.ok) return stop(result.refusal);
     }
     setSaving(false);
     onClose();

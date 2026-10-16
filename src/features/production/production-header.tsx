@@ -18,7 +18,7 @@ import {
 } from '@content-ventures/design-system/v3';
 import { ChevronDown, Ellipsis, Pencil, type LucideIcon } from '@content-ventures/design-system/v3/icons';
 import type { ProductionDetail } from '@/ports';
-import { useCommands, useTabSync } from '@/state';
+import { useCan, useCommands, useTabSync } from '@/state';
 import { OtherTabNotice, requestLeave } from '@/ui/shell';
 import { localRoleMenu, useActAs } from '@/ui/shell/act-as';
 import { routeStageId, stageHref, type ProductionRoute } from '@/ui/routes';
@@ -271,6 +271,7 @@ export function ProductionHeaderView({
   actions,
 }: ProductionHeaderViewProps) {
   const [renaming, setRenaming] = useState(false);
+  const canRename = useCan('production.edit');
   const reasonId = useId();
   const localRoles = localRoleMenu(useActAs());
   // A10: this tab went read-only (the same text was saved in another tab). Said under the line,
@@ -285,7 +286,7 @@ export function ProductionHeaderView({
   const sections: MenuSection[] = [
     ...(menu ?? []).filter((section) => section.items.length > 0),
     ...(localRoles.length ? [{ items: [{ label: 'Trocar perfil', description: 'Ambiente local', items: localRoles[0].items }] }] : []),
-    { items: [{ label: 'Renomear', icon: Pencil, onSelect: () => setRenaming(true) }] },
+    ...(canRename ? [{ items: [{ label: 'Renomear', icon: Pencil, onSelect: () => setRenaming(true) }] }] : []),
   ];
 
   return (

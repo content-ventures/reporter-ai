@@ -26,7 +26,7 @@ import { ArrowRight, Copy, Pencil, ScrollText, Sparkles } from '@content-venture
 import { shortHash, type Brief, type ProductionId } from '@/domain';
 import type { Participant, SourceDetail } from '@/ports';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
-import { useCommands, usePiece, useSource } from '@/state';
+import { useCan, useCommands, usePiece, useSource } from '@/state';
 import { formatDate, formatDateTime, formatDuration, formatSize, plural } from '@/ui/format';
 import { PersonAvatar, usePerson } from '@/ui/person-avatar';
 import { materialHref, pieceHref } from '@/ui/routes';
@@ -115,7 +115,8 @@ function briefFacts(brief: Brief): DescriptionItem[] {
   ];
 }
 
-function MaterialAside({ detail, productionId, brief, onEdit, onEditBrief }: { detail: SourceDetail; productionId: ProductionId; brief: Brief | undefined; onEdit: () => void; onEditBrief: () => void }) {
+/** `onEdit`/`onEditBrief` absent: someone who only reads (no "Editar pauta", no "Ligar pessoas"). */
+function MaterialAside({ detail, productionId, brief, onEdit, onEditBrief }: { detail: SourceDetail; productionId: ProductionId; brief: Brief | undefined; onEdit?: () => void; onEditBrief?: () => void }) {
   const unmapped = withoutPerson(detail);
   const others = detail.productions.filter((production) => production.id !== productionId);
   return (
@@ -124,7 +125,7 @@ function MaterialAside({ detail, productionId, brief, onEdit, onEditBrief }: { d
         <DescriptionList items={materialFacts(detail)} labelWidth={ASIDE_LABEL_WIDTH} label="Dados do material" />
       </Section>
       {brief ? (
-        <Section title="Pauta" action={<LinkButton onClick={onEditBrief}>Editar pauta</LinkButton>}>
+        <Section title="Pauta" action={onEditBrief ? <LinkButton onClick={onEditBrief}>Editar pauta</LinkButton> : undefined}>
           <DescriptionList items={briefFacts(brief)} labelWidth={ASIDE_LABEL_WIDTH} label="Pauta da produção" />
         </Section>
       ) : null}
@@ -132,7 +133,7 @@ function MaterialAside({ detail, productionId, brief, onEdit, onEditBrief }: { d
         title="Falantes"
         meta={unmapped > 0 ? plural(unmapped, 'falante sem pessoa', 'falantes sem pessoa') : String(detail.speakers.length)}
         metaTone={unmapped > 0 ? 'missing' : 'muted'}
-        action={<LinkButton onClick={onEdit}>Ligar pessoas</LinkButton>}
+        action={onEdit ? <LinkButton onClick={onEdit}>Ligar pessoas</LinkButton> : undefined}
       >
         <List label="Falantes do material" framed={false}>
           {detail.speakers.map((participant) => (
@@ -195,6 +196,8 @@ export function MaterialScreen({ productionId }: { productionId: ProductionId })
   const [activeId, setActiveId] = useState<string | null>(null);
   const commands = useCommands();
   const router = useRouter();
+  // Someone who only reads (an approver) sees the material, never a way to change it.
+  const canEdit = useCan('production.edit');
 
   const data = source.data;
   const segments = useMemo(() => (data ? viewerSegments(data.version, data.speakers) : []), [data]);
@@ -222,7 +225,7 @@ export function MaterialScreen({ productionId }: { productionId: ProductionId })
   ];
 
   useCommandGroup(
-    data
+    data && canEdit
       ? {
           label: 'Material',
           items: [
@@ -235,7 +238,7 @@ export function MaterialScreen({ productionId }: { productionId: ProductionId })
 
   // Once the material is authorised, the next step is the article: generate it, or open it.
   const article = detail?.pieces.find((piece) => piece.kind === 'article');
-  const canGenerate = Boolean(article && detail?.guards.pieces.article?.generate.allowed && draft.data && draft.data.body.type === 'article' && draft.data.body.blocks.length === 0 && data?.source.rights.authorized);
+  const canGenerate = Boolean(canEdit && article && detail?.guards.pieces.article?.generate.allowed && draft.data && draft.data.body.type === 'article' && draft.data.body.blocks.length === 0 && data?.source.rights.authorized);
   const [starting, setStarting] = useState(false);
   const undecided = data ? withoutPerson(data) : 0;
   async function generateArticle() {
@@ -271,9 +274,11 @@ export function MaterialScreen({ productionId }: { productionId: ProductionId })
         data ? (
           <>
             {next}
-            <Button size="sm" icon={Pencil} onClick={() => setEditing(true)}>
-              Editar contexto e falantes
-            </Button>
+            {canEdit ? (
+              <Button size="sm" icon={Pencil} onClick={() => setEditing(true)}>
+                Editar contexto e falantes
+              </Button>
+            ) : null}
           </>
         ) : source.status === 'error' || (production.status === 'ready' && !sourceId) ? undefined : (
           // Holds the actions' place while the material loads (on a phone they take their own row).
@@ -315,7 +320,7 @@ export function MaterialScreen({ productionId }: { productionId: ProductionId })
   return (
     <StagePage header={header} label="Material">
       {!data.source.rights.authorized ? (
-        <Alert tone="attention" title="Material não autorizado" action={<LinkButton onClick={() => setEditing(true)}>Autorizar material</LinkButton>} />
+        <Alert tone="attention" title="Material não autorizado" action={canEdit ? <LinkButton onClick={() => setEditing(true)}>Autorizar material</LinkButton> : undefined} />
       ) : null}
       {askedToGenerate && undecided > 0 ? (
         <Alert tone="danger" title={plural(undecided, 'falante sem pessoa', 'falantes sem pessoa')} action={<LinkButton onClick={() => setEditing(true)}>Ligar pessoas</LinkButton>}>
@@ -339,7 +344,7 @@ export function MaterialScreen({ productionId }: { productionId: ProductionId })
             </Section>
           </Panel>
         }
-        aside={<MaterialAside detail={data} productionId={productionId} brief={detail?.brief} onEdit={() => setEditing(true)} onEditBrief={() => setEditingBrief(true)} />}
+        aside={<MaterialAside detail={data} productionId={productionId} brief={detail?.brief} {...(canEdit ? { onEdit: () => setEditing(true), onEditBrief: () => setEditingBrief(true) } : {})} />}
       />
       <MaterialDrawer open={editing} onClose={() => setEditing(false)} detail={data} />
       <BriefDrawer productionId={productionId} open={editingBrief} onClose={() => setEditingBrief(false)} />

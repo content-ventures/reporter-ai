@@ -29,7 +29,7 @@ import {
 } from '@content-ventures/design-system/v3';
 import { Archive, ArrowUpRight, ChevronDown, LayoutList, ListFilter, SearchX } from '@content-ventures/design-system/v3/icons';
 import type { ListTab, ProductionListItem, ProductionListPage } from '@/ports';
-import { useCommands, useProductions, useSession, useSimulation, type QueryState } from '@/state';
+import { useCan, useCommands, useProductions, useSession, useSimulation, type QueryState } from '@/state';
 import { plural } from '@/ui/format';
 import { NewProductionLink } from '@/features/new-production/new-production-link';
 import { useCommandGroup } from '@/ui/shell';
@@ -173,6 +173,8 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
   const searching = hasSearch(params);
   const filterCount = activeFilterCount(params);
   const archivedTab = params.tab === 'archived';
+  // Archiving (row ⋯, bulk bar, selection) exists only for who may archive.
+  const canArchive = useCan('production.archive');
 
   // Selection belongs to what is on screen: another tab, filter or page starts empty.
   const rowIds = new Set(rows.map((row) => row.id));
@@ -272,7 +274,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
               id: 'archive',
               label: 'Arquivar',
               icon: Archive,
-              hidden: item.archived,
+              hidden: item.archived || !canArchive,
               disabled: Boolean(item.liveRun),
               hint: item.liveRun ? ARCHIVE_REASON : undefined,
               onSelect: () => setConfirm([item]),
@@ -298,7 +300,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
 
   const selectedItems = rows.filter((row) => selected.has(row.id));
   const archivable = selectedItems.filter((item) => !item.liveRun);
-  const bulkActions: BulkAction[] = archivedTab
+  const bulkActions: BulkAction[] = archivedTab || !canArchive
     ? []
     : [
         {
@@ -325,7 +327,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
       columns={columns}
       density="compact"
       fixed
-      selectable={!archivedTab}
+      selectable={!archivedTab && canArchive}
       selected={selected}
       onSelectedChange={setSelected}
       sort={tableSort(params.sort)}

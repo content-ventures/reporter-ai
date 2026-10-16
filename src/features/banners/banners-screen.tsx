@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Alert, Badge, Button, ButtonLink, Card, CardHeader, ConfirmDialog, Drawer, EmptyState, Field, Grid, Input, MediaFrame, MetaList, PageHeader, PageStack, Panel, Section, Select, Textarea, toast } from '@content-ventures/design-system/v3';
 import { BANNER_FORMATS, BANNER_PALETTES, BANNER_TEMPLATES, bannerContentKey, initialBanner, type BannerContent, type BannerDraft, type LibraryImage, type VisualLibraryView } from '@/domain/visual-library';
 import { useRuntime } from '@/state';
+import { isPermissionRefusal, notifyRefusal, refusalOf } from '@/ui/permission-dialog';
 import { useLeaveGuard } from '@/ui/shell';
 import { LibraryBrowser } from '@/features/images/library-browser';
 
@@ -75,7 +76,11 @@ function BannerStudio() {
     if (!port || saving || !id.current) return;
     setSaving(true);setFailure(undefined);
     try { const next = await port.saveBanner(id.current,saved?.revision ?? 0,content);setSaved(next);setView(await port.get());toast('Banner salvo como rascunho'); }
-    catch (error) { setFailure(error instanceof Error ? error.message : 'Não foi possível salvar.'); }
+    catch (error) {
+      // A permission limit opens the popup; anything else stays in the red notice.
+      const refusal = refusalOf(error,'Não foi possível salvar.');
+      if (isPermissionRefusal(refusal)) notifyRefusal(undefined,refusal); else setFailure(refusal.message);
+    }
     finally { setSaving(false); }
   }
   function openBanner(banner: BannerDraft) { const href = '/banners?id='+banner.id;if (leave(href)) router.push(href); }

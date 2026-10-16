@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Alert, Badge, Button, ButtonLink, Card, CardHeader, EmptyState, Grid, MediaFrame, PageStack, SearchField } from '@content-ventures/design-system/v3';
 import { bankImages, libraryImageSource, photoBanks, type LibraryImage, type StockImage, type StockProvider, type VisualLibraryView } from '@/domain/visual-library';
 import { useRuntime } from '@/state';
+import { isPermissionRefusal, notifyRefusal, refusalOf } from '@/ui/permission-dialog';
 
 /** The connected library, read once when first `enabled`; undefined while it loads or without a backend. */
 function useLibraryView(enabled = true) {
@@ -52,13 +53,19 @@ export function LibraryBrowser({ onSelect, selectedId }: { onSelect?: (image: Li
     } catch (error) { if (!controller.signal.aborted) setFailure(error instanceof Error ? error.message : 'Não foi possível buscar imagens.'); }
     finally { if (!controller.signal.aborted) setLoading(false); }
   }
+  /** A permission limit opens the popup; anything else stays in the red notice. */
+  function fail(error: unknown, fallback: string) {
+    const refusal = refusalOf(error,fallback);
+    if (isPermissionRefusal(refusal)) notifyRefusal(undefined,refusal);
+    else setFailure(refusal.message);
+  }
   async function choose(image: StockImage) {
     if (!port || busyId) return;
     setBusyId(keyOf(image));setFailure(undefined);
     try {
       const saved = await port.importImage(image.provider,image.providerId,true);
       if (onSelect) onSelect(saved); else setView(await port.get());
-    } catch (error) { setFailure(error instanceof Error ? error.message : 'Não foi possível guardar a imagem.'); }
+    } catch (error) { fail(error,'Não foi possível guardar a imagem.'); }
     finally { setBusyId(undefined); }
   }
 
