@@ -262,7 +262,9 @@ export type StartRefusal =
   /** The reviewed structure cannot be written (section count, an empty intertítulo, a quote twice…). */
   | 'invalid_outline'
   /** The piece waits for approval: its text is locked until the request is withdrawn or decided. */
-  | 'locked';
+  | 'locked'
+  /** The member's role does not edit content. */
+  | 'forbidden';
 
 // ── Runs ─────────────────────────────────────────────────────────────────────────────────
 
@@ -306,8 +308,8 @@ export type RunAttachment = {
 };
 
 export type AttachRefusal = 'unknown_run';
-export type CancelRefusal = 'unknown_run' | 'not_running';
-export type ResumeRefusal = 'unknown_run' | 'not_awaiting' | 'invalid_input';
+export type CancelRefusal = 'unknown_run' | 'not_running' | 'forbidden';
+export type ResumeRefusal = 'unknown_run' | 'not_awaiting' | 'invalid_input' | 'forbidden';
 /** `plan_changed`: the material or the brief changed since the run, so it cannot be continued. */
 export type RetryRefusal = 'unknown_run' | 'still_running' | 'nothing_to_retry' | 'unknown_step' | 'plan_changed' | StartRefusal;
 

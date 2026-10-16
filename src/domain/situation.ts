@@ -10,6 +10,7 @@ import type { PieceStatus, ProductionStatus } from './rules/status.ts';
 import type { GenerationRun } from './run.ts';
 import type { ProductionView } from './views.ts';
 import { WRITING_FLOW } from './stage.ts';
+import { can } from './permissions.ts';
 import { hasAnyRole } from './workspace.ts';
 import type { Member } from './workspace.ts';
 
@@ -247,7 +248,9 @@ function openTarget(situation: Situation): StepTarget {
  * Viewer rules (CONTRACT §2.2): a member with the gate's role who did not send it reviews; the
  * owner or an editor adjusts a returned text; the owner or an admin retries a failed generation and
  * authorises the material; editors continue drafts, resend edited approvals, create and update the
- * carousel and download the package. `mine` marks the viewer's own move (their queue), not a way in.
+ * carousel and download the package. Every move that writes also needs the role's capability
+ * (`can`): an approver who owns a production only opens it. `mine` marks the viewer's own move
+ * (their queue), not a way in.
  */
 export function nextStepFor(input: SituationInput): NextStep | null {
   const { record, viewer } = input;
@@ -257,13 +260,13 @@ export function nextStepFor(input: SituationInput): NextStep | null {
   if (situation.stage === 'archived') return open;
   const owner = record.production.ownerId === viewer.personId;
   const admin = hasAnyRole(viewer, ['admin']);
-  const editor = hasAnyRole(viewer, ['editor', 'admin']);
-  if (situation.status === 'unauthorized') return owner || admin ? step('authorize', { kind: 'source' }, owner) : open;
+  const editor = can(viewer, 'piece.edit');
+  if (situation.status === 'unauthorized') return (owner || admin) && can(viewer, 'production.edit') ? step('authorize', { kind: 'source' }, owner) : open;
 
   const current = currentPiece(record);
   if (!current) {
     if (isDelivered(record)) return open;
-    return editor ? step('deliver', { kind: 'delivery' }, owner) : open;
+    return can(viewer, 'delivery.record') ? step('deliver', { kind: 'delivery' }, owner) : open;
   }
   const { kind, status } = current;
   const piece = pieceOfKind(record, kind);
@@ -273,7 +276,7 @@ export function nextStepFor(input: SituationInput): NextStep | null {
     case 'locked':
       return open;
     case 'failed':
-      return owner || admin ? step('retry', studio, true) : open;
+      return (owner || admin) && editor ? step('retry', studio, true) : open;
     case 'not_started':
       if (!editor) return open;
       if (kind === 'article') return record.production.flowId === WRITING_FLOW.id
@@ -292,7 +295,7 @@ export function nextStepFor(input: SituationInput): NextStep | null {
       return owner ? null : open;
     }
     case 'changes_requested': {
-      if (!editor && !owner) return open;
+      if (!editor) return open;
       return step('adjust', studio, owner || lastSender(record, piece?.id) === viewer.personId);
     }
     case 'approval_outdated':

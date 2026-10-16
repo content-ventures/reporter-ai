@@ -1,6 +1,7 @@
 import type { ActivityId, ActorId, IsoDateTime, ProductionId, WorkspaceId } from './ids.ts';
 import type { PieceKind } from './piece.ts';
 import type { Role } from './workspace.ts';
+import { can, CAPABILITY_ROLES } from './permissions.ts';
 
 /**
  * Audit trail (F1.7, REQ-T.1): who did what, to which record, with which result. R1 reads it
@@ -145,12 +146,12 @@ export type AuditEvent = {
 };
 
 /** Roles that may read the trail (F1.7: "página de Logs restrita e somente leitura"). */
-export const AUDIT_READER_ROLES: readonly Role[] = ['admin'];
+export const AUDIT_READER_ROLES: readonly Role[] = CAPABILITY_ROLES['audit.read'];
 
 export const AUDIT_RESTRICTED_MESSAGE = 'Somente administradores consultam os logs.';
 
 export function canReadAudit(roles: readonly Role[] | undefined): boolean {
-  return Boolean(roles?.some((role) => AUDIT_READER_ROLES.includes(role)));
+  return can(roles, 'audit.read');
 }
 
 const MASK = '•••';

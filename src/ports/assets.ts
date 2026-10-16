@@ -46,7 +46,9 @@ export type AssetRefusal =
   /** The browser storage is full. */
   | 'quota'
   /** The browser refused storage (private mode, blocked site data). */
-  | 'unavailable';
+  | 'unavailable'
+  /** The member's role does not edit content. */
+  | 'forbidden';
 
 export type AssetChange = {
   /** `loaded`: the stored index finished opening; `health`: persistence failed or recovered; `collect`: unused images deleted. */

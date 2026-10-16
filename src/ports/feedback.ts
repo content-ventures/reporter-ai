@@ -16,7 +16,7 @@ export type NewFeedback = {
   durations?: Record<string, number>;
 };
 
-export type FeedbackRefusal = 'empty_feedback' | 'not_found';
+export type FeedbackRefusal = 'empty_feedback' | 'not_found' | 'forbidden';
 
 /** 👍/👎: `value: null` takes the vote back; `note` is the optional comment after voting. */
 export type VoteInput = {
