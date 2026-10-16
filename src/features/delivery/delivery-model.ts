@@ -359,6 +359,9 @@ export function blockedCopy(kind: PieceKind): { title: string; description: stri
   return { title: 'A entrega abre quando tudo estiver aprovado', description: `Falta aprovar o ${piece}.`, action: `Abrir o ${piece}` };
 }
 
+/** The description of the toast once the whole package is out: nobody has anything left to do. */
+export const DELIVERED_NOTE = 'Produção concluída.';
+
 /** "Pacote baixado · 9 arquivos", or "Baixamos 7 de 9 arquivos" when some failed. */
 export function downloadToast(saved: number, total: number): { title: string; partial: boolean } {
   if (saved >= total) return { title: `Pacote baixado · ${total} ${total === 1 ? 'arquivo' : 'arquivos'}`, partial: false };

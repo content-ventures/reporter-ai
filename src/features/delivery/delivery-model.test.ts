@@ -9,6 +9,7 @@ import {
   carouselLine,
   deliveredFiles,
   downloadedOutcomes,
+  DELIVERED_NOTE,
   downloadToast,
   fileOutcomes,
   formatChoices,
@@ -190,6 +191,7 @@ describe('delivery model', () => {
     assert.deepEqual(downloadToast(9, 9), { title: 'Pacote baixado · 9 arquivos', partial: false });
     assert.deepEqual(downloadToast(1, 1), { title: 'Pacote baixado · 1 arquivo', partial: false });
     assert.deepEqual(downloadToast(7, 9), { title: 'Baixamos 7 de 9 arquivos', partial: true });
+    assert.equal(DELIVERED_NOTE, 'Produção concluída.');
     assert.equal(pendingImagesLine(0), undefined);
     assert.equal(pendingImagesLine(1), '1 imagem sem arquivo.');
     assert.equal(pendingImagesLine(2), '2 imagens sem arquivo.');

@@ -36,6 +36,7 @@ import {
   blockingPiece,
   deliverableFiles,
   downloadedOutcomes,
+  DELIVERED_NOTE,
   downloadToast,
   fileOutcomes,
   formatChoices,
@@ -233,7 +234,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
       return;
     }
     const { title, partial } = downloadToast(saved.length, outcomes.length);
-    if (result.value.status === 'completed' && !partial) toast(title);
+    if (result.value.status === 'completed' && !partial) toast(title, { description: DELIVERED_NOTE });
     else {
       setCelebrate(false);
       toast(title, { tone: 'error', description: plural(failed, 'arquivo falhou', 'arquivos falharam') });
@@ -267,7 +268,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
     if (result.ok && result.value.status === 'completed') {
       // The whole package is out now: say so as the first download does.
       const total = deliverableFiles(pkg.plan?.files ?? []).length;
-      toast(downloadToast(total, total).title);
+      toast(downloadToast(total, total).title, { description: DELIVERED_NOTE });
     }
   }
 
