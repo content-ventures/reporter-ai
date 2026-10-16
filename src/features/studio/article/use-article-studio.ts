@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { toast } from '@content-ventures/design-system/v3';
 import { firstName, lockedMessage, sendChecklist, type SendItemId, type SendTarget } from '@/domain';
 import type { GenerationKind, PersonSummary, PieceApproval } from '@/ports';
-import { useCommands, usePeople, useSession } from '@/state';
+import { useCan, useCommands, usePeople, useSession } from '@/state';
 import { briefChangedSince, READ_ONLY_REASON, studioBadge } from './studio-session-model';
 import type { GenerationState, StudioInputs } from './studio-types';
 import { useStudioChecks } from './use-studio-checks';
@@ -41,7 +41,9 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
 
   // ——— Approval: who may do what, and the lock while the text waits for a decision (D8) ———
   const stored = production.approvals.article;
-  const canEdit = stored?.viewer.canEdit ?? true;
+  // Fails closed: before the approval view arrives, the session roles decide.
+  const sessionCanEdit = useCan('piece.edit');
+  const canEdit = stored?.viewer.canEdit ?? sessionCanEdit;
   const locked = stored?.locked ?? false;
 
   const panes = useStudioPanes();
@@ -205,7 +207,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
       addExcerpt,
       saveVersion: writes(saveVersion),
       restoreVersion: writes(restoreVersion),
-      undoChanges,
+      undoChanges: writes(undoChanges),
       scrollToBlock,
       showImage,
       showImageSlot,

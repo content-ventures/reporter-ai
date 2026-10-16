@@ -24,8 +24,8 @@ export function StudioToolbar({
 }: {
   view: StageView;
   onView: (view: StageView) => void;
-  /** "Trocar modelo": opens the library. */
-  onTemplates: () => void;
+  /** "Trocar modelo": opens the library (absent for someone who only reads). */
+  onTemplates?: () => void;
   lockedReason?: string;
   onRegenerate: () => void;
   regenerateReason?: string;
@@ -39,8 +39,8 @@ export function StudioToolbar({
         <ToolbarToggle label="Slide" icon={ImageIcon} showLabel keep pressed={view === 'slide'} onPressedChange={() => onView('slide')} />
         <ToolbarToggle label="Sequência" icon={GalleryHorizontal} showLabel keep pressed={view === 'sequence'} onPressedChange={() => onView('sequence')} />
       </ToolbarGroup>
-      <ToolbarSeparator />
-      <ToolbarButton
+      {onTemplates ? <ToolbarSeparator /> : null}
+      {onTemplates ? <ToolbarButton
         label="Trocar modelo"
         icon={LayoutTemplate}
         showLabel
@@ -48,7 +48,7 @@ export function StudioToolbar({
         disabled={Boolean(lockedReason)}
         disabledReason={lockedReason}
         onClick={onTemplates}
-      />
+      /> : null}
       {generate ? (
         <>
           <ToolbarSeparator />

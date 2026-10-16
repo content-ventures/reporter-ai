@@ -85,7 +85,7 @@ export function CarouselGenerateButton({ action, compact = false, size }: { acti
 }
 
 /** Header tools: panes, focus mode, generation and the primary action (PageHeader actions slot). */
-export function CarouselHeaderActions({ generate, review }: { generate: CarouselGenerateAction; review: CarouselReviewAction }) {
+export function CarouselHeaderActions({ generate, review, readOnly = false }: { generate: CarouselGenerateAction; review: CarouselReviewAction; readOnly?: boolean }) {
   const focusMode = useFocusMode();
   // A laptop keeps the room for the journey menu: "Gerar nova versão" becomes an icon with its tip.
   const roomy = useMediaQuery('(min-width: 1600px)');
@@ -103,8 +103,8 @@ export function CarouselHeaderActions({ generate, review }: { generate: Carousel
         />
       </Tooltip>
       <WorkspaceToggle side="end" />
-      <CarouselGenerateButton action={generate} compact={!roomy} size="sm" />
-      <CarouselSendButton action={review} size="sm" />
+      {readOnly ? null : <CarouselGenerateButton action={generate} compact={!roomy} size="sm" />}
+      {readOnly && !review.inReview ? null : <CarouselSendButton action={review} size="sm" />}
     </>
   );
 }
@@ -124,6 +124,7 @@ export function CarouselDocumentState({
   running,
   onSaveVersion,
   onRestore,
+  readOnly = false,
 }: {
   save: CarouselSaveState;
   versions: readonly VersionView[];
@@ -133,6 +134,8 @@ export function CarouselDocumentState({
   running: boolean;
   onSaveVersion: () => void;
   onRestore: (version: VersionView) => void;
+  /** Someone who only reads: the versions, never "Salvar versão" or "Restaurar". */
+  readOnly?: boolean;
 }) {
   const now = useNow();
   const items: MenuItem[] = [...versions]
@@ -145,19 +148,20 @@ export function CarouselDocumentState({
         meta: version.decision ? DECISION_LABELS[version.decision.kind] : now ? formatRelative(version.createdAt, now) : undefined,
         checked: current,
         disabled: running && !current,
-        ...(current ? {} : { onSelect: () => onRestore(version) }),
+        ...(current || readOnly ? {} : { onSelect: () => onRestore(version) }),
       };
     });
   const label = latest ? `v${latest.number}${dirty ? ' · editado' : ''}` : 'Sem versão';
+  if (readOnly && items.length === 0) return null;
   return (
     <>
-      <SaveIndicator status={save.status} label={save.status === 'saved' ? 'Salvo' : save.label} onRetry={save.onRetry} />
+      {readOnly ? null : <SaveIndicator status={save.status} label={save.status === 'saved' ? 'Salvo' : save.label} onRetry={save.onRetry} />}
       <Menu
         label="Versões do carrossel"
         align="end"
         width={280}
         sections={[
-          {
+          ...(readOnly ? [] : [{
             items: [
               {
                 label: 'Salvar versão',
@@ -168,7 +172,7 @@ export function CarouselDocumentState({
                 onSelect: onSaveVersion,
               },
             ],
-          },
+          }]),
           ...(items.length > 0 ? [{ label: 'Versões', items }] : []),
         ]}
         trigger={(props) => (

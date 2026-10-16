@@ -56,6 +56,8 @@ export function CoverSlot() {
 
   const suggestion = useImageSlots(studio.editor).find((slot) => slot.role === 'cover');
   if (cover) return <CoverImage cover={cover} rootRef={setRoot} />;
+  // Someone who only reads (an approver) sees the cover, never a way to change it.
+  if (!studio.canEdit) return null;
   return suggestion ? <SuggestedCover subject={suggestion.slot.subject} rootRef={setRoot} /> : <EmptyCover rootRef={setRoot} />;
 }
 
@@ -174,7 +176,9 @@ function CoverImage({ cover, rootRef }: { cover: ImageRef; rootRef: (node: HTMLE
   const credit = found ? creditLine(found.credit) : undefined;
   const missing = !loading && !found;
   // The caption opens "Legenda e crédito" on the caption; the credit follows it as everywhere.
-  const caption = cover.caption ? (
+  const caption = cover.caption && !studio.canEdit ? (
+    cover.caption
+  ) : cover.caption ? (
     <LinkButton tone="inherit" size="inherit" disabled={locked || missing} onClick={() => studio.images.openCover('edit', { focus: 'caption' })}>
       {cover.caption}
     </LinkButton>
@@ -213,7 +217,7 @@ function CoverImage({ cover, rootRef }: { cover: ImageRef; rootRef: (node: HTMLE
       src={url.data}
       state={loading ? 'loading' : undefined}
       alt={imageAlt(cover)}
-      caption={
+      caption={!studio.canEdit ? <MetaList size="sm" items={facts} /> : (
         <Toolbar ref={rootRef} label="Imagem de destaque" size={phone ? 'md' : 'sm'}>
           <MetaList size="sm" items={facts} />
           <ToolbarSeparator />
@@ -240,7 +244,7 @@ function CoverImage({ cover, rootRef }: { cover: ImageRef; rootRef: (node: HTMLE
             onClick={studio.images.removeCover}
           />
         </Toolbar>
-      }
+      )}
     />
   );
 }

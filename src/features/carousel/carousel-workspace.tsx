@@ -24,6 +24,7 @@ import {
   countWords,
   findLayout,
   isRunActive,
+  whoCan,
   type CarouselBody,
   type RunId,
   type Slide,
@@ -33,7 +34,7 @@ import {
   type VersionView,
 } from '@/domain';
 import type { PieceView, ProductionDetail, SlotFit } from '@/ports';
-import { useCommands, usePeople, usePiece, useRun, useRuntime, useSaveStatus, useSession, useVersion } from '@/state';
+import { useCan, useCommands, usePeople, usePiece, useRun, useRuntime, useSaveStatus, useVersion } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
 import { rememberTemplate } from '@/features/library/last-template';
 import { switchSummary } from '@/features/library/library-model';
@@ -116,9 +117,9 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
   }, [draft.body?.templateId, live, request?.templateId, running]);
   const body = runBody ?? draft.body;
   const slides = useMemo(() => body?.slides ?? [], [body]);
-  const roles = useSession().data?.current?.roles;
-  const canEdit = roles?.some(role => role === 'editor' || role === 'admin') === true;
-  const lockedReason = running ? LOCKED : !canEdit ? 'Seu papel permite revisar, mas não editar o carrossel. No teste local, escolha Editor ou Todos os papéis.' : undefined;
+  // Someone who only reads (an approver, a creative reviewer) sees the slides and versions, never a way to change them.
+  const canEdit = useCan('piece.edit');
+  const lockedReason = running ? LOCKED : !canEdit ? whoCan('piece.edit') : undefined;
 
   // ── Template and fit (approximate, measured by the render service) ──────────────────
   const templates = useMemo(() => runtime?.render.templates() ?? [], [runtime]);
@@ -346,10 +347,10 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
       onChange={(id) => {
         if (slides.some((slide) => slide.id === id)) select(id);
       }}
-      onReorder={running ? undefined : reorder}
-      onAdd={running || !template ? undefined : add}
-      onDuplicate={running ? undefined : duplicate}
-      onRemove={running ? undefined : remove}
+      onReorder={running || !canEdit ? undefined : reorder}
+      onAdd={running || !canEdit || !template ? undefined : add}
+      onDuplicate={running || !canEdit ? undefined : duplicate}
+      onRemove={running || !canEdit ? undefined : remove}
       ratio={ratio}
       orientation={orientation}
       loading={!body && piece.status === 'loading'}
@@ -365,7 +366,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
   const [traceOpen, setTraceOpen] = useState<boolean | null>(null);
 
   const saveVersion = async () => {
-    if (running) return;
+    if (running || !canEdit) return;
     await draft.flush();
     const result = await commands.production.createVersion(carousel.id);
     if (result.ok) toast(`Versão ${result.value.version.label} salva`);
@@ -457,9 +458,9 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
   useCommandGroup({
     label: 'Carrossel',
     items: [
-      { id: 'carousel-save-version', label: 'Salvar versão', hint: '⌘S', icon: Save, onSelect: () => void saveVersion() },
+      ...(canEdit ? [{ id: 'carousel-save-version', label: 'Salvar versão', hint: '⌘S', icon: Save, onSelect: () => void saveVersion() }] : []),
       // Blocked, "Enviar para aprovação" stays listed with the header's reason and says it again on Enter.
-      {
+      ...(!canEdit && !inReview ? [] : [{
         id: 'carousel-send-review',
         label: approved ? 'Ir para entrega' : inReview ? 'Abrir revisão' : 'Enviar para aprovação',
         icon: Send,
@@ -470,9 +471,9 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
           else if (reviewReason) toast('Ainda não dá para enviar', { tone: 'info', description: reviewReason });
           else void sendToReview();
         },
-      },
+      }]),
       ...(warnings > 0 ? [{ id: 'carousel-next-warning', label: 'Próximo slide com aviso', icon: ArrowLeftRight, onSelect: jumpToWarning }] : []),
-      {
+      ...(!canEdit ? [] : [{
         id: 'carousel-template',
         label: 'Trocar modelo',
         icon: LayoutTemplate,
@@ -481,7 +482,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
           if (lockedReason) toast('Ainda não dá para trocar o modelo', { tone: 'info', description: lockedReason });
           else setPicking(true);
         },
-      },
+      }]),
       { id: 'carousel-toggle-view', label: view === 'slide' ? 'Ver sequência' : 'Ver slide', icon: GalleryHorizontal, onSelect: () => setView(view === 'slide' ? 'sequence' : 'slide') },
       { id: 'carousel-focus', label: focusMode.focus ? 'Sair do modo foco' : 'Modo foco', icon: Maximize2, onSelect: focusMode.toggle },
     ],
@@ -515,10 +516,12 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
   const footer = (narrowFooter: boolean) =>
     narrowFooter ? (
       <ActionBar position="static" status={save.status} statusLabel={save.label} onRetry={save.onRetry}>
-        <Tooltip content={running ? LOCKED : 'Salvar versão'} shortcut={running ? undefined : '⌘S'}>
-          <IconButton label="Salvar versão" icon={Save} aria-disabled={running || undefined} onClick={() => void saveVersion()} />
-        </Tooltip>
-        <CarouselSendButton action={reviewAction} />
+        {canEdit ? (
+          <Tooltip content={running ? LOCKED : 'Salvar versão'} shortcut={running ? undefined : '⌘S'}>
+            <IconButton label="Salvar versão" icon={Save} aria-disabled={running || undefined} onClick={() => void saveVersion()} />
+          </Tooltip>
+        ) : null}
+        {canEdit || inReview ? <CarouselSendButton action={reviewAction} /> : null}
       </ActionBar>
     ) : null;
 
@@ -528,7 +531,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
         docked
         storageKey="reporter:carousel-studio"
         header={(narrowHeader) => (
-          <ProductionHeader compact actions={narrowHeader ? undefined : <CarouselHeaderActions generate={generateAction} review={reviewAction} />} />
+          <ProductionHeader compact actions={narrowHeader ? undefined : <CarouselHeaderActions generate={generateAction} review={reviewAction} readOnly={!canEdit} />} />
         )}
         footer={footer}
         focus={focusMode.focus}
@@ -539,11 +542,11 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
           <StudioToolbar
             view={view}
             onView={setView}
-            onTemplates={() => setPicking(true)}
+            onTemplates={canEdit ? () => setPicking(true) : undefined}
             lockedReason={lockedReason}
             onRegenerate={() => setConfirmRegenerate(true)}
             regenerateReason={regenerateReason}
-            generate={narrow}
+            generate={narrow && canEdit}
             end={
               narrow ? undefined : (
                 <CarouselDocumentState
@@ -554,6 +557,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
                   running={running}
                   onSaveVersion={() => void saveVersion()}
                   onRestore={setRestoring}
+                  readOnly={!canEdit}
                 />
               )
             }
@@ -572,7 +576,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
                 </LinkButton>
               ) : null,
               inputRef ? (
-                outdated && kept ? (
+                outdated && kept && canEdit ? (
                   <LinkButton key="article" tone="quiet" size="inherit" onClick={() => void startUpdate()}>
                     Artigo v{inputRef.number} · Atualizar slides
                   </LinkButton>
@@ -597,6 +601,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
               template={template}
               fits={fits.filter((fit) => fit.slideId === current?.id)}
               lockedReason={lockedReason}
+              readOnly={!canEdit}
               onSlotChange={setSlot}
               article={inputArticle}
               articleNumber={inputRef?.number}
@@ -620,7 +625,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
         <NarrowProbe onChange={setNarrow} />
         <PageStack>
           {piece.status === 'error' ? <ErrorState title="Não foi possível abrir o carrossel" onRetry={piece.retry} /> : null}
-          {outdated && approvedRef && inputRef && (!kept || updatingTo) && !running ? (
+          {canEdit && outdated && approvedRef && inputRef && (!kept || updatingTo) && !running ? (
             <OutdatedNotice
               from={inputRef.number}
               to={approvedRef.number}

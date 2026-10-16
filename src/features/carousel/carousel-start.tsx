@@ -21,7 +21,7 @@ import { Sparkles } from '@content-ventures/design-system/v3/icons';
 import { blockText, formatSize, plannedLayouts, SIMULATED_MODEL, type CarouselBody, type RunId, type TemplateId } from '@/domain';
 import type { DraftView, PieceView, ProductionDetail, RunView, TemplateInfo } from '@/ports';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
-import { useCommands, useRuntime, useSession, useVersion } from '@/state';
+import { useCan, useCommands, useRuntime, useVersion } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
 import { rememberTemplate, useLastTemplate } from '@/features/library/last-template';
 import { featuredNote, initialTemplate, libraryFilter, type LibraryFilter } from '@/features/library/library-model';
@@ -147,14 +147,13 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
   const preview = useSlideRenders(cover, { scale: 0.5, delay: 0, slideIds: COVER_ONLY, articleCover })['preview-cover'];
 
   const generateGuard = production.guards.pieces.carousel?.generate;
-  const roles = useSession().data?.current?.roles;
-  const canEdit = roles?.some(role => role === 'editor' || role === 'admin') === true;
-  const blockedReason = !canEdit ? 'Para criar o carrossel, escolha Editor ou Todos os papéis no teste local.'
-    : !from ? 'Disponível após aprovar o artigo.' : generateGuard && !generateGuard.allowed && carousel ? generateGuard.reason : !template ? 'Carregando os modelos.' : undefined;
+  // Someone who only reads sees the models, never "Gerar textos".
+  const canEdit = useCan('piece.edit');
+  const blockedReason = !from ? 'Disponível após aprovar o artigo.' : generateGuard && !generateGuard.allowed && carousel ? generateGuard.reason : !template ? 'Carregando os modelos.' : undefined;
   const [starting, setStarting] = useState(false);
 
   const start = async () => {
-    if (!from || !template || blockedReason || starting) return;
+    if (!canEdit || !from || !template || blockedReason || starting) return;
     setStarting(true);
     onStartProgress('preparing', template.name, total, template.formatInfo.ratio);
     try {
@@ -211,7 +210,7 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
 
   const label = from ? `Gerar textos a partir da versão ${from.number}` : 'Gerar textos';
   const action = (size?: 'sm') =>
-    blockedReason ? (
+    !canEdit ? null : blockedReason ? (
       <Tooltip content={blockedReason}>
         <Button variant="primary" icon={Sparkles} size={size} aria-disabled>
           {label}
