@@ -28,6 +28,7 @@ services:
       - ./database/migrations/014-editorial-rows.sql:/docker-entrypoint-initdb.d/91-editorial-rows.sql:ro
       - ./database/migrations/015-editorial-sync.sql:/docker-entrypoint-initdb.d/92-editorial-sync.sql:ro
       - ./database/migrations/016-editorial-rows-data.sql:/docker-entrypoint-initdb.d/93-editorial-rows-data.sql:ro
+      - ./database/migrations/017-member-profile.sql:/docker-entrypoint-initdb.d/94-member-profile.sql:ro
     networks:
       - reporter
     healthcheck:

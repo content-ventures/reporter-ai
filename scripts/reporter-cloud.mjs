@@ -140,7 +140,8 @@ async function grant(client) {
   await client.query('BEGIN');
   try {
     const user = (await client.query(`INSERT INTO core.users(name,email) VALUES($1,$2)
-      ON CONFLICT(email) DO UPDATE SET name=excluded.name,updated_at=clock_timestamp() RETURNING id`,[name,email])).rows[0];
+      ON CONFLICT(email) DO UPDATE SET name=CASE WHEN core.users.profile_updated_at IS NULL THEN excluded.name ELSE core.users.name END,
+      updated_at=clock_timestamp() RETURNING id`,[name,email])).rows[0];
     await client.query(`INSERT INTO core.tenant_members(tenant_id,user_id,role) VALUES('10000000-0000-0000-0000-000000000001',$1,$2)
       ON CONFLICT(tenant_id,user_id) DO UPDATE SET role=excluded.role,status='active'`,[user.id,tenantRole]);
     await client.query(`INSERT INTO public.portal_members(tenant_id,portal_id,user_id,status) VALUES('10000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000101',$1,'active') ON CONFLICT(portal_id,user_id) DO UPDATE SET status='active'`,[user.id]);

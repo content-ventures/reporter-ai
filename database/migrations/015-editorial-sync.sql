@@ -2,6 +2,7 @@
 BEGIN;
 
 -- The poll stamp: change number, delta floor and a members hash. It never reads editorial rows.
+-- The hash covers the self-edited profile (title: 005 in the cloud, 017 locally).
 CREATE OR REPLACE FUNCTION public.reporter_ed_status() RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
 DECLARE portal uuid := core.reporter_require('reporter.read'); result jsonb;
@@ -9,7 +10,7 @@ BEGIN
   SELECT jsonb_build_object('seq',coalesce(s.seq,0),'floor',coalesce(s.floor_seq,0),'membersHash',md5(
     jsonb_build_object('name',p.name,'slug',p.slug,'members',coalesce((
       SELECT jsonb_agg(member ORDER BY member->>'id') FROM (
-        SELECT jsonb_build_object('id',u.id,'name',u.name,'email',u.email,'image',u.image,
+        SELECT jsonb_build_object('id',u.id,'name',u.name,'title',u.title,'email',u.email,'image',u.image,
           'portalStatus',pm.status,'tenantStatus',tm.status,'roles',coalesce((
             SELECT jsonb_agg(pr.name ORDER BY pr.name) FROM public.portal_user_roles pur
             JOIN public.portal_roles pr ON pr.id=pur.portal_role_id AND pr.portal_id=portal

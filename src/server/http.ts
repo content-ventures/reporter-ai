@@ -15,6 +15,7 @@ import { editorialWorkspace, editorialRpc, editorialPipeline, requireCapability 
 import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
+import { handleProfile } from './profile.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { reporterIdentity } from './auth.ts';
 import { runWithReporterContext, type ReporterRequestContext } from './request-context.ts';
@@ -108,6 +109,10 @@ const messages: Record<string, string> = {
   BANNER_CREDIT_OVERFLOW: 'O crédito não cabe neste formato. Escolha um formato maior ou outra imagem.',
   BANNER_CONFLICT: 'Este banner mudou em outra aba. Abra a versão salva antes de editar.',
   LIBRARY_FULL: 'A biblioteca atingiu o limite local. Nenhum arquivo foi apagado.',
+  PROFILE_NAME_REQUIRED: 'Informe seu nome.',
+  PROFILE_TOO_LONG: 'Use até 80 caracteres no nome e no cargo.',
+  AVATAR_INVALID: 'Não foi possível ler esta imagem. Envie um JPG, PNG, WebP ou GIF.',
+  AVATAR_TOO_LARGE: 'A foto passa de 4 MB. Escolha outra imagem.',
   AUTH_REQUIRED: 'Entre novamente para continuar.',
   AUTH_CONFIGURATION: 'O acesso ainda não foi configurado neste ambiente.',
   AUTH_CONTEXT_MISSING: 'Não foi possível identificar o workspace deste usuário.',
@@ -156,6 +161,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'visuals') return await handleVisualLibrary(request,path.slice(1),jsonBody);
+    if (path[0] === 'profile') return await handleProfile(request,path.slice(1),jsonBody);
     if (request.method === 'GET' && path.length === 1 && path[0] === 'pipeline') return reply(await editorialPipeline());
     if (path[0] === 'workspace' && path.length === 1) {
       if (request.method === 'GET') {
