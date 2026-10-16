@@ -6,8 +6,9 @@ import { createCommands } from './commands.ts';
 
 /** A10: a tab that another tab took over is read-only until "Usar esta aba". */
 
-function fakeRuntime(state: { tab: TabState; claimed: number }): Runtime {
+function fakeRuntime(state: { tab: TabState; claimed: number }, roles: string[] = ['editor']): Runtime {
   return {
+    session: { current: async () => ({ id: 'person-1', roles }) },
     tabs: {
       current: () => state.tab,
       subscribe: () => () => undefined,
@@ -38,5 +39,12 @@ describe('commands while another tab owns the workspace', () => {
     assert.equal(state.claimed, 1);
     const renamed = await commands.production.rename('prod-1', 'Novo título');
     assert.ok(renamed.ok);
+  });
+
+  it('refuses the ports outside the store to a role without the capability, calling nothing', async () => {
+    const commands = createCommands(async () => fakeRuntime({ tab: { status: 'active' }, claimed: 0 }, ['approver']));
+    const cancel = await commands.generation.cancel('run-1');
+    assert.equal(!cancel.ok && cancel.refusal.code, 'forbidden');
+    assert.equal(!cancel.ok && cancel.refusal.message, 'Só editor ou admin edita o conteúdo.');
   });
 });
