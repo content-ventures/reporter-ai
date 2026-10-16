@@ -15,10 +15,10 @@ export function ReporterBrand({ signature = false, endorsed = false }: { signatu
   const artwork = compact
     ? { src: '/icon.svg', width: 32, height: 32 }
     : signature
-      ? { src: '/brand/reporter-ai-powered.svg', width: 264, height: 78 }
+      ? { src: '/brand/reporter-ia-powered.svg', width: 264, height: 78 }
       : endorsed
-        ? { src: '/brand/reporter-ai-powered.svg', width: 128, height: 38 }
-        : { src: '/brand/reporter-ai.svg', width: 180, height: 49 };
+        ? { src: '/brand/reporter-ia-powered.svg', width: 128, height: 38 }
+        : { src: '/brand/reporter-ia.svg', width: 180, height: 49 };
   const powered = signature || (endorsed && !compact);
 
   return (
