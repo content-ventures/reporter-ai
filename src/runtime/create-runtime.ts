@@ -1,4 +1,4 @@
-import { createIndexedDbAssetStore, createMemoryAssetStore } from '../adapters/local/assets/index.ts';
+import { createIndexedDbAssetStore, createMemoryAssetStore, createStandInImageGenerator } from '../adapters/local/assets/index.ts';
 import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
 import { applyRunUpdate, createLocalGenerationService, keepLiveRun, recoverOrphanRuns } from '../adapters/local/generation/index.ts';
@@ -6,7 +6,8 @@ import type { Sleep } from '../adapters/local/generation/index.ts';
 import { assetCoverLoader, createLocalRenderService, servedCoverLoader } from '../adapters/local/render/index.ts';
 import { browserLocalStorage, createIdGenerator, createLocalPorts, systemClock, WORKSPACE_KEYS } from '../adapters/local/store/index.ts';
 import type { LocalPorts } from '../adapters/local/store/index.ts';
-import { creditLine } from '../domain/asset.ts';
+import { AI_IMAGE_CREDIT, creditLine } from '../domain/asset.ts';
+import { slotImageRef } from '../domain/image-generation.ts';
 import type { ProductionId, RunId } from '../domain/ids.ts';
 import { usedAssetIds } from '../domain/record.ts';
 import type { ProductionRecord } from '../domain/record.ts';
@@ -290,6 +291,13 @@ export function createRuntime(options: CreateRuntimeOptions = {}): Runtime {
 
   const getRecord = (productionId: ProductionId) => ports.records.record(productionId);
 
+  // "Gerar com IA" without a provider: the example's own images stand in, one after another.
+  const imageGeneration = createStandInImageGenerator({
+    samples: [...new Set([...fixtures.samplePhotos.map((photo) => photo.src), fixtures.samplePhoto.src, ...fixtures.images.map((image) => image.src)])],
+    delayMs: 900 * (options.pace ?? 1),
+    ...(options.sleep ? { sleep: options.sleep } : {}),
+  });
+
   const generation = createLocalGenerationService({
     clock,
     ids,
@@ -306,6 +314,13 @@ export function createRuntime(options: CreateRuntimeOptions = {}): Runtime {
     pace: options.pace,
     seed: options.seed,
     persistedFold: (runId) => ports.runs.fold(runId),
+    // A generated draft arrives illustrated, like the connected worker's.
+    illustrate: async (productionId, slot) => {
+      const made = await imageGeneration.generate({ productionId, prompt: slot.subject, ...(slot.orientation ? { orientation: slot.orientation } : {}) });
+      if (!made.ok) return undefined;
+      const stored = await imageStore.put({ type: 'generated', file: made.value.file, prompt: slot.subject }, { productionId, authorized: true, credit: AI_IMAGE_CREDIT });
+      return stored.ok ? slotImageRef(stored.value.id, slot) : undefined;
+    },
   });
 
   const exporter = createLocalExportService({ clock, getRecord, render, assets: imageStore });
@@ -495,6 +510,7 @@ export function createRuntime(options: CreateRuntimeOptions = {}): Runtime {
     feedback: ports.feedback,
     saveStatus: combinedSaveStatus(ports.saveStatus, imageStore),
     assets: imageStore,
+    imageGeneration,
     audit,
     tabs,
     usedAssetIds: () => usedAssetIds(ports.store.state.productions),

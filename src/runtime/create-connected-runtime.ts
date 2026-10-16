@@ -5,7 +5,7 @@ import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
 import { assetCoverLoader, createLocalRenderService, servedCoverLoader } from '../adapters/local/render/index.ts';
 import { reporterRequest, requestWorkspace, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
-import { createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
+import { createHttpImageGenerator, createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
 import { withServerAssets } from '../adapters/http/server-assets.ts';
 import { committedCommand } from '../adapters/http/committed-command.ts';
@@ -105,6 +105,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   return {
     mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest),generation: generation.service,render,export: exporter,assets,audit,
     visuals: createHttpVisualLibrary(),
+    imageGeneration: createHttpImageGenerator(),
     citations: createHttpCitationLibrary(),
     pipeline: { get: () => reporterRequest<PipelineView>('/pipeline'),save: (definition,baseRevision) => rpc('pipeline.save',[definition,baseRevision]) },
     session: {

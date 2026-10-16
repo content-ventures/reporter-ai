@@ -17,4 +17,5 @@ export * from './script-book.ts';
 export * from './render.ts';
 export * from './export.ts';
 export * from './assets.ts';
+export * from './image-generation.ts';
 export * from './audit.ts';

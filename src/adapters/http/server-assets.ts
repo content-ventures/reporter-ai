@@ -27,9 +27,11 @@ export function withServerAssets(local: AssetStore,current: () => readonly Serve
         let asset:ServerImageAsset['asset'];
         if (input.type === 'url') asset = await reporterRequest('/visuals/assets/link',{url:input.url,meta});
         else {
-          const valid=validateImageFile({name:input.fileName,type:input.file.type,size:input.file.size});if(!valid.ok)return valid;
+          const fileName=input.type==='upload'?input.fileName:'imagem-gerada.jpg';
+          const valid=validateImageFile({name:fileName,type:input.file.type,size:input.file.size});if(!valid.ok)return valid;
           const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256',await input.file.arrayBuffer()))].map(byte=>byte.toString(16).padStart(2,'0')).join('');
-          const prepared=await reporterRequest<{url:string;token:string}>('/visuals/assets/prepare',{id:crypto.randomUUID(),fileName:input.fileName,mime:valid.value.mime,size:input.file.size,hash,meta});
+          const prepared=await reporterRequest<{url:string;token:string}>('/visuals/assets/prepare',{id:crypto.randomUUID(),fileName,mime:valid.value.mime,size:input.file.size,hash,meta,
+            ...(input.type==='generated'?{prompt:input.prompt}:{})});
           const uploaded=await fetch(prepared.url,{method:'PUT',headers:{'content-type':valid.value.mime},body:input.file,signal:AbortSignal.timeout(120000)});
           if(!uploaded.ok)throw new Error('Não foi possível enviar a imagem. Tente novamente.');
           asset=await reporterRequest('/visuals/assets/complete',{token:prepared.token});

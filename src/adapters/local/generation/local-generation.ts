@@ -1,4 +1,5 @@
-import type { ArticleBody } from '../../../domain/article.ts';
+import type { ArticleBody, ImageSlot } from '../../../domain/article.ts';
+import type { ImageRef } from '../../../domain/asset.ts';
 import type { CarouselTemplate } from '../../../domain/carousel.ts';
 import type { ActorId, ProductionId, RunId, StepId } from '../../../domain/ids.ts';
 import { isRunActive, RUN_KIND_LABELS, SIMULATED_MODEL } from '../../../domain/run.ts';
@@ -99,6 +100,11 @@ export type LocalGenerationDeps = {
    * a step like a live one.
    */
   persistedFold?: (runId: RunId) => RunFold | undefined;
+  /**
+   * "Gerar com IA" for a suggested image (cover or figure) of a draft: generated, stored and
+   * returned as the use that replaces the suggestion; undefined keeps the suggestion.
+   */
+  illustrate?: (productionId: ProductionId, slot: ImageSlot) => Promise<ImageRef | undefined>;
 };
 
 export type AdoptRefusal = StartRefusal | 'not_running' | 'unsupported' | 'plan_changed';
@@ -524,6 +530,7 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
       openChild,
       ...(reuse ? { reuse } : {}),
       ...(failAt ? { failAt } : {}),
+      ...(deps.illustrate ? { illustrate: (slot: ImageSlot) => deps.illustrate!(meta.productionId, slot) } : {}),
     });
     void (async () => {
       try {

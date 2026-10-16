@@ -18,6 +18,8 @@ import { contentHash } from '../domain/text/hash';
 import { isRunActive } from '../domain/run';
 import { pendingReview } from '../domain/record';
 import { illustrateArticle } from './article-illustration';
+import { generateEditorialImage } from './image-generation';
+import { IMAGE_PROMPT_MAX } from '../domain/image-generation';
 
 const UUID = z.string().uuid(), provider = z.enum(['openverse','pexels','unsplash','pixabay']);
 async function imageBytes(image: LibraryImage): Promise<Buffer> {
@@ -195,6 +197,16 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
         if (!entry) throw new FlowError('IMAGE_UNAVAILABLE',404);
         entry.asset = { ...entry.asset,...input.patch };return entry.asset;
       },true,'reporter.edit',{ pipelines: false,items: { image_asset: [input.id] } })).value);
+    }
+    if (path[0] === 'generate') {
+      // "Gerar com IA" in the picker: the bytes go back to the browser, which keeps the one chosen.
+      const input = z.object({ productionId: UUID,prompt: z.string().trim().min(1).max(IMAGE_PROMPT_MAX),orientation: z.enum(['landscape','portrait','square']).optional() }).strict().parse(body);
+      await editorialTransaction('runtime',async (checkpoint,engine) => {
+        const member = checkpoint.state.members.find(member => member.personId === checkpoint.state.sessionPersonId);
+        if (!hasAnyRole(member,['editor','admin'])) throw new FlowError('CITATION_FORBIDDEN',403);
+        if (!engine.records.record(input.productionId)) throw new FlowError('NOT_FOUND',404);
+      },false,'reporter.edit',{ productions: [input.productionId],parts: [],sources: 'none',runs: 'none',pipelines: false });
+      return file((await generateEditorialImage(input,AbortSignal.any([request.signal,AbortSignal.timeout(150000)]))).bytes,'image/jpeg');
     }
     if (path[0] === 'images') return json(await importImage(body));
     if (path[0] === 'banners') return json(await saveBanner(body));

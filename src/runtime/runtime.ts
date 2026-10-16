@@ -13,6 +13,7 @@ import type { SessionMode, SessionPort } from '../ports/session.ts';
 import type { SourceIngest } from '../ports/source-ingest.ts';
 import type { PipelineSettings } from '../ports/pipeline-settings.ts';
 import type { VisualLibrary } from '../ports/visual-library.ts';
+import type { ImageGenerator } from '../ports/image-generation.ts';
 import type { CitationLibrary } from '../ports/citation-library.ts';
 import type { Clock, IdGenerator } from '../ports/system.ts';
 
@@ -76,6 +77,8 @@ export type Runtime = {
   readonly saveStatus: SaveStatusPort;
   /** Article images (cover and figures): bytes, credit and rights. */
   readonly assets: AssetStore;
+  /** "Gerar com IA": the server's provider, or the example's images in the simulation. */
+  readonly imageGeneration?: ImageGenerator;
   /** Audit trail (Logs, F1.7): read-only, admins only. */
   readonly audit: AuditQueries;
   /** Other tabs of this browser on the same saved workspace ("Aberta em outra aba"). */
