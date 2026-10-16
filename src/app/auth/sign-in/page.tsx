@@ -6,7 +6,6 @@ import {
   Alert,
   AuthShowcase,
   AuthSplit,
-  BrandLockup,
   Button,
   Field,
   Input,
@@ -16,6 +15,8 @@ import {
   Tabs,
 } from '@content-ventures/design-system/v3';
 import { authClient } from '@/lib/auth-client';
+import { ReporterBrand } from '@/ui/reporter-brand';
+import { PRODUCT_NAME } from '@/lib/brand';
 
 type Mode = 'sign-in' | 'sign-up';
 
@@ -53,8 +54,8 @@ export default function SignInPage() {
   }
 
   return <AuthSplit
-    brand={<BrandLockup name="Repórter AI" detail="Workspace editorial" size="sm" />}
-    aside={<AuthShowcase eyebrow="Repórter AI" title="Do material bruto ao artigo e ao carrossel" highlight="em um único fluxo editorial." />}
+    brand={<ReporterBrand signature />}
+    aside={<AuthShowcase eyebrow={PRODUCT_NAME} title="Do material bruto ao artigo e ao carrossel" highlight="em um único fluxo editorial." />}
   >
     <PageStack>
       <PageHeader

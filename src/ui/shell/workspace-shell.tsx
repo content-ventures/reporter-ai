@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   AppShell,
   Badge,
-  ProductMark,
   Sidebar,
   SidebarSearch,
   TopBar,
@@ -17,6 +16,8 @@ import type { ProductionListFilter, ProductionListItem } from '@/ports';
 import { activeNavItem, menuFor, type MenuItem, type MenuSection } from '@/registries';
 import { useApprovals, useProductions, useSession } from '@/state';
 import { iconFor } from '../icons';
+import { ReporterBrand } from '../reporter-brand';
+import { PRODUCT_NAME } from '@/lib/brand';
 import { R2_NAVIGATION, isR2PreviewPath } from '../r2-preview';
 import { NEW_PRODUCTION_HREF, PRODUCTIONS_HREF } from '../routes';
 import { ShellAccount } from './account';
@@ -44,7 +45,7 @@ function defaultCrumbs(pathname: string): Crumb[] {
   if (pathname === NEW_PRODUCTION_HREF) return [{ label: 'Produções', href: PRODUCTIONS_HREF }, { label: 'Nova produção' }];
   if (pathname.startsWith(`${PRODUCTIONS_HREF}/`)) return [{ label: 'Produções', href: PRODUCTIONS_HREF }];
   const item = activeNavItem(pathname, undefined, R2_NAVIGATION);
-  return [{ label: item?.label ?? 'Reporter IA' }];
+  return [{ label: item?.label ?? PRODUCT_NAME }];
 }
 
 /** Items of a later release keep their reason under "Em breve", with no link (their routes are 404). */
@@ -145,7 +146,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
         bleed={docked}
         sidebar={(
           <Sidebar
-            product={<ProductMark name="Reporter IA" caption="Content Ventures" />}
+            product={<ReporterBrand />}
             search={<SidebarSearch onOpen={openPalette} label="Buscar" />}
             groups={groups}
             utilities={utilities}
