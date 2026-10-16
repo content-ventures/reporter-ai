@@ -10,7 +10,7 @@ import { useStudio } from './studio-context';
 import { studioPrimary } from './studio-session-model';
 
 /**
- * The studio's header line (D2, CONTRACT §3.8): ← Produções · title · the article's status ·
+ * The studio's header line (D2, CONTRACT §3.8): title · the article's status ·
  * "Artigo · 2 de 5 ▾" · ⋯ · ONE primary with the next step written on it. Under the line, ONE
  * task notice: where a failed run or approval stands, or (from the frame) the other-tab notice.
  * Writing progress stays with the text in the editor. Behind ⋯: the brief, the structure, the

@@ -20,23 +20,52 @@ type RouteCase = {
   live?: boolean;
   /** Extra check on the loaded screen (desktop only: on a phone the panes are tabs). */
   desktop?: (page: Page) => Promise<void>;
+  /** A production route: its TopBar trail "Produções › <título> › <etapa>" (no title on an error). */
+  trail?: { title?: RegExp; stage: string };
 };
 
 const heading = (name: string | RegExp) => (page: Page) => page.getByRole("heading", { name, level: 1 }).first();
 const text = (value: string | RegExp) => (page: Page) => page.getByText(value).first();
 
+/**
+ * Navigation is by breadcrumbs only: no "Voltar para …" link, and the TopBar trail has "Produções"
+ * (a link), the title (a link to the stage the production is on) and the stage as the current page.
+ * On a phone the DS TopBar shows the first and the current level, so "Produções" stays a visible link.
+ */
+async function expectProductionTrail(page: Page, route: RouteCase, phone: boolean): Promise<void> {
+  const trail = route.trail;
+  if (!trail) return;
+  const nav = page.getByRole("navigation", { name: "Trilha de navegação" });
+  const productions = nav.getByRole("link", { name: "Produções", exact: true });
+  await expect(page.getByRole("link", { name: /^Voltar para/ })).toHaveCount(0);
+  await expect(productions).toBeVisible();
+  await expect(productions).toHaveAttribute("href", "/productions");
+  if (phone) return;
+  await expect(nav.locator('[aria-current="page"]')).toHaveText(trail.stage);
+  if (!trail.title) {
+    await expect(nav.getByRole("link")).toHaveCount(1);
+    return;
+  }
+  const id = route.path.split("/")[2];
+  const title = nav.getByRole("link", { name: trail.title });
+  await expect(title).toBeVisible();
+  // The title leads where the production opens (the same stage the index redirects to).
+  await expect(title).toHaveAttribute("href", route.landsOn ?? new RegExp(`^/productions/${id}/`));
+}
+
 const ROUTES: readonly RouteCase[] = [
   { name: "Visão geral", path: "/", ready: text("Precisa de você"), live: true },
   { name: "Produções", path: "/productions", ready: heading("Produções") },
   { name: "Nova produção", path: "/productions/new", ready: (page) => page.getByRole("button", { name: "Usar exemplo" }).first() },
-  { name: "Material", path: "/productions/prod-estudio-norte/source", ready: heading(/Estúdio Norte/) },
-  { name: "Material sem autorização", path: "/productions/prod-couro-nobre/source", ready: heading(/Couro Nobre/) },
-  { name: "Estúdio em edição", path: "/productions/prod-estudio-norte/article", ready: (page) => page.getByRole("textbox", { name: "Texto do artigo" }) },
-  { name: "Estúdio gerando", path: "/productions/prod-atelie-sul/article", ready: (page) => page.getByRole("textbox", { name: "Texto do artigo" }), live: true },
+  { name: "Material", path: "/productions/prod-estudio-norte/source", ready: heading(/Estúdio Norte/), trail: { title: /Estúdio Norte/, stage: "Material" } },
+  { name: "Material sem autorização", path: "/productions/prod-couro-nobre/source", ready: heading(/Couro Nobre/), trail: { title: /Couro Nobre/, stage: "Material" } },
+  { name: "Estúdio em edição", path: "/productions/prod-estudio-norte/article", ready: (page) => page.getByRole("textbox", { name: "Texto do artigo" }), trail: { title: /Estúdio Norte/, stage: "Artigo" } },
+  { name: "Estúdio gerando", path: "/productions/prod-atelie-sul/article", ready: (page) => page.getByRole("textbox", { name: "Texto do artigo" }), live: true, trail: { title: /Ateliê Sul/, stage: "Artigo" } },
   {
     name: "Estúdio com falha",
     path: "/productions/prod-horizonte/article",
     ready: heading(/Horizonte/),
+    trail: { title: /Horizonte/, stage: "Artigo" },
     // A failed generation exposes a direct recovery action in the studio banner.
     desktop: async (page) => {
       const retry = page.getByRole("button", { name: "Tentar de novo", exact: true });
@@ -44,20 +73,20 @@ const ROUTES: readonly RouteCase[] = [
       await retry.click({ trial: true });
     },
   },
-  { name: "Estúdio devolvido", path: "/productions/prod-casa-forma/article", ready: heading(/Casa Forma/) },
-  { name: "Revisão do artigo", path: "/productions/prod-aurora/article/review", ready: (page) => page.getByRole("button", { name: "Aprovar artigo" }) },
-  { name: "Carrossel", path: "/productions/prod-lume/carousel", ready: heading(/Lume/) },
-  { name: "Revisão do carrossel", path: "/productions/prod-lume/carousel/review", ready: heading(/Lume/) },
-  { name: "Carrossel desatualizado", path: "/productions/prod-patio-couro/carousel", ready: heading(/Pátio Couro/) },
-  { name: "Entrega concluída", path: "/productions/prod-bella-passo/delivery", ready: heading(/Bella Passo/) },
-  { name: "Entrega com carrossel desatualizado", path: "/productions/prod-patio-couro/delivery", ready: heading(/Pátio Couro/) },
-  { name: "Entrega · artigo final", path: "/productions/prod-bella-passo/delivery?view=article", ready: (page) => page.getByRole("list", { name: "Aprovação" }) },
-  { name: "Produção abre a etapa atual", path: "/productions/prod-lume", landsOn: "/productions/prod-lume/carousel", ready: heading(/Lume/) },
+  { name: "Estúdio devolvido", path: "/productions/prod-casa-forma/article", ready: heading(/Casa Forma/), trail: { title: /Casa Forma/, stage: "Artigo" } },
+  { name: "Revisão do artigo", path: "/productions/prod-aurora/article/review", ready: (page) => page.getByRole("button", { name: "Aprovar artigo" }), trail: { title: /Aurora/, stage: "Aprovação do artigo" } },
+  { name: "Carrossel", path: "/productions/prod-lume/carousel", ready: heading(/Lume/), trail: { title: /Lume/, stage: "Carrossel" } },
+  { name: "Revisão do carrossel", path: "/productions/prod-lume/carousel/review", ready: heading(/Lume/), trail: { title: /Lume/, stage: "Aprovação do carrossel" } },
+  { name: "Carrossel desatualizado", path: "/productions/prod-patio-couro/carousel", ready: heading(/Pátio Couro/), trail: { title: /Pátio Couro/, stage: "Carrossel" } },
+  { name: "Entrega concluída", path: "/productions/prod-bella-passo/delivery", ready: heading(/Bella Passo/), trail: { title: /Bella Passo/, stage: "Entrega" } },
+  { name: "Entrega com carrossel desatualizado", path: "/productions/prod-patio-couro/delivery", ready: heading(/Pátio Couro/), trail: { title: /Pátio Couro/, stage: "Entrega" } },
+  { name: "Entrega · artigo final", path: "/productions/prod-bella-passo/delivery?view=article", ready: (page) => page.getByRole("list", { name: "Aprovação" }), trail: { title: /Bella Passo/, stage: "Entrega" } },
+  { name: "Produção abre a etapa atual", path: "/productions/prod-lume", landsOn: "/productions/prod-lume/carousel", ready: heading(/Lume/), trail: { title: /Lume/, stage: "Carrossel" } },
   { name: "Modelos", path: "/library/templates", ready: (page) => page.getByRole("button", { name: "Seafood Manchete", exact: true }).first() },
   { name: "Versões", path: "/whats-new", ready: heading("Versões") },
   { name: "Logs", path: "/admin/audit", ready: heading("Logs") },
   { name: "Endereço antigo de versões", path: "/versions", landsOn: "/whats-new", ready: heading("Versões") },
-  { name: "Produção inexistente", path: "/productions/prod-inexistente/article", ready: heading("Produção não encontrada") },
+  { name: "Produção inexistente", path: "/productions/prod-inexistente/article", ready: heading("Produção não encontrada"), trail: { stage: "Artigo" } },
   {
     name: "Página inexistente",
     path: "/rota-inexistente",
@@ -85,6 +114,7 @@ for (const viewport of VIEWPORTS) {
         await expectHeadingOutline(page);
         await expectNoHorizontalOverflow(page);
         expect(errors, "erros no console").toEqual([]);
+        await expectProductionTrail(page, route, viewport.width < 768);
       });
     }
 
@@ -202,6 +232,8 @@ for (const viewport of VIEWPORTS) {
       ] as const) {
         await page.goto(path);
         await expect(heading(title)(page)).toBeVisible();
+        // A restricted production keeps the default trail: its title never shows.
+        await expect(page.getByRole("navigation", { name: "Trilha de navegação" }).getByText(/Couro Nobre/)).toHaveCount(0);
         await expectNoHorizontalOverflow(page);
       }
       expect(errors, "erros no console").toEqual([]);

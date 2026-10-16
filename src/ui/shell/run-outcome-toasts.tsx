@@ -18,7 +18,7 @@ const READY_TITLE: Partial<Record<PieceKind, string>> = {
   carousel: 'Textos do carrossel prontos',
 };
 
-/** A production's stages (studio, review, Material, Entrega): the immersive work areas. */
+/** A production's stages (studio, review, Material, Entrega): the docked work areas. */
 const STAGE_ROUTE = /^\/productions\/(?!new$)[^/]+\/[^/]+/;
 
 /**
@@ -26,7 +26,7 @@ const STAGE_ROUTE = /^\/productions\/(?!new$)[^/]+\/[^/]+/;
  * somewhere else, the shell says so — "Rascunho pronto · Abrir" (or "A IA parou antes de terminar ·
  * Abrir") — and stays quiet when the person is already looking at that studio. Inside another
  * production's work area it stays quiet too: the toast would cover the composer and the actions
- * there, and the bell lists the outcome once the person is back outside.
+ * there, and the bell (in the top bar on every route) lists the outcome.
  */
 export function RunOutcomeToasts({ productions }: { productions: readonly ProductionListItem[] }) {
   const pathname = usePathname();

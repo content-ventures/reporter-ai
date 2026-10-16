@@ -12,6 +12,7 @@ import {
   type NavGroup,
   type NavItem,
 } from '@content-ventures/design-system/v3';
+import { productionTrail } from '@/features/production/trail';
 import type { ProductionListFilter, ProductionListItem } from '@/ports';
 import { activeNavItem, menuFor, type MenuItem, type MenuSection } from '@/registries';
 import { useApprovals, useProductions, useSession } from '@/state';
@@ -19,7 +20,7 @@ import { iconFor } from '../icons';
 import { ReporterBrand } from '../reporter-brand';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { R2_NAVIGATION, isR2PreviewPath } from '../r2-preview';
-import { NEW_PRODUCTION_HREF, PRODUCTIONS_HREF } from '../routes';
+import { NEW_PRODUCTION_HREF, productionRoute, PRODUCTIONS_HREF } from '../routes';
 import { ShellAccount } from './account';
 import { BreadcrumbProvider, useDeclaredBreadcrumb } from './breadcrumb';
 import { useClientLinks } from './client-links';
@@ -40,10 +41,16 @@ const NO_PRODUCTIONS: readonly ProductionListItem[] = [];
  */
 const DOCKED_ROUTE = /^\/productions\/[^/]+\/[^/]+(?:\/review)?$/;
 
-/** Trail when the screen did not declare one: the menu item, or "Produções › Nova produção". */
+/**
+ * Trail when the screen did not declare one: the menu item, "Produções › Nova produção", or on a
+ * production stage "Produções › <etapa>" (the frame inserts the title once the production loads;
+ * an error or a restricted production keeps this one).
+ */
 function defaultCrumbs(pathname: string): Crumb[] {
   if (pathname === NEW_PRODUCTION_HREF) return [{ label: 'Produções', href: PRODUCTIONS_HREF }, { label: 'Nova produção' }];
-  if (pathname.startsWith(`${PRODUCTIONS_HREF}/`)) return [{ label: 'Produções', href: PRODUCTIONS_HREF }];
+  if (pathname.startsWith(`${PRODUCTIONS_HREF}/`)) {
+    return productionTrail(productionRoute(pathname.split('/').slice(3)), { productions: PRODUCTIONS_HREF });
+  }
   const item = activeNavItem(pathname, undefined, R2_NAVIGATION);
   return [{ label: item?.label ?? PRODUCT_NAME }];
 }
@@ -169,8 +176,9 @@ function ShellFrame({ children }: { children: ReactNode }) {
 
 /**
  * The workspace shell: menu from the navigation registry (released items, then "Em breve"
- * collapsed), ⌘K on every route, trail, bell, account and the run-outcome toasts. Inside a
- * production it steps aside (immersive). Mounted once by `app/(workspace)/layout.tsx`.
+ * collapsed), ⌘K on every route, trail (the only page navigation), bell, account and the
+ * run-outcome toasts. Inside a production it docks the work area edge to edge. Mounted once by
+ * `app/(workspace)/layout.tsx`.
  */
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   return (

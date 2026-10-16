@@ -5,7 +5,8 @@ import type { PieceApproval } from '../../ports/index.ts';
 /**
  * The production journey as the header shows it (D3, §2.6): one quiet menu button in the header
  * line, "Artigo · 2 de 5 ▾", listing every stage with where it stands ("Concluída", "Com Pedro",
- * "Aprovado") or why it is blocked. Pure, so it is tested without React.
+ * "Aprovado") or why it is blocked; and the stage a production opens on. Pure, so it is tested
+ * without React.
  */
 
 /** "Disponível após aprovar o artigo." → the menu's reason: short, without the final period. */
@@ -86,4 +87,30 @@ export function journeyMenuItems(stages: readonly StageView[], viewedIndex: numb
 export function decidesAt(approvals: Partial<Record<PieceKind, PieceApproval>> | undefined, kind: PieceKind | undefined): boolean {
   const approval = kind ? approvals?.[kind] : undefined;
   return Boolean(approval && approval.viewer.canDecide && approval.state !== 'none');
+}
+
+/** The stage a production opens on, and whether it opens as that piece's guided review. */
+export type StageTarget = { stage: StageView; review: boolean };
+
+/**
+ * Where `/productions/[id]` and the trail's title lead: the stage the journey is on. At the
+ * approval stage, whoever decides there opens the guided review and everyone else the piece's
+ * studio (`decidesAt`); a piece whose approval lives inside its own stage (the carousel) opens the
+ * review too when it waits for this viewer (sent to them, or to nobody in particular while they
+ * may decide). Nothing while the production loads.
+ */
+export function currentStageTarget(
+  detail: { stages: readonly StageView[]; currentStageId: string; approvals: Partial<Record<PieceKind, PieceApproval>> } | undefined,
+): StageTarget | undefined {
+  const stage = detail?.stages.find((candidate) => candidate.id === detail.currentStageId);
+  if (!detail || !stage) return undefined;
+  if (!stage.pieceKind) return { stage, review: false };
+  const approval = detail.approvals[stage.pieceKind];
+  const waitsForViewer =
+    stage.kind === 'piece' &&
+    approval?.state === 'awaiting' &&
+    approval.viewer.canDecide &&
+    (approval.viewer.isAssignee || !approval.request?.assignee);
+  const review = waitsForViewer || (stage.kind === 'gate' && decidesAt(detail.approvals, stage.pieceKind));
+  return { stage, review };
 }

@@ -2,7 +2,16 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { StageView } from '../../domain/index.ts';
 import type { PieceApproval } from '../../ports/index.ts';
-import { decidesAt, journeyLabel, journeyMenuItems, stageDescription, stageNavigable, stageReason, viewedStageIndex } from './journey.ts';
+import {
+  currentStageTarget,
+  decidesAt,
+  journeyLabel,
+  journeyMenuItems,
+  stageDescription,
+  stageNavigable,
+  stageReason,
+  viewedStageIndex,
+} from './journey.ts';
 
 /** Aurora: the article was sent to Pedro; the carousel and the delivery wait for its approval. */
 const STAGES: StageView[] = [
@@ -111,5 +120,53 @@ describe('journey menu (D3, COPY §5.3)', () => {
     assert.equal(decidesAt({ article: approval('none', true) }, 'article'), false, 'nothing sent yet: the studio');
     assert.equal(decidesAt({}, 'article'), false);
     assert.equal(decidesAt(undefined, undefined), false);
+  });
+});
+
+/** The stage a production opens on, as `[stage id, opens the review]`. */
+function opens(stages: readonly StageView[], currentStageId: string, approvals: Partial<Record<'article' | 'carousel', PieceApproval>>) {
+  const target = currentStageTarget({ stages, currentStageId, approvals });
+  return target ? [target.stage.id, target.review] : undefined;
+}
+
+/** The carousel waits at its own stage, sent to `assignee` (null: to nobody in particular). */
+function carouselAwaiting(viewer: { canDecide: boolean; isAssignee: boolean }, assignee: string | null): PieceApproval {
+  const base = approval('awaiting', viewer.canDecide);
+  return {
+    ...base,
+    kind: 'carousel',
+    gateId: 'carousel.approval',
+    request: { assignee: assignee ? { id: assignee, name: assignee } : null },
+    viewer: { ...base.viewer, isAssignee: viewer.isAssignee },
+  } as unknown as PieceApproval;
+}
+
+describe('where a production opens (the index and the trail’s title)', () => {
+  it('at the approval stage, the decider opens the review and everyone else the studio', () => {
+    assert.deepEqual(opens(STAGES, 'approval', { article: approval('awaiting', true) }), ['approval', true]);
+    assert.deepEqual(opens(STAGES, 'approval', { article: approval('awaiting', false) }), ['approval', false], 'the sender waits in the studio');
+    assert.deepEqual(opens(STAGES, 'approval', { article: approval('none', true) }), ['approval', false], 'nothing sent yet');
+  });
+
+  it('the carousel opens its review only when it waits for this viewer', () => {
+    const carousel = STAGES.map((stage) => (stage.id === 'carousel' ? { ...stage, state: 'current' as const, selectable: true } : stage));
+    assert.deepEqual(opens(carousel, 'carousel', { carousel: carouselAwaiting({ canDecide: true, isAssignee: true }, 'person-pedro') }), ['carousel', true]);
+    assert.deepEqual(opens(carousel, 'carousel', { carousel: carouselAwaiting({ canDecide: true, isAssignee: false }, null) }), ['carousel', true], 'sent to nobody in particular');
+    assert.deepEqual(opens(carousel, 'carousel', { carousel: carouselAwaiting({ canDecide: true, isAssignee: false }, 'person-ana') }), ['carousel', false], 'sent to someone else');
+    assert.deepEqual(opens(carousel, 'carousel', { carousel: carouselAwaiting({ canDecide: false, isAssignee: false }, null) }), ['carousel', false], 'the sender');
+  });
+
+  it('the writing flow (no Material, no Carrossel) opens its own stages', () => {
+    const writing = STAGES.filter((stage) => stage.kind !== 'source' && stage.pieceKind !== 'carousel');
+    assert.deepEqual(writing.map((stage) => stage.id), ['article', 'approval', 'delivery']);
+    assert.deepEqual(opens(writing, 'article', {}), ['article', false]);
+    assert.deepEqual(opens(writing, 'approval', { article: approval('awaiting', true) }), ['approval', true]);
+    assert.deepEqual(opens(writing, 'approval', { article: approval('awaiting', false) }), ['approval', false]);
+    assert.deepEqual(opens(writing, 'delivery', { article: approval('approved', true) }), ['delivery', false]);
+  });
+
+  it('nothing while the production loads or names no stage of its journey', () => {
+    assert.equal(currentStageTarget(undefined), undefined);
+    assert.equal(opens(STAGES, 'missing', {}), undefined);
   });
 });

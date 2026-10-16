@@ -234,7 +234,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
       : null,
   );
 
-  // ── Header line: "← Aprovações" for whoever decides, the status in the decider's words, the ⋯ ──
+  // ── Header line: the status in the decider's words, the ⋯ (the way back is the TopBar trail) ──
   const menu: MenuSection[] = [
     {
       items: [
@@ -400,7 +400,6 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
     <>
       <ReviewSurface
         header={{
-          ...(canDecide ? { back: { label: 'Aprovações', href: approvalsHref() } } : {}),
           ...(noticeKind === 'awaiting_you' && data ? { status: <StatusBadge kind="piece" status={data.status} label="Aguardando sua aprovação" /> } : {}),
           menu,
           primary: nextPrimary,

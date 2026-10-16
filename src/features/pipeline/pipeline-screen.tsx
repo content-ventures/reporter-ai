@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  Accordion, Alert, Badge, Breadcrumb, Button, ButtonGroup, ConfirmDialog, DescriptionList, EmptyState, ErrorState, Field, FieldGroup,
+  Accordion, Alert, Badge, Button, ButtonGroup, ConfirmDialog, DescriptionList, EmptyState, ErrorState, Field, FieldGroup,
   MetaList, PageHeader, PageStack, Panel, Section, Select, Tabs, Timeline, toast,
 } from '@content-ventures/design-system/v3';
 import { RotateCw, Save } from '@content-ventures/design-system/v3/icons';
@@ -11,7 +11,6 @@ import { PIPELINE_STEP_KEYS, PIPELINE_STEP_LABELS, pipelineRevision, validatePip
 import type { PipelineDefinition, PipelineStepKey, PipelineView } from '@/domain/pipeline';
 import { useRuntime } from '@/state';
 import { useBreadcrumb, useLeaveGuard } from '@/ui/shell';
-import { useMediaQuery } from '@/ui/use-media-query';
 import { PipelineCatalog, promptChanged, type PromptKey } from './pipeline-catalog';
 import { PipelineWorkers } from './pipeline-workers';
 import { PIPELINE_WORKERS, type PipelineWorkerKey } from '@/domain/pipeline-workers';
@@ -26,7 +25,6 @@ export function PipelineScreen() {
   const { runtime,error: runtimeError } = useRuntime();
   const port = runtime?.pipeline;
   const router = useRouter();
-  const narrow = useMediaQuery('(max-width: 640px)');
   const [view,setView] = useState<PipelineView>();
   const [draft,setDraft] = useState<PipelineDefinition>();
   const [tab,setTab] = useState<PromptKey>('outline');
@@ -127,7 +125,6 @@ export function PipelineScreen() {
   }
   return <>
     <PageStack>
-      {narrow && currentWorker && <Breadcrumb variant="compact" items={[{ label: 'Prompts', href: '/config' }, { label: currentWorker.title }]} />}
       <PageHeader title={currentWorker?.title ?? 'Prompts'}
         description={currentWorker?.description ?? 'Gerencie os workers, edite seus prompts e acompanhe as execuções.'}
         status={<Badge tone={dirty ? 'amber' : 'gray'}>{dirty ? 'Alterações não ativadas' : `Revisão ${view.active.revision} ativa`}</Badge>}

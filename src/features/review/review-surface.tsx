@@ -15,7 +15,7 @@ import type { ProductionHeaderProps } from '@/features/production/production-hea
  * in view while reading a long piece; on a phone it keeps the bottom edge.
  */
 export type ReviewSurfaceProps = {
-  /** The header line: back link, status, the screen's ⋯ items. */
+  /** The header line: status, the screen's ⋯ items, the primary. */
   header: ProductionHeaderProps;
   /** Name of the main region ("Texto", "Slides"). */
   mainLabel: string;
