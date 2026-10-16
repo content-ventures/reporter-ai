@@ -10,17 +10,20 @@ import { usePerson } from '@/ui/person-avatar';
 import { Provenance } from '@/ui/provenance';
 import { RunTrace } from '@/ui/run-trace';
 import { SendForApprovalDialog } from '@/ui/send-for-approval-dialog';
+import { useStageMove } from '@/ui/use-stage-move';
 import { useStudio } from './studio-context';
 import { RewriteDialog } from './studio-footer';
 import { historyTitle } from './studio-model';
 
 /**
  * What opens over the studio from ⋯ and the primary, one at a time (`panes.dialog`): the pre-send
- * dialog, "Editar pauta", "Ver estrutura", "Histórico de versões", "Como a IA escreveu" and
- * "Reescrever o artigo do zero?" (CONTRACT §3.8, COPY §2.7 and §2.8).
+ * dialog (once sent, the board shows the card waiting for the approver), "Editar pauta", "Ver
+ * estrutura", "Histórico de versões", "Como a IA escreveu" and "Reescrever o artigo do zero?"
+ * (CONTRACT §3.8, COPY §2.7 and §2.8).
  */
 export function StudioDialogs() {
   const studio = useStudio();
+  const moves = useStageMove();
   const { panes, approval } = studio;
   const { dialog, closeDialog } = panes;
   return (
@@ -35,6 +38,9 @@ export function StudioDialogs() {
           onJump={(target) => studio.actions.jumpTo(target)}
           onMarkReviewed={studio.actions.markTextReviewed}
           prepare={studio.prepareSend}
+          onSent={({ assignee }) =>
+            moves.sent({ productionId: studio.production.id, pieceId: approval.pieceId, kind: 'article', assigneeName: assignee.name })
+          }
         />
       ) : null}
       <BriefDrawer productionId={studio.production.id} open={dialog === 'brief'} onClose={closeDialog} />

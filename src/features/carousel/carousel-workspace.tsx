@@ -33,16 +33,17 @@ import {
   type VersionView,
 } from '@/domain';
 import type { PieceView, ProductionDetail, SlotFit } from '@/ports';
-import { useCommands, usePiece, useRun, useRuntime, useSaveStatus, useSession, useVersion } from '@/state';
+import { useCommands, usePeople, usePiece, useRun, useRuntime, useSaveStatus, useSession, useVersion } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
 import { rememberTemplate } from '@/features/library/last-template';
 import { switchSummary } from '@/features/library/library-model';
 import { TemplatePickerDrawer } from '@/features/library/template-drawers';
 import { plural } from '@/ui/format';
-import { deliveryHref, pieceHref, reviewHref } from '@/ui/routes';
+import { boardHref, deliveryHref, pieceHref, reviewHref } from '@/ui/routes';
 import { RunTrace } from '@/ui/run-trace';
 import { takeArmedSimulation, useCommandGroup, useFocusMode } from '@/ui/shell';
 import { usePersistentFlag } from '@/ui/shell/preference';
+import { useStageMove } from '@/ui/use-stage-move';
 import {
   CarouselDocumentState,
   CarouselHeaderActions,
@@ -94,6 +95,8 @@ function slideWords(slide: Slide): number {
 export function CarouselWorkspace({ production, carousel, article, startedRunId, onRunStarted }: CarouselWorkspaceProps) {
   const router = useRouter();
   const commands = useCommands();
+  const people = usePeople();
+  const moves = useStageMove();
   const { runtime } = useRuntime();
   const focusMode = useFocusMode();
   const saveState = useSaveStatus();
@@ -379,16 +382,21 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     else toast('Versão não restaurada', { tone: 'error', description: result.refusal.message });
   };
 
+  // One click (the approver is the suggested one), then the board with the card waiting for them.
   const sendToReview = async () => {
     setSending(true);
     const saved = await draft.flush();
     const result = saved ? await commands.production.requestReview(carousel.id) : undefined;
     setSending(false);
-    if (result && !result.ok && result.refusal.code !== 'already_requested') {
-      toast('Não foi possível enviar para aprovação', { tone: 'error', description: result.refusal.message });
+    if (!result) return;
+    if (!result.ok) {
+      if (result.refusal.code === 'already_requested') router.push(boardHref(production.id));
+      else toast('Não foi possível enviar para aprovação', { tone: 'error', description: result.refusal.message });
       return;
     }
-    if (result) router.push(reviewHref(production.id, 'carousel'));
+    const { assigneeId } = result.value.request;
+    const assignee = assigneeId ? people.data?.find((person) => person.id === assigneeId) : undefined;
+    moves.sent({ productionId: production.id, pieceId: carousel.id, kind: 'carousel', assigneeName: assignee?.name });
   };
 
   const regenerate = async () => {
