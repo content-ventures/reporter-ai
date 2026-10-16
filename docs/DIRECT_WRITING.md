@@ -12,7 +12,8 @@ text, reloading and using “Continuar” on the home page reopen that same draf
 The addition is frontend-only, using the current local adapter and browser persistence.
 `ProductionCommands.createBlank` atomically creates a production and article draft without
 a fabricated transcript, source authorization, AI generation or immutable version. Invalid
-input and users without an editor/admin role leave the workspace unchanged. The entry button
+input and users without `production.create` (editor or admin, see the role matrix in
+`docs/LOCAL_BACKEND.md`) leave the workspace unchanged and never see the button. The entry button
 stays busy until navigation, preventing repeated clicks from creating duplicate drafts.
 
 `writing-article` is an additional R1 flow: Artigo → Aprovação → Entrega. It starts directly
