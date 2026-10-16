@@ -2,25 +2,24 @@
 
 import { Suspense, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { ErrorState, PageHeader, PageStack, SplitLayout, MetricStrip, Panel, Section, TextLink } from '@content-ventures/design-system/v3';
-import type { OverviewData } from '@/ports';
+import { ErrorState, PageHeader, PageStack, SplitLayout } from '@content-ventures/design-system/v3';
+import type { DeskView, InProgressItem, OverviewData } from '@/ports';
 import { dashboardWidgetsFor } from '@/registries';
 import { useOverview, useSession } from '@/state';
-import { PRODUCTIONS_HREF } from '@/ui/routes';
 import { NewProductionLink } from '@/features/new-production/new-production-link';
 import { StartWritingButton } from '@/features/new-production/start-writing-button';
 import { usePhone } from '@/ui/use-phone';
 import { useNow } from '@/ui/time';
-import { deskSummary } from './desk-copy';
-import { InProgressPanel } from './in-progress-panel';
+import { deskSummary, greeting } from './desk-copy';
+import { ContinueCarousel } from './continue-carousel';
 import { NeedsYouPanel } from './needs-you-panel';
 import { RecentActivity } from './recent-activity';
+import { RecentProductions } from './recent-productions';
 import { parseRange, type OverviewRangeKey } from './overview-format';
-import { FeaturedProduction } from './featured-production';
-import { TemplateStrip } from './template-strip';
-import { WeekLine } from './week-line';
+import { StageFigures } from './stage-figures';
+import { WeekPanel } from './week-panel';
 
-/** Start work, resume a production and resolve the viewer’s pending actions. */
+/** Greet, show where the work stands, resume it and resolve the viewer’s pending actions. */
 
 type BodyProps = { range: OverviewRangeKey; onRangeChange: (range: OverviewRangeKey) => void };
 
@@ -28,22 +27,36 @@ type BodyProps = { range: OverviewRangeKey; onRangeChange: (range: OverviewRange
 const WIDGETS = new Set(dashboardWidgetsFor().map((widget) => widget.id));
 const shows = (id: string) => WIDGETS.has(id);
 
-const TITLE = 'Início';
-const STAGES = [
-  { stage: 'material', label: 'Material' },
-  { stage: 'writing', label: 'Artigo' },
-  { stage: 'approval', label: 'Aprovação' },
-  { stage: 'carousel', label: 'Carrossel' },
-  { stage: 'delivery', label: 'Entrega' },
-] as const;
+/** Most cards "Continuar de onde parou" offers. */
+const CONTINUE_LIMIT = 8;
 
-/** "Bom dia, Pedro. 2 peças esperam sua aprovação." once the desk, the viewer and the clock exist. */
-function useSummary(data: OverviewData | undefined): string | undefined {
+/** A non-breaking space keeps the header's lines while the clock, the viewer and the desk load. */
+const BLANK = '\u00a0';
+
+/** "Bom dia, João" over "1 peça voltou com ajustes." once the desk, the viewer and the clock exist. */
+function useGreeting(data: OverviewData | undefined): { title: string; summary: string } {
   const session = useSession();
   const now = useNow();
-  if (!data || !now || session.status === 'loading') return undefined;
-  return deskSummary({ hour: now.getHours(), name: session.data?.current?.name, groups: data.desk.groups });
+  if (!now || session.status === 'loading') return { title: BLANK, summary: BLANK };
+  return { title: greeting(now.getHours(), session.data?.current?.name), summary: data ? deskSummary(data.desk.groups) : BLANK };
 }
+
+/** Every production in progress, the viewer's next move first, then the latest activity. */
+function continueItems(desk: DeskView): InProgressItem[] {
+  const first = desk.continueWith?.productionId;
+  return desk.team
+    .flatMap((group) => group.items)
+    .filter((item) => item.situation.status !== 'completed')
+    .sort((a, b) => Number(b.productionId === first) - Number(a.productionId === first) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .slice(0, CONTINUE_LIMIT);
+}
+
+const actions = (
+  <>
+    <NewProductionLink />
+    <StartWritingButton />
+  </>
+);
 
 function OverviewBody({ range, onRangeChange }: BodyProps) {
   const query = useOverview(range);
@@ -52,46 +65,29 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
   const [last, setLast] = useState<OverviewData | undefined>(undefined);
   if (query.status === 'ready' && query.data !== last) setLast(query.data);
   const data = query.status === 'ready' ? query.data : last;
-  const summary = useSummary(data);
-  // The week line names the window of the data on screen until the new window arrives.
-  const shownRange = data?.range ?? range;
+  const header = useGreeting(data);
 
   if (query.status === 'error' && data === undefined) {
     return (
       <PageStack>
-        <PageHeader title={TITLE} actions={<><NewProductionLink /><StartWritingButton /></>} />
+        <PageHeader title={header.title} actions={actions} />
         <ErrorState size="panel" title="Não foi possível carregar o Início" description={query.error?.message} onRetry={query.retry} />
       </PageStack>
     );
   }
 
-  const featured = <FeaturedProduction item={data?.desk.continueWith ?? data?.desk.inProgress[0]} loading={!data} />;
-  const recent = shows('in-progress') && !data?.empty && <InProgressPanel desk={data?.desk} />;
+  const figures = shows('team') && <StageFigures desk={data?.desk} />;
+  const resume = shows('in-progress') && <ContinueCarousel items={data ? continueItems(data.desk) : undefined} />;
+  const recent = shows('in-progress') && !data?.empty && <RecentProductions />;
   const pending = shows('needs-you') && <NeedsYouPanel desk={data?.desk} />;
+  const week = shows('week') && <WeekPanel data={data} range={range} onRangeChange={onRangeChange} />;
   const activity = shows('team') && <RecentActivity items={data?.activity} />;
-  const stages = shows('team') && <Panel><Section title="Produções por etapa" action={<TextLink href={PRODUCTIONS_HREF} size="sm">Abrir kanban</TextLink>}>
-    <MetricStrip label="Contagem por etapa" items={STAGES.map(({ stage, label }) => ({ label,
-      value: data?.desk.team.find(group => group.stage === stage)?.items.length ?? 0, loading: !data,
-    }))} />
-  </Section></Panel>;
 
   return (
     <PageStack>
-      {/* A non-breaking space keeps the sentence's line while it loads (no jump under the title). */}
-      <PageHeader
-        title={TITLE}
-        description={summary ?? ' '}
-        actions={
-          <>
-            <NewProductionLink />
-            <StartWritingButton />
-          </>
-        }
-      />
-      {phone ? <PageStack>{featured}{pending}{recent}<TemplateStrip />{stages}{activity}</PageStack>
-        : <SplitLayout main={<>{featured}{recent}<TemplateStrip /></>} asideLabel="Sua mesa de trabalho"
-            aside={<>{pending}{stages}{activity}</>} />}
-      {shows('week') && data && <WeekLine week={data.desk.week} shownRange={shownRange} range={range} onRangeChange={onRangeChange} />}
+      <PageHeader title={header.title} description={header.summary} actions={actions} />
+      {phone ? <PageStack>{pending}{figures}{resume}{recent}{week}{activity}</PageStack>
+        : <SplitLayout main={<>{figures}{resume}{recent}</>} asideLabel="Sua mesa de trabalho" aside={<>{pending}{week}{activity}</>} />}
     </PageStack>
   );
 }

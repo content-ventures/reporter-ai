@@ -6,6 +6,9 @@ export const VIEWPORTS = [
   { name: "390", width: 390, height: 844 },
 ] as const;
 
+/** Início's title: the time-of-day greeting ("Bom dia, João"). */
+export const GREETING = /^(Bom dia|Boa tarde|Boa noite)\b/;
+
 /** A console message as the allow-list reads it: its text, then " @ " and the URL it is about. */
 function describeMessage(message: ConsoleMessage): string {
   return `${message.text()} @ ${message.location().url}`;

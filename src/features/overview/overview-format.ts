@@ -36,3 +36,41 @@ export function durationText(ms: number): string {
   const figure = durationFigure(ms);
   return `${figure.value} ${figure.unit}`;
 }
+
+const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+
+/** "16/10" in the viewer's local calendar. */
+function dayMonth(at: Date): string {
+  return `${String(at.getDate()).padStart(2, '0')}/${String(at.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export type ApprovalBar = { label: string; title: string; approved: number };
+
+/**
+ * "Sua semana" bars from the overview's approvals per day (`rhythm`, oldest first): one bar per
+ * day for 7 days ("sex", tooltip "sexta · 16/10"), one per 7-day stretch for 30 days, counted back
+ * from today so the last bar is the current week ("10/10", tooltip "10/10 a 16/10").
+ */
+export function approvalBars(days: readonly { dayEnd: string; current: number }[], range: OverviewRangeKey): ApprovalBar[] {
+  if (range === '7d') {
+    return days.map((day) => {
+      const at = new Date(day.dayEnd);
+      const weekday = WEEKDAYS[at.getDay()] ?? '';
+      return { label: weekday.slice(0, 3), title: `${weekday} · ${dayMonth(at)}`, approved: day.current };
+    });
+  }
+  const bars: ApprovalBar[] = [];
+  for (let end = days.length; end > 0; end -= 7) {
+    const stretch = days.slice(Math.max(0, end - 7), end);
+    const first = stretch[0];
+    const last = stretch[stretch.length - 1];
+    if (!first || !last) continue;
+    const from = dayMonth(new Date(first.dayEnd));
+    bars.unshift({
+      label: from,
+      title: `${from} a ${dayMonth(new Date(last.dayEnd))}`,
+      approved: stretch.reduce((total, day) => total + day.current, 0),
+    });
+  }
+  return bars;
+}
