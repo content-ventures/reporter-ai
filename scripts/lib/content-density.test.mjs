@@ -55,3 +55,33 @@ test("rejects a page-header back link: navigation is the TopBar trail", () => {
   assert.equal(violations.length, 1);
   assert.match(violations[0], /PageHeader back is not used; the TopBar trail is the only page navigation/);
 });
+
+test("rejects props spread on a page header: they could carry a back link past the policy", () => {
+  const source = `
+    const props = { back: { label: "Produções", href: "/productions" } };
+    export function Page() {
+      return <PageHeader {...props} title="Lume" />;
+    }
+  `;
+
+  const violations = contentDensityViolations(source);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /PageHeader props are written out \(no spread\)/);
+});
+
+test("reads an aliased or namespaced page header too", () => {
+  const source = `
+    import * as DS from "@content-ventures/design-system/v3";
+    import { PageHeader as Header } from "@content-ventures/design-system/v3";
+    export function Page() {
+      return <>
+        <Header back={{ label: "Produções", href: "/productions" }} title="Lume" />
+        <DS.PageHeader back={{ label: "Produções", href: "/productions" }} title="Lume" />
+      </>;
+    }
+  `;
+
+  const violations = contentDensityViolations(source);
+  assert.equal(violations.length, 2);
+  for (const violation of violations) assert.match(violation, /PageHeader back is not used/);
+});

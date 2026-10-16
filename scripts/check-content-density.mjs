@@ -33,6 +33,11 @@ function inspectPageHeader(attributes, projectPath, violations) {
     violations.push(`${projectPath}: PageHeader back is not used; the TopBar trail is the only page navigation`);
   }
 
+  // A spread could carry `back` or stacked copy past this policy: header props are written out.
+  if (attributes.properties.some(ts.isJsxSpreadAttribute)) {
+    violations.push(`${projectPath}: PageHeader props are written out (no spread) so the content policy can read them`);
+  }
+
   const supporting = ["eyebrow", "description", "meta"].filter((name) => props.has(name));
 
   if (supporting.length > 1) {
@@ -66,14 +71,24 @@ export function contentDensityViolations(source, projectPath = "source.tsx") {
     ts.ScriptKind.TSX,
   );
   const violations = [];
+  // `import { PageHeader as Header }` is still the page header; so is `<DS.PageHeader>`.
+  const headerNames = new Set(["PageHeader"]);
+  for (const statement of sourceFile.statements) {
+    const bindings = ts.isImportDeclaration(statement) ? statement.importClause?.namedBindings : undefined;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const specifier of bindings.elements) {
+      if ((specifier.propertyName ?? specifier.name).text === "PageHeader") headerNames.add(specifier.name.text);
+    }
+  }
+
+  function isPageHeader(tagName) {
+    if (ts.isIdentifier(tagName)) return headerNames.has(tagName.text);
+    return ts.isPropertyAccessExpression(tagName) && tagName.name.text === "PageHeader";
+  }
 
   function visit(node) {
-    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
-      const name = node.tagName.getText(sourceFile);
-
-      if (name === "PageHeader") {
-        inspectPageHeader(node.attributes, projectPath, violations);
-      }
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && isPageHeader(node.tagName)) {
+      inspectPageHeader(node.attributes, projectPath, violations);
     }
 
     if (ts.isPropertyAssignment(node) && node.name.getText(sourceFile) === "hint") {
