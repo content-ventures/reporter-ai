@@ -72,11 +72,45 @@ approve its own request only in this pilot. Ordinary membership retains the orig
 The local operator starts with the **Admin** test profile. A **Perfil de teste** selector at the
 bottom-left of the sidebar offers **Editor**, **Aprovador** and **Admin**, without sign-out or
 changing the acting identity. The same choices remain in the account menu (including the collapsed
-sidebar), **Mais ações → Trocar perfil** inside productions, and ⌘K. Editor can create/edit/send;
-Aprovador can review both articles and carousels; Admin carries all local pilot permissions.
+sidebar), **Mais ações → Trocar perfil** inside productions, and ⌘K. The profiles hold the same
+roles as cloud members (Aprovador is approver plus creative reviewer), so the role matrix below
+applies to them unchanged.
 
-The selected roles persist across requests, reloads and local tabs, while unsaved form text survives
-a profile change. A local Editor can send to the same operator, then switch to Aprovador to decide;
+### Role matrix
+
+One table, `src/domain/permissions.ts`, says what each role may do. The UI reads it to hide what a
+person cannot use, the store commands check it first (the simulated runtime and the server engine
+run the same commands), and the server routes outside the engine check it against the member row
+(locally, the stored test profile). E = editor, Ap = approver, CR = creative reviewer, Ad = admin.
+
+| Capability | Who | Covers |
+| --- | --- | --- |
+| `production.create` | E, Ad | Nova produção, Escrever do zero, upload, link, material analysis |
+| `production.edit` | E, Ad | Rename, brief, speakers, people, material authorisation |
+| `production.archive` | E, Ad | Arquivar (row, bulk bar, kanban drag) |
+| `piece.edit` | E, Ad | Draft, cover and images, versions, restore, carousel, suggestions, generation, assistant |
+| `piece.send` | E, Ad | Enviar para aprovação |
+| `delivery.record` | E, Ad | Baixar pacote |
+| `feedback.record` | E, Ad | 👍/👎 on AI output, Retorno do piloto |
+| `library.edit` | E, Ad | Library photos, banners, citations |
+| `pipeline.edit` | Ad | Prompts (`/config` answers AccessState to others) |
+| `audit.read` | Ad | Logs |
+| `profile.edit_self` | all | One's own name, role and organisation |
+
+Gate decisions keep their own rule (article: Ap, Ad; carousel: CR, Ap, Ad; never the sender), and
+"Retirar envio" stays with the sender or an admin. Every member who can open a production reads
+it: an approver opens the article and the carousel read-only, with the versions and the review but
+no edit action. A role without `production.create` never sees "Nova produção"; a deep link to
+`/productions/new` answers the DS AccessState, so switching the local profile to Aprovador on that
+page drops the unsaved form.
+
+A refusal is the same everywhere: the store and the server answer `forbidden` with the sentence
+naming who can ("Só editor ou admin cria produções."), SQL `42501` and route refusals become one
+403 `FORBIDDEN`, and the client maps that code, never the status, to the refusal without a save
+error or a write kept for "Tentar de novo". An action the person started opens one popup, "Você não
+tem permissão para isso" with that sentence (`notifyRefusal`); background saves stay quiet.
+
+The selected roles persist across requests, reloads and local tabs. A local Editor can send to the same operator, then switch to Aprovador to decide;
 Editor still cannot approve. The approval queue and next-step actions follow the current profile.
 The server grants this capability only to the trusted loopback identity in the fixed local workspace
 and explicitly refuses profile selection in cloud mode. Cloud membership roles replace checkpoint

@@ -232,10 +232,13 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole("option", { name: /Entrar como Pedro/ }).click();
       await expect(text("Você entrou como Pedro")(page)).toBeVisible();
       await expect(page.getByRole("button", { name: "Escrever do zero", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Nova produção", exact: true })).toHaveCount(0);
       await expect(page.getByRole("region", { name: "Produções recentes", exact: true }).getByRole("link", { name: /Couro Nobre/ })).toHaveCount(0);
 
       for (const [path, title] of [
         ["/admin/audit", "Logs restritos a administradores"],
+        ["/productions/new", "Nova produção é para quem edita"],
+        ["/config", "Prompts restritos a administradores"],
         ["/productions/prod-couro-nobre/source", "Sem acesso a esta produção"],
       ] as const) {
         await page.goto(path);
