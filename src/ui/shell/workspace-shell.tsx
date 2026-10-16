@@ -155,7 +155,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
         bleed={docked}
         sidebar={(
           <Sidebar
-            product={<ReporterBrand />}
+            product={<ReporterBrand endorsed />}
             search={<SidebarSearch onOpen={openPalette} label="Buscar" />}
             groups={groups}
             utilities={utilities}
