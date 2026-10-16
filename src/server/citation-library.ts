@@ -4,10 +4,10 @@ import { citationDay, citationId, citationsFromArticle, citationView, locateCita
 import type { Citation, CitationLibraryView } from '../domain/citation-library.ts';
 import type { EditorialCheckpoint } from '../ports/connected-workspace.ts';
 import { canOpenProduction } from '../domain/production.ts';
-import { hasAnyRole } from '../domain/workspace.ts';
+import { can } from '../domain/permissions.ts';
 import { editorialTransaction } from './editorial';
 import type { EditorialScope } from './editorial-store';
-import { FlowError } from './errors';
+import { FlowError, forbiddenError } from './errors';
 
 /** Read projection over existing articles + curated entries; GET never mutates the workspace. */
 export function citationRegistry(checkpoint: EditorialCheckpoint): CitationLibraryView {
@@ -51,7 +51,7 @@ export async function handleCitationLibrary(request: Request, path: string[], re
   const value = (await editorialTransaction('runtime',async checkpoint => {
     const view = citationRegistry(checkpoint), input = payload.input;
     const member = checkpoint.state.members.find(member => member.personId === checkpoint.state.sessionPersonId);
-    if (!hasAnyRole(member,['editor','admin'])) throw new FlowError('CITATION_FORBIDDEN',403);
+    if (!can(member,'library.edit')) throw forbiddenError('library.edit');
     const record = checkpoint.state.productions.find(record => record.production.id === input.productionId);
     const source = checkpoint.state.sources.find(source => source.id === input.sourceId);
     if (!record || !source || !source.rights.authorized || !canOpenProduction(record.production,member)

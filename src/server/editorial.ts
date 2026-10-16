@@ -10,7 +10,7 @@ import { isRunActive } from '../domain/run.ts';
 import { pendingReview, latestApproved } from '../domain/record.ts';
 import { sameVersionRef } from '../domain/refs.ts';
 import { ok, refuse } from '../domain/result.ts';
-import { hasAnyRole } from '../domain/workspace.ts';
+import { can, forbidden, type Capability } from '../domain/permissions.ts';
 import { GENERATION_LABELS, RUN_KIND_OF, GENERATION_KINDS } from '../ports/generation.ts';
 import type { GenerationKind, GenerationRequest, RunMeta } from '../ports/generation.ts';
 import type { OutlineInput } from '../ports/generation.ts';
@@ -18,7 +18,7 @@ import type { EditorialCheckpoint, ConnectedWorkspace, EditorialJob, WorkspaceRe
 import { transaction } from './database';
 import { workerAvailable } from './storage';
 import { IDLE_QUEUE, queueStatus } from './queue-status.ts';
-import { FlowError } from './errors';
+import { FlowError, forbiddenError } from './errors';
 import { activePipeline, pipelineView, parsePipelineDefinition } from './pipeline';
 import { assertLocalMode, providerConfigured } from './config';
 import { r1ArticleIssue, ARTICLE_POLICY_MESSAGES } from '../domain/article-policy.ts';
@@ -35,6 +35,18 @@ const ids = { next: () => randomUUID() };
 const identifier = z.string().min(1).max(128);
 const rpcSchema = z.object({ method: z.string().min(1).max(80), args: z.array(z.json()).max(8),requestId: z.string().uuid() }).strict();
 const supportedKinds = new Set(['article.outline', 'article.draft', 'carousel.copy', ...ARTICLE_ASSIST_KINDS]);
+/**
+ * What each command needs beyond membership. The store commands check it again (the simulated
+ * runtime runs the same ones); `decide` (gate roles), `withdrawReview` (the sender) and
+ * `updatePerson` (one's own profile) keep their own rules there.
+ */
+const COMMAND_CAPABILITY: Readonly<Record<string, Capability>> = {
+  createFromSource: 'production.create', createBlank: 'production.create', rename: 'production.edit', updateBrief: 'production.edit',
+  updateSpeakers: 'production.edit', setMaterialAuthorization: 'production.edit', archive: 'production.archive',
+  saveDraft: 'piece.edit', createVersion: 'piece.edit', restoreVersion: 'piece.edit', derive: 'piece.edit', decideSuggestion: 'piece.edit',
+  requestReview: 'piece.send', recordDelivery: 'delivery.record', recordFeedback: 'feedback.record', 'feedback.vote': 'feedback.record',
+  'pipeline.save': 'pipeline.edit', 'generation.start': 'piece.edit', 'generation.retry': 'piece.edit', 'generation.cancel': 'piece.edit',
+};
 const writes = new Set(['createFromSource', 'createBlank', 'rename', 'updateBrief', 'updateSpeakers', 'updatePerson', 'setMaterialAuthorization',
   'saveDraft', 'createVersion', 'restoreVersion', 'requestReview', 'withdrawReview', 'decide', 'derive', 'decideSuggestion', 'recordDelivery', 'archive', 'recordFeedback']);
 
@@ -181,9 +193,24 @@ export function validateEditorialCommandInput(method: string, args: unknown[]) {
   }
 }
 
+function sessionMember(checkpoint: EditorialCheckpoint) {
+  return checkpoint.state.members.find(candidate => candidate.personId === checkpoint.state.sessionPersonId);
+}
+
+/** Throws FORBIDDEN unless the acting member (locally: the stored test profile) holds the capability. */
+export function assertCapability(checkpoint: EditorialCheckpoint, capability: Capability) {
+  if (!can(sessionMember(checkpoint), capability)) throw forbiddenError(capability);
+}
+
+/**
+ * For routes outside the engine (uploads, links, material analysis): the request context always
+ * carries every role locally, so the effective roles come from the loaded member row.
+ */
+export async function requireCapability(capability: Capability) {
+  await editorialTransaction('runtime', async checkpoint => assertCapability(checkpoint, capability), false, 'reporter.edit', { pipelines: false });
+}
+
 async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, kind: GenerationKind, input: Record<string, unknown>, retryOfRunId?: string) {
-  const member = engine.store.state.members.find(candidate => candidate.personId === engine.store.state.sessionPersonId);
-  if (!hasAnyRole(member, ['editor', 'admin'])) return refuse('forbidden', 'Seu papel não permite gerar conteúdo.');
   if (!supportedKinds.has(kind)) return refuse('unsupported_action', 'Esta ação do copiloto ainda não está conectada. Use a geração de artigo ou carrossel.');
   const productionId = identifier.parse(input.productionId), pieceId = identifier.parse(input.pieceId);
   const record = engine.records.record(productionId);
@@ -250,6 +277,8 @@ export async function editorialRpc(payload: unknown) {
       return receipt.projection === 'pipeline' ? ok(pipelineView(checkpoint)) : receipt.result;
     }
     const execute = async () => {
+    const capability = COMMAND_CAPABILITY[method];
+    if (capability && !can(sessionMember(checkpoint), capability)) return forbidden(capability);
     if (method === 'session.selectLocalRole') {
       if (reporterDeploymentMode() !== 'local') return refuse('not_local_operator','Testar perfis só está disponível no ambiente local.');
       assertLocalMode();
@@ -285,10 +314,6 @@ export async function editorialRpc(payload: unknown) {
     }
     if (method === 'feedback.vote') return engine.feedback.vote(args[0] as Parameters<typeof engine.feedback.vote>[0]);
     if (!writes.has(method)) throw new FlowError('UNKNOWN_COMMAND',404);
-    const member = engine.store.state.members.find(candidate => candidate.personId === engine.store.state.sessionPersonId);
-    if (!['decide', 'recordFeedback'].includes(method) && !hasAnyRole(member, ['editor', 'admin'])) {
-      return refuse('forbidden', 'Seu papel não permite editar esta produção.');
-    }
     validateEditorialCommandInput(method,args);
     if (method === 'requestReview') {
       const production = checkpoint.state.productions.find(entry => entry.pieces.some(piece => piece.id === args[0]));

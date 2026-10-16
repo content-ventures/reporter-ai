@@ -70,10 +70,12 @@ export async function rowsPortsUnderTest(world: RowsWorld): Promise<PortsUnderTe
     assert.deepEqual(comparable(current), comparable(await call<ConnectedWorkspace>('workspace')), 'merged deltas equal a fresh snapshot');
   };
   // The server refuses some commands before the engine sees them (role in SQL, input shape); the
-  // contract reads those as refusals that changed nothing, as the browser does.
-  const REFUSALS: Record<number, string> = { 403: 'forbidden', 409: 'conflict', 422: 'invalid_input' };
+  // contract reads those as refusals that changed nothing, as the browser does: a role refusal by
+  // its code (FORBIDDEN), never by the status alone.
+  const REFUSALS: Record<number, string> = { 409: 'conflict', 422: 'invalid_input' };
   const rpc = async <T,>(method: string, args: unknown[]): Promise<T> => {
     const { status, value } = await send('workspace', { method, args, requestId: randomUUID() });
+    if ((value as { error?: unknown })?.error === 'FORBIDDEN') return refuse('forbidden', JSON.stringify(value)) as T;
     if (REFUSALS[status]) return refuse(REFUSALS[status], JSON.stringify(value)) as T;
     if (status !== 200) throw new Error(`${method} answered ${status}: ${JSON.stringify(value)}`);
     await refresh();

@@ -2,7 +2,7 @@ import type { AssetStore } from '../../ports/assets.ts';
 import type { ServerImageAsset } from '../../ports/connected-workspace.ts';
 import { libraryImageUrl } from '../../domain/visual-library.ts';
 import { ok, refuse } from '../../domain/result.ts';
-import { reporterRequest } from './reporter-client.ts';
+import { isForbidden, reporterRequest } from './reporter-client.ts';
 import { contentHash } from '../../domain/text/hash.ts';
 import type { AssetChange } from '../../ports/assets.ts';
 import { validateImageFile } from '../../domain/asset.ts';
@@ -37,7 +37,7 @@ export function withServerAssets(local: AssetStore,current: () => readonly Serve
           asset=await reporterRequest('/visuals/assets/complete',{token:prepared.token});
         }
         await refresh();return ok(asset);
-      }catch(error){return refuse('unavailable',error instanceof Error?error.message:'Não foi possível salvar a imagem no servidor.');}
+      }catch(error){return refuse(isForbidden(error)?'forbidden':'unavailable',error instanceof Error?error.message:'Não foi possível salvar a imagem no servidor.');}
     },
     get scope() { return local.scope; },
     subscribe(listener) { listeners.add(listener);const off = local.subscribe(listener);return () => { listeners.delete(listener);off(); }; },
@@ -57,7 +57,7 @@ export function withServerAssets(local: AssetStore,current: () => readonly Serve
     async update(id,patch) {
       if (!entry(id)) return local.update(id,patch);
       try { const asset = await reporterRequest<ServerImageAsset['asset']>('/visuals/assets',{ id,patch });await refresh();return ok(asset); }
-      catch (error) { return refuse('unavailable',error instanceof Error ? error.message : 'Não foi possível atualizar a imagem.'); }
+      catch (error) { return refuse(isForbidden(error) ? 'forbidden' : 'unavailable',error instanceof Error ? error.message : 'Não foi possível atualizar a imagem.'); }
     },
   };
 }
