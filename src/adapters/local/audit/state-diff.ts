@@ -3,7 +3,8 @@ import type { PersonId } from '../../../domain/ids.ts';
 import type { Production } from '../../../domain/production.ts';
 import { sizeLabel } from '../../../domain/sizing.ts';
 import type { Source } from '../../../domain/source.ts';
-import type { Member, Role } from '../../../domain/workspace.ts';
+import { roleLabel } from '../../../domain/permissions.ts';
+import type { Member } from '../../../domain/workspace.ts';
 import type { StoreState } from '../store/state.ts';
 
 /**
@@ -14,7 +15,6 @@ import type { StoreState } from '../store/state.ts';
 
 export type UpdateDraft = { action: AuditAction; target: AuditTarget; changes: AuditChange[] };
 
-const ROLE_NAMES: Record<Role, string> = { editor: 'Editor', approver: 'Aprovador', creative_reviewer: 'Revisor criativo', admin: 'Admin' };
 
 function personName(state: Pick<StoreState, 'people'>, personId: PersonId | undefined): string {
   if (!personId) return 'Sem pessoa';
@@ -47,7 +47,7 @@ function speakerChanges(state: StoreState, before: Source, after: Source): Audit
 }
 
 function rolesLabel(member: Pick<Member, 'roles'>): string {
-  return member.roles.map((role) => ROLE_NAMES[role] ?? role).join(' · ') || 'Sem papel';
+  return member.roles.map((role) => roleLabel(role)).join(' · ') || 'Sem papel';
 }
 
 export function updatesBetween(before: StoreState, after: StoreState): UpdateDraft[] {

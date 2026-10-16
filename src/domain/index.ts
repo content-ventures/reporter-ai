@@ -26,6 +26,7 @@ export * from './image-generation.ts';
 export * from './feedback.ts';
 export * from './activity.ts';
 export * from './audit.ts';
+export * from './permissions.ts';
 export * from './record.ts';
 export * from './quotes.ts';
 export * from './checks.ts';

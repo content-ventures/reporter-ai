@@ -24,7 +24,7 @@ export type IngestLimits = {
   shortWords: number;
 };
 
-export type ReadRefusal = 'unsupported_type' | 'too_large' | 'empty' | 'read_failed';
+export type ReadRefusal = 'unsupported_type' | 'too_large' | 'empty' | 'read_failed' | 'forbidden';
 
 export type ReadFile = { text: string; fileName: string; format: TranscriptFormat; bytes: number; transcriptId?: string };
 export type MaterialReadPhase = 'reading' | 'locating' | 'uploading' | 'preparing' | 'transcribing' | 'ready';
@@ -100,7 +100,7 @@ export type MaterialOutlook = {
   keyLines: { segmentId: string; speaker?: string; text: string }[];
 };
 
-export type AnalyzeRefusal = 'empty' | 'analysis_failed';
+export type AnalyzeRefusal = 'empty' | 'analysis_failed' | 'forbidden';
 
 export interface SourceIngest {
   readonly limits: IngestLimits;

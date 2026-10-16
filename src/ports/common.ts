@@ -38,6 +38,9 @@ export type Page<T> = {
 
 export const DEFAULT_PAGE_SIZE = 20;
 
+/** A member whose role lacks the capability (`forbidden(capability)`): nothing changes. */
+export type ForbiddenRefusal = 'forbidden';
+
 /** Lookups fail as "not found" now; "restricted" is the REQ-T.1 plug (AccessState restricted). */
 export type LookupRefusal = 'not_found' | 'restricted';
 export type Lookup<T> = Result<T, LookupRefusal>;

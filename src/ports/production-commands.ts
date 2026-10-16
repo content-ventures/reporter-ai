@@ -14,7 +14,7 @@ import type { SourceOrigin, SpeakerPresentation } from '../domain/source.ts';
 import type { SuggestionState } from '../domain/suggestion.ts';
 import type { TranscriptFormat } from '../domain/text/transcript-parse.ts';
 import type { VersionView } from '../domain/views.ts';
-import type { NotFoundRefusal, PersonSummary } from './common.ts';
+import type { ForbiddenRefusal, NotFoundRefusal, PersonSummary } from './common.ts';
 import type { FeedbackRefusal, NewFeedback } from './feedback.ts';
 import type { SourceDetail } from './production-queries.ts';
 
@@ -76,7 +76,8 @@ export type CreateProductionRefusal =
   | 'unknown_size'
   | 'article_required'
   | 'unknown_person'
-  | 'unknown_source';
+  | 'unknown_source'
+  | ForbiddenRefusal;
 
 export type CreatedProduction = {
   productionId: ProductionId;
@@ -92,7 +93,7 @@ export type CreateBlankRefusal = 'empty_title' | 'sections_out_of_range' | 'unkn
 // ── Estúdio ──────────────────────────────────────────────────────────────────────────────
 
 /** `locked`: the text waits for a decision ("O texto está com Pedro para aprovação. Retire o envio para editar."). */
-export type SaveDraftRefusal = NotFoundRefusal | 'conflict' | 'kind_mismatch' | 'locked';
+export type SaveDraftRefusal = NotFoundRefusal | ForbiddenRefusal | 'conflict' | 'kind_mismatch' | 'locked';
 
 export type SavedDraft = {
   pieceId: PieceId;
@@ -102,21 +103,21 @@ export type SavedDraft = {
   persisted: boolean;
 };
 
-export type VersionRefusal = NotFoundRefusal | 'unchanged' | 'empty' | 'run_in_progress' | 'locked';
-export type RestoreRefusal = NotFoundRefusal | 'unknown_version' | 'nothing_to_restore' | 'run_in_progress' | 'locked';
+export type VersionRefusal = NotFoundRefusal | ForbiddenRefusal | 'unchanged' | 'empty' | 'run_in_progress' | 'locked';
+export type RestoreRefusal = NotFoundRefusal | ForbiddenRefusal | 'unknown_version' | 'nothing_to_restore' | 'run_in_progress' | 'locked';
 
 export type SavedVersion = { version: VersionView; revision: number };
 
 export type BriefInput = { angle?: string; sections: number; size: ArticleSize };
-export type BriefRefusal = NotFoundRefusal | 'conflict' | 'sections_out_of_range' | 'unknown_size';
+export type BriefRefusal = NotFoundRefusal | ForbiddenRefusal | 'conflict' | 'sections_out_of_range' | 'unknown_size';
 
 /** `personId: null` with `unattributed` is "Sem atribuição"; without it, the label is left undecided. */
 export type SpeakerMapping = { label: string; personId: PersonId | null; newPerson?: PersonDetails; unattributed?: true };
-export type SpeakersRefusal = NotFoundRefusal | 'unknown_speaker' | 'unknown_person';
+export type SpeakersRefusal = NotFoundRefusal | ForbiddenRefusal | 'unknown_speaker' | 'unknown_person';
 
 /** Name, role and organisation of a person; `null` clears a field. */
 export type PersonPatch = { name?: string; title?: string | null; organization?: string | null };
-export type PersonRefusal = NotFoundRefusal | 'empty_name';
+export type PersonRefusal = NotFoundRefusal | ForbiddenRefusal | 'empty_name';
 
 // ── Revisão ──────────────────────────────────────────────────────────────────────────────
 
@@ -132,6 +133,7 @@ export type RequestReviewInput = { assigneeId?: PersonId; note?: string; dueOn?:
  */
 export type RequestReviewRefusal =
   | NotFoundRefusal
+  | ForbiddenRefusal
   | 'empty'
   | 'run_in_progress'
   | 'suggestion_pending'
@@ -176,12 +178,12 @@ export type DeriveCommand = {
   rebase?: boolean;
 };
 
-export type DeriveCommandRefusal = NotFoundRefusal | DeriveRefusal | 'not_planned' | 'not_derivable' | 'already_derived' | 'unknown_template';
+export type DeriveCommandRefusal = NotFoundRefusal | ForbiddenRefusal | DeriveRefusal | 'not_planned' | 'not_derivable' | 'already_derived' | 'unknown_template';
 
 /** `restore` undoes a discard ("Desfazer" right after "Descartar"): the suggestion is open again. */
 export type SuggestionDecision = 'accept' | 'discard' | 'restore';
 
-export type DecideSuggestionRefusal = NotFoundRefusal | 'not_pending' | 'not_discarded' | 'unsupported' | 'invalid_target' | 'locked';
+export type DecideSuggestionRefusal = NotFoundRefusal | ForbiddenRefusal | 'not_pending' | 'not_discarded' | 'unsupported' | 'invalid_target' | 'locked';
 
 export type DecidedSuggestion = {
   suggestionId: SuggestionId;
@@ -209,9 +211,9 @@ export type RecordDeliveryInput = {
   files: DeliveryFileOutcome[];
 };
 
-export type RecordDeliveryRefusal = NotFoundRefusal | ExportRefusal | 'no_files';
+export type RecordDeliveryRefusal = NotFoundRefusal | ForbiddenRefusal | ExportRefusal | 'no_files';
 
-export type ArchiveRefusal = NotFoundRefusal | 'run_in_progress';
+export type ArchiveRefusal = NotFoundRefusal | ForbiddenRefusal | 'run_in_progress';
 
 // ── Port ─────────────────────────────────────────────────────────────────────────────────
 
@@ -219,13 +221,13 @@ export interface ProductionCommands {
   /** Saves the source and the production BEFORE any run starts (REQ-1.1, REQ-1.2). */
   createFromSource(input: NewProductionInput): Promise<Result<CreatedProduction, CreateProductionRefusal>>;
   createBlank(input: BlankProductionInput): Promise<Result<CreatedBlankProduction, CreateBlankRefusal>>;
-  rename(productionId: ProductionId, title: string): Promise<Result<{ title: string }, NotFoundRefusal | 'empty_title'>>;
+  rename(productionId: ProductionId, title: string): Promise<Result<{ title: string }, NotFoundRefusal | ForbiddenRefusal | 'empty_title'>>;
   /** Pass `baseRevision` to detect a concurrent edit. */
   updateBrief(productionId: ProductionId, brief: BriefInput, baseRevision?: number): Promise<Result<Brief, BriefRefusal>>;
   updateSpeakers(sourceId: SourceId, mapping: SpeakerMapping[]): Promise<Result<SourceDetail, SpeakersRefusal>>;
   /** "Participantes": name, "Cargo ou função" and "Organização" of a person (every production sees it). */
   updatePerson(personId: PersonId, patch: PersonPatch): Promise<Result<PersonSummary, PersonRefusal>>;
-  setMaterialAuthorization(sourceId: SourceId, authorized: boolean): Promise<Result<{ authorized: boolean }, NotFoundRefusal>>;
+  setMaterialAuthorization(sourceId: SourceId, authorized: boolean): Promise<Result<{ authorized: boolean }, NotFoundRefusal | ForbiddenRefusal>>;
 
   /** Autosave: overwrites the draft slot; a stale `baseRevision` is a conflict, never a silent overwrite. */
   saveDraft(pieceId: PieceId, body: PieceBody, baseRevision: number): Promise<Result<SavedDraft, SaveDraftRefusal>>;

@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { toast, type MenuSection } from '@content-ventures/design-system/v3';
-import type { Role } from '@/domain';
+import { ROLES, roleLabel, type Role } from '@/domain';
 import type { LocalRoleProfile, SessionMember } from '@/ports';
 import { useCommands, useSession } from '@/state';
 
@@ -14,12 +14,7 @@ import { useCommands, useSession } from '@/state';
  */
 
 /** pt-BR names of the workspace roles (REQ-T.1). */
-export const ROLE_LABELS: Record<Role, string> = {
-  editor: 'Editor',
-  approver: 'Aprovador',
-  creative_reviewer: 'Revisor criativo',
-  admin: 'Admin',
-};
+export const ROLE_LABELS: Record<Role, string> = Object.fromEntries(ROLES.map((role) => [role, roleLabel(role)])) as Record<Role, string>;
 
 /**
  * "Aprovador", "Editor · Admin": the person's title, else their roles. Admin is always said, since

@@ -7,6 +7,7 @@ import type { ProductionRecord } from '../record.ts';
 import type { VersionRef } from '../refs.ts';
 import { ok, refuse } from '../result.ts';
 import type { CommandContext, Result } from '../result.ts';
+import { roleList } from '../permissions.ts';
 import { hasAnyRole } from '../workspace.ts';
 import type { Member, Role } from '../workspace.ts';
 
@@ -51,13 +52,9 @@ export type DecisionRequest = {
   checks?: readonly CheckResult[];
 };
 
-const ROLE_NAMES: Record<Role, string> = { editor: 'editor', approver: 'aprovador', creative_reviewer: 'revisor criativo', admin: 'admin' };
-
 /** "Só aprovador ou admin decide nesta etapa." — the reason a member without the role reads (B06). */
 export function forbiddenRoleMessage(roles: readonly Role[]): string {
-  const names = roles.map((role) => ROLE_NAMES[role]);
-  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} ou ${names[names.length - 1]}` : (names[0] ?? 'quem tem o papel');
-  return `Só ${list} decide nesta etapa.`;
+  return `Só ${roleList(roles)} decide nesta etapa.`;
 }
 
 export function canDecide(state: DecideState, request: DecisionRequest): Result<true, DecideRefusal> {
