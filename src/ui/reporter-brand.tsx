@@ -11,7 +11,7 @@ export function ReporterBrand({ signature = false }: { signature?: boolean }) {
   const artwork = compact
     ? { src: '/icon.svg', width: 32, height: 32 }
     : signature
-      ? { src: '/brand/reporter-ai-powered.svg', width: 264, height: 84 }
+      ? { src: '/brand/reporter-ai-powered.svg', width: 264, height: 78 }
       : { src: '/brand/reporter-ai.svg', width: 180, height: 49 };
 
   return (
