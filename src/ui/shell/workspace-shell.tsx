@@ -44,7 +44,8 @@ const DOCKED_ROUTE = /^\/productions\/[^/]+\/[^/]+(?:\/review)?$/;
 /**
  * Trail when the screen did not declare one: the menu item, "Produções › Nova produção", or on a
  * production stage "Produções › <etapa>" (the frame inserts the title once the production loads;
- * an error or a restricted production keeps this one).
+ * an error or a restricted production keeps this one). `productionTrail` is the one import from
+ * `src/features` here: a pure module with relative imports only.
  */
 function defaultCrumbs(pathname: string): Crumb[] {
   if (pathname === NEW_PRODUCTION_HREF) return [{ label: 'Produções', href: PRODUCTIONS_HREF }, { label: 'Nova produção' }];

@@ -90,7 +90,7 @@ export function decidesAt(approvals: Partial<Record<PieceKind, PieceApproval>> |
 }
 
 /** The stage a production opens on, and whether it opens as that piece's guided review. */
-export type StageTarget = { stage: StageView; review: boolean };
+type StageTarget = { stage: StageView; review: boolean };
 
 /**
  * Where `/productions/[id]` and the trail's title lead: the stage the journey is on. At the
