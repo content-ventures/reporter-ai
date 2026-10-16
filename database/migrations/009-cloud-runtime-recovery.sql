@@ -5,7 +5,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp
 DECLARE portal uuid := core.reporter_require('reporter.read'); result jsonb;
 BEGIN
   SELECT jsonb_agg(member) INTO result FROM (
-    SELECT u.id AS "personId",u.name,u.email,u.image AS "avatarUrl",p.id AS "workspaceId",p.name AS "workspaceName",p.slug AS "workspaceSlug",
+    SELECT u.id AS "personId",u.name,u.title,u.email,u.image AS "avatarUrl",p.id AS "workspaceId",p.name AS "workspaceName",p.slug AS "workspaceSlug",
       coalesce(array_agg(DISTINCT pr.name) FILTER(WHERE pr.name IS NOT NULL),'{}'::text[]) AS roles
     FROM public.portals p JOIN public.portal_members pm ON pm.portal_id=p.id
     JOIN core.users u ON u.id=pm.user_id JOIN core.tenant_members tm ON tm.user_id=u.id AND tm.tenant_id=p.tenant_id AND tm.status='active'

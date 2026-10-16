@@ -92,7 +92,7 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
     // call list, an asset's credit), or those edits would look unchanged and never be written.
     const baseline = mutate ? structuredClone(rows) : rows;
     const context = role === 'runtime' ? currentReporterContext() : undefined;
-    const identity = context ? { workspaceId: context.portal,workspaceName: context.workspaceName,workspaceSlug: context.workspaceSlug,
+    let identity: EditorialIdentity | undefined = context ? { workspaceId: context.portal,workspaceName: context.workspaceName,workspaceSlug: context.workspaceSlug,
       personId: context.actor,name: context.name,email: context.email,avatarUrl: context.image,roles: context.roles,
       ...(reporterDeploymentMode() === 'local' ? { localOperator: true as const } : {}) } : undefined;
     const fallback = emptyEditorialCheckpoint(identity).state.workspace;
@@ -101,6 +101,14 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
       const members=(await client.query('SELECT public.reporter_workspace_members() AS members')).rows[0].members as EditorialIdentity[];
       checkpoint.state.members=[];
       for(const member of members) adoptEditorialIdentity(checkpoint,member);
+      // The cargo lives only in the members list; the session context carries name and photo.
+      identity = { ...identity,title: members.find(member => member.personId === identity!.personId)?.title };
+    }
+    if (identity && reporterDeploymentMode() === 'local') {
+      // The local operator is a server constant until it edits its own profile ("Meu perfil").
+      const profile = (await client.query('SELECT public.reporter_profile() AS value')).rows[0]?.value as
+        { name: string; title: string | null; image: string | null; updatedAt: string | null } | null;
+      if (profile?.updatedAt) identity = { ...identity,name: profile.name,title: profile.title,avatarUrl: profile.image ?? undefined };
     }
     if (identity) adoptEditorialIdentity(checkpoint,identity);
     for (const job of Object.values(checkpoint.jobs)) job.events = compactRunPreviews(job.events);

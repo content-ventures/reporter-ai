@@ -3,6 +3,10 @@
 BEGIN;
 
 ALTER TABLE core.users ADD COLUMN IF NOT EXISTS auth_subject text;
+-- The self-edited profile (017). Added here too, so every replayed cloud function after this file
+-- finds them; once profile_updated_at is set, sign-in stops copying Neon Auth's name and photo.
+ALTER TABLE core.users ADD COLUMN IF NOT EXISTS title text CHECK(title IS NULL OR length(title) BETWEEN 1 AND 80);
+ALTER TABLE core.users ADD COLUMN IF NOT EXISTS profile_updated_at timestamptz;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_core_users_auth_subject ON core.users(auth_subject) WHERE auth_subject IS NOT NULL;
 
 INSERT INTO core.tenants(id,slug,name) VALUES
@@ -40,10 +44,14 @@ BEGIN
   IF bound_user IS NULL THEN
     SELECT id INTO bound_user FROM core.users WHERE auth_subject IS NULL AND lower(email)=lower(p_email) FOR UPDATE;
     IF bound_user IS NOT NULL THEN
-      UPDATE core.users SET auth_subject=p_subject,email_verified=true,name=p_name,image=p_image,updated_at=clock_timestamp() WHERE id=bound_user;
+      UPDATE core.users SET auth_subject=p_subject,email_verified=true,
+        name=CASE WHEN profile_updated_at IS NULL THEN p_name ELSE name END,
+        image=CASE WHEN profile_updated_at IS NULL THEN p_image ELSE image END,updated_at=clock_timestamp() WHERE id=bound_user;
     END IF;
   ELSE
-    UPDATE core.users SET email_verified=true,name=p_name,image=p_image,updated_at=clock_timestamp() WHERE id=bound_user;
+    UPDATE core.users SET email_verified=true,
+      name=CASE WHEN profile_updated_at IS NULL THEN p_name ELSE name END,
+      image=CASE WHEN profile_updated_at IS NULL THEN p_image ELSE image END,updated_at=clock_timestamp() WHERE id=bound_user;
   END IF;
   IF bound_user IS NULL THEN RETURN; END IF;
   RETURN QUERY

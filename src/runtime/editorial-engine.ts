@@ -87,7 +87,7 @@ export function editorialCandidates(record: ProductionRecord) {
 export function validateEditorialOutline(record: ProductionRecord, outline: OutlineInput) {
   return normalizeOutline(outline,{ size: record.production.brief.size,material: readMaterial(record.sources),defaultTitle: () => record.production.title });
 }
-export type EditorialIdentity = { workspaceId: string;workspaceName: string;workspaceSlug: string;personId: string;name: string;email?: string;avatarUrl?: string;roles: Role[];localOperator?: boolean };
+export type EditorialIdentity = { workspaceId: string;workspaceName: string;workspaceSlug: string;personId: string;name: string;title?: string | null;email?: string;avatarUrl?: string;roles: Role[];localOperator?: boolean };
 const LOCAL_IDENTITY: EditorialIdentity = { workspaceId: LOCAL_WORKSPACE,workspaceName: 'Reporter AI',workspaceSlug: 'reporter-ai-local',personId: LOCAL_OPERATOR,
   name: 'Operador local',email: 'operator@reporter.local.invalid',roles: ['admin','editor','approver','creative_reviewer'],localOperator: true };
 
@@ -111,7 +111,7 @@ export function adoptEditorialIdentity(checkpoint: EditorialCheckpoint, identity
   const profile = local && LOCAL_ROLE_PROFILES.find(profile => profile.roles.length === previous?.roles.length
     && profile.roles.every(role => previous.roles.includes(role)));
   state.workspace = { ...state.workspace,id: identity.workspaceId,name: identity.workspaceName,slug: identity.workspaceSlug };
-  const person = { id: identity.personId,name: identity.name,email: identity.email,avatarUrl: identity.avatarUrl };
+  const person = { id: identity.personId,name: identity.name,...(identity.title ? { title: identity.title } : {}),email: identity.email,avatarUrl: identity.avatarUrl };
   state.people = [...state.people.filter(candidate => candidate.id !== identity.personId),person];
   const member = { workspaceId: identity.workspaceId,personId: identity.personId,roles: [...(profile ? profile.roles : identity.roles)],
     ...(local ? { localOperator: true as const } : {}) };
