@@ -79,7 +79,7 @@ export function articleToHtml(body: ArticleBody, meta: HtmlMeta, sources: ImageS
     '<head>',
     '<meta charset="utf-8">',
     `<title>${title}</title>`,
-    '<meta name="generator" content="Reporter IA">',
+    '<meta name="generator" content="Reporter AI">',
     `<meta name="reporter:version" content="${escapeHtml(meta.versionLabel)} · ${escapeHtml(meta.hash)}">`,
     '</head>',
     '<body>',
