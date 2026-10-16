@@ -7,6 +7,7 @@ import type { DraftView, ProductionDetail } from '@/ports';
 import { useCommands } from '@/state';
 import { takeArmedSimulation } from '@/ui/shell';
 import { slideProposalOf, type SlideProposal } from './slide-proposal';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /**
  * Slide suggestions of the carousel studio, through the generation service ("carousel.assist"):
@@ -185,7 +186,7 @@ export function useSlideAssist({ production, pieceId, draft, body, flush }: Slid
       for (const id of ids) {
         const result = await commands.production.decideSuggestion(id, decision);
         if (!result.ok) {
-          toast(decision === 'accept' ? 'Sugestão não aplicada' : 'Não foi possível descartar', { tone: 'error', description: result.refusal.message });
+          notifyRefusal(decision === 'accept' ? 'Sugestão não aplicada' : 'Não foi possível descartar', result.refusal);
           return;
         }
         if (decision === 'accept' && result.value.outcome === 'stale') toast('O slide mudou', { tone: 'info', description: 'Reaplique a sugestão sobre o texto atual.' });

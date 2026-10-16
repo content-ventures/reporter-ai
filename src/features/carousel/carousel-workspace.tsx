@@ -61,6 +61,7 @@ import { StudioToolbar } from './studio-toolbar';
 import { useCarouselDraft } from './use-carousel-draft';
 import { useSlideAssist } from './use-slide-assist';
 import { useSlideRenders } from './use-slide-renders';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /**
  * Carousel studio (PLAN §3.7) in the same WorkspaceLayout as the article: slide strip on the
@@ -167,7 +168,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     setUpdatePhase('idle');
     const result = await commands.production.derive({ productionId: production.id, kind: 'carousel', from: ref, rebase: true });
     if (result.ok) toast(`Slides atualizados para a versão ${ref.number}`);
-    else toast('Não foi possível atualizar o carrossel', { tone: 'error', description: result.refusal.message });
+    else notifyRefusal('Não foi possível atualizar o carrossel', result.refusal);
   };
 
   const startUpdate = async () => {
@@ -262,7 +263,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     if (!runtime || !before || running) return;
     const switched = runtime.render.switchTemplate(before, templateId);
     if (!switched.ok) {
-      toast('Não foi possível trocar o modelo', { tone: 'error', description: switched.refusal.message });
+      notifyRefusal('Não foi possível trocar o modelo', switched.refusal);
       return;
     }
     const summary = switchSummary(switched.value.issues);
@@ -378,7 +379,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     await commands.production.createVersion(carousel.id);
     const result = await commands.production.restoreVersion(carousel.id, version.id);
     if (result.ok) toast(`${result.value.version.label} criada`);
-    else toast('Versão não restaurada', { tone: 'error', description: result.refusal.message });
+    else notifyRefusal('Versão não restaurada', result.refusal);
   };
 
   // One click (the approver is the suggested one), then the board with the card waiting for them.
@@ -390,7 +391,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     if (!result) return;
     if (!result.ok) {
       if (result.refusal.code === 'already_requested') router.push(boardHref(production.id));
-      else toast('Não foi possível enviar para aprovação', { tone: 'error', description: result.refusal.message });
+      else notifyRefusal('Não foi possível enviar para aprovação', result.refusal);
       return;
     }
     const { assigneeId } = result.value.request;
@@ -412,7 +413,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
       { simulation: takeArmedSimulation('carousel.copy') },
     );
     if (!started.ok) {
-      toast('Não foi possível gerar os textos', { tone: 'error', description: started.refusal.message });
+      notifyRefusal('Não foi possível gerar os textos', started.refusal);
       return;
     }
     setPicked(false);
@@ -428,7 +429,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
     if (retried.ok) {
       setTraceOpen(null);
       onRunStarted(retried.value.runId);
-    } else toast('Não foi possível continuar', { tone: 'error', description: retried.refusal.message });
+    } else notifyRefusal('Não foi possível continuar', retried.refusal);
   };
 
   const guards = production.guards.pieces.carousel;

@@ -75,6 +75,7 @@ import { SpeakersSection } from './speakers-section';
 import { useFileReader } from './use-file-reader';
 import { useLinkReader, type ImportedLink } from './use-link-reader';
 import { useMaterialAnalysis } from './use-material-analysis';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /** Material and pauta are confirmed before opening the editor with a queued article run. */
 
@@ -275,7 +276,7 @@ export function NewProductionScreen() {
     if (readyAnalysis) return readyAnalysis;
     if (!hasMaterial(draft)) return undefined;
     const result = await commands.ingest.analyze(material.text, material.fileName ? { fileName: material.fileName, format: 'auto' } : { format: 'auto' });
-    if (!result.ok) toast('Material não analisado', { tone: 'error', description: result.refusal.message });
+    if (!result.ok) notifyRefusal('Material não analisado', result.refusal);
     return result.ok ? result.value : undefined;
   };
 
@@ -321,7 +322,7 @@ export function NewProductionScreen() {
     const created = await commands.production.createFromSource(toCreateInput(draft, current, people));
     if (!created.ok) {
       setBusy(null);
-      toast('Produção não criada', { tone: 'error', description: created.refusal.message });
+      notifyRefusal('Produção não criada', created.refusal);
       return;
     }
     const article = created.value.pieces.find((piece) => piece.kind === 'article');
@@ -329,7 +330,7 @@ export function NewProductionScreen() {
       const simulation = takeArmedSimulation('article.draft');
       const started = await commands.generation.start('article.draft',
         { productionId: created.value.productionId, pieceId: article.pieceId }, simulation ? { simulation } : undefined);
-      if (!started.ok) toast('Produção salva; geração não iniciada', { tone: 'error', description: started.refusal.message });
+      if (!started.ok) notifyRefusal('Produção salva; geração não iniciada', started.refusal);
     }
     departing.current = true;
     router.replace(pieceHref(created.value.productionId, 'article'));

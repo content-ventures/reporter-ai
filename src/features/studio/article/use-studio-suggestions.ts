@@ -22,6 +22,7 @@ import { isOpenSuggestion, nextInOrder, suggestionMarks } from './studio-model';
 import { focusedSuggestionOf, toolForSuggestion } from './studio-session-model';
 import type { SuggestionFocus } from './studio-types';
 import type { StudioText } from './use-studio-text';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /** Suggestions that sit in the text (a title proposal lives in the copilot only). */
 function inText(suggestion: Suggestion): boolean {
@@ -159,7 +160,7 @@ export function useSuggestionActions({
       await prepare();
       const result = await commands.production.decideSuggestion(suggestion.id, 'accept');
       if (!result.ok) {
-        toast('Sugestão não aplicada', { tone: 'error', description: result.refusal.message });
+        notifyRefusal('Sugestão não aplicada', result.refusal);
         return;
       }
       if (result.value.outcome === 'stale') {
@@ -187,7 +188,7 @@ export function useSuggestionActions({
     async (suggestion: Suggestion) => {
       const result = await commands.production.decideSuggestion(suggestion.id, 'discard');
       if (!result.ok) {
-        toast('Não foi possível descartar', { tone: 'error', description: result.refusal.message });
+        notifyRefusal('Não foi possível descartar', result.refusal);
         return;
       }
       // Esc decides at once: one step back is always at hand.
@@ -197,7 +198,7 @@ export function useSuggestionActions({
           label: 'Desfazer',
           onClick: () => {
             void commands.production.decideSuggestion(suggestion.id, 'restore').then((restored) => {
-              if (!restored.ok) toast('Não foi possível desfazer', { tone: 'error', description: restored.refusal.message });
+              if (!restored.ok) notifyRefusal('Não foi possível desfazer', restored.refusal);
               else setSuggestionFocus({ suggestionId: suggestion.id, target: suggestion.target });
             });
           },

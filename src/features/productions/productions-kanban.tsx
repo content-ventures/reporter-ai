@@ -42,6 +42,7 @@ import { activeFilterCount, hasSearch, listFilter, LIST_SORTS, type ListSort } f
 import { ProductionActiveFilters, ProductionFilterBand } from './production-filters';
 import { useBoardArrival } from './use-board-arrival';
 import { useListParams } from './use-list-params';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 const PAGE_SIZE = 50;
 const ARCHIVE_REASON = 'Disponível quando a IA terminar.';
@@ -178,7 +179,7 @@ function ProductionsKanban() {
     const result = await commands.production.archive([item.id]);
     setArchiving(false);
     if (!result.ok) {
-      toast(result.refusal.message, { tone: 'error' });
+      notifyRefusal(undefined, result.refusal);
       return;
     }
     setConfirm(null);

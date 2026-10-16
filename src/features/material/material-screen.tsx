@@ -35,6 +35,7 @@ import { ProductionHeader, StagePage, useProductionFrame } from '@/features/prod
 import { BriefDrawer } from './brief-drawer';
 import { MaterialDrawer } from './material-drawer';
 import { citedSegmentIds, viewerSegments } from './material-model';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /** The transcript scrolls inside a fixed height (the DS viewer has no "fill the rest" option yet). */
 const TRANSCRIPT_HEIGHT = 600;
@@ -248,7 +249,7 @@ export function MaterialScreen({ productionId }: { productionId: ProductionId })
     const result = await commands.generation.start('article.draft', { productionId, pieceId: article.id });
     setStarting(false);
     if (!result.ok) {
-      toast('Geração não iniciada', { tone: 'error', description: result.refusal.message });
+      notifyRefusal('Geração não iniciada', result.refusal);
       return;
     }
     router.push(pieceHref(productionId, 'article'));
