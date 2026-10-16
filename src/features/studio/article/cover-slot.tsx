@@ -12,7 +12,7 @@ import {
   ToolbarSeparator,
   Tooltip,
 } from '@content-ventures/design-system/v3';
-import { Image as ImageIcon, ImagePlus, Pencil, RefreshCw, Trash2, X } from '@content-ventures/design-system/v3/icons';
+import { Image as ImageIcon, ImagePlus, Pencil, RefreshCw, Sparkles, Trash2, X } from '@content-ventures/design-system/v3/icons';
 import { COVER_BLOCK_ID, creditLine, imageCreditRequired, IMAGE_ISSUE_LABELS, IMAGE_LIMITS, imageAlt, type ImageRef } from '@/domain';
 import { useArticleCover, useImageSlots } from '@/editor';
 import { useAsset, useAssetUrl } from '@/state';
@@ -100,9 +100,10 @@ function EmptyCover({ rootRef }: { rootRef: (node: HTMLElement | null) => void }
 }
 
 /**
- * No cover yet, but the generation suggested one: "Adicionar imagem de destaque" (the picker starts
- * from the suggestion; a dropped image file opens it with the file) and "Remover sugestão" (the
- * toast brings it back) on one line, what to show under them. The cover stays optional (D04).
+ * No cover yet, but the generation suggested one (its AI image failed or was removed): "Adicionar
+ * imagem de destaque" (the picker starts from the suggestion; a dropped image file opens it with
+ * the file), "Gerar com IA" (from the suggestion's description) and "Remover sugestão" (the toast
+ * brings it back) on one line, what to show under them. The cover stays optional (D04).
  */
 function SuggestedCover({ subject, rootRef }: { subject: string; rootRef: (node: HTMLElement | null) => void }) {
   const studio = useStudio();
@@ -132,6 +133,16 @@ function SuggestedCover({ subject, rootRef }: { subject: string; rootRef: (node:
           event.preventDefault();
           const files = Array.from(event.dataTransfer.files);
           add(files.find((file) => file.type.startsWith('image/')) ?? files[0]);
+        }}
+      />
+      <ToolbarButton
+        label="Gerar com IA"
+        icon={Sparkles}
+        showLabel={!phone}
+        disabled={locked || readOnly}
+        disabledReason={reason}
+        onClick={() => {
+          if (!locked && !readOnly) studio.images.fillSlot(COVER_BLOCK_ID, { tab: 'generate' });
         }}
       />
       <ToolbarButton

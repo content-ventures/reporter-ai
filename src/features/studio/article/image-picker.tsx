@@ -19,11 +19,11 @@ import {
   formatBytes,
   toast,
 } from '@content-ventures/design-system/v3';
-import { assetOriginLabel, imageCreditRequired, type AssetId, type BlockId, type ImageAsset, type ImageRef, type ProductionId } from '@/domain';
+import { AI_IMAGE_CREDIT, assetOriginLabel, generatedPrompt, imageCreditRequired, type AssetId, type BlockId, type ImageAsset, type ImageRef, type ProductionId } from '@/domain';
 import type { FigurePlacement } from '@/editor';
 import type { UnusedAssets } from '@/ports';
 import { imageSource, imageSourcesFor, type ImageSourceEntry, type ImageSourceId } from '@/registries';
-import { useAssetLookup, useAssetUrl, useCommands } from '@/state';
+import { useAssetLookup, useAssetUrl, useCommands, useRuntime } from '@/state';
 import { formatCount, plural } from '@/ui/format';
 import { ICONS } from '@/ui/icons';
 import {
@@ -82,7 +82,7 @@ export type PickedImage = { asset: ImageAsset; image: ImageRef };
 const EMPTY_FIELDS: ImageFields = { alt: '', caption: '', credit: '', authorized: false };
 
 /** Credit a source marked as AI starts with (README §6: AI images are labelled as such). */
-const AI_CREDIT = 'Gerada com IA';
+const AI_CREDIT = AI_IMAGE_CREDIT;
 
 type Drafts = Partial<Record<ImageSourceId, unknown>>;
 
@@ -103,24 +103,30 @@ function pickerSources() {
   return imageSourcesFor().filter((source) => IMAGE_SOURCE_PANELS[source.id] !== undefined);
 }
 
-function initialDrafts(file?: File): Drafts {
+function initialDrafts(start: { file?: File; prompt?: string }): Drafts {
   const drafts: Drafts = {};
   for (const source of pickerSources()) {
     const panel = IMAGE_SOURCE_PANELS[source.id];
-    if (panel) drafts[source.id] = panel.initial(panel.takesFiles ? file : undefined);
+    if (panel) drafts[source.id] = panel.initial({ ...(panel.takesFiles && start.file ? { file: start.file } : {}), ...(start.prompt ? { prompt: start.prompt } : {}) });
   }
   return drafts;
 }
 
 function formFor(request: PickerRequest, asset: ImageAsset | undefined, sources: readonly ImageSourceEntry[]): Form {
   const editing = request.mode === 'edit';
-  const fields = fieldsOf(request.current ?? request.prefill, editing ? asset : undefined);
+  const start = fieldsOf(request.current ?? request.prefill, editing ? asset : undefined);
+  // An AI image being replaced reopens on "Gerar com IA" with its description ("Gerar de novo").
+  const previous = request.current ? generatedPrompt(asset) : undefined;
   // A pasted or dropped file opens the tab that takes files; a request may name its source.
   const tab =
     (request.file ? sources.find((source) => IMAGE_SOURCE_PANELS[source.id]?.takesFiles) : undefined) ??
     (request.tab ? sources.find((source) => source.id === request.tab) : undefined) ??
+    (previous ? sources.find((source) => source.id === 'generate') : undefined) ??
     sources[0];
-  return { mode: request.mode, tab: tab?.id ?? 'upload', drafts: initialDrafts(request.file), fields, initial: fields };
+  // A source marked as AI starts with its credit line (editable), its use authorised.
+  const fields = !editing && tab?.ai && !start.credit.trim() ? { ...start, credit: AI_CREDIT, authorized: true } : start;
+  const prompt = request.slot?.subject ?? previous;
+  return { mode: request.mode, tab: tab?.id ?? 'upload', drafts: initialDrafts({ ...(request.file ? { file: request.file } : {}), ...(prompt ? { prompt } : {}) }), fields, initial: fields };
 }
 
 export type ImagePickerProps = {
@@ -136,9 +142,14 @@ export type ImagePickerProps = {
 export function ImagePicker({ request, productionId, onClose, onDone, inUse }: ImagePickerProps) {
   const commands = useCommands();
   const lookup = useAssetLookup();
-  // "Biblioteca" only while a photo bank works (a key and real originals); never Pixabay.
+  // "Biblioteca" only while a photo bank works (a key and real originals; never Pixabay);
+  // "Gerar com IA" wherever the runtime generates images.
   const banks = usePhotoBanks().length;
-  const sources = useMemo(() => pickerSources().filter((source) => source.id !== 'archive' || banks > 0), [banks]);
+  const generates = Boolean(useRuntime().runtime?.imageGeneration);
+  const sources = useMemo(
+    () => pickerSources().filter((source) => (source.id !== 'archive' || banks > 0) && (source.id !== 'generate' || generates)),
+    [banks, generates],
+  );
   const [session, setSession] = useState<number | null>(null);
   const [form, setForm] = useState<Form>({ mode: 'choose', tab: sources[0]?.id ?? 'upload', drafts: {}, fields: EMPTY_FIELDS, initial: EMPTY_FIELDS });
   const [saving, setSaving] = useState(false);
@@ -206,8 +217,8 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
 
   const changeTab = (tab: ImageSourceId) => {
     setForm((current) => {
-      // A source marked as AI starts with its credit line (editable).
-      const fields = imageSource(tab)?.ai && !current.fields.credit.trim() ? { ...current.fields, credit: AI_CREDIT } : current.fields;
+      // A source marked as AI starts with its credit line (editable), its use authorised.
+      const fields = imageSource(tab)?.ai && !current.fields.credit.trim() ? { ...current.fields, credit: AI_CREDIT, authorized: true } : current.fields;
       return { ...current, tab, fields, failure: undefined };
     });
   };
@@ -296,7 +307,12 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
         onClose={dismiss}
         title={copy.title}
         description={
-          form.mode === 'edit' && currentAsset ? assetOriginLabel(currentAsset.origin) : active?.slot ? `Sugestão: ${active.slot.subject}` : undefined
+          form.mode === 'edit' && currentAsset
+            ? assetOriginLabel(currentAsset.origin)
+            : // "Gerar com IA" already shows the suggestion as the description to generate from.
+              active?.slot && form.tab !== 'generate'
+              ? `Sugestão: ${active.slot.subject}`
+              : undefined
         }
         dismissible={!dirty && !saving}
         footer={
@@ -336,7 +352,15 @@ export function ImagePicker({ request, productionId, onClose, onDone, inUse }: I
                 />
               ) : null}
               {SourcePanel && draft !== undefined ? (
-                <SourcePanel id={id} state={draft} onChange={(next) => setDraft(form.tab, next)} fit={fit} alt={form.fields.alt} onSuggest={suggest} />
+                <SourcePanel
+                  id={id}
+                  state={draft}
+                  onChange={(next) => setDraft(form.tab, next)}
+                  fit={fit}
+                  alt={form.fields.alt}
+                  onSuggest={suggest}
+                  productionId={productionId}
+                />
               ) : null}
             </>
           )}
