@@ -1,96 +1,56 @@
 import 'server-only';
-import { randomUUID } from 'node:crypto';
-import type { ArticleBody, ImageSlot } from '../domain/article.ts';
-import { foldForMatch } from '../domain/text/normalize.ts';
-import type { LibraryImage, StockImage } from '../domain/visual-library.ts';
-import { isCoverResolution, libraryImageNote, publicationImageCredit } from '../domain/visual-library.ts';
+import { createHash, randomUUID } from 'node:crypto';
+import type { ArticleBody, ImageOrientation, ImageSlot, ImageSlotBlock } from '../domain/article.ts';
+import { AI_IMAGE_CREDIT } from '../domain/asset.ts';
+import type { ImageRef } from '../domain/asset.ts';
+import { slotImageRef } from '../domain/image-generation.ts';
 import type { ServerImageAsset } from '../ports/connected-workspace.ts';
 import { currentReporterContext } from './request-context.ts';
-import { importStockImage } from './visual-library';
-import { searchStock } from './stock-images';
+import { generateEditorialImage } from './image-generation';
+import type { GeneratedPhoto } from './image-generation';
+import { writeImageFile } from './image-storage.ts';
 import { safeCode } from './errors';
 
-/** Only generic public subject keywords leave the application, never names or podcast text. */
-export function editorialImageQuery(subject: string): string | undefined {
-  const text = foldForMatch(subject);
-  const matches: [RegExp,string][] = [
-    [/aquicultur|piscicultur|criacao de peixe/,'aquaculture'],[/camarao|carcinicultur/,'shrimp'],
-    [/salmao/,'salmon'],[/atum/,'tuna'],[/processamento|beneficiamento|industria|fabrica|maquin/,'fish processing'],
-    [/mercado|varejo|peixaria|comercio/,'fish market'],[/pesca|embarcacao|pescador/,'fishing'],
-    [/peixe|pescado|frutos do mar|seafood/,'seafood'],
-  ];
-  const query = matches.find(([pattern]) => pattern.test(text))?.[1];
-  return ['fish processing','fish market'].includes(query ?? '') && !/peixe|pescado|frutos do mar|seafood|fish/.test(text) ? undefined : query;
-}
-export const IMAGE_LOOKUP_MESSAGES: Record<string,string> = {
-  PIXABAY_ORIGINAL_REQUIRED: 'O Pixabay precisa liberar os originais em alta resolução. A prévia de 1.280 px não foi importada.',
-  PIXABAY_KEY_MISSING: 'Configure a chave do Pixabay para preencher as imagens automaticamente.',
-  NO_RELEVANT_IMAGE: 'Nenhuma foto pertinente em alta resolução foi encontrada. O texto está preservado.',
-  STOCK_UNAVAILABLE: 'O banco de imagens não respondeu. O texto está preservado; tente a busca novamente.',
-};
 type Dependencies = {
-  search(query: string,signal: AbortSignal): Promise<StockImage[]>;
-  importImage(image: StockImage,signal: AbortSignal): Promise<LibraryImage>;
+  generate(input: { prompt: string; orientation?: ImageOrientation }, signal: AbortSignal): Promise<GeneratedPhoto>;
+  store(fileKey: string, bytes: Buffer): Promise<void>;
 };
 const defaults: Dependencies = {
-  async search(query,signal) {
-    const fetcher: typeof fetch = (url,init) => fetch(url,{ ...init,signal: AbortSignal.any([signal,...(init?.signal ? [init.signal] : [])]) });
-    try { return (await searchStock('pixabay',query,1,fetcher,false)).images; }
-    catch (error) {
-      if (safeCode(error) !== 'STOCK_RATE_LIMIT') throw error;
-      await new Promise<void>((resolve,reject) => {
-        const abort = () => { clearTimeout(timer);reject(signal.reason); };
-        const timer = setTimeout(() => { signal.removeEventListener('abort',abort);resolve(); },1100);
-        signal.addEventListener('abort',abort,{ once: true });if (signal.aborted) abort();
-      });
-      return (await searchStock('pixabay',query,1,fetcher,false)).images;
-    }
-  },
-  importImage: (image,signal) => importStockImage('pixabay',image.providerId,signal),
+  generate: (input, signal) => generateEditorialImage(input, signal),
+  store: (fileKey, bytes) => writeImageFile(fileKey, bytes, 'image/jpeg'),
 };
-/** At most three planned images. No invented URLs, low-resolution upscale or legacy fallback. */
+
+/**
+ * The article arrives illustrated: the cover suggestion and up to two figure suggestions are
+ * generated with AI from what they describe, in parallel, and take their place with the
+ * suggestion's alt text and caption, credited "Gerada com IA". A failed one stays a suggestion
+ * (never an error); the text never changes.
+ */
 export async function illustrateArticle(body: ArticleBody,productionId: string,signal: AbortSignal,dependencies: Dependencies = defaults,identity?: {portal:string;actor:string}) {
   const attribution = identity ?? currentReporterContext();
-  const result = structuredClone(body), assets: ServerImageAsset[] = [], used = new Set<string>(), queries = new Map<string,StockImage[]>();
-  const codes: string[] = [];
-  const fill = async (slot: ImageSlot) => {
-    signal.throwIfAborted();
-    let code = 'NO_RELEVANT_IMAGE';
+  const result = structuredClone(body), assets: ServerImageAsset[] = [], codes = new Set<string>();
+  const fill = async (slot: ImageSlot, orientation = slot.orientation): Promise<ImageRef | undefined> => {
     try {
-      const query = editorialImageQuery(slot.subject);
-      if (query) {
-        let photos = queries.get(query);
-        if (!photos) { photos = await dependencies.search(query,signal);queries.set(query,photos); }
-        const candidates = photos.filter(image => image.provider === 'pixabay' && isCoverResolution(image) && !image.downloadLimited && !used.has(image.providerId));
-        if (photos.some(image => image.downloadLimited) && !candidates.length) code = 'PIXABAY_ORIGINAL_REQUIRED';
-        for (const photo of candidates.slice(0,2)) {
-          try {
-            const image = await dependencies.importImage(photo,signal);
-            signal.throwIfAborted();
-            if (!isCoverResolution(image) || image.provider !== 'pixabay' || image.downloadLimited) continue;
-            used.add(image.providerId);
-            const assetId = randomUUID();
-            assets.push({ productionId,fileKey:image.fileKey,asset: { id: assetId,workspaceId: attribution.portal,kind: 'image',origin: { type: 'archive',archiveId: image.id },
-              mime: 'image/jpeg',width: image.width,height: image.height,bytes: image.bytes,credit: publicationImageCredit(image),
-              rights: { authorized: true,note: libraryImageNote(image) },createdAt: new Date().toISOString(),createdBy: attribution.actor,
-              provenance: { ...image,libraryId: image.id } } });
-            return { image: { assetId,alt: image.title,caption: `Imagem ilustrativa: ${image.title}.` } };
-          } catch (error) { if (signal.aborted) throw error;code = safeCode(error); }
-        }
-      }
-    } catch (error) { if (signal.aborted) throw error;code = safeCode(error); }
-    codes.push(code);
-    return { slot: { ...slot,availability: { code,message: IMAGE_LOOKUP_MESSAGES[code] ?? IMAGE_LOOKUP_MESSAGES.STOCK_UNAVAILABLE } } };
+      const photo = await dependencies.generate({ prompt: slot.subject,...(orientation ? { orientation } : {}) },signal);
+      signal.throwIfAborted();
+      const fileKey = createHash('sha256').update(photo.bytes).digest('hex')+'.image';
+      await dependencies.store(fileKey,photo.bytes);
+      const assetId = randomUUID();
+      assets.push({ productionId,fileKey,asset: { id: assetId,workspaceId: attribution.portal,kind: 'image',origin: { type: 'generated',prompt: slot.subject },
+        mime: 'image/jpeg',width: photo.width,height: photo.height,bytes: photo.bytes.length,credit: AI_IMAGE_CREDIT,
+        rights: { authorized: true },createdAt: new Date().toISOString(),createdBy: attribution.actor } });
+      return slotImageRef(assetId,slot);
+    } catch (error) { if (signal.aborted) throw error; codes.add(safeCode(error)); return undefined; }
   };
-  if (result.coverSlot && !result.cover) {
-    const cover = await fill(result.coverSlot);
-    if (cover.image) { result.cover = cover.image;delete result.coverSlot; } else result.coverSlot = cover.slot;
-  }
-  let count = 0;
-  for (const [index,block] of result.blocks.entries()) {
-    if (block.type !== 'figure' || !block.slot || count++ >= 2) continue;
-    const resolved = await fill(block.slot);
-    result.blocks[index] = resolved.image ? { ...block,slot: undefined,image: resolved.image } : { ...block,slot: resolved.slot };
-  }
-  return { body: result,assets,filled: assets.length,codes: [...new Set(codes)] };
+  const figures = result.blocks.flatMap((block,index) => block.type === 'figure' && block.slot ? [index] : []).slice(0,2);
+  const [cover,...images] = await Promise.all([
+    result.coverSlot && !result.cover ? fill(result.coverSlot,'landscape') : undefined,
+    ...figures.map(index => fill((result.blocks[index] as ImageSlotBlock).slot)),
+  ]);
+  if (cover) { result.cover = cover;delete result.coverSlot; }
+  figures.forEach((index,i) => {
+    const image = images[i];
+    if (image) result.blocks[index] = { ...(result.blocks[index] as ImageSlotBlock),slot: undefined,image };
+  });
+  return { body: result,assets,filled: assets.length,codes: [...codes] };
 }

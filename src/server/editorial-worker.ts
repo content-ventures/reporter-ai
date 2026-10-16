@@ -289,15 +289,17 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
             { type: 'step.skipped',stepId: 'images' }]);
         }
       }
-      // Full image lookup is optional: valid writing survives missing keys/originals/provider failures.
+      // The suggested images are generated with AI; writing stays valid without a key or on any failure.
       let resolved = { body: { ...body,...illustrated },assets: [] as ServerImageAsset[],filled: 0,codes: [] as string[] };
-      try {
-        await guarded([{ type: 'step.started',stepId: 'images',meta: 'Buscando fotos pertinentes no Pixabay' }]);
-        resolved = await illustrateArticle({ ...body,...illustrated },job.meta.productionId,AbortSignal.any([combined,AbortSignal.timeout(45000)]),undefined,
-          {portal:input.record.production.workspaceId,actor:input.record.production.createdBy});
-        await guarded([{ type: 'step.completed',stepId: 'images',meta: resolved.codes.includes('PIXABAY_ORIGINAL_REQUIRED')
-          ? 'O Pixabay precisa liberar os originais; o texto foi preservado.' : `${resolved.filled} imagens selecionadas · revisão editorial necessária` }]);
-      } catch (error) { if (combined.aborted) throw error; }
+      if (resolved.body.coverSlot || resolved.body.blocks.some(block => block.type === 'figure' && block.slot)) {
+        try {
+          await guarded([{ type: 'step.started',stepId: 'images',meta: 'Gerando as imagens sugeridas' }]);
+          resolved = await illustrateArticle(resolved.body,job.meta.productionId,AbortSignal.any([combined,AbortSignal.timeout(170000)]),undefined,
+            {portal:input.record.production.workspaceId,actor:input.record.production.createdBy});
+          await guarded([{ type: 'step.completed',stepId: 'images',meta: resolved.filled
+            ? `${resolved.filled} ${resolved.filled === 1 ? 'imagem gerada' : 'imagens geradas'} com IA` : 'Sugestões de imagem mantidas' }]);
+        } catch (error) { if (combined.aborted) throw error; }
+      }
       result = writerResult;
       additions = { assets: resolved.assets,citations: citationsFromArticle(resolved.body,input.record.sources,job.meta.productionId,new Date().toISOString()) };
       events.push({ type: 'outline',title: article.title,sections: [],...(resolved.body.coverSlot ? { cover: resolved.body.coverSlot } : {}),

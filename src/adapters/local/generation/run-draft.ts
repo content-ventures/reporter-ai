@@ -144,6 +144,25 @@ export async function outlineStep(api: RunApi, input: Pick<DraftRunInput, 'outli
   });
 }
 
+/**
+ * The draft arrives illustrated: the cover suggestion and every figure suggestion are generated
+ * ("Gerar com IA") and take their place; one that fails stays a suggestion. False when aborted.
+ */
+async function illustrate(api: RunApi): Promise<boolean> {
+  const { fold } = api.channel;
+  const cover = fold.coverImage ? undefined : fold.coverSlot;
+  const slots = fold.blocks.flatMap((block) => (block.final?.type === 'figure' && block.final.slot ? [block.final] : []));
+  if (!cover && slots.length === 0) return true;
+  const [coverImage, ...images] = await Promise.all([cover ? api.illustrate({ ...cover, orientation: 'landscape' }) : undefined, ...slots.map((block) => api.illustrate(block.slot))]);
+  if (api.aborted()) return false;
+  if (coverImage) api.emit({ type: 'outline', sections: fold.outline, coverImage });
+  slots.forEach((block, index) => {
+    const image = images[index];
+    if (image) api.emit({ type: 'block.completed', block: { ...block, slot: undefined, image } });
+  });
+  return true;
+}
+
 export async function runDraft(input: DraftRunInput): Promise<void> {
   const { api, plan, steps } = input;
   const ok = await simpleStep(api, DRAFT_STEPS.read, async () => ((await api.wait(api.pacing.step())) ? materialMeta(plan) : false));
@@ -175,6 +194,7 @@ export async function runDraft(input: DraftRunInput): Promise<void> {
 
   const checkOk = await simpleStep(api, DRAFT_STEPS.check, async () => {
     if (!(await api.wait(api.pacing.step()))) return false;
+    if (!(await illustrate(api))) return false;
     const body = articleBodyFromRun(api.channel.fold);
     const size = formatLaudas(articleCharacters(body));
     const checks = checkQuotes(body, input.sources);

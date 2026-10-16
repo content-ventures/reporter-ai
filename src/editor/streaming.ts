@@ -6,7 +6,8 @@ import { AddMarkStep, RemoveMarkStep } from '@tiptap/pm/transform';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { articleBodyFromRun, isRunActive } from '../domain/index.ts';
 import type { ArticleBlock, BlockId, RunEvent, RunFold, RunId, StreamBlock } from '../domain/index.ts';
-import { coverOf, coverSlotOf, isFigureDisplayTransaction } from './figures.ts';
+import { coverOf, coverSlotOf, isFigureDisplayTransaction, isFigureNode, readFigureAttrs } from './figures.ts';
+import { readImageRef } from './pm-json.ts';
 import { blockNode } from './nodes.ts';
 import { blockIdOf, blockTextOf, findBlockEntry, inlineText } from './ranges.ts';
 import type { BlockEntry } from './ranges.ts';
@@ -255,6 +256,11 @@ function syncBlock(tr: Transaction, fold: RunFold, index: number, ownership: Own
   }
 
   if (!ownership.inFlight.has(block.id)) {
+    // The AI image generated for a suggestion this stream wrote fills it while it is still open.
+    if (final?.type === 'figure' && final.image && ownership.owned.has(block.id) && isFigureNode(entry.node) && !readFigureAttrs(entry.node.attrs).assetId) {
+      replaceNode(tr, entry, blockNode(schema, final));
+      return;
+    }
     // Take over a block only while it is being written and it holds nothing but streamed text
     // (attach after a remount). Finished blocks are the person's now: never overwritten.
     const text = blockTextOf(entry.node);
@@ -270,6 +276,13 @@ function syncBlock(tr: Transaction, fold: RunFold, index: number, ownership: Own
     return;
   }
   updateStreamingNode(tr, entry, block);
+}
+
+/** The run's AI cover takes the place of the suggestion while the text has no cover of its own. */
+function syncCoverImage(tr: Transaction, fold: RunFold): void {
+  if (!fold.coverImage || !(DOC_ATTR.cover in tr.doc.attrs) || coverOf(tr.doc)) return;
+  tr.setDocAttribute(DOC_ATTR.cover, readImageRef(fold.coverImage));
+  if (tr.doc.attrs[DOC_ATTR.coverSlot]) tr.setDocAttribute(DOC_ATTR.coverSlot, null);
 }
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
@@ -311,6 +324,7 @@ export function streamTransaction(state: EditorState, fold: RunFold, options: St
     const replace = mode === 'replace' && JSON.stringify(current) !== JSON.stringify(next);
     if (replace || (!current && next)) tr.setDocAttribute(DOC_ATTR.coverSlot, next);
   }
+  syncCoverImage(tr, fold);
   // `only` narrows the work per event; blocks still in flight and blocks missing from the
   // document are always compared, so a coalesced or missed event never leaves a block behind.
   const only = options.only && sameRun ? new Set(options.only) : null;
@@ -340,6 +354,7 @@ export function endStreamTransaction(state: EditorState, fold: RunFold): Transac
   if (current.runId === null || current.runId !== fold.run.id) return null;
   const ownership: Ownership = { inFlight: new Set(current.inFlight), owned: new Set(current.owned) };
   const tr = state.tr;
+  syncCoverImage(tr, fold);
   fold.blocks.forEach((_block, index) => syncBlock(tr, fold, index, ownership));
 
   const partial = fold.run.status === 'cancelled' ? articleBodyFromRun(fold, { includePartial: true }).blocks : [];
