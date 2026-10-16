@@ -14,6 +14,7 @@ import type { ApprovalItem, ApprovalsPage, ApprovalsTab } from '../../../ports/p
 import { currentMember, personOf } from './people.ts';
 import { recordOf } from './read-context.ts';
 import type { ReadContext } from './read-context.ts';
+import { decidesOwnRequest } from '../../../domain/rules/decide.ts';
 
 /**
  * "Aprovações" (D10): the acting member's queue ("Para aprovar") and their past decisions
@@ -56,7 +57,7 @@ function itemOf(ctx: ReadContext, record: ProductionRecord, piece: Piece, versio
 export function isInQueue(ctx: Pick<ReadContext, 'gates'>, viewer: Member, piece: Piece, request: ReviewRequest): boolean {
   const gate = gateForPiece(piece.kind, ctx.gates);
   if (!gate || !hasAnyRole(viewer, gate.roles)) return false;
-  if (request.requestedBy === viewer.personId && !viewer.localOperator) return false;
+  if (request.requestedBy === viewer.personId && !decidesOwnRequest(viewer, request)) return false;
   return request.assigneeId === undefined || request.assigneeId === viewer.personId;
 }
 

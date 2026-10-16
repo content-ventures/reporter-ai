@@ -35,6 +35,7 @@ import { currentMember, firstNameOf } from './people.ts';
 import { alreadyRequestedMessage, lockedMessage, lockOf, sendItemsOf, sendRefusal, suggestedAssignee } from './send-check.ts';
 import { assembleRecord, findProduction, locatePiece, withPiece, withProduction } from './state.ts';
 import type { ProductionState, StoreState } from './state.ts';
+import { decidesOwnSends } from '../../../domain/rules/decide.ts';
 
 /** Studio, review and derivative commands, all enforced with the domain rules. */
 
@@ -177,7 +178,7 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
           const assignee = state.people.find((person) => person.id === assigneeId);
           const member = state.members.find((entry) => entry.personId === assigneeId);
           if (!assignee || !member) return refuse('unknown_assignee', 'Pessoa não encontrada.');
-          if (assigneeId === ctx.actorId && !member?.localOperator) return refuse('self_assign', 'Escolha outra pessoa para aprovar.');
+          if (assigneeId === ctx.actorId && !decidesOwnSends(member)) return refuse('self_assign', 'Escolha outra pessoa para aprovar.');
           if (!member.localOperator && !hasAnyRole(member, gate.roles)) return refuse('assignee_cannot_approve', `${firstNameOf(state, assigneeId)} não aprova esta peça.`);
         }
         const dueOn = input.dueOn?.trim() || undefined;

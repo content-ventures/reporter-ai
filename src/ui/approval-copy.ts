@@ -281,7 +281,8 @@ export type StageTransition =
  * The one toast after a stage move, saying who acts now (the board shows the card in its new
  * column): "Enviado para Pedro" · "Agora é só aguardar a aprovação."; "Artigo aprovado" · "Agora é
  * com João: criar o carrossel."; "Ajustes pedidos" · "Agora é com João.". `actorName`: the person
- * asked for a send, whoever continues otherwise; `viewerIsActor` says "você".
+ * asked for a send, whoever continues otherwise; `viewerIsActor` says "você" (an admin who sends to
+ * themselves reviews next: "Enviado para você" · "Revise e aprove para seguir.").
  */
 export function movedToast(input: {
   transition: StageTransition;
@@ -289,7 +290,11 @@ export function movedToast(input: {
   viewerIsActor?: boolean;
 }): { title: string; description: string } {
   const { transition } = input;
-  if (transition.kind === 'sent') return { title: sentToast(input.actorName), description: 'Agora é só aguardar a aprovação.' };
+  if (transition.kind === 'sent') {
+    return input.viewerIsActor
+      ? { title: 'Enviado para você', description: 'Revise e aprove para seguir.' }
+      : { title: sentToast(input.actorName), description: 'Agora é só aguardar a aprovação.' };
+  }
   const who = input.viewerIsActor ? 'você' : firstName(input.actorName);
   if (transition.kind === 'changes_requested') {
     return { title: 'Ajustes pedidos', description: who ? `Agora é com ${who}.` : 'Agora é com quem enviou.' };

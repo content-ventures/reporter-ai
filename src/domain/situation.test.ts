@@ -245,7 +245,7 @@ describe('nextStepFor (the viewer rules, CONTRACT §2.2)', () => {
     const v1 = commitVersion(record, kit, 'article', sampleArticle(record.sources[0]), { origin: 'generation' });
     assert.deepEqual(steps(record, kit.now()), { João: 'Continuar', Pedro: 'Abrir ·', Ana: 'Continuar ·' });
     requestReview(record, kit, v1);
-    assert.deepEqual(steps(record, kit.now()), { João: null, Pedro: 'Revisar', Ana: 'Abrir ·' }, 'the sender waits; any approver reviews an unassigned send');
+    assert.deepEqual(steps(record, kit.now()), { João: 'Revisar', Pedro: 'Revisar', Ana: 'Abrir ·' }, 'an admin sender reviews an unassigned send of theirs; so does any approver');
     assign(record, 'person-other-approver');
     assert.deepEqual(steps(record, kit.now()), { João: null, Pedro: 'Revisar ·', Ana: 'Abrir ·' }, 'assigned to someone else: not in Pedro\'s queue');
     recordDecision(record, kit, v1, 'changes_requested', { note: 'Rever o título.' });

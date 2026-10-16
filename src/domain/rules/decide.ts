@@ -26,7 +26,7 @@ export type DecideRefusal =
   | 'blocking_checks'
   | 'already_decided'
   | 'note_required'
-  /** The person who sent the request never decides on it (two-person gate, admins included). */
+  /** The person who sent the request never decides on it (two-person gate), unless an admin. */
   | 'self_decision';
 
 /**
@@ -34,6 +34,23 @@ export type DecideRefusal =
  * policy so it can be relaxed later (e.g. one-person newsrooms) without hunting for the rule.
  */
 export const REQUESTER_MAY_DECIDE = false;
+
+/**
+ * Who may name themselves in "Quem aprova": an admin, who runs the whole flow alone, and the
+ * loopback operator of the local pilot.
+ */
+export function decidesOwnSends(member: Member | undefined): boolean {
+  return member?.localOperator === true || hasAnyRole(member, ['admin']);
+}
+
+/**
+ * Whether the sender decides this send of theirs: an admin who sent it to themselves (or to
+ * nobody in particular); the loopback operator always. An admin who named someone else waits.
+ */
+export function decidesOwnRequest(member: Member | undefined, request: { assigneeId?: string } | undefined): boolean {
+  if (member?.localOperator === true) return true;
+  return decidesOwnSends(member) && (request?.assigneeId === undefined || request.assigneeId === member?.personId);
+}
 
 export type DecideState = Pick<ProductionRecord, 'versions' | 'decisions' | 'runs' | 'suggestions'> & {
   /** The acting member; undefined means not a member of the workspace. */
@@ -62,7 +79,7 @@ export function canDecide(state: DecideState, request: DecisionRequest): Result<
     return refuse('forbidden_role', forbiddenRoleMessage(request.gate.roles));
   }
   const pending = state.reviewRequests ? pendingReview({ reviewRequests: state.reviewRequests, decisions: state.decisions }, request.subject.pieceId) : undefined;
-  if (!REQUESTER_MAY_DECIDE && !state.member?.localOperator && pending && state.member && pending.requestedBy === state.member.personId) {
+  if (!REQUESTER_MAY_DECIDE && !decidesOwnRequest(state.member, pending) && pending && state.member && pending.requestedBy === state.member.personId) {
     return refuse('self_decision', 'Quem enviou não aprova o próprio envio.');
   }
   const version = findVersion(state, request.subject.versionId);
