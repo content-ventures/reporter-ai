@@ -12,7 +12,7 @@ import type { FlowDefinition } from '../../../domain/stage.ts';
 import { WRITING_FLOW } from '../../../domain/stage.ts';
 import { parseTranscript } from '../../../domain/text/transcript-parse.ts';
 import type { Person } from '../../../domain/workspace.ts';
-import { hasAnyRole } from '../../../domain/workspace.ts';
+import { can, forbidden } from '../../../domain/permissions.ts';
 import type { PersonSummary } from '../../../ports/common.ts';
 import type {
   ArchiveRefusal,
@@ -99,8 +99,7 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
   return {
     async createBlank(input) {
       return store.transact((state, ctx): Tx<CreatedBlankProduction, CreateBlankRefusal> => {
-        const member = currentMember(state);
-        if (!member || !hasAnyRole(member, ['editor', 'admin'])) return refuse('forbidden', 'Você não tem permissão para criar artigos.');
+        if (!can(currentMember(state), 'production.create')) return forbidden('production.create');
         const title = input.title.trim();
         if (!title) return refuse('empty_title', 'Dê um título à produção.');
         const brief = validateBrief({ ...input.brief, revision: 1 });
@@ -130,6 +129,7 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
 
     async createFromSource(input) {
       return store.transact((state, ctx): Tx<CreatedProduction, CreateProductionRefusal> => {
+        if (!can(currentMember(state), 'production.create')) return forbidden('production.create');
         const title = input.title.trim();
         if (!title) return refuse('empty_title', 'Dê um título interno à produção.');
         const brief = validateBrief({ ...input.brief, revision: 1 });
@@ -229,7 +229,8 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
     },
 
     async rename(productionId, rawTitle) {
-      return store.transact((state, ctx): Tx<{ title: string }, 'not_found' | 'empty_title'> => {
+      return store.transact((state, ctx): Tx<{ title: string }, 'not_found' | 'forbidden' | 'empty_title'> => {
+        if (!can(currentMember(state), 'production.edit')) return forbidden('production.edit');
         const production = findProduction(state, productionId);
         if (!production) return PRODUCTION_NOT_FOUND;
         const title = rawTitle.trim();
@@ -240,6 +241,7 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
 
     async updateBrief(productionId, input, baseRevision) {
       return store.transact((state, ctx): Tx<Brief, BriefRefusal> => {
+        if (!can(currentMember(state), 'production.edit')) return forbidden('production.edit');
         const production = findProduction(state, productionId);
         if (!production) return PRODUCTION_NOT_FOUND;
         const current = production.production.brief;
@@ -254,6 +256,7 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
 
     async updateSpeakers(sourceId, mappings) {
       const result = store.transact((state, ctx): Tx<undefined, SpeakersRefusal> => {
+        if (!can(currentMember(state), 'production.edit')) return forbidden('production.edit');
         const source = state.sources.find((candidate) => candidate.id === sourceId);
         if (!source) return SOURCE_NOT_FOUND;
         const unknown = mappings.find((mapping) => !source.speakers.some((speaker) => speaker.label === mapping.label));
@@ -284,6 +287,9 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
 
     async updatePerson(personId, patch) {
       return store.transact((state): Tx<PersonSummary, PersonRefusal> => {
+        // Everyone edits their own profile; other people are production data.
+        const self = personId === state.sessionPersonId && can(currentMember(state), 'profile.edit_self');
+        if (!self && !can(currentMember(state), 'production.edit')) return forbidden('production.edit');
         const current = state.people.find((person) => person.id === personId);
         if (!current) return refuse('not_found', 'Pessoa não encontrada.');
         const next: Person = { ...current };
@@ -309,7 +315,8 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
     },
 
     async setMaterialAuthorization(sourceId, authorized) {
-      return store.transact((state, ctx): Tx<{ authorized: boolean }, 'not_found'> => {
+      return store.transact((state, ctx): Tx<{ authorized: boolean }, 'not_found' | 'forbidden'> => {
+        if (!can(currentMember(state), 'production.edit')) return forbidden('production.edit');
         const source = state.sources.find((candidate) => candidate.id === sourceId);
         if (!source) return SOURCE_NOT_FOUND;
         const users = productionsUsingSource(state, sourceId).map((entry) => entry.production.id);
@@ -324,6 +331,7 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
 
     async archive(productionIds) {
       return store.transact((state, ctx): Tx<{ archived: number }, ArchiveRefusal> => {
+        if (!can(currentMember(state), 'production.archive')) return forbidden('production.archive');
         let next = state;
         const activity: ActivityDraft[] = [];
         for (const productionId of new Set(productionIds)) {

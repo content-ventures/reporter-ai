@@ -4,6 +4,7 @@ import { defaultVoteCategory, sameFeedbackTarget, VOTE_RATINGS, voteOf } from '.
 import type { FeedbackEntry, FeedbackTarget } from '../../../domain/feedback.ts';
 import type { ProductionId } from '../../../domain/ids.ts';
 import type { PieceBody } from '../../../domain/piece.ts';
+import { can, forbidden } from '../../../domain/permissions.ts';
 import { ok, refuse } from '../../../domain/result.ts';
 import type { Result } from '../../../domain/result.ts';
 import { canExport } from '../../../domain/rules/export.ts';
@@ -18,6 +19,7 @@ import type {
   RecordDeliveryRefusal,
 } from '../../../ports/production-commands.ts';
 import type { ActivityDraft, LocalStore, Tx } from './local-store.ts';
+import { currentMember } from './people.ts';
 import { detach } from './queries.ts';
 import { lockedMessage, lockOf } from './send-check.ts';
 import { assembleRecord, findProduction, locatePiece, withPiece, withProduction } from './state.ts';
@@ -96,6 +98,7 @@ export function createFeedbackPort(store: LocalStore): FeedbackPort {
   return {
     async record(input) {
       return store.transact((state, ctx): Tx<FeedbackEntry, FeedbackRefusal> => {
+        if (!can(currentMember(state), 'feedback.record')) return forbidden('feedback.record');
         const productionId = productionOfTarget(state, input.target);
         if (input.target.kind === 'production' && !findProduction(state, input.target.productionId)) {
           return refuse('not_found', 'Não encontramos esta produção.');
@@ -120,6 +123,7 @@ export function createFeedbackPort(store: LocalStore): FeedbackPort {
     },
     async vote(input) {
       const result = store.transact((state, ctx): Tx<FeedbackEntry | null, FeedbackRefusal> => {
+        if (!can(currentMember(state), 'feedback.record')) return forbidden('feedback.record');
         if (!targetExists(state, input.target)) return refuse('not_found', 'Não encontramos o que você avaliou.');
         const productionId = productionOfTarget(state, input.target);
         const productionIds = productionId ? [productionId] : [];
@@ -176,6 +180,7 @@ export function createOutputCommands(store: LocalStore, feedback: FeedbackPort):
   return {
     async decideSuggestion(suggestionId, decision, options = {}) {
       return store.transact((state, ctx): Tx<DecidedSuggestion, DecideSuggestionRefusal> => {
+        if (!can(currentMember(state), 'piece.edit')) return forbidden('piece.edit');
         const found = findSuggestion(state, suggestionId);
         if (!found) return refuse('not_found', 'Sugestão não encontrada.');
         const { suggestion } = found;
@@ -240,6 +245,7 @@ export function createOutputCommands(store: LocalStore, feedback: FeedbackPort):
 
     async recordDelivery(input) {
       return store.transact((state, ctx): Tx<Delivery, RecordDeliveryRefusal> => {
+        if (!can(currentMember(state), 'delivery.record')) return forbidden('delivery.record');
         const production = findProduction(state, input.productionId);
         if (!production) return refuse('not_found', 'Não encontramos esta produção.');
         if (input.files.length === 0) return refuse('no_files', 'Nenhum arquivo foi gerado.');

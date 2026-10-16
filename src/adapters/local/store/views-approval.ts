@@ -7,6 +7,7 @@ import type { ProductionRecord } from '../../../domain/record.ts';
 import { REQUESTER_MAY_DECIDE } from '../../../domain/rules/decide.ts';
 import { toVersionView } from '../../../domain/views.ts';
 import type { ProductionView } from '../../../domain/views.ts';
+import { can } from '../../../domain/permissions.ts';
 import { hasAnyRole } from '../../../domain/workspace.ts';
 import type { PersonSummary } from '../../../ports/common.ts';
 import type { ApprovalDecisionView, ApprovalRequestView, PieceApproval, ProductionDetail, ProductionGuards } from '../../../ports/production-queries.ts';
@@ -84,7 +85,7 @@ export function pieceApproval(ctx: ReadContext, record: ProductionRecord, piece:
   const ordered: PersonSummary[] = suggested ? [suggested, ...approvers.filter((person) => person.id !== suggested.id)] : approvers;
   const pieceView = view.pieces.find((entry) => entry.id === piece.id);
   const isRequester = pending !== undefined && viewer !== undefined && pending.requestedBy === viewer.personId;
-  const canEdit = hasAnyRole(viewer, ['editor', 'admin']);
+  const canEdit = can(viewer, 'piece.edit');
   const approval: PieceApproval = {
     pieceId: piece.id,
     kind: piece.kind,
@@ -102,7 +103,7 @@ export function pieceApproval(ctx: ReadContext, record: ProductionRecord, piece:
     },
     viewer: {
       canEdit,
-      canSend: canEdit,
+      canSend: can(viewer, 'piece.send'),
       canDecide: hasAnyRole(viewer, gate.roles) && (REQUESTER_MAY_DECIDE || viewer?.localOperator === true || !isRequester),
       canWithdraw: pending !== undefined && (isRequester || hasAnyRole(viewer, ['admin'])),
       isRequester,

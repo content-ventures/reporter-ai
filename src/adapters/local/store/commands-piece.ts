@@ -8,6 +8,7 @@ import type { Piece, PieceBody, PieceKind, Version } from '../../../domain/piece
 import { bodyHash, toVersionRef } from '../../../domain/piece.ts';
 import { activeRun, currentSourceRefs, findPiece, findVersion, isApproved, pendingReview } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
+import { can, forbidden } from '../../../domain/permissions.ts';
 import { hasAnyRole } from '../../../domain/workspace.ts';
 import { ok, refuse } from '../../../domain/result.ts';
 import { decide } from '../../../domain/rules/decide.ts';
@@ -89,6 +90,7 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
   return {
     async saveDraft(pieceId, body, baseRevision) {
       const result = store.transact((state, ctx): Tx<Omit<SavedDraft, 'persisted'>, SaveDraftRefusal> => {
+        if (!can(currentMember(state), 'piece.edit')) return forbidden('piece.edit');
         const location = locatePiece(state, pieceId);
         if (!location) return NOT_FOUND;
         // Locked while it waits for a decision (D8): an autosave of the same text still goes through.
@@ -111,6 +113,7 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
 
     async createVersion(pieceId) {
       return store.transact((state, ctx): Tx<SavedVersion, VersionRefusal> => {
+        if (!can(currentMember(state), 'piece.edit')) return forbidden('piece.edit');
         const location = locatePiece(state, pieceId);
         if (!location) return NOT_FOUND;
         const record = assembleRecord(state, location.production);
@@ -132,6 +135,7 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
 
     async restoreVersion(pieceId, versionId) {
       return store.transact((state, ctx): Tx<SavedVersion, RestoreRefusal> => {
+        if (!can(currentMember(state), 'piece.edit')) return forbidden('piece.edit');
         const location = locatePiece(state, pieceId);
         if (!location) return NOT_FOUND;
         const record = assembleRecord(state, location.production);
@@ -154,6 +158,7 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
 
     async requestReview(pieceId, input = {}) {
       return store.transact((state, ctx): Tx<RequestedReview, RequestReviewRefusal> => {
+        if (!can(currentMember(state), 'piece.send')) return forbidden('piece.send');
         const location = locatePiece(state, pieceId);
         if (!location) return NOT_FOUND;
         const gate = gateForPiece(location.piece.kind, options.gates);
@@ -282,6 +287,7 @@ export function createPieceCommands(store: LocalStore, options: PieceCommandOpti
 
     async derive(command) {
       return store.transact((state, ctx): Tx<{ pieceId: string; created: boolean }, DeriveCommandRefusal> => {
+        if (!can(currentMember(state), 'piece.edit')) return forbidden('piece.edit');
         const production = findProduction(state, command.productionId);
         if (!production) return refuse('not_found', 'Não encontramos esta produção.');
         const record = assembleRecord(state, production);

@@ -57,6 +57,28 @@ export function productionPortsContract(name: string, make: PortsFactory): void 
         assert.equal((await ports.queries.activity()).total, 0);
       }));
 
+    it('refuses every content write to a role that only reviews, changing nothing', () =>
+      withPorts(make, async (ports) => {
+        const sample = await createSample(ports);
+        const before = unwrap(await ports.queries.get(sample.productionId));
+        const listed = await ports.queries.list();
+        await ports.actAs(ports.people.approver);
+        const refused = [
+          await ports.commands.createFromSource(newProductionInput()),
+          await ports.commands.rename(sample.productionId, 'Outro título'),
+          await ports.commands.saveDraft(sample.articleId, await sampleArticle(ports, sample.sourceId), 0),
+          await ports.commands.createVersion(sample.articleId),
+          await ports.commands.setMaterialAuthorization(sample.sourceId, false),
+          await ports.commands.archive([sample.productionId]),
+          await ports.feedback.vote({ target: { kind: 'production', productionId: sample.productionId }, value: 'up' }),
+        ];
+        for (const result of refused) assert.equal(!result.ok && result.refusal.code, 'forbidden');
+        const after = unwrap(await ports.queries.get(sample.productionId));
+        assert.equal(after.title, before.title);
+        assert.deepEqual((await ports.queries.list()).items.map((item) => item.id), listed.items.map((item) => item.id), 'still listed, not archived');
+        assert.equal(after.pieces[0]?.draft?.revision, before.pieces[0]?.draft?.revision);
+      }));
+
     it('autosaves manual text and reuses the existing version and approval workflow', (context) =>
       withPorts(make, async (ports) => {
         if (ports.enforcesR1Articles) {
