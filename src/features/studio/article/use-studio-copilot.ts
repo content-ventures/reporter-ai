@@ -12,6 +12,7 @@ import { clip, excerptLabel, type ViewerSegment } from './studio-model';
 import { askQuestion, assistTurnsOf, selectionTarget, toolForSuggestion, unpinnedRunIds } from './studio-session-model';
 import type { ComposerChip, SessionTurn, SuggestionFocus } from './studio-types';
 import type { StudioText } from './use-studio-text';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 type ToolOptions = { target?: TextRange[]; prompt?: string; chips?: ComposerChip[]; question?: string };
 
@@ -251,7 +252,7 @@ export function useStudioCopilot({
       try {
       const result = await commands.generation.retry(runId);
       if (!result.ok) {
-        toast('Não foi possível tentar de novo', { tone: 'error', description: result.refusal.message });
+        notifyRefusal('Não foi possível tentar de novo', result.refusal);
         return;
       }
       setTurns((current) => current.map((turn) => (turn.runId === runId ? { ...turn, runId: result.value.runId } : turn)));

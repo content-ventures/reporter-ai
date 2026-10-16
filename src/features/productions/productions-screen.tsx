@@ -50,6 +50,7 @@ import {
 import { NextStepButton, NextStepCell, OwnerCell, ProductionCell, rowHref, SituationCell } from './production-cells';
 import { FILTER_BAND_ID, ProductionActiveFilters, ProductionFilterBand } from './production-filters';
 import { useListParams, type SetListParams } from './use-list-params';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /**
  * Produções (`/productions`, D12): status tabs (empty ones hidden), search, "Filtros" band with
@@ -194,7 +195,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
     setArchiving(false);
     if (!result.ok) {
       setExiting({ ids: EMPTY_IDS, done: false });
-      toast(result.refusal.message, { tone: 'error' });
+      notifyRefusal(undefined, result.refusal);
       return;
     }
     setExiting({ ids: new Set(ids), done: true });

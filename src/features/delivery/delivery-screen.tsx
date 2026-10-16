@@ -50,6 +50,7 @@ import { PackagePanel } from './package-panel';
 import { PilotFeedbackPanel } from './pilot-feedback';
 import { useDeliveryView, type DeliveryTab } from './use-delivery-view';
 import { usePackage, type PackageController } from './use-package';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /** Simulation scenario of the local ExportService: one file fails once (⌘K › Entrega). */
 const EXPORT_PARTIAL_SCENARIO = 'export-partial';
@@ -230,7 +231,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
     setExporting(false);
     if (!result.ok) {
       setCelebrate(false);
-      toast('Não foi possível registrar a entrega', { tone: 'error', description: result.refusal.message });
+      notifyRefusal('Não foi possível registrar a entrega', result.refusal);
       return;
     }
     const { title, partial } = downloadToast(saved.length, outcomes.length);

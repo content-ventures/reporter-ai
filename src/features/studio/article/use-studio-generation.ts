@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
-import { toast } from '@content-ventures/design-system/v3';
 import { isRunActive, type ArticleBody, type GenerationRun, type RunId } from '@/domain';
 import type { PieceView, ProductionDetail, RunView } from '@/ports';
 import { useRun, type Commands } from '@/state';
@@ -10,6 +9,7 @@ import { isBlankBody } from './studio-model';
 import { continuationMode, generationRunsOf } from './studio-session-model';
 import type { StreamMode } from './studio-types';
 import { newestRunId } from '@/ui/generation-feedback';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /**
  * The article generation on screen: the live run of the piece, the one this tab started
@@ -59,7 +59,7 @@ export function useGenerationActions({
     const simulation = takeArmedSimulation('article.draft');
     const result = await commands.generation.start('article.draft', { productionId, pieceId }, simulation ? { simulation } : undefined);
     if (!result.ok) {
-      toast('Geração não iniciada', { tone: 'error', description: result.refusal.message });
+      notifyRefusal('Geração não iniciada', result.refusal);
       return;
     }
     setStarted({ runId: result.value.runId, mode: hasText ? 'replace' : 'append' });
@@ -70,7 +70,7 @@ export function useGenerationActions({
       if (!runId) return;
       const result = await commands.generation.retry(runId, stepId);
       if (!result.ok) {
-        toast('Não foi possível continuar', { tone: 'error', description: result.refusal.message });
+        notifyRefusal('Não foi possível continuar', result.refusal);
         return;
       }
       setStarted({ runId: result.value.runId, mode: continuationMode(streamMode, live?.fold.blocks.length ?? 0) });

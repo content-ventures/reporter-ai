@@ -6,6 +6,7 @@ import { setArticleDecorations } from '@/editor';
 import type { PieceView } from '@/ports';
 import type { Commands } from '@/state';
 import type { StudioText } from './use-studio-text';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /**
  * Versions and the approval cycle of the article in the studio: "Salvar versão" (⌘S), restoring a
@@ -52,7 +53,7 @@ export function useStudioReview({ commands, piece, text }: { commands: Commands;
       const result = await commands.production.restoreVersion(pieceId, versionId);
       if (!result.ok) {
         awaitReload(false);
-        toast(options.quiet ? 'Mudanças não desfeitas' : 'Versão não restaurada', { tone: 'error', description: result.refusal.message });
+        notifyRefusal(options.quiet ? 'Mudanças não desfeitas' : 'Versão não restaurada', result.refusal);
         throw new Error(result.refusal.code);
       }
       setLocalTitle(null);

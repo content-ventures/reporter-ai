@@ -7,6 +7,7 @@ import { FileText } from '@content-ventures/design-system/v3/icons';
 import { DEFAULT_ARTICLE_SIZE, DEFAULT_SECTIONS } from '@/domain';
 import { useCommands, useSession } from '@/state';
 import { pieceHref } from '@/ui/routes';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /** A user action creates one blank, persisted article and opens the existing R1 studio. */
 export function StartWritingButton() {
@@ -29,7 +30,7 @@ export function StartWritingButton() {
         brief: { size: DEFAULT_ARTICLE_SIZE, sections: DEFAULT_SECTIONS },
       });
       if (!result.ok) {
-        toast('Não foi possível abrir o editor', { tone: 'error', description: result.refusal.message });
+        notifyRefusal('Não foi possível abrir o editor', result.refusal);
         return;
       }
       router.push(pieceHref(result.value.productionId, 'article'));

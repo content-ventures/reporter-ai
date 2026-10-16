@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, ButtonLink, TextLink, toast } from '@content-ventures/design-system/v3';
+import { Button, ButtonLink, TextLink } from '@content-ventures/design-system/v3';
 import type { DeskItem, InProgressItem } from '@/ports';
 import { useCommands } from '@/state';
 import { productionHref, stepTargetHref } from '@/ui/routes';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /**
  * The verb of a row (COPY §0.3): "Revisar", "Ajustar", "Tentar de novo", "Autorizar"… written on
@@ -35,7 +36,7 @@ function RetryButton({ item, label }: { item: DeskItem & { pieceId: NonNullable<
         void commands.generation.start('article.draft', { productionId: item.productionId, pieceId: item.pieceId }).then((result) => {
           setBusy(false);
           if (!result.ok) {
-            toast('Não foi possível tentar de novo', { tone: 'error', description: result.refusal.message });
+            notifyRefusal('Não foi possível tentar de novo', result.refusal);
             return;
           }
           router.push(stepTargetHref(item.productionId, step.target));

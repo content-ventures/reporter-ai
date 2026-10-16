@@ -34,6 +34,7 @@ import { SlideImage } from './slide-media';
 import { articleTopic, coverKicker, mainOrganization } from '@/domain/text/kicker';
 import { fitTitle } from '@/domain/text/slide-text';
 import { useSlideRenders } from './use-slide-renders';
+import { notifyRefusal } from '@/ui/permission-dialog';
 
 /**
  * Start of the carousel (PLAN §3.7, reference 3 "creation page with live preview"): the model
@@ -163,7 +164,7 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
         if (!derived.ok) {
           setStarting(false);
           onStartFailed();
-          toast('Não foi possível criar o carrossel', { tone: 'error', description: derived.refusal.message });
+          notifyRefusal('Não foi possível criar o carrossel', derived.refusal);
           return;
         }
         pieceId = derived.value.pieceId;
@@ -172,7 +173,7 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
         if (!saved.ok) {
           setStarting(false);
           onStartFailed();
-          toast('Não foi possível salvar o modelo', { tone: 'error', description: saved.refusal.message });
+          notifyRefusal('Não foi possível salvar o modelo', saved.refusal);
           return;
         }
       }
@@ -186,7 +187,7 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
       if (!started.ok) {
         setStarting(false);
         onStartFailed();
-        toast('Não foi possível gerar os textos', { tone: 'error', description: started.refusal.message });
+        notifyRefusal('Não foi possível gerar os textos', started.refusal);
         return;
       }
       rememberTemplate(template.id);
@@ -205,7 +206,7 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
     if (!lastRun) return;
     const retried = await commands.generation.retry(lastRun.id, stepId);
     if (retried.ok) onRunStarted(retried.value.runId);
-    else toast('Não foi possível continuar', { tone: 'error', description: retried.refusal.message });
+    else notifyRefusal('Não foi possível continuar', retried.refusal);
   };
 
   const label = from ? `Gerar textos a partir da versão ${from.number}` : 'Gerar textos';
