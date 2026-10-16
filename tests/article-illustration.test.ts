@@ -1,40 +1,51 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { illustrateArticle,editorialImageQuery } from '../src/server/article-illustration.ts';
+import { illustrateArticle } from '../src/server/article-illustration.ts';
 import { editorialResponseValid,outlineResponseSchema } from '../src/server/editorial-validation.ts';
 import { articlePlainText } from '../src/domain/article.ts';
 import type { ArticleBody } from '../src/domain/article.ts';
-import type { StockImage } from '../src/domain/visual-library.ts';
-const body: ArticleBody = { type: 'article',title: 'Teste sintético',coverSlot: { subject: 'Pescado em uma peixaria' },blocks: [
+import { imageGenerationPrompt } from '../src/domain/image-generation.ts';
+const body: ArticleBody = { type: 'article',title: 'Teste sintético',coverSlot: { subject: 'Pescado em uma peixaria',orientation: 'portrait' },blocks: [
   { id: 'paragraph',type: 'paragraph',inlines: [{ text: 'Texto fictício permanece exatamente o mesmo.' }] },
-  { id: 'figure',type: 'figure',slot: { subject: 'Peixes no mercado' } },
+  { id: 'figure',type: 'figure',slot: { subject: 'Peixes no mercado',suggestedAlt: 'Peixes expostos',suggestedCaption: 'Mercado de peixes' } },
 ] };
-const photo = (id: number): StockImage => ({ provider: 'pixabay',providerId: String(id),title: 'Foto de teste',creator: 'Teste',
-  sourceUrl: 'https://example.com/photo',imageUrl: 'https://example.com/image.jpg',previewUrl: 'https://example.com/preview.jpg',
-  license: 'Pixabay Content License',licenseUrl: 'https://pixabay.com/service/license-summary/',attribution: 'Teste / Pixabay',width: 3000,height: 2000 });
-test('auto illustration fills cover and body with distinct real-resolution records; text is unchanged', async () => {
-  let searches = 0;
+const identity = { portal: 'portal',actor: 'actor' };
+const photo = (seed: string) => ({ bytes: Buffer.from('jpeg '+seed),width: 1536,height: 1024 });
+test('a generated article arrives illustrated: cover and figures from their suggestions, text unchanged', async () => {
+  const prompts: { prompt: string; orientation?: string }[] = [],stored: string[] = [];
   const result = await illustrateArticle(body,'production',new AbortController().signal,{
-    search: async () => { searches++;return [photo(1),photo(2)]; },
-    importImage: async image => ({ ...image,id: 'library-'+image.providerId,fileKey: 'fixture.photo.jpg',bytes: 500,createdAt: '2026-10-13T12:00:00Z',authorized: true }),
-  });
-  assert.equal(result.filled,2);assert.equal(searches,1,'the same public query is reused');
-  assert.equal(articlePlainText(result.body),articlePlainText(body));assert.ok(result.body.cover);assert.equal(result.body.coverSlot,undefined);
-  assert.equal(result.assets[0].asset.credit,'');assert.ok(result.assets[0].asset.provenance?.license);
-  assert.notEqual(result.assets[0].asset.id,result.assets[1].asset.id);assert.equal(body.cover,undefined);
+    generate: async input => { prompts.push(input);return photo(input.prompt); },
+    store: async fileKey => { stored.push(fileKey); },
+  },identity);
+  assert.equal(result.filled,2);assert.equal(stored.length,2);
+  assert.deepEqual(prompts.map(item => item.prompt).sort(),['Peixes no mercado','Pescado em uma peixaria']);
+  assert.equal(prompts.find(item => item.prompt === 'Pescado em uma peixaria')?.orientation,'landscape','the cover is always 16:9');
+  assert.equal(articlePlainText(result.body),articlePlainText(body));
+  assert.equal(result.body.coverSlot,undefined);assert.ok(result.body.cover);
+  const figure = result.body.blocks[1];
+  assert.ok(figure.type === 'figure' && figure.image && !figure.slot);
+  assert.deepEqual(figure.type === 'figure' ? { alt: figure.image?.alt,caption: figure.image?.caption } : {},{ alt: 'Peixes expostos',caption: 'Mercado de peixes' });
+  for (const entry of result.assets) {
+    assert.equal(entry.asset.origin.type,'generated');assert.equal(entry.asset.credit,'Gerada com IA');assert.equal(entry.asset.rights.authorized,true);
+    assert.match(entry.fileKey ?? '',/^[a-f0-9]{64}\.image$/);
+  }
+  assert.equal(body.cover,undefined,'the input body is not mutated');
 });
-test('reduced previews never enter the article; missing originals do not fail valid writing', async () => {
-  let imports = 0;
+test('a failed generation leaves that suggestion as it was, never an error', async () => {
   const result = await illustrateArticle(body,'production',new AbortController().signal,{
-    search: async () => [{ ...photo(1),downloadLimited: true }],importImage: async () => { imports++;throw new Error('should not import'); },
-  });
-  assert.equal(imports,0);assert.equal(result.filled,0);assert.deepEqual(result.codes,['PIXABAY_ORIGINAL_REQUIRED']);
-  assert.equal(result.body.coverSlot?.availability?.code,'PIXABAY_ORIGINAL_REQUIRED');assert.equal(articlePlainText(result.body),articlePlainText(body));
+    generate: async input => { if (input.prompt === 'Peixes no mercado') throw new Error('provider down');return photo(input.prompt); },
+    store: async () => {},
+  },identity);
+  assert.equal(result.filled,1);assert.ok(result.body.cover);
+  const figure = result.body.blocks[1];
+  assert.deepEqual(figure.type === 'figure' ? figure.slot : undefined,body.blocks[1].type === 'figure' ? body.blocks[1].slot : undefined);
+  assert.equal(figure.type === 'figure' ? figure.slot?.availability : 'x',undefined);
 });
-test('query derivation never transmits a whole subject, participant identity or a legacy provider', () => {
-  assert.equal(editorialImageQuery('Retrato de João no evento privado'),undefined);
-  assert.equal(editorialImageQuery('Camarão na aquicultura'),'aquaculture');
-  assert.equal(editorialImageQuery('Fábrica de processamento de pescado'),'fish processing');
+test('the provider gets the description inside the editorial frame, never asked to portray a named person', () => {
+  const prompt = imageGenerationPrompt('  Retrato de João   no estande ');
+  assert.match(prompt,/Cena: Retrato de João no estande/);
+  assert.match(prompt,/Não retrate pessoas reais identificáveis/);
+  assert.match(prompt,/Sem texto/);
 });
 test('outline validators reject wrong counts, invented ids and repeated evidence BEFORE cache', () => {
   const known = new Set(['1','2']),value = { introIds: [],sections: [{ evidenceIds: ['1'] },{ evidenceIds: ['2'] }] };

@@ -200,6 +200,25 @@ describe('streaming a draft into the editor', () => {
     assert.deepEqual(texts(view.state), ['Editado: Olá mundo novo.', 'Seção um', 'Texto da seção com várias palavras.', 'Bloco novo.']);
   });
 
+  test('the AI images of a draft fill its open suggestions (cover and figure), never an image the person chose', () => {
+    const slot: ArticleBlock = { id: 'fig-1', type: 'figure', slot: { subject: 'Oficina' } };
+    const image = { assetId: 'img-ai', alt: 'Oficina', caption: 'A oficina' };
+    const filled: ArticleBlock = { id: 'fig-1', type: 'figure', image };
+    const events: RunEventPayload[] = [started(), { type: 'outline', sections: [], cover: { subject: 'Fachada' } }, ...stream(FINAL_1, ['Olá ', 'mundo', ' novo.']),
+      ...stream(slot, []), { type: 'outline', sections: [], coverImage: { assetId: 'img-cover', alt: 'Fachada' } }, { type: 'block.completed', block: filled }, { type: 'run.completed' }];
+    const view = testView(articleState({ blocks: [] }));
+    const fold = play(view, runEvents('run-1', events));
+    const body = docBody(view.state.doc);
+    assert.deepEqual(body.cover, { assetId: 'img-cover', alt: 'Fachada' });
+    assert.equal(body.coverSlot, undefined);
+    assert.deepEqual(body.blocks.find((block) => block.id === 'fig-1'), filled);
+    assert.equal(articleHash(body), articleHash(articleBodyFromRun(fold)));
+
+    const own = testView(articleState({ blocks: [], cover: { assetId: 'img-own' } }));
+    play(own, runEvents('run-2', events));
+    assert.deepEqual(docBody(own.state.doc).cover, { assetId: 'img-own' });
+  });
+
   test('a snapshot of a finished run settles in one go', () => {
     const view = testView(articleState({ blocks: [] }));
     const fold = foldRun(runEvents('run-1', FULL_RUN));
