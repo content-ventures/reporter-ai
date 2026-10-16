@@ -17,7 +17,6 @@ import {
 import {
   Bold,
   Check,
-  CircleStop,
   Italic,
   Link2,
   MessageSquareText,
@@ -239,15 +238,14 @@ function SuggestionNearText({ open, onDismiss }: { open: boolean; onDismiss: () 
       placement="bottom"
       follow
       label="Sugestão da IA"
-      onDismiss={(reason) => (reason === 'outside' ? onDismiss() : undefined)}
+      // While the AI writes (no suggestion yet), Escape only hides the bar: the run goes on.
+      onDismiss={(reason) => (reason === 'outside' || !suggestion ? onDismiss() : undefined)}
     >
       <Chip size="sm" variant="soft" icon={Sparkles}>
         {label}
       </Chip>
       <ToolbarSeparator />
-      {!suggestion ? (
-        <ToolbarButton label="Parar" icon={CircleStop} showLabel shortcut="Esc" onClick={() => void studio.actions.stopAssist()} />
-      ) : state === 'stale' ? (
+      {!suggestion ? null : state === 'stale' ? (
         <>
           <ToolbarButton label="Reaplicar" icon={RefreshCcw} showLabel keep shortcut="⌘↵" onClick={() => void studio.actions.reapply(suggestion)} />
           <ToolbarButton label="Descartar" icon={X} showLabel={!narrow} shortcut="Esc" onClick={() => void studio.actions.discard(suggestion)} />

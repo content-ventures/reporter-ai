@@ -91,7 +91,7 @@ for (const viewport of VIEWPORTS) {
         await confirmPauta(page);
         await expect(page.getByRole('progressbar', { name: 'Preparando o artigo' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Material', exact: true })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Parar', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Parar', exact: true })).toHaveCount(0);
         await expect(page.getByText('Selecionar evidências e citações. Você pode acompanhar a prévia; a edição será liberada após a validação.', { exact: true })).toHaveCount(0);
         expect(replay.counts()).toEqual({ creates: 1, starts: 1 });
         replay.preview();

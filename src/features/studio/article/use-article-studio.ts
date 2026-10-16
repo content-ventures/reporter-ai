@@ -66,7 +66,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
     showAssistant,
     copilotHidden: panes.assistantHidden,
   });
-  const decide = useSuggestionActions({ commands, text, bar, startTool: copilot.startTool, activeAssist: copilot.activeAssist, stopAssist: copilot.stopAssist });
+  const decide = useSuggestionActions({ commands, text, bar, startTool: copilot.startTool });
   const generationActions = useGenerationActions({
     commands,
     productionId: production.id,
@@ -158,8 +158,8 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
     [sendItems, setView, nextSuggestion, nextMissingQuote, markTextReviewed, nextImageSlot, nextImageIssue, focusTitle, editor, showPanel, liveOpen, revealSuggestion, showImage, focusRange],
   );
 
-  const { generate, stopGeneration, retryGeneration } = generationActions;
-  const { stopAssist, retryRun, repeatTurn, runTool, runPreset, ask, askAboutSelection, addExcerpt } = copilot;
+  const { generate, retryGeneration } = generationActions;
+  const { retryRun, repeatTurn, runTool, runPreset, ask, askAboutSelection, addExcerpt } = copilot;
   const { accept, discard, reapply } = decide;
   const { showQuote } = checking;
   const { insertQuote, takeSourceText, showInTranscript } = sourceLink;
@@ -182,9 +182,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
         : action;
     return {
       generate: writes(generate),
-      stopGeneration,
       retryGeneration: writes(retryGeneration),
-      stopAssist,
       retryRun: writes(retryRun),
       repeatTurn: writes(repeatTurn),
       runTool: writes(runTool),
@@ -216,7 +214,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
       jumpTo,
       focusTitle,
     };
-  }, [refusal, readOnly, canEdit, generate, stopGeneration, retryGeneration, stopAssist, retryRun, repeatTurn, runTool, runPreset, ask, askAboutSelection, accept, discard, reapply, revealSuggestion, nextSuggestion, focusRange, showQuote, markTextReviewed, unmarkTextReviewed, nextMissingQuote, insertQuote, takeSourceText, showInTranscript, addExcerpt, saveVersion, restoreVersion, undoChanges, scrollToBlock, showImage, showImageSlot, nextImageIssue, nextImageSlot, jumpTo, focusTitle]);
+  }, [refusal, readOnly, canEdit, generate, retryGeneration, retryRun, repeatTurn, runTool, runPreset, ask, askAboutSelection, accept, discard, reapply, revealSuggestion, nextSuggestion, focusRange, showQuote, markTextReviewed, unmarkTextReviewed, nextMissingQuote, insertQuote, takeSourceText, showInTranscript, addExcerpt, saveVersion, restoreVersion, undoChanges, scrollToBlock, showImage, showImageSlot, nextImageIssue, nextImageSlot, jumpTo, focusTitle]);
 
   /** The brief changed after the text on screen was generated ("Reescrever" follows the new one). */
   const briefChanged = briefChangedSince(generation.run, production.brief);

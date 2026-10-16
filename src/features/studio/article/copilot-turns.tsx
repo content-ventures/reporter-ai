@@ -41,7 +41,7 @@ import type { ComposerChip, SessionTurn } from './use-article-studio';
 
 /**
  * Assistant turns (CONTRACT §3.8, tab "Assistente"): the reviewer's note after "Ajustes solicitados" (tab "Comentários"), the
- * article generation (AgentTrace with the key excerpts, Parar, retry per step, the "v1 · IA"
+ * article generation (AgentTrace with the key excerpts, retry per step, the "v1 · IA"
  * artifact) and each request of this session (the person's turn, then the AI with its trace,
  * reply and SuggestionCards). The model is said in each run's "Ver detalhes"; the turns carry how long
  * they took. No thumbs: the turns do not ask for a vote.
@@ -401,7 +401,7 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
         }
         onContinue={runId && cancelled ? () => void (fold ? studio.actions.retryRun(runId) : studio.actions.repeatTurn(recovered)) : undefined}
         actions={
-          active ? <Button size="sm" variant="ghost" onClick={() => void studio.actions.stopAssist()}>Parar geração</Button> : !active && quotable.length > 0 ? (
+          !active && quotable.length > 0 ? (
             <Button size="sm" variant="ghost" icon={Quote} onClick={() => quotable.forEach((excerpt) => studio.actions.insertQuote(excerpt))}>
               {quotable.length === 1 ? 'Inserir citação' : 'Inserir citações'}
             </Button>

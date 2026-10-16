@@ -15,7 +15,7 @@ import {
   type Editor,
   type SuggestionDecoration,
 } from '@/editor';
-import type { DraftView, RunView } from '@/ports';
+import type { DraftView } from '@/ports';
 import type { CopilotTool } from '@/registries';
 import type { Commands } from '@/state';
 import { isOpenSuggestion, nextInOrder, suggestionMarks } from './studio-model';
@@ -108,18 +108,14 @@ export function useSuggestionActions({
   text,
   bar,
   startTool,
-  activeAssist,
-  stopAssist,
 }: {
   commands: Commands;
   text: StudioText;
   bar: SuggestionBar;
   startTool: (tool: CopilotTool, options?: { target?: TextRange[] }) => Promise<void>;
-  activeAssist: RunView | undefined;
-  stopAssist: () => Promise<void>;
 }) {
   const { editor, prepare, sync, handle, title, setLocalTitle, awaitReload, revealBlock } = text;
-  const { setSuggestionFocus, focusedSuggestion, suggestionBarHidden, suggestionFocus, stateOf, liveOpen } = bar;
+  const { setSuggestionFocus, focusedSuggestion, suggestionBarHidden, stateOf, liveOpen } = bar;
 
   /**
    * A suggestion brought to its passage: the bar points at it and the passage rises to the upper
@@ -236,7 +232,7 @@ export function useSuggestionActions({
    * ⌘↵ / Esc in the text (captured before ProseMirror's keymap). They decide the suggestion under
    * the caret, else the one whose bar is open: ⌘↵ accepts (a stale one is reapplied), Esc
    * discards. With text selected, Esc belongs to the selection bar. With nothing to decide, ⌘↵
-   * goes to the next open suggestion and Esc stops an inline request still being written.
+   * goes to the next open suggestion; Esc on a request still being written only hides its bar.
    */
   const decideFromKeyboard = useEffectEvent((event: globalThis.KeyboardEvent): boolean => {
     const accepting = event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey;
@@ -256,10 +252,6 @@ export function useSuggestionActions({
         return true;
       }
       void discard(target);
-      return true;
-    }
-    if (escaping && caretEmpty && !suggestionBarHidden && suggestionFocus?.runId && activeAssist?.id === suggestionFocus.runId) {
-      void stopAssist();
       return true;
     }
     if (accepting) {

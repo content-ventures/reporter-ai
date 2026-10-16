@@ -12,7 +12,7 @@ import {
   type MenuItem,
   type SaveStatus,
 } from '@content-ventures/design-system/v3';
-import { ChevronDown, CircleStop, Maximize2, Minimize2, Save, Send, Sparkles } from '@content-ventures/design-system/v3/icons';
+import { ChevronDown, Maximize2, Minimize2, Save, Send, Sparkles } from '@content-ventures/design-system/v3/icons';
 import { DECISION_LABELS, type VersionView } from '@/domain';
 import { useFocusMode } from '@/ui/shell';
 import { useMediaQuery } from '@/ui/use-media-query';
@@ -26,11 +26,8 @@ import { useNow } from '@/ui/time';
  */
 
 export type CarouselGenerateAction = {
-  running: boolean;
-  stopping: boolean;
   /** Why "Gerar nova versão" is unavailable (article not approved, run in progress). */
   reason?: string;
-  onStop: () => void;
   onRegenerate: () => void;
 };
 
@@ -71,19 +68,8 @@ export function CarouselSendButton({ action, size }: { action: CarouselReviewAct
   );
 }
 
-/** "Gerar nova versão" (a confirmation follows), or "Parar geração" while the copy is written. */
+/** "Gerar nova versão" (a confirmation follows); while the copy is written it waits, with the reason. */
 export function CarouselGenerateButton({ action, compact = false, size }: { action: CarouselGenerateAction; compact?: boolean; size?: 'sm' }) {
-  if (action.running) {
-    return compact ? (
-      <Tooltip content="Parar geração">
-        <IconButton label="Parar geração" icon={CircleStop} size={size} aria-disabled={action.stopping || undefined} onClick={action.onStop} />
-      </Tooltip>
-    ) : (
-      <Button icon={CircleStop} size={size} loading={action.stopping} onClick={action.onStop}>
-        Parar geração
-      </Button>
-    );
-  }
   const onClick = action.reason ? undefined : action.onRegenerate;
   return (
     <Tooltip content={action.reason ?? 'Gerar nova versão'}>

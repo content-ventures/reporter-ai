@@ -246,14 +246,6 @@ export function useStudioCopilot({
   );
 
   // ——— Runs of the thread ———
-  const stopAssist = useCallback(async () => {
-    if (!activeAssist) return;
-    try {
-      const result = await commands.generation.cancel(activeAssist.id);
-      if (!result.ok) toast('Não foi possível parar', { tone: 'error', description: result.refusal.message });
-    } catch { toast('Não foi possível parar', { tone: 'error', description: 'Confira a conexão e tente novamente.' }); }
-  }, [activeAssist, commands]);
-
   const retryRun = useCallback(
     async (runId: RunId) => {
       try {
@@ -284,7 +276,6 @@ export function useStudioCopilot({
     runPreset,
     askAboutSelection,
     addExcerpt,
-    stopAssist,
     retryRun,
   };
 }

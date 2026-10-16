@@ -117,7 +117,6 @@ export function roundLabel(round: number): string | undefined {
  * in the ⋯ menus and in the toast after a send.
  */
 export const NOTICE_VERBS = {
-  stop: 'Parar',
   retry: 'Tentar de novo',
   withdraw: 'Retirar envio para editar',
   withdrawMenu: 'Retirar envio',
