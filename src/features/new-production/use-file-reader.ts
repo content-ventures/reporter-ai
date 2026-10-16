@@ -5,6 +5,7 @@ import type { RejectedFile } from '@content-ventures/design-system/v3';
 import type { SourceIntake } from '@/registries';
 import type { MaterialReadPhase, MaterialReadProgress } from '@/ports';
 import { useCommands } from '@/state';
+import { isPermissionRefusal, notifyRefusal } from '@/ui/permission-dialog';
 import type { MaterialFile } from './form';
 
 /**
@@ -63,6 +64,12 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
         const rest = MIN_READ_MS - (performance.now() - started);
         if (rest > 0) await new Promise((resolve) => window.setTimeout(resolve, rest));
         if (token !== run.current) return;
+        if (!result.ok && isPermissionRefusal(result.refusal)) {
+          // Not an upload failure: the popup says who can, and the row goes away.
+          setState(null);
+          notifyRefusal(undefined, result.refusal);
+          return;
+        }
         if (!result.ok) {
           setState((current) => ({
             status: 'error',

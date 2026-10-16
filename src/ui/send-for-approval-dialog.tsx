@@ -41,6 +41,7 @@ import {
 } from './approval-copy';
 import { useMediaQuery } from './use-media-query';
 import { useNow } from './time';
+import { isPermissionRefusal, notifyRefusal } from './permission-dialog';
 
 /**
  * "Enviar para aprovação" (D10, brief §5, WordPress pre-publish pattern): what still blocks the
@@ -197,7 +198,10 @@ export function SendForApprovalDialog({ open, onClose, approval, onJump, onMarkR
       const { code, message } = result.refusal;
       if (code === 'unknown_assignee' || code === 'assignee_cannot_approve' || code === 'self_assign') setErrors({ assignee: message });
       else if (code === 'invalid_due') setErrors({ due: message });
-      else toast('Não foi enviado', { tone: 'error', description: message });
+      else {
+        if (isPermissionRefusal(result.refusal)) onClose();
+        notifyRefusal('Não foi enviado', result.refusal);
+      }
       return;
     }
     if (onSent) onSent({ result: result.value, assignee: chosen });

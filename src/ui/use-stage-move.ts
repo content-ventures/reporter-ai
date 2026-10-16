@@ -7,6 +7,7 @@ import type { PieceId, PieceKind, ProductionId } from '@/domain';
 import { useCommands } from '@/state';
 import { movedToast, NOTICE_VERBS, withdrawnToast } from './approval-copy';
 import { boardHref, pieceHref } from './routes';
+import { notifyRefusal } from './permission-dialog';
 
 /** Long enough to read who acts now once the board opens (the DS default is 5 s). */
 export const MOVED_TOAST_MS = 8000;
@@ -41,7 +42,7 @@ export function useStageMove(): StageMove {
         const withdraw = async () => {
           const result = await commands.production.withdrawReview(pieceId);
           if (!result.ok) {
-            toast('Envio não retirado', { tone: 'error', description: result.refusal.message });
+            notifyRefusal('Envio não retirado', result.refusal);
             return;
           }
           const copy = withdrawnToast(kind === 'carousel' ? 'carousel' : 'article');

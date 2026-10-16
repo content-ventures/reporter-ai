@@ -25,6 +25,7 @@ import { routeStageId, stageHref, type ProductionRoute } from '@/ui/routes';
 import { StatusBadge } from '@/ui/status-badge';
 import { decidesAt, journeyLabel, journeyMenuItems, viewedStageIndex } from './journey';
 import { useProductionFrame } from './production-context';
+import { isPermissionRefusal, notifyRefusal } from '@/ui/permission-dialog';
 
 /**
  * Production header (§2.6, D2/D11/P3): ONE line on every `/productions/[id]` route, in reading
@@ -87,7 +88,10 @@ function RenameDialog({ production, open, onClose }: { production: ProductionDet
     const result = await commands.production.rename(production.id, title.trim());
     setSaving(false);
     if (result.ok) onClose();
-    else setError(result.refusal.message);
+    else if (isPermissionRefusal(result.refusal)) {
+      onClose();
+      notifyRefusal(undefined, result.refusal);
+    } else setError(result.refusal.message);
   }
 
   return (

@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { ArticleBody, PieceId } from '@/domain';
 import type { SaveState } from '@/ports';
 import { useCommands, useSaveStatus } from '@/state';
+import { isPermissionRefusal } from '@/ui/permission-dialog';
 import { draftSnapshotHash } from './studio-model';
 
 /**
@@ -84,7 +85,8 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
               setLastOwnSave(result.value.updatedAt);
             } else if (result.refusal.code === 'conflict') {
               setConflict(true);
-            } else {
+            } else if (!isPermissionRefusal(result.refusal)) {
+              // An autosave never reports a permission limit (no popup, no red text).
               setRefused(result.refusal.message);
             }
           } catch {

@@ -19,6 +19,7 @@ import { useApprovals, useProductions, useSession } from '@/state';
 import { iconFor } from '../icons';
 import { ReporterBrand } from '../reporter-brand';
 import { PRODUCT_NAME } from '@/lib/brand';
+import { PermissionDialogHost } from '../permission-dialog';
 import { R2_NAVIGATION, isR2PreviewPath } from '../r2-preview';
 import { NEW_PRODUCTION_HREF, productionRoute, PRODUCTIONS_HREF } from '../routes';
 import { ShellAccount } from './account';
@@ -171,6 +172,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
       </AppShell>
       <ShellCommandPalette open={paletteOpen} onClose={closePalette} productions={items} loading={productions.status === 'loading'} />
       <RunOutcomeToasts productions={items} />
+      <PermissionDialogHost />
     </CommandRegistryProvider>
   );
 }
