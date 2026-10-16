@@ -12,6 +12,7 @@ export { ChecksList, checkProgress, visibleChecks, type ChecksListProps } from '
 export { StatusBanner, TaskNotice, type BannerAction, type StatusBannerProps } from './status-banner';
 export { ApprovalBanner, subjectOf, useWithdrawReview, type ApprovalBannerProps } from './approval-banner';
 export { GenerationBanner, type GenerationBannerProps } from './generation-banner';
+export { PermissionDialogHost, isPermissionRefusal, notifyRefusal, refusalOf } from './permission-dialog';
 export { SendForApprovalDialog, type SendForApprovalDialogProps } from './send-for-approval-dialog';
 export * from './approval-copy';
 export { RelativeTime, useNow, useRelativeTime } from './time';

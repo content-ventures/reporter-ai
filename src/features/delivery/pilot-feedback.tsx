@@ -19,6 +19,7 @@ import { useCommands, useFeedback } from '@/state';
 import { formatDuration, formatListDateTime } from '@/ui/format';
 import { usePerson } from '@/ui/person-avatar';
 import { formatSpan, STAGE_DURATION_LABELS } from './delivery-model';
+import { isPermissionRefusal, notifyRefusal } from '@/ui/permission-dialog';
 
 const RATINGS: { value: FeedbackRating; label: string }[] = [
   { value: 'positive', label: FEEDBACK_RATING_LABELS.positive },
@@ -71,7 +72,8 @@ export function PilotFeedbackPanel({ productionId, durations }: { productionId: 
     });
     setSaving(false);
     if (!result.ok) {
-      setError(result.refusal.message);
+      if (isPermissionRefusal(result.refusal)) notifyRefusal(undefined, result.refusal);
+      else setError(result.refusal.message);
       return;
     }
     setEditing(false);

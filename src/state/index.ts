@@ -26,6 +26,7 @@ export {
 export { useRun, useRunListener, useRunOutcomes } from './use-runs.ts';
 export { useAudit, useAuditControls, useAuditEvent } from './use-audit.ts';
 export type { AuditControls } from './use-audit.ts';
+export { useCan } from './use-can.ts';
 export { useVote } from './use-vote.ts';
 export { useTabSync } from './use-tab-sync.ts';
 export { useBrief } from './use-brief.ts';

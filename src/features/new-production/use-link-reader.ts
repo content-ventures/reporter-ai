@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useCommands } from '@/state';
+import { isPermissionRefusal, notifyRefusal } from '@/ui/permission-dialog';
 import type { MaterialReadPhase, MaterialReadProgress } from '@/ports';
 import type { MaterialFile } from './form';
 
@@ -35,6 +36,7 @@ export function useLinkReader(onLoaded: (value: ImportedLink) => void) {
       if (token===run.current) setState({ status: 'reading',name: url,...progress });
     } }).then(result => {
       if (token!==run.current) return;
+      if (!result.ok && isPermissionRefusal(result.refusal)) { setState(null); notifyRefusal(undefined,result.refusal); return; }
       if (!result.ok) { setState(current => ({ status: 'error',name: url,message: result.refusal.message,phase: current?.phase ?? 'locating' }));return; }
       setState(null);
       onLoaded({ file: { name: result.value.fileName,size: result.value.bytes,text: result.value.text,

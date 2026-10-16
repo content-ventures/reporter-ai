@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from '@content-ventures/design-system/v3';
 import type { CarouselBody, PieceId } from '@/domain';
 import type { DraftView } from '@/ports';
+import { isPermissionRefusal } from '@/ui/permission-dialog';
 import { useCommands } from '@/state';
 
 /**
@@ -54,7 +55,8 @@ export function useCarouselDraft(draft: DraftView | undefined): CarouselDraft {
       if (result.ok) toast('O rascunho mudou em outro lugar', { tone: 'info', description: 'As edições desta tela foram mantidas.' });
     }
     if (!result.ok) {
-      toast('Não foi possível salvar o carrossel', { tone: 'error', description: result.refusal.message });
+      // A background save never opens the permission popup; a read-only viewer has nothing to save.
+      if (!isPermissionRefusal(result.refusal)) toast('Não foi possível salvar o carrossel', { tone: 'error', description: result.refusal.message });
       return false;
     }
     const revision = result.value.revision;

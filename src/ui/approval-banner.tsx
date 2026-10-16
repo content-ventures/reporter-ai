@@ -21,6 +21,7 @@ import {
 } from './approval-copy';
 import { StatusBanner } from './status-banner';
 import { useNow } from './time';
+import { notifyRefusal } from './permission-dialog';
 
 /**
  * Where a piece stands at its approval, as the one task notice above the text (D10, COPY §5.1):
@@ -78,7 +79,7 @@ export function useWithdrawReview(
     const result = await commands.production.withdrawReview(pieceId);
     setWithdrawing(false);
     if (!result.ok) {
-      toast('Envio não retirado', { tone: 'error', description: result.refusal.message });
+      notifyRefusal('Envio não retirado', result.refusal);
       return false;
     }
     const copy = withdrawnToast(subjectOf(kind));
@@ -124,7 +125,7 @@ export function ApprovalBanner({
       await commands.production.createVersion(approval.pieceId);
       const result = await commands.production.restoreVersion(approval.pieceId, approved.id);
       if (!result.ok) {
-        toast('Mudanças não desfeitas', { tone: 'error', description: result.refusal.message });
+        notifyRefusal('Mudanças não desfeitas', result.refusal);
         throw new Error(result.refusal.code);
       }
     }

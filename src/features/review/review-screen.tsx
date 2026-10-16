@@ -21,7 +21,6 @@ import {
   Segmented,
   SkeletonText,
   Switch,
-  toast,
   type MenuSection,
   type Tone,
 } from '@content-ventures/design-system/v3';
@@ -64,6 +63,7 @@ import {
 import { ReviewSurface } from './review-surface';
 import { useReviewView } from './use-review-view';
 import { reviewNextStep } from './review-next-step';
+import { isPermissionRefusal, notifyRefusal } from '@/ui/permission-dialog';
 
 /**
  * Revisão guiada (`/productions/[id]/[piece]/review`, COPY §4): who was asked reads the exact text
@@ -200,7 +200,9 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
       displayedHash: data.version.hash,
     });
     if (!result.ok) {
-      toast(`${label} não aprovado`, { tone: 'error', description: result.refusal.message });
+      notifyRefusal(`${label} não aprovado`, result.refusal);
+      // A permission limit closes the confirmation (the popup says why); anything else keeps it open.
+      if (isPermissionRefusal(result.refusal)) return;
       throw new Error(result.refusal.code);
     }
     // The owner who approves goes straight on from the toast ("Criar carrossel").
@@ -222,6 +224,11 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
       anchors,
       displayedHash: data.version.hash,
     });
+    if (!result.ok && isPermissionRefusal(result.refusal)) {
+      setDialog(null);
+      notifyRefusal(undefined, result.refusal);
+      return null;
+    }
     if (!result.ok) return result.refusal.message;
     setDialog(null);
     setNote('');
