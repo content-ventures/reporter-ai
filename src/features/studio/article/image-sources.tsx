@@ -7,6 +7,7 @@ import { Sparkles } from '@content-ventures/design-system/v3/icons';
 import { useRuntime } from '@/state';
 import type { AssetInput, AssetRefusal } from '@/ports';
 import type { ImageSourceId } from '@/registries';
+import { useFilePreview } from '@/ui/file-preview';
 import { probeImage, useImageProbe } from '@/ui/image-probe';
 import { refusedFileMessage, type ImageFields } from './image-model';
 import { LibraryBrowser } from '@/features/images/library-browser';
@@ -88,24 +89,6 @@ const dropzoneTarget = (id: string) => `${dropzoneId(id)}-dropzone`;
 function checkFile(file: File): UploadState {
   const check = validateImageFile({ name: file.name, type: file.type, size: file.size });
   return check.ok ? { file } : { file: null, error: check.refusal.message };
-}
-
-/** Local preview of a chosen file, revoked when the file changes or the picker closes. */
-function useFilePreview(file: Blob | null): string | undefined {
-  const [preview, setPreview] = useState<{ file: Blob; url: string } | null>(null);
-  useEffect(() => {
-    if (!file) return undefined;
-    const url = URL.createObjectURL(file);
-    let live = true;
-    queueMicrotask(() => {
-      if (live) setPreview({ file, url });
-    });
-    return () => {
-      live = false;
-      URL.revokeObjectURL(url);
-    };
-  }, [file]);
-  return preview?.file === file ? preview.url : undefined;
 }
 
 function UploadPanel({ id, state, onChange, fit, alt }: SourcePanelProps<UploadState>) {
