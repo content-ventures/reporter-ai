@@ -11,7 +11,7 @@ import { IDLE_QUEUE, queueStatus } from "./queue-status.ts";
 import { workerUrl } from "./worker-config.ts";
 import { kickWorker, shouldHealStall, type Defer } from "./worker-kick.ts";
 import { ingestSourceLink } from './source-link';
-import { editorialWorkspace, editorialRpc, editorialPipeline } from './editorial';
+import { editorialWorkspace, editorialRpc, editorialPipeline, requireCapability } from './editorial';
 import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
@@ -82,7 +82,7 @@ const messages: Record<string, string> = {
   CITATION_AUTHOR_INVALID: 'Escolha um participante do material e confirme a autoria; não atribua uma voz por suposição.',
   CITATION_IMMUTABLE: 'As palavras e a fonte de uma citação salva não podem ser reescritas. Adicione outro trecho literal.',
   CITATION_CONFLICT: 'Esta citação foi alterada em outra aba. Recarregue antes de salvar.',
-  CITATION_FORBIDDEN: 'Seu papel não permite editar o banco de citações.',
+  FORBIDDEN: 'Você não tem permissão para isso.',
   TRANSCRIPT_NOT_READY: 'A transcrição ainda não está pronta. Aguarde sua conclusão antes de criar a produção.',
   SOURCE_NOT_AUTHORIZED: 'Este material não está autorizado para uso.',
   IMAGE_DRAFT_CONFLICT: 'O rascunho mudou ou ainda há alterações não salvas. Aguarde o salvamento antes de buscar imagens.',
@@ -134,7 +134,7 @@ const messages: Record<string, string> = {
   INVALID_MEDIA: "Não foi possível ler o áudio deste arquivo.", NO_AUDIO_TRACK: "O arquivo não tem uma faixa de áudio.",
   MEDIA_DURATION: "O arquivo deve ter áudio com duração de até 3 horas.",
   INVALID_TEXT_ENCODING: "Salve a transcrição TXT em UTF-8.", INVALID_TRANSCRIPT: "A transcrição está vazia ou inválida.",
-  "40001": "O conteúdo mudou. Atualize a tela e tente novamente.", "42501": "Operação não autorizada.",
+  "40001": "O conteúdo mudou. Atualize a tela e tente novamente.",
   "22023": "Dados inválidos ou pedido repetido com informações diferentes.", "23514": "O conteúdo ainda não está no estado necessário.",
 };
 
@@ -186,6 +186,8 @@ export async function handleReporter(request: Request, path: string[], deps: { d
       return reply({ transcript,worker_online: await workerAvailable(),stalled: queue.stalled });
     }
     if (request.method !== "POST") return reply({ error: "NOT_FOUND", message: "Rota não encontrada." }, 404);
+    // Material intake belongs to whoever creates productions; refused before any fetch, upload or AI call.
+    if (path.length === 1 && ['uploads','files','links'].includes(path[0]) || path.join('/') === 'material/analysis') await requireCapability('production.create');
     if (path.length===1 && path[0]==='uploads') {
       if (reporterDeploymentMode()!=='cloud') return reply({ mode: 'local' });
       const key = idempotencyKey(request);
@@ -287,13 +289,15 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     return reply({ id, revision });
     });
   } catch (error) {
-    const code = error instanceof z.ZodError ? "INVALID_INPUT" : safeCode(error);
+    // An SQL permission refusal (42501) and an app role refusal are the same FORBIDDEN for the browser.
+    const raw = error instanceof z.ZodError ? "INVALID_INPUT" : safeCode(error);
+    const code = raw === "42501" ? "FORBIDDEN" : raw;
     const status = error instanceof FlowError ? error.status : error instanceof z.ZodError ? 422 :
-      code === "40001" ? 409 : code === "42501" ? 403 : ["22023","23514"].includes(code) ? 422 :
+      code === "40001" ? 409 : code === "FORBIDDEN" ? 403 : ["22023","23514"].includes(code) ? 422 :
       code === '55000' ? 503 :
       code === 'AUTH_REQUIRED' ? 401 : ['ACCESS_PENDING','EMAIL_NOT_VERIFIED'].includes(code) ? 403 :
       ["ECONNREFUSED","DATABASE_CONFIGURATION","GROQ_KEY_MISSING","LOCAL_MODE_DISABLED","AUTH_CONFIGURATION","CLOUD_UPLOAD_PENDING","UPLOAD_CONFIGURATION"].includes(code) ? 503 : 500;
     logEvent("api", "request_failed", { request_id: requestId, error_code: code });
-    return reply({ error: code, message: messages[code==='55000' ? 'UPLOAD_WORKER_UNAVAILABLE' : code] ?? (status < 500 ? "Revise os dados enviados." : "Não foi possível concluir. Tente novamente."), request_id: requestId }, status);
+    return reply({ error: code, message: (error instanceof FlowError ? error.reason : undefined) ?? messages[code==='55000' ? 'UPLOAD_WORKER_UNAVAILABLE' : code] ?? (status < 500 ? "Revise os dados enviados." : "Não foi possível concluir. Tente novamente."), request_id: requestId }, status);
   }
 }

@@ -1,8 +1,19 @@
+import { whoCan, type Capability } from '../domain/permissions.ts';
+
 export class FlowError extends Error {
   code: string; status: number; retryable: boolean; waitSeconds: number;
+  /** pt-BR text that replaces the code's generic message (who may act, for FORBIDDEN). */
+  reason?: string;
   constructor(code: string, status = 422, retryable = false, waitSeconds = 0) {
     super(code); this.code = code; this.status = status; this.retryable = retryable; this.waitSeconds = waitSeconds;
   }
+}
+
+/** The one role refusal of every route: 403 FORBIDDEN naming who can ("Só editor ou admin cria produções."). */
+export function forbiddenError(capability: Capability): FlowError {
+  const error = new FlowError('FORBIDDEN', 403);
+  error.reason = whoCan(capability);
+  return error;
 }
 export function safeCode(error: unknown): string {
   if (error instanceof FlowError) return error.code;

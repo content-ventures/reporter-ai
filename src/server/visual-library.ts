@@ -6,14 +6,14 @@ import type { BannerContent, BannerDraft, LibraryImage, StockImage } from '../do
 import { bannerContentKey, initialBanner, isCoverResolution } from '../domain/visual-library';
 import { blockText } from '../domain/article';
 import { directQuotes, literalQuoteText, r1ArticleQuotationIssue } from '../domain/article-policy';
-import { editorialTransaction } from './editorial';
+import { editorialTransaction, requireCapability } from './editorial';
 import type { EditorialScope } from './editorial-store';
 import { stockProviders, searchStock, stockDetails, downloadStock, trackStockSelection } from './stock-images';
 import { bannerSchema, renderBanner } from './banner-render';
 import { readImageFile, writeImageFile } from './image-storage.ts';
 import { prepareAssetUpload,completeAssetUpload,importLinkedAsset,uploadedAssetFile } from './image-assets.ts';
-import { FlowError } from './errors';
-import { hasAnyRole } from '../domain/workspace';
+import { FlowError, forbiddenError } from './errors';
+import { can } from '../domain/permissions';
 import { contentHash } from '../domain/text/hash';
 import { isRunActive } from '../domain/run';
 import { pendingReview } from '../domain/record';
@@ -167,7 +167,7 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
       const input = z.object({ productionId: UUID,revision: z.number().int().nonnegative(),bodyHash: z.string().regex(/^[a-f0-9]{16}$/) }).strict().parse(body);
       const selected = (await editorialTransaction('runtime',async (checkpoint,engine) => {
         const member = checkpoint.state.members.find(member => member.personId === checkpoint.state.sessionPersonId);
-        if (!hasAnyRole(member,['editor','admin'])) throw new FlowError('CITATION_FORBIDDEN',403);
+        if (!can(member,'piece.edit')) throw forbiddenError('piece.edit');
         const record = engine.records.record(input.productionId),piece = record?.pieces.find(piece => piece.kind === 'article');
         if (!record || piece?.draft.body.type !== 'article') throw new FlowError('NOT_FOUND',404);
         if (record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
@@ -178,7 +178,7 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
       const resolved = await illustrateArticle(selected.body,input.productionId,AbortSignal.any([request.signal,AbortSignal.timeout(60000)]));
       return json((await editorialTransaction('runtime',async (checkpoint,engine) => {
         const member = checkpoint.state.members.find(member => member.personId === checkpoint.state.sessionPersonId);
-        if (!hasAnyRole(member,['editor','admin'])) throw new FlowError('CITATION_FORBIDDEN',403);
+        if (!can(member,'piece.edit')) throw forbiddenError('piece.edit');
         const record = engine.records.record(input.productionId),piece = record?.pieces.find(piece => piece.id === selected.pieceId);
         if (piece?.draft.body.type !== 'article' || piece.draft.revision !== input.revision || contentHash(piece.draft.body) !== input.bodyHash
           || pendingReview(record!,piece.id) || record!.runs.some(isRunActive)) throw new FlowError('IMAGE_DRAFT_CONFLICT',409);
@@ -192,7 +192,7 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
       const input = z.object({ id: UUID,patch: z.object({ credit: z.string().max(500).optional(),rights: z.object({ authorized: z.boolean(),note: z.string().max(2000).optional() }).strict().optional() }).strict() }).strict().parse(body);
       return json((await editorialTransaction('runtime',async checkpoint => {
         const member = checkpoint.state.members.find(member => member.personId === checkpoint.state.sessionPersonId);
-        if (!hasAnyRole(member,['editor','admin'])) throw new FlowError('CITATION_FORBIDDEN',403);
+        if (!can(member,'piece.edit')) throw forbiddenError('piece.edit');
         const entry = checkpoint.imageAssets?.find(entry => entry.asset.id === input.id);
         if (!entry) throw new FlowError('IMAGE_UNAVAILABLE',404);
         entry.asset = { ...entry.asset,...input.patch };return entry.asset;
@@ -203,13 +203,14 @@ export async function handleVisualLibrary(request: Request,path: string[],readJs
       const input = z.object({ productionId: UUID,prompt: z.string().trim().min(1).max(IMAGE_PROMPT_MAX),orientation: z.enum(['landscape','portrait','square']).optional() }).strict().parse(body);
       await editorialTransaction('runtime',async (checkpoint,engine) => {
         const member = checkpoint.state.members.find(member => member.personId === checkpoint.state.sessionPersonId);
-        if (!hasAnyRole(member,['editor','admin'])) throw new FlowError('CITATION_FORBIDDEN',403);
+        if (!can(member,'piece.edit')) throw forbiddenError('piece.edit');
         if (!engine.records.record(input.productionId)) throw new FlowError('NOT_FOUND',404);
       },false,'reporter.edit',{ productions: [input.productionId],parts: [],sources: 'none',runs: 'none',pipelines: false });
       return file((await generateEditorialImage(input,AbortSignal.any([request.signal,AbortSignal.timeout(150000)]))).bytes,'image/jpeg');
     }
-    if (path[0] === 'images') return json(await importImage(body));
-    if (path[0] === 'banners') return json(await saveBanner(body));
+    // The library is shared workspace data: only who edits content adds photos or saves banners.
+    if (path[0] === 'images') { await requireCapability('library.edit'); return json(await importImage(body)); }
+    if (path[0] === 'banners') { await requireCapability('library.edit'); return json(await saveBanner(body)); }
     if (path[0] === 'preview') {
       const content = bannerSchema.parse(body); await validateBannerSource(content);
       return file((await renderBanner(content,await bannerPhoto(content))).png,'image/png');

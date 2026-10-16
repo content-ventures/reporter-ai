@@ -16,6 +16,15 @@ export class ReporterHttpError extends Error {
   constructor(message: string,code: string,status: number) { super(message);this.code = code;this.status = status; }
 }
 
+/** A role refusal from the server (FORBIDDEN, or SQL 42501 from an older server); other 403s are access errors. */
+export function isForbidden(error: unknown): error is ReporterHttpError {
+  return error instanceof ReporterHttpError && FORBIDDEN_CODES.has(error.code);
+}
+
+const FORBIDDEN_CODES = new Set(['FORBIDDEN', '42501']);
+const forbiddenBody = (value: Record<string,unknown>) => typeof value.error === 'string' && FORBIDDEN_CODES.has(value.error);
+const messageOf = (value: Record<string,unknown>, fallback: string) => typeof value.message === 'string' ? value.message : fallback;
+
 async function responseValue(response: Response): Promise<Record<string,unknown>> {
   const text = await response.text();
   if (!text) return {};
@@ -167,7 +176,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           const response = await fetch('/api/reporter/links',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local','idempotency-key': known.key },
             body: JSON.stringify({ url }),signal: options.signal });
           const result = await responseValue(response);
-          if (!response.ok) return refuse('read_failed',typeof result.message==='string' ? result.message : 'Não foi possível importar este link.');
+          if (!response.ok) return refuse(forbiddenBody(result) ? 'forbidden' : 'read_failed',messageOf(result,'Não foi possível importar este link.'));
           known.provider = result.provider as typeof known.provider;known.title = result.title as string;known.programName = result.programName as string;
           known.fileName = result.fileName as string;known.bytes = result.bytes as number;known.sourceUrl = result.sourceUrl as string;
           if (result.kind==='ready') {
@@ -224,7 +233,10 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           else result.value.speakers.push({ label: name, segments: 0, words: 0, presentation });
         }
         return result;
-      } catch (error) { return refuse('analysis_failed', error instanceof Error ? error.message : 'Não foi possível analisar o tema e os participantes. Tente novamente.'); }
+      } catch (error) {
+        if (isForbidden(error)) return refuse('forbidden', error.message);
+        return refuse('analysis_failed', error instanceof Error ? error.message : 'Não foi possível analisar o tema e os participantes. Tente novamente.');
+      }
     },
     async read(file,options = {}) {
       const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
@@ -262,7 +274,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
               'x-reporter-client': 'local','idempotency-key': upload.key },body: JSON.stringify({ sourceId: upload.sourceId,token: upload.token,
                 name: file.name,size: file.size }),signal: options.signal });
             const value = await responseValue(prepared);
-            if (!prepared.ok) return refuse('read_failed',typeof value.message==='string' ? value.message : 'Não foi possível preparar o envio do arquivo.');
+            if (!prepared.ok) return refuse(forbiddenBody(value) ? 'forbidden' : 'read_failed',messageOf(value,'Não foi possível preparar o envio do arquivo.'));
             if (value.mode==='cloud') direct = value as CloudUpload & Record<string,unknown>;
           }
           if (direct) {
@@ -282,7 +294,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
             const data = new FormData();data.set('file',file,file.name);
             const response = await fetch('/api/reporter/files',{ method: 'POST',headers: { 'x-reporter-client': 'local','idempotency-key': upload.key },body: data,signal: options.signal });
             const result = await responseValue(response);
-            if (!response.ok) return refuse('read_failed',typeof result.message==='string' ? result.message : 'Não foi possível enviar o arquivo.');
+            if (!response.ok) return refuse(forbiddenBody(result) ? 'forbidden' : 'read_failed',messageOf(result,'Não foi possível enviar o arquivo.'));
             upload.id = result.id as string;
             upload.uploaded = true;
           }

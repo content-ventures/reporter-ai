@@ -4,7 +4,7 @@ import { createIndexedDbAssetStore } from '../adapters/local/assets/index.ts';
 import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
 import { assetCoverLoader, createLocalRenderService, servedCoverLoader } from '../adapters/local/render/index.ts';
-import { reporterRequest, requestWorkspace, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
+import { isForbidden, reporterRequest, requestWorkspace, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
 import { createHttpImageGenerator, createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
 import { withServerAssets } from '../adapters/http/server-assets.ts';
@@ -73,6 +73,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     const payload = failedWrite && contentHash({ method,args }) === contentHash({ method: failedWrite.method,args: failedWrite.args })
       ? failedWrite : { method,args,requestId: crypto.randomUUID() };
     const operation = writeTail.then(async () => {
+      const before = save;
       setSave({ scope: 'remote',status: 'saving' });
       try {
         await ready;
@@ -81,6 +82,8 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
         setSave({ scope: 'remote',status: 'saved',savedAt: clock.now() });
         return result;
       } catch (error) {
+        // A role refusal is an answer, not an outage: no save error and nothing to send again.
+        if (isForbidden(error)) { setSave(before); return refuse('forbidden',error.message) as T; }
         setSave({ scope: 'remote',status: 'error',error: { code: 'unavailable',message: error instanceof Error ? error.message : 'Não foi possível salvar no servidor.' } });
         failedWrite = payload;
         return refuse('unavailable',save.error!.message) as T;

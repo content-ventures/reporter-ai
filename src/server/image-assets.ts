@@ -7,8 +7,8 @@ import { editorialTransaction } from './editorial.ts';
 import type { EditorialScope } from './editorial-store.ts';
 import { currentReporterContext } from './request-context.ts';
 import { prepareImageFile, readImageFile, writeImageFile } from './image-storage.ts';
-import { FlowError } from './errors.ts';
-import { hasAnyRole } from '../domain/workspace.ts';
+import { FlowError, forbiddenError } from './errors.ts';
+import { can } from '../domain/permissions.ts';
 import { remoteResponse } from './storage.ts';
 import { IMAGE_PROMPT_MAX } from '../domain/image-generation.ts';
 
@@ -37,7 +37,7 @@ const assetScope = (productionId: string | undefined, items: EditorialScope['ite
 async function authorize(productionId:string) {
   return (await editorialTransaction('runtime',async (checkpoint,engine) => {
     const member = checkpoint.state.members.find(member => member.personId === checkpoint.state.sessionPersonId);
-    if (!hasAnyRole(member,['editor','admin'])) throw new FlowError('CITATION_FORBIDDEN',403);
+    if (!can(member,'piece.edit')) throw forbiddenError('piece.edit');
     const record = engine.records.record(productionId);if (!record) throw new FlowError('NOT_FOUND',404);
     return checkpoint.visuals?.images ?? [];
   },false,'reporter.edit',assetScope(productionId,{ library_image: 'all' }))).value;
