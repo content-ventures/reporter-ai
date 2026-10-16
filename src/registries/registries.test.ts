@@ -435,16 +435,16 @@ describe('copilot and dashboard', () => {
 });
 
 describe('image sources', () => {
-  test('R1 picks a file or a link; the archive (R2) and AI generation and semantic search (R6) plug in as entries', () => {
+  test('R1 picks a file, a link, an AI image or a bank photo; semantic search (R6) plugs in as an entry', () => {
     assertUnique(ids(IMAGE_SOURCES), 'image source ids');
-    assert.deepEqual(ids(imageSourcesFor(R1)), ['upload', 'link', 'archive']);
-    assert.deepEqual(ids(imageSourcesFor('R2')), ['upload', 'link', 'archive']);
-    assert.deepEqual(ids(imageSourcesFor('R6')), ['upload', 'link', 'archive', 'generate', 'semantic-search']);
-    assert.deepEqual(imageSourcesFor(R1).map((entry) => entry.label), ['Enviar arquivo', 'Link', 'Biblioteca']);
+    assert.deepEqual(ids(imageSourcesFor(R1)), ['upload', 'link', 'generate', 'archive']);
+    assert.deepEqual(ids(imageSourcesFor('R2')), ['upload', 'link', 'generate', 'archive']);
+    assert.deepEqual(ids(imageSourcesFor('R6')), ['upload', 'link', 'generate', 'archive', 'semantic-search']);
+    assert.deepEqual(imageSourcesFor(R1).map((entry) => entry.label), ['Enviar arquivo', 'Link', 'Gerar com IA', 'Biblioteca']);
     assert.ok(IMAGE_SOURCES.filter((entry) => entry.ai).every((entry) => entry.icon === 'Sparkles'), 'AI actions use the reserved AI icon');
     assert.deepEqual(
       IMAGE_SOURCES.filter((entry) => entry.requirement).map((entry) => entry.requirement),
-      ['F2.9', 'F6.10', 'F6.9'],
+      ['F6.10', 'F2.9', 'F6.9'],
     );
   });
 

@@ -5,8 +5,8 @@ import type { ReleaseId } from './release.ts';
 
 /**
  * Tabs of the image picker (Drawer "Inserir imagem" / "Definir como destaque"). R1 ships "Enviar
- * arquivo" and "Link"; R2 adds the archive search ("Acervo", F2.9) and R6 image generation and
- * semantic search (F6.10, F6.9) by adding entries here, each producing assets of its origin.
+ * arquivo", "Link", "Gerar com IA" (F6.10) and the photo bank ("Biblioteca", F2.9); R6 adds
+ * semantic search (F6.9) by adding an entry here, each producing assets of its origin.
  */
 
 export type ImageSourceId = 'upload' | 'link' | 'archive' | 'generate' | 'semantic-search';
@@ -28,8 +28,8 @@ export type ImageSourceEntry = {
 export const IMAGE_SOURCES: readonly ImageSourceEntry[] = [
   { id: 'upload', label: 'Enviar arquivo', icon: 'Image', since: 'R1', origin: 'upload' },
   { id: 'link', label: 'Link', icon: 'Globe', since: 'R1', origin: 'url' },
+  { id: 'generate', label: 'Gerar com IA', icon: 'Sparkles', since: 'R1', origin: 'generated', requirement: 'F6.10', ai: true },
   { id: 'archive', label: 'Biblioteca', icon: 'Archive', since: 'R1', origin: 'url', requirement: 'F2.9' },
-  { id: 'generate', label: 'Gerar com IA', icon: 'Sparkles', since: 'R6', origin: 'generated', requirement: 'F6.10', ai: true },
   { id: 'semantic-search', label: 'Busca semântica', icon: 'Search', since: 'R6', origin: 'archive', requirement: 'F6.9' },
 ];
 

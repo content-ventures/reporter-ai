@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState, type ComponentType } from 'react';
-import { Dropzone, Field, Input, LinkButton, MediaFrame, MetaList, PageStack, formatBytes } from '@content-ventures/design-system/v3';
-import { IMAGE_LIMITS, validateImageFile, validateImageUrl } from '@/domain';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
+import { Button, Dropzone, Field, Input, LinkButton, MediaFrame, MetaList, PageStack, Textarea, focusField, formatBytes } from '@content-ventures/design-system/v3';
+import { AI_IMAGE_CREDIT, IMAGE_LIMITS, IMAGE_PROMPT_MAX, validateImageFile, validateImageUrl, type ProductionId } from '@/domain';
+import { Sparkles } from '@content-ventures/design-system/v3/icons';
+import { useRuntime } from '@/state';
 import type { AssetInput, AssetRefusal } from '@/ports';
 import type { ImageSourceId } from '@/registries';
 import { probeImage, useImageProbe } from '@/ui/image-probe';
@@ -43,11 +45,16 @@ export type SourcePanelProps<S> = {
   alt: string;
   /** Fills the fields still empty with what the source knows (an archive record's credit). */
   onSuggest: (fields: Partial<ImageFields>, creditOptional?: boolean) => void;
+  /** The production the image is for. */
+  productionId: ProductionId;
 };
 
 export type ImageSourcePanel<S> = {
-  /** Start state; `file` is an image that arrived by paste or drop (sources that take files). */
-  initial(file?: File): S;
+  /**
+   * Start state; `file` is an image that arrived by paste or drop (sources that take files),
+   * `prompt` what the image should show (a suggestion's, or the description an AI image came from).
+   */
+  initial(start: { file?: File; prompt?: string }): S;
   /** Takes a pasted or dropped file (the picker opens on this tab). */
   takesFiles?: true;
   /** Something chosen or typed: "Cancelar" asks before discarding it. */
@@ -84,8 +91,8 @@ function checkFile(file: File): UploadState {
 }
 
 /** Local preview of a chosen file, revoked when the file changes or the picker closes. */
-function useFilePreview(file: File | null): string | undefined {
-  const [preview, setPreview] = useState<{ file: File; url: string } | null>(null);
+function useFilePreview(file: Blob | null): string | undefined {
+  const [preview, setPreview] = useState<{ file: Blob; url: string } | null>(null);
   useEffect(() => {
     if (!file) return undefined;
     const url = URL.createObjectURL(file);
@@ -147,7 +154,7 @@ function UploadPanel({ id, state, onChange, fit, alt }: SourcePanelProps<UploadS
 
 const uploadPanel = panel<UploadState>({
   takesFiles: true,
-  initial: (file) => (file ? checkFile(file) : { file: null }),
+  initial: ({ file }) => (file ? checkFile(file) : { file: null }),
   dirty: (state) => state.file !== null,
   focusOnOpen: (id, state) => (state.file ? undefined : dropzoneTarget(id)),
   async submit(state, id) {
@@ -221,13 +228,90 @@ const linkPanel = panel<LinkState>({
   Panel: LinkPanel,
 });
 
+// ——— "Gerar com IA" ———
+
+type GenerateState = { prompt: string; image?: { file: Blob; prompt: string }; error?: string };
+
+const promptId = (id: string) => `${id}-prompt`;
+const generateId = (id: string) => `${id}-generate`;
+
+/**
+ * What the image should show (a suggestion's description to start from), "Gerar" and, once there
+ * is an image, "Gerar de novo" (the description can change in between). The simulation answers
+ * with the example's images.
+ */
+function GeneratePanel({ id, state, onChange, fit, alt, productionId }: SourcePanelProps<GenerateState>) {
+  const { runtime } = useRuntime();
+  const generator = runtime?.imageGeneration;
+  const [busy, setBusy] = useState(false);
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => () => request.current?.abort(), []);
+  const preview = useFilePreview(state.image?.file ?? null);
+  async function generate() {
+    if (!generator || busy) return;
+    if (!state.prompt.trim()) {
+      onChange({ ...state, error: 'Descreva a imagem.' });
+      focusField(promptId(id));
+      return;
+    }
+    const controller = new AbortController();
+    request.current = controller;
+    setBusy(true);
+    const result = await generator.generate({ productionId, prompt: state.prompt }, controller.signal);
+    if (controller.signal.aborted) return;
+    setBusy(false);
+    onChange(result.ok ? { prompt: state.prompt, image: { file: result.value.file, prompt: state.prompt.trim() } } : { ...state, error: result.refusal.message });
+  }
+  return (
+    <>
+      <Field label="Descrição da imagem" error={state.error} id={promptId(id)}>
+        {({ id: fieldId, describedBy, invalid }) => (
+          <Textarea
+            id={fieldId}
+            aria-describedby={describedBy}
+            invalid={invalid}
+            value={state.prompt}
+            maxLength={IMAGE_PROMPT_MAX}
+            rows={2}
+            autoSize={{ minRows: 2, maxRows: 6 }}
+            readOnly={busy}
+            onChange={(event) => onChange({ ...state, prompt: event.target.value, error: undefined })}
+          />
+        )}
+      </Field>
+      <Button id={generateId(id)} icon={Sparkles} loading={busy} onClick={() => void generate()}>
+        {state.image ? 'Gerar de novo' : 'Gerar'}
+      </Button>
+      {busy || state.image ? (
+        <MediaFrame ratio="16/9" fit={fit} src={busy ? undefined : preview} state={busy || !preview ? 'loading' : undefined} alt={alt || 'Imagem gerada'} />
+      ) : null}
+    </>
+  );
+}
+
+const generatePanel = panel<GenerateState>({
+  initial: ({ prompt }) => ({ prompt: prompt ?? '' }),
+  dirty: (state) => Boolean(state.image),
+  focusOnOpen: (id, state) => (state.prompt.trim() ? generateId(id) : undefined),
+  async submit(state, id) {
+    if (!state.image) return { ok: false, state: { ...state, error: 'Gere a imagem antes de usar.' }, focus: generateId(id) };
+    return {
+      ok: true,
+      selection: { input: { type: 'generated', file: state.image.file, prompt: state.image.prompt }, suggested: { credit: AI_IMAGE_CREDIT, authorized: true } },
+    };
+  },
+  refused: (state, refusal, id) => (FILE_REFUSALS.has(refusal.code) ? { state: { ...state, image: undefined, error: refusal.message }, focus: generateId(id) } : null),
+  Panel: GeneratePanel,
+});
+
 /**
  * Panels by source. A source without a panel here is not offered, even when its release is out:
- * R2 adds `archive`, R6 `generate` and `semantic-search`.
+ * R6 adds `semantic-search`.
  */
 export const IMAGE_SOURCE_PANELS: Readonly<Partial<Record<ImageSourceId, AnyPanel>>> = {
   upload: uploadPanel,
   link: linkPanel,
+  generate: generatePanel,
   archive: panel<{ selected?: LibraryImage; error?: string }>({
     initial: () => ({}),dirty: state => Boolean(state.selected),focusOnOpen: () => undefined,
     async submit(state,id) {

@@ -51,8 +51,6 @@ import {
   type FigureInfo,
   type SelectionInfo,
 } from '@/editor';
-import { arrivalOf, imageSource, type ImageSourceEntry } from '@/registries';
-import { ICONS } from '@/ui/icons';
 import { useMediaQuery } from '@/ui/use-media-query';
 import { aiMenuItems } from './editor-toolbar';
 import { issueLine } from './image-model';
@@ -341,17 +339,12 @@ function FigureBar({ open, figure, onDismiss }: { open: boolean; figure: FigureI
   );
 }
 
-/** Image sources of later releases, offered on a suggestion as "Em breve" (R2 Acervo, R6 Gerar com IA). */
-const SOON_SOURCES: readonly ImageSourceEntry[] = (['archive', 'generate'] as const)
-  .map((id) => imageSource(id))
-  .filter((entry): entry is ImageSourceEntry => entry !== undefined);
-
 /**
  * A suggested image nobody filled yet (an image slot) selected: its frame already says what to
- * show. "Enviar imagem" and "Usar link" open the picker on that source, alt text and caption
- * started from the suggestion; "Acervo" (R2) and "Gerar com IA" (R6) wait as "Em breve" (reachable,
- * the reason in their tip); "Remover sugestão" takes it out of the text ("Desfazer" in the toast).
- * Anchored above the frame like the image bar; keeps showing its slot while it fades out.
+ * show. "Enviar imagem", "Usar link" and "Gerar com IA" open the picker on that source, alt text
+ * and caption started from the suggestion (and, to generate, its description); "Remover sugestão"
+ * takes it out of the text ("Desfazer" in the toast). Anchored above the frame like the image bar;
+ * keeps showing its slot while it fades out.
  */
 function SlotBar({ open, slot, onDismiss }: { open: boolean; slot: FigureInfo | null; onDismiss: () => void }) {
   const studio = useStudio();
@@ -370,10 +363,7 @@ function SlotBar({ open, slot, onDismiss }: { open: boolean; slot: FigureInfo | 
     <FloatingToolbar open={open && shown !== null} anchor={anchor} placement="top" label="Imagem sugerida" onDismiss={(reason) => (reason === 'escape' ? onDismiss() : undefined)}>
       <ToolbarButton label="Enviar imagem" icon={Upload} showLabel keep onClick={act((blockId) => images.fillSlot(blockId, { tab: 'upload' }))} />
       <ToolbarButton label="Usar link" icon={Link2} showLabel={!narrow} onClick={act((blockId) => images.fillSlot(blockId, { tab: 'link' }))} />
-      <ToolbarSeparator />
-      {SOON_SOURCES.map((source) => (
-        <ToolbarButton key={source.id} label={source.label} icon={ICONS[source.icon]} disabled disabledReason={`${source.label} · Em breve. ${arrivalOf(source.since)}`} />
-      ))}
+      <ToolbarButton label="Gerar com IA" icon={Sparkles} showLabel={!narrow} onClick={act((blockId) => images.fillSlot(blockId, { tab: 'generate' }))} />
       <ToolbarSeparator />
       <ToolbarButton label="Remover sugestão" icon={Trash2} tone="danger" onClick={act(images.dismissSlot)} />
     </FloatingToolbar>
