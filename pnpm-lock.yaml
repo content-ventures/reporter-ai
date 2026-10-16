@@ -15,8 +15,8 @@ importers:
         specifier: ^3.1151.0
         version: 3.1151.0
       '@content-ventures/design-system':
-        specifier: https://github.com/content-ventures/design-system/archive/2c92993f395e5516bed4961abeab760c8d93fd65.tar.gz
-        version: https://github.com/content-ventures/design-system/archive/2c92993f395e5516bed4961abeab760c8d93fd65.tar.gz(lucide-react@1.52.0(@types/react@19.3.0)(react@19.2.8))(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.1)(@types/node@24.19.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: https://github.com/content-ventures/design-system/archive/b30a7e561ca1e09972eb075935b628ff2c54f069.tar.gz
+        version: https://github.com/content-ventures/design-system/archive/b30a7e561ca1e09972eb075935b628ff2c54f069.tar.gz(lucide-react@1.52.0(@types/react@19.3.0)(react@19.2.8))(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.1)(@types/node@24.19.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@neon/functions':
         specifier: ^0.11.0
         version: 0.11.0
@@ -367,9 +367,9 @@ packages:
   '@captchafox/types@1.6.0':
     resolution: {integrity: sha512-isJBepZntzO++rE2i9rP4FGh5XPwoXXle4H2POkNR6bYwjBaWI1D7XwbW5oylLnXMMELGksNnOX0QGHYHuQ2PQ==}
 
-  '@content-ventures/design-system@https://github.com/content-ventures/design-system/archive/2c92993f395e5516bed4961abeab760c8d93fd65.tar.gz':
-    resolution: {integrity: sha512-DyC9cExk1WK/o4SRZMCk25EjAGEzH3sNsBSev9cqd8oa/5ckp305G2zCZveZ+Rmji+HiaQaoITGAKqQ6jP5d+Q==, tarball: https://github.com/content-ventures/design-system/archive/2c92993f395e5516bed4961abeab760c8d93fd65.tar.gz}
-    version: 0.2.1
+  '@content-ventures/design-system@https://github.com/content-ventures/design-system/archive/b30a7e561ca1e09972eb075935b628ff2c54f069.tar.gz':
+    resolution: {integrity: sha512-O2x0A7Yk+PUpO091ynxQlj47+2Q++kLW9IyU/+QbEhq5flGbi5ZTZY+yOnzRT0qSScBN8wWBP3sE87p4EAu2hQ==, tarball: https://github.com/content-ventures/design-system/archive/b30a7e561ca1e09972eb075935b628ff2c54f069.tar.gz}
+    version: 0.3.0
     engines: {node: '>=20.9.0'}
     peerDependencies:
       lucide-react: '>=0.462.0'
@@ -4478,7 +4478,7 @@ snapshots:
 
   '@captchafox/types@1.6.0': {}
 
-  '@content-ventures/design-system@https://github.com/content-ventures/design-system/archive/2c92993f395e5516bed4961abeab760c8d93fd65.tar.gz(lucide-react@1.52.0(@types/react@19.3.0)(react@19.2.8))(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.1)(@types/node@24.19.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@content-ventures/design-system@https://github.com/content-ventures/design-system/archive/b30a7e561ca1e09972eb075935b628ff2c54f069.tar.gz(lucide-react@1.52.0(@types/react@19.3.0)(react@19.2.8))(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.1)(@types/node@24.19.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       lucide-react: 1.52.0(@types/react@19.3.0)(react@19.2.8)
       next: 16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.1)(@types/node@24.19.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
