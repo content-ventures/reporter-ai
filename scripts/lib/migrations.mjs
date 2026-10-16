@@ -52,6 +52,7 @@ export const CLOUD = Object.freeze([
   'database/migrations/015-editorial-sync.sql',
   'database/migrations/016-editorial-rows-data.sql',
   'database/migrations/017-member-profile.sql',
+  'database/migrations/018-product-name.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 

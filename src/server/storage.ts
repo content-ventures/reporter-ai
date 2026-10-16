@@ -170,7 +170,7 @@ async function safeRemoteUrl(value: string): Promise<URL> {
 export async function remoteResponse(source: string, signal: AbortSignal): Promise<Response> {
   let url = await safeRemoteUrl(source);
   for (let redirect=0; redirect<=5; redirect++) {
-    const response = await fetch(url,{ redirect: 'manual',signal,headers: { 'user-agent': 'ReporterAI/1.0 (+local podcast import)' } });
+    const response = await fetch(url,{ redirect: 'manual',signal,headers: { 'user-agent': 'ReporterIA/1.0 (+local podcast import)' } });
     if (![301,302,303,307,308].includes(response.status)) {
       if (!response.ok || !response.body) throw new FlowError('REMOTE_MEDIA_UNAVAILABLE',422);
       return response;

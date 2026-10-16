@@ -9,7 +9,7 @@ export const PUBLIC_INDEXING = process.env.VERCEL_ENV === 'production';
 
 export const BRAND_SHARE_IMAGE = {
   url: '/opengraph-image.png', width: 1200, height: 630,
-  alt: 'Reporter AI — Da fonte à publicação. Powered by Content Ventures.',
+  alt: 'Reporter IA — Da fonte à publicação. Powered by Content Ventures.',
 };
 
 export const BRAND_OPEN_GRAPH: Metadata['openGraph'] = {

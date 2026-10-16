@@ -122,7 +122,7 @@ async function request(provider: StockProvider,path: string,fetcher: Fetcher) {
   if (provider === 'pixabay') url.searchParams.set('key',pixabayKey()); // Server only; never reflected or logged.
   let response: Response;
   try { response = await fetcher(url.href,
-    { headers: { ...auth,Accept: 'application/json','User-Agent': 'ReporterAI/1.0 (local editorial image selection)' },redirect: 'error',signal: AbortSignal.timeout(15000) }); }
+    { headers: { ...auth,Accept: 'application/json','User-Agent': 'ReporterIA/1.0 (local editorial image selection)' },redirect: 'error',signal: AbortSignal.timeout(15000) }); }
   catch { throw new FlowError('STOCK_UNAVAILABLE',502); }
   if (response.status === 429 || response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') throw new FlowError('STOCK_RATE_LIMIT',429);
   if ([401,403].includes(response.status)) throw new FlowError('STOCK_ACCESS_DENIED',503);

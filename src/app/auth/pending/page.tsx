@@ -16,7 +16,7 @@ export default function AccessPendingPage() {
     aside={<AuthShowcase eyebrow="Acesso privado" title="Cada pessoa entra apenas no workspace" highlight="e no papel que recebeu." />}
   >
     <PageStack>
-      <PageHeader title="Seu acesso está quase pronto" description="A conta foi criada, mas ainda precisa ser vinculada ao workspace do Reporter AI." />
+      <PageHeader title="Seu acesso está quase pronto" description="A conta foi criada, mas ainda precisa ser vinculada ao workspace do Reporter IA." />
       <Alert tone="info" title="Aguardando liberação">Se você recebeu um pedido de confirmação por e-mail, conclua essa etapa. Depois, peça ao administrador para liberar seu endereço no projeto.</Alert>
       <ButtonGroup label="Ações de acesso">
         <Button variant="primary" onClick={() => router.replace('/')}>Verificar novamente</Button>

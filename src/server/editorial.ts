@@ -274,7 +274,7 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
 export async function editorialRpc(payload: unknown) {
   const { method,args,requestId } = rpcSchema.parse(payload);
   if (['generation.start', 'generation.retry'].includes(method) && !await workerAvailable()) {
-    return refuse('provider_unavailable', 'Inicie o worker do Reporter AI antes de gerar.');
+    return refuse('provider_unavailable', 'Inicie o worker do Reporter IA antes de gerar.');
   }
   const hash = contentHash({ method,args });
   let replayed = false;

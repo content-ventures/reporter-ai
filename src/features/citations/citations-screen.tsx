@@ -80,7 +80,7 @@ export function CitationsScreen() {
     { key: 'state',header: 'Curadoria',width: 110,render: item => <Badge tone={item.ready ? 'green' : 'gray'}>{item.ready ? 'Selecionada' : 'Conferir'}</Badge> },
   ];
   if (failure && !view) return <ErrorState heading="h1" size="page" title="Não foi possível abrir as citações" description={failure} onRetry={() => void load()} />;
-  if (!port && status !== 'loading') return <EmptyState heading="h1" title="Citações disponíveis no backend local" description="Abra o Reporter AI conectado ao PostgreSQL." size="page" />;
+  if (!port && status !== 'loading') return <EmptyState heading="h1" title="Citações disponíveis no backend local" description="Abra o Reporter IA conectado ao PostgreSQL." size="page" />;
   return <>
     <PageStack>
       <PageHeader title="Citações" description="Falas literais dos podcasts, com origem verificável e curadoria editorial." actions={edits ? <Button icon={Plus} disabled={!view?.sources.length} onClick={add}>Adicionar citação</Button> : undefined} />
