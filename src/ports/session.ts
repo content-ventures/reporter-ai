@@ -1,4 +1,5 @@
 import type { PersonId, WorkspaceId } from '../domain/ids.ts';
+import type { ProfilePatch, ProfileRefusal } from '../domain/profile.ts';
 import type { Result } from '../domain/result.ts';
 import type { Role, Workspace } from '../domain/workspace.ts';
 import type { ChangeListener, PersonSummary, Unsubscribe } from './common.ts';
@@ -14,7 +15,12 @@ export type SessionMode = 'simulated' | 'remote';
 export type SessionMember = PersonSummary & {
   workspaceId: WorkspaceId;
   roles: Role[];
+  /** The sign-in e-mail, on `current()` only (never on `members()`). */
+  email?: string;
 };
+
+/** A photo picked on "Meu perfil": the adapter squares it before storing it. */
+export type AvatarInput = { file: Blob; fileName: string };
 
 export type ActAsRefusal = 'unknown_member' | 'not_simulated';
 
@@ -34,5 +40,9 @@ export interface SessionPort {
   /** Only an explicitly local adapter exposes these capabilities. */
   localRoleProfiles?(): Promise<LocalRoleProfile[]>;
   selectLocalRole?(profile: LocalRoleProfileId): Promise<Result<SessionMember, LocalRoleRefusal>>;
+  /** "Meu perfil": the acting member's own name and cargo. Nobody else's profile changes. */
+  updateProfile(patch: ProfilePatch): Promise<Result<SessionMember, ProfileRefusal>>;
+  /** The acting member's photo; `null` removes it. */
+  setAvatar(input: AvatarInput | null): Promise<Result<SessionMember, ProfileRefusal>>;
   subscribe(listener: ChangeListener): Unsubscribe;
 }

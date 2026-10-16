@@ -7,6 +7,7 @@ export * from './ids.ts';
 export * from './result.ts';
 export * from './refs.ts';
 export * from './workspace.ts';
+export * from './profile.ts';
 export * from './source.ts';
 export * from './article.ts';
 export * from './article-slots.ts';

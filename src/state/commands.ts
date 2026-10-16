@@ -10,7 +10,8 @@ import type { GenerationService } from '../ports/generation.ts';
 import type { ProductionCommands } from '../ports/production-commands.ts';
 import type { RenderService } from '../ports/render.ts';
 import type { SaveStatusPort } from '../ports/save-status.ts';
-import type { ActAsRefusal, LocalRoleProfileId, LocalRoleRefusal, SessionMember } from '../ports/session.ts';
+import type { ProfilePatch, ProfileRefusal } from '../domain/profile.ts';
+import type { ActAsRefusal, AvatarInput, LocalRoleProfileId, LocalRoleRefusal, SessionMember } from '../ports/session.ts';
 import type { SourceIngest } from '../ports/source-ingest.ts';
 import type { Runtime } from '../runtime/runtime.ts';
 
@@ -39,10 +40,12 @@ export type Commands = {
     unused(inUse?: Iterable<AssetId>): Promise<UnusedAssets>;
     freeSpace(inUse?: Iterable<AssetId>): Promise<Result<UnusedAssets, AssetRefusal>>;
   };
-  /** "Agir como" (simulated mode only). */
+  /** "Agir como" (simulated mode only) and "Meu perfil" (the acting member's name, cargo and photo). */
   session: {
     actAs(personId: PersonId): Promise<Result<SessionMember, ActAsRefusal>>;
     selectLocalRole(profile: LocalRoleProfileId): Promise<Result<SessionMember, LocalRoleRefusal>>;
+    updateProfile(patch: ProfilePatch): Promise<Result<SessionMember, ProfileRefusal>>;
+    setAvatar(input: AvatarInput | null): Promise<Result<SessionMember, ProfileRefusal>>;
   };
   /** "Tentar de novo" after a save error. */
   save: Pick<SaveStatusPort, 'retry'>;
@@ -83,6 +86,8 @@ type AnyMethod = (...args: unknown[]) => unknown;
 export const READ_ONLY_REFUSAL = refuse('read_only', 'Esta produção está aberta em outra aba. Escolha “Usar esta aba” para editar aqui.');
 
 const readOnly = (runtime: Runtime): boolean => runtime.tabs?.current().status === 'elsewhere';
+
+const PROFILE_READ_ONLY = refuse('read_only', 'Seu perfil está aberto em outra aba. Escolha “Usar esta aba” para editar aqui.');
 
 /**
  * A port whose methods resolve the runtime first, then call the same method on it. Methods in
@@ -144,6 +149,14 @@ export function createCommands(whenReady: () => Promise<Runtime>): Commands {
         const { session } = await whenReady();
         if (!session.actAs) return refuse('not_simulated', 'Trocar de pessoa só existe na simulação.');
         return session.actAs(personId);
+      },
+      async updateProfile(patch) {
+        const runtime = await whenReady();
+        return readOnly(runtime) ? PROFILE_READ_ONLY : runtime.session.updateProfile(patch);
+      },
+      async setAvatar(input) {
+        const runtime = await whenReady();
+        return readOnly(runtime) ? PROFILE_READ_ONLY : runtime.session.setAvatar(input);
       },
     },
     save: deferred<Commands['save']>(whenReady, (runtime) => runtime.saveStatus, { retry: true }),

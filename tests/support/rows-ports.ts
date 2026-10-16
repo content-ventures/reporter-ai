@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ok, refuse } from '../../src/domain/result.ts';
+import type { Result } from '../../src/domain/result.ts';
+import { validateProfilePatch, type ProfileRefusal } from '../../src/domain/profile.ts';
+import { avatarImage } from '../../src/adapters/local/assets/avatar-image.ts';
 import { compactRunPreviews } from '../../src/domain/run-events.ts';
 import { isRunActive } from '../../src/domain/run.ts';
 import type { PortsUnderTest } from '../../src/ports/contracts/fixture.ts';
 import type { ConnectedWorkspace, WorkspaceRefresh } from '../../src/ports/connected-workspace.ts';
 import type { FeedbackPort } from '../../src/ports/feedback.ts';
 import type { ProductionCommands } from '../../src/ports/production-commands.ts';
-import type { SessionPort } from '../../src/ports/session.ts';
+import type { SessionMember, SessionPort } from '../../src/ports/session.ts';
 import { createEditorialEngine } from '../../src/runtime/editorial-engine.ts';
 import { applyWorkspaceDelta } from '../../src/runtime/editorial-sync.ts';
 import type { handleReporter } from '../../src/server/http.ts';
@@ -39,8 +42,10 @@ export async function rowsPortsUnderTest(world: RowsWorld): Promise<PortsUnderTe
   await world.reset();
   let actor = world.people.editor;
   const send = async (path: string, body?: unknown) => {
+    const raw = body instanceof Blob;
     const request = new Request(`${world.origin}/api/reporter/${path}`, body === undefined ? undefined : { method: 'POST',
-      headers: { origin: world.origin, 'content-type': 'application/json', 'x-reporter-client': 'local' }, body: JSON.stringify(body) });
+      headers: { origin: world.origin, 'content-type': raw ? body.type : 'application/json', 'x-reporter-client': 'local' },
+      body: raw ? body : JSON.stringify(body) });
     const response = await world.handle(request, path.split('?')[0].split('/'), { defer: () => {}, identify: async () => actor.identity });
     return { status: response.status, value: await response.json() as unknown };
   };
@@ -83,8 +88,27 @@ export async function rowsPortsUnderTest(world: RowsWorld): Promise<PortsUnderTe
   };
   const commands = Object.fromEntries(Object.keys(engine.commands).map(method =>
     [method, (...args: unknown[]) => rpc(method, args)])) as unknown as ProductionCommands;
+  // The connected runtime's profile writes: the route, then a fresh read of the session.
+  const profile = async (path: string, body: unknown): Promise<Result<SessionMember, ProfileRefusal>> => {
+    const { status, value } = await send(path, body);
+    const code = (value as { error?: string }).error ?? '';
+    if (status !== 200) return refuse(code === 'PROFILE_NAME_REQUIRED' ? 'empty_name' : code === 'PROFILE_TOO_LONG' ? 'too_long'
+      : code.startsWith('AVATAR_') ? 'invalid_image' : 'unavailable', JSON.stringify(value));
+    await refresh();
+    const member = await engine.session.current();
+    return member ? ok(member) : refuse('unavailable', 'no session');
+  };
   const session: SessionPort = { mode: 'remote', workspace: () => engine.session.workspace(), current: () => engine.session.current(),
-    members: () => engine.session.members(), subscribe: listener => engine.session.subscribe(listener) };
+    members: () => engine.session.members(), subscribe: listener => engine.session.subscribe(listener),
+    async updateProfile(patch) {
+      const valid = validateProfilePatch(patch);
+      return valid.ok ? profile('profile', valid.value) : valid;
+    },
+    async setAvatar(input) {
+      if (!input) return profile('profile', { avatar: null });
+      const image = await avatarImage(input);
+      return image.ok ? profile('profile/avatar', image.value) : image;
+    } };
   const feedback: FeedbackPort = { record: input => rpc('recordFeedback', [input]), vote: input => rpc('feedback.vote', [input]),
     list: query => engine.feedback.list(query) };
   const people = world.people;
@@ -94,6 +118,8 @@ export async function rowsPortsUnderTest(world: RowsWorld): Promise<PortsUnderTe
     carouselTemplateId: world.templateId,
     enforcesR1Articles: true,
     validatesBeforeEngine: true,
+    // This run has no object storage; the server's photo pipeline has its own test.
+    storesAvatars: false,
     async actAs(personId) {
       const next = Object.values(people).find(person => person.id === personId);
       if (!next) throw new Error(`Unknown contract person ${personId}`);
