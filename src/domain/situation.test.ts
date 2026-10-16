@@ -5,9 +5,24 @@ import type { RunStep } from './run.ts';
 import { NEXT_STEP_LABELS, nextStepFor, situationOf, writingParts } from './situation.ts';
 import { pieceStatus } from './rules/status.ts';
 import type { ArticleBody } from './article.ts';
+import { toVersionRef } from './piece.ts';
 import type { Version } from './piece.ts';
+import { canExport, defaultExportSelection } from './rules/export.ts';
 import { R1_FLOW, stageState } from './stage.ts';
-import { approvedPackage, baseRecord, commitVersion, createKit, JOAO, MEMBERS, PEDRO, recordDecision, requestReview, sampleArticle } from './testing/scenario.ts';
+import {
+  addCarouselPiece,
+  approvedPackage,
+  baseRecord,
+  commitVersion,
+  createKit,
+  JOAO,
+  MEMBERS,
+  PEDRO,
+  recordDecision,
+  requestReview,
+  sampleArticle,
+  sampleCarousel,
+} from './testing/scenario.ts';
 import type { TestKit } from './testing/scenario.ts';
 import { buildProductionView } from './views.ts';
 
@@ -70,6 +85,100 @@ describe('situationOf', () => {
     const view = buildProductionView(record, { now: kit.now(), nameOf });
     assert.equal(view.situation.line, 'Artigo · Aprovado');
     assert.equal(situationOf({ record, view, nameOf, now: kit.now() }).stage, 'carousel');
+  });
+});
+
+describe('situationOf: who acts next, the same for every viewer', () => {
+  const actorOf = (record: ProductionRecord, now: string) => buildProductionView(record, { now, nameOf }).situation.nextActor;
+  const ANA = 'person-ana';
+
+  it('names the owner until the send, the person asked while it waits and the last sender after "Pedir ajustes"', () => {
+    const kit = createKit();
+    assert.deepEqual(actorOf(baseRecord(kit, { authorized: false }), kit.now()), { personId: JOAO, step: 'authorize' });
+
+    const record = baseRecord(kit, { plan: ['article'] });
+    assert.deepEqual(actorOf(record, kit.now()), { personId: JOAO, step: 'generate_article' });
+    const v1 = commitVersion(record, kit, 'article', sampleArticle(record.sources[0]), { origin: 'generation' });
+    assert.deepEqual(actorOf(record, kit.now()), { personId: JOAO, step: 'continue' });
+    requestReview(record, kit, v1);
+    assert.deepEqual(actorOf(record, kit.now()), { step: 'review' }, 'nobody named: any approver');
+    assign(record, PEDRO);
+    assert.deepEqual(actorOf(record, kit.now()), { personId: PEDRO, step: 'review' });
+
+    // Ana sent it on João's production: she adjusts it, while the line still names the decider.
+    record.reviewRequests = record.reviewRequests.map((request) => ({ ...request, requestedBy: ANA }));
+    recordDecision(record, kit, v1, 'changes_requested', { note: 'Rever o título.' });
+    const returned = buildProductionView(record, { now: kit.now(), nameOf }).situation;
+    assert.deepEqual(returned.nextActor, { personId: ANA, step: 'adjust' });
+    assert.equal(returned.withPersonId, PEDRO);
+
+    recordDecision(record, kit, v1, 'approved');
+    assert.deepEqual(actorOf(record, kit.now()), { personId: JOAO, step: 'deliver' });
+    record.pieces = record.pieces.map((piece) => (piece.draft.body.type === 'article' ? { ...piece, draft: { ...piece.draft, body: { ...piece.draft.body, title: 'Mexido depois' } } } : piece));
+    assert.deepEqual(actorOf(record, kit.now()), { personId: JOAO, step: 'resend' });
+  });
+
+  it('after the article approval the owner creates the carousel, then the carousel goes the same way', () => {
+    const kit = createKit();
+    const record = baseRecord(kit);
+    const article = commitVersion(record, kit, 'article', sampleArticle(record.sources[0]), { origin: 'generation' });
+    requestReview(record, kit, article);
+    recordDecision(record, kit, article, 'approved');
+    assert.deepEqual(actorOf(record, kit.now()), { personId: JOAO, step: 'create_carousel' }, 'the approver is never the next actor');
+    addCarouselPiece(record, kit);
+    const carousel = commitVersion(record, kit, 'carousel', sampleCarousel(), { origin: 'generation', inputs: [toVersionRef(article)] });
+    assert.deepEqual(actorOf(record, kit.now()), { personId: JOAO, step: 'continue' });
+    requestReview(record, kit, carousel);
+    assign(record, PEDRO);
+    assert.deepEqual(actorOf(record, kit.now()), { personId: PEDRO, step: 'review' });
+    recordDecision(record, kit, carousel, 'approved');
+    assert.deepEqual(actorOf(record, kit.now()), { personId: JOAO, step: 'deliver' });
+  });
+
+  it('nobody once delivered or archived; the owner retries a failed generation', () => {
+    const kit = createKit();
+    const { record } = approvedPackage(kit);
+    const items = canExport(record, defaultExportSelection(record));
+    assert.ok(items.ok);
+    record.deliveries = [
+      {
+        id: 'del-1',
+        productionId: record.production.id,
+        channel: 'export',
+        mode: 'download',
+        items: items.value.map((item) => ({ version: item.version, decisionId: item.decisionId, format: item.kind === 'article' ? 'md' : 'png' })),
+        attempts: [{ at: kit.now(), status: 'succeeded' }],
+        status: 'completed',
+        idempotencyKey: 'k',
+        createdBy: JOAO,
+        createdAt: kit.now(),
+      },
+    ];
+    assert.equal(lineOf(record, kit.now()), 'Entrega · Concluída');
+    assert.equal(actorOf(record, kit.now()), undefined);
+
+    const archived = baseRecord(kit);
+    archived.production = { ...archived.production, archivedAt: kit.now() };
+    assert.equal(actorOf(archived, kit.now()), undefined);
+
+    const failed = baseRecord(kit);
+    failed.runs = [
+      {
+        id: 'run-1',
+        kind: 'article.generate',
+        productionId: failed.production.id,
+        pieceId: failed.pieces[0].id,
+        prompt: { key: 'k', version: '1', hash: 'h' },
+        model: { alias: 'local-simulation', label: 'Simulação local', engine: 'simulated' },
+        inputs: [],
+        status: 'failed',
+        steps: [],
+        error: { code: 'x', message: 'Falhou', retryable: true },
+        createdBy: JOAO,
+        createdAt: kit.now(),
+      },
+    ];
+    assert.deepEqual(actorOf(failed, kit.now()), { personId: JOAO, step: 'retry' });
   });
 });
 

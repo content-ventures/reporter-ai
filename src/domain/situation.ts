@@ -15,9 +15,10 @@ import type { Member } from './workspace.ts';
 
 /**
  * Where a production stands, in one newsroom line ("Artigo · Aguardando aprovação de Pedro"),
- * and the next step a given person can take on it ("Revisar", "Ajustar", "Criar carrossel").
- * The line is the same for everyone (`ProductionView.situation`); the next step depends on the
- * viewer and is computed by the ports for the acting member.
+ * who acts next on it ("Pedro revisa"), and the next step a given person can take on it
+ * ("Revisar", "Ajustar", "Criar carrossel"). The line and the next actor are the same for everyone
+ * (`ProductionView.situation`); the next step depends on the viewer and is computed by the ports
+ * for the acting member.
  */
 
 /** Where a next step lands (routes resolve it: `stepTargetHref`). `structure` is a compatibility target for old article links. */
@@ -68,6 +69,14 @@ export type NextStep = {
 
 export type SituationStage = 'source' | 'article' | 'approval' | 'carousel' | 'delivery' | 'archived';
 
+/**
+ * Who moves the production next and with which step, the same for every viewer: the person asked
+ * reviews a send (`personId` absent when nobody was named), the last sender adjusts a returned
+ * piece, and the owner does everything else (R1: after an approval the owner creates the carousel
+ * or downloads the package).
+ */
+export type NextActor = { personId?: PersonId; step: NextStepKind };
+
 export type Situation = {
   stage: SituationStage;
   pieceKind?: PieceKind;
@@ -79,6 +88,8 @@ export type Situation = {
   line: string;
   /** Who has it: the assignee while waiting, the decider after "Pedir ajustes". */
   withPersonId?: PersonId;
+  /** Who acts next (none while the AI writes, once delivered and when archived). */
+  nextActor?: NextActor;
   /** Parts the AI wrote so far ("parte 2 de 4"). */
   progress?: { current: number; total: number };
 };
@@ -166,14 +177,58 @@ function pieceSituation(input: SituationInput, kind: PieceKind, status: PieceSta
   }
 }
 
-/** One line for lists, the Início queue and the Equipe tab (viewer-independent). */
+/** Whoever sent the piece last (a withdrawn send does not count): they adjust it when it comes back. */
+function lastSender(record: ProductionRecord, pieceId: string | undefined): PersonId | undefined {
+  if (!pieceId) return undefined;
+  const requests = record.reviewRequests.filter((entry) => entry.subject.pieceId === pieceId && entry.withdrawnAt === undefined);
+  return requests.sort((a, b) => Date.parse(a.requestedAt) - Date.parse(b.requestedAt)).pop()?.requestedBy;
+}
+
+/** Who acts next on the planned piece the production is on (see `NextActor`). */
+function pieceNextActor(record: ProductionRecord, kind: PieceKind, status: PieceStatus): NextActor | undefined {
+  const owner = record.production.ownerId;
+  const piece = pieceOfKind(record, kind);
+  switch (status) {
+    case 'generating':
+    case 'locked':
+    case 'approved':
+      return undefined;
+    case 'failed':
+      return { personId: owner, step: 'retry' };
+    case 'not_started':
+      if (kind === 'article') return { personId: owner, step: record.production.flowId === WRITING_FLOW.id ? 'continue' : 'generate_article' };
+      return { personId: owner, step: kind === 'carousel' ? 'create_carousel' : 'continue' };
+    case 'draft':
+      return { personId: owner, step: 'continue' };
+    case 'in_review': {
+      const assignee = piece ? pendingReview(record, piece.id)?.assigneeId : undefined;
+      return assignee ? { personId: assignee, step: 'review' } : { step: 'review' };
+    }
+    case 'changes_requested':
+      return { personId: lastSender(record, piece?.id) ?? owner, step: 'adjust' };
+    case 'approval_outdated':
+      return { personId: owner, step: 'resend' };
+    case 'stale':
+      return { personId: owner, step: kind === 'carousel' ? 'update_carousel' : 'continue' };
+  }
+}
+
+function withNextActor(result: Situation, actor: NextActor | undefined): Situation {
+  if (actor) result.nextActor = actor;
+  return result;
+}
+
+/** One line for lists, the Início queue and the Equipe tab, with who acts next (viewer-independent). */
 export function situationOf(input: SituationInput): Situation {
   const { record, view } = input;
+  const owner = record.production.ownerId;
   if (view.status === 'archived') return situation('archived', undefined, 'archived', 'Arquivada');
-  if (view.status === 'unauthorized') return situation('source', undefined, 'unauthorized', 'Falta autorização');
+  if (view.status === 'unauthorized') return withNextActor(situation('source', undefined, 'unauthorized', 'Falta autorização'), { personId: owner, step: 'authorize' });
   const current = currentPiece(record);
-  if (current) return pieceSituation(input, current.kind, current.status);
-  return isDelivered(record) ? situation('delivery', undefined, 'completed', 'Concluída') : situation('delivery', undefined, 'approved', 'Pronto para baixar');
+  if (current) return withNextActor(pieceSituation(input, current.kind, current.status), pieceNextActor(record, current.kind, current.status));
+  return isDelivered(record)
+    ? situation('delivery', undefined, 'completed', 'Concluída')
+    : withNextActor(situation('delivery', undefined, 'approved', 'Pronto para baixar'), { personId: owner, step: 'deliver' });
 }
 
 function step(kind: NextStepKind, target: StepTarget, mine: boolean): NextStep {
@@ -238,9 +293,7 @@ export function nextStepFor(input: SituationInput): NextStep | null {
     }
     case 'changes_requested': {
       if (!editor && !owner) return open;
-      const requests = piece ? record.reviewRequests.filter((entry) => entry.subject.pieceId === piece.id && entry.withdrawnAt === undefined) : [];
-      const sender = requests.sort((a, b) => Date.parse(a.requestedAt) - Date.parse(b.requestedAt)).pop()?.requestedBy;
-      return step('adjust', studio, owner || sender === viewer.personId);
+      return step('adjust', studio, owner || lastSender(record, piece?.id) === viewer.personId);
     }
     case 'approval_outdated':
       return editor ? step('resend', studio, owner) : open;
