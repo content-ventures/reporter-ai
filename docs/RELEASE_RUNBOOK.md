@@ -77,6 +77,19 @@ The worker URL appears as `NEON_FUNCTION_REPORTERWORKER_BASE_URL` in `neon env p
 worker has been deployed. `pnpm cloud:check -- --url <app>` reads a deployment's public
 `/api/reporter/health` and names any missing setting; it never shows a value.
 
+### Production domains
+
+The app checks same-origin requests itself, and its canonical URL falls back to the Vercel
+project's production domain, so Vercel needs no origin setting. Two places list every production
+origin, such as `https://reporteria.contentventures.com.br` and `https://reporter-ai-three.vercel.app`:
+
+- **Neon Auth domains** of the production branch. A missing origin fails sign-in with
+  `INVALID_ORIGIN`. A change applies at once.
+- **`REPORTER_APP_ORIGINS`** on the GitHub `production` environment, comma-separated. The worker
+  accepts upload requests only from these origins, and the bucket CORS is written from them. A
+  change applies at the next production worker deployment: a release, or `Deploy the Neon worker`
+  with the current tag.
+
 ## Releasing
 
 - **Validate first.** From the branch under review, dispatch the workflow with `validation_only`.
