@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  GREETING,
   VIEWPORTS,
   expectHeadingOutline,
   expectLoaded,
@@ -32,7 +33,7 @@ for (const viewport of VIEWPORTS) {
       const errors = watchErrors(page);
 
       for (const [path, heading] of [
-        ["/", "Início"],
+        ["/", GREETING],
         ["/productions", "Produções"],
         ["/quotes", "Banco de citações"],
         ["/images", "Imagens"],

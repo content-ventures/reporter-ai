@@ -10,7 +10,6 @@ import {
   inProgressLine,
   inProgressSize,
   teamLine,
-  weekItems,
 } from './desk-copy.ts';
 
 const NOW = new Date(2026, 9, 8, 16, 10);
@@ -51,35 +50,35 @@ function progress(overrides: Partial<InProgressItem> = {}): InProgressItem {
   } as InProgressItem;
 }
 
-describe('Início summary sentence', () => {
+describe('Início greeting and summary', () => {
   test('greets by the local hour with the first name', () => {
-    assert.equal(greeting(5, 'Pedro'), 'Bom dia, Pedro.');
-    assert.equal(greeting(11, 'Pedro'), 'Bom dia, Pedro.');
-    assert.equal(greeting(12, 'Juliana Prates'), 'Boa tarde, Juliana.');
-    assert.equal(greeting(17, 'João'), 'Boa tarde, João.');
-    assert.equal(greeting(18, 'João'), 'Boa noite, João.');
-    assert.equal(greeting(4, 'João'), 'Boa noite, João.');
-    assert.equal(greeting(9, undefined), 'Bom dia.');
+    assert.equal(greeting(5, 'Pedro'), 'Bom dia, Pedro');
+    assert.equal(greeting(11, 'Pedro'), 'Bom dia, Pedro');
+    assert.equal(greeting(12, 'Juliana Prates'), 'Boa tarde, Juliana');
+    assert.equal(greeting(17, 'João'), 'Boa tarde, João');
+    assert.equal(greeting(18, 'João'), 'Boa noite, João');
+    assert.equal(greeting(4, 'João'), 'Boa noite, João');
+    assert.equal(greeting(9, undefined), 'Bom dia');
   });
 
   test('lists what needs the viewer in the desk order, with "e" before the last fact', () => {
-    assert.equal(deskSummary({ hour: 9, name: 'Pedro', groups: groups({ to_approve: 2 }) }), 'Bom dia, Pedro. 2 peças esperam sua aprovação.');
+    assert.equal(deskSummary(groups({ to_approve: 2 })), '2 peças esperam sua aprovação.');
     assert.equal(
-      deskSummary({ hour: 15, name: 'João', groups: groups({ returned: 1, failed: 1, unauthorized: 1 }) }),
-      'Boa tarde, João. 1 peça voltou com ajustes, 1 artigo parou com erro e 1 material espera autorização.',
+      deskSummary(groups({ returned: 1, failed: 1, unauthorized: 1 })),
+      '1 peça voltou com ajustes, 1 artigo parou com erro e 1 material espera autorização.',
     );
     assert.equal(
-      deskSummary({ hour: 20, name: 'Rafael Dias', groups: groups({ to_approve: 1, returned: 3, failed: 2, unauthorized: 4 }) }),
-      'Boa noite, Rafael. 1 peça espera sua aprovação, 3 peças voltaram com ajustes, 2 artigos pararam com erro e 4 materiais esperam autorização.',
+      deskSummary(groups({ to_approve: 1, returned: 3, failed: 2, unauthorized: 4 })),
+      '1 peça espera sua aprovação, 3 peças voltaram com ajustes, 2 artigos pararam com erro e 4 materiais esperam autorização.',
     );
   });
 
   test('waiting on someone else is not a fact: nothing waits for the viewer', () => {
-    assert.equal(deskSummary({ hour: 15, name: 'Juliana Prates', groups: groups({ waiting_other: 1 }) }), 'Boa tarde, Juliana. Nada esperando você.');
-    assert.equal(deskSummary({ hour: 8, name: 'Clara Souto', groups: [] }), 'Bom dia, Clara. Nada esperando você.');
+    assert.equal(deskSummary(groups({ waiting_other: 1 })), 'Nada esperando você.');
+    assert.equal(deskSummary([]), 'Nada esperando você.');
     assert.equal(
-      deskSummary({ hour: 15, name: 'Rafael Dias', groups: groups({ failed: 1, waiting_other: 1 }) }),
-      'Boa tarde, Rafael. 1 artigo parou com erro.',
+      deskSummary(groups({ failed: 1, waiting_other: 1 })),
+      '1 artigo parou com erro.',
     );
   });
 });
@@ -131,17 +130,5 @@ describe('Início rows', () => {
     assert.equal(teamLine(progress()), 'Artigo · Rascunho · João');
     assert.equal(continueTitle(progress()), 'Continuar: Estúdio Norte: impressão 3D no protótipo');
     assert.equal(continueLine(progress()), 'Artigo · Rascunho · 1,6 de 2 laudas');
-  });
-});
-
-describe('Início week line', () => {
-  test('three facts for the window; missing values leave their part out', () => {
-    assert.deepEqual(weekItems({ inProduction: 8, approved: 14, timeToApprovalMs: 16_212_893 }, '7d'), [
-      'Esta semana: 8 em produção',
-      '14 aprovadas',
-      '4,5 h até aprovar',
-    ]);
-    assert.deepEqual(weekItems({ inProduction: 3, approved: 1, timeToApprovalMs: null }, '30d'), ['Últimos 30 dias: 3 em produção', '1 aprovada']);
-    assert.deepEqual(weekItems({ inProduction: 0, approved: null, timeToApprovalMs: null }, '7d'), ['Esta semana: 0 em produção']);
   });
 });

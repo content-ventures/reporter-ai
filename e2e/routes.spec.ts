@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { VIEWPORTS, expectHeadingOutline, expectLoaded, expectNoHorizontalOverflow, watchErrors } from "./support";
+import { GREETING, VIEWPORTS, expectHeadingOutline, expectLoaded, expectNoHorizontalOverflow, watchErrors } from "./support";
 
 /**
  * Route sweep: every R1 screen and the fixture states of §3.9, at 1440 and 390, with no console
@@ -129,11 +129,15 @@ for (const viewport of VIEWPORTS) {
     test("visão geral: retomar produção, consultar pendências, abrir kanban e manter o período", async ({ page }, testInfo) => {
       const errors = watchErrors(page);
       await page.goto("/");
-      await expect(page.getByRole("heading", { name: "Início", level: 1, exact: true })).toBeVisible();
-      const resume = page.getByRole("article", { name: /^Continuar:/ });
+      await expect(page.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
+      const resume = page.getByRole("article", { name: /^Continuar: Estúdio Norte/ });
       const continueLink = resume.getByRole("link", { name: /^Continuar: Estúdio Norte/ });
       await expect(continueLink).toBeVisible();
-      await expect(page.getByRole("region", { name: "Produções por etapa", exact: true })).toBeVisible();
+      const stages = page.getByRole("region", { name: "Produções por etapa", exact: true });
+      await expect(stages.getByRole("link")).toHaveCount(5);
+      const recent = page.getByRole("region", { name: "Produções recentes", exact: true });
+      await expect(recent.getByRole("link", { name: "Estúdio Norte: impressão 3D no protótipo", exact: true })).toBeVisible();
+      await expect(recent.getByRole("link", { name: "Ver todas", exact: true })).toHaveAttribute("href", "/productions");
       await expect(page.getByRole("list", { name: "Precisa de você", exact: true })).toContainText("Casa Forma");
       await expect(page.getByRole("list", { name: "Últimas movimentações", exact: true })).toBeVisible();
       await expectLoaded(page);
@@ -147,7 +151,7 @@ for (const viewport of VIEWPORTS) {
       await page.waitForURL("/productions/prod-estudio-norte/article");
       await expect(page.getByRole("textbox", { name: "Texto do artigo" })).toBeVisible();
       await page.goBack();
-      await page.getByRole("link", { name: "Abrir kanban", exact: true }).click();
+      await stages.getByRole("link", { name: /^Artigo/ }).click();
       await page.waitForURL("/productions");
       await expect(page.getByRole("heading", { name: "Produções", level: 1 })).toBeVisible();
       await page.goBack();
@@ -156,7 +160,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page).toHaveURL((url) => url.searchParams.get("range") === "30d");
       await page.reload();
       await expect(page.getByRole("radio", { name: "30 dias", exact: true })).toBeChecked();
-      await expect(page.getByText(/Últimos 30 dias:/)).toBeVisible();
+      await expect(page.getByRole("img", { name: /^Aprovações por semana:/ })).toBeVisible();
       await expectNoHorizontalOverflow(page);
       expect(errors, "erros no console").toEqual([]);
     });
@@ -192,8 +196,7 @@ for (const viewport of VIEWPORTS) {
       await expect(editor).toContainText(opening);
       await expect(page.getByRole("button", { name: "Enviar para aprovação", exact: true }).first()).toBeVisible();
       await page.goto("/");
-      const continued = page.getByRole("article", { name: /^Continuar:/ });
-      await continued.getByRole("link", { name: "Continuar: Artigo sem título", exact: true }).click();
+      await page.getByRole("link", { name: "Continuar: Artigo sem título", exact: true }).click();
       await expect(page).toHaveURL(address);
       await expect(editor).toContainText(opening);
       await expectNoHorizontalOverflow(page);

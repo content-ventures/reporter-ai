@@ -1,12 +1,11 @@
 import { formatLaudasOf } from '../../domain/sizing.ts';
 import { firstName, formatAgo, formatSince, quoteNote } from '../../ui/approval-copy.ts';
-import type { DeskGroup, DeskGroupId, DeskItem, DeskView, InProgressItem, TeamStage } from '../../ports/production-queries.ts';
-import { durationText, type OverviewRangeKey } from './overview-format.ts';
+import type { DeskGroup, DeskGroupId, DeskItem, InProgressItem, TeamStage } from '../../ports/production-queries.ts';
 
 /**
- * Every sentence of Início (COPY §1): the summary under the title, the row lines of "Precisa de
- * você", "Em andamento" and "Equipe", the empty-queue card and the week line. Pure, with an
- * explicit `now` (and hour), so `node --test` covers them and screens never hand-format.
+ * Every sentence of Início (COPY §1): the greeting title, the summary under it and the row lines
+ * of "Precisa de você", "Em andamento" and "Equipe". Pure, with an explicit `now` (and hour), so
+ * `node --test` covers them and screens never hand-format.
  */
 
 type Instant = Date | string;
@@ -36,10 +35,10 @@ export function greetingWord(hour: number): string {
   return 'Boa noite';
 }
 
-/** "Bom dia, Pedro." (no name: "Bom dia."). */
+/** The page title: "Bom dia, Pedro" (no name: "Bom dia"). */
 export function greeting(hour: number, name?: string | null): string {
   const who = firstName(name);
-  return who ? `${greetingWord(hour)}, ${who}.` : `${greetingWord(hour)}.`;
+  return who ? `${greetingWord(hour)}, ${who}` : greetingWord(hour);
 }
 
 /** One fact per group that needs the viewer, singular and plural (COPY §1.1). */
@@ -57,18 +56,17 @@ function joinFacts(facts: readonly string[]): string {
 }
 
 /**
- * The summary sentence under "Início": greeting + what needs the viewer, in the desk's order
- * ("Boa tarde, João. 1 peça voltou com ajustes, 1 artigo parou com erro e 1 material espera
- * autorização."); nothing needs them: "Bom dia, Juliana. Nada esperando você." "Aguardando outra
- * pessoa" is never a fact (nothing to do), so the sentence agrees with the section count.
+ * The summary sentence under the greeting: what needs the viewer, in the desk's order ("1 peça
+ * voltou com ajustes, 1 artigo parou com erro e 1 material espera autorização."); nothing needs
+ * them: "Nada esperando você." "Aguardando outra pessoa" is never a fact (nothing to do), so the
+ * sentence agrees with the section count.
  */
-export function deskSummary(input: { hour: number; name?: string | null; groups: readonly Pick<DeskGroup, 'id' | 'items'>[] }): string {
-  const facts = input.groups.flatMap((group) => {
+export function deskSummary(groups: readonly Pick<DeskGroup, 'id' | 'items'>[]): string {
+  const facts = groups.flatMap((group) => {
     const fact = FACTS[group.id];
     return fact && group.items.length > 0 ? [fact(group.items.length)] : [];
   });
-  const head = greeting(input.hour, input.name);
-  return facts.length === 0 ? `${head} Nada esperando você.` : `${head} ${joinFacts(facts)}.`;
+  return facts.length === 0 ? 'Nada esperando você.' : `${joinFacts(facts)}.`;
 }
 
 const joined = (parts: readonly (string | undefined | null | false)[]) => parts.filter(Boolean).join(' · ');
@@ -123,20 +121,4 @@ export function continueTitle(item: Pick<InProgressItem, 'productionTitle'>): st
 /** Under the card title: "Artigo · Rascunho · 1,6 de 2 laudas". */
 export function continueLine(item: InProgressItem): string {
   return joined([item.situation.line, inProgressSize(item)]);
-}
-
-/**
- * The quiet line at the bottom (COPY §1.2): "Esta semana: 8 em produção", "14 aprovadas", "4,5 h
- * até aprovar" (30 days: "Últimos 30 dias: …"), as `MetaList` items. A missing value leaves its
- * part out.
- */
-export function weekItems(week: DeskView['week'], range: OverviewRangeKey): string[] {
-  const prefix = range === '30d' ? 'Últimos 30 dias' : 'Esta semana';
-  const parts = [
-    `${week.inProduction} em produção`,
-    week.approved === null ? undefined : week.approved === 1 ? '1 aprovada' : `${week.approved} aprovadas`,
-    week.timeToApprovalMs === null ? undefined : `${durationText(week.timeToApprovalMs)} até aprovar`,
-  ].filter((part): part is string => Boolean(part));
-  const [first, ...rest] = parts;
-  return [`${prefix}: ${first}`, ...rest];
 }
