@@ -41,7 +41,8 @@ import type { MaterialAnalysis } from './use-material-analysis';
 const MODES: SegmentOption<MaterialMode>[] = [
   { value: 'paste', label: 'Texto', icon: ClipboardList },
   { value: 'file', label: 'Arquivo', icon: FileUp },
-  { value: 'link', label: 'Link', icon: Link2 },
+  // Link import (YouTube/Spotify) is off until it works end to end in every runtime.
+  { value: 'link', label: 'Link', icon: Link2, disabled: true, disabledReason: 'Em breve' },
 ];
 
 const PLACEHOLDER = 'Cole aqui a transcrição da entrevista';

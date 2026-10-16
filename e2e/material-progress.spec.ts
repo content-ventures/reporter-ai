@@ -86,28 +86,16 @@ for (const viewport of VIEWPORTS) {
       expect(calls).toBe(2);
     });
 
-    test('link passa da importação de legendas à análise, sem inventar transcrição de áudio', async ({ page }) => {
-      const imported = deferred(),analyzed = deferred();
-      await page.route('**/api/reporter/links', async route => {
-        await imported.promise;
-        await route.fulfill({ json: { kind: 'ready',provider: 'youtube',sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-          fileName: 'legendas.txt',text,bytes: Buffer.byteLength(text) } });
-      });
-      await page.route('**/api/reporter/material/analysis', async route => {
-        await analyzed.promise;
-        await route.fulfill({ json: insights });
-      });
+    test('link fica indisponível, com o motivo, e não troca o modo', async ({ page }) => {
       await page.goto('/productions/new');
-      await page.getByRole('radio', { name: 'Link',exact: true }).click();
-      await page.getByRole('textbox', { name: 'Transcrição',exact: true }).fill('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
-      await page.getByRole('button', { name: 'Importar link',exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Preparando material' });
-      await expect(dialog.getByText('Localizando episódio', { exact: true })).toBeVisible();
-      imported.resolve();
-      await expect(dialog.getByText('Identificando o tema e os participantes.', { exact: true })).toBeVisible();
-      await expect(dialog.getByText('Transcrever áudio', { exact: true })).toHaveCount(0);
-      analyzed.resolve();
-      await expect(page.getByRole('dialog', { name: 'Material pronto' })).toBeVisible();
+      const link = page.getByRole('radio', { name: 'Link',exact: true });
+      await expect(link).toHaveAttribute('aria-disabled', 'true');
+      await expect(link).toHaveAccessibleDescription('Em breve');
+      // aria-disabled keeps it focusable for the reason, so Playwright would wait forever: force the press.
+      await link.click({ force: true });
+      await expect(link).toHaveAttribute('aria-checked', 'false');
+      await expect(page.getByRole('radio', { name: 'Texto',exact: true })).toHaveAttribute('aria-checked', 'true');
+      await expect(page.getByRole('textbox', { name: 'Transcrição',exact: true })).toBeVisible();
       await expectNoHorizontalOverflow(page);
     });
 
