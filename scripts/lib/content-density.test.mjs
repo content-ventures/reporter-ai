@@ -43,3 +43,15 @@ test("rejects verbose metric hints", () => {
 
   assert.match(contentDensityViolations(source)[0], /metric hint exceeds/);
 });
+
+test("rejects a page-header back link: navigation is the TopBar trail", () => {
+  const source = `
+    export function Page() {
+      return <PageHeader variant="frame" back={{ label: "Produções", href: "/productions" }} title="Lume" />;
+    }
+  `;
+
+  const violations = contentDensityViolations(source);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /PageHeader back is not used; the TopBar trail is the only page navigation/);
+});

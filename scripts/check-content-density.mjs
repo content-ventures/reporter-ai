@@ -27,6 +27,12 @@ function literalValue(attribute) {
 
 function inspectPageHeader(attributes, projectPath, violations) {
   const props = attributeMap(attributes);
+
+  // Page navigation is the TopBar trail (breadcrumbs) only; no header back link.
+  if (props.has("back")) {
+    violations.push(`${projectPath}: PageHeader back is not used; the TopBar trail is the only page navigation`);
+  }
+
   const supporting = ["eyebrow", "description", "meta"].filter((name) => props.has(name));
 
   if (supporting.length > 1) {
