@@ -105,11 +105,6 @@ export function approveLabel(kind: PieceKind): string {
   return `Aprovar ${PIECE_LABELS[kind].toLocaleLowerCase('pt-BR')}`;
 }
 
-/** "Aprovar o artigo" / "Aprovar o carrossel" (the approve popover's title). */
-export function approveTitle(kind: PieceKind): string {
-  return `Aprovar o ${PIECE_LABELS[kind].toLocaleLowerCase('pt-BR')}`;
-}
-
 /**
  * The bar's facts (COPY §4.4): "Artigo · 1,4 de 2 laudas · enviado por Juliana" / "Carrossel ·
  * 5 slides · enviado por Rafael". No version number.

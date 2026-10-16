@@ -3,15 +3,14 @@
 import { useCallback, useState, type ReactElement } from 'react';
 import { ConfirmDialog, toast } from '@content-ventures/design-system/v3';
 import type { PieceKind } from '@/domain';
-import type { ApprovalItem, PieceApproval } from '@/ports';
-import { useCommands } from '@/state';
+import type { PersonSummary, PieceApproval } from '@/ports';
+import { useCommands, useSession } from '@/state';
 import {
   approvalNoticeKind,
   approvalOutdatedNotice,
   approvedNotice,
   awaitingYouNotice,
   changesNotice,
-  decidedNotice,
   NOTICE_VERBS,
   sentNotice,
   undoChangesConfirm,
@@ -20,7 +19,6 @@ import {
   type ApprovedNext,
   type ApprovedUsers,
 } from './approval-copy';
-import { approvalsHref, reviewHref } from './routes';
 import { StatusBanner } from './status-banner';
 import { useNow } from './time';
 
@@ -31,9 +29,10 @@ import { useNow } from './time';
  * - the person asked: "Juliana Prates pediu sua aprovação há 2 h." (no verb: the screen primary is
  *   "Revisar artigo");
  * - "Pedro pediu ajustes: “…”" · Ver comentários; "Aprovado por Pedro · 08/10, 14:20. Próximo
- *   passo: o carrossel."; "Você mudou o texto aprovado…" · Desfazer mudanças (back to the approved
- *   text after a confirmation);
- * - the approver right after deciding: "Aprovado · Juliana recebeu o aviso. Próxima: … · Revisar".
+ *   passo: o carrossel." ("Agora é com João: criar o carrossel." when someone else continues);
+ *   "Você mudou o texto aprovado…" · Desfazer mudanças (back to the approved text after a
+ *   confirmation).
+ * Whoever decides leaves for the board right away (`useStageMove`), so there is no notice for them.
  */
 
 export type ApprovalBannerProps = {
@@ -42,12 +41,13 @@ export type ApprovalBannerProps = {
   onShowComments?: () => void;
   /** After "Retirar envio para editar" succeeded (the banner calls `withdrawReview` and toasts). */
   onWithdrawn?: () => void;
-  /** The approver has just decided here: who was told and the next item of their queue. */
-  decided?: { decision: 'approved' | 'changes_requested'; requesterName: string; next?: ApprovalItem };
   /** Approved: "Próximo passo: o carrossel / a entrega / baixar o pacote" (from the production's next step). */
   approvedNext?: ApprovedNext;
-  /** Continuation immediately after deciding; persisted reviews use their header primary. */
-  nextAction?: { label: string; href: string };
+  /**
+   * Approved: who continues (the production owner, R1). Named ("Agora é com João: criar o
+   * carrossel.") only when it is not the viewer, who has the step as the screen primary.
+   */
+  nextActor?: Pick<PersonSummary, 'id' | 'name'>;
   /** Approval outdated: who keeps the approved version (default: carousel and delivery for the article). */
   usedBy?: ApprovedUsers;
   /**
@@ -100,18 +100,18 @@ export function ApprovalBanner({
   approval,
   onShowComments,
   onWithdrawn,
-  decided,
   approvedNext,
-  nextAction,
+  nextActor,
   usedBy,
   onUndo,
 }: ApprovalBannerProps): ReactElement | null {
   const commands = useCommands();
   const now = useNow();
+  const viewerId = useSession().data?.current?.id;
   const subject = subjectOf(approval.kind);
   const withdrawal = useWithdrawReview(approval, onWithdrawn);
   const [confirming, setConfirming] = useState(false);
-  const kind = approvalNoticeKind(approval, Boolean(decided));
+  const kind = approvalNoticeKind(approval);
   const { request, decision } = approval;
 
   const undo = useCallback(async () => {
@@ -132,22 +132,6 @@ export function ApprovalBanner({
   }, [approval, commands, onUndo, subject]);
 
   switch (kind) {
-    case 'decided': {
-      if (!decided) return null;
-      const next = decided.next;
-      return (
-        <StatusBanner
-          kind="decided"
-          action={
-            nextAction ?? (next
-              ? { label: NOTICE_VERBS.review, href: reviewHref(next.productionId, next.kind) }
-              : { label: NOTICE_VERBS.approvals, href: approvalsHref() })
-          }
-        >
-          {decidedNotice({ decision: decided.decision, requesterName: decided.requesterName, nextTitle: next?.productionTitle })}
-        </StatusBanner>
-      );
-    }
     case 'sent':
       return (
         <StatusBanner
@@ -175,9 +159,10 @@ export function ApprovalBanner({
       );
     case 'approved': {
       const at = decision?.kind === 'approved' ? decision.at : approvedAt(approval);
+      const someoneElse = nextActor && viewerId && nextActor.id !== viewerId ? nextActor.name : undefined;
       return (
         <StatusBanner kind="approved">
-          {approvedNotice({ deciderName: decision?.decider?.name, at: at ?? '', now, next: approvedNext })}
+          {approvedNotice({ deciderName: decision?.decider?.name, at: at ?? '', now, next: approvedNext, nextActorName: someoneElse })}
         </StatusBanner>
       );
     }

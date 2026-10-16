@@ -4,7 +4,8 @@ import type { DueState, SendItemLevel } from '../domain/approval.ts';
 
 /**
  * Every sentence of the approval flow (COPY §5): the task notices above the text, the pre-send
- * dialog, the undo and withdraw confirmations, plus the time and due formats the queues share
+ * dialog, the approve, undo and withdraw confirmations, the toast after each stage move (who acts
+ * now), plus the time and due formats the queues share
  * ("há 2 h", "desde 14:10", "prazo: hoje", "atrasado · prazo era 07/10"). Pure functions with an
  * explicit `now`, so screens never hand-format these strings and server and browser agree.
  * Dates are read in the local calendar (the newsroom's day).
@@ -111,7 +112,10 @@ export function roundLabel(round: number): string | undefined {
 
 // ── Task notices (COPY §5.1) ────────────────────────────────────────────────────────────
 
-/** Verbs of the notices. "Retirar envio" is the same command in the ⋯ menus. */
+/**
+ * Verbs of the notices and of the toast after a stage move. "Retirar envio" is the same command
+ * in the ⋯ menus and in the toast after a send.
+ */
 export const NOTICE_VERBS = {
   stop: 'Parar',
   retry: 'Tentar de novo',
@@ -119,8 +123,7 @@ export const NOTICE_VERBS = {
   withdrawMenu: 'Retirar envio',
   comments: 'Ver comentários',
   undo: 'Desfazer mudanças',
-  review: 'Revisar',
-  approvals: 'Ver aprovações',
+  reviewNext: 'Revisar próxima',
 } as const;
 
 type Parts = { current: number; total: number } | undefined;
@@ -187,12 +190,32 @@ const NEXT_WORDS: Record<ApprovedNext, string> = {
   package: 'baixar o pacote',
 };
 
-/** "Aprovado por Pedro · 08/10, 14:20. Próximo passo: o carrossel." */
-export function approvedNotice(input: { deciderName?: string | null; at: Instant; now?: Instant; next?: ApprovedNext }): string {
+/** What whoever continues does after an approval: "criar o carrossel" / "(João) cria o carrossel". */
+const NEXT_TASKS: Record<ApprovedNext, { infinitive: string; present: string }> = {
+  carousel: { infinitive: 'criar o carrossel', present: 'cria o carrossel' },
+  delivery: { infinitive: 'baixar o pacote', present: 'baixa o pacote' },
+  package: { infinitive: 'baixar o pacote', present: 'baixa o pacote' },
+};
+
+/**
+ * "Aprovado por Pedro · 08/10, 14:20. Próximo passo: o carrossel." With who continues when it is
+ * someone else (the viewer already has the step as the screen primary): "… Agora é com João:
+ * criar o carrossel."
+ */
+export function approvedNotice(input: {
+  deciderName?: string | null;
+  at: Instant;
+  now?: Instant;
+  next?: ApprovedNext;
+  /** Who continues, named only when it is not the viewer. */
+  nextActorName?: string | null;
+}): string {
   const who = firstName(input.deciderName);
   const when = toDate(input.at) ? formatDayTime(input.at, input.now) : undefined;
   const head = `${sentence([who ? `Aprovado por ${who}` : 'Aprovado', when])}.`;
-  return input.next ? `${head} Próximo passo: ${NEXT_WORDS[input.next]}.` : head;
+  if (!input.next) return head;
+  const actor = firstName(input.nextActorName);
+  return actor ? `${head} Agora é com ${actor}: ${NEXT_TASKS[input.next].infinitive}.` : `${head} Próximo passo: ${NEXT_WORDS[input.next]}.`;
 }
 
 /** Who keeps using the approved version while the text differs from it. */
@@ -212,15 +235,6 @@ export function approvalOutdatedNotice(input: {
   return `${changed} ${follows}`;
 }
 
-/** "Aprovado · Juliana recebeu o aviso. Próxima: Lume Acessórios…" (approver, right after deciding). */
-export function decidedNotice(input: { decision: 'approved' | 'changes_requested'; requesterName?: string | null; nextTitle?: string }): string {
-  const head = input.decision === 'approved' ? 'Aprovado' : 'Ajustes pedidos';
-  const who = firstName(input.requesterName);
-  const told = who ? `${head} · ${who} recebeu o aviso.` : `${head}.`;
-  const title = input.nextTitle?.trim().replace(/[.!?…]+$/, '');
-  return title ? `${told} Próxima: ${title}.` : `${told} Nada mais esperando você.`;
-}
-
 /** "Desfazer mudanças": back to the approved text (the edited one stays in the history). */
 export function undoChangesConfirm(input: { subject: ApprovalSubject; approvedAt: Instant; now?: Instant }) {
   const day = formatDayMonth(input.approvedAt, input.now);
@@ -231,6 +245,61 @@ export function undoChangesConfirm(input: { subject: ApprovalSubject; approvedAt
     confirm: NOTICE_VERBS.undo,
     toast: 'Mudanças desfeitas',
   } as const;
+}
+
+const SUBJECT_WORDS: Record<ApprovalSubject, { noun: string; title: string }> = {
+  article: { noun: 'artigo', title: 'Artigo' },
+  carousel: { noun: 'carrossel', title: 'Carrossel' },
+};
+
+/**
+ * The approval confirmation (COPY §4.4): the question, then who continues — the production owner,
+ * never the approver — and the button naming the result. "Aprovar o artigo?" · "Depois, João cria
+ * o carrossel." · "Aprovar artigo"; "Depois, você baixa o pacote." when the viewer is the owner.
+ */
+export function approveConfirm(input: {
+  subject: ApprovalSubject;
+  next: ApprovedNext;
+  ownerName?: string | null;
+  viewerIsOwner?: boolean;
+}): { title: string; description: string; confirm: string } {
+  const { noun } = SUBJECT_WORDS[input.subject];
+  const who = input.viewerIsOwner ? 'você' : firstName(input.ownerName) || 'a edição';
+  return {
+    title: `Aprovar o ${noun}?`,
+    description: `Depois, ${who} ${NEXT_TASKS[input.next].present}.`,
+    confirm: `Aprovar ${noun}`,
+  };
+}
+
+/** A move between stages, for the toast that follows it. */
+export type StageTransition =
+  | { kind: 'sent' }
+  | { kind: 'approved'; subject: ApprovalSubject; next: ApprovedNext }
+  | { kind: 'changes_requested' };
+
+/**
+ * The one toast after a stage move, saying who acts now (the board shows the card in its new
+ * column): "Enviado para Pedro" · "Agora é só aguardar a aprovação."; "Artigo aprovado" · "Agora é
+ * com João: criar o carrossel."; "Ajustes pedidos" · "Agora é com João.". `actorName`: the person
+ * asked for a send, whoever continues otherwise; `viewerIsActor` says "você".
+ */
+export function movedToast(input: {
+  transition: StageTransition;
+  actorName?: string | null;
+  viewerIsActor?: boolean;
+}): { title: string; description: string } {
+  const { transition } = input;
+  if (transition.kind === 'sent') return { title: sentToast(input.actorName), description: 'Agora é só aguardar a aprovação.' };
+  const who = input.viewerIsActor ? 'você' : firstName(input.actorName);
+  if (transition.kind === 'changes_requested') {
+    return { title: 'Ajustes pedidos', description: who ? `Agora é com ${who}.` : 'Agora é com quem enviou.' };
+  }
+  const task = NEXT_TASKS[transition.next].infinitive;
+  return {
+    title: `${SUBJECT_WORDS[transition.subject].title} aprovado`,
+    description: who ? `Agora é com ${who}: ${task}.` : `Próximo passo: ${task}.`,
+  };
 }
 
 /** Toast after "Retirar envio": "Envio retirado. O texto voltou a ser editável." */
@@ -350,13 +419,8 @@ type NoticeApproval = {
  * The approval notice of a piece for the acting member (`null`: none), so a screen can pick ONE
  * notice: the sender (and anyone not asked) sees "Enviado para Pedro…", the person asked (or any
  * decider when nobody was named) "Juliana pediu sua aprovação…", then the decision's notice.
- * `decided`: the approver has just decided on this screen.
  */
-export function approvalNoticeKind(
-  approval: NoticeApproval,
-  decided = false,
-): 'decided' | 'sent' | 'awaiting_you' | 'changes' | 'approved' | 'approval_outdated' | null {
-  if (decided) return 'decided';
+export function approvalNoticeKind(approval: NoticeApproval): 'sent' | 'awaiting_you' | 'changes' | 'approved' | 'approval_outdated' | null {
   switch (approval.state) {
     case 'awaiting': {
       const { viewer } = approval;

@@ -34,6 +34,17 @@ export function approvalsTabOf(param: string | null | undefined): ApprovalsTab {
   return entry ? entry[0] : 'to_approve';
 }
 
+/** `?destaque=` on Produções: the card that just moved, revealed and highlighted on the board. */
+export const BOARD_HIGHLIGHT_PARAM = 'destaque';
+
+/**
+ * The board after a stage move, with the moved card highlighted: `/productions?destaque=<id>`.
+ * No other list parameter, so no filter or search hides the card.
+ */
+export function boardHref(productionId: ProductionId | string): string {
+  return `${PRODUCTIONS_HREF}?${BOARD_HIGHLIGHT_PARAM}=${encodeURIComponent(productionId)}`;
+}
+
 export function productionHref(productionId: ProductionId | string): string {
   return `${PRODUCTIONS_HREF}/${encodeURIComponent(productionId)}`;
 }

@@ -8,7 +8,6 @@ import {
   anchorsFromRanges,
   anchorsLabel,
   approveLabel,
-  approveTitle,
   changedCount,
   changedSummary,
   checksSummary,
@@ -104,8 +103,6 @@ describe('the decision bar and its dialogs', () => {
   it('names the verbs by the piece', () => {
     assert.equal(approveLabel('article'), 'Aprovar artigo');
     assert.equal(approveLabel('carousel'), 'Aprovar carrossel');
-    assert.equal(approveTitle('article'), 'Aprovar o artigo');
-    assert.equal(approveTitle('carousel'), 'Aprovar o carrossel');
   });
 
   it('reads the facts of the piece and who sent it, without a version number', () => {

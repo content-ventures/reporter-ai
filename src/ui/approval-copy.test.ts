@@ -4,11 +4,11 @@ import { test } from 'node:test';
 import {
   approvalNoticeKind,
   approvalOutdatedNotice,
+  approveConfirm,
   approvedNotice,
   awaitingYouNotice,
   calendarDate,
   changesNotice,
-  decidedNotice,
   DUE_OPTIONS,
   dueOnFor,
   errorNotice,
@@ -19,6 +19,7 @@ import {
   formatDue,
   formatSince,
   missingItemsReason,
+  movedToast,
   quoteNote,
   roundLabel,
   sendButtonLabel,
@@ -132,6 +133,16 @@ test('changes, approved and approval-outdated notices', () => {
   assert.equal(approvedNotice({ deciderName: 'Pedro', at: at(8, 14, 20), next: 'package' }), 'Aprovado por Pedro · 08/10, 14:20. Próximo passo: baixar o pacote.');
   assert.equal(approvedNotice({ deciderName: 'Pedro', at: at(8, 14, 20) }), 'Aprovado por Pedro · 08/10, 14:20.');
   assert.equal(approvedNotice({ deciderName: 'Pedro', at: '' }), 'Aprovado por Pedro.');
+  // Someone else continues: the notice names them (the viewer who continues has the primary).
+  assert.equal(
+    approvedNotice({ deciderName: 'Pedro', at: at(8, 14, 20), next: 'carousel', nextActorName: 'João Vitor' }),
+    'Aprovado por Pedro · 08/10, 14:20. Agora é com João: criar o carrossel.',
+  );
+  assert.equal(
+    approvedNotice({ deciderName: 'Pedro', at: at(8, 14, 20), next: 'delivery', nextActorName: 'João' }),
+    'Aprovado por Pedro · 08/10, 14:20. Agora é com João: baixar o pacote.',
+  );
+  assert.equal(approvedNotice({ deciderName: 'Pedro', at: '', nextActorName: 'João' }), 'Aprovado por Pedro.');
   assert.equal(
     approvalOutdatedNotice({ subject: 'article', approvedAt: at(8, 11) }),
     'Você mudou o texto aprovado. Carrossel e entrega seguem a versão aprovada em 08/10.',
@@ -146,16 +157,40 @@ test('changes, approved and approval-outdated notices', () => {
   );
 });
 
-test('the approver notice after deciding points at the next item', () => {
+test('approving asks once and says who continues: the owner, or "você"', () => {
+  assert.deepEqual(approveConfirm({ subject: 'article', next: 'carousel', ownerName: 'João Vitor' }), {
+    title: 'Aprovar o artigo?',
+    description: 'Depois, João cria o carrossel.',
+    confirm: 'Aprovar artigo',
+  });
+  assert.deepEqual(approveConfirm({ subject: 'carousel', next: 'delivery', ownerName: 'João' }), {
+    title: 'Aprovar o carrossel?',
+    description: 'Depois, João baixa o pacote.',
+    confirm: 'Aprovar carrossel',
+  });
+  assert.equal(approveConfirm({ subject: 'article', next: 'carousel', ownerName: 'João', viewerIsOwner: true }).description, 'Depois, você cria o carrossel.');
+  assert.equal(approveConfirm({ subject: 'article', next: 'delivery' }).description, 'Depois, a edição baixa o pacote.');
+});
+
+test('the toast after a stage move says who acts now', () => {
+  assert.deepEqual(movedToast({ transition: { kind: 'sent' }, actorName: 'Pedro Alves' }), {
+    title: 'Enviado para Pedro',
+    description: 'Agora é só aguardar a aprovação.',
+  });
+  assert.deepEqual(movedToast({ transition: { kind: 'approved', subject: 'article', next: 'carousel' }, actorName: 'João Vitor' }), {
+    title: 'Artigo aprovado',
+    description: 'Agora é com João: criar o carrossel.',
+  });
+  assert.deepEqual(movedToast({ transition: { kind: 'approved', subject: 'carousel', next: 'delivery' }, actorName: 'João' }), {
+    title: 'Carrossel aprovado',
+    description: 'Agora é com João: baixar o pacote.',
+  });
   assert.equal(
-    decidedNotice({ decision: 'approved', requesterName: 'Juliana Prates', nextTitle: 'Lume Acessórios: bijuteria na Europa' }),
-    'Aprovado · Juliana recebeu o aviso. Próxima: Lume Acessórios: bijuteria na Europa.',
+    movedToast({ transition: { kind: 'approved', subject: 'article', next: 'carousel' }, actorName: 'João', viewerIsActor: true }).description,
+    'Agora é com você: criar o carrossel.',
   );
-  assert.equal(
-    decidedNotice({ decision: 'changes_requested', requesterName: 'Juliana Prates', nextTitle: 'Lume Acessórios.' }),
-    'Ajustes pedidos · Juliana recebeu o aviso. Próxima: Lume Acessórios.',
-  );
-  assert.equal(decidedNotice({ decision: 'approved', requesterName: 'Juliana Prates' }), 'Aprovado · Juliana recebeu o aviso. Nada mais esperando você.');
+  assert.deepEqual(movedToast({ transition: { kind: 'changes_requested' }, actorName: 'João' }), { title: 'Ajustes pedidos', description: 'Agora é com João.' });
+  assert.equal(movedToast({ transition: { kind: 'changes_requested' } }).description, 'Agora é com quem enviou.');
 });
 
 test('undo and withdraw confirmations', () => {
@@ -218,5 +253,4 @@ test('one approval notice per viewer: the sender waits, the person asked decides
   assert.equal(approvalNoticeKind({ state: 'approved', viewer: viewer() }), 'approved');
   assert.equal(approvalNoticeKind({ state: 'approval_outdated', viewer: viewer() }), 'approval_outdated');
   assert.equal(approvalNoticeKind({ state: 'none', viewer: viewer() }), null);
-  assert.equal(approvalNoticeKind({ state: 'approved', viewer: viewer() }, true), 'decided');
 });
