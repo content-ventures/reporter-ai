@@ -12,7 +12,8 @@ import { libraryImageSource, libraryImageNote, publicationImageCredit, type Libr
 
 /**
  * The tabs of the image picker, one panel per image source of the registry
- * (`imageSourcesFor()`): R1 "Enviar arquivo", "Link" and the connected "Biblioteca". A source plugs in by adding its panel
+ * (`imageSourcesFor()`): R1 "Enviar arquivo", "Link" and the connected "Biblioteca" (only while a photo
+ * bank works, see `usePhotoBanks`). A source plugs in by adding its panel
  * here — future semantic archive/AI sources remain separate — and the
  * picker stays as it is: each panel keeps its own state (kept while the person switches tabs),
  * says whether something was chosen, shows its own errors, and hands the store an `AssetInput`
@@ -240,8 +241,7 @@ export const IMAGE_SOURCE_PANELS: Readonly<Partial<Record<ImageSourceId, AnyPane
     },
     refused: (state,refusal,id) => ({ state: { ...state,error: refusal.message },focus: id }),
     Panel: ({ state,onChange,onSuggest }) => <PageStack>
-      <LibraryBrowser selectedId={state.selected?.id} onSelect={image => { onChange({ selected: image });onSuggest({ credit: publicationImageCredit(image),alt: image.title,caption: `Imagem ilustrativa: ${image.title}` },image.provider === 'pixabay'); }} />
-      {state.selected ? <MetaList items={['Imagem selecionada',state.selected.title,state.selected.license,'Revise legenda, texto alternativo e contexto. Confirme o uso desta foto neste artigo.']} /> : null}
+      <LibraryBrowser selectedId={state.selected?.id} onSelect={image => { onChange({ selected: image });onSuggest({ credit: publicationImageCredit(image),alt: image.title,caption: `Imagem ilustrativa: ${image.title}` }); }} />
       {state.error ? <MetaList items={[state.error]} /> : null}
     </PageStack>,
   }),

@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DEFAULT_STOCK_PROVIDER, SEAFOOD_SEARCHES, isCoverResolution, libraryImageSource, imageCreditUrl, publicationImageCredit, libraryImageNote, type LibraryImage } from './visual-library.ts';
+import { bankImages, photoBanks, isCoverResolution, libraryImageSource, imageCreditUrl, publicationImageCredit, libraryImageNote, type LibraryImage } from './visual-library.ts';
 
-test('the default photo search is the cover provider, never a silent no-key documentary fallback', () => {
-  assert.equal(DEFAULT_STOCK_PROVIDER,'pixabay');
-  assert.equal(SEAFOOD_SEARCHES[0].query,'seafood');
-  assert.ok(SEAFOOD_SEARCHES.some(item => item.query === 'aquaculture'));
+test('Pixabay and Openverse are never offered; a bank shows only with its key', () => {
+  const providers = (configured: string[]) => ({ providers: (['pixabay','openverse','unsplash','pexels'] as const).map(id => ({ id,label: id,configured: configured.includes(id) })) });
+  assert.deepEqual(photoBanks(providers(['pixabay','openverse'])),[]);
+  assert.deepEqual(photoBanks(providers(['pixabay','openverse','pexels'])),['pexels']);
+  assert.deepEqual(photoBanks(providers(['pexels','unsplash'])),['unsplash','pexels']);
+  assert.deepEqual(photoBanks(undefined),[]);
+  const saved = (['pixabay','unsplash'] as const).map(provider => ({ id: provider,provider }) as LibraryImage);
+  assert.deepEqual(bankImages(saved).map(image => image.provider),['unsplash']);
 });
 test('unchanged Unsplash photos stay on their CDN, while legacy sources retain local file URLs', () => {
   const image = { id: 'local-image',provider: 'unsplash',imageUrl: 'https://images.unsplash.com/photo-test?ixid=app&w=3840',previewUrl: 'https://images.unsplash.com/photo-test?ixid=app&w=1080' } as LibraryImage;

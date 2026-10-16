@@ -17,15 +17,19 @@ export type LibraryImage = StockImage & {
 export function isCoverResolution(image: Pick<StockImage,'width'|'height'>) {
   return image.width >= 2400 && image.height >= 1350 && image.width > image.height;
 }
-export const DEFAULT_STOCK_PROVIDER: StockProvider = 'pixabay';
-export const SEAFOOD_SEARCHES = [
-  { label: 'Pescado e frutos do mar', query: 'seafood' },
-  { label: 'Pesca', query: 'fishing' },
-  { label: 'Aquicultura', query: 'aquaculture' },
-  { label: 'Camarão', query: 'shrimp' },
-  { label: 'Salmão', query: 'salmon' },
-  { label: 'Atum', query: 'tuna' },
-] as const;
+/**
+ * Banks whose originals reach an article. Pixabay stays out (its API keeps the originals locked and
+ * its photos fell short) and Openverse has no cover-size floor; a bank shows only with its key.
+ */
+export const PHOTO_BANKS: readonly StockProvider[] = ['unsplash', 'pexels'];
+/** The working banks of a library view, in preference order (none: the bank is not offered). */
+export function photoBanks(view: Pick<VisualLibraryView,'providers'> | undefined): StockProvider[] {
+  return PHOTO_BANKS.filter(id => view?.providers.some(provider => provider.id === id && provider.configured));
+}
+/** Saved photos the library offers: those of a bank it still uses. */
+export function bankImages(images: readonly LibraryImage[]): LibraryImage[] {
+  return images.filter(image => PHOTO_BANKS.includes(image.provider));
+}
 /** Keep author/licence internally; Pixabay does not require a published photo credit. */
 export function publicationImageCredit(image: StockImage) { return image.provider === 'pixabay' ? '' : image.attribution; }
 export const BANNER_FORMATS = {
