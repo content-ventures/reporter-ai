@@ -124,6 +124,7 @@ function useStudioNotice(): ReactNode {
         approval={approval}
         onShowComments={() => panes.showPanel('comments')}
         approvedNext={production.plan.includes('carousel') && carousel?.status !== 'approved' ? 'carousel' : 'delivery'}
+        nextActor={production.owner}
         usedBy={production.plan.includes('carousel') ? 'carousel_and_delivery' : 'delivery'}
         onUndo={actions.undoChanges}
       />
