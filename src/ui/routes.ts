@@ -87,6 +87,14 @@ export function stageHref(
   }
 }
 
+/** Where a stage target (`currentStageTarget`) leads: its piece's guided review, or the stage itself. */
+export function stageTargetHref(
+  productionId: ProductionId | string,
+  target: { stage: Pick<StageView, 'kind' | 'pieceKind'>; review: boolean },
+): string {
+  return target.review && target.stage.pieceKind ? reviewHref(productionId, target.stage.pieceKind) : stageHref(productionId, target.stage);
+}
+
 /** Where a next step lands ("Revisar" → review, "Gerar artigo" → editor). */
 export function stepTargetHref(productionId: ProductionId | string, target: StepTarget): string {
   switch (target.kind) {

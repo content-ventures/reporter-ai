@@ -75,7 +75,7 @@ export function useActAs(): ActAs {
     [actAs, current, members, localProfiles, selectedProfile, switchingRole, selectRole]);
 }
 
-/** Same test-only choices in the account and in the immersive production header. */
+/** Same test-only choices in the account and in the production header's ⋯. */
 export function localRoleMenu(session: ActAs): MenuSection[] {
   return session.localProfiles.length ? [{ label: 'Perfil de teste · local', items: session.localProfiles.map(profile => ({
     label: profile.label,

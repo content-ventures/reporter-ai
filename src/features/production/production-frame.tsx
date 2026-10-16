@@ -4,20 +4,20 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useSelectedLayoutSegments } from 'next/navigation';
 import { AccessState, ButtonLink, ErrorState, PageStack, WorkspaceLayout } from '@content-ventures/design-system/v3';
 import type { ProductionId } from '@/domain';
-import type { ProductionDetail } from '@/ports';
-import { pieceKind } from '@/registries';
 import { useProduction } from '@/state';
-import { productionRoute, PRODUCTIONS_HREF, type ProductionRoute } from '@/ui/routes';
+import { useBreadcrumb } from '@/ui/shell';
+import { productionHref, productionRoute, PRODUCTIONS_HREF, stageTargetHref } from '@/ui/routes';
 import { useDocumentTitle } from '@/ui/use-document-title';
+import { currentStageTarget } from './journey';
 import { ProductionFrameContext, type ProductionFrameState } from './production-context';
 import { ProductionHeaderView, ProductionPrimaryBar, type HeaderPrimary } from './production-header';
+import { productionDocumentTitle, productionTrail } from './trail';
 
 export { useProductionFrame, type ProductionFrameState } from './production-context';
 export {
   ProductionHeader,
   ProductionPrimaryBar,
   useJourneyLabel,
-  type HeaderBack,
   type HeaderPrimary,
   type HeaderSecondary,
   type ProductionHeaderProps,
@@ -57,23 +57,14 @@ export function StagePage({
   );
 }
 
-const ROUTE_LABEL: Partial<Record<ProductionRoute['kind'], string>> = {
-  source: 'Material',
-  delivery: 'Entrega',
-};
-
-function documentTitle(production: ProductionDetail | undefined, route: ProductionRoute): string | null {
-  if (!production) return null;
-  const stage = route.kind === 'studio' || route.kind === 'review' ? pieceKind(route.pieceKind)?.label : ROUTE_LABEL[route.kind];
-  return [production.title, stage, route.kind === 'review' ? 'Aprovação' : null].filter(Boolean).join(' · ');
-}
-
 /**
- * Persistent frame of `/productions/[id]/**` (PLAN §3.4): an immersive area (no app menu, no top
- * bar, no trail; the shell decides) where every stage hosts the one-line production header in its
- * own docked layout (no double scroll). Unknown id → AccessState not-found; a production
- * restricted to another team (REQ-T.1, B06) → AccessState restricted with who to ask. Screens read
- * the production from `useProductionFrame()`.
+ * Persistent frame of `/productions/[id]/**` (PLAN §3.4), inside the app shell: it declares the
+ * TopBar trail "Produções › <título> › <etapa>" (the way back; the header has no back link), and
+ * every stage hosts the one-line production header in its own docked layout (no double scroll).
+ * The title links to the stage the production is on. Unknown id → AccessState not-found; a
+ * production restricted to another team (REQ-T.1, B06) → AccessState restricted with who to ask;
+ * both keep the shell's default trail, so a restricted title never shows. Screens read the
+ * production from `useProductionFrame()`.
  */
 export function ProductionFrame({ productionId, children }: { productionId: ProductionId; children: ReactNode }) {
   const production = useProduction(productionId);
@@ -93,7 +84,12 @@ export function ProductionFrame({ productionId, children }: { productionId: Prod
 
   // A refusal may keep the last answer (another person just switched in): never show its title.
   const shown = production.status === 'error' ? undefined : production.data;
-  useDocumentTitle(documentTitle(shown, route));
+  useDocumentTitle(productionDocumentTitle(route, shown?.title));
+  // The title opens the stage the production is on, straight (no hop through the index). Priority
+  // 1: a screen inside the frame may still declare its own trail with priority 2.
+  const target = currentStageTarget(shown);
+  const title = shown ? { label: shown.title, href: target ? stageTargetHref(productionId, target) : productionHref(productionId) } : undefined;
+  useBreadcrumb(title ? productionTrail(route, { productions: PRODUCTIONS_HREF, title }) : null, { priority: 1 });
 
   if (production.status === 'error') {
     const code = production.error?.code;
@@ -113,7 +109,7 @@ export function ProductionFrame({ productionId, children }: { productionId: Prod
         />
       );
     }
-    // No app menu inside a production (immersive): the state offers the way back.
+    // Besides "Tentar de novo", the state offers the list; the trail keeps its default.
     return (
       <ErrorState
         title="Não foi possível abrir a produção"

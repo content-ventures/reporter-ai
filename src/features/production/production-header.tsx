@@ -21,20 +21,20 @@ import type { ProductionDetail } from '@/ports';
 import { useCommands, useTabSync } from '@/state';
 import { OtherTabNotice, requestLeave } from '@/ui/shell';
 import { localRoleMenu, useActAs } from '@/ui/shell/act-as';
-import { PRODUCTIONS_HREF, routeStageId, stageHref, type ProductionRoute } from '@/ui/routes';
+import { routeStageId, stageHref, type ProductionRoute } from '@/ui/routes';
 import { StatusBadge } from '@/ui/status-badge';
 import { decidesAt, journeyLabel, journeyMenuItems, viewedStageIndex } from './journey';
 import { useProductionFrame } from './production-context';
 
 /**
  * Production header (§2.6, D2/D11/P3): ONE line on every `/productions/[id]` route, in reading
- * order — ← Produções · title · status · journey menu ("Artigo · 2 de 5 ▾") · [blocked reason] ·
- * secondary · ONE primary with the next step on it · ⋯. No panel icons, no focus mode, no ✦, no
- * Stepper. Under the line, at most ONE notice (approval, generation, other tab). Each screen hosts
- * it in its own layout (`WorkspaceLayout header` in studios and review, `StagePage` elsewhere); on
- * narrow layouts the primary moves to `ProductionPrimaryBar` at the bottom.
- * The back link is DS `PageHeader back` (icon-only on a phone); the blocked reason is DS
- * `PageHeader actionsNote`, tied to the button by `aria-describedby`.
+ * order — title · status · journey menu ("Artigo · 2 de 5 ▾") · [blocked reason] · secondary · ONE
+ * primary with the next step on it · ⋯. No back link: the way back is the TopBar trail
+ * ("Produções › <título> › <etapa>", declared by the frame). No panel icons, no focus mode, no ✦,
+ * no Stepper. Under the line, at most ONE notice (approval, generation, other tab). Each screen
+ * hosts it in its own layout (`WorkspaceLayout header` in studios and review, `StagePage`
+ * elsewhere); on narrow layouts the primary moves to `ProductionPrimaryBar` at the bottom.
+ * The blocked reason is DS `PageHeader actionsNote`, tied to the button by `aria-describedby`.
  */
 
 export type HeaderPrimary =
@@ -51,8 +51,6 @@ export type HeaderPrimary =
 
 export type HeaderSecondary = { label: string; onClick?: () => void; href?: string; icon?: LucideIcon };
 
-export type HeaderBack = { label: string; href: string };
-
 export type ProductionHeaderProps = {
   /** None while the AI writes and while the author waits for approval (the banner carries the verb). */
   primary?: HeaderPrimary;
@@ -64,15 +62,11 @@ export type ProductionHeaderProps = {
   menu?: MenuSection[];
   /** ONE StatusBanner / ApprovalBanner / GenerationBanner, full width under the line. */
   notice?: ReactNode;
-  /** Default: ← Produções. The review shows ← Aprovações to whoever decides. */
-  back?: HeaderBack;
   /** @deprecated Wave-1 compatibility (screens not yet on `primary`); removed at I2. */
   actions?: ReactNode;
   /** @deprecated Ignored: every production header is one line. Removed at I2. */
   compact?: boolean;
 };
-
-const DEFAULT_BACK: HeaderBack = { label: 'Produções', href: PRODUCTIONS_HREF };
 
 function RenameDialog({ production, open, onClose }: { production: ProductionDetail; open: boolean; onClose: () => void }) {
   const commands = useCommands();
@@ -203,12 +197,11 @@ export type ProductionHeaderViewProps = ProductionHeaderProps & {
 
 type ActionsNote = { id: string; text: string } | undefined;
 
-/** Same line while the production loads (back, title, status and journey placeholders, ⋯), so nothing moves. */
-function HeaderSkeleton({ back, actions, actionsNote }: { back: HeaderBack; actions?: ReactNode; actionsNote: ActionsNote }) {
+/** Same line while the production loads (title, status and journey placeholders, ⋯), so nothing moves. */
+function HeaderSkeleton({ actions, actionsNote }: { actions?: ReactNode; actionsNote: ActionsNote }) {
   return (
     <PageHeader
       variant="frame"
-      back={back}
       title={<Skeleton width={240} height={26} />}
       status={<Skeleton width={220} height={22} />}
       actions={actions}
@@ -271,7 +264,6 @@ export function ProductionHeaderView({
   status,
   menu,
   notice,
-  back = DEFAULT_BACK,
   actions,
 }: ProductionHeaderViewProps) {
   const [renaming, setRenaming] = useState(false);
@@ -284,7 +276,7 @@ export function ProductionHeaderView({
   const reason = blockedReasonOf(primary);
   const actionsNote: ActionsNote = reason ? { id: reasonId, text: reason } : undefined;
 
-  if (!production) return <HeaderSkeleton back={back} actions={line} actionsNote={actionsNote} />;
+  if (!production) return <HeaderSkeleton actions={line} actionsNote={actionsNote} />;
 
   const sections: MenuSection[] = [
     ...(menu ?? []).filter((section) => section.items.length > 0),
@@ -296,7 +288,6 @@ export function ProductionHeaderView({
     <>
       <PageHeader
         variant="frame"
-        back={back}
         title={production.title}
         status={
           <>
