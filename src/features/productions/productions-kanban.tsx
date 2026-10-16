@@ -21,15 +21,18 @@ import {
   PageHeader,
   PageStack,
   SearchField,
+  TextLink,
   toast,
   useKanbanDrag,
   VisuallyHidden,
 } from '@content-ventures/design-system/v3';
 import { Archive, ArrowUpRight, BadgeCheck, ChevronDown, FileText, GalleryHorizontal, Inbox, MoreHorizontal, Package, Plus } from '@content-ventures/design-system/v3/icons';
 import type { ProductionListItem, ProductionListPage } from '@/ports';
+import { firstName, NEXT_STEP_LABELS } from '@/domain';
 import type { StageView } from '@/domain/stage';
 import type { KanbanMove } from '@content-ventures/design-system/v3';
 import { useCommands, useProductions, useSession, type QueryState } from '@/state';
+import { usePerson } from '@/ui/person-avatar';
 import { NEW_PRODUCTION_HREF } from '@/ui/routes';
 import { RelativeTime } from '@/ui/time';
 import { Avatar } from '@content-ventures/design-system/v3';
@@ -37,6 +40,7 @@ import { nextStepHref, rowHref, SituationCell, productionMeta } from './producti
 import { SORT_LABELS } from './list-model';
 import { activeFilterCount, hasSearch, listFilter, LIST_SORTS, type ListSort } from './list-params';
 import { ProductionActiveFilters, ProductionFilterBand } from './production-filters';
+import { useBoardArrival } from './use-board-arrival';
 import { useListParams } from './use-list-params';
 
 const PAGE_SIZE = 50;
@@ -91,7 +95,15 @@ function ProductionsKanban() {
     if (params.tab !== 'all') setParams({ tab: 'all' }, { history: 'replace' });
   }, [params.tab, setParams]);
 
-  const rows = page?.items ?? [];
+  const arrival = useBoardArrival({
+    items: page?.items ?? [],
+    total: page?.total ?? 0,
+    ready: query.status === 'ready',
+    widen: (size) => setPageSize((current) => Math.max(current, size)),
+    laneOf: (item) => LANES.find((lane) => lane.id === (item.archived ? 'archived' : item.currentStageId))?.title ?? item.situation.line,
+    viewerId,
+  });
+  const rows = arrival.rows;
   const archivedRows = archivedPage?.items ?? [];
   const groups = Object.fromEntries(LANES.map((lane) => [
     lane.id,
@@ -279,6 +291,7 @@ function ProductionsKanban() {
                           title={item.title}
                           summary={productionMeta(item)}
                           menu={cardMenu(item)}
+                          arrived={item.id === arrival.arrivedId}
                           onOpen={() => router.push(rowHref(item))}
                         >
                           <KanbanCardRow start>
@@ -294,10 +307,7 @@ function ProductionsKanban() {
                           <KanbanCardRow start>
                             <SituationCell item={item} size="sm" />
                           </KanbanCardRow>
-                          <KanbanCardRow start>
-                            <Avatar name={item.owner.name} src={item.owner.avatarUrl} size="xs" decorative />
-                            <KanbanCardMeta title={item.owner.name}>Responsável · {item.owner.name}</KanbanCardMeta>
-                          </KanbanCardRow>
+                          <NextActorRow item={item} viewerId={viewerId} />
                         </KanbanCard>
                       );
                     })}
@@ -306,6 +316,7 @@ function ProductionsKanban() {
               })}
             </KanbanBoard>
             {drag.region}
+            {arrival.region}
           </>
         )}
       </PageStack>
@@ -363,13 +374,52 @@ function useKanbanSearchDraft(query: string, setParams: ReturnType<typeof useLis
   return [search.draft, (draft: string) => setSearch((current) => ({ ...current, draft }))] as const;
 }
 
+/**
+ * Who moves the card now, in place of the owner: "Agora: Pedro"; the viewer's own move links to it
+ * ("Agora: você · Criar carrossel"). With nobody to act (the AI writing, delivered, archived) or
+ * while the person is unknown, the owner stays ("Responsável · João").
+ */
+function NextActorRow({ item, viewerId }: { item: ProductionListItem; viewerId: string | undefined }) {
+  const actor = item.situation.nextActor;
+  // An unnamed review is the viewer's when their own next step is that review.
+  const yours = Boolean(actor && (actor.personId ? actor.personId === viewerId : item.nextStep?.mine && item.nextStep.kind === actor.step));
+  const personId = actor?.personId ?? (yours ? viewerId : undefined);
+  const owner = personId === item.owner.id ? item.owner : undefined;
+  const person = usePerson(owner ? null : personId) ?? owner;
+  if (!actor || !person) {
+    return (
+      <KanbanCardRow start>
+        <Avatar name={item.owner.name} src={item.owner.avatarUrl} size="xs" decorative />
+        <KanbanCardMeta title={item.owner.name}>Responsável · {item.owner.name}</KanbanCardMeta>
+      </KanbanCardRow>
+    );
+  }
+  const step = NEXT_STEP_LABELS[actor.step];
+  return (
+    <KanbanCardRow start>
+      <Avatar name={person.name} src={person.avatarUrl} size="xs" decorative />
+      {yours ? (
+        <>
+          <KanbanCardMeta>Agora: você ·</KanbanCardMeta>
+          {/* The card opens the same place: the link alone navigates. */}
+          <TextLink href={nextStepHref(item)} size="sm" onClick={(event) => event.stopPropagation()}>{step}</TextLink>
+        </>
+      ) : (
+        <KanbanCardMeta title={person.name}>Agora: {firstName(person.name)}</KanbanCardMeta>
+      )}
+    </KanbanCardRow>
+  );
+}
+
+/** The current stage in a word; a delivered production reads "Concluída", not the stage in progress. */
 function StageBadge({ stage }: { stage: StageView | undefined }) {
   if (!stage) return <Badge tone="gray" variant="soft" size="sm">Etapa indisponível</Badge>;
+  const done = stage.state === 'done' || stage.status === 'completed';
   const tone = stage.state === 'error' ? 'red'
     : stage.state === 'warn' ? 'amber'
-      : stage.state === 'done' ? 'green'
+      : done ? 'green'
         : stage.state === 'blocked' ? 'gray' : 'blue';
-  const label = stage.detail ?? (stage.state === 'done' ? 'Concluída' : stage.state === 'blocked' ? 'Bloqueada' : stage.state === 'upcoming' ? 'Próxima etapa' : 'Em andamento');
+  const label = stage.detail ?? (done ? 'Concluída' : stage.state === 'blocked' ? 'Bloqueada' : stage.state === 'upcoming' ? 'Próxima etapa' : 'Em andamento');
   return <Badge tone={tone} variant="soft" size="sm">{label}</Badge>;
 }
 
