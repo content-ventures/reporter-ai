@@ -185,7 +185,7 @@ export function DeliveryScreen({ productionId }: { productionId: ProductionId })
 
 const TAB_OPTIONS: { value: DeliveryTab; label: string }[] = [
   { value: 'package', label: 'Pacote' },
-  // "Artigo final": the header Stepper beside it already has an "Artigo" stage.
+  // "Artigo final": the header's journey menu already has an "Artigo" stage.
   { value: 'article', label: 'Artigo final' },
 ];
 

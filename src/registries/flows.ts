@@ -4,8 +4,9 @@ import { availableIn, CURRENT_RELEASE } from './release.ts';
 import type { ReleaseId } from './release.ts';
 
 /**
- * Production flows: the journey stages behind the Stepper, tabs and board. `stageState()` in
- * the domain reads a FlowDefinition, so a new release adds a flow here instead of new screens.
+ * Production flows: the journey stages behind the header's journey menu, tabs and board.
+ * `stageState()` in the domain reads a FlowDefinition, so a new release adds a flow here instead of
+ * new screens.
  */
 
 export type FlowEntry = FlowDefinition & {
