@@ -5,7 +5,8 @@ import { Plus, Quote } from '@content-ventures/design-system/v3/icons';
 import { citationCopy, type CitationInput, type CitationLibraryView, type CitationView } from '@/domain/citation-library';
 import { foldForMatch, type ArticleBody } from '@/domain';
 import { EditorContent, useArticleReader } from '@/editor';
-import { useRuntime } from '@/state';
+import { useCan, useRuntime } from '@/state';
+import { isPermissionRefusal, notifyRefusal, refusalOf } from '@/ui/permission-dialog';
 import { usePhone } from '@/ui/use-phone';
 import { materialHref } from '@/ui/routes';
 
@@ -19,6 +20,8 @@ function QuoteReading({ text }: { text: string }) {
 }
 export function CitationsScreen() {
   const { runtime,status } = useRuntime(), port = runtime?.citations, phone = usePhone();
+  // A role that only reviews reads and copies citations; adding and curating is for who edits.
+  const edits = useCan('library.edit'), creates = useCan('production.create');
   const [view,setView] = useState<CitationLibraryView>(),[failure,setFailure] = useState<string>();
   const [query,setQuery] = useState(''),[filter,setFilter] = useState<Filter>('all'),[page,setPage] = useState(1);
   const [selected,setSelected] = useState<CitationView>(),[adding,setAdding] = useState(false),[saving,setSaving] = useState(false);
@@ -61,7 +64,10 @@ export function CitationsScreen() {
       setView(previous => previous ? { ...previous,items: [next,...previous.items.filter(item => item.id !== next.id)] } : previous);
       open(next);toast('Citação salva');void load();
     }
-    catch (error) { setFormError(error instanceof Error ? error.message : 'Não foi possível salvar. Seus campos continuam aqui.'); }
+    catch (error) {
+      const refusal = refusalOf(error,'Não foi possível salvar. Seus campos continuam aqui.');
+      if (isPermissionRefusal(refusal)) notifyRefusal(undefined,refusal); else setFormError(refusal.message);
+    }
     finally { setSaving(false); }
   }
   async function copy(item: CitationView) {
@@ -77,15 +83,15 @@ export function CitationsScreen() {
   if (!port && status !== 'loading') return <EmptyState heading="h1" title="Citações disponíveis no backend local" description="Abra o Reporter AI conectado ao PostgreSQL." size="page" />;
   return <>
     <PageStack>
-      <PageHeader title="Citações" description="Falas literais dos podcasts, com origem verificável e curadoria editorial." actions={<Button icon={Plus} disabled={!view?.sources.length} onClick={add}>Adicionar citação</Button>} />
+      <PageHeader title="Citações" description="Falas literais dos podcasts, com origem verificável e curadoria editorial." actions={edits ? <Button icon={Plus} disabled={!view?.sources.length} onClick={add}>Adicionar citação</Button> : undefined} />
       <FilterBar filters={false} tabs={<Tabs<Filter> label="Curadoria das citações" value={filter} onChange={value => { setFilter(value);setPage(1); }} items={[{ value: 'all',label: 'Todas',count: view?.items.length },{ value: 'ready',label: 'Selecionadas',count: view?.items.filter(item => item.ready).length },{ value: 'pending',label: 'Para conferir',count: view?.items.filter(item => !item.ready).length }]} />}
         search={<SearchField label="Buscar citações" value={query} onValueChange={value => { setQuery(value);setPage(1); }} placeholder="Fala, participante, podcast ou assunto" />} />
       {!view ? <List label="Carregando citações"><ListItemSkeleton /><ListItemSkeleton /><ListItemSkeleton /></List> : rows.length ? <>
         <DataTable<CitationView> label="Banco de citações" rows={shown} columns={columns} rowKey={item => item.id} onRowClick={open} />
         <Pagination page={currentPage} pageSize={PAGE_SIZE} total={rows.length} onPageChange={setPage} />
-      </> : <EmptyState icon={Quote} title={query || filter !== 'all' ? 'Nenhuma citação neste filtro' : 'O banco começa com as falas dos seus artigos'} description={query ? 'Tente outro termo ou limpe a busca.' : 'Gere um artigo ou adicione um trecho literal de um material autorizado.'} actions={query ? <Button onClick={() => { setQuery('');setFilter('all'); }}>Limpar filtros</Button> : view.sources.length ? <Button onClick={add}>Adicionar citação</Button> : <ButtonLink href="/productions/new">Criar produção</ButtonLink>} />}
+      </> : <EmptyState icon={Quote} title={query || filter !== 'all' ? 'Nenhuma citação neste filtro' : 'O banco começa com as falas dos seus artigos'} description={query ? 'Tente outro termo ou limpe a busca.' : 'Gere um artigo ou adicione um trecho literal de um material autorizado.'} actions={query ? <Button onClick={() => { setQuery('');setFilter('all'); }}>Limpar filtros</Button> : view.sources.length ? (edits ? <Button onClick={add}>Adicionar citação</Button> : undefined) : (creates ? <ButtonLink href="/productions/new">Criar produção</ButtonLink> : undefined)} />}
     </PageStack>
-    <Drawer open={Boolean(input)} title={adding ? 'Adicionar citação' : 'Conferir citação'} onClose={close} size="lg" footer={<Button loading={saving} disabled={!input?.text.trim()} onClick={() => void save()} variant="primary">Salvar citação</Button>}>
+    <Drawer open={Boolean(input)} title={adding ? 'Adicionar citação' : 'Conferir citação'} onClose={close} size="lg" footer={edits ? <Button loading={saving} disabled={!input?.text.trim()} onClick={() => void save()} variant="primary">Salvar citação</Button> : undefined}>
       {input ? <PageStack>
         {selected ? <>
           <QuoteReading text={selected.text} />

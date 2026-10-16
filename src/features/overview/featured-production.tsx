@@ -1,21 +1,24 @@
 'use client';
 
 import { Badge, ButtonLink, Card, CardHeader, EditableTitle, Grid, MediaFrame, MetaList, PageStack, Prose, SkeletonText } from '@content-ventures/design-system/v3';
-import { ArrowRight, Plus } from '@content-ventures/design-system/v3/icons';
+import { ArrowRight } from '@content-ventures/design-system/v3/icons';
 import type { InProgressItem } from '@/ports';
 import { PersonAvatar } from '@/ui/person-avatar';
-import { NEW_PRODUCTION_HREF, productionHref, stepTargetHref } from '@/ui/routes';
+import { useCan } from '@/state';
+import { productionHref, stepTargetHref } from '@/ui/routes';
+import { NewProductionLink } from '@/features/new-production/new-production-link';
 import { StartWritingButton } from '@/features/new-production/start-writing-button';
 import { storyOpening, useStoryPreview } from './use-story-preview';
 
 export function FeaturedProduction({ item, loading }: { item: InProgressItem | undefined; loading: boolean }) {
+  const creates = useCan('production.create');
   if (item) return <ProductionCard item={item} />;
   if (loading) return <Card loading padding="lg" aria-label="Carregando produção para continuar"><SkeletonText lines={5} /></Card>;
   return <Card padding="lg"><Grid columns="3:2" collapseBelow={640} align="start">
     <PageStack>
       <CardHeader titleAs="h2" size="md" title="Sua próxima história começa aqui" />
       <Prose variant="read" measure="wide">Transforme uma transcrição em artigo e carrossel, com revisão em cada etapa.</Prose>
-      <MetaList items={[<ButtonLink key="create" href={NEW_PRODUCTION_HREF} variant="primary" icon={Plus}>Começar produção</ButtonLink>, <StartWritingButton key="write" />]} />
+      {creates && <MetaList items={[<NewProductionLink key="create" label="Começar produção" />, <StartWritingButton key="write" />]} />}
     </PageStack>
     <MediaFrame ratio="16/9" src="/editorial/writing.jpg" alt="" />
   </Grid></Card>;

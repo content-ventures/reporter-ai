@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  AccessState,
   Button,
+  ButtonLink,
   Checkbox,
   ConfirmDialog,
   ErrorSummary,
@@ -31,7 +33,7 @@ import { sourceLinkMessage } from '@/domain/source-link';
 import { MAX_UPLOAD_BYTES } from '../../domain/reporter.ts';
 import type { PersonSummary, SourceAnalysis } from '@/ports';
 import { sourceKind, type SourceIntake } from '@/registries';
-import { useCommands, usePeople } from '@/state';
+import { useCan, useCommands, usePeople, useSession } from '@/state';
 import { plural } from '@/ui/format';
 import { PRODUCTIONS_HREF, pieceHref } from '@/ui/routes';
 import { takeArmedSimulation, useCommandGroup, useLeaveGuard } from '@/ui/shell';
@@ -101,7 +103,29 @@ function daysAgoIso(days: number): string {
   return isoDay(date);
 }
 
+/**
+ * A role that does not create productions never reaches the upload: a deep link answers
+ * AccessState (nothing while the session is unknown, so the form never flashes).
+ */
 export function NewProductionScreen() {
+  const session = useSession();
+  const creates = useCan('production.create');
+  if (!session.data) return null;
+  if (!creates) {
+    return (
+      <AccessState
+        kind="restricted"
+        heading="h1"
+        title="Nova produção é para quem edita"
+        description="Peça a um admin o papel de editor."
+        actions={<ButtonLink href={PRODUCTIONS_HREF} variant="primary">Ver produções</ButtonLink>}
+      />
+    );
+  }
+  return <NewProductionForm />;
+}
+
+function NewProductionForm() {
   const router = useRouter();
   const commands = useCommands();
   const intake: SourceIntake = { ...INTAKE,extensions: [...INTAKE.extensions,'.mp3','.m4a','.mp4','.wav','.ogg','.flac','.webm'],maxBytes: MAX_UPLOAD_BYTES };

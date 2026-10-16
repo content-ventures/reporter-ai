@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button, toast } from '@content-ventures/design-system/v3';
 import { FileText } from '@content-ventures/design-system/v3/icons';
 import { DEFAULT_ARTICLE_SIZE, DEFAULT_SECTIONS } from '@/domain';
-import { useCommands, useSession } from '@/state';
+import { useCan, useCommands } from '@/state';
 import { pieceHref } from '@/ui/routes';
 import { notifyRefusal } from '@/ui/permission-dialog';
 
@@ -13,10 +13,9 @@ import { notifyRefusal } from '@/ui/permission-dialog';
 export function StartWritingButton() {
   const router = useRouter();
   const commands = useCommands();
-  const session = useSession();
+  const allowed = useCan('production.create');
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
-  const allowed = session.data?.current?.roles.some((role) => role === 'editor' || role === 'admin');
   if (!allowed) return null;
 
   async function start() {
