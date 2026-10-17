@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.5.0",
+  "currentVersion": "0.5.1",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,28 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.5.1",
+      "roadmapRelease": "R0",
+      "date": "2026-10-17",
+      "title": "R0 maintenance release",
+      "summary": "Automatic maintenance release with 3 validated changes: record real-provider seafood show load results; complete article text before background images; reuse prepared files when finalizing manifests.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Improved",
+          "description": "Reuse prepared files when finalizing manifests"
+        },
+        {
+          "type": "Improved",
+          "description": "Complete article text before background images"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record real-provider Seafood Show load results"
+        }
+      ]
+    },
     {
       "version": "0.5.0",
       "roadmapRelease": "R0",

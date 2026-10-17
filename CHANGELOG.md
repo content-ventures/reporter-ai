@@ -4,6 +4,17 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-17
+
+### Improved
+
+- Reuse prepared files when finalizing manifests.
+- Complete article text before background images.
+
+### Documentation
+
+- Record real-provider Seafood Show load results.
+
 ## [0.5.0] - 2026-10-16
 
 ### Maintenance
