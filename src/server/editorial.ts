@@ -1,4 +1,6 @@
 import 'server-only';
+// Worker helpers share this server composition boundary with the transactional engine.
+export { appendEditorialEvent, editorialContextHash } from '../runtime/editorial-engine.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';

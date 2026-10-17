@@ -13,6 +13,11 @@ import type { ImageAsset } from '../domain/asset.ts';
 import type { WorkspaceDelta } from './editorial-rows.ts';
 
 export type ServerImageAsset = { productionId: string; asset: ImageAsset; fileKey?: string };
+/** Optional work on a completed text run; never locks editing or changes its outcome. */
+export type ArticleImageTask = {
+  status: 'queued' | 'completed' | 'skipped' | 'failed';
+  revision: number; basedOn: string; hash: string; attempts: number; error?: string;
+};
 
 /** Server-owned aggregate. Browser copies are read projections, never write payloads. */
 export type EditorialState = {
@@ -29,6 +34,7 @@ export type EditorialJob = {
   cacheSourceRunId?: string;
   pipeline?: PipelineRevision;
   calls?: PipelineCall[];
+  images?: ArticleImageTask;
   provider?: { name: string; model: string; requestId: string | null };
   lease?: { owner: string; until: number; fence: string };
 };

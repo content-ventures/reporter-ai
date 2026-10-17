@@ -20,7 +20,6 @@ import { generateStructured } from './groq';
 import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, editorialPassageSize } from './pipeline-runner';
 import { workDirectory, sourcePreparationDirectory } from './storage';
 import { mapEditorialPassages } from './editorial-passages';
-import { planArticleImages } from './editorial-images';
 import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
 import { contiguousSourcePassages, r1ArticleIssue, ARTICLE_POLICY_MESSAGES } from '../domain/article-policy.ts';
@@ -28,8 +27,8 @@ import type { ArticlePolicyIssue } from '../domain/article-policy.ts';
 import { ARTICLE_ASSIST_KINDS, runArticleAssist } from './article-assist';
 import { citationsFromArticle, emphasizeArticleQuotes } from '../domain/citation-library.ts';
 import type { Citation } from '../domain/citation-library.ts';
-import type { ServerImageAsset } from '../ports/connected-workspace.ts';
-import { illustrateArticle } from './article-illustration';
+import type { EditorialJob, ServerImageAsset } from '../ports/connected-workspace.ts';
+import { articleImageTarget } from './article-image-task.ts';
 import { editorialResponseValid } from './editorial-validation';
 import { planEditorialOutline } from './editorial-outline';
 
@@ -67,7 +66,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
   const controller = new AbortController();
   const combined = AbortSignal.any([signal,controller.signal]);
   let checkedAt = Date.now();
-  const guarded = async (events: RunEventPayload[],call?: PipelineCall, additions?: { citations: Citation[]; assets: ServerImageAsset[] }) => {
+  const guarded = async (events: RunEventPayload[],call?: PipelineCall, additions?: { citations: Citation[]; assets: ServerImageAsset[]; queueImages?: boolean; provider?: EditorialJob['provider'] }) => {
     // Sources and plan are re-read at most once a minute and always before the result settles.
     const full = Boolean(additions) || events.some(event => event.type === 'run.completed') || Date.now()-checkedAt >= 60000;
     const committed = await editorialTransaction('worker',async (checkpoint,engine) => {
@@ -92,6 +91,13 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         for (const citation of additions.citations) if (!existing.has(citation.id) && existing.size < 5000) existing.set(citation.id,citation);
         checkpoint.citations = [...existing.values()];
         checkpoint.imageAssets = [...(checkpoint.imageAssets ?? []),...additions.assets];
+        if (additions.queueImages) {
+          const record = engine.records.record(job.meta.productionId);
+          current.images = record ? articleImageTarget(record,job.meta.pieceId) : undefined;
+          current.availableAt = Date.now();
+          if (additions.provider) current.provider = additions.provider;
+          delete current.lease;
+        }
       }
     },true,'reporter.edit',full ? scope : progress);
     if (full) checkedAt = Date.now();
@@ -255,7 +261,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       value = await call('carousel',schema);
     }
     const events: RunEventPayload[] = [];
-    let additions: { citations: Citation[]; assets: ServerImageAsset[] } | undefined;
+    let additions: { citations: Citation[]; assets: ServerImageAsset[]; queueImages?: boolean; provider?: EditorialJob['provider'] } | undefined;
     if (job.kind === 'article.outline') {
       if (!reviewed) throw new FlowError('INVALID_OUTLINE',502);
       events.push({ type: 'outline',title: reviewed.title,intro: { budget: sizing.introChars,quotes: reviewed.intro?.quotes ?? [] },
@@ -276,35 +282,15 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       // No block/version is committed until the WHOLE sequential or single output passes.
       if (issue) throw new FlowError(issue, 502);
       if (!articlePlainText(body).trim()) throw new FlowError('EMPTY_ARTICLE',502);
-      let illustrated: ReturnType<typeof planArticleImages> = { blocks: body.blocks };
-      const writerResult = result;
-      if (pipeline.definition.steps.images) {
-        try {
-          illustrated = planArticleImages(body,await call('images',PIPELINE_SCHEMAS.images,
-            { ...variables,history: JSON.stringify(body) }));
-        } catch (error) {
-          // Image planning is optional, never erase a valid article or conceal a lost lease.
-          if (combined.aborted || ['LEASE_LOST','PLAN_CHANGED','SOURCE_NOT_AUTHORIZED'].includes(safeCode(error))) throw error;
-          await guarded([{ type: 'step.progress',stepId: 'images',meta: 'Sugestões indisponíveis; o artigo foi preservado.' },
-            { type: 'step.skipped',stepId: 'images' }]);
-        }
-      }
-      // The suggested images are generated with AI; writing stays valid without a key or on any failure.
-      let resolved = { body: { ...body,...illustrated },assets: [] as ServerImageAsset[],filled: 0,codes: [] as string[] };
-      if (resolved.body.coverSlot || resolved.body.blocks.some(block => block.type === 'figure' && block.slot)) {
-        try {
-          await guarded([{ type: 'step.started',stepId: 'images',meta: 'Gerando as imagens sugeridas' }]);
-          resolved = await illustrateArticle(resolved.body,job.meta.productionId,AbortSignal.any([combined,AbortSignal.timeout(170000)]),undefined,
-            {portal:input.record.production.workspaceId,actor:input.record.production.createdBy});
-          await guarded([{ type: 'step.completed',stepId: 'images',meta: resolved.filled
-            ? `${resolved.filled} ${resolved.filled === 1 ? 'imagem gerada' : 'imagens geradas'} com IA` : 'Sugestões de imagem mantidas' }]);
-        } catch (error) { if (combined.aborted) throw error; }
-      }
-      result = writerResult;
-      additions = { assets: resolved.assets,citations: citationsFromArticle(resolved.body,input.record.sources,job.meta.productionId,new Date().toISOString()) };
-      events.push({ type: 'outline',title: article.title,sections: [],...(resolved.body.coverSlot ? { cover: resolved.body.coverSlot } : {}),
-        ...(resolved.body.cover ? { coverImage: resolved.body.cover } : {}) });
-      for (const block of resolved.body.blocks) events.push({ type: 'block.started',block: { id: block.id,type: block.type } },{ type: 'block.completed',block });
+      // Persist the validated text and enqueue optional images in the SAME transaction.
+      // The completed text run stays editable while the image worker uses its own lease.
+      additions = { assets: [],citations: citationsFromArticle(body,input.record.sources,job.meta.productionId,new Date().toISOString()),
+        queueImages: Boolean(pipeline.definition.steps.images),
+        ...(result ? { provider: { name: result.provider,model: result.model,requestId: result.provider_request_id } } : {}) };
+      events.push({ type: 'outline',title: article.title,sections: [] });
+      for (const block of body.blocks) events.push({ type: 'block.started',block: { id: block.id,type: block.type } },{ type: 'block.completed',block });
+      if (pipeline.definition.steps.images) events.push({ type: 'step.skipped',stepId: 'images' },
+        { type: 'step.progress',stepId: 'images',meta: 'Imagens em segundo plano; o artigo está disponível.' });
     } else {
       const raw = z.object({ slides: z.record(z.string(),z.object({ slots: z.record(z.string(),z.string().max(2000)),sourceBlockIds: z.array(z.string()).min(1).max(20) }).strict()) }).strict().parse(value);
       if (Object.keys(raw.slides).length !== layouts.length || layouts.some((_layout,i) => !raw.slides[String(i)])) throw new FlowError('INVALID_SLIDE_COUNT',502);
