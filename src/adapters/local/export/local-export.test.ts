@@ -18,6 +18,7 @@ import { TEMPLATE_RENDERS } from '../../../fixtures/templates/provisional.ts';
 import { pngFile } from '../../../ports/contracts/assets.contract.ts';
 import { exportContract } from '../../../ports/contracts/export.contract.ts';
 import type { RenderRequest } from '../../../ports/render.ts';
+import type { BuiltFile } from '../../../ports/export.ts';
 import { createMemoryAssetStore } from '../assets/index.ts';
 import { sha256Sync } from '../assets/sha256.ts';
 import { manualClock, sequentialIds } from '../store/system.ts';
@@ -61,7 +62,9 @@ function setup(options: { canvas?: boolean } = {}) {
     createSurface: options.canvas === false ? () => undefined : fakeCanvas,
     fontsReady: async () => undefined,
   });
-  const exports = createLocalExportService({ clock: { now: () => kit.now() }, getRecord: () => record, render });
+  let rendered = 0;
+  const exports = createLocalExportService({ clock: { now: () => kit.now() }, getRecord: () => record,
+    render: { ...render, render: request => { rendered += request.slideIds?.length ?? request.body.slides.length; return render.render(request); } } });
   const approveAll = () => {
     const article = commitVersion(record, kit, 'article', sampleArticle(record.sources[0]), { origin: 'generation' });
     recordDecision(record, kit, article, 'approved');
@@ -76,7 +79,7 @@ function setup(options: { canvas?: boolean } = {}) {
     recordDecision(record, kit, newer, 'approved');
     return toVersionRef(newer);
   };
-  return { kit, record, exports, approveAll, approveNewerArticle };
+  return { kit, record, exports, approveAll, approveNewerArticle, rendered: () => rendered };
 }
 
 exportContract('local export', () => {
@@ -136,6 +139,34 @@ describe('article serialisers', () => {
 });
 
 describe('local export service', () => {
+  it('finalizes the actual prepared files without rendering slides twice; retries refresh only their outcome', async () => {
+    const sut = setup(); sut.approveAll();
+    const request = { productionId: sut.record.production.id };
+    const plan = await sut.exports.plan(request); assert.ok(plan.ok);
+    const prepared: BuiltFile[] = [];
+    for (const file of plan.value.files.filter(file => file.available && file.kind !== 'manifest')) {
+      const result = await sut.exports.buildFile({ ...request, fileName: file.fileName, simulation: EXPORT_PARTIAL_FAILURE });
+      assert.ok(result.ok); prepared.push(result.value);
+    }
+    const failed = prepared.find(file => file.status === 'failed')!;
+    const before = sut.rendered();
+    const manifest = await sut.exports.buildFile({ ...request, fileName: 'manifesto.json', prepared });
+    assert.ok(manifest.ok);
+    assert.equal(sut.rendered(), before, 'manifest must perform no rendering');
+    const files = JSON.parse(manifest.value.text!).items.flatMap((item: { files: string[] }) => item.files);
+    assert.ok(!files.includes(failed.fileName), 'a failed file must stay excluded until retried');
+    const retry = await sut.exports.buildFile({ ...request, fileName: failed.fileName }); assert.ok(retry.ok);
+    prepared[prepared.indexOf(failed)] = retry.value;
+    const refreshed = await sut.exports.buildFile({ ...request, fileName: 'manifesto.json', prepared }); assert.ok(refreshed.ok);
+    assert.equal(sut.rendered(), 4, 'each of four slides is rendered once successfully');
+    assert.ok(JSON.parse(refreshed.value.text!).items.flatMap((item: { files: string[] }) => item.files).includes(failed.fileName));
+    const incomplete = await sut.exports.buildFile({ ...request, fileName: 'manifesto.json', prepared: [] });
+    assert.ok(!incomplete.ok && incomplete.refusal.code === 'incomplete_package');
+    sut.approveNewerArticle();
+    const stale = await sut.exports.buildFile({ ...request, fileName: 'manifesto.json', prepared });
+    assert.equal(stale.ok, false, 'reuse still enforces approved compatible versions');
+  });
+
   it('lists disabled formats with their reasons, in the Entrega order', async () => {
     const sut = setup();
     sut.approveAll();

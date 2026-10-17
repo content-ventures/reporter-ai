@@ -85,13 +85,13 @@ export type ExportRequest = {
   simulation?: string;
 };
 
-export type ExportServiceRefusal = ExportRefusal | 'unknown_production' | 'unknown_file' | 'file_unavailable';
+export type ExportServiceRefusal = ExportRefusal | 'unknown_production' | 'unknown_file' | 'file_unavailable' | 'incomplete_package';
 
 export interface ExportService {
   /** The file list of the package (Entrega screen), without building contents. */
   plan(request: ExportRequest): Promise<Result<ExportPlan, ExportServiceRefusal>>;
   /** Builds every available file; one failing file makes the package `partial`. */
   build(request: ExportRequest): Promise<Result<ExportPackage, ExportServiceRefusal>>;
-  /** Builds (or retries) one file of the package. */
-  buildFile(request: ExportRequest & { fileName: string }): Promise<Result<BuiltFile, ExportServiceRefusal>>;
+  /** `prepared` finalizes a manifest from this preparation's actual results, without rebuilding. */
+  buildFile(request: ExportRequest & { fileName: string; prepared?: readonly BuiltFile[] }): Promise<Result<BuiltFile, ExportServiceRefusal>>;
 }
