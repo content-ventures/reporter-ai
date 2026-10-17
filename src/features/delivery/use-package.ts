@@ -59,6 +59,7 @@ export function usePackage(productionId: ProductionId, selection: readonly Versi
   const jobKey = target.key ? `${target.key}#${round.n}` : null;
   const [job, setJob] = useState<PackageJob>({ key: null, progress: EMPTY });
   const anchors = useRef(new Map<string, HTMLAnchorElement>());
+  const prepared = useRef<{ key: string; files: Map<string, BuiltFile>; manifestAttempt: number } | undefined>(undefined);
 
   const patch = useCallback((forKey: string, fileName: string, next: FileProgress) => {
     setJob((current) => (current.key === forKey ? { ...current, progress: { ...current.progress, [fileName]: next } } : current));
@@ -82,13 +83,19 @@ export function usePackage(productionId: ProductionId, selection: readonly Versi
         progress[file.fileName] = file.available ? { state: 'pending' } : { state: 'unavailable', reason: file.unavailableReason ?? 'Formato ainda não disponível.' };
       }
       setJob({ key: jobKey, plan, progress });
+      const batch = { key: jobKey, files: new Map<string, BuiltFile>(), manifestAttempt: 0 };
+      prepared.current = batch;
       const buildable = plan.files.filter((file) => file.available);
       const order = [...buildable.filter((file) => file.kind !== 'manifest'), ...buildable.filter((file) => file.kind === 'manifest')];
       for (const file of order) {
         if (!live) return;
         patch(jobKey, file.fileName, { state: 'building' });
-        const built = await commands.export.buildFile({ ...request, fileName: file.fileName, simulation: round.simulation });
+        const manifestAttempt = file.kind === 'manifest' ? ++batch.manifestAttempt : undefined;
+        const built = await commands.export.buildFile({ ...request, fileName: file.fileName, simulation: round.simulation,
+          ...(file.kind === 'manifest' ? { prepared: [...batch.files.values()] } : {}) });
         if (!live) return;
+        if (manifestAttempt && manifestAttempt !== batch.manifestAttempt) continue;
+        if (built.ok) batch.files.set(file.fileName, built.value);
         patch(
           jobKey,
           file.fileName,
@@ -121,15 +128,31 @@ export function usePackage(productionId: ProductionId, selection: readonly Versi
   const retry = useCallback(
     async (fileName: string): Promise<boolean> => {
       const exact = target.selection;
-      if (!jobKey || !exact) return false;
+      const batch = prepared.current;
+      if (!jobKey || !exact || batch?.key !== jobKey) return false;
       patch(jobKey, fileName, { state: 'building' });
-      const built = await commands.export.buildFile({ productionId, selection: [...exact], fileName });
+      const request = { productionId, selection: [...exact] };
+      const manifestName = current?.plan?.files.find(file => file.kind === 'manifest')?.fileName;
+      const manifestAttempt = fileName === manifestName ? ++batch.manifestAttempt : undefined;
+      const built = await commands.export.buildFile({ ...request, fileName,
+        ...(fileName === manifestName ? { prepared: [...batch.files.values()] } : {}) });
+      if (prepared.current !== batch) return false;
+      if (manifestAttempt && manifestAttempt !== batch.manifestAttempt) return false;
+      if (built.ok) batch.files.set(fileName, built.value);
       const next: FileProgress = built.ok ? fromBuilt(built.value) : { state: 'failed', error: { code: built.refusal.code, message: built.refusal.message } };
+      if (manifestName && fileName !== manifestName) {
+        patch(jobKey, manifestName, { state: 'building' });
+        const attempt = ++batch.manifestAttempt;
+        const manifest = await commands.export.buildFile({ ...request, fileName: manifestName, prepared: [...batch.files.values()] });
+        if (prepared.current !== batch) return false;
+        if (attempt === batch.manifestAttempt) patch(jobKey, manifestName, manifest.ok ? fromBuilt(manifest.value)
+          : { state: 'failed', error: { code: manifest.refusal.code, message: manifest.refusal.message } });
+      }
       // Rendered now, so the row's download link exists right after this call.
       flushSync(() => patch(jobKey, fileName, next));
       return next.state === 'ready';
     },
-    [commands, jobKey, patch, productionId, target.selection],
+    [commands, current?.plan, jobKey, patch, productionId, target.selection],
   );
 
   /** Builds the whole package again; `simulation` arms a failure for the local adapter. */

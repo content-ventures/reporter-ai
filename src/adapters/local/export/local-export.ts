@@ -278,7 +278,19 @@ export function createLocalExportService(deps: LocalExportDeps): ExportService {
       if (!file.available) return refuse('file_unavailable', file.unavailableReason ?? 'Formato ainda não disponível.');
       if (file.kind === 'manifest') {
         const built: BuiltFile[] = [];
-        for (const entry of plan.files) if (entry.kind !== 'manifest') built.push(await buildOne(record, plan, entry, { productionId: request.productionId }));
+        for (const entry of plan.files) {
+          if (entry.kind === 'manifest') continue;
+          if (!entry.available) { built.push({ ...entry, status: 'unavailable' }); continue; }
+          if (request.prepared) {
+            const previous = request.prepared.find(candidate => candidate.fileName === entry.fileName);
+            if (!previous || previous.versionId !== entry.versionId || previous.image?.assetId !== entry.image?.assetId
+              || !['ready', 'failed'].includes(previous.status))
+              return refuse('incomplete_package', 'Prepare os arquivos desta seleção antes de gerar o manifesto.');
+            // Metadata and authorisation come from the fresh plan; status comes from the files
+            // actually offered for download, including failures until an explicit retry.
+            built.push({ ...previous, ...entry });
+          } else built.push(await buildOne(record, plan, entry, request));
+        }
         return ok(manifestFile(record, plan, built).file);
       }
       return ok(await buildOne(record, plan, file, request));
