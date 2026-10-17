@@ -116,6 +116,27 @@ test('work left at the budget continues in a new invocation, up to the chain lim
   assert.deepEqual(chained, [1, 2]);
 });
 
+test('a continuation routed to the same isolate starts a fresh drain and keeps its own active promise', { timeout: 1000 }, async () => {
+  let passes = 0,release!: () => void,continuation: Promise<DrainResult> | undefined;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const schedule = createDrainScheduler({
+    drain: async () => {
+      const pass = ++passes;
+      if (pass === 2) await gate;
+      return pass === 1 ? { processed: 20,remaining: true,elapsedMs: 1 } : IDLE;
+    },
+    chain: async depth => { continuation = schedule(depth); },
+  });
+  try {
+    await schedule();
+    assert.equal(passes,2,'the continuation must not rejoin the exhausted drain');
+    const kick = schedule();
+    assert.equal(kick,continuation,'finishing the old invocation must not clear the new drain');
+    release(); await kick;
+    assert.equal(passes,3,'a kick during the continued drain still buys one more pass');
+  } finally { release(); await continuation; }
+});
+
 test('the drain route requires the worker secret, answers at once and drains in the background', () => withEnv({ REPORTER_WORKER_PASSWORD: 'worker-secret' }, async () => {
   const { worker, calls, settle } = harness();
   assert.equal((await worker.fetch(new Request('https://worker.test/drain', { method: 'POST' }))).status, 401);

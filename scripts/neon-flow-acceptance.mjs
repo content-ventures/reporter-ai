@@ -19,7 +19,7 @@ import { transaction } from '../src/server/database.ts';
 import { analyzeMaterial } from '../src/server/material-analysis.ts';
 import { transcriptFileText } from '../src/adapters/http/reporter-client.ts';
 import { applyWorkspaceDelta } from '../src/runtime/editorial-sync.ts';
-import { markTextReviewed } from '../src/domain/article.ts';
+import { articlePlainText,markTextReviewed } from '../src/domain/article.ts';
 import { latestApproved } from '../src/domain/record.ts';
 import { acceptanceOrigin,assertStagingTarget } from './lib/staging-target.mjs';
 
@@ -56,6 +56,28 @@ async function record(id){const s=await snapshot(),engine=createEditorialEngine(
 // Nothing schedules the worker more than hourly: like the app, the acceptance wakes it, and fails loudly if it cannot.
 async function wake(){const r=await fetch(new URL('/drain',process.env.REPORTER_WORKER_URL),{method:'POST',headers:{'x-reporter-worker-key':process.env.REPORTER_WORKER_PASSWORD},signal:AbortSignal.timeout(10000)});await r.body?.cancel();assert.equal(r.status,202,'Worker wake-up failed: HTTP '+r.status);}
 async function waitRun(id){await wake();for(let n=0;n<180;n++){const s=await snapshot(),run=s.state.runFolds[id]?.run;if(run?.status==='completed')return;if(run?.status==='failed'||run?.status==='cancelled')throw new Error('Live generation failed: '+JSON.stringify(run.error));if(n%10===0)console.log('Waiting for deployed worker: '+(run?.steps?.find(step=>step.state==='current')?.id??run?.status));if(n%6===5)await wake();await delay(5000);}throw new Error('Live generation timed out.');}
+
+async function acceptBackgroundImages(runId,productionId,pieceId){
+  const before=(await record(productionId)).pieces.find(piece=>piece.id===pieceId).draft.body;
+  let completed=false;
+  for(let n=0;n<120;n++){
+    const current=await snapshot(),run=current.state.runFolds[runId]?.run;
+    assert.equal(run?.status,'completed','Image work must preserve the completed text run');
+    if(run.steps.find(step=>step.id==='images')?.state==='done'){completed=true;break;}
+    if(n%10===0)console.log('Waiting for deployed background images.');
+    if(n%6===0)await wake();
+    await delay(5000);
+  }
+  assert.ok(completed,'Deployed background image task did not complete');
+  const after=(await record(productionId)).pieces.find(piece=>piece.id===pieceId).draft.body;
+  assert.equal(articlePlainText(after),articlePlainText(before),'Background images changed article prose');
+  const fresh=await snapshot('reviewer');
+  const stored=fresh.imageAssets?.find(entry=>entry.productionId===productionId&&entry.fileKey);
+  assert.ok(stored,'Fresh reviewer cannot see the generated image');
+  const metadata=await sharp(await as('reviewer',()=>readImageFile(stored.fileKey))).metadata();
+  assert.ok(metadata.width>=1024&&metadata.height>=1024,'Generated image lost its configured resolution');
+  console.log('PASS deployed background images, unchanged article prose and fresh reviewer image retrieval.');
+}
 
 const settings=await as('editor',()=>editorialPipeline());
 const configured=process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH?JSON.parse(await readFile(process.env.REPORTER_ACCEPTANCE_PIPELINE_PATH,'utf8')):null;
@@ -126,6 +148,7 @@ await acceptEditorialFlow({rpc,snapshot,record,waitRun,reviewerId:actors.reviewe
   const article=created.pieces.find(piece=>piece.kind==='article');assert.ok(article);
   const draft=await rpc('editor','generation.start','article.draft',{productionId:created.productionId,pieceId:article.pieceId});await waitRun(draft.runId);
   console.log('PASS live article generation with the deployed worker and the staging pipeline.');
+  await acceptBackgroundImages(draft.runId,created.productionId,article.pieceId);
   const piece=(await record(created.productionId)).pieces.find(entry=>entry.id===article.pieceId);
   await rpc('editor','saveDraft',piece.id,markTextReviewed(piece.draft.body),piece.draft.revision);
   const requested=await rpc('editor','requestReview',piece.id,{assigneeId:actors.reviewer.actor});

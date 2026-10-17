@@ -2,6 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { transaction } from './database.ts';
 import { runEditorialJob } from './editorial-worker.ts';
+import { runArticleImageJob } from './article-image-worker.ts';
 import { logEvent, safeCode } from './errors.ts';
 import { runRemoteIngest } from './remote-ingest.ts';
 import { runReporterJob } from './reporter-worker-jobs.ts';
@@ -37,7 +38,7 @@ export const drainServices: DrainServices = {
   pending: () => transaction('worker', async client =>
     (await client.query('SELECT public.reporter_worker_pending() AS pending')).rows[0]?.pending === true),
   run: async (owner, signal, deadline) => await runRemoteIngest(owner, signal)
-    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal),
+    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal) || await runArticleImageJob(owner, signal),
   now: Date.now,
   compact: () => compactEditorialRows(),
 };
@@ -78,7 +79,9 @@ export function createDrainScheduler(deps: {
   let again = false;
   return (depth = 0) => {
     if (active) { again = true; return active; }
-    active = (async () => {
+    const { promise,resolve,reject } = Promise.withResolvers<DrainResult>();
+    active = promise;
+    void (async () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort('invocation_budget'), deps.maxMs ?? MAX_INVOCATION_MS);
       timer.unref?.();
@@ -89,13 +92,16 @@ export function createDrainScheduler(deps: {
           result = await deps.drain(`reporter-neon-${randomUUID()}`, controller.signal);
         } while (again && !result.remaining && !controller.signal.aborted);
         if (result.remaining || controller.signal.aborted) {
+          // The authenticated continuation may land on this same isolate. It must own a
+          // fresh drain, rather than rejoining the promise whose budget was exhausted.
+          if (active === promise) active = undefined;
           if (depth < (deps.maxDepth ?? MAX_DRAIN_CHAIN)) await deps.chain(depth + 1);
           else logEvent('worker', 'drain_chain_exhausted');
         }
         return result;
-      } finally { clearTimeout(timer); active = undefined; }
-    })();
-    return active;
+      } finally { clearTimeout(timer); if (active === promise) active = undefined; }
+    })().then(resolve,reject);
+    return promise;
   };
 }
 
