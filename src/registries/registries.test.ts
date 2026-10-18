@@ -171,7 +171,9 @@ describe('navigation registry', () => {
 
   test('shipping a release turns "Em breve" into links; scoped items stay in the menu', () => {
     const all = (release: ReleaseId) => menuFor(release, { roles: EVERYONE }).flatMap((section) => section.items.map((item) => item.id)).sort();
-    for (const release of RELEASES) assert.deepEqual(all(release), all(R1), `${release} shows the same items`);
+    // Imagens and Citações stay out of the R1 menu and open with R2 (the library around Hard News).
+    const fromR2 = [...all(R1), 'images', 'quotes'].sort();
+    for (const release of RELEASES) assert.deepEqual(all(release), releaseIndex(release) >= releaseIndex('R2') ? fromR2 : all(R1), `${release} shows the same items`);
     const soon = (release: ReleaseId) =>
       menuFor(release, { roles: EVERYONE }).flatMap((section) => section.items.filter((item) => item.soon).map((item) => item.id));
     assert.deepEqual(soon('R2'), ['opportunities', 'media', 'channels', 'profiles', 'newsletter', 'performance', 'batches', 'events', 'workspaces']);
@@ -180,7 +182,7 @@ describe('navigation registry', () => {
       navigationFor('R2').map((section) => section.group.id),
       ['production', 'intake', 'library', 'settings', 'utility'],
     );
-    assert.equal(navigationFor('R7', { roles: EVERYONE }).flatMap((section) => section.items).length, NAV_ITEMS.filter((item) => !item.hidden).length);
+    assert.equal(navigationFor('R7', { roles: EVERYONE }).flatMap((section) => section.items).length, NAV_ITEMS.filter((item) => !item.hidden).length + 2);
   });
 
   test('items are unique, follow their release inside the group and map to roadmap features', () => {

@@ -14,13 +14,13 @@ import {
 } from '@content-ventures/design-system/v3';
 import { productionTrail } from '@/features/production/trail';
 import type { ProductionListFilter, ProductionListItem } from '@/ports';
-import { activeNavItem, menuFor, type MenuItem, type MenuSection } from '@/registries';
+import { activeNavItem, isReleased, menuFor, type MenuItem, type MenuSection } from '@/registries';
 import { useApprovals, useProductions, useSession } from '@/state';
 import { iconFor } from '../icons';
 import { ReporterBrand } from '../reporter-brand';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { PermissionDialogHost } from '../permission-dialog';
-import { R2_NAVIGATION, isR2PreviewPath } from '../r2-preview';
+import { R2_NAVIGATION, isR2DemoPath, isR2PreviewPath } from '../r2-preview';
 import { NEW_PRODUCTION_HREF, productionRoute, PRODUCTIONS_HREF } from '../routes';
 import { ShellAccount } from './account';
 import { BreadcrumbProvider, useDeclaredBreadcrumb } from './breadcrumb';
@@ -41,6 +41,8 @@ const NO_PRODUCTIONS: readonly ProductionListItem[] = [];
  * and Entrega share one header line at one place, edge to edge, no page gutter or max width.
  */
 const DOCKED_ROUTE = /^\/productions\/[^/]+\/[^/]+(?:\/review)?$/;
+/** From R2 the news desk is a work area too: the queue and the news fill the window. */
+const R2_DOCKED_ROUTE = /^\/news$/;
 
 /**
  * Trail when the screen did not declare one: the menu item, "Produções › Nova produção", or on a
@@ -104,7 +106,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
   const router = useRouter();
   useClientLinks();
   const declared = useDeclaredBreadcrumb();
-  const docked = DOCKED_ROUTE.test(pathname);
+  const docked = DOCKED_ROUTE.test(pathname) || (isReleased('R2') && R2_DOCKED_ROUTE.test(pathname));
   const [collapsed, setCollapsed] = usePersistentFlag(SIDEBAR_COLLAPSED_KEY);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
@@ -164,7 +166,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             account={<ShellAccount />}
           />
         )}
-        topbar={<TopBar actions={isR2PreviewPath(pathname) ? <Badge tone="amber">R2 · Demonstração</Badge> : undefined} breadcrumb={crumbs} onToggleSidebar={() => setCollapsed(!collapsed)} notifications={<ShellNotifications />} />}
+        topbar={<TopBar actions={isR2PreviewPath(pathname) ? <Badge tone="amber">R2 · Demonstração</Badge> : isR2DemoPath(pathname) ? <Badge tone="amber">Demo</Badge> : undefined} breadcrumb={crumbs} onToggleSidebar={() => setCollapsed(!collapsed)} notifications={<ShellNotifications />} />}
       >
         {/* On a docked production the notice lives in its own header, not above the studio. */}
         {docked ? null : <OtherTabNotice />}

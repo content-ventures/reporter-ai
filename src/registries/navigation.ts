@@ -33,8 +33,11 @@ export type NavGroup = {
   defaultOpen?: boolean;
 };
 
-/** The sections the sidebar draws: released items, the "Em breve" group, the bottom utilities. */
-export type MenuGroupId = 'main' | 'soon' | 'utility';
+/**
+ * The sections the sidebar draws: released items, the "Em breve" group, the bottom utilities. From
+ * R2 the released items split into the day's work, "Biblioteca" and "Configurações".
+ */
+export type MenuGroupId = 'main' | 'library' | 'settings' | 'soon' | 'utility';
 
 export type MenuGroup = {
   id: MenuGroupId;
@@ -364,6 +367,8 @@ export type MenuSection = { group: MenuGroup; items: MenuItem[] };
 /** The sidebar's sections (D9): "Em breve" is ONE group, collapsed on arrival. */
 export const MENU_GROUPS: Readonly<Record<MenuGroupId, MenuGroup>> = {
   main: { id: 'main', placement: 'main', collapsible: false },
+  library: { id: 'library', label: 'Biblioteca', placement: 'main', collapsible: false },
+  settings: { id: 'settings', label: 'Configurações', placement: 'main', collapsible: false },
   soon: { id: 'soon', label: 'Em breve', placement: 'main', collapsible: true, defaultOpen: false },
   utility: { id: 'utility', placement: 'utility', collapsible: false },
 };
@@ -373,7 +378,13 @@ export type NavViewer = { roles: readonly Role[] };
 
 /** Only the UI demonstration expands navigation; domain/worker release gates stay on R1. */
 export type NavigationOptions = { previewR2?: boolean };
-function navigationEntries(options: NavigationOptions): readonly NavItem[] {
+/** Library screens R1 kept out of the menu (Imagens, Citações) open with the Hard News release. */
+const LIBRARY_FROM_R2 = new Set(['images', 'quotes']);
+
+function navigationEntries(options: NavigationOptions, release: ReleaseId = CURRENT_RELEASE): readonly NavItem[] {
+  if (!options.previewR2 && isReleased('R2', release)) {
+    return NAV_ITEMS.map((item) => (LIBRARY_FROM_R2.has(item.id) ? { ...item, hidden: false } : item));
+  }
   if (!options.previewR2) return NAV_ITEMS;
   return NAV_ITEMS.map(item => item.id === 'images' || item.id === 'quotes'
     ? { ...item, hidden: false, since: 'R2' as const }
@@ -418,7 +429,7 @@ function placementOf(item: Pick<NavItem, 'group' | 'placement'>): NavPlacement {
  */
 export function menuFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer, options: NavigationOptions = {}): MenuSection[] {
   if (options.previewR2) release = 'R2';
-  const visible = navigationEntries(options).filter((item) => isNavItemVisible(item, viewer));
+  const visible = navigationEntries(options, release).filter((item) => isNavItemVisible(item, viewer));
   const released = visible.filter((item) => isReleased(item.since, release));
   if (options.previewR2) {
     const order = ['overview', 'productions', 'templates', 'news', 'images', 'quotes', 'archive', 'editorial-map', 'writing-guide', 'integrations'];
@@ -429,6 +440,7 @@ export function menuFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer
     .map((item, order) => ({ item, order }))
     .sort((a, b) => releaseIndex(a.item.since) - releaseIndex(b.item.since) || a.order - b.order)
     .map<MenuItem>(({ item }) => ({ ...item, soon: soonReason(item) }));
+  if (!options.previewR2 && isReleased('R2', release)) return sectionedMenu(released, soon);
   const result: MenuSection[] = [
     { group: MENU_GROUPS.main, items: released.filter((item) => placementOf(item) === 'main') },
     { group: MENU_GROUPS.soon, items: soon },
@@ -437,10 +449,43 @@ export function menuFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer
   return result.filter((section) => section.items.length > 0);
 }
 
+/** Where a released item sits from R2: the day's work, the library, the settings, the bottom. */
+function menuGroupOf(item: NavItem): MenuGroupId {
+  if (placementOf(item) === 'utility') return 'utility';
+  if (item.group === 'library') return 'library';
+  if (item.group === 'settings' || item.group === 'administration') return 'settings';
+  return 'main';
+}
+
+/** Início first, then the incoming news, then the rest of the work, as a writer's day reads. */
+function workRank(item: NavItem): number {
+  if (item.id === 'overview') return 0;
+  return item.group === 'intake' ? 1 : 2;
+}
+
+/**
+ * R2 menu: Início, Notícias and Produções on top, then "Biblioteca" and "Configurações" as two
+ * short labelled sections, "Em breve" collapsed, and the utilities at the bottom.
+ */
+function sectionedMenu(released: readonly NavItem[], soon: readonly MenuItem[]): MenuSection[] {
+  const of = (id: MenuGroupId) => released.filter((item) => menuGroupOf(item) === id);
+  const work = of('main').map((item, order) => ({ item, order }))
+    .sort((a, b) => workRank(a.item) - workRank(b.item) || a.order - b.order)
+    .map(({ item }) => item);
+  const result: MenuSection[] = [
+    { group: MENU_GROUPS.main, items: work },
+    { group: MENU_GROUPS.library, items: of('library') },
+    { group: MENU_GROUPS.settings, items: of('settings') },
+    { group: MENU_GROUPS.soon, items: [...soon] },
+    { group: MENU_GROUPS.utility, items: of('utility') },
+  ];
+  return result.filter((section) => section.items.length > 0);
+}
+
 /** Released destinations only (⌘K "Ir para"): groups with at least one visible item, in registry order. */
 export function navigationFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer, options: NavigationOptions = {}): NavSection[] {
   if (options.previewR2) release = 'R2';
-  const items = availableIn(navigationEntries(options), release).filter((item) => isNavItemVisible(item, viewer));
+  const items = availableIn(navigationEntries(options, release), release).filter((item) => isNavItemVisible(item, viewer));
   return sections(availableIn(NAV_GROUPS, release), items);
 }
 
@@ -453,7 +498,7 @@ function matches(item: NavItem, pathname: string): boolean {
 /** The menu item to highlight for a pathname (longest matching href wins); "Em breve" items never match. */
 export function activeNavItem(pathname: string, release: ReleaseId = CURRENT_RELEASE, options: NavigationOptions = {}): NavItem | undefined {
   if (options.previewR2) release = 'R2';
-  return availableIn(navigationEntries(options), release)
+  return availableIn(navigationEntries(options, release), release)
     .filter((item) => matches(item, pathname))
     .sort((a, b) => b.href.length - a.href.length)[0];
 }
