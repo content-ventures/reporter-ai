@@ -8,6 +8,7 @@ import { useCan, useCommands, usePeople, useSession } from '@/state';
 import { briefChangedSince, READ_ONLY_REASON, studioBadge } from './studio-session-model';
 import type { GenerationState, StudioInputs } from './studio-types';
 import { useStudioChecks } from './use-studio-checks';
+import { withEvidenceWarning } from '@/features/hard-news/studio/send-items';
 import { useStudioCommands } from './use-studio-commands';
 import { useStudioCopilot } from './use-studio-copilot';
 import { useGenerationActions, useStudioGeneration } from './use-studio-generation';
@@ -98,7 +99,9 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
       }),
     [checking.checks, bar.liveOpen, generation.active, checking.empty, size, characters],
   );
-  const approval = useMemo<PieceApproval | undefined>(() => (stored ? { ...stored, send: { ...stored.send, items: sendItems } } : undefined), [stored, sendItems]);
+  // R2: a covered news story warns about claims still to check before it is sent (never blocks).
+  const deskSendItems = useMemo(() => withEvidenceWarning(sendItems, checking.desk), [sendItems, checking.desk]);
+  const approval = useMemo<PieceApproval | undefined>(() => (stored ? { ...stored, send: { ...stored.send, items: deskSendItems } } : undefined), [stored, deskSendItems]);
 
   // ——— Jumps from the footer, the Checagem and the dialog ("Ir ao trecho", "Revisar"…) ———
   /** Bumped to bring the title into edition with the caret in it ("Ir ao título"). */
@@ -268,6 +271,8 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
     body: text.body,
     facts: checking.facts,
     checks: checking.checks,
+    /** R2: the news desk's dossier, evidence and suggestions of a covered story (else undefined). */
+    desk: checking.desk,
     images: text.images,
     imageIssues: checking.imageIssues,
     /** Suggested images still to fill in the text (figures, reading order). */
@@ -309,7 +314,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
     panes,
     /** The article's approval with the checklist of the text on screen. */
     approval,
-    sendItems,
+    sendItems: deskSendItems,
     /** The text waits for a decision: nothing changes it until it is withdrawn or decided (D8). */
     locked,
     /** The viewer may edit the article (an approver reads it). */
