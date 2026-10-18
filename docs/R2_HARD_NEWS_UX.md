@@ -42,7 +42,11 @@ The R2 screens with no backend yet carry an amber "Demo" Badge in the top bar: N
 8. **Início** gains "Pauta do dia" (registry widget `news-queue`): the same story cards as the radar, the high-priority ones first, each opening the story on the desk.
 
 Library and settings:
-- Citações (`/quotes`, F2.11, cards in pages of 12, 24 or 48)
+- Citações (`/quotes`, F2.11, cards in pages of 12, 24 or 48). The connected build reads the R1 citations (`CitationLibrary` port, `quotes/quote-model.ts` with tests).
+  - Each citation is an interview passage with speaker, program, minute and date, "Conferida" when the author is confirmed.
+  - Its words, source and speaker are fixed; the context, the date and the check change.
+  - "Adicionar fala" waits, with the reason ("As falas saem da transcrição de cada produção."), and the strip counts sources instead of uses.
+  - Quotes from events or articles, with topic and role, have no R1 backend yet.
 - Acervo (`/archive`, F2.12): the portal's published articles as a library the reporter searches before covering a story ("o que já demos sobre isso?").
   - The header counts what was published and what the AI read. One large field ("O que o portal já publicou sobre…", `/` focuses it) has suggested searches under it, offered only when the AI can answer them.
   - Enter or a suggestion runs a search. The AI's answer comes first: its steps while it reads (AgentTrace), then the text with numbered markers beside the sources it cites (article, date, address). "Nothing found" says so and that it does not prove the fact did not happen. Below the answer come the articles found, also the ones the AI has not read. Clearing the field goes back to the library.
@@ -90,16 +94,27 @@ Each photo has its own page, `/images/[id]` (`own:img-x`, `unsplash:abc`, `pexel
 
 "Usar em artigo" opens a drawer with:
 - the photo, its credit and license;
-- the productions in progress, as a list with stage, person and time;
+- the workspace's productions in progress (R1, not archived), as a list with stage, person and time;
 - "Usar como" (Capa / No texto);
 - an editable caption.
 
-"Usar imagem" waits until a production is chosen. It counts one more use. The preview does not attach the photo to the article: the backend will.
+"Usar imagem" waits until a production is chosen. It then puts the photo into that production's article, through R1 in the preview too:
+- the photo becomes an R1 image asset of the production (credit kept, "Uso autorizado");
+- the draft is saved with it as the cover ("Imagem de destaque", replacing the AI's cover suggestion) or as a figure at the end of the text, with the caption;
+- the toast opens the article.
+
+A locked article (in approval) or a draft that changed meanwhile says why and changes nothing. The desk's archive counts one more use (`images/article-image.ts`, with tests).
 
 Preview data and limits:
 - The archive seed is `seedImages()` (`preview/library.ts`): the local sample plus nine photos saved from the banks.
 - The bank results are `preview/image-bank.ts`: 36 free-license photos (20 Unsplash, 16 Pexels) with real authors and profiles. They are hotlinked from the banks' CDNs, never downloaded, and answer after 350 ms so the field shows its spinner.
-- The live bank search (R1 `usePhotoBanks` / `port.search`, `port.importImage`) is not wired in R2 yet. The bank tabs always read the preview results.
+- On real data: the connected build reads the R1 visual library (`VisualLibrary` port), and only that build has it. The fixtures preview keeps the preview archive and banks.
+  - The archive is the library's kept photos: cleared, with credit as published ("Nome/Pexels").
+  - The bank tabs are the library's search in the banks that have a key, from two letters on.
+  - "Salvar no acervo" is `importImage`.
+  - A library photo's credit and license stay as the bank gave them, so it has no "Editar créditos".
+  - A bank photo's page resolves what the search answered in this tab (`images/library-model.ts`, with tests).
+- Still without a backend: "Enviar fotos" to the archive (R1 uploads go to a production), editable credit and license with "rights to confirm", and the count of uses of a library photo.
 - "Enviar fotos" keeps the files in the tab's memory only (`blob:`). They enter with rights to confirm and are gone on reload.
 - The pure rules (search, filters, merging, mosaic, rights, address) are in `images/images-model.ts`, with tests.
 
