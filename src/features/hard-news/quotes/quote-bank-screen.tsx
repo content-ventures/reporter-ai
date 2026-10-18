@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -37,6 +37,7 @@ import { QUOTE_ORIGIN_LABELS } from '@/domain/hard-news';
 import type { BankQuote, QuoteOrigin } from '@/domain/hard-news';
 import { useCan } from '@/state';
 import { useHardNews } from '../state/hard-news-provider';
+import { useQuoteBank } from './use-quote-bank';
 
 type Filter = 'all' | 'verified' | 'pending';
 
@@ -55,10 +56,14 @@ function fold(text: string): string {
   return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
-/** “…”, disse Marina Castro, diretora comercial da Cooperativa Oeste Peixes. */
+/** “…”, disse Marina Castro, diretora comercial da Cooperativa Oeste Peixes (the role only when known). */
 export function attributed(quote: Pick<BankQuote, 'text' | 'author' | 'role'>): string {
-  return `“${quote.text}”, disse ${quote.author}, ${quote.role}.`;
+  const role = quote.role.trim();
+  return `“${quote.text}”, disse ${quote.author}${role ? `, ${role}` : ''}.`;
 }
+
+/** Why "Adicionar fala" waits in the connected build. */
+const FROM_TRANSCRIPT = 'As falas saem da transcrição de cada produção.';
 
 function dateOf(day: string): string {
   return new Date(`${day}T12:00:00`).toLocaleDateString('pt-BR');
@@ -70,8 +75,10 @@ function dateOf(day: string): string {
  * after a person checks it ("Conferida"). The draft and the enrichment read this bank (F2.13).
  */
 export function QuoteBankScreen() {
-  const { state, ready } = useHardNews();
+  const { quotes, ready, connected, save } = useQuoteBank();
+  const { state } = useHardNews();
   const canEdit = useCan('production.create');
+  const addNoteId = useId();
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [topic, setTopic] = useState('all');
@@ -79,9 +86,9 @@ export function QuoteBankScreen() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
 
-  const quotes = state.quotes;
   const counts = { all: quotes.length, verified: quotes.filter((quote) => quote.verified).length, pending: quotes.filter((quote) => !quote.verified).length };
-  const topics = useMemo(() => [...new Set(quotes.map((quote) => quote.topic))], [quotes]);
+  const topics = useMemo(() => [...new Set(quotes.map((quote) => quote.topic).filter(Boolean))], [quotes]);
+  const sources = new Set(quotes.map((quote) => quote.sourceTitle)).size;
   const uses = quotes.reduce((total, quote) => total + quote.uses, 0);
   const people = new Set(quotes.map((quote) => quote.author)).size;
   const shown = quotes.filter((quote) => (filter === 'all' || (filter === 'verified' ? quote.verified : !quote.verified))
@@ -95,14 +102,27 @@ export function QuoteBankScreen() {
     <PageStack>
       <PageHeader
         title="Citações"
-        actions={canEdit ? <Button variant="primary" icon={Plus} onClick={() => setOpen('new')}>Adicionar fala</Button> : undefined}
+        actions={canEdit ? (
+          <Button
+            variant="primary"
+            icon={Plus}
+            aria-disabled={connected || undefined}
+            aria-describedby={connected ? addNoteId : undefined}
+            onClick={connected ? undefined : () => setOpen('new')}
+          >
+            Adicionar fala
+          </Button>
+        ) : undefined}
+        actionsNote={canEdit && connected ? { id: addNoteId, text: FROM_TRANSCRIPT } : undefined}
       />
       <MetricStrip
         label="Banco de citações"
         items={[
           { label: 'Falas', value: ready ? String(counts.all) : undefined, loading: !ready },
           { label: 'Conferidas', value: ready ? `${counts.verified} de ${counts.all}` : undefined, loading: !ready, meter: { value: counts.verified, max: Math.max(1, counts.all), tone: 'green' } },
-          { label: 'Usos em matérias', value: ready ? String(uses) : undefined, loading: !ready },
+          connected
+            ? { label: 'Fontes', value: ready ? String(sources) : undefined, loading: !ready }
+            : { label: 'Usos em matérias', value: ready ? String(uses) : undefined, loading: !ready },
           { label: 'Pessoas', value: ready ? String(people) : undefined, loading: !ready },
         ]}
       />
@@ -111,7 +131,7 @@ export function QuoteBankScreen() {
         filters={false}
         tabs={<Tabs label="Situação" value={filter} onChange={(value) => { setFilter(value); setPage(1); }} items={FILTERS.map((entry) => ({ ...entry, count: counts[entry.value] }))} />}
         search={<SearchField label="Buscar citações" value={query} onValueChange={(value) => { setQuery(value); setPage(1); }} placeholder="Fala, pessoa ou fonte" />}
-        actions={<Select aria-label="Tema" size="sm" value={topic} onChange={(value) => { setTopic(value); setPage(1); }} options={[{ value: 'all', label: 'Todos os temas' }, ...topics.map((value) => ({ value, label: value }))]} />}
+        actions={topics.length > 0 ? <Select aria-label="Tema" size="sm" value={topic} onChange={(value) => { setTopic(value); setPage(1); }} options={[{ value: 'all', label: 'Todos os temas' }, ...topics.map((value) => ({ value, label: value }))]} /> : undefined}
       />
       {shown.length === 0 ? (
         <EmptyState icon={Quote} title={query || topic !== 'all' ? 'Nenhuma citação encontrada' : 'Nenhuma citação'} size="panel" />
@@ -131,7 +151,15 @@ export function QuoteBankScreen() {
           />
         </>
       )}
-      <QuoteDrawer key={open === 'new' ? 'new' : open?.id ?? 'closed'} quote={open} topics={state.map.topics.map((entry) => entry.label)} canEdit={canEdit} onClose={() => setOpen(null)} />
+      <QuoteDrawer
+        key={open === 'new' ? 'new' : open?.id ?? 'closed'}
+        quote={open}
+        topics={state.map.topics.map((entry) => entry.label)}
+        canEdit={canEdit}
+        connected={connected}
+        onSave={save}
+        onClose={() => setOpen(null)}
+      />
     </PageStack>
   );
 }
@@ -170,19 +198,26 @@ const EMPTY: Omit<BankQuote, 'id'> = {
   recordedOn: new Date().toISOString().slice(0, 10), verified: false, uses: 0,
 };
 
-function QuoteDrawer({ quote, topics, canEdit, onClose }: { quote: BankQuote | 'new' | null; topics: string[]; canEdit: boolean; onClose: () => void }) {
-  const { actions } = useHardNews();
+function QuoteDrawer({ quote, topics, canEdit, connected, onSave, onClose }: {
+  quote: BankQuote | 'new' | null;
+  topics: string[];
+  canEdit: boolean;
+  /** R1 citations: the words, source and speaker are fixed; context, date and the check change. */
+  connected: boolean;
+  onSave: (quote: BankQuote) => Promise<boolean>;
+  onClose: () => void;
+}) {
   const creating = quote === 'new';
   const [draft, setDraft] = useState<BankQuote>(() => (quote && quote !== 'new' ? quote : { id: `q-${Date.now().toString(36)}`, ...EMPTY, topic: topics[0] ?? '' }));
   const [tried, setTried] = useState(false);
   const patch = (next: Partial<BankQuote>) => setDraft((current) => ({ ...current, ...next }));
   const missing = { text: !draft.text.trim(), author: !draft.author.trim(), source: !draft.sourceTitle.trim() };
-  const editable = canEdit && (creating || !draft.verified || quote === null);
+  const editable = canEdit && !connected && (creating || !draft.verified || quote === null);
 
-  function save() {
+  async function save() {
     setTried(true);
     if (missing.text || missing.author || missing.source) return;
-    actions.saveQuote(draft);
+    if (!(await onSave(draft))) return;
     toast(creating ? 'Fala adicionada' : 'Citação salva', { description: draft.verified ? undefined : 'Fica a conferir até alguém confirmar com a fonte.' });
     onClose();
   }
@@ -197,7 +232,7 @@ function QuoteDrawer({ quote, topics, canEdit, onClose }: { quote: BankQuote | '
       footer={canEdit ? (
         <>
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" onClick={save}>{creating ? 'Adicionar fala' : 'Salvar'}</Button>
+          <Button variant="primary" onClick={() => void save()}>{creating ? 'Adicionar fala' : 'Salvar'}</Button>
         </>
       ) : undefined}
     >
@@ -225,9 +260,11 @@ function QuoteDrawer({ quote, topics, canEdit, onClose }: { quote: BankQuote | '
               <Field label="Origem">
                 {({ id, describedBy }) => <Select id={id} describedBy={describedBy} disabled={!editable} value={draft.origin} options={ORIGINS} onChange={(origin) => patch({ origin: origin as QuoteOrigin })} />}
               </Field>
-              <Field label="Tema">
-                {({ id, describedBy }) => <Select id={id} describedBy={describedBy} disabled={!canEdit} value={draft.topic} options={topics.map((value) => ({ value, label: value }))} onChange={(value) => patch({ topic: value })} />}
-              </Field>
+              {connected ? null : (
+                <Field label="Tema">
+                  {({ id, describedBy }) => <Select id={id} describedBy={describedBy} disabled={!canEdit} value={draft.topic} options={topics.map((value) => ({ value, label: value }))} onChange={(value) => patch({ topic: value })} />}
+                </Field>
+              )}
             <Field label="Fonte" required error={tried && missing.source ? 'Diga de onde veio a fala.' : undefined}>
               {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} disabled={!editable} placeholder="Ex.: Podcast Cadeia do Pescado #41" value={draft.sourceTitle} onChange={(event) => patch({ sourceTitle: event.target.value })} />}
             </Field>
@@ -235,12 +272,12 @@ function QuoteDrawer({ quote, topics, canEdit, onClose }: { quote: BankQuote | '
                 {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} disabled={!editable} placeholder="Ex.: 14:32" value={draft.locator ?? ''} onChange={(event) => patch({ locator: event.target.value || undefined })} />}
               </Field>
               <Field label="Data">
-                {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="date" disabled={!editable} value={draft.recordedOn} onChange={(event) => patch({ recordedOn: event.target.value })} />}
+                {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="date" disabled={!(editable || (connected && canEdit))} value={draft.recordedOn} onChange={(event) => patch({ recordedOn: event.target.value })} />}
               </Field>
             {draft.sourceUrl ? <TextLink href={draft.sourceUrl} external>Abrir fonte</TextLink> : null}
           </Section>
         </Panel>
-        {!creating ? (
+        {!creating && !connected ? (
           <Panel label="Uso">
             <Section title="Uso">
               <DescriptionList items={[{ label: 'Em matérias', value: String(draft.uses) }, { label: 'Registro', value: QUOTE_ORIGIN_LABELS[draft.origin] }]} />
