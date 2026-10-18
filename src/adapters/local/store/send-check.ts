@@ -16,6 +16,7 @@ import type { Member } from '../../../domain/workspace.ts';
 import { firstNameOf } from './people.ts';
 import type { StoreState } from './state.ts';
 import { decidesOwnSends } from '../../../domain/rules/decide.ts';
+import { isReleased } from '../../../registries/release.ts';
 
 /**
  * "Antes de enviar" for one piece, shared by the commands (they refuse a "Falta"), the guards and
@@ -33,7 +34,8 @@ export type SendCheckDeps = {
 /** The pre-send checklist of the piece's current draft. */
 export function sendItemsOf(record: ProductionRecord, piece: Piece, deps: SendCheckDeps): SendItem[] {
   const body = piece.draft.body;
-  const checks = deps.checks ?? evaluatePieceChecks(record, piece, body, deps.templates, deps.assets, deps.materialChars);
+  const evaluated = deps.checks ?? evaluatePieceChecks(record, piece, body, deps.templates, deps.assets, deps.materialChars);
+  const checks = withoutTranscriptQuotes(record, evaluated);
   const running = activeRun(record, piece.id) !== undefined;
   const openSuggestionIds = pendingSuggestions(record, piece.id).map((suggestion) => suggestion.id);
   if (body.type === 'article') {
@@ -50,6 +52,16 @@ export function sendItemsOf(record: ProductionRecord, piece: Piece, deps: SendCh
     slides: body.slides.length,
     slideIssues: template ? slotIssues(body, template).map((issue) => ({ slideId: issue.slideId, kind: issue.kind })) : [],
   });
+}
+
+/**
+ * R2 preview: a story opened from the news desk has no transcript, so its quotations are checked
+ * against the quote bank by the desk (the R2 backend takes that check over). Before R2, and for
+ * every production with a material, the transcript check stays exactly as it is.
+ */
+function withoutTranscriptQuotes(record: ProductionRecord, checks: readonly CheckResult[]): readonly CheckResult[] {
+  if (!isReleased('R2') || record.production.sourceIds.length > 0) return checks;
+  return checks.filter((check) => check.id !== 'article.quotes');
 }
 
 export type SendRefusalCode = 'empty' | 'run_in_progress' | 'suggestion_pending' | 'checks_blocking' | 'send_blocked';

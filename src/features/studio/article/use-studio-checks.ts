@@ -17,6 +17,7 @@ import {
 import { focusBlock, setArticleDecorations, setTextReview, textRangeToPositions } from '@/editor';
 import type { PieceView, ProductionDetail } from '@/ports';
 import { articleChecksFor } from '@/registries';
+import { useDeskStudio } from '@/features/hard-news/studio/use-desk-studio';
 import { imagesToCheck, type ImageToCheck } from './image-model';
 import { articleFacts, documentTools, isBlankBody, mergeChecks, nextInOrder, type ArticleFacts } from './studio-model';
 import { factsBodyOf } from './studio-session-model';
@@ -54,6 +55,11 @@ export function useStudioChecks({
   );
   const facts: ArticleFacts = useMemo(() => articleFacts(factsBody, sources), [factsBody, sources]);
   const assetLookup = images.lookup;
+  // R2: a covered news story adds its evidence flags (F2.8) and checks its quotations against the
+  // quote bank instead of a transcript; undefined for every other production.
+  const desk = useDeskStudio(production.id, factsBody, facts.quotes);
+  const deskChecks = desk?.checks;
+  const deskReplaces = desk?.replaces;
   const checks: CheckResult[] = useMemo(() => {
     const local = runChecks(articleChecksFor(), {
       body: factsBody,
@@ -63,8 +69,10 @@ export function useStudioChecks({
       assets: assetLookup,
       ...(production.charsAvailable !== undefined ? { materialChars: production.charsAvailable } : {}),
     });
-    return mergeChecks(local, piece.checks, { body: factsBody, sources });
-  }, [factsBody, production.brief, production.charsAvailable, sources, generating, piece.checks, assetLookup]);
+    const merged = mergeChecks(local, piece.checks, { body: factsBody, sources });
+    if (!deskChecks) return merged;
+    return [...merged.filter((check) => !deskReplaces?.includes(check.id)), ...deskChecks];
+  }, [factsBody, production.brief, production.charsAvailable, sources, generating, piece.checks, assetLookup, deskChecks, deskReplaces]);
   /** Images without credit, authorisation or file ("Imagens com crédito"), in reading order. */
   const imageIssues: ImageToCheck[] = useMemo(() => imagesToCheck(factsBody, assetLookup), [factsBody, assetLookup]);
   /**
@@ -81,13 +89,16 @@ export function useStudioChecks({
     [body, facts.characters, facts.outline, size],
   );
 
-  // Quotations lit as used (found in the transcript) or missing.
+  // Quotations lit as used (found in the transcript) or missing; R2 claims to check read as missing.
+  const deskDecorations = desk?.decorations;
+  const deskQuotes = desk?.quoteDecorations;
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
+    const quotes = deskQuotes ?? facts.quotes.map((quote) => ({ range: quote.range, state: quote.status === 'verified' ? 'used' as const : 'missing' as const }));
     setArticleDecorations(editor.view, {
-      quotes: facts.quotes.map((quote) => ({ range: quote.range, state: quote.status === 'verified' ? 'used' : 'missing' })),
+      quotes: deskDecorations ? [...quotes, ...deskDecorations] : quotes,
     });
-  }, [editor, facts.quotes]);
+  }, [editor, facts.quotes, deskDecorations, deskQuotes]);
 
   // ——— Jumps ———
   /** A passage pointed at from the Checagem or the copilot: selected, in the upper third of the pane. */
@@ -204,6 +215,7 @@ export function useStudioChecks({
     factsBody,
     facts,
     checks,
+    desk,
     imageIssues,
     imageSlots,
     readiness: ready,

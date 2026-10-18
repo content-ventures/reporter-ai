@@ -108,7 +108,7 @@ export function EditorToolbar({ onLink }: { onLink: () => void }) {
     <>
       {studio.canEdit ? <StudioSaveState /> : null}
       <Button size="sm" variant="ghost" icon={BookOpen} aria-pressed={panes.visibleTab === 'material'} onClick={() => panes.togglePanel('material')}>
-        Material
+        {studio.desk ? 'Fontes' : 'Material'}
       </Button>
       <Button size="sm" variant="ghost" icon={Sparkles} aria-pressed={panes.visibleTab === 'assistant'} onClick={() => panes.togglePanel('assistant')}>
         Assistente

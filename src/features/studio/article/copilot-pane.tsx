@@ -28,6 +28,9 @@ import { useStudio } from './studio-context';
 import { MaterialTab } from './source-pane';
 import { ContextChips, GenerationTurn, RequestTurn, ReviewNoteTurn } from './copilot-turns';
 import type { PanelTab } from './use-article-studio';
+import { DossierTab } from '@/features/hard-news/studio/dossier-tab';
+import { EnrichmentSection } from '@/features/hard-news/studio/enrichment-section';
+import { EvidenceSection } from '@/features/hard-news/studio/evidence-section';
 
 /**
  * The studio's one panel ("Painel", CONTRACT §3.8) and its tabs: Material (the interview) ·
@@ -52,7 +55,8 @@ export function PanelTabs() {
   const groups = useMemo(() => checagemGroups(studio.checks, studio.openSuggestions), [studio.checks, studio.openSuggestions]);
   const pending = groups.missing.length + groups.warnings.length;
   const items: { value: PanelTab; label: string; count?: number }[] = [
-    { value: 'material', label: 'Material' },
+    // R2: a covered news story was written from sources, not an interview.
+    { value: 'material', label: studio.desk ? 'Fontes' : 'Material' },
     { value: 'assistant', label: 'Assistente' },
     { value: 'checks', label: 'Checagem', ...(pending > 0 ? { count: pending } : {}) },
     ...(studio.reviewNote ? [{ value: 'comments' as const, label: 'Comentários', count: 1 }] : []),
@@ -61,9 +65,10 @@ export function PanelTabs() {
 }
 
 export function PanelPane() {
+  const { desk } = useStudio();
   switch (usePanelTab()) {
     case 'material':
-      return <MaterialTab />;
+      return desk ? <DossierTab desk={desk} /> : <MaterialTab />;
     case 'assistant':
       return <AssistantTab />;
     case 'checks':
@@ -156,7 +161,8 @@ function Composer() {
 function ChecksTab() {
   const studio = useStudio();
   const groups = useMemo(() => checagemGroups(studio.checks, studio.openSuggestions), [studio.checks, studio.openSuggestions]);
-  const missing = studio.facts.quotes.filter((quote) => quote.status === 'missing');
+  // A covered news story checks its quotations against the quote bank (its Checagem row), not a transcript.
+  const missing = studio.desk ? [] : studio.facts.quotes.filter((quote) => quote.status === 'missing');
   const jump = (check: CheckResult) => {
     if (check.id === 'article.suggestions') studio.actions.nextSuggestion();
     else if (check.id === 'article.quotes') studio.actions.nextMissingQuote();
@@ -180,6 +186,7 @@ function ChecksTab() {
           <ChecksList checks={groups.warnings} onJump={jump} defaultOpen={[]} />
         </Section>
       ) : null}
+      {studio.desk ? <EvidenceSection desk={studio.desk} /> : null}
       {studio.imageIssues.length > 0 ? (
         <Section title="Imagens a conferir" titleAs="h3" meta={formatCount(studio.imageIssues.length)} metaTone="missing">
           <PageStack>
@@ -198,6 +205,7 @@ function ChecksTab() {
           </List>
         </Section>
       ) : null}
+      {studio.desk ? <EnrichmentSection desk={studio.desk} /> : null}
       {missing.length > 0 ? (
         <Section title="Citações que não batem" titleAs="h3" meta={formatCount(missing.length)} metaTone="missing">
           <PageStack>
