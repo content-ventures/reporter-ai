@@ -17,7 +17,8 @@ type Instant = Date | string;
 export type ApprovalSubject = 'article' | 'carousel';
 
 /** What follows an approved piece ("Próximo passo: o carrossel / a entrega / baixar o pacote"). */
-export type ApprovedNext = 'carousel' | 'delivery' | 'package';
+/** `cms`: R2 · a covered news story goes to the portal's CMS after its approval. */
+export type ApprovedNext = 'carousel' | 'delivery' | 'package' | 'cms';
 
 const pad = (value: number) => String(value).padStart(2, '0');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -187,6 +188,7 @@ const NEXT_WORDS: Record<ApprovedNext, string> = {
   carousel: 'o carrossel',
   delivery: 'a entrega',
   package: 'baixar o pacote',
+  cms: 'o envio ao CMS',
 };
 
 /** What whoever continues does after an approval: "criar o carrossel" / "(João) cria o carrossel". */
@@ -194,6 +196,7 @@ const NEXT_TASKS: Record<ApprovedNext, { infinitive: string; present: string }> 
   carousel: { infinitive: 'criar o carrossel', present: 'cria o carrossel' },
   delivery: { infinitive: 'baixar o pacote', present: 'baixa o pacote' },
   package: { infinitive: 'baixar o pacote', present: 'baixa o pacote' },
+  cms: { infinitive: 'enviar ao CMS', present: 'envia ao CMS' },
 };
 
 /**

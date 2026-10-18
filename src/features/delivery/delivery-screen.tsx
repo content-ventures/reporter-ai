@@ -51,6 +51,9 @@ import { PilotFeedbackPanel } from './pilot-feedback';
 import { useDeliveryView, type DeliveryTab } from './use-delivery-view';
 import { usePackage, type PackageController } from './use-package';
 import { notifyRefusal } from '@/ui/permission-dialog';
+import { isReleased } from '@/registries';
+import { DeskPublication } from '@/features/hard-news/delivery/cms-publication';
+import { useDossier } from '@/features/hard-news/state/hard-news-provider';
 
 /** Simulation scenario of the local ExportService: one file fails once (⌘K › Entrega). */
 const EXPORT_PARTIAL_SCENARIO = 'export-partial';
@@ -207,6 +210,8 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
   const pkg = usePackage(productionId, exportable);
   const [exporting, setExporting] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
+  // R2: a covered news story goes to the portal's CMS; the package download becomes secondary.
+  const desk = useDossier(productionId);
 
   const templates = runtime?.render.templates() ?? [];
   const templateName = (id: string) => templates.find((template) => template.id === id)?.name;
@@ -360,7 +365,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
         label="Baixar pacote"
         icon={Download}
         size="sm"
-        variant="primary"
+        variant={desk ? 'secondary' : 'primary'}
         loading={preparing || exporting}
         onClick={() => void exportPackage()}
         menu={[{ label: 'Baixar só', items: downloadMenu(pkg) }]}
@@ -408,6 +413,9 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
                 >
                   As imagens saem no pacote assim mesmo; o manifesto registra crédito e uso autorizado de cada uma.
                 </Alert>
+              ) : null}
+              {isReleased('R2') && desk && articleItem ? (
+                <DeskPublication productionId={productionId} versionId={articleItem.version.versionId} versionNumber={articleItem.version.number} owner={detail.owner.name} />
               ) : null}
               <DeliveredPieces items={view.items} pkg={pkg} onReadArticle={() => setTab('article')} {...(slideRatio ? { slideRatio } : {})} />
               <PackagePanel pkg={pkg} onRetry={retryFile} />

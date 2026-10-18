@@ -64,6 +64,7 @@ import { ReviewSurface } from './review-surface';
 import { useReviewView } from './use-review-view';
 import { reviewNextStep } from './review-next-step';
 import { isPermissionRefusal, notifyRefusal } from '@/ui/permission-dialog';
+import { useDossier } from '@/features/hard-news/state/hard-news-provider';
 
 /**
  * Revisão guiada (`/productions/[id]/[piece]/review`, COPY §4): who was asked reads the exact text
@@ -105,6 +106,7 @@ function approvedNextOf(kind: PieceKind, production: ProductionDetail | undefine
 type AnchorState = { versionId: string | undefined; list: DecisionAnchor[] };
 
 function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; pieceKind: PieceKind }) {
+  const desk = useDossier(productionId);
   const router = useRouter();
   const phone = usePhone();
   const now = useNow();
@@ -156,8 +158,10 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
   const mode: ReviewMode = view.mode;
   const characters = version?.characters;
   const size = detail?.brief.size;
-  const checks = data
-    ? checksSummary({ kind: pieceKind, checks: data.checks, ...(size ? { size } : {}), ...(characters !== undefined ? { characters } : {}) })
+  // A covered news story checks its quotations against the quote bank in the studio, not a transcript.
+  const reviewChecks = data && desk ? data.checks.filter((check) => check.id !== 'article.quotes') : data?.checks;
+  const checks = data && reviewChecks
+    ? checksSummary({ kind: pieceKind, checks: reviewChecks, ...(size ? { size } : {}), ...(characters !== undefined ? { characters } : {}) })
     : undefined;
 
   // A decided review keeps its continuation as the header primary ("Criar carrossel", "Revisar
@@ -183,7 +187,8 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
   const viewerId = session.data?.current?.id;
   const viewerIsOwner = Boolean(owner && viewerId && owner.id === viewerId);
   const subject = subjectOf(pieceKind);
-  const approvedNext = approvedNextOf(pieceKind, detail);
+  // R2: a covered news story continues to the portal's CMS, not to a package download.
+  const approvedNext = desk && pieceKind === 'article' ? 'cms' : approvedNextOf(pieceKind, detail);
   const confirm = approveConfirm({ subject, next: approvedNext, ownerName: owner?.name, viewerIsOwner });
   const nextInQueue = data?.nextInQueue;
   const queueAction = nextInQueue
