@@ -7,6 +7,7 @@ import type { ProductionId } from '@/domain';
 import { stageTargetHref } from '@/ui/routes';
 import { currentStageTarget } from './journey';
 import { useProductionFrame } from './production-context';
+import { useResearchHref } from '@/features/hard-news/use-journey';
 
 /**
  * `/productions/[id]` opens the stage the journey is on (it becomes the production hub with
@@ -17,7 +18,9 @@ export function ProductionIndex({ productionId }: { productionId: ProductionId }
   const router = useRouter();
   const { production } = useProductionFrame();
   const stage = currentStageTarget(production.data);
-  const target = stage ? stageTargetHref(productionId, stage) : null;
+  // R2: a covered news story still being researched opens on its Apuração.
+  const researching = useResearchHref(productionId);
+  const target = researching ?? (stage ? stageTargetHref(productionId, stage) : null);
 
   useEffect(() => {
     if (target) router.replace(target);

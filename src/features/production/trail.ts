@@ -16,6 +16,8 @@ export function stageCrumbLabel(route: ProductionRoute): string | undefined {
       return 'Material';
     case 'delivery':
       return 'Entrega';
+    case 'research':
+      return 'Apuração';
     case 'studio':
       return pieceKind(route.pieceKind)?.label;
     case 'review': {
