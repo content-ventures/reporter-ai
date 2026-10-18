@@ -117,6 +117,8 @@ export type SendItemId =
   | 'image-credits'
   | 'image-alt'
   | 'links'
+  /** R2 · claims the AI flagged for a person to check (F2.8). */
+  | 'evidence'
   | 'summary';
 
 /**
