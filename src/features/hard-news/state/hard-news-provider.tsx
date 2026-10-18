@@ -1,0 +1,639 @@
+'use client';
+
+import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
+import { DEFAULT_SECTIONS } from '@/domain';
+import type { ArticleBody } from '@/domain';
+import {
+  priorityOf,
+  slugify,
+} from '@/domain/hard-news';
+import type {
+  ArchiveAnswer,
+  ArchiveImage,
+  BankQuote,
+  CmsConnection,
+  CmsDelivery,
+  EditorialMap,
+  EnrichmentSuggestion,
+  EvidenceState,
+  HardNewsDossier,
+  HardNewsOutline,
+  NewsFeed,
+  NewsItem,
+  NewsPriority,
+  ResearchSource,
+  WritingGuide,
+} from '@/domain/hard-news';
+import { useCommands, useRuntime, useSession } from '@/state';
+import type { Arrival } from '../preview/arrivals';
+import { ARTICLE_NEWS_ID, classificationFor, clockAt, RESEARCH_NEWS_ID } from '../preview/news';
+import { outlineFor, researchFor, writeDraft } from '../preview/research';
+import { previewScore } from '../settings/map-preview';
+import { answerFrom } from './archive-search';
+import { createDeskStore } from './desk-store';
+import type { HardNewsState } from './hard-news-state';
+
+/** One step of "Escrever artigo", as the writing trace shows it. */
+export type WritingStep = { id: string; label: string; detail?: string };
+
+export const WRITING_STEPS: readonly WritingStep[] = [
+  { id: 'read', label: 'Lendo pauta e fontes aceitas' },
+  { id: 'guide', label: 'Seguindo o guia de escrita' },
+  { id: 'lead', label: 'Escrevendo título e lead' },
+  { id: 'body', label: 'Escrevendo as seções' },
+  { id: 'evidence', label: 'Conferindo evidências e atribuições' },
+];
+
+export type WritingProgress = { productionId: string; step: number };
+
+export type HardNewsActions = {
+  cover(newsId: string): Promise<string | undefined>;
+  postpone(newsId: string, hours: number): void;
+  discard(newsId: string, reason: string): void;
+  restore(newsId: string): void;
+  correct(newsId: string, priority: NewsPriority, note?: string): void;
+  importUrl(url: string): { ok: true; id: string } | { ok: false; message: string };
+  setGoal(perDay: number): void;
+  addFeed(input: Pick<NewsFeed, 'name' | 'url' | 'everyMinutes'>): { ok: true } | { ok: false; message: string };
+  updateFeed(id: string, patch: Partial<Pick<NewsFeed, 'name' | 'everyMinutes' | 'state'>>): void;
+  retryFeed(id: string): void;
+  removeFeed(id: string): void;
+  research(productionId: string): void;
+  setSource(productionId: string, sourceId: string, state: ResearchSource['state']): void;
+  addSource(productionId: string, url: string): { ok: true } | { ok: false; message: string };
+  setAngle(productionId: string, angle: string): void;
+  buildOutline(productionId: string): void;
+  updateOutline(productionId: string, outline: HardNewsOutline): void;
+  toggleDossierQuote(productionId: string, quoteId: string): void;
+  write(productionId: string): Promise<boolean>;
+  decideFlag(productionId: string, flagId: string, state: EvidenceState): void;
+  decideSuggestion(productionId: string, suggestionId: string, state: EnrichmentSuggestion['state']): void;
+  /** A new version of the editorial map; `changes` says in words what it changed (history). */
+  saveMap(map: EditorialMap, changes?: string[]): void;
+  /** A new version of the writing guide; `changes` says in words what it changed (history). */
+  saveGuide(guide: WritingGuide, changes?: string[]): void;
+  updateCms(patch: Partial<CmsConnection>): void;
+  testCms(): Promise<boolean>;
+  saveDelivery(productionId: string, patch: Partial<CmsDelivery>): void;
+  sendToCms(productionId: string, version: number): Promise<boolean>;
+  saveQuote(quote: BankQuote): void;
+  ask(question: string): Promise<ArchiveAnswer>;
+  reindex(articleId: string): void;
+  saveImage(image: ArchiveImage): void;
+  /** Radar (preview): a simulated arrival lands (a new story or an outlet joining one). */
+  arrive(arrival: Arrival): void;
+  /** Radar (preview): the active feed that is due soonest is read now. */
+  readFeed(): void;
+  /** Radar: postponed stories whose time came go back to the queue. */
+  returnDue(): void;
+  /** Radar: everything that arrived so far counts as seen. */
+  markSeen(): void;
+  /** "Restaurar exemplo" of the desk. */
+  reset(): void;
+};
+
+type HardNewsContextValue = {
+  state: HardNewsState;
+  ready: boolean;
+  writing?: WritingProgress;
+  actions: HardNewsActions;
+};
+
+const HardNewsContext = createContext<HardNewsContextValue | null>(null);
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function urlProblem(value: string): string | undefined {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return 'Use um endereço que comece com https://.';
+    return undefined;
+  } catch {
+    return 'Cole um endereço completo, com https://.';
+  }
+}
+
+function sameUrl(a: string, b: string): boolean {
+  try {
+    const left = new URL(a);
+    const right = new URL(b);
+    return left.host === right.host && left.pathname.replace(/\/$/, '') === right.pathname.replace(/\/$/, '');
+  } catch {
+    return a === b;
+  }
+}
+
+/**
+ * R2 · Hard News desk for the local preview. It keeps the desk's records in this browser and uses
+ * the workspace's own commands where R2 meets R1: "Cobrir" opens a production in Produções and the
+ * written draft lands in the same article studio.
+ */
+export function HardNewsProvider({ children }: { children: ReactNode }) {
+  const commands = useCommands();
+  const runtime = useRuntime();
+  const session = useSession();
+  const actor = session.data?.current?.name ?? 'João';
+  const [store] = useState(createDeskStore);
+  const { state, ready } = useSyncExternalStore(store.subscribe, store.get, store.server);
+  const [writing, setWriting] = useState<WritingProgress>();
+  const actorRef = useRef(actor);
+  const seeding = useRef(false);
+  const runtimeRef = useRef(runtime.runtime);
+  /** The latest records, for async steps that outlive a render. */
+  const latest = useMemo(() => ({ get current() { return store.get().state; } }), [store]);
+
+  useEffect(() => {
+    actorRef.current = actor;
+  }, [actor]);
+
+  // Load once on the client (the store reads this browser, never during render).
+  useEffect(() => store.load(), [store]);
+
+  // Leaving the desk (reload, close): the next visit's "Novas" start here.
+  useEffect(() => {
+    if (!ready) return;
+    const leave = () => store.set((current) => (current.radar ? { ...current, radar: { ...current.radar, lastSeenAt: new Date().toISOString() } } : current));
+    window.addEventListener('pagehide', leave);
+    return () => window.removeEventListener('pagehide', leave);
+  }, [ready, store]);
+
+  // "Restaurar exemplo" replaces the workspace runtime: the desk restarts with it.
+  useEffect(() => {
+    if (!runtime.runtime) return;
+    if (runtimeRef.current && runtimeRef.current !== runtime.runtime) {
+      store.reset();
+      seeding.current = false;
+    }
+    runtimeRef.current = runtime.runtime;
+  }, [runtime.runtime, store]);
+
+  const update = store.set;
+
+  const patchNews = useCallback((id: string, patch: Partial<NewsItem>) => {
+    update((current) => ({ ...current, news: current.news.map((item) => (item.id === id ? { ...item, ...patch } : item)) }));
+  }, [update]);
+
+  const patchDossier = useCallback((productionId: string, patch: Partial<HardNewsDossier>) => {
+    update((current) => {
+      const dossier = current.dossiers[productionId];
+      if (!dossier) return current;
+      return { ...current, dossiers: { ...current.dossiers, [productionId]: { ...dossier, ...patch } } };
+    });
+  }, [update]);
+
+  /** Creates the production and its blank article in the workspace, as "Escrever do zero" does. */
+  const openProduction = useCallback(async (title: string, size: HardNewsOutline['size'] = 'standard') => {
+    const result = await commands.production.createBlank({
+      title,
+      brief: { size, sections: size === 'short' ? 1 : DEFAULT_SECTIONS },
+    });
+    return result.ok ? result.value : undefined;
+  }, [commands]);
+
+  // The example's covered stories: one being researched, one already written in the studio.
+  useEffect(() => {
+    if (!ready || latest.current.seeded || seeding.current || !runtime.runtime) return;
+    seeding.current = true;
+    const live = runtime.runtime;
+    /**
+     * The example's production of a story: the one this workspace already has with that title (the
+     * desk's records were reset but the workspace was not), else a new blank one. Never a duplicate.
+     */
+    const seedProduction = async (title: string, size: HardNewsOutline['size']) => {
+      const found = await live.queries.list({ search: title, sort: 'created_desc' }, { page: 1, size: 20 }).catch(() => undefined);
+      const existing = found?.items.find((item) => item.title === title && !item.archived);
+      if (existing) {
+        const detail = await live.queries.get(existing.id).catch(() => undefined);
+        const article = detail?.ok ? detail.value.pieces.find((piece) => piece.kind === 'article') : undefined;
+        if (article) return { productionId: existing.id, pieceId: article.id, reused: true, revision: article.draft.revision };
+      }
+      const opened = await openProduction(title, size);
+      return opened ? { ...opened, reused: false, revision: 0 } : undefined;
+    };
+    void (async () => {
+      const current = latest.current;
+      const clock = clockAt(Date.now());
+      const researchNews = current.news.find((item) => item.id === RESEARCH_NEWS_ID);
+      const articleNews = current.news.find((item) => item.id === ARTICLE_NEWS_ID);
+      const dossiers: Record<string, HardNewsDossier> = {};
+      const flags: HardNewsState['flags'] = {};
+      const suggestions: HardNewsState['suggestions'] = {};
+      const productionByNews: Record<string, string> = {};
+      if (researchNews) {
+        const sources = researchFor(researchNews, clock, current.archive);
+        const opened = await seedProduction(outlineFor(researchNews, sources).headline, 'short');
+        if (opened) {
+          productionByNews[researchNews.id] = opened.productionId;
+          dossiers[opened.productionId] = {
+            productionId: opened.productionId, newsId: researchNews.id, angle: 'Quanto do recorde é pescado e o que muda para quem exporta.',
+            research: 'done', searchedAt: clock.ago(980), sources, quoteIds: [], archiveIds: ['a-reefer'], stage: 'research',
+          };
+        }
+      }
+      if (articleNews) {
+        const sources = researchFor(articleNews, clock, current.archive);
+        const outline = outlineFor(articleNews, sources);
+        const opened = await seedProduction(outline.headline, 'standard');
+        if (opened) {
+          const draft = writeDraft(articleNews, outline, sources, { quotes: current.quotes, archive: current.archive });
+          if (opened.revision === 0) await commands.production.saveDraft(opened.pieceId, draft.body, 0);
+          productionByNews[articleNews.id] = opened.productionId;
+          dossiers[opened.productionId] = {
+            productionId: opened.productionId, newsId: articleNews.id, angle: 'O que o produtor precisa saber para pedir o crédito.',
+            research: 'done', searchedAt: clock.ago(1_250), sources, quoteIds: ['q-sonia'], archiveIds: ['a-credit-2025', 'a-energy'],
+            outline, stage: 'article', writtenAt: clock.ago(1_200), guideVersion: current.guide.version,
+          };
+          flags[opened.productionId] = draft.flags;
+          suggestions[opened.productionId] = draft.suggestions;
+        }
+      }
+      update((now) => ({
+        ...now,
+        seeded: true,
+        news: now.news.map((item) => (productionByNews[item.id] ? { ...item, productionId: productionByNews[item.id] } : item)),
+        dossiers: { ...now.dossiers, ...dossiers },
+        flags: { ...now.flags, ...flags },
+        suggestions: { ...now.suggestions, ...suggestions },
+      }));
+      seeding.current = false;
+    })();
+  }, [commands, latest, openProduction, ready, runtime.runtime, update]);
+
+  /** The article piece of a covered story and its revision, read from the workspace. */
+  const articlePieceId = useCallback(async (productionId: string): Promise<{ pieceId: string; revision: number } | undefined> => {
+    const live = runtimeRef.current;
+    if (!live) return undefined;
+    const found = await live.queries.get(productionId).catch(() => undefined);
+    const article = found?.ok ? found.value.pieces.find((piece) => piece.kind === 'article') : undefined;
+    return article ? { pieceId: article.id, revision: article.draft.revision } : undefined;
+  }, []);
+
+  // The AI reads every news item that arrives (F2.4): a few seconds after it lands in the queue.
+  const reading = useRef(new Set<string>());
+  useEffect(() => {
+    if (!ready) return;
+    for (const item of state.news) {
+      if (item.classification || reading.current.has(item.id)) continue;
+      reading.current.add(item.id);
+      void wait(3200).then(() => {
+        reading.current.delete(item.id);
+        const current = latest.current.news.find((candidate) => candidate.id === item.id);
+        if (current && !current.classification) patchNews(item.id, { classification: classificationFor(current, latest.current.map.version) });
+      });
+    }
+  }, [latest, patchNews, ready, state.news]);
+
+  const research = useCallback((productionId: string) => {
+    const dossier = latest.current.dossiers[productionId];
+    const news = dossier && latest.current.news.find((item) => item.id === dossier.newsId);
+    if (!dossier || !news || dossier.research === 'searching') return;
+    patchDossier(productionId, { research: 'searching' });
+    void wait(2600).then(() => {
+      const found = researchFor(news, clockAt(Date.now()), latest.current.archive);
+      const kept = latest.current.dossiers[productionId]?.sources ?? [];
+      const merged = found.map((item) => kept.find((old) => old.id === item.id) ?? item);
+      const manual = kept.filter((old) => !found.some((item) => item.id === old.id));
+      patchDossier(productionId, { research: 'done', searchedAt: new Date().toISOString(), sources: [...merged, ...manual] });
+    });
+  }, [latest, patchDossier]);
+
+  const actions = useMemo<HardNewsActions>(() => ({
+    async cover(newsId) {
+      const news = latest.current.news.find((item) => item.id === newsId);
+      if (!news) return undefined;
+      if (news.productionId) return news.productionId;
+      const opened = await openProduction(news.title);
+      if (!opened) return undefined;
+      const now = new Date().toISOString();
+      update((current) => ({
+        ...current,
+        news: current.news.map((item) => (item.id === newsId ? { ...item, status: 'covered', decidedBy: actorRef.current, decidedAt: now, productionId: opened.productionId } : item)),
+        dossiers: {
+          ...current.dossiers,
+          [opened.productionId]: { productionId: opened.productionId, newsId, angle: '', research: 'idle', sources: [], quoteIds: [], archiveIds: [], stage: 'research' },
+        },
+      }));
+      research(opened.productionId);
+      return opened.productionId;
+    },
+    postpone(newsId, hours) {
+      patchNews(newsId, { status: 'later', decidedBy: actorRef.current, decidedAt: new Date().toISOString(), laterUntil: new Date(Date.now() + hours * 3_600_000).toISOString() });
+    },
+    discard(newsId, reason) {
+      patchNews(newsId, { status: 'discarded', decidedBy: actorRef.current, decidedAt: new Date().toISOString(), discardReason: reason });
+    },
+    restore(newsId) {
+      patchNews(newsId, { status: 'new', decidedBy: undefined, decidedAt: undefined, laterUntil: undefined, discardReason: undefined });
+    },
+    correct(newsId, priority, note) {
+      update((current) => ({
+        ...current,
+        news: current.news.map((item) => {
+          if (item.id !== newsId || !item.classification) return item;
+          const automatic = priorityOf({ classification: { ...item.classification, correction: undefined } });
+          const correction = priority === automatic ? undefined : { priority, by: actorRef.current, at: new Date().toISOString(), note };
+          return { ...item, classification: { ...item.classification, correction } };
+        }),
+      }));
+    },
+    importUrl(url) {
+      const problem = urlProblem(url);
+      if (problem) return { ok: false, message: problem };
+      const existing = latest.current.news.find((item) => sameUrl(item.url, url) || item.duplicates.some((duplicate) => sameUrl(duplicate.url, url)));
+      if (existing) return { ok: false, message: `Já está na fila: “${existing.title}”.` };
+      const address = new URL(url.trim());
+      const id = `news-url-${Date.now().toString(36)}`;
+      const now = new Date().toISOString();
+      const slug = address.pathname.split('/').filter(Boolean).pop() ?? address.host;
+      const title = slug.replace(/[-_]+/g, ' ').replace(/\.\w+$/, '').replace(/^\w/, (letter) => letter.toUpperCase());
+      const item: NewsItem = {
+        id, title, url: address.href, source: address.host.replace(/^www\./, ''), via: 'url',
+        publishedAt: now, importedAt: now, excerpt: 'Texto importado do endereço informado.', body: ['Texto importado do endereço informado.'],
+        duplicates: [], status: 'new',
+      };
+      update((current) => ({ ...current, news: [item, ...current.news] }));
+      return { ok: true, id };
+    },
+    setGoal(perDay) {
+      update((current) => ({ ...current, goal: { perDay: Math.max(1, Math.min(50, Math.round(perDay))) } }));
+    },
+    addFeed(input) {
+      const problem = urlProblem(input.url);
+      if (problem) return { ok: false, message: problem };
+      if (!input.name.trim()) return { ok: false, message: 'Dê um nome à fonte.' };
+      if (latest.current.feeds.some((feed) => sameUrl(feed.url, input.url))) return { ok: false, message: 'Essa fonte já está cadastrada.' };
+      const feed: NewsFeed = { id: `feed-${Date.now().toString(36)}`, name: input.name.trim(), url: new URL(input.url.trim()).href, everyMinutes: input.everyMinutes, state: 'active', lastDay: 0 };
+      update((current) => ({ ...current, feeds: [...current.feeds, feed] }));
+      void wait(1800).then(() => {
+        update((current) => ({ ...current, feeds: current.feeds.map((item) => (item.id === feed.id ? { ...item, lastReadAt: new Date().toISOString(), lastDay: 4 } : item)) }));
+      });
+      return { ok: true };
+    },
+    updateFeed(id, patch) {
+      update((current) => ({ ...current, feeds: current.feeds.map((feed) => (feed.id === id ? { ...feed, ...patch } : feed)) }));
+    },
+    retryFeed(id) {
+      update((current) => ({ ...current, feeds: current.feeds.map((feed) => (feed.id === id ? { ...feed, state: 'active', lastError: undefined } : feed)) }));
+      void wait(1500).then(() => {
+        update((current) => ({ ...current, feeds: current.feeds.map((feed) => (feed.id === id ? { ...feed, lastReadAt: new Date().toISOString(), lastDay: 3 } : feed)) }));
+      });
+    },
+    removeFeed(id) {
+      update((current) => ({ ...current, feeds: current.feeds.filter((feed) => feed.id !== id) }));
+    },
+    research,
+    setSource(productionId, sourceId, sourceState) {
+      const dossier = latest.current.dossiers[productionId];
+      if (!dossier) return;
+      patchDossier(productionId, { sources: dossier.sources.map((item) => (item.id === sourceId ? { ...item, state: sourceState } : item)) });
+    },
+    addSource(productionId, url) {
+      const dossier = latest.current.dossiers[productionId];
+      if (!dossier) return { ok: false, message: 'Pauta não encontrada.' };
+      const problem = urlProblem(url);
+      if (problem) return { ok: false, message: problem };
+      if (dossier.sources.some((item) => sameUrl(item.url, url))) return { ok: false, message: 'Essa fonte já está na apuração.' };
+      const address = new URL(url.trim());
+      const added: ResearchSource = {
+        id: `s-manual-${Date.now().toString(36)}`, title: address.pathname.split('/').filter(Boolean).pop()?.replace(/[-_]+/g, ' ') ?? address.host,
+        url: address.href, outlet: address.host.replace(/^www\./, ''), kind: 'press', consultedAt: new Date().toISOString(),
+        excerpt: 'Trecho a confirmar na leitura da fonte.', state: 'accepted',
+      };
+      patchDossier(productionId, { sources: [...dossier.sources, added] });
+      return { ok: true };
+    },
+    setAngle(productionId, angle) {
+      patchDossier(productionId, { angle });
+    },
+    buildOutline(productionId) {
+      const dossier = latest.current.dossiers[productionId];
+      const news = dossier && latest.current.news.find((item) => item.id === dossier.newsId);
+      if (!dossier || !news) return;
+      patchDossier(productionId, { outline: outlineFor(news, dossier.sources) });
+    },
+    updateOutline(productionId, outline) {
+      patchDossier(productionId, { outline });
+    },
+    toggleDossierQuote(productionId, quoteId) {
+      const dossier = latest.current.dossiers[productionId];
+      if (!dossier) return;
+      const quoteIds = dossier.quoteIds.includes(quoteId) ? dossier.quoteIds.filter((id) => id !== quoteId) : [...dossier.quoteIds, quoteId];
+      patchDossier(productionId, { quoteIds });
+    },
+    async write(productionId) {
+      const current = latest.current;
+      const dossier = current.dossiers[productionId];
+      const news = dossier && current.news.find((item) => item.id === dossier.newsId);
+      if (!dossier || !news) return false;
+      const outline = dossier.outline ?? outlineFor(news, dossier.sources);
+      patchDossier(productionId, { stage: 'writing', outline });
+      for (let step = 0; step < WRITING_STEPS.length; step += 1) {
+        setWriting({ productionId, step });
+        await wait(step === 3 ? 1600 : 850);
+      }
+      const draft = writeDraft(news, outline, dossier.sources, { quotes: current.quotes, archive: current.archive });
+      const pieceId = await articlePieceId(productionId);
+      if (pieceId) {
+        const saved = await commands.production.saveDraft(pieceId.pieceId, { ...draft.body, title: outline.headline } satisfies ArticleBody, pieceId.revision);
+        if (!saved.ok) {
+          setWriting(undefined);
+          patchDossier(productionId, { stage: 'research' });
+          return false;
+        }
+      }
+      update((now) => ({
+        ...now,
+        dossiers: { ...now.dossiers, [productionId]: { ...now.dossiers[productionId], stage: 'article', writtenAt: new Date().toISOString(), guideVersion: now.guide.version, outline } },
+        flags: { ...now.flags, [productionId]: draft.flags },
+        suggestions: { ...now.suggestions, [productionId]: draft.suggestions },
+      }));
+      setWriting(undefined);
+      return true;
+    },
+    decideFlag(productionId, flagId, flagState) {
+      update((current) => ({
+        ...current,
+        flags: {
+          ...current.flags,
+          [productionId]: (current.flags[productionId] ?? []).map((flag) => (flag.id === flagId
+            ? { ...flag, state: flagState, decidedBy: flagState === 'open' ? undefined : actorRef.current, decidedAt: flagState === 'open' ? undefined : new Date().toISOString() }
+            : flag)),
+        },
+      }));
+    },
+    decideSuggestion(productionId, suggestionId, suggestionState) {
+      update((current) => ({
+        ...current,
+        suggestions: {
+          ...current.suggestions,
+          [productionId]: (current.suggestions[productionId] ?? []).map((item) => (item.id === suggestionId ? { ...item, state: suggestionState } : item)),
+        },
+      }));
+    },
+    saveMap(map, changes = []) {
+      update((current) => {
+        const saved = { ...map, version: current.map.version + 1, updatedAt: new Date().toISOString(), updatedBy: actorRef.current };
+        const entry = { version: saved.version, at: saved.updatedAt, by: saved.updatedBy, changes };
+        // The AI rereads the waiting stories with the new version: the radar shows what the preview promised.
+        const news = current.news.map((item) => {
+          if (item.status !== 'new' || !item.classification) return item;
+          const score = previewScore(item, current.map, saved) ?? item.classification.score;
+          return { ...item, classification: { ...item.classification, score, mapVersion: saved.version } };
+        });
+        return { ...current, map: saved, news, mapHistory: [entry, ...(current.mapHistory ?? [])] };
+      });
+    },
+    saveGuide(guide, changes = []) {
+      update((current) => {
+        const saved = { ...guide, version: current.guide.version + 1, updatedAt: new Date().toISOString(), updatedBy: actorRef.current };
+        const entry = { version: saved.version, at: saved.updatedAt, by: saved.updatedBy, changes };
+        return { ...current, guide: saved, guideHistory: [entry, ...(current.guideHistory ?? [])] };
+      });
+    },
+    updateCms(patch) {
+      update((current) => ({ ...current, cms: { ...current.cms, ...patch } }));
+    },
+    async testCms() {
+      update((current) => ({ ...current, cms: { ...current.cms, status: 'connected' } }));
+      await wait(1400);
+      const ok = Boolean(latest.current.cms.siteUrl) && !urlProblem(latest.current.cms.siteUrl);
+      update((current) => ({ ...current, cms: { ...current.cms, status: ok ? 'connected' : 'failing', checkedAt: new Date().toISOString() } }));
+      return ok;
+    },
+    saveDelivery(productionId, patch) {
+      update((current) => {
+        const existing = current.deliveries[productionId] ?? { productionId, state: 'idle', slug: '', tags: [], excerpt: '', attempts: 0 };
+        return { ...current, deliveries: { ...current.deliveries, [productionId]: { ...existing, ...patch } } };
+      });
+    },
+    async sendToCms(productionId, version) {
+      const existing = latest.current.deliveries[productionId];
+      if (!existing || existing.state === 'sending') return false;
+      const attempts = existing.attempts + 1;
+      update((current) => ({ ...current, deliveries: { ...current.deliveries, [productionId]: { ...existing, state: 'sending', attempts, error: undefined } } }));
+      await wait(1800);
+      const cms = latest.current.cms;
+      if (cms.status !== 'connected') {
+        update((current) => ({ ...current, deliveries: { ...current.deliveries, [productionId]: { ...current.deliveries[productionId], state: 'failed', error: 'O CMS não aceitou a conexão. Confira a integração e tente de novo.' } } }));
+        return false;
+      }
+      // An article already sent updates the same post (REQ-2.10: never a duplicate).
+      const remoteId = existing.remoteId ?? String(48_000 + Math.floor(Math.random() * 900));
+      const slug = existing.slug || slugify(productionId);
+      update((current) => ({
+        ...current,
+        deliveries: {
+          ...current.deliveries,
+          [productionId]: { ...current.deliveries[productionId], state: 'sent', remoteId, url: `${cms.siteUrl}/?p=${remoteId}&preview=true`, sentAt: new Date().toISOString(), sentVersion: version, slug },
+        },
+      }));
+      return true;
+    },
+    saveQuote(quote) {
+      update((current) => {
+        const exists = current.quotes.some((item) => item.id === quote.id);
+        return { ...current, quotes: exists ? current.quotes.map((item) => (item.id === quote.id ? quote : item)) : [quote, ...current.quotes] };
+      });
+    },
+    async ask(question) {
+      await wait(1400);
+      const answer = answerFrom(question, latest.current.archive);
+      // The desk's latest question stays on the Acervo for whoever opens it next.
+      update((current) => ({ ...current, lastAsk: { question, askedBy: actorRef.current, askedAt: new Date().toISOString(), answer } }));
+      return answer;
+    },
+    reindex(articleId) {
+      update((current) => ({ ...current, archive: current.archive.map((item) => (item.id === articleId ? { ...item, index: 'pending' } : item)) }));
+      void wait(2400).then(() => {
+        update((current) => ({ ...current, archive: current.archive.map((item) => (item.id === articleId ? { ...item, index: 'indexed' } : item)) }));
+      });
+    },
+    saveImage(image) {
+      // Upsert: a photo saved from a bank enters the archive at the top.
+      update((current) => ({
+        ...current,
+        images: current.images.some((item) => item.id === image.id)
+          ? current.images.map((item) => (item.id === image.id ? image : item))
+          : [image, ...current.images],
+      }));
+    },
+    arrive(arrival) {
+      update((current) => {
+        const radar = current.radar;
+        if (!radar || radar.released.includes(arrival.id)) return current;
+        const now = new Date().toISOString();
+        const released = { ...radar, released: [...radar.released, arrival.id] };
+        if (arrival.kind === 'duplicate') {
+          const duplicate = arrival.build(clockAt(Date.now()));
+          return {
+            ...current,
+            radar: released,
+            news: current.news.map((item) => (item.id === arrival.newsId && !item.duplicates.some((known) => known.url === duplicate.url)
+              ? { ...item, duplicates: [...item.duplicates, duplicate] }
+              : item)),
+          };
+        }
+        const item = arrival.build(clockAt(Date.now()));
+        const feed = current.feeds.find((candidate) => candidate.id === item.feedId);
+        // A paused or removed source brings nothing; the arrival is spent all the same.
+        if (!feed || feed.state !== 'active' || current.news.some((known) => known.id === item.id)) return { ...current, radar: released };
+        return {
+          ...current,
+          radar: released,
+          news: [item, ...current.news],
+          feeds: current.feeds.map((feed) => (feed.id === item.feedId ? { ...feed, lastReadAt: now, lastDay: feed.lastDay + 1 } : feed)),
+        };
+      });
+    },
+    readFeed() {
+      update((current) => {
+        const due = (feed: NewsFeed) => (feed.lastReadAt ? Date.parse(feed.lastReadAt) : 0) + feed.everyMinutes * 60_000;
+        const next = current.feeds.filter((feed) => feed.state === 'active').sort((a, b) => due(a) - due(b))[0];
+        // Nothing due yet: no write (an idle radar never rewrites the desk).
+        if (!next || due(next) > Date.now()) return current;
+        const now = new Date().toISOString();
+        return { ...current, feeds: current.feeds.map((feed) => (feed.id === next.id ? { ...feed, lastReadAt: now } : feed)) };
+      });
+    },
+    returnDue() {
+      update((current) => {
+        const now = Date.now();
+        const due = current.news.filter((item) => item.status === 'later' && item.laterUntil && Date.parse(item.laterUntil) <= now);
+        if (due.length === 0) return current;
+        const at = new Date(now).toISOString();
+        return {
+          ...current,
+          news: current.news.map((item) => (due.includes(item)
+            ? { ...item, status: 'new', returnedAt: at, laterUntil: undefined, decidedBy: undefined, decidedAt: undefined }
+            : item)),
+        };
+      });
+    },
+    markSeen() {
+      update((current) => (current.radar ? { ...current, radar: { ...current.radar, seenSince: new Date().toISOString() } } : current));
+    },
+    reset() {
+      store.reset();
+    },
+  }), [articlePieceId, commands, latest, openProduction, patchDossier, patchNews, research, store, update]);
+
+  const value = useMemo<HardNewsContextValue>(() => ({ state, ready, writing, actions }), [actions, ready, state, writing]);
+  return <HardNewsContext value={value}>{children}</HardNewsContext>;
+}
+
+export function useHardNews(): HardNewsContextValue {
+  const value = use(HardNewsContext);
+  if (!value) throw new Error('useHardNews needs HardNewsProvider (R2 only).');
+  return value;
+}
+
+/** Null outside the R2 preview, so R1 screens can ask without a provider. */
+export function useOptionalHardNews(): HardNewsContextValue | null {
+  return use(HardNewsContext);
+}
+
+export function useDossier(productionId: string | undefined): HardNewsDossier | undefined {
+  const value = useOptionalHardNews();
+  return productionId ? value?.state.dossiers[productionId] : undefined;
+}
