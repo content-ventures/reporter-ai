@@ -53,7 +53,7 @@ import {
 import type { ImageFilters, ImageParams, SourceTab, ViewMode } from './images-model';
 import { MosaicSkeleton, PhotoGrid, PhotoMosaic } from './photo-mosaic';
 import { UploadDrawer } from './upload-drawer';
-import { BANK_POOL, useArchive, useBankResults, useImageParams } from './use-image-bank';
+import { useArchive, useBankPool, useBankResults, useImageParams } from './use-image-bank';
 import type { SetImageParams } from './use-image-bank';
 
 const TABS: readonly SourceTab[] = ['all', 'own', 'unsplash', 'pexels'];
@@ -111,11 +111,12 @@ export function ImageBank({ params = DEFAULT_IMAGE_PARAMS, onParamsChange = KEEP
   const counts = results ? sourceCounts(results, archive) : undefined;
 
   // Suggestions count what each search finds among every photo the filters allow.
+  const bankPool = useBankPool();
   const pool = useMemo(() => photosFor('all', {
     own: searchPhotos(ownPhotos, '', filters, 'recent'),
-    unsplash: searchPhotos(BANK_POOL.unsplash, '', filters, 'recent'),
-    pexels: searchPhotos(BANK_POOL.pexels, '', filters, 'recent'),
-  }, archive), [ownPhotos, filters, archive]);
+    unsplash: searchPhotos(bankPool.unsplash, '', filters, 'recent'),
+    pexels: searchPhotos(bankPool.pexels, '', filters, 'recent'),
+  }, archive), [ownPhotos, filters, archive, bankPool]);
   const suggestions = ready ? suggestedSearches(pool, all ?? pool, q, 8) : [];
 
   const total = shown?.length ?? 0;
@@ -134,8 +135,8 @@ export function ImageBank({ params = DEFAULT_IMAGE_PARAMS, onParamsChange = KEEP
     change({ filters: { ...filters, ...patch } });
   }
 
-  function saveEdit(image: ArchiveImage) {
-    save(image);
+  async function saveEdit(image: ArchiveImage) {
+    if (!(await save(image))) return;
     setEditing((previous) => ({ image, open: false, session: previous?.session ?? 0 }));
     toast('Imagem salva', imageUsable(image) ? undefined : { tone: 'info', description: 'Ela só vai para artigos depois de confirmar os direitos.' });
   }
@@ -274,7 +275,7 @@ export function ImageBank({ params = DEFAULT_IMAGE_PARAMS, onParamsChange = KEEP
           image={editing.image}
           open={editing.open}
           onClose={() => setEditing({ ...editing, open: false })}
-          onSave={saveEdit}
+          onSave={(next) => void saveEdit(next)}
         />
       ) : null}
     </>
