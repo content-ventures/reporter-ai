@@ -18,6 +18,7 @@ import { RecentProductions } from './recent-productions';
 import { parseRange, type OverviewRangeKey } from './overview-format';
 import { StageFigures } from './stage-figures';
 import { WeekPanel } from './week-panel';
+import { NewsAgenda } from '@/features/hard-news/overview/news-agenda';
 
 /** Greet, show where the work stands, resume it and resolve the viewer’s pending actions. */
 
@@ -80,14 +81,16 @@ function OverviewBody({ range, onRangeChange }: BodyProps) {
   const resume = shows('in-progress') && <ContinueCarousel items={data ? continueItems(data.desk) : undefined} />;
   const recent = shows('in-progress') && !data?.empty && <RecentProductions />;
   const pending = shows('needs-you') && <NeedsYouPanel desk={data?.desk} />;
+  // R2: the day's agenda from the news desk (dashboard widget `news-queue`), under the work in progress.
+  const news = shows('news-queue') && <NewsAgenda />;
   const week = shows('week') && <WeekPanel data={data} range={range} onRangeChange={onRangeChange} />;
   const activity = shows('team') && <RecentActivity items={data?.activity} />;
 
   return (
     <PageStack>
       <PageHeader title={header.title} description={header.summary} actions={actions} />
-      {phone ? <PageStack>{pending}{figures}{resume}{recent}{week}{activity}</PageStack>
-        : <SplitLayout main={<>{figures}{resume}{recent}</>} asideLabel="Sua mesa de trabalho" aside={<>{pending}{week}{activity}</>} />}
+      {phone ? <PageStack>{pending}{news}{figures}{resume}{recent}{week}{activity}</PageStack>
+        : <SplitLayout main={<>{figures}{resume}{recent}{news}</>} asideLabel="Sua mesa de trabalho" aside={<>{pending}{week}{activity}</>} />}
     </PageStack>
   );
 }

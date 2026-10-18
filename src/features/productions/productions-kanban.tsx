@@ -25,7 +25,7 @@ import {
   useKanbanDrag,
   VisuallyHidden,
 } from '@content-ventures/design-system/v3';
-import { Archive, ArrowUpRight, BadgeCheck, ChevronDown, FileText, GalleryHorizontal, Inbox, MoreHorizontal, Package } from '@content-ventures/design-system/v3/icons';
+import { Archive, ArrowUpRight, BadgeCheck, ChevronDown, FileText, GalleryHorizontal, Inbox, MoreHorizontal, Package, Telescope } from '@content-ventures/design-system/v3/icons';
 import type { ProductionListItem, ProductionListPage } from '@/ports';
 import { firstName, NEXT_STEP_LABELS } from '@/domain';
 import type { StageView } from '@/domain/stage';
@@ -42,6 +42,9 @@ import { ProductionActiveFilters, ProductionFilterBand } from './production-filt
 import { useBoardArrival } from './use-board-arrival';
 import { useListParams } from './use-list-params';
 import { notifyRefusal } from '@/ui/permission-dialog';
+import { isReleased } from '@/registries';
+import { useDeskBoard, type DeskBoard } from '@/features/hard-news/use-desk-board';
+import { DemoBadge } from '@/features/hard-news/demo-badge';
 
 const PAGE_SIZE = 50;
 const ARCHIVE_REASON = 'Disponível quando a IA terminar.';
@@ -54,7 +57,16 @@ const LANES = [
   { id: 'delivery', title: 'Entrega', icon: Package, count: 'Produção', plural: 'Produções' },
   { id: 'archived', title: 'Arquivadas', icon: Archive, count: 'Produção', plural: 'Produções' },
 ] as const;
-type LaneId = (typeof LANES)[number]['id'];
+/** R2: covered news stories are researched before the article ("Apuração"), first on the board. */
+const RESEARCH_LANE = { id: 'research', title: 'Apuração', icon: Telescope, count: 'Produção', plural: 'Produções' } as const;
+const BOARD_LANES: readonly (typeof LANES[number] | typeof RESEARCH_LANE)[] = isReleased('R2') ? [RESEARCH_LANE, ...LANES] : LANES;
+type LaneId = (typeof BOARD_LANES)[number]['id'];
+
+/** The lane a card sits in: R2's "Apuração" for a story being researched, else its journey stage. */
+function laneOf(item: ProductionListItem, desk: DeskBoard | undefined): string {
+  if (item.archived) return 'archived';
+  return desk?.card(item)?.lane ?? item.currentStageId;
+}
 type BoardPlacement = {
   columnById: Record<string, LaneId>;
   orderByColumn: Partial<Record<LaneId, string[]>>;
@@ -73,6 +85,7 @@ function ProductionsKanban() {
   const [params, setParams] = useListParams();
   const commands = useCommands();
   const session = useSession();
+  const desk = useDeskBoard();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draft, setDraft] = useKanbanSearchDraft(params.q, setParams);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
@@ -100,19 +113,19 @@ function ProductionsKanban() {
     total: page?.total ?? 0,
     ready: query.status === 'ready',
     widen: (size) => setPageSize((current) => Math.max(current, size)),
-    laneOf: (item) => LANES.find((lane) => lane.id === (item.archived ? 'archived' : item.currentStageId))?.title ?? item.situation.line,
+    laneOf: (item) => BOARD_LANES.find((lane) => lane.id === laneOf(item, desk))?.title ?? item.situation.line,
     viewerId,
   });
   const rows = arrival.rows;
   const archivedRows = archivedPage?.items ?? [];
-  const groups = Object.fromEntries(LANES.map((lane) => [
+  const groups = Object.fromEntries(BOARD_LANES.map((lane) => [
     lane.id,
-    lane.id === 'archived' ? archivedRows : rows.filter((item) => item.currentStageId === lane.id),
-  ])) as Record<(typeof LANES)[number]['id'], ProductionListItem[]>;
+    lane.id === 'archived' ? archivedRows : rows.filter((item) => laneOf(item, desk) === lane.id),
+  ])) as Record<LaneId, ProductionListItem[]>;
   const allItems = Object.values(groups).flat();
   const itemById = new Map(allItems.map((item) => [item.id, item]));
-  const originalColumnById = new Map(allItems.map((item) => [item.id, item.archived ? 'archived' as const : item.currentStageId as LaneId]));
-  const boardGroups = Object.fromEntries(LANES.map((lane) => {
+  const originalColumnById = new Map(allItems.map((item) => [item.id, laneOf(item, desk) as LaneId]));
+  const boardGroups = Object.fromEntries(BOARD_LANES.map((lane) => {
     const members = allItems.filter((item) => (placement.columnById[item.id] ?? originalColumnById.get(item.id)) === lane.id);
     const memberIds = new Set(members.map((item) => item.id));
     const order = placement.orderByColumn[lane.id] ?? [];
@@ -145,7 +158,7 @@ function ProductionsKanban() {
     });
   }
 
-  const dragLanes = LANES.map((lane) => ({
+  const dragLanes = BOARD_LANES.map((lane) => ({
     id: lane.id,
     ids: boardGroups[lane.id].map((item) => item.id),
     label: lane.title,
@@ -258,7 +271,7 @@ function ProductionsKanban() {
           <>
             <VisuallyHidden role="heading" aria-level={2}>Etapas de produção e aprovações</VisuallyHidden>
             <KanbanBoard label="Etapas de produção e aprovações" fill>
-              {LANES.map((lane) => {
+              {BOARD_LANES.map((lane) => {
                 const laneRows = boardGroups[lane.id];
                 const count = lane.id === 'archived' ? archivedPage?.counts.archived ?? 0 : laneRows.length;
                 const laneLoading = !page || (lane.id === 'archived' && !archivedPage);
@@ -274,6 +287,7 @@ function ProductionsKanban() {
                     icon={<LaneIcon aria-hidden="true" />}
                     count={count}
                     countNoun={{ singular: lane.count, plural: lane.plural }}
+                    actions={lane.id === RESEARCH_LANE.id ? <DemoBadge /> : undefined}
                     empty={
                       <KanbanEmpty
                         title={laneLoading ? 'Carregando…' : searching || filterCount ? 'Nada neste filtro' : 'Nenhuma produção'}
@@ -286,30 +300,37 @@ function ProductionsKanban() {
                       if (entry.kind === 'slot') return <KanbanPlaceholder key={entry.key} height={entry.height} motion={entry.motion} slotKey={entry.key} />;
                       const item = itemById.get(entry.id);
                       if (!item) return null;
+                      // R2: a covered news story says where it came from and its desk step.
+                      const deskCard = desk?.card(item);
+                      const meta = deskCard?.meta ?? productionMeta(item);
                       return (
                         <KanbanCard
                           key={item.id}
                           {...(!item.archived && canArchive ? drag.cardProps(item.id, lane.id) : {})}
                           title={item.title}
-                          summary={productionMeta(item)}
+                          summary={meta}
                           menu={cardMenu(item)}
                           arrived={item.id === arrival.arrivedId}
-                          onOpen={() => router.push(rowHref(item))}
+                          onOpen={() => router.push(deskCard?.href ?? rowHref(item))}
                         >
                           <KanbanCardRow start>
-                            <StageBadge stage={item.stages.find((stage) => stage.id === item.currentStageId)} />
+                            {deskCard?.lane ? <Badge tone="blue" variant="soft" size="sm">Em apuração</Badge> : <StageBadge stage={item.stages.find((stage) => stage.id === item.currentStageId)} />}
                             {item.liveRun && <Badge tone="blue" variant="soft" size="sm" live>{item.liveRun.label}</Badge>}
                           </KanbanCardRow>
                           <KanbanCardRow>
-                            <KanbanCardMeta title={item.material?.title ?? productionMeta(item)}>
-                              {item.material?.title ?? productionMeta(item)}
+                            <KanbanCardMeta title={item.material?.title ?? meta}>
+                              {item.material?.title ?? meta}
                             </KanbanCardMeta>
                             <RelativeTime at={item.updatedAt} />
                           </KanbanCardRow>
                           <KanbanCardRow start>
-                            <SituationCell item={item} size="sm" />
+                            {deskCard?.situation ? (
+                              <Badge tone={deskCard.situation.tone} variant="text" size="sm" dot live={deskCard.situation.live} wrap>{deskCard.situation.line}</Badge>
+                            ) : (
+                              <SituationCell item={item} size="sm" />
+                            )}
                           </KanbanCardRow>
-                          <NextActorRow item={item} viewerId={viewerId} />
+                          <NextActorRow item={item} viewerId={viewerId} href={deskCard?.href} />
                         </KanbanCard>
                       );
                     })}
@@ -381,7 +402,7 @@ function useKanbanSearchDraft(query: string, setParams: ReturnType<typeof useLis
  * ("Agora: você · Criar carrossel"). With nobody to act (the AI writing, delivered, archived) or
  * while the person is unknown, the owner stays ("Responsável · João").
  */
-function NextActorRow({ item, viewerId }: { item: ProductionListItem; viewerId: string | undefined }) {
+function NextActorRow({ item, viewerId, href }: { item: ProductionListItem; viewerId: string | undefined; href?: string }) {
   const actor = item.situation.nextActor;
   // An unnamed review is the viewer's when their own next step is that review.
   const yours = Boolean(actor && (actor.personId ? actor.personId === viewerId : item.nextStep?.mine && item.nextStep.kind === actor.step));
@@ -404,7 +425,7 @@ function NextActorRow({ item, viewerId }: { item: ProductionListItem; viewerId: 
         <>
           <KanbanCardMeta>Agora: você ·</KanbanCardMeta>
           {/* The card opens the same place: the link alone navigates. */}
-          <TextLink href={nextStepHref(item)} size="sm" onClick={(event) => event.stopPropagation()}>{step}</TextLink>
+          <TextLink href={href ?? nextStepHref(item)} size="sm" onClick={(event) => event.stopPropagation()}>{step}</TextLink>
         </>
       ) : (
         <KanbanCardMeta title={person.name}>Agora: {firstName(person.name)}</KanbanCardMeta>

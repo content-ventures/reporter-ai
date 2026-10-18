@@ -24,6 +24,7 @@ import { localRoleMenu, useActAs } from '@/ui/shell/act-as';
 import { routeStageId, stageHref, type ProductionRoute } from '@/ui/routes';
 import { StatusBadge } from '@/ui/status-badge';
 import { decidesAt, journeyLabel, journeyMenuItems, viewedStageIndex } from './journey';
+import { useJourney } from '@/features/hard-news/use-journey';
 import { useProductionFrame } from './production-context';
 import { isPermissionRefusal, notifyRefusal } from '@/ui/permission-dialog';
 
@@ -227,13 +228,15 @@ function defaultStatus(production: ProductionDetail, route: ProductionRoute): Re
 /** The journey menu: "Artigo · 2 de 5 ▾", every stage with where it stands; blocked stages say why. */
 function JourneyMenu({ production, route }: { production: ProductionDetail; route: ProductionRoute }) {
   const router = useRouter();
-  const stages = production.stages;
-  const viewedIndex = viewedStageIndex(stages, routeStageId(route, stages), production.currentStageId);
+  // R2: a covered news story starts with "Apuração" (same production, same menu).
+  const journey = useJourney(production);
+  const stages = journey.stages;
+  const viewedIndex = viewedStageIndex(stages, routeStageId(route, stages), journey.currentStageId);
   const items = journeyMenuItems(stages, viewedIndex, production.status === 'completed');
   const open = (index: number) => {
     const stage = stages[index];
     if (!stage || items[index]?.disabled) return;
-    const href = stageHref(production.id, stage, { canDecide: decidesAt(production.approvals, stage.pieceKind) });
+    const href = journey.hrefOf(stage) ?? stageHref(production.id, stage, { canDecide: decidesAt(production.approvals, stage.pieceKind) });
     if (requestLeave(href)) router.push(href);
   };
   return (
@@ -353,6 +356,7 @@ export function ProductionPrimaryBar({ primary, detail }: { primary?: HeaderPrim
 export function useJourneyLabel(): string {
   const { production, route } = useProductionFrame();
   const detail = production.data;
+  const journey = useJourney(detail);
   if (!detail) return '';
-  return journeyLabel(detail.stages, viewedStageIndex(detail.stages, routeStageId(route, detail.stages), detail.currentStageId));
+  return journeyLabel(journey.stages, viewedStageIndex(journey.stages, routeStageId(route, journey.stages), journey.currentStageId));
 }

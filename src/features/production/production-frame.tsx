@@ -12,6 +12,7 @@ import { currentStageTarget } from './journey';
 import { ProductionFrameContext, type ProductionFrameState } from './production-context';
 import { ProductionHeaderView, ProductionPrimaryBar, type HeaderPrimary } from './production-header';
 import { productionDocumentTitle, productionTrail } from './trail';
+import { useResearchHref } from '@/features/hard-news/use-journey';
 
 export { useProductionFrame, type ProductionFrameState } from './production-context';
 export {
@@ -88,7 +89,9 @@ export function ProductionFrame({ productionId, children }: { productionId: Prod
   // The title opens the stage the production is on, straight (no hop through the index). Priority
   // 1: a screen inside the frame may still declare its own trail with priority 2.
   const target = currentStageTarget(shown);
-  const title = shown ? { label: shown.title, href: target ? stageTargetHref(productionId, target) : productionHref(productionId) } : undefined;
+  // R2: a covered news story still being researched opens on its Apuração.
+  const researching = useResearchHref(productionId);
+  const title = shown ? { label: shown.title, href: researching ?? (target ? stageTargetHref(productionId, target) : productionHref(productionId)) } : undefined;
   useBreadcrumb(title ? productionTrail(route, { productions: PRODUCTIONS_HREF, title }) : null, { priority: 1 });
 
   if (production.status === 'error') {
