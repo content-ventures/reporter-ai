@@ -29,7 +29,6 @@ import type { ArchiveImage } from '@/domain/hard-news';
 import { formatDate, plural } from '@/ui/format';
 import { pieceHref } from '@/ui/routes';
 import { useBreadcrumb } from '@/ui/shell';
-import { BANK_PHOTOS } from '../preview/image-bank';
 import { ImageDrawer } from './image-drawer';
 import {
   archiveCopy,
@@ -56,8 +55,8 @@ import {
 } from './images-model';
 import type { Photo } from './images-model';
 import { PhotoAuthorMark, PhotoMosaic } from './photo-mosaic';
-import { BANK_POOL, useArchive } from './use-image-bank';
-import { PLACEMENT_LABELS, UseInArticleDrawer } from './use-in-article-drawer';
+import { useArchive, useBankPhotos, useBankPool } from './use-image-bank';
+import { PLACEMENT_LABELS, UseInArticleDrawer, usePlaceInArticle } from './use-in-article-drawer';
 import type { ArticleUse } from './use-in-article-drawer';
 
 /** The photo page with the bank's search kept for the way back (inside `<Suspense>`). */
@@ -88,8 +87,9 @@ function themeHref(tag: string): string {
 export function PhotoScreen({ search = '' }: { search?: string }) {
   const { id } = useParams<{ id: string }>();
   const key = decoded(id);
-  const { images: archive, ready, save } = useArchive();
-  const photo = useMemo(() => (ready ? resolvePhoto(key, archive, BANK_PHOTOS) : undefined), [ready, key, archive]);
+  const { images: archive, ready, save, editable } = useArchive();
+  const bankPhotos = useBankPhotos();
+  const photo = useMemo(() => (ready ? resolvePhoto(key, archive, bankPhotos) : undefined), [ready, key, archive, bankPhotos]);
   const back = imagesHref(search);
   useBreadcrumb(ready ? [{ label: 'Imagens', href: back }, { label: photo?.title ?? 'Foto não encontrada' }] : null);
 
@@ -113,10 +113,17 @@ export function PhotoScreen({ search = '' }: { search?: string }) {
       />
     );
   }
-  return <PhotoPage photo={photo} archive={archive} search={search} save={save} />;
+  return <PhotoPage photo={photo} archive={archive} search={search} save={save} editable={photo.image ? editable(photo.image) : false} />;
 }
 
-function PhotoPage({ photo, archive, search, save }: { photo: Photo; archive: ArchiveImage[]; search: string; save: (image: ArchiveImage) => void }) {
+function PhotoPage({ photo, archive, search, save, editable }: {
+  photo: Photo;
+  archive: ArchiveImage[];
+  search: string;
+  save: (image: ArchiveImage) => Promise<boolean>;
+  /** Credit and license can change here (R1 keeps a library photo's as the bank gave them). */
+  editable: boolean;
+}) {
   const router = useRouter();
   const noteId = useId();
   const [editing, setEditing] = useState<{ open: boolean; session: number }>();
@@ -125,9 +132,11 @@ function PhotoPage({ photo, archive, search, save }: { photo: Photo; archive: Ar
   const badge = rightsBadge(photo);
   const reason = blockedReason(state);
   const image = photo.image;
+  const bankPool = useBankPool();
+  const place = usePlaceInArticle();
   const pool = useMemo(
-    () => photosFor('all', { own: archive.map(fromArchive), unsplash: BANK_POOL.unsplash, pexels: BANK_POOL.pexels }, archive),
-    [archive],
+    () => photosFor('all', { own: archive.map(fromArchive), unsplash: bankPool.unsplash, pexels: bankPool.pexels }, archive),
+    [archive, bankPool],
   );
   const similar = useMemo(() => similarPhotos(photo, pool, 12), [photo, pool]);
 
@@ -139,24 +148,26 @@ function PhotoPage({ photo, archive, search, save }: { photo: Photo; archive: Ar
     setEditing((previous) => ({ open: true, session: (previous?.session ?? 0) + 1 }));
   }
 
-  function saveToArchive() {
+  async function saveToArchive() {
     if (!photo.bank) return;
     // One archive copy per bank photo: saving twice updates the same record.
-    save(archiveCopy(photo.bank, `img-${photo.source}-${photo.id}`));
-    toast('Foto salva no acervo', { action: { label: 'Usar em artigo', onClick: openUse } });
+    if (await save(archiveCopy(photo.bank, `img-${photo.source}-${photo.id}`))) {
+      toast('Foto salva no acervo', { action: { label: 'Usar em artigo', onClick: openUse } });
+    }
   }
 
-  function saveEdit(next: ArchiveImage) {
-    save(next);
+  async function saveEdit(next: ArchiveImage) {
+    if (!(await save(next))) return;
     setEditing((previous) => ({ open: false, session: previous?.session ?? 0 }));
     toast('Imagem salva', imageUsable(next) ? undefined : { tone: 'info', description: 'Ela só vai para artigos depois de confirmar os direitos.' });
   }
 
-  function use(choice: ArticleUse) {
-    if (!image) return;
-    save({ ...image, uses: image.uses + 1 });
+  /** The photo goes into the article (cover or text), then the archive counts one more use. */
+  async function use(choice: ArticleUse) {
+    if (!image || !(await place(photo, choice))) return;
+    if (editable) await save({ ...image, uses: image.uses + 1 });
     setUsing((previous) => ({ open: false, session: previous?.session ?? 0 }));
-    toast(`Imagem enviada para ${choice.title}`, {
+    toast(`Imagem no artigo de ${choice.title}`, {
       description: PLACEMENT_LABELS[choice.placement],
       action: { label: 'Abrir artigo', onClick: () => router.push(pieceHref(choice.productionId, 'article')) },
     });
@@ -165,7 +176,7 @@ function PhotoPage({ photo, archive, search, save }: { photo: Photo; archive: Ar
   const bankName = photo.source === 'own' ? undefined : SOURCE_LABELS[photo.source];
   const actions: ReactNode = state === 'bank' ? (
     <>
-      <Button variant="primary" icon={ImagePlus} onClick={saveToArchive}>Salvar no acervo</Button>
+      <Button variant="primary" icon={ImagePlus} onClick={() => void saveToArchive()}>Salvar no acervo</Button>
       {photo.sourceUrl ? (
         <ButtonLink href={photo.sourceUrl} target="_blank" rel="noopener noreferrer" trailingIcon={ExternalLink}>{`Ver no ${bankName}`}</ButtonLink>
       ) : null}
@@ -173,7 +184,7 @@ function PhotoPage({ photo, archive, search, save }: { photo: Photo; archive: Ar
   ) : state === 'ready' ? (
     <>
       <Button variant="primary" icon={Newspaper} onClick={openUse}>Usar em artigo</Button>
-      <Button icon={Pencil} onClick={openEdit}>Editar créditos</Button>
+      {editable ? <Button icon={Pencil} onClick={openEdit}>Editar créditos</Button> : null}
     </>
   ) : (
     <>
@@ -209,7 +220,7 @@ function PhotoPage({ photo, archive, search, save }: { photo: Photo; archive: Ar
           image={image}
           open={editing.open}
           onClose={() => setEditing({ ...editing, open: false })}
-          onSave={saveEdit}
+          onSave={(next) => void saveEdit(next)}
         />
       ) : null}
       {using ? (
@@ -218,7 +229,7 @@ function PhotoPage({ photo, archive, search, save }: { photo: Photo; archive: Ar
           photo={photo}
           open={using.open && state === 'ready'}
           onClose={() => setUsing({ ...using, open: false })}
-          onUse={use}
+          onUse={(choice) => void use(choice)}
         />
       ) : null}
     </>

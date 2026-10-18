@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 import {
   Avatar,
   BrandMark,
@@ -20,43 +20,90 @@ import {
   TruncatedText,
 } from '@content-ventures/design-system/v3';
 import { Newspaper } from '@content-ventures/design-system/v3/icons';
-import type { DossierStage } from '@/domain/hard-news';
+import type { Refusal } from '@/domain/result';
+import { createBlockIdFactory } from '@/editor/block-ids';
+import type { ProductionListFilter } from '@/ports';
+import { useCommands, useProductions as useWorkspaceProductions, useRuntime } from '@/state';
 import { plural } from '@/ui/format';
-import { useHardNews } from '../state/hard-news-provider';
+import { notifyRefusal } from '@/ui/permission-dialog';
+import { placeImage, PLACEMENT_LABELS } from './article-image';
+import type { Placement } from './article-image';
 import { licenseLabel, markName, normalize } from './images-model';
 import type { Photo } from './images-model';
 
-const STAGE_LABELS: Record<DossierStage, string> = { research: 'Apuração', writing: 'Escrevendo', article: 'Artigo' };
-
-export type Placement = 'cover' | 'body';
-
-export const PLACEMENT_LABELS: Record<Placement, string> = { cover: 'Capa', body: 'No texto' };
+export type { Placement };
+export { PLACEMENT_LABELS };
 
 export type ArticleUse = { productionId: string; title: string; placement: Placement; caption: string };
 
 /** With more productions than this, a search sits above the list. */
 const SEARCH_FROM = 6;
 
+const IN_PROGRESS: ProductionListFilter = { sort: 'updated_desc' };
+const FIRST_PAGE = { page: 1, size: 50 };
+
 type Production = { id: string; title: string; stage: string; person?: string; at?: string };
 
-/** The desk's productions in progress, the most recently touched first. */
+/** The workspace's productions in progress (R1), the most recently touched first. */
 function useProductions(): Production[] {
-  const { state } = useHardNews();
+  const page = useWorkspaceProductions(IN_PROGRESS, FIRST_PAGE).data;
   return useMemo(
-    () => Object.values(state.dossiers)
-      .map((dossier) => {
-        const news = state.news.find((item) => item.id === dossier.newsId);
-        return {
-          id: dossier.productionId,
-          title: dossier.outline?.headline.trim() || news?.title || 'Produção sem título',
-          stage: STAGE_LABELS[dossier.stage],
-          person: news?.decidedBy,
-          at: dossier.writtenAt ?? dossier.searchedAt ?? news?.decidedAt,
-        };
-      })
-      .sort((a, b) => (b.at ?? '').localeCompare(a.at ?? '')),
-    [state.dossiers, state.news],
+    () => (page?.items ?? [])
+      .filter((item) => !item.archived)
+      .map((item) => ({ id: item.id, title: item.title, stage: item.situation.line, person: item.owner.name, at: item.updatedAt })),
+    [page],
   );
+}
+
+const newBlockId = createBlockIdFactory({ prefix: 'img' });
+
+const SAVE_REFUSALS: Partial<Record<string, string>> = {
+  locked: 'O artigo está em aprovação. Use a imagem depois da decisão.',
+  conflict: 'O artigo mudou agora há pouco. Tente de novo.',
+  quota: 'O armazenamento deste navegador está cheio.',
+  invalid_url: 'O endereço da imagem não abriu.',
+};
+
+function refused(refusal: Pick<Refusal, 'code' | 'message'>) {
+  notifyRefusal('Não foi possível usar a imagem', { code: refusal.code, message: SAVE_REFUSALS[refusal.code] ?? refusal.message });
+}
+
+const NO_ARTICLE = { code: 'not_found', message: 'Esta produção não tem artigo para receber a imagem.' };
+
+/**
+ * "Usar imagem": the photo goes into the chosen production's article, as its cover or as a figure
+ * at the end of the text, with its caption and credit (an R1 image asset, saved with the draft).
+ * Resolves `false` when it could not, after saying why.
+ */
+export function usePlaceInArticle(): (photo: Photo, use: ArticleUse) => Promise<boolean> {
+  const { runtime } = useRuntime();
+  const commands = useCommands();
+  return useCallback(async (photo, use) => {
+    if (!runtime) return false;
+    const found = await runtime.queries.get(use.productionId).catch(() => undefined);
+    const piece = found?.ok ? found.value.pieces.find((item) => item.kind === 'article') : undefined;
+    const draft = piece ? await runtime.queries.draft(piece.id).catch(() => undefined) : undefined;
+    if (!piece || !draft?.ok || draft.value.body.type !== 'article') {
+      refused(NO_ARTICLE);
+      return false;
+    }
+    const credit = photo.credit.trim();
+    const asset = await commands.assets.put(
+      { type: 'url', url: photo.full, width: photo.width, height: photo.height },
+      { productionId: use.productionId, authorized: true, ...(credit ? { credit } : {}) },
+    );
+    if (!asset.ok) {
+      refused(asset.refusal);
+      return false;
+    }
+    const body = placeImage(draft.value.body, { assetId: asset.value.id, caption: use.caption, alt: photo.title }, use.placement, newBlockId());
+    const saved = await commands.production.saveDraft(piece.id, body, draft.value.revision);
+    if (!saved.ok) {
+      refused(saved.refusal);
+      return false;
+    }
+    return true;
+  }, [runtime, commands]);
 }
 
 /**
@@ -68,7 +115,7 @@ export function UseInArticleDrawer({ photo, open, onClose, onUse }: {
   photo: Photo;
   open: boolean;
   onClose: () => void;
-  onUse: (use: ArticleUse) => void;
+  onUse: (use: ArticleUse) => void | Promise<void>;
 }) {
   const productions = useProductions();
   const reasonId = useId();
