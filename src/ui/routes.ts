@@ -1,6 +1,6 @@
 import type { PieceKind, ProductionId, StageView, StepTarget } from '@/domain';
 import type { ApprovalsTab } from '@/ports';
-import { pieceKind, pieceKindBySlug } from '@/registries';
+import { isReleased, pieceKind, pieceKindBySlug } from '@/registries';
 
 /**
  * Product URLs in one place (PLAN §2). Stage routes follow the journey: Material is `source`,
@@ -129,6 +129,8 @@ export type ProductionRoute =
   | { kind: 'delivery' }
   | { kind: 'studio'; pieceKind: PieceKind }
   | { kind: 'review'; pieceKind: PieceKind }
+  /** R2 · Apuração of a covered news story (research and outline). */
+  | { kind: 'research' }
   | { kind: 'unknown' };
 
 export function productionRoute(segments: readonly string[]): ProductionRoute {
@@ -136,6 +138,7 @@ export function productionRoute(segments: readonly string[]): ProductionRoute {
   if (first === undefined) return { kind: 'index' };
   if (first === 'source' && second === undefined) return { kind: 'source' };
   if (first === 'delivery' && second === undefined) return { kind: 'delivery' };
+  if (first === 'research' && second === undefined && isReleased('R2')) return { kind: 'research' };
   const entry = pieceKindBySlug(first);
   if (!entry) return { kind: 'unknown' };
   if (second === undefined) return { kind: 'studio', pieceKind: entry.kind };
@@ -153,6 +156,8 @@ export function routeStageId(route: ProductionRoute, stages: readonly StageView[
       return stages.find((stage) => stage.kind === 'source')?.id;
     case 'delivery':
       return stages.find((stage) => stage.kind === 'delivery')?.id;
+    case 'research':
+      return stages.find((stage) => stage.id === 'research')?.id;
     case 'studio':
       return stages.find((stage) => stage.kind === 'piece' && stage.pieceKind === route.pieceKind)?.id;
     case 'review':

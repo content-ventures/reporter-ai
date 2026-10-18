@@ -41,7 +41,8 @@ if (upcoming.length > 0) {
   fail(`release-history "upcoming": ${upcoming.join("; ")}`);
 }
 
-const buildRelease = /export const CURRENT_RELEASE: ReleaseId = '(R[0-7])'/.exec(readFileSync("src/registries/release.ts", "utf8"))?.[1];
+// The shipped build's release: with the local fixtures preview (`PREVIEW_R2 ? 'R2' : …`), the fallback.
+const buildRelease = /export const CURRENT_RELEASE: ReleaseId = (?:PREVIEW_R2 \? 'R[0-7]' : )?'(R[0-7])'/.exec(readFileSync("src/registries/release.ts", "utf8"))?.[1];
 const shown = buildReleaseViolations(history, buildRelease ?? "");
 if (shown.length > 0) {
   fail(shown.join("; "));

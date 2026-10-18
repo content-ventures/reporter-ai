@@ -94,18 +94,13 @@ describe('menu (D9): what works today on top, "Em breve" as one collapsed group'
     assert.deepEqual(labels(['editor']), ['Início', 'Produções', 'Modelos', 'Versões']);
   });
 
-  test('shipping a release moves its items from "Em breve" to the top, in registry order', () => {
+  test('shipping R2 splits the menu into the day\'s work, "Biblioteca" and "Configurações"', () => {
     const r2 = menuFor('R2', { roles: EVERYONE });
-    assert.deepEqual(r2[0]?.items.map((item) => item.id), [
-      'overview',
-      'productions',
-      'news',
-      'templates',
-      'archive',
-      'editorial-map',
-      'writing-guide',
-      'integrations',
-    ]);
+    const section = (id: string) => r2.find((entry) => entry.group.id === id)?.items.map((item) => item.id);
+    assert.deepEqual(section('main'), ['overview', 'news', 'productions']);
+    assert.deepEqual(section('library'), ['templates', 'images', 'quotes', 'archive']);
+    assert.deepEqual(section('settings'), ['editorial-map', 'writing-guide', 'integrations']);
+    assert.deepEqual(r2.map((entry) => entry.group.label ?? ''), ['', 'Biblioteca', 'Configurações', 'Em breve', '']);
     assert.deepEqual(soonIds(r2), ['opportunities', 'media', 'channels', 'profiles', 'newsletter', 'performance', 'batches', 'events', 'workspaces']);
     const last: ReleaseId = RELEASES[RELEASES.length - 1] as ReleaseId;
     assert.deepEqual(soonIds(menuFor(last, { roles: EVERYONE })), [], 'nothing left "Em breve" once R7 ships');

@@ -7,8 +7,15 @@ export type ReleaseId = 'R0' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';
 
 export const RELEASES: readonly ReleaseId[] = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7'];
 
+/**
+ * Local preview of the next release: only the simulated fixtures build honours
+ * `NEXT_PUBLIC_REPORTER_PREVIEW_RELEASE=R2`; the connected build always shows the shipped release.
+ */
+const PREVIEW_R2 = process.env.NEXT_PUBLIC_REPORTER_E2E_FIXTURES === 'true'
+  && process.env.NEXT_PUBLIC_REPORTER_PREVIEW_RELEASE === 'R2';
+
 /** The release this build shows. Only entries with `since <= CURRENT_RELEASE` are visible. */
-export const CURRENT_RELEASE: ReleaseId = 'R1';
+export const CURRENT_RELEASE: ReleaseId = PREVIEW_R2 ? 'R2' : 'R1';
 
 /** Roadmap names (planilha do roadmap, aba Releases); the menu says when an item arrives. */
 export const RELEASE_NAMES: Record<ReleaseId, string> = {
