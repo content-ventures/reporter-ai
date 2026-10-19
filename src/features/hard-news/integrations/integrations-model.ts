@@ -10,6 +10,7 @@ export type AppId =
   | 'drupal'
   | 'rss'
   | 'google-alerts'
+  | 'rss-app'
   | 'agency'
   | 'slack'
   | 'teams'
@@ -68,6 +69,7 @@ export const CATALOG: readonly AppDef[] = [
   { id: 'drupal', name: 'Drupal', category: 'publish', kind: 'publisher', auth: 'credentials', summary: 'Publica no Drupal do portal', logo: 'https://cdn.simpleicons.org/drupal' },
   { id: 'rss', name: 'Feeds RSS', category: 'sources', kind: 'feeds', auth: 'none', summary: 'Os veículos que a redação acompanha', logo: 'https://cdn.simpleicons.org/rss' },
   { id: 'google-alerts', name: 'Google Alertas', category: 'sources', kind: 'alerts', auth: 'credentials', summary: 'Alertas por palavra-chave no radar', logo: 'https://www.google.com/s2/favicons?domain=google.com&sz=128' },
+  { id: 'rss-app', name: 'RSS.app', category: 'sources', kind: 'feeds', auth: 'credentials', summary: 'Sites sem feed e palavras-chave no radar', logo: 'https://www.google.com/s2/favicons?domain=rss.app&sz=128' },
   { id: 'agency', name: 'Estadão Conteúdo', category: 'sources', kind: 'agency', auth: 'credentials', summary: 'Notícias de agência direto no radar', logo: 'https://www.google.com/s2/favicons?domain=estadao.com.br&sz=128' },
   { id: 'slack', name: 'Slack', category: 'chat', kind: 'chat', auth: 'oauth', summary: 'Avisos da redação nos canais certos', logo: 'https://www.google.com/s2/favicons?domain=api.slack.com&sz=128' },
   { id: 'teams', name: 'Microsoft Teams', category: 'chat', kind: 'chat', auth: 'oauth', summary: 'Avisos da redação nos canais do Teams', logo: 'https://www.google.com/s2/favicons?domain=teams.microsoft.com&sz=128' },

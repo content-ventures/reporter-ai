@@ -136,6 +136,24 @@ export const GUIDES: Partial<Record<AppId, ConnectGuide>> = {
     auth: 'Sem credencial: o link do feed é privado',
     calls: [{ method: 'GET', path: '/{conta}/{alerta}', purpose: 'Ler as notícias novas a cada 15 min' }],
   },
+  'rss-app': {
+    method: 'Chave de API da conta RSS.app da plataforma',
+    steps: [
+      { title: 'Crie a conta no RSS.app', detail: 'Um plano com acesso à API.', link: { label: 'Abrir RSS.app', href: 'https://rss.app' } },
+      { title: 'Gere a chave de API', detail: 'Na conta, a chave e o segredo da API.', link: { label: 'Ver a API', href: 'https://rss.app/docs/api' } },
+      { title: 'Configure a chave no servidor', detail: 'A chave fica na plataforma, nunca no navegador.' },
+    ],
+    fields: [
+      { id: 'secret', label: 'Chave da API', kind: 'secret' },
+    ],
+    action: 'Validar chave',
+    base: 'https://api.rss.app/v1',
+    auth: 'Bearer chave:segredo',
+    calls: [
+      { method: 'POST', path: '/feeds', purpose: 'Criar o feed de um site ou de uma palavra-chave' },
+      { method: 'GET', path: '/feeds/{id}.xml (rss.app)', purpose: 'Ler as notícias novas, como um feed RSS' },
+    ],
+  },
   agency: {
     method: 'Chave de API do contrato de agência',
     steps: [

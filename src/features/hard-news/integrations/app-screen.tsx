@@ -27,6 +27,8 @@ import type { ActivityEntry, AppDef, AppId, AppRecord } from './integrations-mod
 import { useIntegrations } from './integrations-store';
 import { INTEGRATIONS_HREF } from './use-catalog';
 import { WebhooksScreen } from './webhooks-screen';
+import { NewsSourcePage } from './news-source-page';
+import { useHardNews } from '../state/hard-news-provider';
 
 const TEST_MS = 1200;
 const DAY = 24 * 60 * 60_000;
@@ -37,11 +39,14 @@ export function AppScreen({ id }: { id: AppId }) {
   const def = appDef(id);
   const session = useSession();
   const allowed = useCan('pipeline.edit');
+  const { live } = useHardNews();
   useBreadcrumb([{ label: 'Integrações', href: INTEGRATIONS_HREF }, { label: def?.name ?? 'Integração' }]);
   if (!def) return null;
   if (session.status === 'loading') return <PageStack><PageHeader title={def.name} /></PageStack>;
   if (!allowed) return <AdminOnly />;
   if (def.kind === 'webhooks') return <WebhooksScreen />;
+  // F2.1: in the connected build, the news-source apps are the server's sources.
+  if (live && (def.id === 'google-alerts' || def.id === 'rss-app')) return <NewsSourcePage def={def} />;
   return <AppPage def={def} />;
 }
 

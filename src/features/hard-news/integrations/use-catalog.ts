@@ -1,8 +1,10 @@
 'use client';
 
 import { useMemo } from 'react';
+import type { NewsFeed } from '@/domain/hard-news';
+import type { NewsSourceKind } from '@/domain/news-intake';
 import { NEWS_SOURCES_HREF } from '../routes';
-import { useHardNews } from '../state/hard-news-provider';
+import { useHardNews, useNewsWatch } from '../state/hard-news-provider';
 import { CATALOG, failureStreak, statusOf, webhooksState } from './integrations-model';
 import type { AppId, CatalogEntry, ConnectionState, IntegrationsState } from './integrations-model';
 import { useIntegrations } from './integrations-store';
@@ -23,11 +25,22 @@ export type EntryFacts = { facts: string[]; problem?: { tone: 'red' | 'amber'; t
 
 export type CatalogItem = CatalogEntry & EntryFacts;
 
-type Desk = ReturnType<typeof useHardNews>['state'];
+type DeskContext = ReturnType<typeof useHardNews>;
 
-function connectionOf(id: AppId, desk: Desk, store: IntegrationsState): ConnectionState | undefined {
+/** The desk's sources of one kind (an outlet's feed when the kind is absent). */
+export function feedsOf(feeds: readonly NewsFeed[], kind: NewsSourceKind): NewsFeed[] {
+  return feeds.filter((feed) => (feed.kind ?? 'rss') === kind);
+}
+
+const sourceState = (feeds: readonly NewsFeed[]): ConnectionState => (feeds.length === 0 ? 'disconnected' : feeds.every((feed) => feed.state === 'failing') ? 'failing' : 'connected');
+
+function connectionOf(id: AppId, context: DeskContext, store: IntegrationsState): ConnectionState | undefined {
+  const desk = context.state;
   if (id === 'wordpress') return desk.cms.status;
-  if (id === 'rss') return desk.feeds.length > 0 ? 'connected' : 'disconnected';
+  if (id === 'rss') return feedsOf(desk.feeds, 'rss').length > 0 ? 'connected' : 'disconnected';
+  // F2.1 on the server: alerts are the desk's sources; RSS.app is the platform's account.
+  if (context.live && id === 'google-alerts') return sourceState(feedsOf(desk.feeds, 'google-alerts'));
+  if (context.live && id === 'rss-app') return context.rssApp ? 'connected' : 'disconnected';
   if (id === 'webhooks') return webhooksState(store.endpoints);
   return store.apps[id]?.state;
 }
@@ -36,8 +49,22 @@ const count = (value: number, one: string, many: string) => `${value} ${value ==
 const thousands = (value: number) => value.toLocaleString('pt-BR');
 const failedText = (name: string, streak: number) => (streak > 1 ? `${name} falhou nas últimas ${streak} entregas` : `${name} falhou na última entrega`);
 
-function factsOf(id: AppId, desk: Desk, store: IntegrationsState): EntryFacts {
+/** "3 alertas · 41 em 24 h", and the source that stopped answering. */
+function sourceFacts(feeds: readonly NewsFeed[], one: string, many: string): EntryFacts {
+  const failing = feeds.filter((feed) => feed.state === 'failing');
+  return {
+    facts: feeds.length ? [count(feeds.length, one, many), `${feeds.reduce((total, feed) => total + feed.lastDay, 0)} em 24 h`] : [],
+    problem: failing.length
+      ? { tone: 'amber', text: failing.length === 1 ? `${failing[0]?.name} não responde` : `${failing.length} ${many} não respondem`, fix: 'Ver fontes' }
+      : undefined,
+  };
+}
+
+function factsOf(id: AppId, context: DeskContext, store: IntegrationsState): EntryFacts {
+  const desk = context.state;
   const record = store.apps[id];
+  if (context.live && id === 'google-alerts') return sourceFacts(feedsOf(desk.feeds, 'google-alerts'), 'alerta', 'alertas');
+  if (context.live && id === 'rss-app') return sourceFacts(feedsOf(desk.feeds, 'rss-app'), 'feed', 'feeds');
   switch (id) {
     case 'wordpress': {
       const sent = Object.values(desk.deliveries).filter((delivery) => delivery.state === 'sent').length;
@@ -50,13 +77,8 @@ function factsOf(id: AppId, desk: Desk, store: IntegrationsState): EntryFacts {
       };
     }
     case 'rss': {
-      const failing = desk.feeds.filter((feed) => feed.state === 'failing');
-      return {
-        facts: [count(desk.feeds.length, 'feed', 'feeds'), `${desk.feeds.reduce((total, feed) => total + feed.lastDay, 0)} em 24 h`],
-        problem: failing.length
-          ? { tone: 'amber', text: failing.length === 1 ? `${failing[0]?.name} não responde` : `${failing.length} feeds não respondem`, fix: 'Ver fontes' }
-          : undefined,
-      };
+      const feeds = feedsOf(desk.feeds, 'rss');
+      return { ...sourceFacts(feeds, 'feed', 'feeds'), facts: [count(feeds.length, 'feed', 'feeds'), `${feeds.reduce((total, feed) => total + feed.lastDay, 0)} em 24 h`] };
     }
     case 'webhooks': {
       const failing = store.endpoints.filter((endpoint) => endpoint.state === 'failing');
@@ -85,11 +107,12 @@ function factsOf(id: AppId, desk: Desk, store: IntegrationsState): EntryFacts {
 /** The catalog with each app's status and facts, from the desk (WordPress, feeds) and the store. */
 export function useCatalog(): { items: CatalogItem[]; ready: boolean } {
   const desk = useHardNews();
+  useNewsWatch();
   const store = useIntegrations();
   const ready = desk.ready && store.ready;
   const items = useMemo(() => CATALOG.map((def) => {
-    const status = statusOf(def, ready ? connectionOf(def.id, desk.state, store.state) : undefined);
-    return { ...def, status, ...(ready && !def.since ? factsOf(def.id, desk.state, store.state) : { facts: [] }) };
-  }), [desk.state, store.state, ready]);
+    const status = statusOf(def, ready ? connectionOf(def.id, desk, store.state) : undefined);
+    return { ...def, status, ...(ready && !def.since ? factsOf(def.id, desk, store.state) : { facts: [] }) };
+  }), [desk, store.state, ready]);
   return { items, ready };
 }
