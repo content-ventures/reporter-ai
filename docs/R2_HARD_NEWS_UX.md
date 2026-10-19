@@ -10,19 +10,20 @@ NEXT_PUBLIC_REPORTER_E2E_FIXTURES=true NEXT_PUBLIC_REPORTER_PREVIEW_RELEASE=R2 p
 
 `CURRENT_RELEASE` becomes `R2` only when both variables are set (simulated fixtures workspace). The connected build always shows R1. `/?reset=1` restarts both the workspace and the desk.
 
-The R2 screens with no backend yet carry an amber "Demo" Badge in the top bar, in both builds: Notícias and Fontes, Apuração, Acervo, Mapa editorial, Guia de escrita and Integrações (catalog, each app, WordPress). Imagens (bank and photo page) and Citações carry it only without the R1 visual and citation libraries (the fixtures builds): the connected build reads and saves real data there. Screens on real data do not carry it: Modelos and the R1 stages. The list is `isR2DemoPath` in `ui/r2-preview.ts`. In an R2 build, inside the R1 screens, each simulated R2 block carries the same word in its header (`DemoBadge`, `hard-news/demo-badge.tsx`): Início's "Pauta do dia", the Apuração lane in Produções, the studio's Fontes, Evidências and Do acervo, and the Entrega's Portal.
+The R2 screens with no backend yet carry an amber "Demo" Badge in the top bar, in both builds: Notícias and Fontes, Apuração (R2 build only; an R1 build answers 404 there, without it), Acervo, Mapa editorial, Guia de escrita and Integrações (catalog, each app, WordPress). Imagens (bank and photo page) and Citações carry it only without the R1 visual and citation libraries (the fixtures builds): the connected build reads and saves real data there. Screens on real data do not carry it: Modelos and the R1 stages. The list is `isR2DemoPath` in `ui/r2-preview.ts`. In an R2 build, inside the R1 screens, each simulated R2 block carries the same word in its header (`DemoBadge`, `hard-news/demo-badge.tsx`): Início's "Pauta do dia", the Apuração lane in Produções, the studio's Fontes, Evidências and Do acervo, and the Entrega's Portal.
 
 ## In an R1 build (demonstration)
 
 Production is an R1 build. `HARD_NEWS_DEMO` (`ui/r2-preview.ts`) is true there, and:
 - the menu is the R2 one: Início, Notícias, Produções; Biblioteca (Modelos, Imagens, Citações, Acervo); Configurações (Mapa editorial, Guia de escrita, Integrações);
 - the R2 routes render the R2 screens, on the desk kept in this browser; `/news/draft` and the first review URL (`/prototypes/r2?screen=`) open the matching destination; Apuração (`/productions/{id}/research`) stays 404;
-- the desk writes nothing to the workspace: no example productions are seeded and **Cobrir** is disabled ("Na demonstração, Cobrir não abre pauta.");
+- the desk writes nothing to the workspace: no example productions are seeded and **Cobrir** is disabled ("Na demonstração, Cobrir não abre pauta."); a story the example marks as covered has "Abrir apuração" disabled ("Na demonstração, a apuração não abre.");
+- the demonstration routes ask for sign-in like the rest of the workspace (`proxy.ts`);
 - the R1 stages see no desk (`useOptionalHardNews` returns `null` in the demonstration), so Início, Produções, the studios, the review and the Entrega are R1 as they were;
 - Imagens and Citações read the R1 libraries in the connected build, and "Usar em artigo" places a photo in a real article, as in R2;
 - Modelos is the gallery below, on the workspace's own models.
 
-`e2e/hard-news-demo.spec.ts` (connected smoke) opens every demonstration screen at 1440 and 390 px and checks that no API request writes.
+`e2e/hard-news-demo.spec.ts` (connected smoke) opens the radar, Fontes, Acervo, Mapa editorial, Guia de escrita, Integrações, one app and WordPress at 1440 and 390 px, with "Demo" in the top bar, and checks that no API request writes.
 
 ## Journey
 
@@ -62,7 +63,7 @@ Library and settings:
 - Acervo (`/archive`, F2.12): the portal's published articles as a library the reporter searches before covering a story ("o que já demos sobre isso?").
   - The header counts what was published and what the AI read. One large field ("O que o portal já publicou sobre…", `/` focuses it) has suggested searches under it, offered only when the AI can answer them.
   - Enter or a suggestion runs a search. The AI's answer comes first: its steps while it reads (AgentTrace), then the text with numbered markers beside the sources it cites (article, date, address). "Nothing found" says so and that it does not prove the fact did not happen. Below the answer come the articles found, also the ones the AI has not read. Clearing the field goes back to the library.
-  - Without a search, the editorias are folders: a Carousel straight on the page (no tray), each card with the editoria's photo, its name, the count and who signs it (the faces are hidden on a phone). From 1600 px every folder fits one row; narrower, the row slides (five in view, about 1.6 on a phone). A folder filters the articles; a Chip in the bar removes the filter. The tabs are Todas, Usadas pela IA and Fora da IA.
+  - Without a search, the editorias are folders: a Carousel in a Panel with its own "Editorias" heading (h2, so each folder is an h3), each card with the editoria's photo, its name, the count and who signs it (the faces are hidden on a phone). From 1600 px every folder fits one row; narrower, the row slides (five in view, about 1.6 on a phone). A folder filters the articles; a Chip in the bar removes the filter. The tabs are Todas, Usadas pela IA and Fora da IA.
   - An article is a card with its cover, headline, editoria, date and byline, plus "Copiar link". The tag "Usada em N pautas" says the AI used it. Only exceptions carry a note under the card: "Na fila da IA" (the preview reads it a few seconds after the page opens), or "Leitura falhou" with "Reenviar para a IA".
   - The drawer shows the cover, the excerpt and the address (copy), the way into the AI (Publicada → Lida pela IA → Usada em pautas) and, under "Pautas que usaram", a way into each story's Apuração or Estúdio.
   - Uses are derived from the stories' research (attached and accepted archive sources; a discarded one is no use) and from the studio's link suggestions. The search, the shelves and the tag are in `archive/archive-model.ts`, with tests.
@@ -248,7 +249,7 @@ Preview data and limits:
 ### Modelos (carousel and static templates)
 
 `/library/templates` keeps the R1 address and parameters (`?format&q&model`), so R1 links still open. In every build it is a gallery:
-- The header names the default model ("Padrão: Seafood Manchete") and has **Criar carrossel**.
+- The header names the default model ("Padrão: Seafood Manchete") and has **Criar carrossel** for whoever edits pieces (`piece.edit`, as the carousel stage asks).
 - The bar has the piece tabs (**Carrosséis** with its count, **Estáticos** "Em breve"), the search and the format (Feed 4:5, Quadrado 1:1, Stories 9:16 "Em breve").
 - The models sit on **shelves by family** (Notícia, Explica, Podcast), each with its use line. With more than 1280 px of content the three shelves sit side by side, so the Feed catalog fits one 1920 × 1080 screen; below that they stack. A format without families (Quadrado) is one shelf without a heading.
 - Each card is a **contact sheet of three real pages**, drawn by the R1 render: the cover, the model's signature page (its featured layout, else its other photo page, else "Ponto principal") and the quote. The counters stay those of the full sample ("1/7 · 5/7 · 6/7"). On a phone a card is the cover and the name. "Aprovado" and "Padrão" are the only marks.
@@ -294,9 +295,10 @@ Backend work this preview does not do:
 
 ## R1 files with R2 plug points
 
-Each plug point is inert before R2 (the demonstration hides the desk from them):
-- `registries/release.ts`, `registries/navigation.ts`, `ui/r2-preview.ts`, `ui/routes.ts`, `ui/approval-copy.ts`, `ui/shell/workspace-shell.tsx`;
-- `app/(workspace)/layout.tsx` and the R2 route pages;
+The menu, the shell, the layout and the R2 route pages show the demonstration in an R1 build (see "In an R1 build"): `registries/navigation.ts`, `ui/r2-preview.ts`, `ui/shell/workspace-shell.tsx`, `app/(workspace)/layout.tsx`, the R2 route pages, and `proxy.ts` (sign-in on `/news`, `/archive` and `/settings`).
+
+The plug points inside the R1 stages are inert before R2 (the demonstration hides the desk from them):
+- `registries/release.ts`, `ui/routes.ts`, `ui/approval-copy.ts`;
 - `features/production/{production-header,production-frame,production-index,trail}`;
 - `features/productions/productions-kanban.tsx`;
 - `features/studio/article/{use-studio-checks,use-article-studio,copilot-pane,editor-toolbar}`;
