@@ -26,6 +26,8 @@ const SLATE = '#3D4A5C';
 const MIST = '#C9D5E8';
 /** Line art on the deep navy pages (the brand posts' circles and strokes). */
 const TRACE = '#1A2F63';
+/** Hairline on white and beige pages. */
+const RULE = '#D6D0C6';
 
 const M = 88;
 const W = 904;
@@ -46,16 +48,17 @@ const soft = (tone: Tone) => (tone === 'light' ? SLATE : MIST);
 function header(tone: Tone): Pick<LayoutRender, 'vectors' | 'counter'> {
   return {
     vectors: [seafoodSymbol(M, 72, 68, tone === 'light' ? 'dark' : 'light')],
-    counter: counter(RIGHT, 96, 'right', 28, brand(600), soft(tone)),
+    counter: counter(RIGHT, 94, 'right', 28, brand(600), soft(tone)),
   };
 }
 
 /**
  * A page of the news model: the white card with its rounded corner over the orange band, the
- * signature of Seafood's news posts. `fill` is the card's colour.
+ * signature of Seafood's news posts. `fill` is the card's colour; `bottom` is where the card
+ * ends, so text set in the band sits wholly below it.
  */
-function card(fill: string, band = ORANGE): ShapeStyle[] {
-  return [rect(0, 1270, 1080, 80, band), rounded(0, 0, 1080, 1300, fill, [0, 0, 72, 0])];
+function card(fill: string, bottom = 1300, band = ORANGE): ShapeStyle[] {
+  return [rect(0, bottom - 30, 1080, 1380 - bottom, band), rounded(0, 0, 1080, bottom, fill, [0, 0, 72, 0])];
 }
 
 /**
@@ -64,10 +67,10 @@ function card(fill: string, band = ORANGE): ShapeStyle[] {
  */
 function art(color = TRACE): ShapeStyle[] {
   return [
-    rounded(760, 56, 264, 264, color, 132, 3),
-    rounded(716, 292, 24, 24, color, 12),
-    rounded(700, 980, 300, 300, color, 150, 3),
-    rounded(660, 1140, 18, 18, color, 9),
+    rounded(800, 150, 180, 180, color, 90, 3),
+    rounded(766, 316, 20, 20, color, 10),
+    rounded(720, 1010, 280, 280, color, 140, 3),
+    rounded(682, 1156, 18, 18, color, 9),
   ];
 }
 
@@ -91,11 +94,11 @@ function statement(base: LayoutRender, tone: Tone): LayoutRender {
 function figure(base: LayoutRender, tone: Tone, stat: string, line: string): LayoutRender {
   return {
     ...base,
-    shapes: [...(base.shapes ?? []), rect(M, 800, W, 3, line)],
+    shapes: [...(base.shapes ?? []), rect(M, 864, W, 3, line)],
     slots: {
-      title: text(M, 236, W, 2, 64, brand(700), ink(tone), { leading: 1.14, minFontSize: 52, balanced: true }),
-      stat: text(M, 432, W, 1, 300, brand(800), stat, { leading: 1.08, minFontSize: 180 }),
-      body: text(M, 852, W, 4, 44, brand(400), soft(tone), { leading: 1.44, minFontSize: 38 }),
+      title: text(M, 300, W, 2, 64, brand(700), ink(tone), { leading: 1.14, minFontSize: 52, balanced: true }),
+      stat: text(M, 496, W, 1, 300, brand(800), stat, { leading: 1.08, minFontSize: 180 }),
+      body: text(M, 916, W, 4, 44, brand(400), soft(tone), { leading: 1.44, minFontSize: 38 }),
     },
   };
 }
@@ -157,11 +160,11 @@ function news(): Record<string, LayoutRender> {
       background: WHITE,
       accent: NAVY,
       rule: false,
-      shapes: [...card(WHITE), rounded(616, 0, 464, 420, BEIGE, [0, 0, 0, 88])],
+      shapes: [...card(WHITE, 1236), rounded(616, 0, 464, 420, BEIGE, [0, 0, 0, 88])],
       image: photo({ x: M, y: 184, width: 1080 - M, height: 596 }, { radius: [44, 0, 0, 44], focus: 0.4 }),
       vectors: [seafoodSymbol(M, 56, 92, 'dark')],
-      marks: [mark(SWIPE, M, 1294, 28, brand(700), DEEP)],
-      counter: counter(RIGHT, 1294, 'right', 28, brand(700), DEEP),
+      marks: [mark(SWIPE, M, 1278, 28, brand(700), DEEP)],
+      counter: counter(RIGHT, 1278, 'right', 28, brand(700), DEEP),
       slots: {
         kicker: text(M, 160, W - 40, 1, 26, brand(700), DEEP, { align: 'right', uppercase: true, tracking: 1.5, leading: 1.2, minFontSize: 22, pill: { color: ORANGE, padX: 28, padY: 16, radius: 40 } }),
         title: text(M, 832, W, 4, 76, brand(700), INK, { leading: 1.12, minFontSize: 60, balanced: true }),
@@ -169,11 +172,11 @@ function news(): Record<string, LayoutRender> {
     },
     context: statement(light(), 'light'),
     point: statement(light(), 'light'),
-    data: figure(light(), 'light', NAVY, BEIGE),
+    data: figure(light(), 'light', NAVY, RULE),
     list: steps(light(), 'light', NAVY),
     quote: {
       ...page('light', BEIGE, card(BEIGE)),
-      marks: [mark('“', M - 6, 168, 300, brand(800), ORANGE)],
+      marks: [mark('“', M - 6, 250, 300, brand(800), ORANGE)],
       slots: {
         quote: text(M, 860 - 5 * 77, W, 5, 62, brand(700), INK, { leading: 1.24, minFontSize: 48, balanced: true, valign: 'bottom' }),
         attribution: text(M, 900, W, 2, 34, brand(600), NAVY, { leading: 1.32 }),
@@ -211,7 +214,7 @@ function photoModel(): Record<string, LayoutRender> {
     list: steps(page('light', WHITE), 'light', NAVY),
     quote: {
       ...page('dark', DEEP),
-      marks: [mark('“', M - 6, 168, 300, brand(800), SKY)],
+      marks: [mark('“', M - 6, 250, 300, brand(800), SKY)],
       slots: {
         quote: text(M, 860 - 5 * 77, W, 5, 62, brand(700), WHITE, { leading: 1.24, minFontSize: 48, balanced: true, valign: 'bottom' }),
         attribution: text(M, 900, W, 2, 34, brand(600), SKY, { leading: 1.32 }),
@@ -248,7 +251,7 @@ function explainer(): Record<string, LayoutRender> {
       ...page('light', ORANGE),
       vectors: [seafoodSymbol(M, 72, 68, 'dark')],
       counter: counter(RIGHT, 96, 'right', 28, brand(600), DEEP),
-      marks: [mark('“', M - 6, 168, 300, brand(800), WHITE)],
+      marks: [mark('“', M - 6, 250, 300, brand(800), WHITE)],
       slots: {
         quote: text(M, 860 - 5 * 77, W, 5, 62, brand(700), DEEP, { leading: 1.24, minFontSize: 48, balanced: true, valign: 'bottom' }),
         attribution: text(M, 900, W, 2, 34, brand(600), DEEP, { leading: 1.32 }),
@@ -262,8 +265,8 @@ function podcast(): Record<string, LayoutRender> {
   const full = { x: 0, y: 0, width: 1080, height: 1350 };
   const quoteCard: LayoutRender = {
     ...page('dark', DEEP),
-    shapes: [rounded(M, 220, W, 880, WHITE, 44)],
-    marks: [mark('“', M + 44, 236, 260, brand(800), ORANGE)],
+    shapes: [rounded(M, 300, W, 760, WHITE, 44)],
+    marks: [mark('“', M + 42, 324, 260, brand(800), ORANGE)],
     slots: {
       quote: text(M + 48, 880 - 5 * 72, W - 96, 5, 58, brand(700), NAVY, { leading: 1.24, minFontSize: 42, balanced: true, valign: 'bottom' }),
       attribution: text(M + 48, 920, W - 96, 2, 32, brand(600), SLATE, { leading: 1.32 }),
@@ -284,7 +287,7 @@ function podcast(): Record<string, LayoutRender> {
       marks: swipe(1214, WHITE).marks,
       counter: false,
       slots: {
-        kicker: text(M + 20, 736, W - 40, 1, 26, brand(800), DEEP, { uppercase: true, tracking: 1.5, leading: 1.2, minFontSize: 22, pill: { color: SKY, padX: 22, padY: 12, radius: 40 } }),
+        kicker: text(M + 20, 720, W - 40, 1, 26, brand(800), DEEP, { uppercase: true, tracking: 1.5, leading: 1.2, minFontSize: 22, pill: { color: SKY, padX: 22, padY: 12, radius: 40 } }),
         title: text(M + 48, 840, W - 96, 4, 64, brand(700), NAVY, { leading: 1.14, minFontSize: 50, balanced: true, valign: 'middle', room: 4 }),
       },
     },
