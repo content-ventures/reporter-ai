@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { NewsFeed, NewsItem } from '../../../domain/hard-news.ts';
-import { decidedOf, feedRows, heroOf, hourly, pulse, queueOf, returnLabel, sinceLabel, spread, wireGroups } from './radar-model.ts';
+import { arrivedAt, decidedOf, feedRows, heroOf, hourly, hourlyArrivals, intakePulse, pulse, queueOf, returnLabel, sinceLabel, spread, wireGroups } from './radar-model.ts';
 
 const NOW = new Date(2026, 9, 17, 15, 30).getTime();
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
@@ -90,4 +90,26 @@ test('labels for since, return and spread', () => {
   assert.equal(returnLabel(new Date(NOW + 40 * 60_000).toISOString(), NOW), 'Volta em 40 min');
   assert.equal(returnLabel(new Date(NOW + 12 * 3_600_000).toISOString(), NOW), 'Volta em 12 h');
   assert.deepEqual(spread({ duplicates: [{ source: 'B', url: '', publishedAt: ago(30) }, { source: 'C', url: '', publishedAt: ago(300) }] }, NOW), { outlets: 3, lastHour: 1 });
+});
+
+test('before the triage, arrivals count every story and the strip finds the most spread one', () => {
+  const untriaged = [
+    news('s1', 10, undefined, { duplicates: [{ source: 'g1', url: 'https://g1.test/1', publishedAt: ago(8) }] }),
+    news('s2', 20, undefined, { duplicates: [{ source: 'g1', url: 'https://g1.test/2', publishedAt: ago(15) }, { source: 'Valor', url: 'https://valor.test/2', publishedAt: ago(12) }] }),
+    news('s3', 60 * 30, undefined),
+    news('s4', 5, undefined, { status: 'discarded' }),
+  ];
+  const buckets = hourlyArrivals(untriaged, NOW);
+  assert.equal(buckets.length, 12);
+  assert.equal(buckets.reduce((total, bucket) => total + bucket.values.all, 0), 3, 'the 30-hour-old story is out of the window');
+  assert.deepEqual(intakePulse(untriaged, NOW), { lastDay: 2, spread: { count: 2, topId: 's2', outlets: 3 } });
+  assert.deepEqual(intakePulse([], NOW), { lastDay: 0, spread: { count: 0, topId: undefined, outlets: 0 } });
+});
+
+test('backlog a new source brings arrives at its publication, a fresh story at its import', () => {
+  assert.equal(arrivedAt(news('fresh', 10, undefined)), ago(10));
+  const backlog = news('old', 1, undefined, { publishedAt: ago(3 * 24 * 60) });
+  assert.equal(arrivedAt(backlog), ago(3 * 24 * 60));
+  assert.equal(wireGroups([backlog], ago(90), NOW)[0]?.id, 'older');
+  assert.equal(arrivedAt({ ...backlog, returnedAt: ago(2) }), ago(2));
 });

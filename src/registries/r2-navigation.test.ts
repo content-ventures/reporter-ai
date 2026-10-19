@@ -29,6 +29,12 @@ test('the demo screens carry "Demo"; Modelos and the R1 stages do not', () => {
   for (const path of ['/', '/productions', '/library/templates', '/productions/p1/article', '/productions/p1/research']) assert.equal(isR2DemoPath(path), false, path);
   for (const path of ['/images', '/images/i1', '/quotes']) assert.equal(isR2DemoPath(path, true), false, path);
   assert.equal(isR2DemoPath('/news', true), true);
+  // F2.1: with the server's news, the radar, its sources and the news-source apps are real.
+  for (const path of ['/news', '/news/sources', '/admin/integrations/google-alerts', '/admin/integrations/rss-app']) {
+    assert.equal(isR2DemoPath(path, true), true, path);
+    assert.equal(isR2DemoPath(path, true, true), false, path);
+  }
+  for (const path of ['/admin/integrations', '/admin/integrations/slack', '/archive']) assert.equal(isR2DemoPath(path, true, true), true, path);
 });
 
 test('R2 sidebar and command palette preserve role restrictions and hidden banners', () => {

@@ -106,9 +106,11 @@ function ShellFrame({ children }: { children: ReactNode }) {
   useClientLinks();
   const declared = useDeclaredBreadcrumb();
   const docked = DOCKED_ROUTE.test(pathname) || R2_DOCKED_ROUTE.test(pathname);
-  // The image and quote banks are a demonstration only without the R1 libraries (none while loading).
+  // The image and quote banks are a demonstration only without the R1 libraries, the radar only
+  // without the server's news (none while loading).
   const runtime = useRuntime();
   const libraries = runtime.status === 'loading' || Boolean(runtime.runtime?.visuals);
+  const news = runtime.status === 'loading' || Boolean(runtime.runtime?.news);
   const [collapsed, setCollapsed] = usePersistentFlag(SIDEBAR_COLLAPSED_KEY);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
@@ -168,7 +170,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             account={<ShellAccount />}
           />
         )}
-        topbar={<TopBar actions={isR2DemoPath(pathname, libraries) ? <Badge tone="amber">Demo</Badge> : undefined} breadcrumb={crumbs} onToggleSidebar={() => setCollapsed(!collapsed)} notifications={<ShellNotifications />} />}
+        topbar={<TopBar actions={isR2DemoPath(pathname, libraries, news) ? <Badge tone="amber">Demo</Badge> : undefined} breadcrumb={crumbs} onToggleSidebar={() => setCollapsed(!collapsed)} notifications={<ShellNotifications />} />}
       >
         {/* On a docked production the notice lives in its own header, not above the studio. */}
         {docked ? null : <OtherTabNotice />}
