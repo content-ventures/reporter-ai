@@ -43,6 +43,20 @@ test('preset 2.0 grounds each editorial part without recap, invented negatives o
   assert.ok(definition.steps.facts.prompt.includes('{{brief}}'));
   assert.equal(defaultPipelineDefinition('openai/gpt-oss-20b').steps.section.model,'openai/gpt-oss-20b');
 });
+test('the carousel prompt writes for the Instagram feed: a hook on the cover, one idea per slide, a call without a link',() => {
+  const prompt = defaultPipelineDefinition().steps.carousel.prompt;
+  assert.match(prompt,/feed do Instagram/);
+  assert.match(prompt,/gancho que faz a pessoa arrastar/);
+  assert.match(prompt,/fato concreto mais forte do artigo/);
+  assert.match(prompt,/um slide, uma ideia/i);
+  assert.match(prompt,/sem link clicável/);
+  assert.match(prompt,/Nunca escreva URL, "clique aqui"/);
+  // The Instagram guidance never loosens the editorial guards around it.
+  assert.match(prompt,/Use exclusivamente a versão do artigo aprovado/);
+  assert.match(prompt,/Evite caça-cliques, sensacionalismo/);
+  assert.match(prompt,/exatamente como ele aparece/);
+  assert.equal(validatePipelineTemplates(defaultPipelineDefinition()),undefined);
+});
 test('provider contracts require the same nonempty editorial parts as the worker validator',() => {
   const facts = PIPELINE_SCHEMAS.facts.properties.facts as { maxItems: number; minItems: number };
   assert.equal(facts.maxItems,50);

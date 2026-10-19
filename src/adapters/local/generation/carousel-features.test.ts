@@ -131,3 +131,15 @@ describe('slide assist on featured layouts', () => {
     assert.equal(fitted.proposal.slots.items, items.split('\n').slice(0, 3).join('\n'));
   });
 });
+
+describe('closing call', () => {
+  it('points to the bio, since a post has no clickable link, and fits the call of every model', () => {
+    for (const template of CAROUSEL_TEMPLATES) {
+      const plan = extractiveCarouselPlan({ article: ARTICLE, template, slides: 5, sources: [], newId });
+      const closing = plan.slides.find((slide) => slide.layout === 'closing');
+      assert.equal(closing?.slots.cta, 'Matéria completa no link da bio', template.name);
+      const budget = template.layouts.find((layout) => layout.id === 'closing')?.slots.find((slot) => slot.role === 'cta')?.maxChars ?? 0;
+      assert.ok(closing.slots.cta.length <= budget, `${template.name}: within ${budget}`);
+    }
+  });
+});

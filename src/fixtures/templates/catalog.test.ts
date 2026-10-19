@@ -5,6 +5,7 @@ import { estimateText } from '../../adapters/local/render/text-metrics.ts';
 import type { Canvas2D, SurfaceFactory } from '../../adapters/local/render/canvas.ts';
 import { CAROUSEL_FORMATS, findLayout, formatOf, switchTemplate, TEMPLATE_CATEGORIES } from '../../domain/index.ts';
 import type { CarouselBody } from '../../domain/index.ts';
+import { defaultPipelineDefinition } from '../../domain/pipeline.ts';
 import type { LayoutRender, ShapeStyle } from '../../ports/render-template.ts';
 import { createFixtures } from '../index.ts';
 import {
@@ -283,6 +284,18 @@ describe('carousel template library · sample copy and switching', () => {
       assert.ok(measured.ok);
       const over = measured.value.filter((fit) => fit.overflow).map((fit) => `${fit.slideId}·${fit.label}`);
       assert.deepEqual(over, [], `${template.name}: the sample fits its lines`);
+    }
+  });
+
+  it('every closing call the carousel prompt suggests fits the closing call of every model, as it is', () => {
+    const prompt = defaultPipelineDefinition().steps.carousel.prompt;
+    const sentence = /slot cta\)[^\n]*?como ([^\n]*?)\. Nunca/.exec(prompt)?.[1] ?? '';
+    const examples = [...sentence.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    assert.ok(examples.length >= 2, 'the prompt names example calls');
+    for (const { template } of TEMPLATE_CATALOG) {
+      const cta = findLayout(template, 'closing')?.slots.find((slot) => slot.role === 'cta');
+      assert.ok(cta, `${template.name}: a closing call`);
+      for (const example of examples) assert.ok(example.length <= cta.maxChars, `${template.name}: "${example}" within ${cta.maxChars}`);
     }
   });
 
