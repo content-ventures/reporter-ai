@@ -34,8 +34,9 @@ import { horizonteStory } from './stories/horizonte.ts';
 import { lumeStory } from './stories/lume.ts';
 import { patioCouroStory } from './stories/patio-couro.ts';
 import type { Story, StoryContext, StoryExpectation } from './stories/types.ts';
-import type { TemplateLibraryData } from '../ports/render-template.ts';
+import type { CreativeFont, TemplateLibraryData } from '../ports/render-template.ts';
 import { CAROUSEL_TEMPLATE_DESCRIPTIONS, CAROUSEL_TEMPLATE_LIBRARY, CAROUSEL_TEMPLATE_RENDERS, CAROUSEL_TEMPLATES } from './templates/catalog.ts';
+import { CREATIVE_FONTS } from './templates/kit.ts';
 import type { TemplateRender } from './templates/provisional.ts';
 import { ago, assertValidNow } from './time.ts';
 
@@ -71,6 +72,8 @@ export type FixtureSet = {
   templateDescriptions: Record<TemplateId, string>;
   /** Library metadata (category, format, tags, status) and sample copy per template. */
   templateLibrary: Record<TemplateId, TemplateLibraryData>;
+  /** Brand typefaces the templates draw with, registered for the canvas only. */
+  templateFonts: readonly CreativeFont[];
   scriptBook: ScriptBook;
   /** Catalogue of seeded states (for tests and the "Simulação" command group). */
   stories: FixtureStory[];
@@ -113,6 +116,7 @@ export function createFixtures(options: FixtureOptions): FixtureSet {
     templateRenders: structuredClone(CAROUSEL_TEMPLATE_RENDERS),
     templateDescriptions: { ...CAROUSEL_TEMPLATE_DESCRIPTIONS },
     templateLibrary: structuredClone(CAROUSEL_TEMPLATE_LIBRARY) as Record<TemplateId, TemplateLibraryData>,
+    templateFonts: CREATIVE_FONTS,
     samplePhoto: SAMPLE_PHOTO,
     samplePhotos: [SEAFOOD_SAMPLE_PHOTO],
   };

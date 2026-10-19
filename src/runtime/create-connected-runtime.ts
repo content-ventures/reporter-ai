@@ -44,7 +44,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(true),() => current.deploymentMode === 'cloud');
   const fixtures = createFixtures({ now: clock.now(),empty: true });
   const render = createLocalRenderService({ templates: fixtures.templates,renders: fixtures.templateRenders,
-    descriptions: fixtures.templateDescriptions,library: fixtures.templateLibrary,loadCover: assetCoverLoader(assets),
+    descriptions: fixtures.templateDescriptions,library: fixtures.templateLibrary,fontFaces: fixtures.templateFonts,loadCover: assetCoverLoader(assets),
     coverCredit: id => creditLine(assets.get(id)?.credit),samplePhoto: { assetId: fixtures.samplePhoto.assetId,credit: fixtures.samplePhoto.credit,load: servedCoverLoader(fixtures.samplePhoto.src) },
     samplePhotos: fixtures.samplePhotos.map(photo => ({ assetId: photo.assetId,credit: photo.credit,load: servedCoverLoader(photo.src) })),typefaces: options.typefaces });
   const runActive = () => Object.values(current.state.runFolds).some(fold => isRunActive(fold.run));

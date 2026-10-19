@@ -448,6 +448,142 @@ describe('library render features', () => {
   });
 });
 
+describe('brand creative primitives', () => {
+  type Recorded = { op: string; args: unknown[]; fill?: unknown };
+
+  /** A canvas that records every path, clip and transform call besides the text. */
+  function brandSurfaces(calls: Recorded[]): SurfaceFactory {
+    return (width, height) => {
+      const surface = fakeSurfaces(calls as Call[])(width, height)!;
+      const context = surface.context;
+      for (const op of ['beginPath', 'roundRect', 'fill', 'stroke', 'save', 'restore', 'clip', 'translate', 'scale', 'drawImage'] as const) {
+        (context as Record<string, unknown>)[op] = (...args: unknown[]) => { calls.push({ op, args, fill: context.fillStyle }); };
+      }
+      return surface;
+    };
+  }
+
+  /** The fixture cover with rounded and outlined boxes, a tagged call, a vector mark and a rounded photo. */
+  function branded(): TemplateRender {
+    const visual = TEMPLATE_RENDERS[TEMPLATE.id];
+    const cover = visual.layouts.cover;
+    return {
+      ...visual,
+      layouts: {
+        ...visual.layouts,
+        cover: {
+          ...cover,
+          shapes: [
+            { x: 0, y: 0, width: 400, height: 200, color: '#112233', radius: [0, 0, 40, 0] },
+            { x: 100, y: 1000, width: 300, height: 60, color: '#FFFFFF', radius: 30, outline: 3 },
+          ],
+          image: { ...cover.image!, radius: 40 },
+          vectors: [{ x: 100, y: 50, height: 86, viewBox: { x: 10, y: 0, width: 50, height: 172 }, paths: [{ d: 'M10 0H60V172H10Z', color: '#229FD7' }] }],
+          slots: { ...cover.slots, kicker: { ...cover.slots.kicker, pill: { color: '#E68040', padX: 20, padY: 10, radius: 40 } } },
+        },
+      },
+    };
+  }
+
+  it('draws rounded and outlined boxes, a band behind each line of a tagged slot and a vector mark in place', async () => {
+    const calls: Recorded[] = [];
+    const scope = globalThis as { Path2D?: unknown };
+    const original = scope.Path2D;
+    scope.Path2D = class {
+      d: string;
+      constructor(d: string) {
+        this.d = d;
+      }
+    };
+    try {
+      const service = createLocalRenderService({ templates: [TEMPLATE], renders: { [TEMPLATE.id]: branded() }, createSurface: brandSurfaces(calls), fontsReady: async () => undefined });
+      const rendered = await service.render({ body: body(), slideIds: ['s1'], scale: 0.5 });
+      assert.ok(rendered.ok && rendered.value.slides[0].image);
+    } finally {
+      scope.Path2D = original;
+    }
+    const rounds = calls.filter((call) => call.op === 'roundRect');
+    assert.ok(rounds.some((call) => JSON.stringify(call.args) === JSON.stringify([0, 0, 200, 100, [0, 0, 20, 0]])), 'own corners at export scale');
+    const outline = rounds.find((call) => JSON.stringify(call.args.slice(0, 4)) === JSON.stringify([50, 500, 150, 30]));
+    assert.ok(outline);
+    assert.equal(calls.filter((call) => call.op === 'stroke').length, 1, 'the outlined box is stroked, not filled');
+
+    const band = rounds.find((call) => call.fill === '#E68040');
+    const kicker = calls.find((call) => call.op === 'fillText' && call.args[0] === 'Entrevista');
+    assert.ok(band && kicker);
+    assert.ok(calls.indexOf(band) < calls.indexOf(kicker), 'the band goes under its text');
+    const style = TEMPLATE_RENDERS[TEMPLATE.id].layouts.cover.slots.kicker;
+    assert.equal(band.args[3], Math.round((style.lineHeight + 20) * 0.5), 'one line tall plus its padding');
+    assert.ok(Number(band.args[0]) <= Number(kicker.args[1]) - 10 && Number(band.args[2]) > 20, 'as wide as the text plus its padding');
+
+    const at = calls.findIndex((call) => call.op === 'translate' && call.args[0] === 50 && call.args[1] === 25);
+    assert.ok(at >= 0, 'the mark sits at its place');
+    assert.deepEqual(calls[at + 1].args, [0.25, 0.25], 'scaled from its viewBox to its height');
+    assert.deepEqual(calls[at + 2].args, [-10, -0]);
+    const path = calls.slice(at).find((call) => call.op === 'fill' && call.args.length === 1);
+    assert.equal((path?.args[0] as { d: string }).d, 'M10 0H60V172H10Z');
+    assert.equal(path?.fill, '#229FD7');
+  });
+
+  it('clips the photo and its scrim to the rounded frame, then lifts the clip', async () => {
+    const calls: Recorded[] = [];
+    const service = createLocalRenderService({
+      templates: [TEMPLATE],
+      renders: { [TEMPLATE.id]: branded() },
+      createSurface: brandSurfaces(calls),
+      fontsReady: async () => undefined,
+      loadCover: async () => ({ ok: true, value: { source: 'bitmap', width: 2000, height: 1000 } }),
+    });
+    const rendered = await service.render({ body: body(), slideIds: ['s1'], articleCover: 'img-capa' });
+    assert.ok(rendered.ok && rendered.value.slides[0].background?.drawn);
+    const order = calls.map((call) => call.op).filter((op) => ['save', 'clip', 'drawImage', 'restore'].includes(op));
+    assert.deepEqual(order.slice(0, 4), ['save', 'clip', 'drawImage', 'restore']);
+    const clip = calls.findIndex((call) => call.op === 'clip');
+    const frame = calls.slice(0, clip).reverse().find((call) => call.op === 'roundRect');
+    assert.deepEqual(frame?.args, [0, 0, 1080, 600, [40, 40, 40, 40]]);
+  });
+
+  it('a canvas without rounded paths or Path2D still draws the boxes flat and skips the mark', async () => {
+    const calls: Call[] = [];
+    const service = createLocalRenderService({ templates: [TEMPLATE], renders: { [TEMPLATE.id]: branded() }, createSurface: fakeSurfaces(calls), fontsReady: async () => undefined });
+    const rendered = await service.render({ body: body(), slideIds: ['s1'] });
+    assert.ok(rendered.ok && rendered.value.slides[0].image);
+    assert.ok(calls.some((call) => call.op === 'fillRect' && call.fill === '#112233'));
+    assert.ok(calls.some((call) => call.op === 'fillRect' && call.fill === '#E68040'), 'the band as a flat box');
+  });
+
+  it('registers the brand faces once with the document font set, never twice', () => {
+    const added: { family: string; source: string; descriptors: Record<string, string> }[] = [];
+    const scope = globalThis as { document?: unknown; FontFace?: unknown };
+    const [document, FontFace] = [scope.document, scope.FontFace];
+    scope.document = { fonts: { add: (face: (typeof added)[number]) => added.push(face) } };
+    scope.FontFace = class {
+      family: string;
+      source: string;
+      descriptors: Record<string, string>;
+      constructor(family: string, source: string, descriptors: Record<string, string>) {
+        this.family = family;
+        this.source = source;
+        this.descriptors = descriptors;
+      }
+    };
+    try {
+      const fontFaces = [{ family: 'Montserrat', weight: 700, url: '/test-fonts/montserrat-700.woff2' }];
+      createLocalRenderService({ templates: [TEMPLATE], renders: TEMPLATE_RENDERS, createSurface: () => undefined, fontFaces });
+      createLocalRenderService({ templates: [TEMPLATE], renders: TEMPLATE_RENDERS, createSurface: () => undefined, fontFaces });
+    } finally {
+      scope.document = document;
+      scope.FontFace = FontFace;
+    }
+    assert.deepEqual(added.map((face) => [face.family, face.source, face.descriptors]), [['Montserrat', 'url("/test-fonts/montserrat-700.woff2")', { weight: '700', style: 'normal' }]]);
+  });
+
+  it('estimates the geometric brand face wider than the interface face', () => {
+    const inter = estimateText('Mais eficiência no processamento', { size: 60, weight: 700 });
+    assert.ok(estimateText('Mais eficiência no processamento', { family: 'Montserrat', size: 60, weight: 700 }) > inter * 1.1);
+  });
+});
+
 function body0(): CarouselBody {
   return {
     type: 'carousel',
