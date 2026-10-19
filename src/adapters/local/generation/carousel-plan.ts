@@ -43,7 +43,8 @@ const ORIGIN_KICKERS: Partial<Record<SourceOrigin, string>> = {
   talk: 'Palestra',
 };
 
-const CTA_TEXT = 'Leia a matéria completa';
+/** The closing call: an Instagram post has no clickable link, so it points to the bio. */
+const CTA_TEXT = 'Matéria completa no link da bio';
 
 /**
  * A paragraph read as a point: the first statement (the words inside its quotation, without the
