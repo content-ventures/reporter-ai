@@ -1,6 +1,6 @@
 # R2 · Hard News — UI/UX preview
 
-The R2 experience (F2.1–F2.13) runs locally on top of the R1 product, behind the release gate. R1 builds are unchanged: every R2 screen, menu entry and plug point checks `isReleased('R2')` or reads the R2 desk context, which only exists when R2 is released.
+The R2 experience (F2.1–F2.13) runs on top of the R1 product, behind the release gate. In an R1 build (production) the R2 screens are a demonstration on their own routes; the R1 stages do not change.
 
 ## Preview
 
@@ -10,7 +10,19 @@ NEXT_PUBLIC_REPORTER_E2E_FIXTURES=true NEXT_PUBLIC_REPORTER_PREVIEW_RELEASE=R2 p
 
 `CURRENT_RELEASE` becomes `R2` only when both variables are set (simulated fixtures workspace). The connected build always shows R1. `/?reset=1` restarts both the workspace and the desk.
 
-The R2 screens with no backend yet carry an amber "Demo" Badge in the top bar: Notícias and Fontes, Apuração, Imagens (bank and photo page), Citações, Acervo, Mapa editorial, Guia de escrita and Integrações (catalog, each app, WordPress). Screens on real data do not carry it: Modelos and the R1 stages. The list is `isR2DemoPath` in `ui/r2-preview.ts`, and it is never shown in an R1 build (R1 keeps its own "R2 · Demonstração" Badge on the demonstration screens). Inside the R1 screens, each simulated R2 block carries the same word in its header (`DemoBadge`, `hard-news/demo-badge.tsx`): Início's "Pauta do dia", the Apuração lane in Produções, the studio's Fontes, Evidências and Do acervo, and the Entrega's Portal.
+The R2 screens with no backend yet carry an amber "Demo" Badge in the top bar, in both builds: Notícias and Fontes, Apuração, Acervo, Mapa editorial, Guia de escrita and Integrações (catalog, each app, WordPress). Imagens (bank and photo page) and Citações carry it only without the R1 visual and citation libraries (the fixtures builds): the connected build reads and saves real data there. Screens on real data do not carry it: Modelos and the R1 stages. The list is `isR2DemoPath` in `ui/r2-preview.ts`. In an R2 build, inside the R1 screens, each simulated R2 block carries the same word in its header (`DemoBadge`, `hard-news/demo-badge.tsx`): Início's "Pauta do dia", the Apuração lane in Produções, the studio's Fontes, Evidências and Do acervo, and the Entrega's Portal.
+
+## In an R1 build (demonstration)
+
+Production is an R1 build. `HARD_NEWS_DEMO` (`ui/r2-preview.ts`) is true there, and:
+- the menu is the R2 one: Início, Notícias, Produções; Biblioteca (Modelos, Imagens, Citações, Acervo); Configurações (Mapa editorial, Guia de escrita, Integrações);
+- the R2 routes render the R2 screens, on the desk kept in this browser; `/news/draft` and the first review URL (`/prototypes/r2?screen=`) open the matching destination; Apuração (`/productions/{id}/research`) stays 404;
+- the desk writes nothing to the workspace: no example productions are seeded and **Cobrir** is disabled ("Na demonstração, Cobrir não abre pauta.");
+- the R1 stages see no desk (`useOptionalHardNews` returns `null` in the demonstration), so Início, Produções, the studios, the review and the Entrega are R1 as they were;
+- Imagens and Citações read the R1 libraries in the connected build, and "Usar em artigo" places a photo in a real article, as in R2;
+- Modelos is the gallery below, on the workspace's own models.
+
+`e2e/hard-news-demo.spec.ts` (connected smoke) opens every demonstration screen at 1440 and 390 px and checks that no API request writes.
 
 ## Journey
 
@@ -235,7 +247,7 @@ Preview data and limits:
 
 ### Modelos (carousel and static templates)
 
-`/library/templates` keeps the R1 address and parameters (`?format&q&model`), so R1 links still open. In R2 it is a gallery:
+`/library/templates` keeps the R1 address and parameters (`?format&q&model`), so R1 links still open. In every build it is a gallery:
 - The header names the default model ("Padrão: Seafood Manchete") and has **Criar carrossel**.
 - The bar has the piece tabs (**Carrosséis** with its count, **Estáticos** "Em breve"), the search and the format (Feed 4:5, Quadrado 1:1, Stories 9:16 "Em breve").
 - The models sit on **shelves by family** (Notícia, Explica, Podcast), each with its use line. With more than 1280 px of content the three shelves sit side by side, so the Feed catalog fits one 1920 × 1080 screen; below that they stack. A format without families (Quadrado) is one shelf without a heading.
@@ -282,10 +294,9 @@ Backend work this preview does not do:
 
 ## R1 files with R2 plug points
 
-Each plug point is inert before R2:
+Each plug point is inert before R2 (the demonstration hides the desk from them):
 - `registries/release.ts`, `registries/navigation.ts`, `ui/r2-preview.ts`, `ui/routes.ts`, `ui/approval-copy.ts`, `ui/shell/workspace-shell.tsx`;
 - `app/(workspace)/layout.tsx` and the R2 route pages;
-- `app/(workspace)/library/templates/page.tsx` (Modelos: the R2 screen behind `isReleased('R2')`, else the R1 `TemplatesScreen`);
 - `features/production/{production-header,production-frame,production-index,trail}`;
 - `features/productions/productions-kanban.tsx`;
 - `features/studio/article/{use-studio-checks,use-article-studio,copilot-pane,editor-toolbar}`;
@@ -293,4 +304,4 @@ Each plug point is inert before R2:
 - `domain/approval.ts` (one `SendItemId`);
 - `adapters/local/store/send-check.ts`.
 
-The Codex demonstration (`features/r2-prototype`) still renders in R1 builds, exactly as in v0.5.0.
+The Codex demonstration (`features/r2-prototype`, `docs/R2_UI_PROTOTYPE.md`) was removed when the R2 screens replaced it in R1 builds.
