@@ -4,6 +4,12 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-19
+
+### Fixed
+
+- Keep Seafood V2 chrome clear of block edges.
+
 ## [0.9.0] - 2026-10-19
 
 ### Added
