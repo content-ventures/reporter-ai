@@ -72,4 +72,5 @@ export const LOCAL_CATALOG = Object.freeze([
   'database/migrations/004-editorial-workspace.sql',
   'database/migrations/012-worker-queue-status.sql',
   'database/migrations/014-editorial-rows.sql',
+  'database/migrations/020-platform-admin.sql',
 ]);
