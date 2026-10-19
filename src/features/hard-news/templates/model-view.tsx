@@ -19,6 +19,7 @@ import {
 import { Check, Plus } from '@content-ventures/design-system/v3/icons';
 import type { AssetId } from '@/domain';
 import type { TemplateInfo } from '@/ports';
+import { useCan } from '@/state';
 import { rememberTemplate } from '@/features/library/last-template';
 import { statusBadge, templateLine, type LibraryParams } from '@/features/library/library-model';
 import { useTemplatePreview } from '@/features/library/use-template-images';
@@ -77,6 +78,8 @@ export function ModelView({
 }) {
   const [index, setIndex] = useState(0);
   const [starting, setStarting] = useState(false);
+  // Starting a carousel is for whoever edits pieces (the carousel stage asks the same).
+  const canStart = useCan('piece.edit');
   const preview = useTemplatePreview(template.id, { articleCover, scale: STAGE_SCALE });
   const items = galleryItems(preview.slides, template);
   // The pages follow the model's layouts, so the limits are known before the render arrives.
@@ -104,9 +107,11 @@ export function ModelView({
           meta={isDefault ? [templateLine(template), DEFAULT_NOTE] : [templateLine(template)]}
           actions={
             <>
-              <Button variant="primary" icon={Plus} onClick={() => setStarting(true)}>
-                Criar carrossel
-              </Button>
+              {canStart ? (
+                <Button variant="primary" icon={Plus} onClick={() => setStarting(true)}>
+                  Criar carrossel
+                </Button>
+              ) : null}
               {isDefault ? null : (
                 <Button icon={Check} onClick={makeDefault}>
                   Usar como padrão
@@ -152,7 +157,7 @@ export function ModelView({
           </Carousel>
         ) : null}
       </PageStack>
-      <StartDrawer template={template} open={starting} onClose={() => setStarting(false)} />
+      {canStart ? <StartDrawer template={template} open={starting} onClose={() => setStarting(false)} /> : null}
     </>
   );
 }
