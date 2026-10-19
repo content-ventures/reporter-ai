@@ -24,6 +24,15 @@ export async function kickWorker(request: typeof fetch = fetch) {
   } catch (error) { logEvent('api', 'worker_kick_failed', { error_code: safeCode(error) }); }
 }
 
+let lastNewsWake = Number.NEGATIVE_INFINITY;
+
+/** A radar poll that finds a source due wakes the worker, at most once a minute per server instance. */
+export function shouldWakeForNews(now = Date.now()) {
+  if (now - lastNewsWake < HEAL_INTERVAL_MS) return false;
+  lastNewsWake = now;
+  return true;
+}
+
 /** A stall seen by a poll wakes the worker again, at most once a minute per server instance. */
 export function shouldHealStall(now = Date.now()) {
   if (now - lastHeal < HEAL_INTERVAL_MS) return false;
