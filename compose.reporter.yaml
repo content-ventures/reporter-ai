@@ -32,6 +32,7 @@ services:
       - ./database/migrations/019-background-article-images.sql:/docker-entrypoint-initdb.d/95-background-article-images.sql:ro
       - ./database/migrations/020-platform-admin.sql:/docker-entrypoint-initdb.d/96-platform-admin.sql:ro
       - ./database/migrations/023-fact-check.sql:/docker-entrypoint-initdb.d/97-fact-check.sql:ro
+      - ./database/migrations/024-news-intake.sql:/docker-entrypoint-initdb.d/98-news-intake.sql:ro
     networks:
       - reporter
     healthcheck:
