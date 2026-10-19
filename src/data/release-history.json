@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.5.1",
+  "currentVersion": "0.6.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,152 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.6.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-19",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 34 validated changes: describe the r1 wiring of images and quotes; read the r1 citation library in the quote bank; place a photo in the article from the image bank.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Add the hard news desk contract"
+        },
+        {
+          "type": "Added",
+          "description": "Add the news desk preview data"
+        },
+        {
+          "type": "Added",
+          "description": "Add the image bank rules"
+        },
+        {
+          "type": "Added",
+          "description": "Add research, library and photo bank preview data"
+        },
+        {
+          "type": "Added",
+          "description": "Add the desk store and its actions"
+        },
+        {
+          "type": "Added",
+          "description": "Persist the desk state and share its helpers"
+        },
+        {
+          "type": "Added",
+          "description": "Gate the R2 preview in the shell and menu"
+        },
+        {
+          "type": "Added",
+          "description": "Add the news radar board"
+        },
+        {
+          "type": "Added",
+          "description": "Add the radar rules, story file and dialogs"
+        },
+        {
+          "type": "Added",
+          "description": "Add the feed sources screen"
+        },
+        {
+          "type": "Added",
+          "description": "Add the research stage"
+        },
+        {
+          "type": "Added",
+          "description": "Show sources, evidence and archive links in the studio"
+        },
+        {
+          "type": "Added",
+          "description": "Send covered stories to the portal CMS"
+        },
+        {
+          "type": "Added",
+          "description": "Show desk stories on the board and the home"
+        },
+        {
+          "type": "Added",
+          "description": "Add the image bank screen"
+        },
+        {
+          "type": "Added",
+          "description": "Add the photo page"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover the image bank rules"
+        },
+        {
+          "type": "Added",
+          "description": "Add the quote bank screen"
+        },
+        {
+          "type": "Added",
+          "description": "Add the archive search, shelves and covers"
+        },
+        {
+          "type": "Added",
+          "description": "Add the archive library screen"
+        },
+        {
+          "type": "Added",
+          "description": "Edit the editorial map in place"
+        },
+        {
+          "type": "Added",
+          "description": "Edit the writing guide in place"
+        },
+        {
+          "type": "Added",
+          "description": "Add the app catalog rules"
+        },
+        {
+          "type": "Added",
+          "description": "Add the connection guides and the local store"
+        },
+        {
+          "type": "Added",
+          "description": "Add the app catalog and app pages"
+        },
+        {
+          "type": "Added",
+          "description": "Add the guided connection and app settings"
+        },
+        {
+          "type": "Added",
+          "description": "Add the webhooks and WordPress pages"
+        },
+        {
+          "type": "Added",
+          "description": "Add the model shelves rules"
+        },
+        {
+          "type": "Added",
+          "description": "Add the model library screen"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe the R2 hard news preview"
+        },
+        {
+          "type": "Added",
+          "description": "Read the R1 visual library in the image bank"
+        },
+        {
+          "type": "Added",
+          "description": "Place a photo in the article from the image bank"
+        },
+        {
+          "type": "Added",
+          "description": "Read the R1 citation library in the quote bank"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe the R1 wiring of images and quotes"
+        }
+      ]
+    },
     {
       "version": "0.5.1",
       "roadmapRelease": "R0",

@@ -4,6 +4,51 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-19
+
+### Added
+
+- Add the hard news desk contract.
+- Add the news desk preview data.
+- Add the image bank rules.
+- Add research, library and photo bank preview data.
+- Add the desk store and its actions.
+- Persist the desk state and share its helpers.
+- Gate the R2 preview in the shell and menu.
+- Add the news radar board.
+- Add the radar rules, story file and dialogs.
+- Add the feed sources screen.
+- Add the research stage.
+- Show sources, evidence and archive links in the studio.
+- Send covered stories to the portal CMS.
+- Show desk stories on the board and the home.
+- Add the image bank screen.
+- Add the photo page.
+- Add the quote bank screen.
+- Add the archive search, shelves and covers.
+- Add the archive library screen.
+- Edit the editorial map in place.
+- Edit the writing guide in place.
+- Add the app catalog rules.
+- Add the connection guides and the local store.
+- Add the app catalog and app pages.
+- Add the guided connection and app settings.
+- Add the webhooks and WordPress pages.
+- Add the model shelves rules.
+- Add the model library screen.
+- Read the R1 visual library in the image bank.
+- Place a photo in the article from the image bank.
+- Read the R1 citation library in the quote bank.
+
+### Maintenance
+
+- Cover the image bank rules.
+
+### Documentation
+
+- Describe the R2 hard news preview.
+- Describe the R1 wiring of images and quotes.
+
 ## [0.5.1] - 2026-10-17
 
 ### Improved
