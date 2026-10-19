@@ -90,7 +90,7 @@ const ROUTES: readonly RouteCase[] = [
   { name: "Entrega com carrossel desatualizado", path: "/productions/prod-patio-couro/delivery", ready: heading(/Pátio Couro/), trail: { title: { name: /Pátio Couro/, href: "/productions/prod-patio-couro/carousel" }, stage: "Entrega" } },
   { name: "Entrega · artigo final", path: "/productions/prod-bella-passo/delivery?view=article", ready: (page) => page.getByRole("list", { name: "Aprovação" }), trail: { title: { name: /Bella Passo/, href: "/productions/prod-bella-passo/delivery" }, stage: "Entrega" } },
   { name: "Produção abre a etapa atual", path: "/productions/prod-lume", landsOn: "/productions/prod-lume/carousel", ready: heading(/Lume/), trail: { title: { name: /Lume/, href: "/productions/prod-lume/carousel" }, stage: "Carrossel" } },
-  { name: "Modelos", path: "/library/templates", ready: (page) => page.getByRole("button", { name: "Seafood Manchete", exact: true }).first() },
+  { name: "Modelos", path: "/library/templates", ready: (page) => page.getByRole("link", { name: "Seafood Manchete", exact: true }).first() },
   { name: "Versões", path: "/whats-new", ready: heading("Versões") },
   { name: "Logs", path: "/admin/audit", ready: heading("Logs") },
   { name: "Endereço antigo de versões", path: "/versions", landsOn: "/whats-new", ready: heading("Versões") },

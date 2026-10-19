@@ -3,8 +3,8 @@ import { TEMPLATE_CATALOG } from "../src/fixtures/templates/catalog";
 import { expectNoHorizontalOverflow, watchErrors } from "./support";
 
 /**
- * The carousel model library (F1.5): the "Modelos" page — one format at a time, a search, a model
- * opened in full with the sample photo and made the default — and "Trocar modelo" in the carousel
+ * The carousel model library (F1.5): the "Modelos" page — shelves by family, one format at a time, a
+ * search, a model's page with the sample photo, made the default — and "Trocar modelo" in the carousel
  * studio, which draws this carousel in the candidate model, keeps the texts, redraws the slides at
  * the new model's proportion and can be undone from the toast. Each test opens a fresh context, so
  * the workspace starts from the fixtures.
@@ -24,19 +24,20 @@ async function expectRatio(image: Locator, ratio: number): Promise<void> {
     .toBe(true);
 }
 
-test("Modelos: filtrar a biblioteca e abrir um modelo com todos os layouts", async ({ page }) => {
+test("Modelos: prateleiras por família, busca, formato e a página do modelo", async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto("/library/templates");
-  const library = page.getByRole("list", { name: "Modelos de carrossel" });
-  const cards = library.getByRole("listitem");
-  // One format at a time: Feed first, every card at its proportion.
+  const cards = page.getByRole("list", { name: /^Modelos/ }).getByRole("listitem");
+  // One format at a time: Feed first, the models on shelves by family.
   await expect(cards).toHaveCount(FEED_MODELS);
+  await expect(page.getByRole("list", { name: "Modelos de Notícia" })).toBeVisible();
   // The current Seafood library is editorially available without claiming Marketing approval.
-  await expect(library.getByText("Aprovado")).toHaveCount(0);
-
-  // Stories (9:16) is listed for a later release and cannot be chosen.
-  await expect(page.getByRole("tab", { name: /Stories/ })).toBeDisabled();
-  await page.getByRole("tab", { name: /Quadrado/ }).click();
+  await expect(page.getByRole("main").getByText("Aprovado")).toHaveCount(0);
+  // Static posts and Stories (9:16) are listed for a later release and cannot be chosen.
+  await expect(page.getByRole("tab", { name: /Estáticos/ })).toBeDisabled();
+  const formats = page.getByRole("radiogroup", { name: "Formato" });
+  await expect(formats.getByRole("radio", { name: /Stories/ })).toBeDisabled();
+  await formats.getByRole("radio", { name: /Quadrado/ }).click();
   await expect(cards).toHaveCount(3);
   await expect(page).toHaveURL(/[?&]format=square/);
   // The search ignores accents and case, inside the chosen format; elsewhere it offers that format.
@@ -49,26 +50,22 @@ test("Modelos: filtrar a biblioteca e abrir um modelo com todos os layouts", asy
   await search.fill("");
   await expect(cards).toHaveCount(FEED_MODELS);
 
-  await test.step("abrir o modelo: cada layout desenhado, e o endereço leva até ele", async () => {
-    await library.getByRole("button", { name: "Seafood Panorama", exact: true }).click();
-    const drawer = page.getByRole("dialog", { name: "Seafood Panorama" });
-    await expect(drawer).toBeVisible();
+  await test.step("a página do modelo: cada página desenhada, e o endereço leva até ela", async () => {
+    await cards.getByRole("link", { name: "Seafood Panorama", exact: true }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Seafood Panorama" })).toBeVisible();
     await expect(page).toHaveURL(/[?&]model=/);
-    const layouts = drawer.getByRole("img", { name: / no modelo Seafood Panorama$/ });
-    await expect(layouts).toHaveCount(7);
-    await expect(drawer.getByRole("img", { name: "Capa no modelo Seafood Panorama" })).toHaveAttribute("src", /^data:image\/png/);
-    await expect(drawer.getByText("1080 × 1350 px")).toBeVisible();
-    // "Usar como padrão": the next carousel starts from it, and the library says so.
-    await drawer.getByRole("button", { name: "Usar como padrão" }).click();
+    await expect(page.getByRole("img", { name: / no modelo Seafood Panorama$/ }).first()).toHaveAttribute("src", /^data:image\/png/);
+    // "Usar como padrão": the next carousel starts from it, and the page says so.
+    await page.getByRole("button", { name: "Usar como padrão" }).click();
     await expect(page.getByText("Seafood Panorama é o modelo padrão")).toBeVisible();
-    await expect(drawer.getByText("Modelo padrão dos próximos carrosséis")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Usar como padrão" })).toBeHidden();
 
-    // The same address opens the same model.
+    // The same address opens the same model; the trail goes back to the shelves.
     await page.reload();
-    await expect(page.getByRole("dialog", { name: "Seafood Panorama" })).toBeVisible();
-    await page.getByRole("button", { name: "Fechar modelo" }).click();
-    await expect(page.getByRole("dialog", { name: "Seafood Panorama" })).toBeHidden();
+    await expect(page.getByRole("heading", { level: 1, name: "Seafood Panorama" })).toBeVisible();
+    await page.getByRole("link", { name: "Modelos", exact: true }).last().click();
     await expect(page).not.toHaveURL(/[?&]model=/);
+    await expect(page.getByText("Padrão: Seafood Panorama")).toBeVisible();
   });
 
   await expectNoHorizontalOverflow(page);
