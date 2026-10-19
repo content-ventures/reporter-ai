@@ -8,6 +8,8 @@ export * from './result.ts';
 export * from './refs.ts';
 export * from './workspace.ts';
 export * from './profile.ts';
+export * from './platform.ts';
+export * from './platform-usage.ts';
 export * from './source.ts';
 export * from './article.ts';
 export * from './article-slots.ts';

@@ -19,3 +19,4 @@ export * from './export.ts';
 export * from './assets.ts';
 export * from './image-generation.ts';
 export * from './audit.ts';
+export * from './platform.ts';
