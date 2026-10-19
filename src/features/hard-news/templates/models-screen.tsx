@@ -24,7 +24,7 @@ import type { TemplateInfo } from '@/ports';
 import { useLastTemplate } from '@/features/library/last-template';
 import { DEFAULT_LIBRARY_PARAMS, FIRST_FORMAT, initialTemplate, otherFormatMatch, type LibraryParams } from '@/features/library/library-model';
 import { useLibraryParams, type SetLibraryParams } from '@/features/library/use-library-params';
-import { useRuntime } from '@/state';
+import { useCan, useRuntime } from '@/state';
 import { useBreadcrumb } from '@/ui/shell';
 import { usePhone } from '@/ui/use-phone';
 import { ModelCard, ModelCardSkeleton } from './model-card';
@@ -76,6 +76,8 @@ function ModelsGallery({ params, setParams }: { params: LibraryParams; setParams
   const [query, setQuery] = useState(params.query);
   const [format, setFormat] = useState<CarouselFormatId>(params.format ?? FIRST_FORMAT);
   const [starting, setStarting] = useState(false);
+  // Starting a carousel is for whoever edits pieces (the carousel stage asks the same).
+  const canStart = useCan('piece.edit');
   const shown = { format: shownFormat(format), query };
   const shelves = familyShelves(templates, { format, query });
   const elsewhere = runtime && shelves.length === 0 ? otherFormatMatch(templates, { format, query }) : undefined;
@@ -115,9 +117,11 @@ function ModelsGallery({ params, setParams }: { params: LibraryParams; setParams
           title="Modelos"
           meta={standardTemplate ? [`Padrão: ${standardTemplate.name}`] : undefined}
           actions={
-            <Button variant="primary" icon={Plus} disabled={!standardTemplate} onClick={() => setStarting(true)}>
-              Criar carrossel
-            </Button>
+            canStart ? (
+              <Button variant="primary" icon={Plus} disabled={!standardTemplate} onClick={() => setStarting(true)}>
+                Criar carrossel
+              </Button>
+            ) : undefined
           }
         />
         {status === 'error' ? (
@@ -174,7 +178,7 @@ function ModelsGallery({ params, setParams }: { params: LibraryParams; setParams
           </>
         )}
       </PageStack>
-      <StartDrawer template={standardTemplate} open={starting} onClose={() => setStarting(false)} />
+      {canStart ? <StartDrawer template={standardTemplate} open={starting} onClose={() => setStarting(false)} /> : null}
     </>
   );
 }
