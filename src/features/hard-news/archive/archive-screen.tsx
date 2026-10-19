@@ -12,6 +12,7 @@ import {
   PageHeader,
   PageStack,
   Pagination,
+  Panel,
   SearchField,
   Section,
   SkeletonText,
@@ -205,9 +206,14 @@ export function ArchiveScreen() {
           onOpenArticle={open}
         />
       ) : ready ? (
-        <Carousel label="Editorias" title="Editorias" perView={perView}>
-          {shelves.map((shelf) => <ShelfCard key={shelf.name} shelf={shelf} compact={phone} selected={section === shelf.name} onSelect={() => showShelf(shelf.name)} />)}
-        </Carousel>
+        // The editorias head their own panel (h2), so the folders (h3) sit under it.
+        <Panel label="Editorias">
+          <Section title="Editorias">
+            <Carousel label="Editorias" perView={perView}>
+              {shelves.map((shelf) => <ShelfCard key={shelf.name} shelf={shelf} compact={phone} selected={section === shelf.name} onSelect={() => showShelf(shelf.name)} />)}
+            </Carousel>
+          </Section>
+        </Panel>
       ) : (
         <Grid columns="auto" min={200} label="Carregando editorias">
           <Card padding="sm" loading><SkeletonText lines={3} /></Card>
