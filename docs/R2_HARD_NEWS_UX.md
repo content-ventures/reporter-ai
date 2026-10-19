@@ -10,7 +10,7 @@ NEXT_PUBLIC_REPORTER_E2E_FIXTURES=true NEXT_PUBLIC_REPORTER_PREVIEW_RELEASE=R2 p
 
 `CURRENT_RELEASE` becomes `R2` only when both variables are set (simulated fixtures workspace). The connected build always shows R1. `/?reset=1` restarts both the workspace and the desk.
 
-The R2 screens with no backend yet carry an amber "Demo" Badge in the top bar, in both builds: Notícias and Fontes, Apuração (R2 build only; an R1 build answers 404 there, without it), Acervo, Mapa editorial, Guia de escrita and Integrações (catalog, each app, WordPress). Imagens (bank and photo page) and Citações carry it only without the R1 visual and citation libraries (the fixtures builds): the connected build reads and saves real data there. Screens on real data do not carry it: Modelos and the R1 stages. The list is `isR2DemoPath` in `ui/r2-preview.ts`. In an R2 build, inside the R1 screens, each simulated R2 block carries the same word in its header (`DemoBadge`, `hard-news/demo-badge.tsx`): Início's "Pauta do dia", the Apuração lane in Produções, the studio's Fontes, Evidências and Do acervo, and the Entrega's Portal.
+The R2 screens with no backend yet carry an amber "Demo" Badge in the top bar, in both builds: Apuração (R2 build only; an R1 build answers 404 there, without it), Acervo, Mapa editorial, Guia de escrita and Integrações (catalog, each app, WordPress). Imagens (bank and photo page) and Citações carry it only without the R1 visual and citation libraries (the fixtures builds): the connected build reads and saves real data there. Notícias, Fontes and the Google Alertas and RSS.app pages carry it only without the server's news (F2.1, `docs/NEWS_INTAKE.md`). Screens on real data do not carry it: Modelos and the R1 stages. The list is `isR2DemoPath` in `ui/r2-preview.ts`. In an R2 build, inside the R1 screens, each simulated R2 block carries the same word in its header (`DemoBadge`, `hard-news/demo-badge.tsx`): Início's "Pauta do dia", the Apuração lane in Produções, the studio's Fontes, Evidências and Do acervo, and the Entrega's Portal.
 
 ## In an R1 build (demonstration)
 
@@ -23,7 +23,7 @@ Production is an R1 build. `HARD_NEWS_DEMO` (`ui/r2-preview.ts`) is true there, 
 - Imagens and Citações read the R1 libraries in the connected build, and "Usar em artigo" places a photo in a real article, as in R2;
 - Modelos is the gallery below, on the workspace's own models.
 
-`e2e/hard-news-demo.spec.ts` (connected smoke) opens the radar, Fontes, Acervo, Mapa editorial, Guia de escrita, Integrações, one app and WordPress at 1440 and 390 px, with "Demo" in the top bar, and checks that no API request writes.
+`e2e/hard-news-demo.spec.ts` (connected smoke) opens Acervo, Mapa editorial, Guia de escrita, Integrações, one app and WordPress at 1440 and 390 px, with "Demo" in the top bar, and checks that no API request writes. It also opens the radar, Fontes and RSS.app on the server's news (mocked), without "Demo", triage or decisions, with the story's text read on demand.
 
 ## Journey
 
@@ -133,9 +133,9 @@ Preview data and limits:
 
 ### Integrações (apps and connections)
 
-`/admin/integrations` (admin only) is a catalog of 18 apps. They are grouped by what they do for the desk:
+`/admin/integrations` (admin only) is a catalog of 19 apps. They are grouped by what they do for the desk:
 - Publicação: WordPress, Ghost, Drupal.
-- Fontes de notícias: Feeds RSS, Google Alertas, Estadão Conteúdo.
+- Fontes de notícias: Feeds RSS, Google Alertas, RSS.app, Estadão Conteúdo.
 - Comunicação: Slack, Microsoft Teams, E-mail.
 - Imagens: Unsplash, Pexels, Bynder.
 - Automação: Webhooks, Zapier.
