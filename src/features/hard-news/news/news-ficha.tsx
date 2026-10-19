@@ -206,13 +206,15 @@ export type DecisionProps = {
   item: NewsItem;
   covering: boolean;
   canCover: boolean;
+  /** The R1 build's demonstration: "Cobrir" waits, with the reason in view. */
+  demo?: boolean;
   onCover: (item: NewsItem) => void;
   onPostpone: (item: NewsItem, hours: number, label: string) => void;
   onDiscard: (item: NewsItem, reason: string) => void;
 };
 
 /** The one decision under the story: Descartar, Adiar, Cobrir (the only blue button of the desk). */
-export function DecisionBar({ item, covering, canCover, onCover, onPostpone, onDiscard }: DecisionProps) {
+export function DecisionBar({ item, covering, canCover, demo = false, onCover, onPostpone, onDiscard }: DecisionProps) {
   const { actions } = useHardNews();
   const dossier = useDossier(item.productionId);
   if (item.status === 'covered' && item.productionId) {
@@ -236,7 +238,7 @@ export function DecisionBar({ item, covering, canCover, onCover, onPostpone, onD
   const reading = !item.classification;
   const reasonId = `decision-${item.id}`;
   return (
-    <ActionBar position="static" detail={reading ? 'Aguarde a IA terminar a leitura.' : !canCover ? 'Só editor ou admin abre pautas.' : undefined} detailId={reasonId}>
+    <ActionBar position="static" detail={reading ? 'Aguarde a IA terminar a leitura.' : demo ? 'Na demonstração, Cobrir não abre pauta.' : !canCover ? 'Só editor ou admin abre pautas.' : undefined} detailId={reasonId}>
       <Menu
         label="Descartar"
         align="end"

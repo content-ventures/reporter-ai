@@ -55,14 +55,15 @@ export function NewsDeskFromUrl() {
  * research right there). At 1024 px or less the board and the story are two tabs.
  */
 export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
-  const { state, ready, actions } = useHardNews();
+  const { state, ready, actions, demo } = useHardNews();
   const router = useRouter();
   const phone = usePhone();
   /** The frame turns into tabs (Radar | Notícia) at 1024 px; "Cobrir agora" fits three cards from 1600. */
   const narrow = useMediaQuery('(max-width: 1024px)');
   const wide = useMediaQuery('(min-width: 1600px)');
   const clock = useNow();
-  const canCover = useCan('production.create');
+  // The demonstration opens no production in the real workspace: "Cobrir" says why it waits.
+  const canCover = useCan('production.create') && !demo;
   const [chosenTab, setTab] = useState<DeskTab>();
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | undefined>(initialItem);
@@ -258,7 +259,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
             </List>
           ),
           footer: live && shown
-            ? <DecisionBar item={shown} covering={covering} canCover={canCover} onCover={(item) => void cover(item)} onPostpone={postpone} onDiscard={discard} />
+            ? <DecisionBar item={shown} covering={covering} canCover={canCover} demo={demo} onCover={(item) => void cover(item)} onPostpone={postpone} onDiscard={discard} />
             : undefined,
         }}
       >

@@ -98,6 +98,8 @@ type HardNewsContextValue = {
   ready: boolean;
   writing?: WritingProgress;
   actions: HardNewsActions;
+  /** The R1 build's demonstration: simulated data only, nothing written to the workspace. */
+  demo: boolean;
 };
 
 const HardNewsContext = createContext<HardNewsContextValue | null>(null);
@@ -125,11 +127,12 @@ function sameUrl(a: string, b: string): boolean {
 }
 
 /**
- * R2 · Hard News desk for the local preview. It keeps the desk's records in this browser and uses
- * the workspace's own commands where R2 meets R1: "Cobrir" opens a production in Produções and the
- * written draft lands in the same article studio.
+ * R2 · Hard News desk. It keeps the desk's records in this browser and uses the workspace's own
+ * commands where R2 meets R1: "Cobrir" opens a production in Produções and the written draft lands
+ * in the same article studio. As the R1 build's demonstration (`demo`) it writes nothing to the
+ * workspace: no example productions and no "Cobrir"; the R1 screens do not see the desk.
  */
-export function HardNewsProvider({ children }: { children: ReactNode }) {
+export function HardNewsProvider({ children, demo = false }: { children: ReactNode; demo?: boolean }) {
   const commands = useCommands();
   const runtime = useRuntime();
   const session = useSession();
@@ -193,7 +196,7 @@ export function HardNewsProvider({ children }: { children: ReactNode }) {
 
   // The example's covered stories: one being researched, one already written in the studio.
   useEffect(() => {
-    if (!ready || latest.current.seeded || seeding.current || !runtime.runtime) return;
+    if (demo || !ready || latest.current.seeded || seeding.current || !runtime.runtime) return;
     seeding.current = true;
     const live = runtime.runtime;
     /**
@@ -258,7 +261,7 @@ export function HardNewsProvider({ children }: { children: ReactNode }) {
       }));
       seeding.current = false;
     })();
-  }, [commands, latest, openProduction, ready, runtime.runtime, update]);
+  }, [commands, demo, latest, openProduction, ready, runtime.runtime, update]);
 
   /** The article piece of a covered story and its revision, read from the workspace. */
   const articlePieceId = useCallback(async (productionId: string): Promise<{ pieceId: string; revision: number } | undefined> => {
@@ -300,6 +303,8 @@ export function HardNewsProvider({ children }: { children: ReactNode }) {
 
   const actions = useMemo<HardNewsActions>(() => ({
     async cover(newsId) {
+      // The demonstration never opens a production in the real workspace.
+      if (demo) return undefined;
       const news = latest.current.news.find((item) => item.id === newsId);
       if (!news) return undefined;
       if (news.productionId) return news.productionId;
@@ -616,21 +621,25 @@ export function HardNewsProvider({ children }: { children: ReactNode }) {
     reset() {
       store.reset();
     },
-  }), [articlePieceId, commands, latest, openProduction, patchDossier, patchNews, research, store, update]);
+  }), [articlePieceId, commands, demo, latest, openProduction, patchDossier, patchNews, research, store, update]);
 
-  const value = useMemo<HardNewsContextValue>(() => ({ state, ready, writing, actions }), [actions, ready, state, writing]);
+  const value = useMemo<HardNewsContextValue>(() => ({ state, ready, writing, actions, demo }), [actions, demo, ready, state, writing]);
   return <HardNewsContext value={value}>{children}</HardNewsContext>;
 }
 
 export function useHardNews(): HardNewsContextValue {
   const value = use(HardNewsContext);
-  if (!value) throw new Error('useHardNews needs HardNewsProvider (R2 only).');
+  if (!value) throw new Error('useHardNews needs HardNewsProvider.');
   return value;
 }
 
-/** Null outside the R2 preview, so R1 screens can ask without a provider. */
+/**
+ * The desk as the R1 screens see it: null unless R2 is released. In the R1 build's demonstration
+ * the desk exists for the Hard News screens only, so every R1 plug point stays as it was.
+ */
 export function useOptionalHardNews(): HardNewsContextValue | null {
-  return use(HardNewsContext);
+  const value = use(HardNewsContext);
+  return value?.demo ? null : value;
 }
 
 export function useDossier(productionId: string | undefined): HardNewsDossier | undefined {
