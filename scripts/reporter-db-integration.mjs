@@ -92,6 +92,12 @@ function queuePasses(output) {
   return passes.join("\n");
 }
 
+function newsPasses(output) {
+  const passes = output.split("\n").filter(line => line.startsWith("PASS "));
+  if (passes.length !== 8) throw new Error("Not all news intake integration groups completed");
+  return passes.join("\n");
+}
+
 function importPasses(output) {
   const passes = output.split("\n").filter(line => line.startsWith("PASS "));
   if (passes.length !== 2) throw new Error("Not all editorial import integration groups completed");
@@ -215,6 +221,7 @@ export async function verifyFreshBootstrap(source, baseline) {
     console.log(run(await readFile(resolve(root, "database/tests/editorial-polling.integration.sql"), "utf8")).split('\n').filter(line => line.startsWith('PASS ')).join('\n'));
     console.log(queuePasses(run(await readFile(resolve(root, "database/tests/worker-queue.integration.sql"), "utf8"))));
     console.log(queuePasses(run(await readFile(resolve(root, "database/tests/editorial-rows.integration.sql"), "utf8"))));
+    console.log(newsPasses(run(await readFile(resolve(root, "database/tests/news-intake.integration.sql"), "utf8"))));
     await verifyCatalog(run, baseline);
     console.log("PASS fresh official-entrypoint bootstrap and PostgreSQL integration suite");
     await verifyConcurrency(id);
@@ -257,5 +264,6 @@ export async function runIntegration() {
   console.log(importPasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/editorial-import.integration.sql"), "utf8"))));
   console.log(queuePasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/worker-queue.integration.sql"), "utf8"))));
   console.log(queuePasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/editorial-rows.integration.sql"), "utf8"))));
+  console.log(newsPasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/news-intake.integration.sql"), "utf8"))));
   await verifyFreshBootstrap(source, baseline);
 }
