@@ -219,6 +219,29 @@ describe('carousel template library · structure and render data', () => {
     }
   });
 
+  it('never sets a mark or the counter across the edge of a colour block, where half the letters sit on each colour', () => {
+    for (const { template, render } of TEMPLATE_CATALOG) {
+      for (const layout of template.layouts) {
+        const visual = render.layouts[layout.id];
+        const texts = [
+          ...(visual.marks ?? []).map((mark) => ({ label: mark.text, x: mark.x, y: mark.y, size: mark.fontSize })),
+          ...(visual.counter ? [{ label: 'contador', x: visual.counter.x, y: visual.counter.y, size: visual.counter.fontSize }] : []),
+        ];
+        const blocks = [...(visual.shapes ?? []), ...(visual.overlays ?? [])].filter((shape) => shape.outline === undefined);
+        for (const text of texts) {
+          // The line box a top-baseline text takes: from its y down one line.
+          const [top, bottom] = [text.y, text.y + text.size * 1.2];
+          for (const block of blocks) {
+            if (text.x < block.x || text.x > block.x + block.width) continue;
+            for (const edge of [block.y, block.y + block.height]) {
+              assert.ok(edge <= top || edge >= bottom, `${template.name} · ${layout.label} · ${text.label}: an edge at y ${edge} crosses the text (${top}–${bottom})`);
+            }
+          }
+        }
+      }
+    }
+  });
+
   it('keeps every text legible: slot, marker, counter and credit colours against what is under them, with and without the photo', () => {
     for (const { template, render } of TEMPLATE_CATALOG) {
       for (const layout of template.layouts) {
