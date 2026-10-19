@@ -31,8 +31,8 @@ const entries = (live: string[], failing: string[] = []): CatalogEntry[] =>
   CATALOG.map((def) => ({ ...def, status: statusOf(def, failing.includes(def.id) ? 'failing' : live.includes(def.id) ? 'connected' : 'disconnected') }));
 
 describe('catalog', () => {
-  it('lists between 12 and 18 apps with unique ids', () => {
-    assert.ok(CATALOG.length >= 12 && CATALOG.length <= 18);
+  it('lists between 12 and 19 apps with unique ids', () => {
+    assert.ok(CATALOG.length >= 12 && CATALOG.length <= 19);
     assert.equal(new Set(CATALOG.map((app) => app.id)).size, CATALOG.length);
   });
 
