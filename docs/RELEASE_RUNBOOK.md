@@ -72,6 +72,7 @@ Settings stay in the Francal workspace dashboard; never use the Vercel CLI or a 
 | `REPORTER_WORKER_PASSWORD` | production worker password | staging worker password |
 | `NEON_AUTH_BASE_URL`, `NEON_AUTH_COOKIE_SECRET` | production Auth | staging Auth |
 | `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PIXABAY_API_KEY`, optional `TAVILY_API_KEY` | provider keys | provider keys |
+| `RSS_APP_API_KEY`, `RSS_APP_API_SECRET` (optional) | RSS.app account | RSS.app account |
 
 The worker URL appears as `NEON_FUNCTION_REPORTERWORKER_BASE_URL` in `neon env pull` once the
 worker has been deployed. `pnpm cloud:check -- --url <app>` reads a deployment's public
