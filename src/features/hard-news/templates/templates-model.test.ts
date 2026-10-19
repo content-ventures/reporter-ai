@@ -37,6 +37,10 @@ describe('spreadLayouts', () => {
   it('shows the cover, the signature page and the quote of every catalog model', () => {
     const spreads = Object.fromEntries(MODELS.map((entry) => [entry.id, spreadLayouts(entry).join(' ')]));
     assert.deepEqual(spreads, {
+      'tpl-seafood-v2-news': 'cover point quote',
+      'tpl-seafood-v2-photo': 'cover closing quote',
+      'tpl-seafood-v2-explainer': 'cover data quote',
+      'tpl-seafood-v2-podcast': 'cover point quote',
       'tpl-seafood-headline': 'cover context quote',
       'tpl-seafood-reportage': 'cover point quote',
       'tpl-seafood-flow': 'cover list quote',
@@ -66,9 +70,9 @@ describe('familyShelves', () => {
   it('puts the Feed models on the three family shelves, each with its use line', () => {
     const shelves = familyShelves(MODELS, { format: 'feed', query: '' });
     assert.deepEqual(shelves.map((shelf) => [shelf.title, shelf.meta, shelf.templates.length]), [
-      ['Notícia', 'Manchetes e reportagens do setor', 2],
-      ['Explica', 'Processos, etapas e dados contextualizados', 2],
-      ['Podcast', 'Conversas e citações verificadas', 2],
+      ['Notícia', 'Manchetes e reportagens do setor', 4],
+      ['Explica', 'Processos, etapas e dados contextualizados', 3],
+      ['Podcast', 'Conversas e citações verificadas', 3],
     ]);
     assert.equal(shelves[0].label, 'Modelos de Notícia');
   });
@@ -93,7 +97,7 @@ describe('familyShelves', () => {
 describe('tabs and format', () => {
   it('counts the carousels across formats and keeps static posts for later', () => {
     assert.deepEqual(kindTabs(MODELS, ''), [
-      { value: 'carousel', label: 'Carrosséis', count: 9, disabled: false },
+      { value: 'carousel', label: 'Carrosséis', count: 13, disabled: false },
       { value: 'static', label: 'Estáticos', count: 'Em breve', disabled: true },
     ]);
     assert.equal(kindTabs(MODELS, 'aspas')[0].count, 2);
@@ -186,7 +190,11 @@ describe('the model page', () => {
 
   it('offers the other models of the same format, the same family first', () => {
     assert.deepEqual(otherModels(MODELS, model('tpl-seafood-panorama')).map((entry) => entry.id), [
+      'tpl-seafood-v2-explainer',
       'tpl-seafood-flow',
+      'tpl-seafood-v2-news',
+      'tpl-seafood-v2-photo',
+      'tpl-seafood-v2-podcast',
       'tpl-seafood-headline',
       'tpl-seafood-reportage',
       'tpl-seafood-interview',

@@ -23,6 +23,7 @@ import {
  */
 
 const CORE_LAYOUTS = ['cover', 'context', 'point', 'data', 'list', 'quote', 'closing'];
+const V2_PREFIX = 'tpl-seafood-v2-';
 
 function service() {
   return createLocalRenderService({
@@ -85,7 +86,7 @@ const minimum = (size: number, weight: number) => (size >= 64 || (size >= 50 && 
 
 describe('carousel template library · metadata', () => {
   it('offers two distinct editable Seafood variations per family without claiming Marketing approval', () => {
-    const seafood = TEMPLATE_CATALOG.filter(entry => entry.meta.family);
+    const seafood = TEMPLATE_CATALOG.filter(entry => entry.meta.family && !entry.template.id.startsWith(V2_PREFIX));
     assert.equal(seafood.length, 6);
     for (const family of ['news', 'explainer', 'podcast']) {
       const models = seafood.filter(entry => entry.meta.family === family);
@@ -99,8 +100,27 @@ describe('carousel template library · metadata', () => {
       assert.match(model.sample.quote.quote, /^\[/, 'sample quotes cannot impersonate actual speakers');
     }
   });
-  it('offers the 6 Seafood variations and 3 square models, the Seafood default first, each with a short name and a one-line description', () => {
-    assert.equal(TEMPLATE_CATALOG.length, 9);
+  it('offers the four Seafood V2 models first, one per editorial use, in the brand face with the official mark', () => {
+    const v2 = TEMPLATE_CATALOG.filter(entry => entry.template.id.startsWith(V2_PREFIX));
+    assert.deepEqual(v2.map(entry => entry.template.name), ['Seafood Notícia V2', 'Seafood Foto V2', 'Seafood Explica V2', 'Seafood Podcast V2']);
+    assert.deepEqual(TEMPLATE_CATALOG.slice(0, v2.length), v2, 'listed before the first generation');
+    assert.deepEqual(v2.map(entry => entry.meta.family), ['news', 'news', 'explainer', 'podcast']);
+    for (const { template, render, meta, sample, previewPhoto } of v2) {
+      assert.equal(meta.status, 'base');
+      assert.equal(previewPhoto, 'img-amostra-pescado');
+      assert.match(sample.quote.quote, /^\[/, 'sample quotes cannot impersonate actual speakers');
+      assert.match(sample.closing.cta, /link da bio/, 'an Instagram call: links in a post do not open');
+      for (const layout of template.layouts) {
+        const visual = render.layouts[layout.id];
+        assert.ok(visual.vectors?.length, `${template.name} · ${layout.label}: the official mark`);
+        for (const [id, box] of Object.entries(visual.slots)) assert.equal(box.fontFamily, 'Montserrat', `${template.name} · ${layout.label} · ${id}: brand face`);
+      }
+      assert.ok(render.layouts.cover.marks?.some(mark => mark.text.startsWith('Arraste para o lado')), `${template.name}: swipe cue on the cover`);
+    }
+  });
+
+  it('offers the Seafood V2 and V1 variations and 3 square models, the V2 default first, each with a short name and a one-line description', () => {
+    assert.equal(TEMPLATE_CATALOG.length, 13);
     assert.equal(CAROUSEL_TEMPLATES[0]?.id, DEFAULT_TEMPLATE_ID);
     const ids = TEMPLATE_CATALOG.map((entry) => entry.template.id);
     const names = TEMPLATE_CATALOG.map((entry) => entry.template.name);
@@ -216,6 +236,12 @@ describe('carousel template library · structure and render data', () => {
           const box = visual.slots[slot.id];
           // The first line's left edge: where a bottom-aligned title reaches highest on the photo.
           const top = box.valign === 'bottom' ? box.y + box.height - (slot.maxLines ?? 1) * box.lineHeight + 4 : box.y + 4;
+          if (box.pill) {
+            // A tagged slot reads against its own band, on the page and on the photo alike.
+            const ratio = contrast(rgb(box.color), rgb(box.pill.color));
+            assert.ok(ratio >= minimum(box.fontSize, box.fontWeight), `${template.name} · ${layout.label} · ${slot.label} on its band: ${ratio.toFixed(2)}`);
+            continue;
+          }
           check(slot.label, box.color, box.x + 4, top, box.fontSize, box.fontWeight, visual.image?.slotColors?.[slot.id]);
           if (box.list) check(`${slot.label} (marcador)`, box.list.color, box.x + 4, top, box.fontSize, box.list.fontWeight);
         }

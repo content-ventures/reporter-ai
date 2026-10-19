@@ -154,7 +154,7 @@ test('without a literal quote, the carousel uses an existing prose layout instea
 
 test('a writer can derive each Seafood variation from the exact approved article, and the engine keeps that template for generation', async () => {
   const templates = editorialTemplates().filter(template => template.id.startsWith('tpl-seafood-'));
-  assert.equal(templates.length, 6);
+  assert.equal(templates.length, 10);
   for (const template of templates) {
     const engine = createEditorialEngine(emptyEditorialCheckpoint(), ids);
     const created = await engine.commands.createFromSource(input); assert.ok(created.ok);

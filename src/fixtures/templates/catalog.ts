@@ -10,6 +10,8 @@ import { quoteSquare } from './designs/quote.ts';
 import { stepsFeed } from './designs/steps.ts';
 import { seafoodFeed, seafoodSample } from './designs/seafood.ts';
 import type { SeafoodVariation } from './designs/seafood.ts';
+import { seafoodV2Feed, seafoodV2Sample } from './designs/seafood-v2.ts';
+import type { SeafoodV2Variation } from './designs/seafood-v2.ts';
 import { SEAFOOD_SAMPLE_PHOTO } from '../images.ts';
 import { FEED, SQUARE } from './kit.ts';
 import { SAMPLE_CONTENT } from './sample.ts';
@@ -32,7 +34,7 @@ export type TemplateEntry = { template: CarouselTemplate; render: TemplateRender
 /** Ids kept from the first two models, so carousels saved with them still open. */
 export const EDITORIAL_TEMPLATE_ID: TemplateId = 'tpl-provisorio-claro';
 export const NOTURNO_TEMPLATE_ID: TemplateId = 'tpl-provisorio-escuro';
-export const DEFAULT_TEMPLATE_ID: TemplateId = 'tpl-seafood-headline';
+export const DEFAULT_TEMPLATE_ID: TemplateId = 'tpl-seafood-v2-news';
 
 type EntrySpec = {
   id: TemplateId;
@@ -250,7 +252,26 @@ const SEAFOOD_TEMPLATE_CATALOG = SEAFOOD_SPECS.map(spec => entry({
   render: id => seafoodFeed(id, spec.variation), sample: seafoodSample(spec.variation), previewPhoto: SEAFOOD_SAMPLE_PHOTO.assetId,
 }));
 
-export const TEMPLATE_CATALOG: readonly TemplateEntry[] = [...SEAFOOD_TEMPLATE_CATALOG,...SQUARE_TEMPLATE_CATALOG];
+/**
+ * Second generation, on Seafood Brasil's own feed language (Montserrat, official mark, brand
+ * colours). Listed first and kept beside the first generation: both stay available.
+ */
+const SEAFOOD_V2_SPECS: readonly { variation: SeafoodV2Variation; name: string; family: TemplateFamily; category: TemplateCategory; description: string; photo: NonNullable<StructureOptions['photo']>; featured?: StructureOptions['featured']; tags: string[] }[] = [
+  { variation: 'news', name: 'Seafood Notícia V2', family: 'news', category: 'editorial', description: 'Padrão de notícia do feed: foto, editoria e manchete forte.', photo: ['cover'], tags: ['notícia', 'branco', 'laranja'] },
+  { variation: 'photo', name: 'Seafood Foto V2', family: 'news', category: 'photo', description: 'Foto em tela cheia, manchete branca e páginas navy e brancas.', photo: ['cover', 'closing'], tags: ['notícia', 'foto', 'navy'] },
+  { variation: 'explainer', name: 'Seafood Explica V2', family: 'explainer', category: 'data', description: 'Navy da marca com números e etapas grandes em laranja.', photo: [], featured: ['data', 'list'], tags: ['explica', 'dados', 'etapas', 'navy'] },
+  { variation: 'podcast', name: 'Seafood Podcast V2', family: 'podcast', category: 'quote', description: 'Capa com foto e cartão branco, citações em destaque.', photo: ['cover'], tags: ['podcast', 'citação', 'foto'] },
+];
+
+const SEAFOOD_V2_TEMPLATE_CATALOG = SEAFOOD_V2_SPECS.map(spec => entry({
+  id: `tpl-seafood-v2-${spec.variation}`, name: spec.name, family: spec.family,
+  format: 'feed', category: spec.category, description: spec.description,
+  tags: ['seafood', 'pescado', 'v2', 'montserrat', ...spec.tags],
+  structure: { photo: spec.photo, coverTitleLines: 4, ...(spec.featured ? { featured: spec.featured } : {}) },
+  render: id => seafoodV2Feed(id, spec.variation), sample: seafoodV2Sample(spec.variation), previewPhoto: SEAFOOD_SAMPLE_PHOTO.assetId,
+}));
+
+export const TEMPLATE_CATALOG: readonly TemplateEntry[] = [...SEAFOOD_V2_TEMPLATE_CATALOG, ...SEAFOOD_TEMPLATE_CATALOG, ...SQUARE_TEMPLATE_CATALOG];
 
 /** Structures, in library order (the first is the default). */
 export const CAROUSEL_TEMPLATES: readonly CarouselTemplate[] = TEMPLATE_CATALOG.map((item) => item.template);
