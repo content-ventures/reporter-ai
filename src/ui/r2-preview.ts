@@ -27,11 +27,3 @@ const R2_DEMO_PATHS: readonly RegExp[] = [
 const R1_LIBRARY_PATHS: readonly RegExp[] = [/^\/images(\/[^/]+)?$/, /^\/quotes$/];
 export const isR2DemoPath = (pathname: string, libraries = false) =>
   R2_DEMO_PATHS.some(pattern => pattern.test(pathname)) || (!libraries && R1_LIBRARY_PATHS.some(pattern => pattern.test(pathname)));
-
-/** The earlier R2 demonstration (Codex prototype), until it is removed. */
-export const R2_UI_PREVIEW = HARD_NEWS_DEMO;
-export const R2_ROUTES = {
-  news: '/news', 'hard-news': '/news/draft', images: '/images', quotes: '/quotes', archive: '/archive',
-  'editorial-map': '/settings/editorial-map', 'writing-guide': '/settings/writing-guide', cms: '/admin/integrations',
-} as const;
-export type R2Screen = keyof typeof R2_ROUTES;

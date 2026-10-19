@@ -1,8 +1,18 @@
-import { notFound, redirect } from 'next/navigation';
-import { R2_ROUTES, R2_UI_PREVIEW, type R2Screen } from '@/ui/r2-preview';
-/** Compatibility for the first review URL; there is no separate R2 application. */
+import { redirect } from 'next/navigation';
+
+/** The first review URL (`/prototypes/r2?screen=`) opens the matching workspace destination. */
+const SCREENS: Record<string, string> = {
+  news: '/news',
+  'hard-news': '/news',
+  images: '/images',
+  quotes: '/quotes',
+  archive: '/archive',
+  'editorial-map': '/settings/editorial-map',
+  'writing-guide': '/settings/writing-guide',
+  cms: '/admin/integrations',
+};
+
 export default async function Page({ searchParams }: { searchParams: Promise<{ screen?: string }> }) {
-  if (!R2_UI_PREVIEW) notFound();
   const { screen } = await searchParams;
-  redirect(screen && Object.hasOwn(R2_ROUTES, screen) ? R2_ROUTES[screen as R2Screen] : R2_ROUTES.news);
+  redirect(screen && Object.hasOwn(SCREENS, screen) ? SCREENS[screen] : SCREENS.news);
 }
