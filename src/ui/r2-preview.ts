@@ -13,13 +13,14 @@ export const R2_NAVIGATION = { previewR2: HARD_NEWS_DEMO };
 
 /**
  * Hard News screens that still run on simulated data, with no backend yet: the radar and its
- * sources, Apuração, the Acervo, the editorial map, the writing guide and the integrations. They
- * carry "Demo" in the top bar, in both builds. The image and quote banks read the R1 visual and
- * citation libraries when the build has them (the connected build), so they carry it only without.
+ * sources, Apuração (an R2 build only: an R1 build answers 404 there), the Acervo, the editorial
+ * map, the writing guide and the integrations. They carry "Demo" in the top bar, in both builds.
+ * The image and quote banks read the R1 visual and citation libraries when the build has them (the
+ * connected build), so they carry it only without.
  */
 const R2_DEMO_PATHS: readonly RegExp[] = [
   /^\/news(\/sources)?$/,
-  /^\/productions\/[^/]+\/research$/,
+  ...(HARD_NEWS_DEMO ? [] : [/^\/productions\/[^/]+\/research$/]),
   /^\/archive$/,
   /^\/settings\/(editorial-map|writing-guide)$/,
   /^\/admin\/integrations(\/[^/]+)?$/,

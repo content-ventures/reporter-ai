@@ -25,7 +25,8 @@ test('the demo screens carry "Demo"; Modelos and the R1 stages do not', () => {
   for (const path of ['/news', '/news/sources', '/images', '/images/own:img-processing', '/quotes', '/archive', '/settings/editorial-map', '/settings/writing-guide', '/admin/integrations', '/admin/integrations/cms']) {
     assert.equal(isR2DemoPath(path), true, path);
   }
-  for (const path of ['/', '/productions', '/library/templates', '/productions/p1/article']) assert.equal(isR2DemoPath(path), false, path);
+  // Apuração answers 404 in an R1 build, without the badge.
+  for (const path of ['/', '/productions', '/library/templates', '/productions/p1/article', '/productions/p1/research']) assert.equal(isR2DemoPath(path), false, path);
   for (const path of ['/images', '/images/i1', '/quotes']) assert.equal(isR2DemoPath(path, true), false, path);
   assert.equal(isR2DemoPath('/news', true), true);
 });
