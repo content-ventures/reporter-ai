@@ -228,6 +228,15 @@ export function DecisionBar({ item, covering, canCover, demo = false, onCover, o
       </ActionBar>
     );
   }
+  // The demonstration seeds no productions: a story the example marks as covered has none to open.
+  if (item.status === 'covered' && demo) {
+    const reasonId = `decision-${item.id}`;
+    return (
+      <ActionBar position="static" detail="Na demonstração, a apuração não abre." detailId={reasonId}>
+        <Button variant="primary" icon={Telescope} aria-disabled aria-describedby={reasonId}>Abrir apuração</Button>
+      </ActionBar>
+    );
+  }
   if (item.status !== 'new') {
     return (
       <ActionBar position="static">
@@ -237,6 +246,19 @@ export function DecisionBar({ item, covering, canCover, demo = false, onCover, o
   }
   const reading = !item.classification;
   const reasonId = `decision-${item.id}`;
+  const available = !reading && canCover;
+  const cover = (
+    <Button
+      variant="primary"
+      icon={Telescope}
+      loading={covering}
+      aria-disabled={!available || undefined}
+      aria-describedby={available ? undefined : reasonId}
+      onClick={() => { if (available) onCover(item); }}
+    >
+      Cobrir
+    </Button>
+  );
   return (
     <ActionBar position="static" detail={reading ? 'Aguarde a IA terminar a leitura.' : demo ? 'Na demonstração, Cobrir não abre pauta.' : !canCover ? 'Só editor ou admin abre pautas.' : undefined} detailId={reasonId}>
       <Menu
@@ -253,18 +275,8 @@ export function DecisionBar({ item, covering, canCover, demo = false, onCover, o
         sections={[{ items: POSTPONE_OPTIONS.map((option) => ({ label: option.label, icon: Clock, shortcut: option.hours === 18 ? 'A' : undefined, onSelect: () => onPostpone(item, option.hours, option.label) })) }]}
         trigger={(props) => <Button {...props} variant="secondary" trailingIcon={ChevronDown}>Adiar</Button>}
       />
-      <Tooltip content="Abre a pauta e começa a apuração" shortcut="C">
-        <Button
-          variant="primary"
-          icon={Telescope}
-          loading={covering}
-          aria-disabled={reading || !canCover || undefined}
-          aria-describedby={reading || !canCover ? reasonId : undefined}
-          onClick={() => { if (!reading && canCover) onCover(item); }}
-        >
-          Cobrir
-        </Button>
-      </Tooltip>
+      {/* Unavailable, the bar's visible reason explains it: no tooltip promising what it will not do. */}
+      <Tooltip content="Abre a pauta e começa a apuração" shortcut="C" disabled={!available}>{cover}</Tooltip>
     </ActionBar>
   );
 }
