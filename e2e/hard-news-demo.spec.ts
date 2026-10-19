@@ -14,6 +14,7 @@ const DEMO_SCREENS = [
   ['/settings/editorial-map', 'Mapa editorial'],
   ['/settings/writing-guide', 'Guia de escrita'],
   ['/admin/integrations', 'Integrações'],
+  ['/admin/integrations/slack', 'Slack'],
   ['/admin/integrations/cms', 'WordPress'],
 ] as const;
 
@@ -45,7 +46,7 @@ for (const viewport of VIEWPORTS) {
       for (const [path, title] of DEMO_SCREENS) {
         await page.goto(path);
         await expect(page.getByRole('heading', { level: 1, name: title, exact: true })).toBeVisible();
-        if (viewport.width >= 768) await expect(page.getByText('Demo', { exact: true })).toBeVisible();
+        await expect(page.getByText('Demo', { exact: true })).toBeVisible();
         await expectHeadingOutline(page);
         await expectNoHorizontalOverflow(page);
       }
@@ -67,6 +68,12 @@ test('no radar, Cobrir diz por que não abre pauta; o Início da R1 não muda', 
   await page.goto('/news');
   await expect(page.getByRole('button', { name: 'Cobrir', exact: true })).toBeDisabled();
   await expect(page.getByText('Na demonstração, Cobrir não abre pauta.')).toBeVisible();
+  // A story the example marks as covered has no production to open.
+  await page.getByRole('tab', { name: /^Decididas/ }).click();
+  await page.getByRole('list', { name: 'Decididas' }).getByRole('button', { name: /^Porto de Itajaí registra recorde/ }).click();
+  await expect(page.getByRole('button', { name: 'Abrir apuração', exact: true })).toBeDisabled();
+  await expect(page.getByText('Na demonstração, a apuração não abre.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Voltar para a fila', exact: true })).toHaveCount(0);
 
   await page.getByRole('navigation', { name: 'Menu principal' }).getByRole('link', { name: 'Início', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: GREETING })).toBeVisible();
