@@ -16,6 +16,7 @@ import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
 import { handleProfile } from './profile.ts';
+import { handleInvites, handlePlatform } from './platform.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { reporterIdentity } from './auth.ts';
 import { runWithReporterContext, type ReporterRequestContext } from './request-context.ts';
@@ -157,6 +158,9 @@ export async function handleReporter(request: Request, path: string[], deps: { d
   try {
     // The release probe is public: booleans and versions only, no session and no database.
     if (request.method === 'GET' && path.length === 1 && path[0] === 'health') return reply(appHealth());
+    // The platform console and the access link have their own guards: no workspace membership.
+    if (path[0] === 'platform') return await handlePlatform(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest,identify: deps.identify });
+    if (path[0] === 'invites') return await handleInvites(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest });
     const context = await guardReporterRequest(request, deps.identify);
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
