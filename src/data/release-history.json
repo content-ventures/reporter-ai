@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.7.0",
+  "currentVersion": "0.8.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,56 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.8.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-19",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 10 validated changes: list the console log on phones instead of a table; list the access links table in the sql catalog; check console access per request, never at build time.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Model platform access links, roles and usage"
+        },
+        {
+          "type": "Added",
+          "description": "Add the platform console demo"
+        },
+        {
+          "type": "Added",
+          "description": "Store access links and the platform role"
+        },
+        {
+          "type": "Added",
+          "description": "Serve the platform console and access links"
+        },
+        {
+          "type": "Added",
+          "description": "Add the console frame, overview and usage screens"
+        },
+        {
+          "type": "Added",
+          "description": "Manage people and access links in the console"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe the platform console and access links"
+        },
+        {
+          "type": "Fixed",
+          "description": "Check console access per request, never at build time"
+        },
+        {
+          "type": "Fixed",
+          "description": "List the access links table in the SQL catalog"
+        },
+        {
+          "type": "Fixed",
+          "description": "List the console log on phones instead of a table"
+        }
+      ]
+    },
     {
       "version": "0.7.0",
       "roadmapRelease": "R0",

@@ -4,6 +4,27 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-19
+
+### Added
+
+- Model platform access links, roles and usage.
+- Add the platform console demo.
+- Store access links and the platform role.
+- Serve the platform console and access links.
+- Add the console frame, overview and usage screens.
+- Manage people and access links in the console.
+
+### Documentation
+
+- Describe the platform console and access links.
+
+### Fixed
+
+- Check console access per request, never at build time.
+- List the access links table in the SQL catalog.
+- List the console log on phones instead of a table.
+
 ## [0.7.0] - 2026-10-19
 
 ### Fixed
