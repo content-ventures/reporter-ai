@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.6.0",
+  "currentVersion": "0.7.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,76 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.7.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-19",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 15 validated changes: correct the hard news notes after review; check the demo badge on phones and a covered story; show criar carrossel only to whoever edits pieces.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Fixed",
+          "description": "Give the editorias a heading of their own"
+        },
+        {
+          "type": "Added",
+          "description": "Keep the Hard News desk read-only in a demonstration"
+        },
+        {
+          "type": "Added",
+          "description": "Open the Hard News screens in R1 builds as a demo"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover the Hard News demo in the connected smoke"
+        },
+        {
+          "type": "Changed",
+          "description": "Remove the Codex R2 prototype"
+        },
+        {
+          "type": "Changed",
+          "description": "Remove the image and citation screens no route opens"
+        },
+        {
+          "type": "Added",
+          "description": "Open Modelos as the shelf gallery in every build"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe the Hard News demo in R1 builds"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Open a model's page in the connected Modelos smoke"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep the Demo badge off the R1 research 404"
+        },
+        {
+          "type": "Fixed",
+          "description": "Ask for sign-in on the news, archive and settings routes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Say why Cobrir and covered stories wait in the demo"
+        },
+        {
+          "type": "Fixed",
+          "description": "Show Criar carrossel only to whoever edits pieces"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Check the demo badge on phones and a covered story"
+        },
+        {
+          "type": "Documentation",
+          "description": "Correct the Hard News notes after review"
+        }
+      ]
+    },
     {
       "version": "0.6.0",
       "roadmapRelease": "R0",

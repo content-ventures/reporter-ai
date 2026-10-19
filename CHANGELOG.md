@@ -4,6 +4,38 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-19
+
+### Fixed
+
+- Give the editorias a heading of their own.
+- Keep the Demo badge off the R1 research 404.
+- Ask for sign-in on the news, archive and settings routes.
+- Say why Cobrir and covered stories wait in the demo.
+- Show Criar carrossel only to whoever edits pieces.
+
+### Added
+
+- Keep the Hard News desk read-only in a demonstration.
+- Open the Hard News screens in R1 builds as a demo.
+- Open Modelos as the shelf gallery in every build.
+
+### Maintenance
+
+- Cover the Hard News demo in the connected smoke.
+- Open a model's page in the connected Modelos smoke.
+- Check the demo badge on phones and a covered story.
+
+### Changed
+
+- Remove the Codex R2 prototype.
+- Remove the image and citation screens no route opens.
+
+### Documentation
+
+- Describe the Hard News demo in R1 builds.
+- Correct the Hard News notes after review.
+
 ## [0.6.0] - 2026-10-19
 
 ### Added
