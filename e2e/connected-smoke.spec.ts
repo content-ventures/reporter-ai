@@ -96,12 +96,11 @@ for (const viewport of VIEWPORTS) {
       await page.goto("/library/templates?format=feed&q=seafood");
       await expectShell(page, "Modelos");
 
-      const library = page.getByRole("list", { name: "Modelos de carrossel" });
-      await expect(library.getByRole("listitem")).not.toHaveCount(0);
-      await library.getByRole("button", { name: "Seafood Entrevista", exact: true }).click();
-      const preview = page.getByRole("dialog", { name: /Seafood Entrevista/ });
-      await expect(preview).toBeVisible();
-      await expect(preview.getByRole("img").first()).toBeVisible();
+      const cards = page.getByRole("list", { name: /^Modelos/ }).getByRole("listitem");
+      await expect(cards).not.toHaveCount(0);
+      await cards.getByRole("link", { name: "Seafood Entrevista", exact: true }).click();
+      await expectShell(page, "Seafood Entrevista");
+      await expect(page.getByRole("img", { name: / no modelo Seafood Entrevista$/ }).first()).toBeVisible();
       await expectNoHorizontalOverflow(page);
 
       expect(errors, "erros no console").toEqual([]);
