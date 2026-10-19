@@ -35,7 +35,7 @@ for (const viewport of VIEWPORTS) {
       for (const [path, heading] of [
         ["/", GREETING],
         ["/productions", "Produções"],
-        ["/quotes", "Banco de citações"],
+        ["/quotes", "Citações"],
         ["/images", "Imagens"],
         ["/config", "Prompts"],
       ] as const) {

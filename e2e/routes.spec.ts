@@ -211,7 +211,7 @@ for (const viewport of VIEWPORTS) {
       if (phone) await page.getByRole("button", { name: "Abrir menu" }).click();
       await page.getByRole("button", { name: "Em breve", exact: true }).click();
       await expect(page.getByRole("button", { name: /, Em breve$/ })).toHaveCount(9);
-      await expect(page.getByRole("navigation", { name: "Menu principal" }).getByRole("link", { name: "Notícias — R2", exact: true })).toHaveAttribute("href", "/news");
+      await expect(page.getByRole("navigation", { name: "Menu principal" }).getByRole("link", { name: "Notícias", exact: true })).toHaveAttribute("href", "/news");
       const planned = page.getByRole("button", { name: "Oportunidades, Em breve" });
       await expect(planned).toHaveAttribute("aria-disabled", "true");
       await expect(planned).toHaveAccessibleDescription(/Pautas Evergreen com dados de SEO\.\sChega\sna\sR3/);
