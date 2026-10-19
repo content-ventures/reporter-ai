@@ -3,7 +3,6 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, lstat, realpath, stat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 import { join, basename, extname } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -14,6 +13,7 @@ import { FlowError } from "./errors";
 import { inspectMedia } from "./media";
 import { reporterDeploymentMode } from './deployment.ts';
 import { storageRootPath } from './storage-root.ts';
+import { privateAddress } from './public-address.ts';
 
 export async function storageRoot() {
   const root = storageRootPath();
@@ -137,24 +137,6 @@ export async function receiveFile(request: Request) {
     if (error instanceof FlowError) throw error;
     throw new FlowError("UPLOAD_FAILED", 400);
   }
-}
-
-function privateAddress(value: string): boolean {
-  const address = value.toLowerCase().split('%')[0];
-  if (isIP(address) === 4) {
-    const [a,b] = address.split('.').map(Number);
-    return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
-      (a === 198 && (b === 18 || b === 19));
-  }
-  if (isIP(address) === 6) {
-    if (address === '::' || address === '::1' || address.startsWith('fc') || address.startsWith('fd')) return true;
-    if (/^fe[89ab]/.test(address)) return true;
-    if (address.startsWith('::ffff:') && !/^::ffff:\d+\.\d+\.\d+\.\d+$/.test(address)) return true;
-    const mapped = address.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-    return mapped ? privateAddress(mapped) : false;
-  }
-  return true;
 }
 
 async function safeRemoteUrl(value: string): Promise<URL> {
