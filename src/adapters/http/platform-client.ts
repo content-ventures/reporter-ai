@@ -1,0 +1,86 @@
+import { INVITE_MESSAGES, PLATFORM_MESSAGES } from '../../domain/platform.ts';
+import type { InviteLinkRefusal, InvitePreview, IssuedInvite, PasswordRefusal, PlatformPerson, PlatformRefusal } from '../../domain/platform.ts';
+import type { UsageReport } from '../../domain/platform-usage.ts';
+import { ok, refuse } from '../../domain/result.ts';
+import type { Result } from '../../domain/result.ts';
+import type { InviteAccepted, InviteDesk, PlatformConsole, PlatformDirectory, PlatformLogPage, PlatformOperator, Restored } from '../../ports/platform.ts';
+
+/**
+ * The connected console and invite page: `/api/reporter/platform` and `/api/reporter/invites`.
+ * Refusals arrive as `{ error, message }` with the domain code; anything unexpected is
+ * `unavailable`. Signed out, the console goes to the sign-in page.
+ */
+
+const PLATFORM_CODES = new Set<string>(Object.keys(PLATFORM_MESSAGES));
+const INVITE_CODES = new Set<string>([...Object.keys(INVITE_MESSAGES), 'password_short', 'password_long', 'password_mismatch']);
+
+type Body = Record<string, unknown>;
+
+async function request(path: string, body?: unknown): Promise<{ status: number; value: Body } | null> {
+  try {
+    const response = await fetch(`/api/reporter/${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      cache: 'no-store',
+      headers: { 'x-reporter-client': 'local', ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const value = (await response.json().catch(() => ({}))) as Body;
+    return { status: response.status, value };
+  } catch {
+    return null;
+  }
+}
+
+async function platformCall<T>(path: string, body?: unknown): Promise<Result<T, PlatformRefusal>> {
+  const answer = await request(`platform/${path}`, body);
+  if (!answer) return refuse('unavailable', PLATFORM_MESSAGES.unavailable);
+  if (answer.status < 300) return ok(answer.value as T);
+  if (answer.value.error === 'auth_required' && typeof window !== 'undefined') window.location.replace('/auth/sign-in');
+  const code = typeof answer.value.error === 'string' && PLATFORM_CODES.has(answer.value.error) ? (answer.value.error as PlatformRefusal) : 'unavailable';
+  return refuse(code, typeof answer.value.message === 'string' ? answer.value.message : PLATFORM_MESSAGES[code]);
+}
+
+async function inviteCall<T, C extends string>(path: string, body?: unknown): Promise<Result<T, C>> {
+  const answer = await request(`invites/${path}`, body);
+  if (!answer) return refuse('unavailable' as C, INVITE_MESSAGES.unavailable);
+  if (answer.status < 300) return ok(answer.value as T);
+  const code = typeof answer.value.error === 'string' && INVITE_CODES.has(answer.value.error) ? answer.value.error : 'unavailable';
+  return refuse(code as C, typeof answer.value.message === 'string' ? answer.value.message : INVITE_MESSAGES.unavailable);
+}
+
+export function createHttpPlatform(): { console: PlatformConsole; invites: InviteDesk } {
+  const listeners = new Set<() => void>();
+  async function write<T>(path: string, body: unknown): Promise<Result<T, PlatformRefusal>> {
+    const result = await platformCall<T>(path, body);
+    if (result.ok) for (const listener of [...listeners]) listener();
+    return result;
+  }
+  const person = (id: string) => `people/${encodeURIComponent(id)}`;
+
+  const platform: PlatformConsole = {
+    mode: 'connected',
+    operator: () => platformCall<PlatformOperator>('operator'),
+    directory: () => platformCall<PlatformDirectory>('directory'),
+    usage: (period) => platformCall<UsageReport>(`usage?period=${period}`),
+    log: (limit) => platformCall<PlatformLogPage>(`log?limit=${limit}`),
+    invite: (input) => write<IssuedInvite>('invites', input),
+    renewInvite: (id) => write<IssuedInvite>(`${person(id)}/renew-invite`, {}),
+    approve: (id, roles) => write<PlatformPerson>(`${person(id)}/approve`, { roles }),
+    setRoles: (id, roles) => write<PlatformPerson>(`${person(id)}/roles`, { roles }),
+    suspend: (id) => write<PlatformPerson>(`${person(id)}/suspend`, {}),
+    restore: (id) => write<Restored>(`${person(id)}/restore`, {}),
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+  };
+
+  const invites: InviteDesk = {
+    preview: (token) => inviteCall<InvitePreview, 'invalid_link' | 'unavailable'>(encodeURIComponent(token)),
+    accept: (token, password, confirmation) =>
+      inviteCall<InviteAccepted, PasswordRefusal | InviteLinkRefusal>(`${encodeURIComponent(token)}/accept`, { password, confirmation }),
+  };
+
+  return { console: platform, invites };
+}

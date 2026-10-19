@@ -1,0 +1,309 @@
+import 'server-only';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import type { PoolClient } from 'pg';
+import { z } from 'zod';
+import { buildUsageReport, DEFAULT_USAGE_PERIOD, USAGE_PERIODS, usageWindow, type UsageFacts, type UsagePeriod } from '../domain/platform-usage.ts';
+import {
+  INVITE_MESSAGES,
+  INVITE_TOKEN,
+  INVITE_TTL_DAYS,
+  PLATFORM_MESSAGES,
+  validateInvite,
+  validateNewPassword,
+  validateRoles,
+  type InviteLinkRefusal,
+  type PlatformRefusal,
+} from '../domain/platform.ts';
+import { ROLES, type Role } from '../domain/workspace.ts';
+import { reporterIdentity } from './auth.ts';
+import { cloudPortalId, localContext } from './config.ts';
+import { pool } from './database.ts';
+import { reporterDeploymentMode } from './deployment.ts';
+import { FlowError, logEvent } from './errors.ts';
+
+/**
+ * Console da plataforma and the access link over HTTP.
+ *
+ * `/api/reporter/platform/*` answers only a signed-in person who holds the platform role; it does
+ * not need a workspace membership. Each request runs one transaction with
+ * `app.access_mode='platform'` and the operator's id, and every SQL function checks the role again.
+ *
+ * `/api/reporter/invites/<token>` is public: the token is the credential. Accepting it defines the
+ * password with Neon Auth (sign-up; or a sign-in check when the account already exists), then the
+ * database binds the account, marks the e-mail verified and closes the link. No e-mail is sent.
+ */
+
+type Identity = Awaited<ReturnType<typeof reporterIdentity>>;
+
+export type PlatformDeps = {
+  readJson: (request: Request) => Promise<unknown>;
+  guardLocal: (request: Request) => void;
+  identify?: () => Promise<Identity>;
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A console refusal: the domain code and its pt-BR message. */
+class Refused extends Error {
+  readonly refusal: string;
+  readonly status: number;
+  readonly text: string;
+  constructor(refusal: string, text: string, status: number) {
+    super(refusal);
+    this.refusal = refusal;
+    this.text = text;
+    this.status = status;
+  }
+}
+
+const PLATFORM_STATUS: Readonly<Record<PlatformRefusal, number>> = {
+  invalid_name: 422, invalid_email: 422, invalid_role: 422, invalid_workspace: 422, no_roles: 422,
+  restricted: 403, self: 403, not_found: 404, email_taken: 409, invalid_state: 409, unavailable: 503,
+};
+
+function platformRefusal(code: PlatformRefusal): Refused {
+  return new Refused(code, PLATFORM_MESSAGES[code], PLATFORM_STATUS[code]);
+}
+
+const INVITE_STATUS: Readonly<Record<InviteLinkRefusal, number>> = { invalid_link: 404, expired: 410, used: 409, wrong_password: 401, unavailable: 503 };
+
+function inviteRefusal(code: InviteLinkRefusal): Refused {
+  return new Refused(code, INVITE_MESSAGES[code], INVITE_STATUS[code]);
+}
+
+/** SQL raises `P0001` with an upper-case code; anything else is not a refusal. */
+const SQL_REFUSALS: Readonly<Record<string, PlatformRefusal | InviteLinkRefusal>> = {
+  INVALID_NAME: 'invalid_name', INVALID_EMAIL: 'invalid_email', INVALID_ROLE: 'invalid_role', INVALID_WORKSPACE: 'invalid_workspace',
+  EMAIL_TAKEN: 'email_taken', SELF: 'self', NO_ROLES: 'no_roles', INVALID_STATE: 'invalid_state', NOT_FOUND: 'not_found',
+  INVALID_LINK: 'invalid_link', USED: 'used', EXPIRED: 'expired',
+};
+
+function translate(error: unknown): unknown {
+  if (!error || typeof error !== 'object') return error;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  if (code === '42501') return platformRefusal('restricted');
+  if (code === 'P0001' && typeof message === 'string' && SQL_REFUSALS[message]) {
+    const refusal = SQL_REFUSALS[message];
+    return refusal in INVITE_STATUS ? inviteRefusal(refusal as InviteLinkRefusal) : platformRefusal(refusal as PlatformRefusal);
+  }
+  return error;
+}
+
+function reply(value: unknown, status = 200): Response {
+  return Response.json(value, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+}
+
+async function run<T>(mode: 'platform' | 'invite', actor: string | null, operation: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool('runtime').connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT 1 AS applied FROM (SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode',$1,true),set_config('app.user_id',$2,true),set_config('app.request_id',$3,true),set_config('app.correlation_id',$3,true)) settings",
+      [mode, actor ?? '', randomUUID()]);
+    const result = await operation(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw translate(error);
+  } finally { client.release(); }
+}
+
+async function call<T>(client: PoolClient, sql: string, values: unknown[] = []): Promise<T> {
+  return (await client.query<{ value: T }>(sql, values)).rows[0]?.value as T;
+}
+
+function newToken(): { token: string; hash: string } {
+  const token = randomBytes(32).toString('base64url');
+  return { token, hash: createHash('sha256').update(token, 'utf8').digest('hex') };
+}
+
+const tokenHash = (token: string) => createHash('sha256').update(token, 'utf8').digest('hex');
+
+/** The signed-in operator's `core.users` id; local mode is the synthetic operator (checked in SQL). */
+async function operatorOf(request: Request, deps: PlatformDeps): Promise<string> {
+  if (reporterDeploymentMode() === 'local') {
+    deps.guardLocal(request);
+    return localContext.actor;
+  }
+  const url = new URL(request.url);
+  const origin = request.headers.get('origin');
+  if (!['GET', 'HEAD'].includes(request.method) && origin !== url.origin) throw new FlowError('ORIGIN_DENIED', 403);
+  const identity = await (deps.identify ?? reporterIdentity)();
+  if (!identity) throw new FlowError('AUTH_REQUIRED', 401);
+  if (!identity.emailVerified) throw platformRefusal('restricted');
+  const { rows } = await pool('runtime').query<{ user_id: string }>('SELECT user_id FROM public.reporter_platform_context($1,$2)', [identity.subject, identity.email]);
+  if (!rows[0]) throw platformRefusal('restricted');
+  return rows[0].user_id;
+}
+
+const rolesSchema = z.object({ roles: z.array(z.enum(ROLES as readonly [Role, ...Role[]])).max(8) }).strict();
+const inviteSchema = z.object({ name: z.string().max(400), email: z.string().max(400), role: z.string().max(40), workspaceId: z.string().max(80) }).strict();
+
+function personId(raw: string | undefined): string {
+  if (!raw || !UUID.test(raw)) throw platformRefusal('not_found');
+  return raw;
+}
+
+function roles(input: unknown): Role[] {
+  const parsed = rolesSchema.safeParse(input);
+  if (!parsed.success) throw platformRefusal('no_roles');
+  const valid = validateRoles(parsed.data.roles);
+  if (!valid.ok) throw platformRefusal('no_roles');
+  return valid.value;
+}
+
+function defaultPortal(): string {
+  return reporterDeploymentMode() === 'cloud' ? cloudPortalId() : localContext.portal;
+}
+
+export async function handlePlatform(request: Request, path: string[], deps: PlatformDeps): Promise<Response> {
+  try {
+    const operator = await operatorOf(request, deps);
+    const platform = <T>(operation: (client: PoolClient) => Promise<T>) => run('platform', operator, operation);
+    const [head, id, action] = path;
+
+    if (request.method === 'GET') {
+      if (path.length === 1 && head === 'operator') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_operator() AS value')));
+      if (path.length === 1 && head === 'directory') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_directory() AS value')));
+      if (path.length === 1 && head === 'log') {
+        const limit = Math.min(200, Math.max(1, Number(new URL(request.url).searchParams.get('limit')) || 50));
+        return reply(await platform(client => call(client, 'SELECT public.reporter_platform_log($1) AS value', [limit])));
+      }
+      if (path.length === 1 && head === 'usage') {
+        const asked = Number(new URL(request.url).searchParams.get('period'));
+        const period: UsagePeriod = (USAGE_PERIODS as readonly number[]).includes(asked) ? asked as UsagePeriod : DEFAULT_USAGE_PERIOD;
+        const now = new Date().toISOString();
+        const facts = await platform(client => call<UsageFacts>(client, 'SELECT public.reporter_platform_usage($1::date) AS value', [usageWindow(period, now).previousFrom]));
+        return reply(buildUsageReport(facts, period, now));
+      }
+      throw platformRefusal('not_found');
+    }
+    if (request.method !== 'POST') throw platformRefusal('not_found');
+
+    if (path.length === 1 && head === 'invites') {
+      const input = inviteSchema.safeParse(await deps.readJson(request));
+      if (!input.success) throw platformRefusal('invalid_name');
+      const valid = validateInvite({ ...input.data, role: input.data.role as Role });
+      if (!valid.ok) throw platformRefusal(valid.refusal.code);
+      const { token, hash } = newToken();
+      const value = await platform(client => call<{ person: unknown; expiresAt: string }>(client,
+        'SELECT public.reporter_platform_invite($1,$2,$3,$4::uuid,$5,$6) AS value',
+        [valid.value.name, valid.value.email, valid.value.role, personId(valid.value.workspaceId), hash, INVITE_TTL_DAYS]));
+      return reply({ ...value, token });
+    }
+    if (path.length === 3 && head === 'people') {
+      if (action === 'approve') {
+        if (!id?.startsWith('auth:') || id.length > 300) throw platformRefusal('not_found');
+        const chosen = roles(await deps.readJson(request));
+        return reply(await platform(client => call(client, 'SELECT public.reporter_platform_approve($1,$2::text[],$3::uuid) AS value', [id.slice(5), chosen, defaultPortal()])));
+      }
+      const target = personId(id);
+      if (action === 'roles') {
+        const chosen = roles(await deps.readJson(request));
+        return reply(await platform(client => call(client, 'SELECT public.reporter_platform_set_roles($1::uuid,$2::text[]) AS value', [target, chosen])));
+      }
+      if (action === 'suspend') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_suspend($1::uuid) AS value', [target])));
+      if (action === 'renew-invite') {
+        const { token, hash } = newToken();
+        const value = await platform(client => call<{ person: unknown; expiresAt: string }>(client,
+          'SELECT public.reporter_platform_renew_invite($1::uuid,$2,$3) AS value', [target, hash, INVITE_TTL_DAYS]));
+        return reply({ ...value, token });
+      }
+      if (action === 'restore') {
+        const { token, hash } = newToken();
+        const value = await platform(client => call<{ person: { id: string }; expiresAt?: string }>(client,
+          'SELECT public.reporter_platform_restore($1::uuid,$2,$3) AS value', [target, hash, INVITE_TTL_DAYS]));
+        return reply(value.expiresAt ? { person: value.person, invite: { person: value.person, token, expiresAt: value.expiresAt } } : { person: value.person });
+      }
+    }
+    throw platformRefusal('not_found');
+  } catch (error) {
+    return failure(error, 'platform');
+  }
+}
+
+function failure(error: unknown, component: 'platform' | 'invites'): Response {
+  if (error instanceof Refused) return reply({ error: error.refusal, message: error.text }, error.status);
+  if (error instanceof FlowError && ['AUTH_REQUIRED', 'ORIGIN_DENIED', 'LOCAL_ACCESS_ONLY', 'CLIENT_HEADER_REQUIRED'].includes(error.code)) {
+    return reply({ error: error.code === 'AUTH_REQUIRED' ? 'auth_required' : 'restricted', message: PLATFORM_MESSAGES.restricted }, error.status);
+  }
+  logEvent(component, 'request_failed', { error_code: error instanceof FlowError ? error.code : 'INTERNAL_ERROR' });
+  return component === 'platform'
+    ? reply({ error: 'unavailable', message: PLATFORM_MESSAGES.unavailable }, 503)
+    : reply({ error: 'unavailable', message: INVITE_MESSAGES.unavailable }, 503);
+}
+
+type Preview = { name: string; email: string; state: string; hasAccount: boolean };
+
+/** Neon Auth's own endpoints, called by the server with the app's origin; the session they open is discarded. */
+async function neonAuth(path: 'sign-up/email' | 'sign-in/email', origin: string, body: Record<string, string>): Promise<{ status: number; subject?: string; code?: string }> {
+  const base = process.env.NEON_AUTH_BASE_URL?.trim();
+  if (!base) throw inviteRefusal('unavailable');
+  const response = await fetch(`${base.replace(/\/$/, '')}/${path}`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000), cache: 'no-store',
+  });
+  const value = await response.json().catch(() => ({})) as { user?: { id?: unknown }; code?: unknown };
+  return { status: response.status, subject: typeof value.user?.id === 'string' ? value.user.id : undefined, code: typeof value.code === 'string' ? value.code : undefined };
+}
+
+/** The Neon Auth account of this e-mail with this password: created now, or the existing one checked. */
+async function defineAccount(origin: string, preview: Preview, password: string): Promise<string> {
+  if (!preview.hasAccount) {
+    const created = await neonAuth('sign-up/email', origin, { email: preview.email, password, name: preview.name });
+    if (created.status < 300 && created.subject) return created.subject;
+    if (created.status !== 422 && created.code !== 'USER_ALREADY_EXISTS') throw inviteRefusal('unavailable');
+  }
+  const signed = await neonAuth('sign-in/email', origin, { email: preview.email, password });
+  if (signed.status < 300 && signed.subject) return signed.subject;
+  if (signed.status === 401 || signed.status === 403) throw inviteRefusal('wrong_password');
+  throw inviteRefusal('unavailable');
+}
+
+const acceptSchema = z.object({ password: z.string().max(400), confirmation: z.string().max(400) }).strict();
+
+export async function handleInvites(request: Request, path: string[], deps: PlatformDeps): Promise<Response> {
+  try {
+    const [token, action] = path;
+    if (!token || !INVITE_TOKEN.test(token) || path.length > 2) throw inviteRefusal('invalid_link');
+    const hash = tokenHash(token);
+    const local = reporterDeploymentMode() === 'local';
+    if (local) deps.guardLocal(request);
+    const preview = () => run('invite', null, client => call<Preview | null>(client, 'SELECT public.reporter_invite_preview($1) AS value', [hash]));
+
+    if (request.method === 'GET' && path.length === 1) {
+      const value = await preview();
+      if (!value) throw inviteRefusal('invalid_link');
+      return reply(value);
+    }
+    if (request.method !== 'POST' || action !== 'accept') throw inviteRefusal('invalid_link');
+    const origin = new URL(request.url).origin;
+    if (!local && request.headers.get('origin') !== origin) throw new FlowError('ORIGIN_DENIED', 403);
+    const input = acceptSchema.safeParse(await deps.readJson(request));
+    if (!input.success) throw inviteRefusal('invalid_link');
+    const valid = validateNewPassword(input.data.password, input.data.confirmation);
+    if (!valid.ok) return reply({ error: valid.refusal.code, message: valid.refusal.message }, 422);
+    const current = await preview();
+    if (!current || current.state === 'revoked') throw inviteRefusal('invalid_link');
+    if (current.state === 'used') throw inviteRefusal('used');
+    if (current.state === 'expired') throw inviteRefusal('expired');
+    // Local development has no Neon Auth: the link only releases the synthetic account.
+    const subject = local ? `local:${randomUUID()}` : await defineAccount(origin, current, valid.value);
+    const accepted = await run('invite', null, client => call<{ email: string }>(client, 'SELECT public.reporter_invite_accept($1,$2) AS value', [hash, subject]));
+    return reply({ email: accepted.email, signIn: !local });
+  } catch (error) {
+    return failure(error, 'invites');
+  }
+}
+
+/**
+ * Whether the console's pages render for this request. Signed-in people without the platform
+ * role get a 404: the console does not reveal that it exists. Local and demo builds answer from
+ * their own checks (the synthetic operator, the seeded demo).
+ */
+export async function platformAccess(): Promise<boolean> {
+  if (process.env.NEXT_PUBLIC_REPORTER_E2E_FIXTURES === 'true' || reporterDeploymentMode() !== 'cloud') return true;
+  const identity = await reporterIdentity();
+  if (!identity?.emailVerified) return false;
+  const { rows } = await pool('runtime').query('SELECT user_id FROM public.reporter_platform_context($1,$2)', [identity.subject, identity.email]);
+  return rows.length > 0;
+}
