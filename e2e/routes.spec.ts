@@ -94,6 +94,13 @@ const ROUTES: readonly RouteCase[] = [
   { name: "Versões", path: "/whats-new", ready: heading("Versões") },
   { name: "Logs", path: "/admin/audit", ready: heading("Logs") },
   { name: "Endereço antigo de versões", path: "/versions", landsOn: "/whats-new", ready: heading("Versões") },
+  // Console da plataforma: its own frame, outside the workspace menu.
+  { name: "Plataforma · visão geral", path: "/platform", ready: heading("Visão geral") },
+  { name: "Plataforma · pessoas", path: "/platform/people", ready: heading("Pessoas") },
+  { name: "Plataforma · pessoa aguardando", path: "/platform/people?person=auth%3Abeatriz", ready: (page) => page.getByRole("button", { name: "Liberar acesso" }) },
+  { name: "Plataforma · uso", path: "/platform/usage", ready: heading("Uso") },
+  { name: "Plataforma · registro", path: "/platform/log", ready: heading("Registro") },
+  { name: "Link de acesso inválido", path: `/auth/invite/${"x".repeat(43)}`, ready: heading("Este link não é válido") },
   { name: "Produção inexistente", path: "/productions/prod-inexistente/article", ready: heading("Produção não encontrada"), trail: { stage: "Artigo" } },
   {
     name: "Página inexistente",
