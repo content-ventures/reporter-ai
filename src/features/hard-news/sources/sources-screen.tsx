@@ -27,9 +27,9 @@ import type { NewsFeed } from '@/domain/hard-news';
 import { useBreadcrumb } from '@/ui/shell';
 import { RelativeTime } from '@/ui/time';
 import { NEWS_HREF } from '../routes';
-import { useHardNews } from '../state/hard-news-provider';
+import { useHardNews, useNewsWatch } from '../state/hard-news-provider';
 import { AddFeedDialog } from './add-feed-dialog';
-import { FEED_STATE, feedHost, INTERVAL_OPTIONS } from './feed-format';
+import { FEED_STATE, feedOrigin, INTERVAL_OPTIONS } from './feed-format';
 
 /**
  * Fontes (F2.1, REQ-2.1): the RSS feeds the desk reads, how often, and whether each one answers.
@@ -41,18 +41,21 @@ export function SourcesScreen() {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<NewsFeed>();
   useBreadcrumb([{ label: 'Notícias', href: NEWS_HREF }, { label: 'Fontes' }]);
+  useNewsWatch();
 
   const feeds = state.feeds;
   const failing = ready ? feeds.filter((feed) => feed.state === 'failing') : [];
 
-  function retry(feed: NewsFeed) {
-    actions.retryFeed(feed.id);
+  async function retry(feed: NewsFeed) {
     toast(`Lendo ${feed.name} de novo`);
+    const read = await actions.retryFeed(feed.id);
+    if (read?.state === 'failing') toast(`${feed.name} não respondeu`, { tone: 'error', description: read.lastError });
   }
 
-  function setPaused(feed: NewsFeed, paused: boolean) {
-    actions.updateFeed(feed.id, { state: paused ? 'paused' : 'active' });
-    toast(paused ? `${feed.name} pausada` : `${feed.name} retomada`);
+  async function change(feed: NewsFeed, patch: { paused?: boolean; everyMinutes?: number }, done?: string) {
+    const result = await actions.updateFeed(feed.id, patch);
+    if (!result.ok) toast('Não foi possível salvar', { tone: 'error', description: result.message });
+    else if (done) toast(done);
   }
 
 
@@ -91,10 +94,10 @@ export function SourcesScreen() {
                 <FeedCard
                   key={feed.id}
                   feed={feed}
-                  onRetry={() => retry(feed)}
-                  onPause={(paused) => setPaused(feed, paused)}
+                  onRetry={() => void retry(feed)}
+                  onPause={(paused) => void change(feed, { paused }, paused ? `${feed.name} pausada` : `${feed.name} retomada`)}
                   onRemove={() => setRemoving(feed)}
-                  onInterval={(everyMinutes) => actions.updateFeed(feed.id, { everyMinutes })}
+                  onInterval={(everyMinutes) => void change(feed, { everyMinutes })}
                 />
               ))}
             </Grid>
@@ -109,10 +112,11 @@ export function SourcesScreen() {
         description="As notícias já importadas continuam na fila."
         confirmLabel="Remover fonte"
         tone="danger"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (removing) {
-            actions.removeFeed(removing.id);
-            toast('Fonte removida', { description: removing.name });
+            const result = await actions.removeFeed(removing.id);
+            if (result.ok) toast('Fonte removida', { description: removing.name });
+            else toast('Não foi possível remover', { tone: 'error', description: result.message });
           }
           setRemoving(undefined);
         }}
@@ -138,7 +142,7 @@ function FeedCard({ feed, onRetry, onPause, onRemove, onInterval }: {
           leading={<BrandMark name={feed.name} size="md" />}
           title={feed.name}
           badge={<Badge variant="soft" size="sm" tone={state.tone} dot={feed.state === 'paused' ? 'hollow' : true}>{state.label}</Badge>}
-          description={feedHost(feed.url)}
+          description={feedOrigin(feed)}
           actions={(
             <Menu
               label={`Ações de ${feed.name}`}

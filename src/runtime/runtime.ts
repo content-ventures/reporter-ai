@@ -1,3 +1,4 @@
+import type { NewsIntake } from '../ports/news-intake.ts';
 import type { AssetId, IsoDateTime, RunId } from '../domain/ids.ts';
 import type { AssetStore } from '../ports/assets.ts';
 import type { AuditQueries } from '../ports/audit.ts';
@@ -69,6 +70,8 @@ export type Runtime = {
   readonly pipeline?: PipelineSettings;
   readonly visuals?: VisualLibrary;
   readonly citations?: CitationLibrary;
+  /** F2.1 news sources and queue on the server (connected build only). */
+  readonly news?: NewsIntake;
   readonly render: RenderService;
   readonly export: ExportService;
   readonly session: SessionPort;

@@ -8,6 +8,7 @@ import { isForbidden, ReporterHttpError, reporterRequest, reporterUpload, reques
 import { avatarImage } from '../adapters/local/assets/avatar-image.ts';
 import { createHttpImageGenerator, createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
+import { createHttpNewsIntake } from '../adapters/http/news-intake.ts';
 import { withServerAssets } from '../adapters/http/server-assets.ts';
 import { committedCommand } from '../adapters/http/committed-command.ts';
 import { createWorkspaceRefresh } from '../adapters/http/workspace-refresh.ts';
@@ -128,6 +129,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     visuals: createHttpVisualLibrary(),
     imageGeneration: createHttpImageGenerator(),
     citations: createHttpCitationLibrary(),
+    news: createHttpNewsIntake(),
     pipeline: { get: () => reporterRequest<PipelineView>('/pipeline'),save: (definition,baseRevision) => rpc('pipeline.save',[definition,baseRevision]) },
     session: {
       mode: 'remote',
