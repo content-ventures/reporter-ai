@@ -1,5 +1,6 @@
 import 'server-only';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { connection } from 'next/server';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { buildUsageReport, DEFAULT_USAGE_PERIOD, USAGE_PERIODS, usageWindow, type UsageFacts, type UsagePeriod } from '../domain/platform-usage.ts';
@@ -301,6 +302,8 @@ export async function handleInvites(request: Request, path: string[], deps: Plat
  * their own checks (the synthetic operator, the seeded demo).
  */
 export async function platformAccess(): Promise<boolean> {
+  // Per request, never prerendered: the answer depends on who is signed in.
+  await connection();
   if (process.env.NEXT_PUBLIC_REPORTER_E2E_FIXTURES === 'true' || reporterDeploymentMode() !== 'cloud') return true;
   const identity = await reporterIdentity();
   if (!identity?.emailVerified) return false;
