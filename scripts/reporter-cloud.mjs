@@ -135,6 +135,7 @@ async function grant(client) {
   const name = option('name')?.trim() || email;
   const role = option('role')?.trim() || 'admin';
   const tenantRole = role === 'admin' ? 'admin' : 'member';
+  const platformAdmin = process.argv.includes('--platform-admin');
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw new Error('Use --email usuario@dominio');
   if (!['admin','editor','approver','creative_reviewer'].includes(role)) throw new Error('Invalid --role');
   await client.query('BEGIN');
@@ -149,8 +150,10 @@ async function grant(client) {
     await client.query(`INSERT INTO public.portal_user_roles(portal_id,user_id,portal_role_id)
       SELECT '10000000-0000-0000-0000-000000000101',$1,id FROM public.portal_roles
       WHERE portal_id='10000000-0000-0000-0000-000000000101' AND name=$2 ON CONFLICT DO NOTHING`,[user.id,role]);
+    // The console da plataforma ("modo deus") is granted only here, never from a screen.
+    if (platformAdmin) await client.query(`INSERT INTO public.user_roles(user_id,role) VALUES($1,'platform_admin') ON CONFLICT(user_id,role) DO NOTHING`,[user.id]);
     await client.query('COMMIT');
-    console.log(`Access granted to ${email} as ${role}. The Auth subject binds after verified sign-in.`);
+    console.log(`Access granted to ${email} as ${role}${platformAdmin ? ' and platform operator' : ''}. The Auth subject binds after verified sign-in.`);
   } catch (error) { await client.query('ROLLBACK');throw error; }
 }
 
@@ -160,5 +163,5 @@ try {
   else if (command === 'roles') await configureRoles(client);
   else if (command === 'grant') await grant(client);
   else if (command === 'status') console.log(JSON.stringify(await status(client),null,2));
-  else throw new Error('Use: status | migrate | roles --rotate [--write file] | grant --email ... [--name ...] [--role ...]');
+  else throw new Error('Use: status | migrate | roles --rotate [--write file] | grant --email ... [--name ...] [--role ...] [--platform-admin]');
 } finally { await client.end(); }
