@@ -5,6 +5,7 @@
  */
 
 import type { FactCheck } from './fact-check.ts';
+import type { NewsSourceKind } from './news-intake.ts';
 
 // ── F2.1 · Fontes de notícias ─────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,12 @@ export type NewsFeed = {
   lastDay: number;
   /** News imported per day in the last 7 days, oldest first (the source's rhythm). */
   lastWeek?: number[];
+  /** How the feed is made; absent is an outlet's own feed ('rss'). */
+  kind?: NewsSourceKind;
+  /** RSS.app: the site it follows. */
+  site?: string;
+  /** Google Alertas and RSS.app: the keyword it follows. */
+  keyword?: string;
 };
 
 export const FEED_INTERVALS = [15, 30, 60, 120, 360] as const;
@@ -66,6 +73,8 @@ export type NewsItem = {
   excerpt: string;
   /** Paragraphs of the original text, for reading without leaving the queue. */
   body: string[];
+  /** Paragraphs the server keeps when `body` was not sent with the queue (read on demand). */
+  paragraphs?: number;
   duplicates: NewsDuplicate[];
   /** Absent while the AI is still reading it. */
   classification?: NewsClassification;
