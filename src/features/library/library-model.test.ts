@@ -57,21 +57,21 @@ describe('library cards', () => {
       assert.match(entry.meta.description, /^\p{Lu}.{8,80}\.$/u, entry.template.name);
     }
     assert.ok(TEMPLATE_CATALOG.some((entry) => entry.meta.status === 'aprovado'));
-    assert.equal(TEMPLATE_CATALOG[0].template.id, 'tpl-seafood-headline');
+    assert.equal(TEMPLATE_CATALOG[0].template.id, 'tpl-seafood-v2-news');
   });
 });
 
 describe('library filters', () => {
   it('filters the Seafood families independently and exposes no retired feed model', () => {
     const catalog: LibraryTemplate[] = TEMPLATE_CATALOG.map(entry => ({ ...entry.template, ...entry.meta, formatInfo: CAROUSEL_FORMATS.find(format => format.id === entry.meta.format)! }));
-    for (const family of ['news', 'explainer', 'podcast'] as const) {
+    for (const [family, count] of [['news', 4], ['explainer', 3], ['podcast', 3]] as const) {
       const found = applyFilter(catalog, { format: 'feed', query: '', family });
-      assert.equal(found.length, 2);
+      assert.equal(found.length, count, family);
       assert.ok(found.every(template => template.family === family));
     }
     const all = applyFilter(catalog, libraryFilter('feed'));
     assert.ok(all.every(template => template.family));
-    assert.equal(all.length, 6);
+    assert.equal(all.length, 10);
     assert.equal(all.length, catalog.filter(template => template.format === 'feed').length);
     assert.equal(applyFilter(catalog, { format: 'feed', family: 'podcast', query: 'aspas' })[0]?.name, 'Seafood Aspas');
     assert.equal(applyFilter(catalog, { format: 'square', family: 'news', query: '' }).length, 0);

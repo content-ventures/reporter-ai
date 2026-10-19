@@ -76,7 +76,7 @@ test("Trocar modelo no estúdio do carrossel: mantém os textos, muda a proporç
   const errors = watchErrors(page);
   await page.goto("/productions/prod-lume/carousel");
   const status = page.getByLabel("Situação do carrossel");
-  await expect(status).toContainText("Modelo Seafood Manchete");
+  await expect(status).toContainText("Modelo Seafood Notícia V2");
   const cover = page.getByRole("img", { name: "Slide 1: Capa" });
   await expectRatio(cover, 4 / 5);
   const title = page.getByRole("textbox", { name: "Título" }).first();
@@ -87,7 +87,7 @@ test("Trocar modelo no estúdio do carrossel: mantém os textos, muda a proporç
   const models = picker.getByRole("radiogroup", { name: "Modelos de carrossel" });
   // It opens on the carousel's own format and model.
   await expect(models.getByRole("radio")).toHaveCount(FEED_MODELS);
-  await expect(models.getByRole("radio", { checked: true })).toHaveAccessibleName(/^Seafood Manchete/);
+  await expect(models.getByRole("radio", { checked: true })).toHaveAccessibleName(/^Seafood Notícia V2/);
   await picker.getByRole("tab", { name: /Quadrado/ }).click();
   // "Ver modelo" draws this carousel in that model, with what changes, before anything is applied.
   await models.getByRole("button", { name: "Ver modelo Aspas" }).click();
@@ -102,7 +102,7 @@ test("Trocar modelo no estúdio do carrossel: mantém os textos, muda a proporç
   await expectRatio(cover, 1);
 
   await page.getByRole("button", { name: "Desfazer" }).click();
-  await expect(status).toContainText("Modelo Seafood Manchete");
+  await expect(status).toContainText("Modelo Seafood Notícia V2");
   await expectRatio(cover, 4 / 5);
   await expect(title).toHaveValue(before);
 
