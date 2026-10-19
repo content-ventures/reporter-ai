@@ -1,42 +1,70 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Dialog, Field, Input, Section, Select, toast } from '@content-ventures/design-system/v3';
+import { Button, Dialog, Field, Input, Section, Segmented, Select, toast } from '@content-ventures/design-system/v3';
+import type { SegmentOption } from '@content-ventures/design-system/v3';
+import type { NewSource } from '@/ports/news-intake';
 import { useHardNews } from '../state/hard-news-provider';
-import { DEFAULT_INTERVAL, INTERVAL_OPTIONS, isWebAddress } from './feed-format';
+import { DEFAULT_INTERVAL, INTERVAL_OPTIONS } from './feed-format';
 
-type FieldError = { field: 'name' | 'url'; message: string };
+type Mode = 'feed' | 'site' | 'keyword';
 
-/** F2.1 · "Adicionar fonte": a name, the RSS address and how often to read it. */
+/**
+ * F2.1 · "Adicionar fonte": an outlet's feed (or its site, whose feed is found), a site without a
+ * feed or a keyword (both made by RSS.app), and how often to read it. The first read happens here:
+ * the source arrives with its news.
+ */
 export function AddFeedDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { actions } = useHardNews();
+  const { actions, rssApp } = useHardNews();
+  const [mode, setMode] = useState<Mode>('feed');
+  const [address, setAddress] = useState('');
   const [name, setName] = useState('');
-  const [url, setUrl] = useState('');
+  const [keyword, setKeyword] = useState('');
   const [every, setEvery] = useState(String(DEFAULT_INTERVAL));
-  const [error, setError] = useState<FieldError>();
-  const ready = name.trim().length > 0 && url.trim().length > 0;
+  const [error, setError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  const modes: SegmentOption<Mode>[] = [
+    { value: 'feed', label: 'Feed ou site' },
+    { value: 'site', label: 'Site sem feed', ...(rssApp ? {} : { disabled: true, disabledReason: 'O RSS.app não está conectado' }) },
+    { value: 'keyword', label: 'Palavra-chave', ...(rssApp ? {} : { disabled: true, disabledReason: 'O RSS.app não está conectado' }) },
+  ];
+  const ready = mode === 'keyword' ? keyword.trim().length > 0 : address.trim().length > 0;
 
   function close() {
+    if (saving) return;
+    setMode('feed');
+    setAddress('');
     setName('');
-    setUrl('');
+    setKeyword('');
     setEvery(String(DEFAULT_INTERVAL));
     setError(undefined);
     onClose();
   }
 
-  function submit() {
-    if (!ready) return;
-    const result = actions.addFeed({ name, url, everyMinutes: Number(every) });
+  async function submit() {
+    if (!ready || saving) return;
+    const everyMinutes = Number(every);
+    const input: NewSource = mode === 'keyword'
+      ? { kind: 'rss-app', keyword: keyword.trim(), everyMinutes }
+      : mode === 'site'
+        ? { kind: 'rss-app', site: address.trim(), name: name.trim() || undefined, everyMinutes }
+        : { kind: 'rss', url: address.trim(), name: name.trim() || undefined, everyMinutes };
+    setSaving(true);
+    const result = await actions.addFeed(input);
+    setSaving(false);
     if (!result.ok) {
-      // The desk checks the address first, then the name, then duplicates.
-      setError({ field: !name.trim() && isWebAddress(url) ? 'name' : 'url', message: result.message });
+      setError(result.message);
       return;
     }
-    toast('Fonte adicionada', { description: name.trim() });
+    toast('Fonte adicionada', {
+      description: result.inserted > 0 ? `${result.feed.name} · ${result.inserted} ${result.inserted === 1 ? 'notícia' : 'notícias'}` : result.feed.name,
+    });
+    setSaving(false);
     close();
   }
 
-  const onEnter = (event: { key: string }) => { if (event.key === 'Enter') submit(); };
+  const onEnter = (event: { key: string }) => { if (event.key === 'Enter') void submit(); };
+  const change = (set: (value: string) => void) => (event: { target: { value: string } }) => { set(event.target.value); setError(undefined); };
 
   return (
     <Dialog
@@ -45,45 +73,50 @@ export function AddFeedDialog({ open, onClose }: { open: boolean; onClose: () =>
       size="sm"
       title="Adicionar fonte"
       divided={false}
-      dirty={name.trim().length > 0 || url.trim().length > 0}
+      dirty={address.trim().length > 0 || keyword.trim().length > 0 || name.trim().length > 0}
       footer={(
         <>
-          <Button variant="secondary" onClick={close}>Cancelar</Button>
-          <Button variant="primary" disabled={!ready} onClick={submit}>Adicionar fonte</Button>
+          <Button variant="secondary" disabled={saving} onClick={close}>Cancelar</Button>
+          <Button variant="primary" disabled={!ready} loading={saving} onClick={() => void submit()}>Adicionar fonte</Button>
         </>
       )}
     >
       {/* A headless Section gives the fields the form rhythm (20 px between them). */}
       <Section>
-        <Field label="Nome" error={error?.field === 'name' ? error.message : undefined}>
-          {({ id, describedBy, invalid }) => (
-            <Input
-              id={id}
-              aria-describedby={describedBy}
-              invalid={invalid}
-              value={name}
-              placeholder="Ex.: Agência Litoral"
-              autoFocus
-              onChange={(event) => { setName(event.target.value); setError(undefined); }}
-              onKeyDown={onEnter}
-            />
-          )}
+        <Field label="Tipo">
+          {() => <Segmented label="Tipo de fonte" options={modes} value={mode} onChange={(value) => { setMode(value); setError(undefined); }} full />}
         </Field>
-        <Field label="Endereço do feed RSS" error={error?.field === 'url' ? error.message : undefined}>
-          {({ id, describedBy, invalid }) => (
-            <Input
-              id={id}
-              aria-describedby={describedBy}
-              invalid={invalid}
-              value={url}
-              type="url"
-              inputMode="url"
-              placeholder="https://"
-              onChange={(event) => { setUrl(event.target.value); setError(undefined); }}
-              onKeyDown={onEnter}
-            />
-          )}
-        </Field>
+        {mode === 'keyword' ? (
+          <Field label="Palavra-chave" error={error}>
+            {({ id, describedBy, invalid }) => (
+              <Input id={id} aria-describedby={describedBy} invalid={invalid} value={keyword} placeholder="Ex.: tilápia" autoFocus onChange={change(setKeyword)} onKeyDown={onEnter} />
+            )}
+          </Field>
+        ) : (
+          <>
+            <Field label={mode === 'site' ? 'Endereço do site' : 'Endereço do site ou do feed'} error={error}>
+              {({ id, describedBy, invalid }) => (
+                <Input
+                  id={id}
+                  aria-describedby={describedBy}
+                  invalid={invalid}
+                  value={address}
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://"
+                  autoFocus
+                  onChange={change(setAddress)}
+                  onKeyDown={onEnter}
+                />
+              )}
+            </Field>
+            <Field label="Nome" optional>
+              {({ id, describedBy }) => (
+                <Input id={id} aria-describedby={describedBy} value={name} placeholder="O nome do feed" onChange={change(setName)} onKeyDown={onEnter} />
+              )}
+            </Field>
+          </>
+        )}
         <Field label="Frequência">
           {({ id, describedBy }) => (
             <Select id={id} describedBy={describedBy} value={every} options={INTERVAL_OPTIONS} onChange={setEvery} />

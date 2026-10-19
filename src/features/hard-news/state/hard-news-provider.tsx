@@ -25,6 +25,7 @@ import type {
   ResearchSource,
   WritingGuide,
 } from '@/domain/hard-news';
+import type { NewSource, SourcePatch } from '@/ports/news-intake';
 import { useCommands, useRuntime, useSession } from '@/state';
 import type { Arrival } from '../preview/arrivals';
 import { ARTICLE_NEWS_ID, classificationFor, clockAt, RESEARCH_NEWS_ID } from '../preview/news';
@@ -33,6 +34,8 @@ import { previewScore } from '../settings/map-preview';
 import { answerFrom } from './archive-search';
 import { createDeskStore } from './desk-store';
 import type { HardNewsState } from './hard-news-state';
+import { createLiveNewsStore } from './live-news';
+import type { LiveNews } from './live-news';
 
 /** One step of "Escrever artigo", as the writing trace shows it. */
 export type WritingStep = { id: string; label: string; detail?: string };
@@ -53,12 +56,16 @@ export type HardNewsActions = {
   discard(newsId: string, reason: string): void;
   restore(newsId: string): void;
   correct(newsId: string, priority: NewsPriority, note?: string): void;
-  importUrl(url: string): { ok: true; id: string } | { ok: false; message: string };
+  /** "Colar link": the story's id, also when it was already in the queue (`outcome: 'repeat'`). */
+  importUrl(url: string): Promise<{ ok: true; id: string; outcome: 'inserted' | 'grouped' | 'repeat' } | { ok: false; message: string }>;
   setGoal(perDay: number): void;
-  addFeed(input: Pick<NewsFeed, 'name' | 'url' | 'everyMinutes'>): { ok: true } | { ok: false; message: string };
-  updateFeed(id: string, patch: Partial<Pick<NewsFeed, 'name' | 'everyMinutes' | 'state'>>): void;
-  retryFeed(id: string): void;
-  removeFeed(id: string): void;
+  addFeed(input: NewSource): Promise<{ ok: true; feed: NewsFeed; inserted: number } | { ok: false; message: string }>;
+  updateFeed(id: string, patch: SourcePatch): Promise<{ ok: true } | { ok: false; message: string }>;
+  /** "Tentar de novo": the source as the new read left it. */
+  retryFeed(id: string): Promise<NewsFeed | undefined>;
+  removeFeed(id: string): Promise<{ ok: true } | { ok: false; message: string }>;
+  /** The text of a story read from the server (the ficha's "Texto original"). */
+  loadBody(id: string): void;
   research(productionId: string): void;
   setSource(productionId: string, sourceId: string, state: ResearchSource['state']): void;
   addSource(productionId: string, url: string): { ok: true } | { ok: false; message: string };
@@ -100,11 +107,22 @@ type HardNewsContextValue = {
   actions: HardNewsActions;
   /** The R1 build's demonstration: simulated data only, nothing written to the workspace. */
   demo: boolean;
+  /** F2.1 on the server (connected build): sources and news are real, the triage is not there yet. */
+  live: boolean;
+  /** RSS.app can create feeds: the platform's account in the connected build, simulated otherwise. */
+  rssApp: boolean;
+  /** A screen that shows the news keeps the server polling while mounted (a no-op in the simulation). */
+  watch: () => () => void;
 };
 
 const HardNewsContext = createContext<HardNewsContextValue | null>(null);
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const EMPTY_LIVE: LiveNews = { ready: false, feeds: [], news: [], rssApp: false, failed: false };
+const emptyLive = () => EMPTY_LIVE;
+const noSubscription = () => () => {};
+const noWatch = () => () => {};
+const failure = (error: unknown) => ({ ok: false as const, message: error instanceof Error && error.message ? error.message : 'Não foi possível concluir. Tente de novo.' });
 
 function urlProblem(value: string): string | undefined {
   try {
@@ -145,6 +163,10 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
   const runtimeRef = useRef(runtime.runtime);
   /** The latest records, for async steps that outlive a render. */
   const latest = useMemo(() => ({ get current() { return store.get().state; } }), [store]);
+  // F2.1 on the server: the connected build's runtime brings the news port.
+  const newsPort = runtime.runtime?.news;
+  const liveStore = useMemo(() => (newsPort ? createLiveNewsStore(newsPort) : undefined), [newsPort]);
+  const liveNews = useSyncExternalStore(liveStore?.subscribe ?? noSubscription, liveStore?.get ?? emptyLive, emptyLive);
 
   useEffect(() => {
     actorRef.current = actor;
@@ -342,11 +364,20 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
         }),
       }));
     },
-    importUrl(url) {
+    async importUrl(url) {
       const problem = urlProblem(url);
       if (problem) return { ok: false, message: problem };
+      if (newsPort && liveStore) {
+        try {
+          const imported = await newsPort.importLink(url.trim());
+          await liveStore.refresh();
+          return { ok: true, ...imported };
+        } catch (error) {
+          return failure(error);
+        }
+      }
       const existing = latest.current.news.find((item) => sameUrl(item.url, url) || item.duplicates.some((duplicate) => sameUrl(duplicate.url, url)));
-      if (existing) return { ok: false, message: `Já está na fila: “${existing.title}”.` };
+      if (existing) return { ok: true, id: existing.id, outcome: 'repeat' };
       const address = new URL(url.trim());
       const id = `news-url-${Date.now().toString(36)}`;
       const now = new Date().toISOString();
@@ -358,34 +389,91 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
         duplicates: [], status: 'new',
       };
       update((current) => ({ ...current, news: [item, ...current.news] }));
-      return { ok: true, id };
+      return { ok: true, id, outcome: 'inserted' };
     },
     setGoal(perDay) {
       update((current) => ({ ...current, goal: { perDay: Math.max(1, Math.min(50, Math.round(perDay))) } }));
     },
-    addFeed(input) {
-      const problem = urlProblem(input.url);
+    async addFeed(input) {
+      const address = 'url' in input ? input.url : 'site' in input ? input.site : undefined;
+      const problem = address === undefined ? undefined : urlProblem(address);
       if (problem) return { ok: false, message: problem };
-      if (!input.name.trim()) return { ok: false, message: 'Dê um nome à fonte.' };
-      if (latest.current.feeds.some((feed) => sameUrl(feed.url, input.url))) return { ok: false, message: 'Essa fonte já está cadastrada.' };
-      const feed: NewsFeed = { id: `feed-${Date.now().toString(36)}`, name: input.name.trim(), url: new URL(input.url.trim()).href, everyMinutes: input.everyMinutes, state: 'active', lastDay: 0 };
+      if (newsPort && liveStore) {
+        try {
+          const read = await newsPort.addSource(input);
+          liveStore.putFeed(read.source);
+          void liveStore.refresh();
+          return { ok: true, feed: read.source, inserted: read.inserted };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+      // The example: the source is read a moment later and brings a few stories.
+      if (address && latest.current.feeds.some((feed) => sameUrl(feed.url, address) || (feed.site && sameUrl(feed.site, address)))) {
+        return { ok: false, message: 'Essa fonte já está cadastrada.' };
+      }
+      const keyword = 'keyword' in input ? input.keyword.trim() : undefined;
+      if (keyword !== undefined && !keyword) return { ok: false, message: 'Digite a palavra-chave.' };
+      const host = address ? new URL(address.trim()).host.replace(/^www\./, '') : '';
+      const name = ('name' in input ? input.name?.trim() : undefined) || keyword || host;
+      const feed: NewsFeed = {
+        id: `feed-${Date.now().toString(36)}`, name, url: address ? new URL(address.trim()).href : `https://rss.app/feeds/${Date.now().toString(36)}.xml`,
+        everyMinutes: input.everyMinutes, state: 'active', lastDay: 0, kind: input.kind,
+        ...('site' in input ? { site: input.site } : {}), ...(keyword ? { keyword } : {}),
+      };
       update((current) => ({ ...current, feeds: [...current.feeds, feed] }));
       void wait(1800).then(() => {
         update((current) => ({ ...current, feeds: current.feeds.map((item) => (item.id === feed.id ? { ...item, lastReadAt: new Date().toISOString(), lastDay: 4 } : item)) }));
       });
+      return { ok: true, feed, inserted: 0 };
+    },
+    async updateFeed(id, patch) {
+      if (newsPort && liveStore) {
+        try {
+          liveStore.putFeed(await newsPort.updateSource(id, patch));
+          return { ok: true };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+      const { paused, ...rest } = patch;
+      update((current) => ({ ...current, feeds: current.feeds.map((feed) => (feed.id === id
+        ? { ...feed, ...rest, ...(paused === undefined ? {} : { state: paused ? 'paused' : 'active' }) }
+        : feed)) }));
       return { ok: true };
     },
-    updateFeed(id, patch) {
-      update((current) => ({ ...current, feeds: current.feeds.map((feed) => (feed.id === id ? { ...feed, ...patch } : feed)) }));
-    },
-    retryFeed(id) {
+    async retryFeed(id) {
+      if (newsPort && liveStore) {
+        try {
+          const read = await newsPort.readSource(id);
+          liveStore.putFeed(read.source);
+          void liveStore.refresh();
+          return read.source;
+        } catch {
+          return undefined;
+        }
+      }
       update((current) => ({ ...current, feeds: current.feeds.map((feed) => (feed.id === id ? { ...feed, state: 'active', lastError: undefined } : feed)) }));
       void wait(1500).then(() => {
         update((current) => ({ ...current, feeds: current.feeds.map((feed) => (feed.id === id ? { ...feed, lastReadAt: new Date().toISOString(), lastDay: 3 } : feed)) }));
       });
+      return latest.current.feeds.find((feed) => feed.id === id);
     },
-    removeFeed(id) {
+    async removeFeed(id) {
+      if (newsPort && liveStore) {
+        try {
+          await newsPort.removeSource(id);
+          liveStore.dropFeed(id);
+          return { ok: true };
+        } catch (error) {
+          return failure(error);
+        }
+      }
       update((current) => ({ ...current, feeds: current.feeds.filter((feed) => feed.id !== id) }));
+      return { ok: true };
+    },
+    loadBody(id) {
+      void liveStore?.loadBody(id).catch(() => {});
     },
     research,
     setSource(productionId, sourceId, sourceState) {
@@ -621,9 +709,22 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
     reset() {
       store.reset();
     },
-  }), [articlePieceId, commands, demo, latest, openProduction, patchDossier, patchNews, research, store, update]);
+  }), [articlePieceId, commands, demo, latest, liveStore, newsPort, openProduction, patchDossier, patchNews, research, store, update]);
 
-  const value = useMemo<HardNewsContextValue>(() => ({ state, ready, writing, actions, demo }), [actions, demo, ready, state, writing]);
+  // The connected build reads sources and news from the server; everything else stays the desk's.
+  const live = Boolean(liveStore);
+  const shown = useMemo(() => (live ? { ...state, feeds: liveNews.feeds, news: liveNews.news } : state), [live, liveNews.feeds, liveNews.news, state]);
+  const watch = useMemo(() => (liveStore ? () => liveStore.watch() : noWatch), [liveStore]);
+  const value = useMemo<HardNewsContextValue>(() => ({
+    state: shown,
+    ready: live ? ready && liveNews.ready : ready,
+    writing,
+    actions,
+    demo,
+    live,
+    rssApp: live ? liveNews.rssApp : true,
+    watch,
+  }), [actions, demo, live, liveNews.ready, liveNews.rssApp, ready, shown, watch, writing]);
   return <HardNewsContext value={value}>{children}</HardNewsContext>;
 }
 
@@ -640,6 +741,12 @@ export function useHardNews(): HardNewsContextValue {
 export function useOptionalHardNews(): HardNewsContextValue | null {
   const value = use(HardNewsContext);
   return value?.demo ? null : value;
+}
+
+/** Keeps the server's news polling while the calling screen is mounted (F2.1, connected build). */
+export function useNewsWatch(): void {
+  const { watch } = useHardNews();
+  useEffect(() => watch(), [watch]);
 }
 
 export function useDossier(productionId: string | undefined): HardNewsDossier | undefined {

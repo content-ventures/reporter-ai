@@ -1,5 +1,5 @@
 import { FEED_INTERVALS } from '@/domain/hard-news';
-import type { FeedState } from '@/domain/hard-news';
+import type { FeedState, NewsFeed } from '@/domain/hard-news';
 
 /** "A cada 15 min", "A cada 1 h", "A cada 6 h". */
 export function intervalLabel(minutes: number): string {
@@ -23,6 +23,13 @@ export function feedHost(url: string): string {
   } catch {
     return url;
   }
+}
+
+/** What a source follows, under its name: the site, the alert's or RSS.app's keyword. */
+export function feedOrigin(feed: Pick<NewsFeed, 'url' | 'kind' | 'site' | 'keyword'>): string {
+  if (feed.kind === 'google-alerts') return feed.keyword ? `Google Alertas · ${feed.keyword}` : 'Google Alertas';
+  if (feed.kind === 'rss-app') return feed.keyword ? `RSS.app · ${feed.keyword}` : `RSS.app · ${feedHost(feed.site ?? feed.url)}`;
+  return feedHost(feed.url);
 }
 
 /** The same rule the desk applies to addresses: a full http(s) address. */
