@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { AppScreen } from '@/features/hard-news/integrations/app-screen';
 import { appDef } from '@/features/hard-news/integrations/integrations-model';
-import { isReleased } from '@/registries';
 
 export async function generateMetadata({ params }: PageProps<'/admin/integrations/[app]'>): Promise<Metadata> {
   const { app } = await params;
@@ -12,10 +11,9 @@ export async function generateMetadata({ params }: PageProps<'/admin/integration
 /**
  * R2 · one app of the Integrações catalog: its connection, or the guided connection. WordPress
  * keeps its CMS page and the RSS feeds are the desk's Fontes; apps of a later release have no page
- * yet. Before R2 the address answers 404.
+ * yet. A demonstration in an R1 build.
  */
 export default async function Page({ params }: PageProps<'/admin/integrations/[app]'>) {
-  if (!isReleased('R2')) notFound();
   const { app } = await params;
   const def = appDef(app);
   if (!def || def.since) notFound();

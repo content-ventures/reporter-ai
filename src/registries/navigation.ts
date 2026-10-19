@@ -376,19 +376,16 @@ export const MENU_GROUPS: Readonly<Record<MenuGroupId, MenuGroup>> = {
 /** Who is looking at the menu; without one, role-restricted items stay hidden. */
 export type NavViewer = { roles: readonly Role[] };
 
-/** Only the UI demonstration expands navigation; domain/worker release gates stay on R1. */
+/** The R1 build's Hard News demonstration shows the R2 menu; domain/worker release gates stay on R1. */
 export type NavigationOptions = { previewR2?: boolean };
 /** Library screens R1 kept out of the menu (Imagens, Citações) open with the Hard News release. */
 const LIBRARY_FROM_R2 = new Set(['images', 'quotes']);
 
 function navigationEntries(options: NavigationOptions, release: ReleaseId = CURRENT_RELEASE): readonly NavItem[] {
-  if (!options.previewR2 && isReleased('R2', release)) {
+  if (options.previewR2 || isReleased('R2', release)) {
     return NAV_ITEMS.map((item) => (LIBRARY_FROM_R2.has(item.id) ? { ...item, hidden: false } : item));
   }
-  if (!options.previewR2) return NAV_ITEMS;
-  return NAV_ITEMS.map(item => item.id === 'images' || item.id === 'quotes'
-    ? { ...item, hidden: false, since: 'R2' as const }
-    : item.id === 'integrations' ? { ...item, label: 'CMS do portal' } : item);
+  return NAV_ITEMS;
 }
 
 /** Scope is checked before roles; approved items without `roles` are for everyone. */
@@ -431,16 +428,12 @@ export function menuFor(release: ReleaseId = CURRENT_RELEASE, viewer?: NavViewer
   if (options.previewR2) release = 'R2';
   const visible = navigationEntries(options, release).filter((item) => isNavItemVisible(item, viewer));
   const released = visible.filter((item) => isReleased(item.since, release));
-  if (options.previewR2) {
-    const order = ['overview', 'productions', 'templates', 'news', 'images', 'quotes', 'archive', 'editorial-map', 'writing-guide', 'integrations'];
-    released.sort((a, b) => (order.indexOf(a.id) < 0 ? 99 : order.indexOf(a.id)) - (order.indexOf(b.id) < 0 ? 99 : order.indexOf(b.id)));
-  }
   const soon = visible
     .filter((item) => !isReleased(item.since, release))
     .map((item, order) => ({ item, order }))
     .sort((a, b) => releaseIndex(a.item.since) - releaseIndex(b.item.since) || a.order - b.order)
     .map<MenuItem>(({ item }) => ({ ...item, soon: soonReason(item) }));
-  if (!options.previewR2 && isReleased('R2', release)) return sectionedMenu(released, soon);
+  if (isReleased('R2', release)) return sectionedMenu(released, soon);
   const result: MenuSection[] = [
     { group: MENU_GROUPS.main, items: released.filter((item) => placementOf(item) === 'main') },
     { group: MENU_GROUPS.soon, items: soon },

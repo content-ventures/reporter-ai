@@ -14,13 +14,13 @@ import {
 } from '@content-ventures/design-system/v3';
 import { productionTrail } from '@/features/production/trail';
 import type { ProductionListFilter, ProductionListItem } from '@/ports';
-import { activeNavItem, isReleased, menuFor, type MenuItem, type MenuSection } from '@/registries';
-import { useApprovals, useProductions, useSession } from '@/state';
+import { activeNavItem, menuFor, type MenuItem, type MenuSection } from '@/registries';
+import { useApprovals, useProductions, useRuntime, useSession } from '@/state';
 import { iconFor } from '../icons';
 import { ReporterBrand } from '../reporter-brand';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { PermissionDialogHost } from '../permission-dialog';
-import { R2_NAVIGATION, isR2DemoPath, isR2PreviewPath } from '../r2-preview';
+import { R2_NAVIGATION, isR2DemoPath } from '../r2-preview';
 import { NEW_PRODUCTION_HREF, productionRoute, PRODUCTIONS_HREF } from '../routes';
 import { ShellAccount } from './account';
 import { BreadcrumbProvider, useDeclaredBreadcrumb } from './breadcrumb';
@@ -63,7 +63,6 @@ function defaultCrumbs(pathname: string): Crumb[] {
 function toNavItem(item: MenuItem, awaitingApproval: number): NavItem {
   if (item.soon) return { id: item.id, label: item.label, icon: iconFor(item.icon), soon: { reason: item.soon } };
   const nav: NavItem = { id: item.id, label: item.label, icon: iconFor(item.icon), href: item.href };
-  if (R2_NAVIGATION.previewR2 && item.since === 'R2') nav.count = '— R2';
   // "Aprovações 2": the viewer's "Para aprovar" (the same number as the Início sentence and group).
   if (item.badge === 'awaiting-approval' && awaitingApproval > 0) {
     nav.count = awaitingApproval;
@@ -106,7 +105,10 @@ function ShellFrame({ children }: { children: ReactNode }) {
   const router = useRouter();
   useClientLinks();
   const declared = useDeclaredBreadcrumb();
-  const docked = DOCKED_ROUTE.test(pathname) || (isReleased('R2') && R2_DOCKED_ROUTE.test(pathname));
+  const docked = DOCKED_ROUTE.test(pathname) || R2_DOCKED_ROUTE.test(pathname);
+  // The image and quote banks are a demonstration only without the R1 libraries (none while loading).
+  const runtime = useRuntime();
+  const libraries = runtime.status === 'loading' || Boolean(runtime.runtime?.visuals);
   const [collapsed, setCollapsed] = usePersistentFlag(SIDEBAR_COLLAPSED_KEY);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
@@ -166,7 +168,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             account={<ShellAccount />}
           />
         )}
-        topbar={<TopBar actions={isR2PreviewPath(pathname) ? <Badge tone="amber">R2 · Demonstração</Badge> : isR2DemoPath(pathname) ? <Badge tone="amber">Demo</Badge> : undefined} breadcrumb={crumbs} onToggleSidebar={() => setCollapsed(!collapsed)} notifications={<ShellNotifications />} />}
+        topbar={<TopBar actions={isR2DemoPath(pathname, libraries) ? <Badge tone="amber">Demo</Badge> : undefined} breadcrumb={crumbs} onToggleSidebar={() => setCollapsed(!collapsed)} notifications={<ShellNotifications />} />}
       >
         {/* On a docked production the notice lives in its own header, not above the studio. */}
         {docked ? null : <OtherTabNotice />}
