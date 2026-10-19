@@ -26,11 +26,13 @@ import { NEWS_SOURCES_HREF } from '../routes';
 import { arrivalLabel } from './news-ficha';
 import { NewsCard } from './news-card';
 import { PriorityBadge } from './priority-badge';
-import { arrivedAt, returnLabel, sinceLabel, waitLabel } from './radar-model';
+import { arrivedAt, intakePulse, returnLabel, sinceLabel, spread, waitLabel } from './radar-model';
 import type { Pulse, WireGroup } from './radar-model';
 import { RadarSide } from './radar-side';
 
 export type RadarBoardProps = {
+  /** The AI's triage exists (the simulation): "Cobrir agora", priorities and the day's goal. */
+  triage: boolean;
   tab: 'open' | 'decided';
   now: number;
   news: readonly NewsItem[];
@@ -55,11 +57,11 @@ export type RadarBoardProps = {
  * wire by arrival beside the instruments (arrivals per hour, the sources' health).
  */
 export function RadarBoard(props: RadarBoardProps) {
-  const { tab, now, news, feeds, hero, overflow, groups, decided, query, selectedId, onSelect, onMarkSeen } = props;
+  const { triage, tab, now, news, feeds, hero, overflow, groups, decided, query, selectedId, onSelect, onMarkSeen } = props;
   return (
     <PageStack>
-      <RadarStrip {...props} />
-      {tab === 'open' ? (
+      {triage ? <RadarStrip {...props} /> : <IntakeStrip {...props} />}
+      {triage && tab === 'open' ? (
         <Section title="Cobrir agora" meta={overflow > 0 ? `Prioridade alta · +${overflow} na fila` : 'Prioridade alta'}>
           {hero.length === 0 ? (
             <EmptyState size="inline" icon={Telescope} title={query ? 'Nada com prioridade alta na busca' : 'Nada para cobrir agora'} />
@@ -72,9 +74,9 @@ export function RadarBoard(props: RadarBoardProps) {
       ) : null}
       <Grid columns="3:2" collapseBelow={640} align="start">
         {tab === 'open'
-          ? <Wire groups={groups} query={query} now={now} selectedId={selectedId} onSelect={onSelect} onMarkSeen={onMarkSeen} />
+          ? <Wire triage={triage} groups={groups} query={query} now={now} selectedId={selectedId} onSelect={onSelect} onMarkSeen={onMarkSeen} />
           : <Decided items={decided} query={query} now={now} selectedId={selectedId} onSelect={onSelect} />}
-        <RadarSide news={news} feeds={feeds} now={now} />
+        <RadarSide triage={triage} news={news} feeds={feeds} now={now} />
       </Grid>
     </PageStack>
   );
@@ -120,10 +122,42 @@ function RadarStrip({ now, hero, pulse, seenSince, goal, onSelect, onEditGoal }:
   return <MetricStrip label="Sinais do radar" items={items} />;
 }
 
+/** The strip before the AI's triage (F2.1 on the server): what arrived, what spread, the sources. */
+function IntakeStrip({ now, news, pulse, seenSince, onSelect }: RadarBoardProps) {
+  const { fresh, feeds } = pulse;
+  const intake = intakePulse(news, now);
+  const items: MetricProps[] = [
+    {
+      label: 'Novas',
+      value: fresh.count,
+      hint: sinceLabel(seenSince, now),
+      tooltip: fresh.newestId ? 'Abrir a mais recente' : undefined,
+      onClick: fresh.newestId ? () => onSelect(fresh.newestId as string) : undefined,
+    },
+    { label: 'Em 24 h', value: intake.lastDay },
+    {
+      label: 'Em mais de um veículo',
+      value: intake.spread.count,
+      hint: intake.spread.topId ? `a maior em ${intake.spread.outlets} veículos` : undefined,
+      tooltip: intake.spread.topId ? 'Abrir a que mais veículos publicaram' : undefined,
+      onClick: intake.spread.topId ? () => onSelect(intake.spread.topId as string) : undefined,
+    },
+    {
+      label: 'Fontes',
+      value: `${feeds.active} de ${feeds.total}`,
+      hint: feeds.failing > 0 ? `${feeds.failing} com falha` : feeds.total ? 'Todas respondendo' : undefined,
+      warn: feeds.failing > 0,
+      href: NEWS_SOURCES_HREF,
+      linkAs: Link,
+    },
+  ];
+  return <MetricStrip label="Sinais do radar" items={items} />;
+}
+
 type ListProps = { query: string; now: number; selectedId?: string; onSelect: (id: string) => void };
 
 /** "Na fila": everything else waiting, by arrival, with the AI's priority as a dot + word. */
-function Wire({ groups, query, now, selectedId, onSelect, onMarkSeen }: ListProps & { groups: WireGroup[]; onMarkSeen: () => void }) {
+function Wire({ triage, groups, query, now, selectedId, onSelect, onMarkSeen }: ListProps & { triage: boolean; groups: WireGroup[]; onMarkSeen: () => void }) {
   const total = groups.reduce((sum, group) => sum + group.items.length, 0);
   const fresh = groups.some((group) => group.id === 'new');
   return (
@@ -135,7 +169,7 @@ function Wire({ groups, query, now, selectedId, onSelect, onMarkSeen }: ListProp
           <List label="Na fila" framed={false} bleed>
             {groups.map((group) => (
               <ListGroup key={group.id} label={group.label} meta={group.items.length}>
-                {group.items.map((item) => <WireRow key={item.id} item={item} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
+                {group.items.map((item) => <WireRow key={item.id} triage={triage} item={item} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
               </ListGroup>
             ))}
           </List>
@@ -145,17 +179,20 @@ function Wire({ groups, query, now, selectedId, onSelect, onMarkSeen }: ListProp
   );
 }
 
-function WireRow({ item, now, selected, onSelect }: { item: NewsItem; now: number; selected: boolean; onSelect: (id: string) => void }) {
+function WireRow({ triage, item, now, selected, onSelect }: { triage: boolean; item: NewsItem; now: number; selected: boolean; onSelect: (id: string) => void }) {
   const priority = priorityOf(item);
   const facts = [item.source, arrivalLabel(item, now)];
   if (item.classification) facts.push(item.classification.topic);
+  const outlets = spread(item, now).outlets;
   return (
     <ListItem
       leading={<BrandMark name={item.source} size="sm" decorative />}
       title={item.title}
       titleLines={2}
       description={facts.join(' · ')}
-      meta={priority ? <PriorityBadge priority={priority} size="sm" /> : <Spinner size={14} tone="muted" label="A IA está lendo" />}
+      meta={!triage
+        ? (outlets > 1 ? <Badge variant="text" tone="gray">{`${outlets} veículos`}</Badge> : undefined)
+        : priority ? <PriorityBadge priority={priority} size="sm" /> : <Spinner size={14} tone="muted" label="A IA está lendo" />}
       selected={selected}
       onClick={() => onSelect(item.id)}
       data-testid={`news-row-${item.id}`}
@@ -202,17 +239,20 @@ function Decided({ items, query, now, selectedId, onSelect }: ListProps & { item
 }
 
 /** The board before this browser's desk loads: the same blocks, still. */
-export function RadarSkeleton() {
+export function RadarSkeleton({ triage = true }: { triage?: boolean }) {
+  const signals = triage ? ['Novas', 'Prioridade alta', 'Pautas de hoje', 'Fontes'] : ['Novas', 'Em 24 h', 'Em mais de um veículo', 'Fontes'];
   return (
     <PageStack>
-      <MetricStrip label="Sinais do radar" items={['Novas', 'Prioridade alta', 'Pautas de hoje', 'Fontes'].map((label) => ({ label, loading: true }))} />
-      <Section title="Cobrir agora">
-        <Grid columns="1:1:1" collapseBelow={640}>
-          <Card padding="md" loading>{null}</Card>
-          <Card padding="md" loading>{null}</Card>
-          <Card padding="md" loading>{null}</Card>
-        </Grid>
-      </Section>
+      <MetricStrip label="Sinais do radar" items={signals.map((label) => ({ label, loading: true }))} />
+      {triage ? (
+        <Section title="Cobrir agora">
+          <Grid columns="1:1:1" collapseBelow={640}>
+            <Card padding="md" loading>{null}</Card>
+            <Card padding="md" loading>{null}</Card>
+            <Card padding="md" loading>{null}</Card>
+          </Grid>
+        </Section>
+      ) : null}
       <Grid columns="3:2" collapseBelow={640} align="start">
         <Panel label="Na fila">
           <Section title="Na fila">

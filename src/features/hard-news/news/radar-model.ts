@@ -11,9 +11,16 @@ import { matchesQuery } from './news-model.ts';
 /** Priority as color on the radar: orange asks for action now; red stays for failures. */
 export const PRIORITY_COLOR: Record<NewsPriority, ChartColor> = { high: 'orange', medium: 'amber', low: 'gray' };
 
-/** When the item reached the desk: its return to the queue, else its import. */
-export function arrivedAt(item: Pick<NewsItem, 'importedAt' | 'returnedAt'>): string {
-  return item.returnedAt ?? item.importedAt;
+/** A story imported this long after it was published is backlog (a source's first read), not news. */
+export const BACKLOG_MS = 6 * 3_600_000;
+
+/**
+ * When the item reached the desk: its return to the queue, else its import. Backlog that a new
+ * source brings arrives at its publication, so a week of an outlet's stories is not "agora".
+ */
+export function arrivedAt(item: Pick<NewsItem, 'importedAt' | 'returnedAt' | 'publishedAt'>): string {
+  if (item.returnedAt) return item.returnedAt;
+  return Date.parse(item.importedAt) - Date.parse(item.publishedAt) > BACKLOG_MS ? item.publishedAt : item.importedAt;
 }
 
 const time = (iso: string | undefined) => (iso ? Date.parse(iso) : 0);
@@ -110,27 +117,51 @@ export function pulse(news: readonly NewsItem[], feeds: readonly NewsFeed[], sin
   };
 }
 
-export type HourBucket = { label: string; title: string; values: Record<NewsPriority, number> };
+export type HourBucket<K extends string = NewsPriority> = { label: string; title: string; values: Record<K, number> };
 
-/** Arrivals per hour over the last `hours` (the current hour last), by the AI's priority. */
-export function hourly(news: readonly NewsItem[], now: number, hours = 12): HourBucket[] {
+/** Arrivals per hour over the last `hours` (the current hour last), counted under `keyOf`. */
+function perHour<K extends string>(news: readonly NewsItem[], now: number, hours: number, keys: readonly K[], keyOf: (item: NewsItem) => K | undefined): HourBucket<K>[] {
   const current = new Date(now);
   current.setMinutes(0, 0, 0);
-  const buckets: HourBucket[] = [];
+  const buckets: HourBucket<K>[] = [];
   for (let index = hours - 1; index >= 0; index -= 1) {
     const start = new Date(current.getTime() - index * 3_600_000);
     const day = `${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')}`;
-    buckets.push({ label: `${start.getHours()}h`, title: `${day} · ${start.getHours()}h`, values: { high: 0, medium: 0, low: 0 } });
+    buckets.push({ label: `${start.getHours()}h`, title: `${day} · ${start.getHours()}h`, values: Object.fromEntries(keys.map((key) => [key, 0])) as Record<K, number> });
   }
   const first = current.getTime() - (hours - 1) * 3_600_000;
   for (const item of news) {
-    const priority = priorityOf(item);
+    const key = keyOf(item);
     const at = time(arrivedAt(item));
-    if (!priority || at < first || at > now) continue;
+    if (!key || at < first || at > now) continue;
     const bucket = buckets[Math.floor((at - first) / 3_600_000)];
-    if (bucket) bucket.values[priority] += 1;
+    if (bucket) bucket.values[key] += 1;
   }
   return buckets;
+}
+
+/** Arrivals per hour over the last `hours` (the current hour last), by the AI's priority. */
+export function hourly(news: readonly NewsItem[], now: number, hours = 12): HourBucket[] {
+  return perHour(news, now, hours, ['high', 'medium', 'low'] as const, priorityOf);
+}
+
+/** Arrivals per hour before the AI's triage exists (F2.1 on the server): one count per hour. */
+export function hourlyArrivals(news: readonly NewsItem[], now: number, hours = 12): HourBucket<'all'>[] {
+  return perHour(news, now, hours, ['all'] as const, () => 'all');
+}
+
+/**
+ * The strip of a radar without the AI's triage: what arrived in 24 hours and the stories more than
+ * one outlet ran (the one most outlets ran first).
+ */
+export function intakePulse(news: readonly NewsItem[], now: number): { lastDay: number; spread: { count: number; topId?: string; outlets: number } } {
+  const queue = news.filter((item) => item.status === 'new');
+  const spreadOut = queue.filter((item) => item.duplicates.length > 0)
+    .sort((a, b) => b.duplicates.length - a.duplicates.length || time(arrivedAt(b)) - time(arrivedAt(a)));
+  return {
+    lastDay: queue.filter((item) => now - time(arrivedAt(item)) <= 86_400_000).length,
+    spread: { count: spreadOut.length, topId: spreadOut[0]?.id, outlets: spreadOut[0] ? spreadOut[0].duplicates.length + 1 : 0 },
+  };
 }
 
 /** Sources for the radar: failing first, then the active ones by last read, then the paused. */

@@ -19,7 +19,7 @@ import {
   WorkspaceLayout,
 } from '@content-ventures/design-system/v3';
 import type { WorkspaceView } from '@content-ventures/design-system/v3';
-import { CheckCheck, Ellipsis, Link2, Newspaper, Rss, Target } from '@content-ventures/design-system/v3/icons';
+import { CheckCheck, Ellipsis, Link2, Newspaper, Plus, Rss, Target } from '@content-ventures/design-system/v3/icons';
 import type { NewsItem } from '@/domain/hard-news';
 import { useCan } from '@/state';
 import { useDocumentTitle } from '@/ui/use-document-title';
@@ -27,7 +27,7 @@ import { useMediaQuery } from '@/ui/use-media-query';
 import { usePhone } from '@/ui/use-phone';
 import { useNow } from '@/ui/time';
 import { NEWS_SOURCES_HREF, researchHref } from '../routes';
-import { useHardNews } from '../state/hard-news-provider';
+import { useHardNews, useNewsWatch } from '../state/hard-news-provider';
 import { coveredToday } from '../state/hard-news-state';
 import { DeskGoalDialog } from './desk-goal-dialog';
 import { ImportLinkDialog } from './import-link-dialog';
@@ -55,7 +55,10 @@ export function NewsDeskFromUrl() {
  * research right there). At 1024 px or less the board and the story are two tabs.
  */
 export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
-  const { state, ready, actions, demo } = useHardNews();
+  const { state, ready, actions, demo, live: onServer } = useHardNews();
+  useNewsWatch();
+  // Sources and news on the server (F2.1) come before the AI's triage: no priorities, no decisions yet.
+  const triage = !onServer;
   const router = useRouter();
   const phone = usePhone();
   /** The frame turns into tabs (Radar | Notícia) at 1024 px; "Cobrir agora" fits three cards from 1600. */
@@ -119,7 +122,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     });
   }
 
-  const { region } = useRadar(select);
+  const { region } = useRadar(select, !triage);
 
   async function cover(item: NewsItem) {
     if (covering) return;
@@ -153,9 +156,9 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   }
 
   // J/K walk the board, C covers, A postpones until tomorrow (never while typing or in a menu).
-  const latest = useRef({ ordered: board.ordered, shown, cover, postpone, tab, canCover });
+  const latest = useRef({ ordered: board.ordered, shown, cover, postpone, tab, canCover, triage });
   useEffect(() => {
-    latest.current = { ordered: board.ordered, shown, cover, postpone, tab, canCover };
+    latest.current = { ordered: board.ordered, shown, cover, postpone, tab, canCover, triage };
   });
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -176,7 +179,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       } else if (key === 'c' && current && currentTab === 'open' && current.status === 'new' && current.classification && allowed) {
         event.preventDefault();
         void latest.current.cover(current);
-      } else if (key === 'a' && current && currentTab === 'open' && current.status === 'new') {
+      } else if (key === 'a' && current && currentTab === 'open' && current.status === 'new' && latest.current.triage) {
         event.preventDefault();
         latest.current.postpone(current, 18, 'Até amanhã cedo');
       }
@@ -193,7 +196,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
         {
           items: [
             { label: 'Marcar como vistas', icon: CheckCheck, onSelect: () => actions.markSeen() },
-            { label: 'Ajustar meta do dia', icon: Target, onSelect: () => setGoalOpen(true) },
+            ...(triage ? [{ label: 'Ajustar meta do dia', icon: Target, onSelect: () => setGoalOpen(true) }] : []),
           ],
         },
         ...(phone ? [{ items: [
@@ -224,7 +227,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const filters = (
     <FilterBar
       filters={false}
-      tabs={<Tabs<DeskTab> label="Situação" size="sm" value={tab} onChange={(value) => { setTab(value); setSelectedId(undefined); }} items={DESK_TABS.map((entry) => ({ value: entry.value, label: entry.label, count: live ? (entry.value === 'open' ? board.open : board.decided.length) : undefined }))} />}
+      tabs={triage ? <Tabs<DeskTab> label="Situação" size="sm" value={tab} onChange={(value) => { setTab(value); setSelectedId(undefined); }} items={DESK_TABS.map((entry) => ({ value: entry.value, label: entry.label, count: live ? (entry.value === 'open' ? board.open : board.decided.length) : undefined }))} /> : undefined}
       search={<SearchField label="Buscar notícias" value={query} onValueChange={setQuery} placeholder="Título, fonte ou tema" />}
     />
   );
@@ -258,13 +261,20 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
               <ListItemSkeleton />
             </List>
           ),
-          footer: live && shown
+          footer: live && shown && triage
             ? <DecisionBar item={shown} covering={covering} canCover={canCover} demo={demo} onCover={(item) => void cover(item)} onPostpone={postpone} onDiscard={discard} />
             : undefined,
         }}
       >
-        {live ? (
+        {live && !triage && state.feeds.length === 0 && state.news.length === 0 ? (
+          <EmptyState
+            icon={Rss}
+            title="Nenhuma fonte cadastrada"
+            actions={<ButtonLink href={NEWS_SOURCES_HREF} variant="primary" icon={Plus}>Adicionar fonte</ButtonLink>}
+          />
+        ) : live ? (
           <RadarBoard
+            triage={triage}
             tab={tab}
             now={now}
             news={state.news}
@@ -282,7 +292,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
             onEditGoal={() => setGoalOpen(true)}
             onMarkSeen={() => actions.markSeen()}
           />
-        ) : <RadarSkeleton />}
+        ) : <RadarSkeleton triage={triage} />}
       </WorkspaceLayout>
       {region}
       <ImportLinkDialog open={importing} onClose={() => setImporting(false)} onImported={(id) => { setTab('open'); setQuery(''); select(id); }} />

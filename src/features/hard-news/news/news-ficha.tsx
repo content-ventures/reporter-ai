@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   ActionBar,
   AgentTrace,
@@ -55,6 +55,12 @@ const at = (iso: string, now: number) => formatRelative(new Date(Math.min(Date.p
  */
 export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
   const dossier = useDossier(item.productionId);
+  const { live, actions } = useHardNews();
+  // News on the server come without their text: the open story reads it once.
+  const pending = (item.paragraphs ?? 0) > 1;
+  useEffect(() => {
+    if (pending) actions.loadBody(item.id);
+  }, [actions, item.id, pending]);
   const facts = [at(item.publishedAt, now)];
   if (item.via === 'url') facts.push('Link colado');
   if (item.status === 'later' && item.laterUntil) facts.push(returnLabel(item.laterUntil, now));
@@ -74,7 +80,7 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
       />
       {item.status === 'covered' && dossier ? <ResearchTrace dossier={dossier} /> : null}
       <Prose variant="compact" measure="wide">{item.excerpt}</Prose>
-      <AiReading item={item} />
+      {live ? null : <AiReading item={item} />}
       {item.duplicates.length > 0 ? <WhoPublished item={item} now={now} /> : null}
       {item.body.length > 1 ? <OriginalText item={item} /> : null}
     </PageStack>

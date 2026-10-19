@@ -18,13 +18,14 @@ import { RefreshCw } from '@content-ventures/design-system/v3/icons';
 import { PRIORITY_LABELS } from '@/domain/hard-news';
 import type { NewsFeed, NewsItem } from '@/domain/hard-news';
 import { useHardNews } from '../state/hard-news-provider';
-import { feedRows, hourly, PRIORITY_COLOR, waitLabel } from './radar-model';
+import { feedRows, hourly, hourlyArrivals, PRIORITY_COLOR, waitLabel } from './radar-model';
 
 const SERIES = (['high', 'medium', 'low'] as const).map((key) => ({ key, label: PRIORITY_LABELS[key], color: PRIORITY_COLOR[key] }));
+const ARRIVALS = [{ key: 'all', label: 'Notícias', color: 'blue' as const }];
 
 /** The radar's instruments: the flow of the last 12 hours and the health of every source. */
-export function RadarSide({ news, feeds, now }: { news: readonly NewsItem[]; feeds: readonly NewsFeed[]; now: number }) {
-  const buckets = hourly(news, now);
+export function RadarSide({ triage = true, news, feeds, now }: { triage?: boolean; news: readonly NewsItem[]; feeds: readonly NewsFeed[]; now: number }) {
+  const buckets: { label: string; title: string; values: Record<string, number> }[] = triage ? hourly(news, now) : hourlyArrivals(news, now);
   const active = feeds.filter((feed) => feed.state === 'active').length;
   return (
     <PageStack>
@@ -32,12 +33,12 @@ export function RadarSide({ news, feeds, now }: { news: readonly NewsItem[]; fee
         title="Chegadas"
         titleAs="h2"
         description="Últimas 12 h"
-        legend={<Legend items={SERIES.map((series) => ({ key: series.key, label: series.label, color: series.color }))} />}
+        legend={triage ? <Legend items={SERIES.map((series) => ({ key: series.key, label: series.label, color: series.color }))} /> : undefined}
       >
         <BarChart
           label="Notícias por hora"
           data={buckets.map((bucket) => ({ label: bucket.label, title: bucket.title, values: bucket.values }))}
-          series={SERIES}
+          series={triage ? SERIES : ARRIVALS}
           layout="stacked"
           values="none"
           appearance="solid"
@@ -75,7 +76,7 @@ function FeedRow({ feed, now }: { feed: NewsFeed; now: number }) {
             ? <Sparkline points={feed.lastWeek} tone="gray" width={64} height={24} />
             : undefined}
       actions={feed.state === 'failing'
-        ? <IconButton variant="ghost" size="sm" icon={RefreshCw} label={`Tentar ler ${feed.name} de novo`} onClick={() => actions.retryFeed(feed.id)} />
+        ? <IconButton variant="ghost" size="sm" icon={RefreshCw} label={`Tentar ler ${feed.name} de novo`} onClick={() => void actions.retryFeed(feed.id)} />
         : undefined}
     />
   );

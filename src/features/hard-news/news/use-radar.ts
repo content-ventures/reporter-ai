@@ -15,7 +15,7 @@ const RETURN_EVERY_MS = 30_000;
  * postponed stories back when their time comes, and tells the person what landed — a toast for
  * a high-priority story, the screen reader for every arrival. Only the news desk calls it.
  */
-export function useRadar(onOpen: (id: string) => void) {
+export function useRadar(onOpen: (id: string) => void, server = false) {
   const { state, ready, actions } = useHardNews();
   const { announce, region } = useAnnouncer();
   const latest = useRef({ state, onOpen, announce });
@@ -24,19 +24,20 @@ export function useRadar(onOpen: (id: string) => void) {
   });
 
   // The pending arrivals, each at its time after the desk opens (each happens once per desk).
+  // News on the server (F2.1) arrive by the server's reads: nothing is simulated.
   useEffect(() => {
-    if (!ready) return undefined;
+    if (!ready || server) return undefined;
     const radar = latest.current.state.radar;
     const released = new Set(radar?.released ?? []);
     const timers = arrivalsFor(radar?.round ?? 0)
       .filter((arrival) => !released.has(arrival.id))
       .map((arrival) => setTimeout(() => actions.arrive(arrival), arrival.afterSeconds * 1000));
     return () => timers.forEach(clearTimeout);
-  }, [actions, ready]);
+  }, [actions, ready, server]);
 
   // Sources are read on their schedule; postponed stories come back on theirs.
   useEffect(() => {
-    if (!ready) return undefined;
+    if (!ready || server) return undefined;
     // Opening the radar reads the source that is due right away.
     actions.readFeed();
     actions.returnDue();
@@ -46,7 +47,7 @@ export function useRadar(onOpen: (id: string) => void) {
       clearInterval(reads);
       clearInterval(returns);
     };
-  }, [actions, ready]);
+  }, [actions, ready, server]);
 
   // What landed since the desk opened: announced; a high-priority story also gets a toast.
   const known = useRef<{ news: Set<string>; read: Set<string>; outlets: Map<string, number> } | null>(null);
