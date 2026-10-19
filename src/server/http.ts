@@ -10,13 +10,15 @@ import { mediaOf } from '../domain/reporter.ts';
 import { receiveFile, workerAvailable } from "./storage";
 import { IDLE_QUEUE, queueStatus } from "./queue-status.ts";
 import { workerUrl } from "./worker-config.ts";
-import { kickWorker, shouldHealStall, type Defer } from "./worker-kick.ts";
+import { kickWorker, shouldHealStall, shouldWakeForNews, type Defer } from "./worker-kick.ts";
 import { ingestSourceLink } from './source-link';
 import { editorialWorkspace, editorialRpc, editorialPipeline, requireCapability } from './editorial';
 import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
 import { handleFactCheck } from './fact-check';
+import { handleNews } from './news-intake.ts';
+import { NEWS_MESSAGES } from '../domain/news-intake.ts';
 import { handleProfile } from './profile.ts';
 import { handleInvites, handlePlatform } from './platform.ts';
 import { driveReceived, driveRetry, handleDrive } from './drive-intake.ts';
@@ -82,6 +84,7 @@ function reply(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 }
 const messages: Record<string, string> = {
+  ...NEWS_MESSAGES,
   CITATION_NOT_LITERAL: 'Copie um trecho contínuo da transcrição, com pelo menos quatro palavras. Não altere a fala.',
   CITATION_METADATA_INVALID: 'Confira a data e o link HTTPS do episódio.',
   CITATION_AUTHOR_INVALID: 'Escolha um participante do material e confirme a autoria; não atribua uma voz por suposição.',
@@ -182,6 +185,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
+    if (path[0] === 'news') return await handleNews(request,path.slice(1),{ readJson: jsonBody,wake: () => { if (shouldWakeForNews()) kick(); } });
     if (path[0] === 'visuals') return await handleVisualLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'profile') return await handleProfile(request,path.slice(1),jsonBody);
     if (request.method === 'GET' && path.length === 1 && path[0] === 'pipeline') return reply(await editorialPipeline());
