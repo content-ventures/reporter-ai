@@ -1,19 +1,29 @@
-import type { CounterStyle, ListStyle, MarkStyle, NumberStyle, ScrimStyle, ShapeStyle, SlotStyle, TextAlign } from '../../ports/render-template.ts';
+import type { CounterStyle, CreativeFont, ListStyle, MarkStyle, NumberStyle, PillStyle, Radius, ScrimStyle, ShapeStyle, SlotStyle, TextAlign } from '../../ports/render-template.ts';
 
 /**
  * Small builders for template render data: text boxes sized by the lines they hold, faces and
  * flat shapes. Creative content only (fixtures); the renderer reads the plain data they return.
- * Typefaces: Inter (loaded by the page through the DS, 400/500/600 and italics) and Georgia (a
- * system serif; the renderer falls back to a serif where it is missing).
+ * Typefaces: Inter (loaded by the page through the DS, 400/500/600 and italics), Georgia (a
+ * system serif; the renderer falls back to a serif where it is missing) and Montserrat, Seafood
+ * Brasil's brand face (OFL, `public/templates/fonts/`), registered for the canvas only.
  */
 
 export const INTER = 'Inter';
 export const GEORGIA = 'Georgia';
+export const MONTSERRAT = 'Montserrat';
+
+/** Brand faces the creatives draw with beyond the page's own (latin subset, regular widths). */
+export const CREATIVE_FONTS: readonly CreativeFont[] = [400, 500, 600, 700, 800].map((weight) => ({
+  family: MONTSERRAT,
+  weight,
+  url: `/templates/fonts/montserrat-${weight}.woff2`,
+}));
 
 export type Face = { family: string; weight: number; italic?: boolean };
 
 export const sans = (weight: number, italic = false): Face => ({ family: INTER, weight, ...(italic ? { italic: true } : {}) });
 export const serif = (weight: number, italic = false): Face => ({ family: GEORGIA, weight, ...(italic ? { italic: true } : {}) });
+export const brand = (weight: number): Face => ({ family: MONTSERRAT, weight });
 
 export type TextOptions = {
   align?: TextAlign;
@@ -27,6 +37,8 @@ export type TextOptions = {
   /** Box height in lines (default: the lines the slot allows; more leaves room for valign). */
   room?: number;
   list?: Omit<ListStyle, 'gap'> & { gap?: number };
+  /** A band behind each line (a tag, a highlighted headline). */
+  pill?: PillStyle;
 };
 
 /**
@@ -56,6 +68,7 @@ export function text(x: number, y: number, width: number, lines: number, size: n
   if (options.minFontSize !== undefined) style.minFontSize = options.minFontSize;
   if (options.balanced) style.balanced = true;
   if (options.list) style.list = { ...options.list, gap };
+  if (options.pill) style.pill = { ...options.pill };
   return style;
 }
 
@@ -63,6 +76,13 @@ export function text(x: number, y: number, width: number, lines: number, size: n
 export const below = (style: SlotStyle, space = 0): number => style.y + style.height + space;
 
 export const rect = (x: number, y: number, width: number, height: number, color: string): ShapeStyle => ({ x, y, width, height, color });
+
+/** A box with rounded corners; `outline` strokes it instead of filling. */
+export const rounded = (x: number, y: number, width: number, height: number, color: string, radius: Radius, outline?: number): ShapeStyle => ({
+  ...rect(x, y, width, height, color),
+  radius,
+  ...(outline !== undefined ? { outline } : {}),
+});
 
 export function mark(value: string, x: number, y: number, size: number, face: Face, color: string, align?: TextAlign): MarkStyle {
   return { text: value, x, y, fontSize: size, fontWeight: face.weight, color, fontFamily: face.family, ...(face.italic ? { italic: true } : {}), ...(align ? { align } : {}) };

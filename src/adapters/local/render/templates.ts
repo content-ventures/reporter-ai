@@ -10,16 +10,20 @@ import type { SlotStyle, TemplateRender } from '../../../ports/render-template.t
 
 export type {
   CounterStyle,
+  CreativeFont,
   CreditStyle,
   LayoutImage,
   LayoutRender,
   ListStyle,
   MarkStyle,
   NumberStyle,
+  PillStyle,
+  Radius,
   ScrimStyle,
   ShapeStyle,
   SlotStyle,
   TemplateRender,
+  VectorStyle,
 } from '../../../ports/render-template.ts';
 
 /** Generic sans-serif fallbacks after the template font (the canvas may not have it loaded). */
@@ -65,7 +69,7 @@ export function templateFonts(render: TemplateRender | undefined, typefaces?: Ty
     }
     for (const mark of layout.marks ?? []) add({ fontFamily: mark.fontFamily ?? BASE_FAMILY, fontWeight: mark.fontWeight, ...(mark.italic ? { italic: true } : {}) });
     if (layout.number) add({ fontFamily: layout.number.fontFamily ?? BASE_FAMILY, fontWeight: layout.number.fontWeight });
-    if (layout.image?.credit) add({ fontFamily: BASE_FAMILY, fontWeight: layout.image.credit.fontWeight });
+    if (layout.image?.credit) add({ fontFamily: layout.image.credit.fontFamily ?? BASE_FAMILY, fontWeight: layout.image.credit.fontWeight });
     if (layout.counter) add({ fontFamily: layout.counter.fontFamily ?? BASE_FAMILY, fontWeight: layout.counter.fontWeight });
   }
   add({ fontFamily: BASE_FAMILY, fontWeight: 600 });

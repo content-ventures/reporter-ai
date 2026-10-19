@@ -17,7 +17,7 @@ import type {
   SlotFit,
   TemplateInfo,
 } from '../../../ports/render.ts';
-import type { TemplateLibraryData } from '../../../ports/render-template.ts';
+import type { CreativeFont, TemplateLibraryData } from '../../../ports/render-template.ts';
 import { canDrawImages, drawSlide, offscreenSurface } from './canvas.ts';
 import type { Canvas2D, CoverImage, SurfaceFactory } from './canvas.ts';
 import { COVER_REASONS } from './cover-image.ts';
@@ -55,6 +55,11 @@ export type LocalRenderDeps = {
   typefaces?: Typefaces;
   /** Resolves when the given web fonts can draw; default: `document.fonts.load` of each, when present. */
   fontsReady?: (fonts: readonly string[]) => Promise<unknown>;
+  /**
+   * Brand typefaces the templates name beyond the page's own (`Montserrat`): registered with the
+   * document's font set for the canvas only, so the interface never uses them.
+   */
+  fontFaces?: readonly CreativeFont[];
   /** Decodes the article cover for layouts whose data asks for it (`assetCoverLoader`). */
   loadCover?: CoverLoader;
   /** Credit line of the cover ("Foto: Ana Prado"), read at each render (it may change). */
@@ -79,7 +84,25 @@ const THUMBNAIL_PAGES = 5;
 /** Library images kept in memory (thumbnails and previews, any scale). */
 const LIBRARY_CACHE_LIMIT = 64;
 
-type FontFaceSet = { ready?: Promise<unknown>; load?: (font: string) => Promise<unknown> };
+type FontFaceSet = { ready?: Promise<unknown>; load?: (font: string) => Promise<unknown>; add?: (face: unknown) => unknown };
+type FontFaceFactory = new (family: string, source: string, descriptors: { weight: string; style: string }) => unknown;
+
+/** Faces already registered in this document (one per family, weight, style and file). */
+const registeredFaces = new Set<string>();
+
+/** Registers the templates' brand faces with the document (browser only), once each. */
+function registerFonts(faces: readonly CreativeFont[]): void {
+  const set = (globalThis as { document?: { fonts?: FontFaceSet } }).document?.fonts;
+  const Face = (globalThis as { FontFace?: FontFaceFactory }).FontFace;
+  if (!set?.add || !Face) return;
+  for (const face of faces) {
+    const style = face.style ?? 'normal';
+    const key = `${face.family}\u0001${face.weight}\u0001${style}\u0001${face.url}`;
+    if (registeredFaces.has(key)) continue;
+    registeredFaces.add(key);
+    set.add(new Face(face.family, `url(${JSON.stringify(face.url)})`, { weight: String(face.weight), style }));
+  }
+}
 
 /**
  * A face the document does not use yet (the italic of the quote, say) is not downloaded until
@@ -132,6 +155,7 @@ function slotsKey(slots: Readonly<Record<string, string>> | undefined): string {
 export function createLocalRenderService(deps: LocalRenderDeps): RenderService {
   const createSurface = deps.createSurface ?? offscreenSurface;
   const fontsReady = deps.fontsReady ?? defaultFontsReady;
+  if (deps.fontFaces?.length) registerFonts(deps.fontFaces);
   const probe = createSurface(1, 1);
   const measurer = canvasMeasure(probe?.context, deps.typefaces);
   const facesOf = (templateId: TemplateId) => templateFonts(deps.renders[templateId], deps.typefaces);

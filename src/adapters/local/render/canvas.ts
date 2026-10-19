@@ -2,7 +2,7 @@ import type { CarouselTemplate, Slide } from '../../../domain/carousel.ts';
 import type { LaidSlot } from './slide-layout.ts';
 import { BASE_FAMILY, cssFont, MARGIN } from './templates.ts';
 import type { TemplateRender, Typefaces } from './templates.ts';
-import type { ShapeStyle } from '../../../ports/render-template.ts';
+import type { Radius, ShapeStyle, VectorStyle } from '../../../ports/render-template.ts';
 import { ellipsize } from './text-metrics.ts';
 
 /**
@@ -25,7 +25,18 @@ export type Canvas2D = {
   moveTo?(x: number, y: number): void;
   lineTo?(x: number, y: number): void;
   closePath?(): void;
-  fill?(): void;
+  /** Fills the current path, or the given `Path2D` (vector marks). */
+  fill?(path?: unknown): void;
+  /** Rounded boxes, outlines, clipped photos and vector marks; skipped where the canvas lacks them. */
+  roundRect?(x: number, y: number, width: number, height: number, radii: number | number[]): void;
+  strokeStyle?: unknown;
+  lineWidth?: number;
+  stroke?(): void;
+  save?(): void;
+  restore?(): void;
+  clip?(): void;
+  translate?(x: number, y: number): void;
+  scale?(x: number, y: number): void;
   /** Needed only for background images and their scrim. */
   globalAlpha?: number;
   /** Letter spacing ("4px") where the canvas supports it; measuring sets it the same way. */
@@ -80,6 +91,44 @@ export const offscreenSurface: SurfaceFactory = (width, height) => {
   };
 };
 
+/** Corner radii in drawn pixels, clamped to half the box's shorter side. */
+function radii(radius: Radius, width: number, height: number, scale: number): number[] {
+  const most = Math.min(width, height) / 2;
+  return (typeof radius === 'number' ? [radius, radius, radius, radius] : [...radius]).map((value) => Math.min(most, Math.max(0, value * scale)));
+}
+
+/** Traces a rounded box as the current path; false where the canvas cannot. */
+function roundedPath(context: Canvas2D, box: { x: number; y: number; width: number; height: number }, radius: Radius, scale: number): boolean {
+  if (!context.beginPath || !context.roundRect) return false;
+  context.beginPath();
+  context.roundRect(box.x, box.y, box.width, box.height, radii(radius, box.width, box.height, scale));
+  return true;
+}
+
+type PathFactory = new (d: string) => unknown;
+const paths = new Map<string, unknown>();
+
+/** Draws a vector mark (a logo's paths) scaled into place; skipped where the canvas has no `Path2D`. */
+function drawVector(context: Canvas2D, vector: VectorStyle, scale: number): void {
+  const Path = (globalThis as { Path2D?: PathFactory }).Path2D;
+  if (!Path || !context.save || !context.restore || !context.translate || !context.scale || !context.fill) return;
+  const factor = (vector.height / vector.viewBox.height) * scale;
+  context.save();
+  context.translate(Math.round(vector.x * scale), Math.round(vector.y * scale));
+  context.scale(factor, factor);
+  context.translate(-vector.viewBox.x, -vector.viewBox.y);
+  for (const path of vector.paths) {
+    let shape = paths.get(path.d);
+    if (!shape) {
+      shape = new Path(path.d);
+      paths.set(path.d, shape);
+    }
+    context.fillStyle = path.color;
+    context.fill(shape);
+  }
+  context.restore();
+}
+
 /**
  * Draws one slide. With `cover` (the article cover, decoded) and a layout whose data asks for it,
  * the image fills its box over the colour blocks, the scrim goes on top, the text uses the
@@ -109,6 +158,18 @@ export function drawSlide(
   const px = (value: number) => Math.round(value * scale);
   const fill = (shape: ShapeStyle) => {
     context.fillStyle = shape.color;
+    const box = { x: px(shape.x), y: px(shape.y), width: px(shape.width), height: px(shape.height) };
+    if (shape.outline !== undefined) {
+      if (!context.stroke || !roundedPath(context, box, shape.radius ?? 0, scale)) return;
+      context.strokeStyle = shape.color;
+      context.lineWidth = Math.max(1, shape.outline * scale);
+      context.stroke();
+      return;
+    }
+    if (shape.radius && !shape.points && context.fill && roundedPath(context, box, shape.radius, scale)) {
+      context.fill();
+      return;
+    }
     if (shape.points && shape.points.length >= 3 && context.beginPath && context.moveTo && context.lineTo && context.closePath && context.fill) {
       context.beginPath();
       context.moveTo(px(shape.points[0].x), px(shape.points[0].y));
@@ -117,7 +178,7 @@ export function drawSlide(
       context.fill();
       return;
     }
-    context.fillRect(px(shape.x), px(shape.y), px(shape.width), px(shape.height));
+    context.fillRect(box.x, box.y, box.width, box.height);
   };
 
   context.fillStyle = layout.background;
@@ -128,6 +189,11 @@ export function drawSlide(
   if (image && input.cover && withImage) {
     const box = { x: px(image.x), y: px(image.y), width: px(image.width), height: px(image.height) };
     const source = coverFit(input.cover, image, image.position);
+    const clipped = Boolean(image.radius && context.save && context.restore && context.clip && roundedPath(context, box, image.radius, scale));
+    if (clipped) {
+      context.save?.();
+      context.clip?.();
+    }
     context.drawImage?.(input.cover.source, source.sx, source.sy, source.sw, source.sh, box.x, box.y, box.width, box.height);
     for (const scrim of image.scrim) {
       context.globalAlpha = Math.min(1, Math.max(0, scrim.opacity));
@@ -135,6 +201,7 @@ export function drawSlide(
       context.fillRect(px(scrim.x), px(scrim.y), px(scrim.width), px(scrim.height));
     }
     context.globalAlpha = 1;
+    if (clipped) context.restore?.();
   }
   for (const shape of layout.overlays ?? []) fill(shape);
   if (layout.rule !== false) {
@@ -150,6 +217,7 @@ export function drawSlide(
     context.fillText(mark.text, px(mark.x), px(mark.y));
     if (mark.tracking) context.letterSpacing = '0px';
   }
+  for (const vector of layout.vectors ?? []) drawVector(context, vector, scale);
   if (layout.number) {
     const number = layout.number;
     context.font = cssFont({ fontFamily: number.fontFamily ?? BASE_FAMILY, fontWeight: number.fontWeight, fontSize: number.fontSize }, scale, typefaces);
@@ -173,6 +241,18 @@ export function drawSlide(
     const used = last ? last.top + style.lineHeight : 0;
     const shift = style.valign === 'bottom' ? style.height - used : style.valign === 'middle' ? (style.height - used) / 2 : 0;
     const x = (indent: number) => (style.align === 'center' ? style.x + indent + (style.width - indent) / 2 : style.align === 'right' ? style.x + style.width : style.x + indent);
+    const pill = style.pill;
+    if (pill) {
+      const ink = context.fillStyle;
+      for (const row of visible) {
+        // Letter spacing trails the last glyph too: leave it out so the band sits even.
+        const width = measure(row.text) - (style.tracking ?? 0);
+        const anchor = x(row.indent);
+        const left = style.align === 'center' ? anchor - width / 2 : style.align === 'right' ? anchor - width : anchor;
+        fill({ x: left - pill.padX, y: style.y + shift + row.top - pill.padY, width: width + pill.padX * 2, height: style.lineHeight + pill.padY * 2, color: pill.color, radius: pill.radius, ...(pill.outline !== undefined ? { outline: pill.outline } : {}) });
+      }
+      context.fillStyle = ink;
+    }
     for (const row of visible) context.fillText(row.text, px(x(row.indent)), px(style.y + shift + row.top));
     if (style.tracking) context.letterSpacing = '0px';
     const list = style.list;
@@ -186,7 +266,7 @@ export function drawSlide(
 
   const credit = withImage ? image?.credit : undefined;
   if (credit && input.coverCredit) {
-    context.font = cssFont({ fontFamily: BASE_FAMILY, fontWeight: credit.fontWeight, fontSize: credit.fontSize }, scale, typefaces);
+    context.font = cssFont({ fontFamily: credit.fontFamily ?? BASE_FAMILY, fontWeight: credit.fontWeight, fontSize: credit.fontSize }, scale, typefaces);
     context.fillStyle = credit.color;
     context.textAlign = credit.align;
     const measure = (text: string) => context.measureText(text).width / scale;

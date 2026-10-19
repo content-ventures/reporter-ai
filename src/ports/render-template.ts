@@ -49,14 +49,51 @@ export type SlotStyle = {
   balanced?: boolean;
   /** List slots: items with markers in a hanging indent. */
   list?: ListStyle;
+  /** A rounded band behind each drawn line (a tag, a highlighted headline), as wide as its text. */
+  pill?: PillStyle;
 };
+
+/** The band a slot sets behind each of its lines: the text plus padding, filled or outlined. */
+export type PillStyle = {
+  color: string;
+  padX: number;
+  padY: number;
+  radius: number;
+  /** Stroke width: the band is outlined instead of filled. */
+  outline?: number;
+};
+
+/** Corner radii of a rounded box: one for all, or top-left, top-right, bottom-right, bottom-left. */
+export type Radius = number | readonly [number, number, number, number];
 
 /** A flat colour block of the creative (bleed band, panel, hairline), in canvas pixels. */
 export type ShapeStyle = {
   x: number; y: number; width: number; height: number; color: string;
   /** Optional polygon vertices in absolute canvas coordinates, inside the bounding box. */
   points?: readonly { x: number; y: number }[];
+  /** Rounded corners (ignored for polygons). */
+  radius?: Radius;
+  /** Stroke width: the box is outlined instead of filled. */
+  outline?: number;
 };
+
+/**
+ * A vector mark of the creative (a client's logo, from its official SVG): filled paths in their
+ * own `viewBox`, scaled to `height` and drawn with its top-left at (x, y), under the text.
+ */
+export type VectorStyle = {
+  x: number;
+  y: number;
+  height: number;
+  viewBox: { x: number; y: number; width: number; height: number };
+  paths: readonly { d: string; color: string }[];
+};
+
+/**
+ * A typeface file a template draws with, beyond the faces the page loads: creative content
+ * (a client's brand face), registered for the canvas only and never used by the interface.
+ */
+export type CreativeFont = { family: string; weight: number; style?: 'normal' | 'italic'; url: string };
 
 /** A typographic mark of the creative (the big “ of a quote slide, an arrow), drawn under the text. */
 export type MarkStyle = {
@@ -91,7 +128,7 @@ export type CounterStyle = {
 export type ScrimStyle = ShapeStyle & { opacity: number };
 
 /** A one-line text over the image (the credit), ellipsized to `width`; `x` is its anchor for `align`. */
-export type CreditStyle = { x: number; y: number; width: number; fontSize: number; fontWeight: number; color: string; align: 'left' | 'right' };
+export type CreditStyle = { x: number; y: number; width: number; fontSize: number; fontWeight: number; color: string; align: 'left' | 'right'; fontFamily?: string };
 
 /**
  * Template data asking for an image under the text. `background: 'article-cover'` draws the
@@ -107,6 +144,8 @@ export type LayoutImage = {
   height: number;
   /** Crop anchor on the excess source area; defaults to the centre, clamped to 0–1. */
   position?: { x: number; y: number };
+  /** Rounded corners: the photo and its scrim are clipped to them. */
+  radius?: Radius;
   /** Legibility scrim over the image, under the text (template colours). */
   scrim: ScrimStyle[];
   /** Slot colours while the image is drawn (text set on the photo). */
@@ -129,6 +168,8 @@ export type LayoutRender = {
   overlays?: ShapeStyle[];
   /** Typographic marks under the text. */
   marks?: MarkStyle[];
+  /** Vector marks (a logo) under the text. */
+  vectors?: VectorStyle[];
   /** Large slide number. */
   number?: NumberStyle;
   /** The short accent rule at the top (default shown). */

@@ -282,6 +282,7 @@ export function createRuntime(options: CreateRuntimeOptions = {}): Runtime {
     renders: fixtures.templateRenders,
     descriptions: fixtures.templateDescriptions,
     library: fixtures.templateLibrary,
+    fontFaces: fixtures.templateFonts,
     loadCover: assetCoverLoader(imageStore),
     coverCredit: (assetId) => creditLine(imageStore.get(assetId)?.credit),
     samplePhoto: { assetId: fixtures.samplePhoto.assetId, credit: fixtures.samplePhoto.credit, load: servedCoverLoader(fixtures.samplePhoto.src) },

@@ -23,6 +23,9 @@ function charEm(char: string): number {
   return 0.54;
 }
 
+/** Faces set wider than the Inter proportions above (geometric sans). */
+const FAMILY_WIDTH: Readonly<Record<string, number>> = { Montserrat: 1.12 };
+
 /** Estimated width (no canvas): sum of character proportions × size, heavier weights a bit wider, plus letter spacing. */
 export const estimateText: MeasureText = (text, font) => {
   let em = 0;
@@ -31,8 +34,8 @@ export const estimateText: MeasureText = (text, font) => {
     em += charEm(char);
     count += 1;
   }
-  const weight = font.weight >= 700 ? 1.06 : font.weight >= 600 ? 1.04 : font.weight >= 500 ? 1.02 : 1;
-  return em * font.size * weight + (font.tracking ?? 0) * count;
+  const weight = font.weight >= 800 ? 1.09 : font.weight >= 700 ? 1.06 : font.weight >= 600 ? 1.04 : font.weight >= 500 ? 1.02 : 1;
+  return em * font.size * weight * (FAMILY_WIDTH[font.family ?? ''] ?? 1) + (font.tracking ?? 0) * count;
 };
 
 /**
