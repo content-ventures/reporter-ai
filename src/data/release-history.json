@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.8.0",
+  "currentVersion": "0.9.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,28 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.9.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-19",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 3 validated changes: write carousel copy for the instagram feed; add seafood v2 carousel models on the client's brand; draw rounded boxes, tags, vector marks and brand faces.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Draw rounded boxes, tags, vector marks and brand faces"
+        },
+        {
+          "type": "Added",
+          "description": "Add Seafood V2 carousel models on the client's brand"
+        },
+        {
+          "type": "Added",
+          "description": "Write carousel copy for the Instagram feed"
+        }
+      ]
+    },
     {
       "version": "0.8.0",
       "roadmapRelease": "R0",

@@ -4,6 +4,14 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-19
+
+### Added
+
+- Draw rounded boxes, tags, vector marks and brand faces.
+- Add Seafood V2 carousel models on the client's brand.
+- Write carousel copy for the Instagram feed.
+
 ## [0.8.0] - 2026-10-19
 
 ### Added
