@@ -64,7 +64,7 @@ export function replaceTerm(text: string, from: string, to: string): { text: str
 /**
  * A correction for the Material: the replacement, refused when it would change how the material is
  * read, not only its words. A speaker name the label rules do not accept ("Rafael du Pont:") would
- * hand that speaker's lines to the previous one, and a broken stamp would drop every time; then the
+ * hand that speaker's lines to the previous one; then the
  * name is corrected in "Falantes" instead.
  */
 export type TermCorrection = { text: string; count: number; refused?: undefined } | { refused: 'structure'; count: number };
@@ -72,12 +72,11 @@ export type TermCorrection = { text: string; count: number; refused?: undefined 
 export function correctTerm(text: string, from: string, to: string): TermCorrection {
   const result = replaceTerm(text, from, to);
   if (!result.count) return result;
+  // Who speaks, turn by turn. Segment sizes may regroup when a name grows or shrinks; turns may not.
+  const turns = (raw: string, rename: boolean) => parseTranscript(raw).segments
+    .map(segment => segment.speaker === undefined ? '' : (rename ? replaceTerm(segment.speaker, from, to).text : segment.speaker).normalize('NFC'))
+    .filter((speaker, at, all) => at === 0 || speaker !== all[at - 1]);
   const before = parseTranscript(text), after = parseTranscript(result.text);
-  const kept = before.format === after.format && before.segments.length === after.segments.length
-    && before.segments.every((segment, at) => {
-      const next = after.segments[at];
-      const speaker = segment.speaker === undefined ? undefined : replaceTerm(segment.speaker, from, to).text.normalize('NFC');
-      return next.speaker?.normalize('NFC') === speaker && next.startMs === segment.startMs && next.endMs === segment.endMs;
-    });
+  const kept = before.format === after.format && JSON.stringify(turns(text, true)) === JSON.stringify(turns(result.text, false));
   return kept ? result : { refused: 'structure', count: result.count };
 }

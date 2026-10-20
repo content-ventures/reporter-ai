@@ -147,6 +147,11 @@ test.describe('formato de evento na pauta', () => {
       await page.getByRole('textbox', { name: 'Por', exact: true }).fill('auditório');
       await page.getByRole('textbox', { name: 'Por', exact: true }).press('Enter');
       await expect(page.getByText('1 troca: estúdio → auditório', { exact: true })).toBeVisible();
+      // A misheard speaker name: the new person is created with the corrected name.
+      await page.getByRole('textbox', { name: 'Trocar', exact: true }).fill('Ferraz');
+      await page.getByRole('textbox', { name: 'Por', exact: true }).fill('Ferrari');
+      await page.getByRole('textbox', { name: 'Por', exact: true }).press('Enter');
+      await expect(page.getByText(/trocas?: Ferraz → Ferrari/)).toBeVisible();
       await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
       await page.getByRole('button', { name: 'Continuar', exact: true }).click();
       await page.getByRole('radio', { name: /Cobertura de estande/ }).check();
@@ -166,6 +171,7 @@ test.describe('formato de evento na pauta', () => {
       expect(replay.counts()).toEqual({ creates: 1, starts: 1 });
       expect(replay.created()?.material.text).toContain('auditório');
       expect(replay.created()?.material.text).not.toContain('estúdio');
+      expect(replay.created()?.speakers?.find(speaker => speaker.label === 'Lucas Ferrari')?.newPerson?.name).toBe('Lucas Ferrari');
       await expect(page.getByText('Gerando linha fina…', { exact: true })).toBeVisible();
       await expectNoHorizontalOverflow(page);
       expect(errors).toEqual([]);

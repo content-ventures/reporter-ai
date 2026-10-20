@@ -70,3 +70,12 @@ test('a correction that would change who speaks or the times is refused; a plain
   // The stand case: the event name is fixed and nothing else moves.
   assert.equal(correctTerm(SRT, 'Q Show', 'Aquishow').count, 3);
 });
+
+test('a name fix that only regroups unlabeled cues by size is accepted', () => {
+  const cue = (at: number, text: string) => `${at + 1}\n00:00:${String(at * 5).padStart(2, '0')},000 --> 00:00:${String(at * 5 + 5).padStart(2, '0')},000\n${text}`;
+  const words = 'e a gente acompanha o mercado de perto com os clientes do setor todo dia sem parar nunca';
+  const srt = [cue(0, `a Q Show reuniu ${words}`), ...Array.from({ length: 7 }, (_, at) => cue(at + 1, words))].join('\n\n');
+  const fixed = correctTerm(srt, 'Q Show', 'Aquishow Brasil Seafood Show Latin America');
+  assert.equal(fixed.refused, undefined);
+  assert.equal(fixed.count, 1);
+});

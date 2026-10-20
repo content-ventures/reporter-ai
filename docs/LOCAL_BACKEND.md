@@ -55,10 +55,11 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
   Whisper sometimes returns a Portuguese stretch with every word cut at its first accented letter
   ("Então" -> "Ent", "ração" -> "ra") at normal confidence. A segment of 12 words or more with
   no accented letter is cut again with a 3-second margin and transcribed alone with word
-  timestamps. The repair completes and never rewrites: every word of the first transcription stays
-  as it was, and a word cut at its accent ("Ent", "ra") takes the new word spoken inside the segment
-  that starts with exactly that piece ("Então", "ração"). The only words added are those that start
-  with an accent ("é", "à"), dropped whole by the failure, between two confirmed words. A
+  timestamps. The repair completes and never rewrites: every token of the first transcription stays
+  as it wrote it (case, punctuation, symbols), and a word cut at its accent ("Ent", "ra") takes the
+  letters of the new word spoken inside the segment that starts with exactly that piece ("Então",
+  "ração"). The only words added are those that start with an accent ("é", "à"), dropped whole by
+  the failure, between two confirmed words with no first-pass word between them. A
   neighbour's word is outside the segment, so it never stands in for this one, and a new
   transcription confirming less than 70% of the words (another stretch, a translation) changes
   nothing. At most 20 repairs per recording, one at a time; a rate limit is waited out once (up to
@@ -69,8 +70,9 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
   the right one ("Aquishow") across the material before the production exists, as whole words in
   any case, also across a wrapped line. Cue numbers, timestamp lines and "[00:04:12]" stamps are
   never touched, and a corrected speaker name keeps the reporter's choice for that speaker. A
-  correction that would change who speaks or the times (a name the label rules do not read, a
-  broken stamp) is refused and points to "Falantes" (`correctTerm`, `src/domain/text/terms.ts`).
+  correction that would change who speaks, turn by turn (a name the label rules do not read), is
+  refused and points to "Falantes"; a new person named after the misheard label takes the corrected
+  name (`correctTerm`, `src/domain/text/terms.ts`).
   "Ver transcrição" reads the current text, with search.
 - The editable **Material** stage suggests an internal title from the actual topic and lists
   participants explicitly presented in the transcript, with literal evidence for confirmation.
