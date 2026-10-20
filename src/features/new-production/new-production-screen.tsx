@@ -30,7 +30,7 @@ import {
 import { FileText, Sparkles, X } from '@content-ventures/design-system/v3/icons';
 import { materialMinutes, sizeOf } from '@/domain';
 import { sourceLinkMessage } from '@/domain/source-link';
-import { replaceTerm } from '@/domain/text/terms';
+import { correctTerm, replaceTerm, type TermCorrection } from '@/domain/text/terms';
 import { MAX_UPLOAD_BYTES, MEDIA_EXTENSIONS } from '../../domain/reporter.ts';
 import type { PersonSummary, SourceAnalysis } from '@/ports';
 import { sourceKind, type SourceIntake } from '@/registries';
@@ -171,15 +171,20 @@ function NewProductionForm({ received }: { received?: string }) {
     });
   }, []);
   // "Corrigir termo": a misheard name is fixed in the material itself, before the production exists.
-  // A corrected speaker name keeps the choice the reporter already made for that speaker.
-  const replaceMaterialTerm = (from: string, to: string) => {
-    const { text, count } = replaceTerm(draftMaterial(draft).text, from, to);
-    if (!count) return 0;
-    const speakers = Object.fromEntries(Object.entries(draft.speakers).map(([label, choice]) => [replaceTerm(label, from, to).text, choice]));
+  // A corrected speaker name keeps the choice the reporter already made for that speaker; when two
+  // labels become one, the choice already made for the right name wins.
+  const replaceMaterialTerm = (from: string, to: string): TermCorrection => {
+    const result = correctTerm(draftMaterial(draft).text, from, to);
+    if (result.refused || !result.count) return result;
+    const speakers: Record<string, SpeakerChoice> = {};
+    const moved = Object.entries(draft.speakers).map(([label, choice]) => ({ label, choice, next: replaceTerm(label, from, to) }));
+    for (const { label, choice, next } of moved) if (!next.count) speakers[label.normalize('NFC')] = choice;
+    for (const { choice, next } of moved) if (next.count && !(next.text.normalize('NFC') in speakers)) speakers[next.text.normalize('NFC')] = choice;
+    const { text } = result;
     if (draft.mode === 'paste') update({ pasted: text, speakers });
     else if (draft.mode === 'file' && draft.file) update({ file: { ...draft.file, text }, speakers });
     else if (draft.mode === 'link' && draft.linkFile) update({ linkFile: { ...draft.linkFile, text }, speakers });
-    return count;
+    return result;
   };
   const fileReader = useFileReader(intake, onFileLoaded);
   const onLinkLoaded = useCallback((value: ImportedLink) => setDraft((current) => ({

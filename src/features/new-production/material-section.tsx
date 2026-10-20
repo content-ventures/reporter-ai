@@ -28,6 +28,7 @@ import { formatCount } from '@/ui/format';
 import { productionHref } from '@/ui/routes';
 import { analysisLine, draftMaterial, type MaterialMode, type NewProductionDraft } from './form';
 import { TermFix } from './term-fix';
+import type { TermCorrection } from '@/domain/text/terms';
 import type { FileReadState } from './use-file-reader';
 import type { LinkReadState } from './use-link-reader';
 import type { MaterialAnalysis } from './use-material-analysis';
@@ -95,8 +96,8 @@ export type MaterialSectionProps = {
   onRetryLink: () => void;
   onRemoveLink: () => void;
   onUseSample: () => void;
-  /** "Corrigir termo": replaces a misheard name across the material; returns how many changed. */
-  onReplaceTerm: (from: string, to: string) => number;
+  /** "Corrigir termo": replaces a misheard name across the material, unless it would change how it is read. */
+  onReplaceTerm: (from: string, to: string) => TermCorrection;
 };
 
 export function MaterialSection({
