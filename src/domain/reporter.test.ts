@@ -106,3 +106,12 @@ test('a pairing is used only when every best alignment makes it, from either sid
   // The clear cases still repair.
   assert.equal(repair(GARBLED, BEFORE, INSIDE, AFTER), REPAIRED);
 });
+
+test('hyphens, apostrophes and sentence ends never bring in or move a word', () => {
+  assert.equal(repair('a Petrobras investe no pr sal a gente trabalha com peixe aqui no estado de Minas Gerais', '',
+    'a Petrobras investe no pré-sal a gente trabalha com peixe aqui no estado de Minas Gerais'), undefined);
+  assert.equal(repair("um copo d' gelada a gente trabalha com peixe aqui no estado de Minas Gerais", '',
+    "um copo d'água gelada a gente trabalha com peixe aqui no estado de Minas Gerais"), undefined);
+  assert.equal(repair('O que? Isso a gente trabalha com peixe aqui no estado de Minas Gerais', '',
+    'O que é? Isso a gente trabalha com peixe aqui no estado de Minas Gerais'), undefined);
+});

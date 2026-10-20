@@ -169,17 +169,17 @@ export function repairedText(segment: Segment, words: readonly TimedWord[], wind
   for (const [p, [i, j]] of pairs.entries()) {
     const token = tokens[order[i]], word = inside[j].word.trim();
     if (ambiguous(i, j)) continue;
-    // A cut word keeps what the first pass wrote (case, marks around it) and takes only the letters it lost,
-    // placed before its own trailing marks ("Ent," + "ão" gives "Então,").
-    if (bare(word) !== target[i]) {
-      let letters = 0, at = 0;
-      while (at < word.length && letters < target[i].length) { if (/[\p{L}\p{N}]/u.test(word[at])) letters++; at++; }
-      const rest = word.slice(at).replace(/[^\p{L}\p{M}\p{N}]+$/u, ''), trail = /[^\p{L}\p{M}\p{N}]*$/u.exec(token)?.[0] ?? '';
-      completed.set(order[i], token.slice(0, token.length - trail.length) + rest + trail);
+    // A cut word keeps what the first pass wrote (case, marks after it) and takes only the letters it lost,
+    // placed before its own trailing marks ("Ent," + "ão" gives "Então,"). Only plain words on both sides:
+    // a hyphen or an apostrophe ("pré-sal", "d'água") could bring in another word's letters.
+    const own = /^(\p{L}+)([.,;:!?]*)$/u.exec(token.normalize('NFC')), core = word.normalize('NFC').replace(/[.,;:!?]+$/u, '');
+    if (bare(word) !== target[i] && own && /^[\p{L}\p{M}]+$/u.test(core) && core.length > own[1].length) {
+      completed.set(order[i], own[1] + core.slice(own[1].length) + own[2]);
     }
     // Words that start with an accent, dropped whole, only when no first-pass word stands between the two confirmed words.
     const next = pairs[p + 1];
-    if (next && next[0] === i + 1 && order[next[0]] === order[i] + 1 && !ambiguous(next[0], next[1])) {
+    // Never after the end of a sentence: the word would move into the next one.
+    if (next && next[0] === i + 1 && order[next[0]] === order[i] + 1 && !ambiguous(next[0], next[1]) && !/[.!?:;]$/u.test(token)) {
       const between = inside.slice(j + 1, next[1]);
       if (between.length && between.every((_, k) => !cut[j + 1 + k])) added.set(order[i], between.map(item => item.word.replace(/^[^\p{L}\p{M}\p{N}]+|[^\p{L}\p{M}\p{N}]+$/gu, '')).filter(Boolean));
     }

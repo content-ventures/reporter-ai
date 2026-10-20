@@ -56,8 +56,11 @@ function editSpeech(text: string, edit: (speech: string) => string): string {
 function occurrences(speech: string, pattern: RegExp, to: string, crossLines: boolean): number[] {
   const right = termPattern(to, crossLines, true), kept: [number, number][] = [];
   if (right) for (const match of speech.matchAll(right)) kept.push([match.index, match.index + match[0].length]);
-  return [...speech.matchAll(pattern)].map(match => match.index)
-    .filter(at => !kept.some(([start, end]) => at >= start && at < end));
+  // Skipped when already written as the right name, or inside a longer right name: shortening
+  // "Lucas Ferraz" to "Lucas" still applies.
+  const exact = to.normalize('NFC').trim().replace(/\s+/gu, ' ');
+  return [...speech.matchAll(pattern)].filter(match => match[0].replace(/\s+/gu, ' ') !== exact && !kept.some(([start, end]) =>
+    match.index >= start && match.index + match[0].length <= end && end - start > match[0].length)).map(match => match.index);
 }
 
 /** How many times the term appears in the speech of a transcript, not counting the right name itself. */
@@ -71,7 +74,7 @@ export function termOccurrences(text: string, term: string, to = ''): number {
 
 /** The transcript with every whole-word occurrence of `from` written as `to`, and how many changed. */
 export function replaceTerm(text: string, from: string, to: string): { text: string; count: number } {
-  const cross = crossesLines(text), pattern = termPattern(from, cross), replacement = to.normalize('NFC').trim();
+  const cross = crossesLines(text), pattern = termPattern(from, cross), replacement = to.normalize('NFC').trim().replace(/\s+/gu, ' ');
   if (!pattern || !replacement) return { text, count: 0 };
   let count = 0;
   const edited = editSpeech(text, speech => {
@@ -96,11 +99,14 @@ export type TermCorrection = { text: string; count: number; refused?: undefined 
 export function correctTerm(text: string, from: string, to: string): TermCorrection {
   const result = replaceTerm(text, from, to);
   if (!result.count) return result;
-  // Who speaks, turn by turn. Segment sizes may regroup when a name grows or shrinks; turns may not.
-  const turns = (raw: string, rename: boolean) => parseTranscript(raw).segments
-    .map(segment => segment.speaker === undefined ? '' : (rename ? replaceTerm(segment.speaker, from, to).text : segment.speaker).normalize('NFC'))
-    .filter((speaker, at, all) => at === 0 || speaker !== all[at - 1]);
-  const before = parseTranscript(text), after = parseTranscript(result.text);
-  const kept = before.format === after.format && JSON.stringify(turns(text, true)) === JSON.stringify(turns(result.text, false));
+  // Who says each word, in order. Stretches may regroup by size when a name grows or shrinks; no word
+  // may change speaker, and a label may neither appear nor vanish.
+  const said = (raw: string, rename: boolean) => parseTranscript(raw).segments.flatMap(segment => {
+    const speaker = segment.speaker === undefined ? '' : (rename ? replaceTerm(segment.speaker, from, to).text : segment.speaker).normalize('NFC');
+    const speech = rename ? replaceTerm(segment.text, from, to).text : segment.text;
+    return speech.normalize('NFC').split(/\s+/u).filter(Boolean).map(word => `${speaker}\u0000${word}`);
+  });
+  const kept = parseTranscript(text).format === parseTranscript(result.text).format
+    && JSON.stringify(said(text, true)) === JSON.stringify(said(result.text, false));
   return kept ? result : { refused: 'structure', count: result.count };
 }

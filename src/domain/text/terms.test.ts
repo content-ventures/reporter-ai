@@ -102,3 +102,15 @@ test('a two-word term never swallows the next line\'s speaker, and a case-only f
   assert.match(!fixed.refused ? fixed.text : '', /A MSD veio para a aquishow\.[\s\S]*A MSD trouxe a vacina\./u);
   assert.equal(termOccurrences('A MSD e a MSD.', 'msd', 'MSD'), 0, 'already right, nothing to change');
 });
+
+test('shortening a name applies, extra spaces are cleaned, and a line that would change speaker is refused', () => {
+  const lines = 'Lucas Ferraz: Bom dia.\nAna Souza: Oi, Lucas Ferraz.\nLucas Ferraz: Vamos lá.';
+  assert.equal(termOccurrences(lines, 'Lucas Ferraz', 'Lucas'), 3);
+  assert.equal(correctTerm(lines, 'Lucas Ferraz', 'Lucas').count, 3);
+  const spaced = correctTerm(lines, 'Lucas Ferraz', 'Lucas  Ferraz Rocha');
+  assert.equal(spaced.refused, undefined);
+  assert.match(!spaced.refused ? spaced.text : '', /^Lucas Ferraz Rocha: Bom dia\.$/mu);
+  // "rafael dias:" in lowercase is Beatriz's speech; fixing its case would hand the line to Rafael.
+  const turns = 'Rafael Dias: Qual o objetivo?\nBeatriz Almeida: Crescer na feira.\nrafael dias: E a cor do verão?\nRafael Dias: Pode responder, Beatriz.\nBeatriz Almeida: Verde.';
+  assert.equal(correctTerm(turns, 'rafael dias', 'Rafael Dias').refused, 'structure');
+});
