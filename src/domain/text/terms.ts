@@ -43,12 +43,23 @@ function editSpeech(text: string, edit: (speech: string) => string): string {
   return out.join('\n');
 }
 
-/** How many times the term appears in the speech of a transcript. */
-export function termOccurrences(text: string, term: string): number {
+/**
+ * Where `from` occurs as a whole word but not inside a whole occurrence of `to`: fixing "Rafael" to
+ * "Rafael Dias" leaves an existing "Rafael Dias" as it is.
+ */
+function occurrences(speech: string, pattern: RegExp, to: string): number[] {
+  const right = termPattern(to), kept: [number, number][] = [];
+  if (right) for (const match of speech.matchAll(right)) kept.push([match.index, match.index + match[0].length]);
+  return [...speech.matchAll(pattern)].map(match => match.index)
+    .filter(at => !kept.some(([start, end]) => at >= start && at < end));
+}
+
+/** How many times the term appears in the speech of a transcript, not counting the right name itself. */
+export function termOccurrences(text: string, term: string, to = ''): number {
   const pattern = termPattern(term);
   if (!pattern) return 0;
   let count = 0;
-  editSpeech(text, speech => { count += speech.match(pattern)?.length ?? 0; return speech; });
+  editSpeech(text, speech => { count += occurrences(speech, pattern, to).length; return speech; });
   return count;
 }
 
@@ -57,7 +68,14 @@ export function replaceTerm(text: string, from: string, to: string): { text: str
   const pattern = termPattern(from), replacement = to.normalize('NFC').trim();
   if (!pattern || !replacement) return { text, count: 0 };
   let count = 0;
-  const edited = editSpeech(text, speech => speech.replace(pattern, () => { count++; return replacement; }));
+  const edited = editSpeech(text, speech => {
+    const at = new Set(occurrences(speech, pattern, replacement));
+    return speech.replace(pattern, (found: string, offset: number) => {
+      if (!at.has(offset)) return found;
+      count++;
+      return replacement;
+    });
+  });
   return { text: count ? edited : text, count };
 }
 

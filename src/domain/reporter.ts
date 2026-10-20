@@ -142,7 +142,16 @@ export function repairedText(segment: Segment, words: readonly TimedWord[], wind
   for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) {
     lcs[i][j] = cut[j] && target[i] === cut[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
   }
-  if (lcs[0][0] < Math.ceil(m * REPAIR_AGREEMENT)) return undefined;
+  const total = lcs[0][0];
+  if (total < Math.ceil(m * REPAIR_AGREEMENT)) return undefined;
+  // The same alignment from the start, to tell whether a pairing is the only one that reaches the best.
+  const head = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    head[i][j] = cut[j - 1] && target[i - 1] === cut[j - 1] ? head[i - 1][j - 1] + 1 : Math.max(head[i - 1][j], head[i][j - 1]);
+  }
+  /** Another identical first-pass word could take this new word just as well: nothing tells which one it is. */
+  const ambiguous = (i: number, j: number) => target.some((token, other) =>
+    other !== i && token === cut[j] && head[other][j] + 1 + lcs[other + 1][j + 1] === total);
   const pairs: [number, number][] = [];
   for (let i = 0, j = 0; i < m && j < n;) {
     if (cut[j] && target[i] === cut[j]) { pairs.push([i, j]); i++; j++; }
@@ -153,15 +162,18 @@ export function repairedText(segment: Segment, words: readonly TimedWord[], wind
   const completed = new Map<number, string>(), added = new Map<number, string[]>();
   for (const [p, [i, j]] of pairs.entries()) {
     const token = tokens[order[i]], word = inside[j].word.trim();
-    // A cut word keeps what the first pass wrote (case, a leading mark) and takes only the rest of the new word.
+    if (ambiguous(i, j)) continue;
+    // A cut word keeps what the first pass wrote (case, marks around it) and takes only the letters it lost,
+    // placed before its own trailing marks ("Ent," + "ão" gives "Então,").
     if (bare(word) !== target[i]) {
       let letters = 0, at = 0;
       while (at < word.length && letters < target[i].length) { if (/[\p{L}\p{N}]/u.test(word[at])) letters++; at++; }
-      completed.set(order[i], token + word.slice(at).replace(/[^\p{L}\p{M}\p{N}]+$/u, ''));
+      const rest = word.slice(at).replace(/[^\p{L}\p{M}\p{N}]+$/u, ''), trail = /[^\p{L}\p{M}\p{N}]*$/u.exec(token)?.[0] ?? '';
+      completed.set(order[i], token.slice(0, token.length - trail.length) + rest + trail);
     }
     // Words that start with an accent, dropped whole, only when no first-pass word stands between the two confirmed words.
     const next = pairs[p + 1];
-    if (next && next[0] === i + 1 && order[next[0]] === order[i] + 1) {
+    if (next && next[0] === i + 1 && order[next[0]] === order[i] + 1 && !ambiguous(next[0], next[1])) {
       const between = inside.slice(j + 1, next[1]);
       if (between.length && between.every((_, k) => !cut[j + 1 + k])) added.set(order[i], between.map(item => item.word.replace(/^[^\p{L}\p{M}\p{N}]+|[^\p{L}\p{M}\p{N}]+$/gu, '')).filter(Boolean));
     }

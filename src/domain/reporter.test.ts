@@ -84,3 +84,13 @@ test('accent words go only between confirmed words with nothing between them; fi
     'A Johnson Johnson cresceu 10 no ano passado segundo o relatório da empresa hoje'),
   'A Johnson & Johnson cresceu 10 % no ano passado segundo o relatório da empresa hoje');
 });
+
+test('a cut word keeps its own punctuation after the completion, and an ambiguous pairing completes nothing', () => {
+  assert.equal(repair('Ent, a gente foi pra casa e depois a gente voltou pro trabalho cedo', '',
+    'Então, a gente foi pra casa e depois a gente voltou pro trabalho cedo'),
+  'Então, a gente foi pra casa e depois a gente voltou pro trabalho cedo');
+  // "na na": the new "nação" could be either one, so both stay; the clear "manh" is completed.
+  assert.equal(repair('ele falou na na hoje e a gente voltou pro trabalho cedo de manh', '',
+    'ele falou nação hoje e a gente voltou pro trabalho cedo de manhã'),
+  'ele falou na na hoje e a gente voltou pro trabalho cedo de manhã');
+});
