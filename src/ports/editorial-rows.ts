@@ -11,7 +11,7 @@ export const PART_FIELDS = { piece: 'pieces', version: 'versions', decision: 'de
   run: 'runs', suggestion: 'suggestions', delivery: 'deliveries' } as const;
 export type PartKind = keyof typeof PART_FIELDS;
 export const PART_KINDS = Object.keys(PART_FIELDS) as PartKind[];
-export type ItemKind = 'person' | 'member' | 'activity' | 'feedback' | 'image_asset' | 'citation' | 'library_image' | 'banner';
+export type ItemKind = 'person' | 'member' | 'activity' | 'feedback' | 'image_asset' | 'citation' | 'library_image' | 'banner' | 'fact_check';
 
 export type WorkspaceDoc = { workspace: Workspace; pipelineHash?: string; historyHashes?: string[] };
 export type ProductionRow = { id: string; ordinal?: number; doc: ProductionState['production']; sourceIds: string[]; archived: boolean };

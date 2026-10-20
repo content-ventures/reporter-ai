@@ -76,6 +76,7 @@ export function assembleCheckpoint(rows: EditorialRows, fallbackWorkspace: Works
   if (active) checkpoint.pipeline = active;
   if (loaded.history) checkpoint.pipelineHistory = (workspace?.historyHashes ?? []).map(hash => pipelines.get(hash)).filter((entry): entry is PipelineRevision => Boolean(entry));
   if (loaded.items.includes('citation')) checkpoint.citations = docs(rows.items, 'citation');
+  if (loaded.items.includes('fact_check')) checkpoint.factChecks = docs(rows.items, 'fact_check');
   if (loaded.items.includes('library_image') || loaded.items.includes('banner'))
     checkpoint.visuals = { images: newest(docs<LibraryImage>(rows.items, 'library_image'), image => image.createdAt),
       banners: newest(docs<BannerDraft>(rows.items, 'banner'), banner => banner.updatedAt) };
@@ -110,6 +111,7 @@ export function splitCheckpoint(checkpoint: EditorialCheckpoint, previous: Edito
   add('person', state.people); add('member', state.members); add('activity', state.activity); add('feedback', state.feedback);
   add('image_asset', checkpoint.imageAssets);
   if (loaded.items.includes('citation')) add('citation', checkpoint.citations);
+  if (loaded.items.includes('fact_check')) add('fact_check', checkpoint.factChecks);
   if (loaded.items.includes('library_image')) add('library_image', checkpoint.visuals?.images);
   if (loaded.items.includes('banner')) add('banner', checkpoint.visuals?.banners);
   return {

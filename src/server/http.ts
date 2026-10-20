@@ -16,6 +16,7 @@ import { editorialWorkspace, editorialRpc, editorialPipeline, requireCapability 
 import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
+import { handleFactCheck } from './fact-check';
 import { handleProfile } from './profile.ts';
 import { handleInvites, handlePlatform } from './platform.ts';
 import { driveReceived, handleDrive } from './drive-intake.ts';
@@ -92,6 +93,15 @@ const messages: Record<string, string> = {
   SOURCE_NOT_AUTHORIZED: 'Este material não está autorizado para uso.',
   IMAGE_DRAFT_CONFLICT: 'O rascunho mudou ou ainda há alterações não salvas. Aguarde o salvamento antes de buscar imagens.',
   ARTICLE_LOCKED: 'Aguarde a geração terminar ou retire o artigo da aprovação antes de preencher imagens.',
+  FACT_CHECK_INVALID: 'A checagem não retornou um resultado válido. Tente de novo.',
+  FACT_DECISION_INVALID: 'Escolha uma afirmação checável da última checagem.',
+  TAVILY_KEY_MISSING: 'Adicione TAVILY_API_KEY no servidor para checar fatos. A chave fica somente no backend.',
+  TAVILY_AUTH_INVALID: 'O Tavily recusou a chave. Confira TAVILY_API_KEY no servidor.',
+  TAVILY_QUOTA_EXHAUSTED: 'Os créditos de busca do Tavily acabaram. Confira o plano antes de checar mais falas.',
+  TAVILY_RATE_LIMIT: 'Limite temporário de buscas do Tavily. Aguarde e tente de novo.',
+  TAVILY_UNAVAILABLE: 'A busca na web não respondeu. Tente de novo.',
+  TAVILY_REQUEST_FAILED: 'A busca na web falhou. Tente de novo.',
+  TAVILY_INVALID_RESPONSE: 'A busca na web respondeu em um formato inesperado. Tente de novo.',
   PIXABAY_KEY_MISSING: 'Adicione PIXABAY_API_KEY no .env.local e reinicie o servidor. A chave fica somente no backend.',
   PIXABAY_ORIGINAL_REQUIRED: 'O original em alta resolução não está disponível. Solicite acesso completo à API do Pixabay ou escolha uma foto com original de pelo menos 2400 × 1350 px. A prévia reduzida não será importada.',
   UNSPLASH_KEY_MISSING: 'Adicione UNSPLASH_ACCESS_KEY no .env.local e reinicie o servidor. Use a Access Key da aplicação, não a Secret Key.',
@@ -168,6 +178,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     if (path[0] === 'drive' && path[1] === 'sync') return await handleDrive(request,path.slice(1),{ readJson: jsonBody,defer });
     const context = await guardReporterRequest(request, deps.identify);
     return await runWithReporterContext(context, async () => {
+    if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'visuals') return await handleVisualLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'profile') return await handleProfile(request,path.slice(1),jsonBody);

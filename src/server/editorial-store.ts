@@ -31,7 +31,7 @@ const DEFAULT_ITEMS: Partial<Record<ItemKind, 'all' | 'production'>> = { person:
 
 /** Everything: rare commands and library reads that genuinely span the workspace. */
 export const FULL_SCOPE: EditorialScope = { productions: 'all', sources: 'all', history: true,
-  items: { person: 'all', member: 'all', image_asset: 'all', feedback: 'all', citation: 'all', library_image: 'all', banner: 'all' } };
+  items: { person: 'all', member: 'all', image_asset: 'all', feedback: 'all', citation: 'all', fact_check: 'all', library_image: 'all', banner: 'all' } };
 
 export function loadedScope(scope: EditorialScope): LoadedScope {
   const items = { ...DEFAULT_ITEMS, ...scope.items };
