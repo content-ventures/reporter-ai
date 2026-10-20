@@ -434,6 +434,10 @@ Wallpapers describe the
 desired look of editorial covers; this is not a wallpaper-distribution app or permission to reuse
 unlicensed images. Beautiful stock photography is illustrative, not evidence of a real news event.
 
+Add `TAVILY_API_KEY` to `.env.local` to fact-check citations (Citações → Checar, and the background
+check after each generation; see [Fact check of citations](FACT_CHECK.md)). Restart the app and the
+worker after adding it. Without the key, generation still works and nothing is queued for checking.
+
 Add `PIXABAY_API_KEY` to the primary project's `.env.local`, then restart the Next.js server.
 The blank slot is prepared at the top of that file. Obtain the key and request full-resolution
 API access through [Pixabay API documentation](https://pixabay.com/api/docs/); approval is not
