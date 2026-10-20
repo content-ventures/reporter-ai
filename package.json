@@ -48,7 +48,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1151.0",
     "@aws-sdk/s3-request-presigner": "^3.1151.0",
-    "@content-ventures/design-system": "https://github.com/content-ventures/design-system/archive/b30a7e561ca1e09972eb075935b628ff2c54f069.tar.gz",
+    "@content-ventures/design-system": "https://github.com/content-ventures/design-system/archive/0479b31c567653c76b93ec2ec89eb6976ce31172.tar.gz",
     "@neon/functions": "^0.11.0",
     "@neondatabase/auth": "0.6.0-beta",
     "@next/env": "16.3.8",
