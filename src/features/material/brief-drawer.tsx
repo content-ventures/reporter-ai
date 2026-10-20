@@ -14,7 +14,7 @@ import {
   toast,
   type SegmentOption,
 } from '@content-ventures/design-system/v3';
-import { expectedDraftChars, fitSections, sizeOf, type ArticleSize, type Brief, type ProductionId } from '@/domain';
+import { briefSizeName, expectedDraftChars, fitSections, formatSizeOf, sizeOf, type ArticleSize, type Brief, type ProductionId } from '@/domain';
 import { useBrief } from '@/state';
 import { formatCharacters, formatLaudas, formatSize, SIZE_OPTIONS } from '@/ui/format';
 
@@ -130,7 +130,7 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
               />
             )}
           </Field>
-          <Field label="Tamanho do artigo" hint={sizeHint}>
+          {brief.format ? null : <Field label="Tamanho do artigo" hint={sizeHint}>
             {() => (
               <Segmented
                 label="Tamanho do artigo"
@@ -140,12 +140,12 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
                 size="sm"
               />
             )}
-          </Field>
-          <Field label="Seções" hint={`Introdução + ${current.sections} seções`}>
+          </Field>}
+          <Field label="Seções" hint={brief.format ? `${briefSizeName(brief)} · abertura + ${current.sections} ${current.sections === 1 ? 'parte' : 'partes'}` : `Introdução + ${current.sections} seções`}>
             {() => (
               <Segmented
                 label="Seções depois da introdução"
-                options={sectionOptions(current.size)}
+                options={brief.format ? formatSectionOptions(brief) : sectionOptions(current.size)}
                 value={String(current.sections)}
                 onChange={(value) => update({ sections: Number(value) })}
                 size="sm"
@@ -167,4 +167,10 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
       />
     </>
   );
+}
+
+/** Section counts of a format's size option ("1", "2"…). */
+function formatSectionOptions(brief: Brief): SegmentOption<string>[] {
+  const { min, max } = formatSizeOf(brief.format!, brief.formatSize).sections;
+  return Array.from({ length: max - min + 1 }, (_, index) => ({ value: String(min + index), label: String(min + index) }));
 }

@@ -5,7 +5,7 @@ import { Accordion, Alert, Badge, Button, CopyButton, DescriptionList, Drawer, F
 import { PIPELINE_MODELS, PIPELINE_SCHEMAS, PIPELINE_VARIABLES, pipelineModelLabel, pipelineModelProvider, pipelineModelReasons, pipelineTokenLimit } from '@/domain/pipeline';
 import type { PipelineDefinition, PipelineStep, PipelineView } from '@/domain/pipeline';
 import { useMediaQuery } from '@/ui/use-media-query';
-import { PROMPTS, promptInactive, promptUsage, type PromptKey } from './pipeline-catalog';
+import { PROMPTS, funnelOf, promptInactive, promptStep, promptUsage, type PromptKey } from './pipeline-catalog';
 
 const VARIABLE_LABELS: Record<typeof PIPELINE_VARIABLES[number], string> = {
   source: 'Transcrição e evidências da fonte', brief: 'Pauta e quantidade de seções', sizing: 'Metas e limites de tamanho',
@@ -20,12 +20,13 @@ export function PipelineEditor({ promptKey, draft, view, saving, dirty, invalid,
   onUpdateStep: (patch: Partial<PipelineStep>) => void; onSave: () => void;
 }) {
   const startAtTop = useCallback((element: HTMLTextAreaElement | null) => { element?.setSelectionRange(0, 0); }, []);
-  const selected = promptKey === 'system' ? undefined : draft.steps[promptKey];
+  const selected = promptStep(promptKey, draft);
+  const schemaKey = funnelOf(promptKey)?.step ?? promptKey;
   const prompt = selected?.prompt ?? draft.systemPrompt;
   const used = new Set([...prompt.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map(match => match[1]));
   const schema = promptKey === 'system' ? undefined : promptKey === 'carousel'
     ? 'O formato é definido pelo modelo de carrossel escolhido: cada slide recebe os campos e limites do layout, com referências ao artigo aprovado.'
-    : JSON.stringify(PIPELINE_SCHEMAS[promptKey], null, 2);
+    : JSON.stringify(PIPELINE_SCHEMAS[schemaKey as keyof typeof PIPELINE_SCHEMAS], null, 2);
   const narrow = useMediaQuery('(max-width: 640px)');
   const status = <Badge tone={dirty ? 'amber' : 'gray'}>{dirty ? 'Configuração com alterações' : `Revisão ${view.active.revision} ativa`}</Badge>;
   const footer = <><Button onClick={onClose}>Fechar edição</Button><Button variant="primary" loading={saving} disabled={!dirty || invalid} onClick={onSave}>Salvar e ativar tudo</Button></>;

@@ -1,5 +1,5 @@
-import { DEFAULT_ARTICLE_SIZE, expectedDraftChars, fitSections, foldForMatch, formatLaudas, sizeLabel, sizeOf } from '../../domain/index.ts';
-import type { ArticleSize, PieceKind, SourceOrigin } from '../../domain/index.ts';
+import { DEFAULT_ARTICLE_SIZE, EVENT_FIELDS, FORMAT_SPECS, expectedDraftChars, fitSections, foldForMatch, formatLabel, formatSizeOf, formatLaudas, normalizeEvent, sizeLabel, sizeOf } from '../../domain/index.ts';
+import type { ArticleSize, EditorialFormat, EventContext, PieceKind, SourceOrigin } from '../../domain/index.ts';
 import type { NewProductionInput, SourceAnalysis, SpeakerAssignment } from '../../ports/index.ts';
 import { podcastLink } from '../../domain/citation-library.ts';
 
@@ -54,7 +54,23 @@ export type NewProductionDraft = {
   programName?: string;
   sourceUrl?: string;
   location?: string;
+  /** Event-coverage format; absent = the article (Curto/Padrão). */
+  format?: EditorialFormat;
+  /** The format's size option id. */
+  formatSize?: string;
+  /** The event as typed (every field a string while editing). */
+  event: EventDraft;
 };
+
+/** The event fields while the reporter types them. */
+export type EventDraft = Record<keyof EventContext, string>;
+
+export const EMPTY_EVENT: EventDraft = { name: '', boxTitle: '', about: '', dates: '', hours: '', venue: '', address: '', cta: '' };
+
+/** An event as the form edits it: every field present, empty when unknown. */
+export function eventDraft(event?: Partial<EventContext>): EventDraft {
+  return Object.fromEntries(EVENT_FIELDS.map((key) => [key, event?.[key] ?? ''])) as EventDraft;
+}
 
 export type PersonOption = { id: string; name: string };
 
@@ -73,6 +89,7 @@ export const EMPTY_DRAFT: NewProductionDraft = {
   title: '',
   origin: 'interview',
   recordedOn: '',
+  event: EMPTY_EVENT,
 };
 
 export const MAX_TITLE_LENGTH = 120;
@@ -104,6 +121,7 @@ export function isDraftDirty(draft: NewProductionDraft): boolean {
     draft.sectionsCustom ||
     draft.size !== EMPTY_DRAFT.size ||
     draft.plan !== EMPTY_DRAFT.plan ||
+    draft.format !== undefined ||
     Object.keys(draft.speakers).length > 0
   );
 }
@@ -236,11 +254,66 @@ export function shortfallSentence(size: ArticleSize, charsAvailable: number | un
   return expected.reachesRange ? undefined : `O material rende ≈ ${formatLaudas(expected.chars)}. Acrescente fonte para cumprir o mínimo; a IA não inventará conteúdo.`;
 }
 
-/** Footer summary of the Pauta: "Padrão · 2 laudas · 3 seções · 2 falantes" ("Curto · 1 lauda · 2 partes · 2 falantes"). */
-export function briefSummary(size: ArticleSize, sections: number, speakers: number): string {
-  return [sizeLabel(size), sectionsLabel(size, sections), speakers > 0 ? `${speakers} ${speakers === 1 ? 'falante' : 'falantes'}` : null]
+/** Footer summary of the Pauta: "Padrão · 2 laudas · 3 seções · 2 falantes"; a format names itself ("Nota curta · 1 parte"). */
+export function briefSummary(size: ArticleSize, sections: number, speakers: number, format?: Pick<NewProductionDraft, 'format' | 'formatSize'>): string {
+  const rule = format?.format ? formatRule(format) : undefined;
+  return [
+    rule ? formatLabel(format!) : sizeLabel(size),
+    rule ? partsLabel(rule.headings, sections) : sectionsLabel(size, sections),
+    speakers > 0 ? `${speakers} ${speakers === 1 ? 'falante' : 'falantes'}` : null,
+  ]
     .filter(Boolean)
     .join(' · ');
+}
+
+// ── Formats (event coverage) ─────────────────────────────────────────────────────────────
+
+type FormatRule = { label: string; headings: boolean; sections: { min: number; max: number; default: number } };
+
+/** The section rule of a format's size option: its range and whether parts become intertítulos. */
+export function formatRule(draft: Pick<NewProductionDraft, 'format' | 'formatSize'>): FormatRule | undefined {
+  if (!draft.format) return undefined;
+  const spec = FORMAT_SPECS[draft.format];
+  return { label: spec.label, headings: spec.headings, sections: formatSizeOf(draft.format, draft.formatSize).sections };
+}
+
+function partsLabel(headings: boolean, count: number): string {
+  const [one, many] = headings ? ['seção', 'seções'] : ['parte', 'partes'];
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/** Section counts the draft accepts: the format size's range, or the article size's. */
+export function draftSectionOptions(draft: Pick<NewProductionDraft, 'size' | 'format' | 'formatSize'>): string[] {
+  const rule = formatRule(draft);
+  if (!rule) return sectionOptions(draft.size);
+  return Array.from({ length: rule.sections.max - rule.sections.min + 1 }, (_, index) => String(rule.sections.min + index));
+}
+
+/** The automatic section count of the draft. */
+export function draftAutomaticSections(draft: Pick<NewProductionDraft, 'size' | 'format' | 'formatSize'>): number {
+  return formatRule(draft)?.sections.default ?? sizeOf(draft.size).sections.default;
+}
+
+/** "Automático: abertura + 2 seções" for a format, the article's label otherwise. */
+export function draftStructureLabel(draft: Pick<NewProductionDraft, 'size' | 'format' | 'formatSize'>, count: number, custom: boolean): string {
+  const rule = formatRule(draft);
+  if (!rule) return structureChoiceLabel(draft.size, count, custom);
+  const label = `Abertura + ${partsLabel(rule.headings, count)}`;
+  return custom ? label : `Automático: ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+}
+
+/** A new format (or the article): its default size and section count. */
+export function withFormat(format: EditorialFormat | undefined): Pick<NewProductionDraft, 'format' | 'formatSize' | 'sections' | 'sectionsCustom' | 'size'> {
+  if (!format) return { format: undefined, formatSize: undefined, size: DEFAULT_ARTICLE_SIZE, sections: sizeOf(DEFAULT_ARTICLE_SIZE).sections.default, sectionsCustom: false };
+  const option = formatSizeOf(format);
+  return { format, formatSize: option.id, size: DEFAULT_ARTICLE_SIZE, sections: option.sections.default, sectionsCustom: false };
+}
+
+/** A new size option of the format: the automatic count follows it; a chosen count is fitted. */
+export function withFormatSize(draft: Pick<NewProductionDraft, 'format' | 'sections' | 'sectionsCustom'>, sizeId: string): { formatSize: string; sections: number } {
+  const option = formatSizeOf(draft.format!, sizeId);
+  const sections = draft.sectionsCustom ? Math.min(option.sections.max, Math.max(option.sections.min, draft.sections)) : option.sections.default;
+  return { formatSize: option.id, sections };
 }
 
 // ── Blockers (visible reason next to the primary) and validation ─────────────────────────
@@ -254,8 +327,13 @@ export function materialBlocker(draft: NewProductionDraft): string | undefined {
 }
 
 /** Why "Montar estrutura" cannot run from Pauta (COPY §6.1). */
-export function briefBlocker(draft: Pick<NewProductionDraft, 'title' | 'size' | 'sections'>): string | undefined {
+export function briefBlocker(draft: Pick<NewProductionDraft, 'title' | 'size' | 'sections'> & Partial<Pick<NewProductionDraft, 'format' | 'formatSize'>>): string | undefined {
   if (!draft.title.trim()) return 'Dê um título interno.';
+  const rule = formatRule(draft);
+  if (rule) {
+    const { min, max } = rule.sections;
+    return draft.sections < min || draft.sections > max ? `${rule.label} aceita de ${min} a ${max} ${rule.headings ? 'seções' : 'partes'}.` : undefined;
+  }
   const { min, max } = sizeOf(draft.size).sections;
   if (draft.sections < min || draft.sections > max) {
     return `${sizeOf(draft.size).label} aceita de ${min} a ${max} ${sizeOf(draft.size).headings ? 'seções' : 'partes'}.`;
@@ -325,5 +403,11 @@ export function toCreateInput(draft: NewProductionDraft, analysis: SourceAnalysi
   if (draft.location?.trim()) input.material.location = draft.location.trim();
   if (draft.sourceUrl?.trim()) input.material.sourceUrl = podcastLink(draft.sourceUrl) ?? draft.sourceUrl.trim();
   if (angle) input.brief.angle = angle;
+  if (draft.format) {
+    input.brief.format = draft.format;
+    input.brief.formatSize = formatSizeOf(draft.format, draft.formatSize).id;
+    const event = normalizeEvent(draft.event);
+    if (event) input.brief.event = event;
+  }
   return input;
 }

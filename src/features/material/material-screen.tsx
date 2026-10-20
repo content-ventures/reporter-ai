@@ -23,7 +23,7 @@ import {
   type TranscriptAction,
 } from '@content-ventures/design-system/v3';
 import { ArrowRight, Copy, Pencil, ScrollText, Sparkles } from '@content-ventures/design-system/v3/icons';
-import { shortHash, type Brief, type ProductionId } from '@/domain';
+import { briefSizeName, shortHash, type Brief, type ProductionId } from '@/domain';
 import type { Participant, SourceDetail } from '@/ports';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
 import { useCan, useCommands, usePiece, useSource } from '@/state';
@@ -110,7 +110,7 @@ function withoutPerson(detail: SourceDetail): number {
 function briefFacts(brief: Brief): DescriptionItem[] {
   return [
     { label: 'Orientação', value: brief.angle || undefined },
-    { label: 'Tamanho', value: formatSize(brief.size) },
+    { label: brief.format ? 'Formato' : 'Tamanho', value: brief.format ? briefSizeName(brief) : formatSize(brief.size) },
     { label: 'Estrutura', value: `Introdução + ${plural(brief.sections, 'seção', 'seções')}` },
   ];
 }

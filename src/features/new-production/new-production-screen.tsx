@@ -41,6 +41,8 @@ import { useNow } from '@/ui/time';
 import { BriefStep } from './brief-sections';
 import {
   EMPTY_DRAFT,
+  eventDraft,
+  type EventDraft,
   NEW_PRODUCTION_STEPS,
   STEP_LABELS,
   briefBlocker,
@@ -136,7 +138,11 @@ function NewProductionForm() {
   const today = now ? isoDay(now) : undefined;
 
   const [draft, setDraft] = useState<NewProductionDraft>(EMPTY_DRAFT);
-  const update = useCallback((patch: Partial<NewProductionDraft>) => setDraft((current) => ({ ...current, ...patch })), []);
+  // A coverage reuses the event typed for the previous one on this device: the reporter types it once.
+  const update = useCallback((patch: Partial<NewProductionDraft>) => setDraft((current) => {
+    const next = { ...current, ...patch };
+    return patch.format && !next.event.name.trim() ? { ...next, event: lastEvent() ?? next.event } : next;
+  }), []);
 
   const [step, setView] = useState<NewProductionStep>('material');
 
@@ -344,6 +350,7 @@ function NewProductionForm() {
     const current = await freshAnalysis();
     if (!current) { setBusy(null); return; }
     const created = await commands.production.createFromSource(toCreateInput(draft, current, people));
+    if (created.ok && draft.format && draft.event.name.trim()) rememberEvent(draft.event);
     if (!created.ok) {
       setBusy(null);
       notifyRefusal('Produção não criada', created.refusal);
@@ -374,7 +381,7 @@ function NewProductionForm() {
   const canSelectStep = (_index: number, state: StepState) => state === 'done' && !busy;
   const primary = {
     material: { label: 'Continuar', icon: undefined, run: continueFromMaterial, loading: false },
-    brief: { label: 'Gerar artigo', icon: Sparkles, run: createArticle, loading: busy === 'create' },
+    brief: { label: draft.format ? 'Gerar texto' : 'Gerar artigo', icon: Sparkles, run: createArticle, loading: busy === 'create' },
   }[step];
   const back = step === 'material'
     ? { label: 'Cancelar', onClick: cancel, hideNarrow: true }
@@ -393,7 +400,7 @@ function NewProductionForm() {
   const errorCount = step === 'material' ? summaryErrors.length : 0;
   const statusText =
     busy === 'create' ? 'Abrindo o editor…' : errorCount > 0 ? `Revise ${plural(errorCount, 'campo', 'campos')}` : '';
-  const summary = step === 'brief' ? briefSummary(draft.size, draft.sections, speakerCount) : '';
+  const summary = step === 'brief' ? briefSummary(draft.size, draft.sections, speakerCount, draft) : '';
   const footerMeta = (narrow: boolean) => statusText || blocker || (narrow ? '' : summary) || undefined;
 
   const primaryButton = (
@@ -539,4 +546,24 @@ function NewProductionForm() {
       />
     </>
   );
+}
+
+const LAST_EVENT_KEY = 'reporter.new-production.last-event';
+
+/** The event of the last coverage created on this device, as the form edits it. */
+function lastEvent(): EventDraft | undefined {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(LAST_EVENT_KEY) ?? 'null') as Partial<EventDraft> | null;
+    return stored?.name ? eventDraft(stored) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberEvent(event: EventDraft) {
+  try {
+    window.localStorage.setItem(LAST_EVENT_KEY, JSON.stringify(event));
+  } catch {
+    /* Private windows and blocked storage only lose the convenience. */
+  }
 }
