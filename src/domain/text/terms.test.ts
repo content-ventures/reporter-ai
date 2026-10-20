@@ -121,3 +121,14 @@ test('a name split across two Whisper cues does not block the other corrections'
   assert.equal(fixed.refused, undefined);
   assert.equal(fixed.count, 1);
 });
+
+test('names split by line breaks, cues or tags do not block a fix; a blank line between cues is never crossed', () => {
+  const wrapped = 'Rafael Dias: O Q Show abriu hoje.\nBeatriz Almeida: O Q Show tem 300 marcas e o\nQ Show cresceu.\nBeatriz Almeida: Eu que agradeço ao Q\nShow.';
+  const fixed = correctTerm(wrapped, 'Q Show', 'Aquishow');
+  assert.equal(fixed.refused, undefined);
+  assert.equal(fixed.count, 3, 'the name split over a line break in "Nome: fala" text stays as it was');
+  assert.equal(correctTerm('WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nO <i>Q Show</i> e o Q <i>Show</i> cresceram.', 'Q Show', 'Aquishow').refused, undefined);
+  // A cue identifier after a blank line is not speech: the term never reaches into it.
+  const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nBem-vindos ao Q\n\nShow abertura\n00:00:03.000 --> 00:00:05.000\nque reúne 300 marcas.\n';
+  assert.equal(correctTerm(vtt, 'Q Show', 'Aquishow').count, 0);
+});
