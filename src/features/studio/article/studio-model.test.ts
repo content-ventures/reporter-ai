@@ -199,6 +199,19 @@ describe('studio model', () => {
     assert.equal(excerptLabel(segments[1]), 'Fala de M.');
   });
 
+  it("puts the mapped person's company beside the name, only when there is one", () => {
+    const segments = viewerSegments(
+      [
+        { id: 's1', speaker: 'Speaker 1', text: 'A vacina reduz a mortalidade.' },
+        { id: 's2', speaker: 'Speaker 2', text: 'E o custo?' },
+      ],
+      [{ label: 'Speaker 1', personId: 'p-fabi' }, { label: 'Speaker 2', personId: 'p-joao' }],
+      [{ id: 'p-fabi', name: 'Fabiana Souza', organization: ' Seafood Brasil ' }, { id: 'p-joao', name: 'João', organization: '  ' }],
+    );
+    assert.deepEqual(segments[0]?.speaker, { id: 'Speaker 1', name: 'Fabiana Souza', description: 'Seafood Brasil' });
+    assert.deepEqual(segments[1]?.speaker, { id: 'Speaker 2', name: 'João' });
+  });
+
   it('clips long excerpts at a word boundary', () => {
     assert.equal(clip('curto'), 'curto');
     const long = 'palavra '.repeat(40);

@@ -8,10 +8,16 @@ import type { Participant } from '@/ports';
  * segments the article cites are marked "Usado".
  */
 
-/** Speaker as the viewer draws it; the transcript label stays the id (stable across versions). */
+/** Speaker as the viewer draws it, with the company beside the name; the transcript label stays the id (stable across versions). */
 export function viewerSpeaker(label: string, participant: Participant | undefined): TranscriptSpeaker {
   const person = participant?.person;
-  return { id: label, name: person?.name ?? label, ...(person?.avatarUrl ? { src: person.avatarUrl } : {}) };
+  const organization = person?.organization?.trim();
+  return {
+    id: label,
+    name: person?.name ?? label,
+    ...(person?.avatarUrl ? { src: person.avatarUrl } : {}),
+    ...(organization ? { description: organization } : {}),
+  };
 }
 
 export function viewerSegments(version: SourceVersion, participants: readonly Participant[]): ViewerSegment[] {

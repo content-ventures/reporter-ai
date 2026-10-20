@@ -411,12 +411,13 @@ export function targetLabel(body: ArticleBody, target: readonly TextRange[]): st
 
 // ——— Transcript ———
 
-export type ViewerSpeaker = { id: string; name: string; src?: string };
+/** `description`: the person's organization, beside the name ("Fabiana Souza · Seafood Brasil"). */
+export type ViewerSpeaker = { id: string; name: string; src?: string; description?: string };
 export type ViewerSegment = { id: string; speaker?: ViewerSpeaker; start?: number; end?: number; text: string };
 
-export type PersonLike = { id: string; name: string; avatarUrl?: string };
+export type PersonLike = { id: string; name: string; avatarUrl?: string; organization?: string };
 
-/** Transcript segments in the shape of the DS `TranscriptViewer` (speaker = mapped person). */
+/** Transcript segments in the shape of the DS `TranscriptViewer` (speaker = mapped person and company). */
 export function viewerSegments(
   segments: readonly TranscriptSegment[],
   speakers: readonly Speaker[],
@@ -427,6 +428,7 @@ export function viewerSegments(
     const person = speaker.personId ? people.find((entry) => entry.id === speaker.personId) : undefined;
     const entry: ViewerSpeaker = { id: speaker.label, name: person?.name ?? speaker.label };
     if (person?.avatarUrl) entry.src = person.avatarUrl;
+    if (person?.organization?.trim()) entry.description = person.organization.trim();
     bySpeaker.set(speaker.label, entry);
   }
   return segments.map((segment) => {
