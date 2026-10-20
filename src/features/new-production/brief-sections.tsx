@@ -19,7 +19,7 @@ import {
   useNotice,
   type SelectOption,
 } from '@content-ventures/design-system/v3';
-import { EDITORIAL_FORMATS, FORMAT_SPECS, SIZE_RULE, formatRangeLabel, type ArticleSize, type EditorialFormat, type EventContext, type SourceOrigin } from '@/domain';
+import { EDITORIAL_FORMATS, FORMAT_SPECS, SIZE_RULE, formatRangeLabel, suggestedFormatSize, type ArticleSize, type EditorialFormat, type EventContext, type SourceOrigin } from '@/domain';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
 import { podcastLink } from '@/domain/citation-library';
 import { SIZE_OPTIONS } from '@/ui/format';
@@ -34,6 +34,7 @@ import {
   withFormatSize,
   withSize,
   type DeliveryPlan,
+  type EventDraft,
   type NewProductionDraft,
 } from './form';
 
@@ -66,20 +67,27 @@ export type BriefStepProps = {
   update: Patch;
   /** Characters of the longest article the material supports, when known. */
   charsAvailable?: number;
+  /** Minutes of speech in the material, when known (a stand interview of 3 min fills "Completo"). */
+  materialMinutes?: number;
   /** The production already exists: only size, sections and angle can change. */
   existing?: boolean;
   titleError?: string;
   titleRef: Ref<HTMLInputElement>;
   /** Today (YYYY-MM-DD, after hydration): the interview cannot be dated in the future. */
   today?: string;
+  /** The event of the previous coverage on this device, offered while the field is empty. */
+  eventSuggestion?: EventDraft;
+  /** The reporter used the suggested event (true) or dismissed it (false). */
+  onEventSuggestion?: (use: boolean) => void;
 };
 
-export function BriefStep({ draft, update, charsAvailable, existing = false, titleError, titleRef, today }: BriefStepProps) {
+export function BriefStep({ draft, update, charsAvailable, materialMinutes, existing = false, titleError, titleRef, today, eventSuggestion, onEventSuggestion }: BriefStepProps) {
   const [notice, showNotice] = useNotice();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const shortfall = draft.format ? undefined : shortfallSentence(draft.size, charsAvailable);
   const automaticSections = draftAutomaticSections(draft);
   const formatSpec = draft.format ? FORMAT_SPECS[draft.format] : undefined;
+  const sizeSuggestion = suggestedFormatSize(draft.format, draft.formatSize, materialMinutes);
   const chooseFormat = (value: string) => update(withFormat(value === ARTICLE ? undefined : (value as EditorialFormat)));
   const setEvent = (key: keyof EventContext, value: string) => update({ event: { ...draft.event, [key]: value } });
 
@@ -132,6 +140,12 @@ export function BriefStep({ draft, update, charsAvailable, existing = false, tit
                 />
               ))}
             </Grid>
+            {sizeSuggestion && materialMinutes !== undefined ? (
+              <Alert compact tone="info"
+                action={<Button size="sm" onClick={() => update(withFormatSize(draft, sizeSuggestion.id))}>{`Usar ${sizeSuggestion.label}`}</Button>}>
+                {`Material de ${Math.floor(materialMinutes)} min: o ${sizeSuggestion.label} aproveita melhor as falas.`}
+              </Alert>
+            ) : null}
           </FormRow>
         ) : null
       ) : (
@@ -183,8 +197,16 @@ export function BriefStep({ draft, update, charsAvailable, existing = false, tit
         <>
           <FormRow label="Evento" optional>
             {({ id, describedBy }) => (
-              <Input id={id} aria-describedby={describedBy} value={draft.event.name} maxLength={EVENT_MAX}
-                placeholder="Ex.: Seafood Show Latin America 2026" onChange={(event) => setEvent('name', event.target.value)} />
+              <>
+                <Input id={id} aria-describedby={describedBy} value={draft.event.name} maxLength={EVENT_MAX}
+                  placeholder="Ex.: Seafood Show Latin America 2026" onChange={(event) => setEvent('name', event.target.value)} />
+                {eventSuggestion ? (
+                  <Alert compact tone="info" onDismiss={() => onEventSuggestion?.(false)} dismissLabel="Não é este evento"
+                    action={<Button size="sm" onClick={() => onEventSuggestion?.(true)}>Usar</Button>}>
+                    {`Mesmo evento da última cobertura: ${eventSuggestion.name}?`}
+                  </Alert>
+                ) : null}
+              </>
             )}
           </FormRow>
           {draft.event.name.trim() ? (

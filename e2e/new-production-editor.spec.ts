@@ -136,6 +136,8 @@ test.describe('formato de evento na pauta', () => {
     test.setTimeout(120_000);
     const errors = watchErrors(page), replay = await workspace(page);
     try {
+      // The previous coverage on this device was another fair: it is offered, never filled by itself.
+      await page.addInitScript(() => window.localStorage.setItem('reporter.new-production.last-event', JSON.stringify({ name: 'Seafood Show Latin America 2026' })));
       await page.goto('/productions/new', { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Usar exemplo', exact: true }).click();
       await expect(page.getByRole('dialog')).toBeHidden();
@@ -143,7 +145,12 @@ test.describe('formato de evento na pauta', () => {
       await page.getByRole('button', { name: 'Continuar', exact: true }).click();
       await page.getByRole('radio', { name: /Cobertura de estande/ }).check();
       await page.getByRole('radio', { name: /Enxuto/ }).check();
-      await page.getByRole('textbox', { name: /^Evento/ }).fill('Seafood Show Latin America 2026');
+      const eventName = page.getByRole('textbox', { name: /^Evento/ });
+      await expect(eventName).toHaveValue('');
+      await expect(page.getByText('Mesmo evento da última cobertura: Seafood Show Latin America 2026?', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Usar', exact: true }).click();
+      await expect(eventName).toHaveValue('Seafood Show Latin America 2026');
+      await expect(page.getByText(/Mesmo evento da última cobertura/)).toHaveCount(0);
       await page.getByRole('textbox', { name: 'Data', exact: true }).fill('De 20 a 22 de outubro de 2026');
       await page.getByRole('textbox', { name: 'Título interno', exact: true }).fill('Estande no SSLA');
       await page.getByRole('button', { name: 'Gerar texto', exact: true }).click();

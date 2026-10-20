@@ -28,7 +28,7 @@ import {
   type StepState,
 } from '@content-ventures/design-system/v3';
 import { FileText, Sparkles, X } from '@content-ventures/design-system/v3/icons';
-import { sizeOf } from '@/domain';
+import { materialMinutes, sizeOf } from '@/domain';
 import { sourceLinkMessage } from '@/domain/source-link';
 import { MAX_UPLOAD_BYTES, MEDIA_EXTENSIONS } from '../../domain/reporter.ts';
 import type { PersonSummary, SourceAnalysis } from '@/ports';
@@ -141,11 +141,13 @@ function NewProductionForm({ received }: { received?: string }) {
 
   // A Drive file opens on "Arquivo", its progress on screen, as an upload just started would.
   const [draft, setDraft] = useState<NewProductionDraft>(() => (received ? { ...EMPTY_DRAFT, mode: 'file' } : EMPTY_DRAFT));
-  // A coverage reuses the event typed for the previous one on this device: the reporter types it once.
-  const update = useCallback((patch: Partial<NewProductionDraft>) => setDraft((current) => {
-    const next = { ...current, ...patch };
-    return patch.format && !next.event.name.trim() ? { ...next, event: lastEvent() ?? next.event } : next;
-  }), []);
+  // A coverage offers the event typed for the previous one on this device, never fills it by itself:
+  // a material from another fair would otherwise go out with the wrong box. Undefined: not read yet.
+  const [eventSuggestion, setEventSuggestion] = useState<EventDraft | null>();
+  const update = useCallback((patch: Partial<NewProductionDraft>) => {
+    if (patch.format) setEventSuggestion((current) => (current === undefined ? lastEvent() ?? null : current));
+    setDraft((current) => ({ ...current, ...patch }));
+  }, []);
 
   const [step, setView] = useState<NewProductionStep>('material');
 
@@ -535,10 +537,16 @@ function NewProductionForm({ received }: { received?: string }) {
               draft={draft}
               update={update}
               charsAvailable={analysis?.outlook?.charsAvailable}
+              materialMinutes={analysis ? materialMinutes(analysis.stats) : undefined}
               existing={false}
               titleError={triedBrief && !draft.title.trim() ? 'Dê um título interno.' : undefined}
               titleRef={titleRef}
               today={today}
+              eventSuggestion={eventSuggestion && !draft.event.name.trim() ? eventSuggestion : undefined}
+              onEventSuggestion={(use) => {
+                if (use && eventSuggestion) update({ event: eventSuggestion });
+                setEventSuggestion(null);
+              }}
             />
           </PageStack>
         )}
