@@ -72,7 +72,8 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
   never touched, and a corrected speaker name keeps the reporter's choice for that speaker. A
   correction that would change who speaks, turn by turn (a name the label rules do not read), is
   refused and points to "Falantes"; a new person named after the misheard label takes the corrected
-  name (`correctTerm`, `src/domain/text/terms.ts`).
+  name (`correctTerm`, `src/domain/text/terms.ts`). Known limit: in pasted "Nome: fala" text with
+  hard line breaks inside a name, a two-word correction is refused rather than risk a turn.
   "Ver transcrição" reads the current text, with search.
 - The editable **Material** stage suggests an internal title from the actual topic and lists
   participants explicitly presented in the transcript, with literal evidence for confirmation.

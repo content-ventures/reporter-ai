@@ -114,3 +114,10 @@ test('shortening a name applies, extra spaces are cleaned, and a line that would
   const turns = 'Rafael Dias: Qual o objetivo?\nBeatriz Almeida: Crescer na feira.\nrafael dias: E a cor do verão?\nRafael Dias: Pode responder, Beatriz.\nBeatriz Almeida: Verde.';
   assert.equal(correctTerm(turns, 'rafael dias', 'Rafael Dias').refused, 'structure');
 });
+
+test('a name split across two Whisper cues does not block the other corrections', () => {
+  const srt = '1\n00:00:00,000 --> 00:00:03,000\nObrigado por vir para a Q\n\n2\n00:00:03,000 --> 00:00:06,000\nShow deste ano.\n\n3\n00:00:06,000 --> 00:00:09,000\nA Q Show é a maior feira do setor.';
+  const fixed = correctTerm(srt, 'Q Show', 'Aquishow');
+  assert.equal(fixed.refused, undefined);
+  assert.equal(fixed.count, 1);
+});

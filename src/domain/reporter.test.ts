@@ -115,3 +115,11 @@ test('hyphens, apostrophes and sentence ends never bring in or move a word', () 
   assert.equal(repair('O que? Isso a gente trabalha com peixe aqui no estado de Minas Gerais', '',
     'O que é? Isso a gente trabalha com peixe aqui no estado de Minas Gerais'), undefined);
 });
+
+test('an accent word is never added next to a quote, a bracket or an ellipsis', () => {
+  const tail = ' a gente trabalha com peixe aqui no estado de Minas Gerais';
+  assert.equal(repair(`O que?" Isso${tail}`, '', `O que é?" Isso${tail}`), undefined);
+  assert.equal(repair(`(o que?) Isso${tail}`, '', `(o que é?) Isso${tail}`), undefined);
+  assert.equal(repair(`O que… Isso${tail}`, '', `O que é… Isso${tail}`), undefined);
+  assert.equal(repair(`ele disse "isso${tail}`, '', `ele disse "é isso${tail}`), undefined);
+});
