@@ -9,6 +9,7 @@ import type { GenerationKind, GenerationInputs, RunMeta } from './generation.ts'
 import type { PipelineRevision, PipelineCall } from '../domain/pipeline.ts';
 import type { BannerDraft, LibraryImage } from '../domain/visual-library.ts';
 import type { Citation } from '../domain/citation-library.ts';
+import type { FactCheck } from '../domain/fact-check.ts';
 import type { ImageAsset } from '../domain/asset.ts';
 import type { WorkspaceDelta } from './editorial-rows.ts';
 
@@ -38,7 +39,7 @@ export type EditorialJob = {
   provider?: { name: string; model: string; requestId: string | null };
   lease?: { owner: string; until: number; fence: string };
 };
-export type EditorialCheckpoint = { state: EditorialState; jobs: Record<string, EditorialJob>; pipeline?: PipelineRevision; pipelineHistory?: PipelineRevision[]; visuals?: { images: LibraryImage[]; banners: BannerDraft[] }; citations?: Citation[]; imageAssets?: ServerImageAsset[]; receipts?: Record<string,{ hash: string; result: unknown; projection?: 'pipeline' }> };
+export type EditorialCheckpoint = { state: EditorialState; jobs: Record<string, EditorialJob>; pipeline?: PipelineRevision; pipelineHistory?: PipelineRevision[]; visuals?: { images: LibraryImage[]; banners: BannerDraft[] }; citations?: Citation[]; factChecks?: FactCheck[]; imageAssets?: ServerImageAsset[]; receipts?: Record<string,{ hash: string; result: unknown; projection?: 'pipeline' }> };
 export type ConnectedWorkspace = EditorialCheckpoint & { revision: number; model: string; workerOnline: boolean; stalled?: boolean; deploymentMode?: 'cloud' | 'local'; syncToken?: string };
 /** Rows changed since the browser's change number; the browser merges them into its workspace. */
 export type WorkspaceDeltaRefresh = Omit<WorkspaceDelta, 'seq'> & { delta: true; revision: number; syncToken: string; workerOnline: boolean; stalled?: boolean };

@@ -29,11 +29,11 @@ export function citationRegistry(checkpoint: EditorialCheckpoint): CitationLibra
       }
     }
   }
-  const uses = citationUses(appearances);
+  const uses = citationUses(appearances), checks = new Map((checkpoint.factChecks ?? []).map(check => [check.id,check]));
   for (const citation of checkpoint.citations ?? []) if (accessibleSources.has(citation.ref.sourceId) && accessibleProductions.has(citation.productionId)) citations.set(citation.id,citation);
   return { items: [...citations.values()].flatMap(citation => {
     const source = state.sources.find(source => source.id === citation.ref.sourceId);
-    return source ? [citationView(citation,source,state.people,{ uses: uses.get(citation.id) ?? [] })] : [];
+    return source ? [citationView(citation,source,state.people,{ uses: uses.get(citation.id) ?? [],factCheck: checks.get(citation.id) })] : [];
   }).sort((a,b) => b.createdAt.localeCompare(a.createdAt)), sources: state.sources.filter(source => source.rights.authorized && accessibleSources.has(source.id)).map(source => ({
     id: source.id,version: source.versions.at(-1)!.number,title: source.programName || source.title,
     productionId: records.find(record => record.production.sourceIds.includes(source.id))!.production.id,
@@ -46,7 +46,7 @@ const schema = z.object({ id: z.string().regex(/^[a-f0-9]{16}$/).optional(), bas
     relevance: z.string().trim().max(600),podcastName: optionalText(160),podcastUrl: optionalText(2000),recordedOn: optionalText(10),location: optionalText(160),
   }).strict() }).strict();
 // Citations come from article drafts and versions plus curated entries; runs are never read.
-const CITATION_SCOPE: EditorialScope = { productions: 'all',parts: ['piece','version'],runs: 'none',pipelines: false,items: { citation: 'all' } };
+export const CITATION_SCOPE: EditorialScope = { productions: 'all',parts: ['piece','version'],runs: 'none',pipelines: false,items: { citation: 'all',fact_check: 'all' } };
 export async function handleCitationLibrary(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>) {
   if (path.length) throw new FlowError('NOT_FOUND',404);
   if (request.method === 'GET') return Response.json((await editorialTransaction('runtime',async checkpoint => citationRegistry(checkpoint),false,'reporter.edit',CITATION_SCOPE)).value,{ headers: { 'Cache-Control': 'no-store' } });
@@ -83,7 +83,7 @@ export async function handleCitationLibrary(request: Request, path: string[], re
     const saved = checkpoint.citations ??= [];
     if (!saved.some(item => item.id === id) && saved.length >= 5000) throw new FlowError('LIBRARY_FULL',422);
     checkpoint.citations = [...saved.filter(item => item.id !== id),next];
-    return citationView(next,source,checkpoint.state.people,{ uses: previous?.uses ?? [] });
+    return citationView(next,source,checkpoint.state.people,{ uses: previous?.uses ?? [],factCheck: previous?.factCheck });
   },true,'reporter.edit',CITATION_SCOPE)).value;
   return Response.json(value,{ headers: { 'Cache-Control': 'no-store' } });
 }
