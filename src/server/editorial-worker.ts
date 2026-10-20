@@ -23,7 +23,7 @@ import { mapEditorialPassages } from './editorial-passages';
 import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
 import { contiguousSourcePassages, r1ArticleIssue, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
-import { articleContractFor } from '../domain/formats.ts';
+import { articleContractFor, outletPunctuation } from '../domain/formats.ts';
 import { ungroundedTerms } from '../domain/grounding.ts';
 import { currentSourceVersion } from '../domain/source.ts';
 import type { Person } from '../domain/workspace.ts';
@@ -159,7 +159,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     const people = confirmedPeople(input.record,input.people);
     const today = new Intl.DateTimeFormat('pt-BR',{ timeZone: 'America/Sao_Paulo',weekday: 'long',day: 'numeric',month: 'long',year: 'numeric' }).format(new Date());
     // Event formats: every number and name must exist in the material, the speakers or the event typed by a person.
-    const corpus = [...input.record.sources.flatMap(s => currentSourceVersion(s).content.segments.map(segment => segment.text)),
+    // Speaker labels are part of what the material says ("Categoria Personalidade Feminina: …" parses as one).
+    const corpus = [...input.record.sources.flatMap(s => currentSourceVersion(s).content.segments.map(segment => (segment.speaker ? segment.speaker + ': ' : '') + segment.text)),
       ...people.flatMap(person => [person.name,person.title ?? '',person.organization ?? '']),
       ...Object.values(input.record.production.brief.event ?? {}),today].join('\n');
     const grounding = format ? (text: string) => ungroundedTerms(text,corpus) : undefined;
@@ -252,7 +253,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         .map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}) })) });
       variables.outline = JSON.stringify(outline);
       if (pipeline.definition.articleMode === 'single') value = await writeCompleteArticle(outline, variables, sizing, call);
-      else value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages,grounding);
+      else value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages,grounding,people.map(person => person.name));
     }
     if (job.kind === 'carousel.copy') {
       const piece = input.record.pieces.find(p => p.id === job.meta.pieceId);
@@ -286,7 +287,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       const article = z.object({ title: z.string().min(1).max(500),intro: z.array(paragraph).min(1).max(3),sections: z.array(z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict()).min(1).max(8) }).strict().parse(value);
       if (reviewed && (article.title !== reviewed.title || article.sections.length !== reviewed.sections.length || article.sections.some((s,i) => s.title !== reviewed.sections[i].title))) throw new FlowError('OUTLINE_NOT_FOLLOWED',502);
       const blocks: ArticleBlock[] = [];
-      const add = (p: z.infer<typeof paragraph>) => blocks.push({ id: randomUUID(),type: 'paragraph',inlines: [{ text: p.text }],sourceRefs: refs(p.evidenceIds),ai: 'unreviewed' });
+      const add = (p: z.infer<typeof paragraph>) => blocks.push({ id: randomUUID(),type: 'paragraph',inlines: [{ text: format ? outletPunctuation(p.text) : p.text }],sourceRefs: refs(p.evidenceIds),ai: 'unreviewed' });
       article.intro.forEach(add);
       article.sections.forEach((s,i) => {
         if (sizing.headings) blocks.push({ id: reviewed?.sections[i].blockId ?? randomUUID(),type: 'heading',level: 2,inlines: [{ text: s.title }],ai: 'unreviewed' });

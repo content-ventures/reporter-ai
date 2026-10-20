@@ -25,7 +25,8 @@ const outputs = {
   assist: articleAssistOutput,
   images: imagePlanOutput,
   facts: z.object({ facts: z.array(z.string().min(1).max(3000)).min(1).max(50) }).strict(),
-  outline: z.object({ title: z.string().min(1).max(500), introIds: ids.max(2), sections: z.array(z.object({
+  // Event formats plan the linha fina with the title (`dek`); the article's outline has none.
+  outline: z.object({ title: z.string().min(1).max(500), dek: z.string().min(1).max(240).optional(), introIds: ids.max(2), sections: z.array(z.object({
     title: z.string().min(1).max(120), evidenceIds: ids.min(1).max(20),
   }).strict()).min(1).max(8) }).strict(),
   quotes: z.object({ introIds: ids.max(2), sectionIds: z.array(ids.min(1).max(20)).min(1).max(8) }).strict(),

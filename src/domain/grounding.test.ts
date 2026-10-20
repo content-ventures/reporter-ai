@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dropUngroundedSentences, numberWords, ungroundedTerms } from './grounding.ts';
+import { dropUngroundedSentences, numberWords, reintroducedPeople, repeatedSentences, ungroundedTerms } from './grounding.ts';
 
 const material = [
   'Sérgio Sousa: Nós trouxemos o bacalhau com sal rosa para a feira.',
@@ -43,4 +43,19 @@ test('the last resort drops only the sentences with invented terms', () => {
     { text: 'Faturou R$ 3 milhões.', evidenceIds: ['2'] },
   ];
   assert.deepEqual(dropUngroundedSentences(paragraphs, material), [{ text: 'A BomPORTO levou o bacalhau com sal rosa.', evidenceIds: ['1'] }]);
+});
+
+test('a sentence restating what the text already said is caught; a new fact is not', () => {
+  const history = 'A Hecke Alimentos, com 25 anos de trajetória no mercado brasileiro, lança na APAS Show 2026 sua primeira linha de merluza empanada com ervas finas.';
+  assert.deepEqual(repeatedSentences('A Hecke Alimentos, com 25 anos de trajetória no mercado brasileiro, lança sua linha de merluza empanada com ervas finas.', history).length, 1);
+  assert.deepEqual(repeatedSentences('O produto chega congelado da Patagônia em contêineres marítimos e segue para o centro de distribuição.', history), []);
+  assert.deepEqual(repeatedSentences('Texto curto.', history), []);
+});
+
+test('a person already introduced is not introduced again', () => {
+  const names = ['Giaceli Scorsin', 'Sérgio Sousa'];
+  const history = 'A gerente de marketing da Hecke Alimentos, Giaceli Scorsin, destacou a novidade.';
+  assert.deepEqual(reintroducedPeople('explicou a gerente de marketing Giaceli Scorsin.', history, names), ['Giaceli Scorsin']);
+  assert.deepEqual(reintroducedPeople('detalhou Scorsin.', history, names), []);
+  assert.deepEqual(reintroducedPeople('“Eu falei com Giaceli Scorsin”, contou Sousa.', history, names), []);
 });

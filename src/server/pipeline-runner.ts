@@ -9,7 +9,8 @@ import { FlowError, safeCode } from './errors';
 import { restoreLiteralQuoteCase, validPipelineOutput, exceedsParagraphBudget, exceedsArticleBudget, writingContractIssue, writtenArticleText } from './pipeline-output';
 import type { WritingContract } from './pipeline-output';
 import { countCharacters, countWords, textStats } from '../domain/text/stats.ts';
-import { articleLengthIssue, articleQuotationIssue, unquoteUnsupported } from '../domain/article-policy.ts';
+import { reintroducedPeople, repeatedSentences } from '../domain/grounding.ts';
+import { articleLengthIssue, articleQuotationIssue, directQuotes, literalQuoteText, unquoteUnsupported } from '../domain/article-policy.ts';
 
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceIds: z.array(z.string()).min(1).max(30) }).strict();
 type Outline = { title: string; sections: { title: string; evidenceIds: string[] }[] };
@@ -118,7 +119,9 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   call: (key: PipelineStepKey,schema: object,variables: PipelineVariables,index?: number) => Promise<unknown>,
   evidence?:ReadonlyMap<string,string>,evidencePassages?:(ids:readonly string[])=>readonly string[],
   /** Event formats: the numbers and names of a text that the material, speakers and event lack. */
-  grounding?:(text:string)=>string[]) {
+  grounding?:(text:string)=>string[],
+  /** Event formats: the confirmed speakers' names, introduced once and then named by the surname. */
+  people:readonly string[]=[]) {
   const budgets = articleWritingBudgets(outline, sizing);
   const floors = articlePartFloors(outline, sizing, budgets);
   const introSchema = articlePartSchema('intro', budgets.intro);
@@ -143,18 +146,46 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   const part=async(key:'intro'|'section',schema:object,values:PipelineVariables,budget?:number,index?:number,floor?:PartFloor)=>{
     const paragraphsOf=(value:unknown)=>(value as {paragraphs:{text:string;evidenceIds:string[]}[]}).paragraphs;
     const ungrounded=(value:unknown)=>grounding?[...new Set(paragraphsOf(value).flatMap(p=>grounding(p.text)))]:[];
+    // Event formats: a quotation is used once in the whole text (outlet style), never twice.
+    const written=literalQuoteText(values.history??'');
+    const repeated=(value:unknown)=>{
+      if(!grounding)return [];
+      const seen=new Set<string>(),again:string[]=[];
+      for(const quote of paragraphsOf(value).flatMap(p=>directQuotes(p.text)).map(literalQuoteText)){
+        if(seen.has(quote)||written.includes(quote))again.push(quote);
+        seen.add(quote);
+      }
+      return again;
+    };
+    const partText=(value:unknown)=>paragraphsOf(value).map(p=>p.text).join('\n');
+    const restated=(value:unknown)=>grounding?repeatedSentences(partText(value),values.history??''):[];
+    const reintroduced=(value:unknown)=>grounding?reintroducedPeople(partText(value),values.history??'',people):[];
     const hard=(value:unknown)=>exceedsParagraphBudget(key,value,budget)?'ARTICLE_PART_SIZE_EXCEEDED'
       :(evidence?articleQuotationIssue(paragraphsOf(value),evidence,0,evidencePassages):undefined)
-        ??(ungrounded(value).length?'UNGROUNDED_FACT':undefined);
+        ??(ungrounded(value).length?'UNGROUNDED_FACT':repeated(value).length?'REPEATED_QUOTE'
+          :restated(value).length?'REPEATED_FACT':reintroduced(value).length?'REINTRODUCED_PERSON':undefined);
     const short=(value:unknown)=>{if(!floor)return false;const size=measured(paragraphsOf(value));return size.chars<floor.chars||size.words<floor.words;};
     const repair=(draft:unknown)=>{
       let paragraphs=paragraphsOf(draft).map(p=>({...p}));
       if(evidence)paragraphs=unquoteUnsupported(paragraphs,evidence,evidencePassages);
-      // An invented number or name is never kept: its sentence goes, nothing is rewritten.
-      if(grounding)paragraphs=paragraphs.flatMap(p=>{
-        const kept=articleSentences(p.text).filter(sentence=>!grounding(sentence).length);
-        return kept.length?[{...p,text:kept.join(' ')}]:[];
-      });
+      // An invented number or name is never kept, nor a quotation used twice: the sentence goes, nothing is rewritten.
+      if(grounding){
+        const used=new Set<string>();
+        paragraphs=paragraphs.flatMap(p=>{
+          const kept=articleSentences(p.text).filter(sentence=>{
+            const quotes=directQuotes(sentence).map(literalQuoteText);
+            if(grounding(sentence).length||quotes.some(quote=>used.has(quote)||written.includes(quote))
+              ||repeatedSentences(sentence,values.history??'').length)return false;
+            quotes.forEach(quote=>used.add(quote));
+            return true;
+          });
+          // A person already introduced is named by the surname from here on.
+          const text=kept.join(' ');
+          const named=reintroducedPeople(text,values.history??'',people)
+            .reduce((result,name)=>result.split(name).join(name.trim().split(/\s+/).pop()!),text);
+          return kept.length?[{...p,text:named}]:[];
+        });
+      }
       if(!paragraphs.length)throw new FlowError('UNGROUNDED_FACT',502);
       if(budget!==undefined){
         while(paragraphs.length>1&&measured(paragraphs).chars>budget)paragraphs=paragraphs.slice(0,-1);
@@ -199,6 +230,9 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
         outputParagraphs:{...sizing.outputParagraphs,preferredCount:count,targetCharsEach:Math.floor(targetTotalChars/count),targetWordsEach:Math.max(1,Math.floor(targetWords/count))},
         revisionFeedback:{scope:'current_part',attempt:revision,maxAttempts:2,violation,actualCharacters:measured(paragraphs).chars,actualWords:actual.words,
           ...(violation==='UNGROUNDED_FACT'?{ungroundedTerms:ungrounded(value)}:{}),
+          ...(violation==='REPEATED_QUOTE'?{repeatedQuotes:repeated(value)}:{}),
+          ...(violation==='REPEATED_FACT'?{repeatedSentences:restated(value)}:{}),
+          ...(violation==='REINTRODUCED_PERSON'?{reintroducedPeople:reintroduced(value)}:{}),
           ...(floor?{minTotalChars:floor.chars,minTotalWords:floor.words}:{}),maxTotalChars:budget,targetTotalChars,previousDraft:value},
       })};
       value=await call(key,schema,requested,index);

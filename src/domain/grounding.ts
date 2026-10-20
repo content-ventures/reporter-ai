@@ -131,3 +131,25 @@ export function dropUngroundedSentences<T extends { text: string }>(paragraphs: 
     return kept.length ? [{ ...paragraph, text: kept.join(' ') }] : [];
   });
 }
+
+const contentWords = (text: string) => new Set((fold(text).match(/\p{L}{4,}/gu) ?? []));
+
+/**
+ * Sentences of `text` (outside quotations) that restate a sentence already written: at least
+ * three quarters of their words of four letters or more are in one sentence of `history`. The
+ * outlet never says the same fact twice in a short text.
+ */
+export function repeatedSentences(text: string, history: string): string[] {
+  const written = sentencesOf(history.replace(/[“"«][^”"»]*[”"»]/g, ' ')).map(contentWords).filter((words) => words.size >= 4);
+  if (!written.length) return [];
+  return sentencesOf(text).filter((sentence) => {
+    const words = contentWords(sentence.replace(/[“"«][^”"»]*[”"»]/g, ' '));
+    if (words.size < 6) return false;
+    return written.some((previous) => [...words].filter((word) => previous.has(word)).length / words.size >= 0.75);
+  });
+}
+
+/** Full names already introduced in `history` that `text` introduces again (later mentions use the surname). */
+export function reintroducedPeople(text: string, history: string, names: readonly string[]): string[] {
+  return names.filter((name) => name.trim().includes(' ') && history.includes(name) && text.replace(/[“"«][^”"»]*[”"»]/g, ' ').includes(name));
+}

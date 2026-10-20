@@ -51,12 +51,12 @@ export const FORMAT_SPECS: Readonly<Record<EditorialFormat, EditorialFormatSpec>
   stand: {
     id: 'stand', label: 'Cobertura de estande', summary: 'Empresa no evento: novidade, porta-voz e mercado.',
     sizes: [size('compact', 'Enxuto', 1200, 2300, { min: 1, max: 2, default: 1 }), size('full', 'Completo', 2300, 3600, { min: 2, max: 3, default: 2 })],
-    defaultSize: 'full', headings: true, minQuotes: 2, introShare: 0.35,
+    defaultSize: 'full', headings: true, minQuotes: 2, introShare: 0.22,
   },
   panel: {
     id: 'panel', label: 'Cobertura de painel', summary: 'Quem disse o quê numa palestra ou painel.',
     sizes: [size('standard', 'Padrão', 2800, 4500, { min: 2, max: 4, default: 3 }), size('full', 'Completo', 4500, 7500, { min: 3, max: 6, default: 4 })],
-    defaultSize: 'standard', headings: true, minQuotes: 3, introShare: 0.2,
+    defaultSize: 'standard', headings: true, minQuotes: 3, introShare: 0.15,
   },
   awards: {
     id: 'awards', label: 'Premiação', summary: 'Vencedores por categoria, do material oficial.',
@@ -66,7 +66,7 @@ export const FORMAT_SPECS: Readonly<Record<EditorialFormat, EditorialFormatSpec>
   opening: {
     id: 'opening', label: 'Abertura', summary: 'Cerimônia de abertura: anúncios e autoridades.',
     sizes: [size('standard', 'Padrão', 2800, 5000, { min: 2, max: 5, default: 3 })],
-    defaultSize: 'standard', headings: true, minQuotes: 2, introShare: 0.25,
+    defaultSize: 'standard', headings: true, minQuotes: 2, introShare: 0.18,
   },
   note: {
     id: 'note', label: 'Nota curta', summary: 'Um fato, sem intertítulo.',
@@ -197,4 +197,12 @@ export function briefSizeProgress(chars: number, brief: SizedBrief): string {
 /** "Padrão · 2 laudas", or the format's name: "Cobertura de estande · Completo". */
 export function briefSizeName(brief: SizedBrief): string {
   return formatLabel(brief) ?? sizeLabel(brief.size);
+}
+
+/**
+ * The outlet's punctuation after a quotation: “fala”, explicou — never “fala.”, explicou. Only the
+ * closing period moves; "?" and "!" carry meaning and stay. The literal-quote check accepts it.
+ */
+export function outletPunctuation(text: string): string {
+  return text.replace(/\.”,/g, '”,');
 }

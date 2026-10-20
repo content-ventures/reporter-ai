@@ -88,8 +88,8 @@ export function outlineMeta(payload: OutlinePayload, size: ArticleSize): string 
 // ——— A structure a person edited ———
 
 /** Why a structure cannot be written, in the words of Nova produção (COPY §6.4). */
-function countRefusal(size: ArticleSize, count: number): string | undefined {
-  const spec = sizeOf(size);
+function countRefusal(size: ArticleSize, count: number, rule?: NormalizeContext['rule']): string | undefined {
+  const spec = rule ?? sizeOf(size);
   const { min, max } = spec.sections;
   if (spec.headings) {
     if (count > max) return `${spec.label} aceita até ${max} seções.`;
@@ -111,6 +111,8 @@ export const OUTLINE_MESSAGES = {
 
 export type NormalizeContext = {
   size: ArticleSize;
+  /** An event format's own section range and intertítulos rule, in place of the size's. */
+  rule?: { label: string; headings: boolean; sections: { min: number; max: number } };
   material: Material;
   /** The article's title when the person left it empty (the headline of the material). */
   defaultTitle: () => string;
@@ -126,9 +128,9 @@ export type NormalizeContext = {
 export function normalizeOutline(outline: OutlineInput, context: NormalizeContext): Result<PlannedOutline, 'invalid_outline'> {
   const invalid = (message: string) => refuse('invalid_outline' as const, message);
   const sections = Array.isArray(outline.sections) ? outline.sections : [];
-  const counted = countRefusal(context.size, sections.length);
+  const counted = countRefusal(context.size, sections.length, context.rule);
   if (counted) return invalid(counted);
-  const headings = sizeOf(context.size).headings;
+  const headings = context.rule?.headings ?? sizeOf(context.size).headings;
   const seen = new Set<string>();
   const check = (refs: readonly SourceRef[] | undefined): string | undefined => {
     for (const ref of refs ?? []) {
