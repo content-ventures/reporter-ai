@@ -3,25 +3,21 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { citationDay } from '../domain/citation-library.ts';
 import { MAX_UPLOAD_BYTES } from '../domain/reporter.ts';
-import type { EditorialFormat } from '../domain/formats.ts';
-import type { MaterialInsights } from '../ports/source-ingest.ts';
 import { resolveServiceContext, transaction } from './database.ts';
 import { reporterDeploymentMode } from './deployment.ts';
-import { editorialRpc, editorialTransaction } from './editorial';
 import { FlowError, logEvent, safeCode } from './errors.ts';
-import { analyzeMaterial } from './material-analysis';
 import { IDLE_QUEUE, queueStatus } from './queue-status.ts';
 import { runWithReporterContext, type ReporterRequestContext } from './request-context.ts';
 import { appOrigins, workerUrl } from './worker-config.ts';
 import { kickWorker, shouldHealStall, type Defer } from './worker-kick.ts';
-import { driveIds, driveMedia, driveProductionInput, folderFormat, materialSpeakers, partRange, transcriptText, type StoredTranscript } from './drive-intake-plan.ts';
+import { driveIds, driveMedia, folderFormat, partRange } from './drive-intake-plan.ts';
 
 /**
  * Drive folder intake. A script attached to the event's Drive folder posts each new file here;
  * the server copies it from Drive into source storage (the browser's multipart upload, done
- * server to server), the worker transcribes it, and once the transcript is ready the server
- * creates the production a person would have created in the form, still awaiting the speakers'
- * authorization. Every step is idempotent per Drive file, so the script simply asks again.
+ * server to server) and the worker transcribes it. The file then waits on the board's Material
+ * lane: a person opens it in the new-production steps, exactly as a file they uploaded. Every
+ * step is idempotent per Drive file, so the script simply asks again.
  */
 
 const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files/';
@@ -40,7 +36,7 @@ const syncBody = z.object({
 }).strict();
 type SyncInput = z.infer<typeof syncBody>;
 
-type Transcript = StoredTranscript & { id: string; status: string; error_code?: string | null;
+type Transcript = { id: string; status: string; error_code?: string | null;
   job?: { progress?: { done?: number; total?: number } | null } | null };
 
 function driveSecret() {
@@ -74,6 +70,21 @@ export async function handleDrive(request: Request, path: string[], deps: { read
   return runWithReporterContext(context, () => syncFile(input, secret, { app, worker: appOrigins()[0] ?? app }, context, deps.defer));
 }
 
+/** The address that opens a received file in the new-production steps. */
+export function receivedHref(transcriptId: string) {
+  return `/productions/new?material=${encodeURIComponent(transcriptId)}`;
+}
+
+/** GET drive/received (the board's Material lane) and drive/received/:id (one file, for the form). */
+export async function driveReceived(path: string[]) {
+  const id = path.length === 1 ? z.string().uuid().parse(path[0]) : path.length === 0 ? null : undefined;
+  if (id === undefined) throw new FlowError('NOT_FOUND', 404);
+  const items = await transaction('runtime', async client => (await client.query('SELECT public.reporter_drive_received($1) AS value', [id])).rows[0].value as unknown[]);
+  if (id === null) return reply({ items });
+  if (!items[0]) throw new FlowError('NOT_FOUND', 404);
+  return reply(items[0]);
+}
+
 async function syncFile(input: SyncInput, secret: string, origins: { app: string; worker: string }, context: ReporterRequestContext, defer: Defer) {
   const ids = driveIds(secret, input.fileId), media = driveMedia(input.name)!;
   const name = input.name.normalize('NFC');
@@ -84,6 +95,7 @@ async function syncFile(input: SyncInput, secret: string, origins: { app: string
   const { prepared, transcript, stalled } = await transaction('runtime', async client => {
     const prepared = (await client.query('SELECT public.reporter_prepare_cloud_upload($1,$2,$3,$4,$5,$6,$7) AS value',
       [ids.sourceId, name, input.size, media.contentType, objectKey, tokenHash, ids.key])).rows[0].value as { id: string; upload_endpoint: string | null };
+    await client.query('SELECT public.reporter_drive_intake_record($1,$2,$3,$4)', [prepared.id, name, folderFormat(input.folder) ?? null, input.recordedOn ?? null]);
     const transcript = (await client.query('SELECT public.reporter_local_transcript($1) AS value', [prepared.id])).rows[0].value as Transcript | null;
     const queue = transcript?.job && ['queued', 'processing'].includes(transcript.status) ? await queueStatus(client, `transcript:${prepared.id}`) : IDLE_QUEUE;
     return { prepared, transcript, stalled: queue.stalled };
@@ -105,33 +117,8 @@ async function syncFile(input: SyncInput, secret: string, origins: { app: string
     return reply({ ...base, stage: 'transcribing', retryAfter: 60,
       ...(progress?.total ? { progress: Math.round((progress.done ?? 0) / progress.total * 100) } : {}) }, 202);
   }
-  const lookup = await productionLookup(ids.productionRequest);
-  if (lookup.productionId) {
-    return reply({ ...base, stage: 'ready', productionId: lookup.productionId, url: `${origins.app}/productions/${lookup.productionId}` });
-  }
-  defer(() => runWithReporterContext(context, () => createProduction(input, transcript, ids.productionRequest, folderFormat(input.folder), lookup.people))
-    .catch(error => { logEvent('api', 'drive_production_failed', { error_code: safeCode(error) }); }));
-  return reply({ ...base, stage: 'creating', retryAfter: 60 }, 202);
-}
-
-/** The production this file already created (its command receipt), and the workspace people. */
-async function productionLookup(requestId: string) {
-  return (await editorialTransaction('runtime', async (checkpoint, _engine, _client, { receipt }) => ({
-    productionId: (receipt?.result as { ok?: boolean; value?: { productionId?: string } } | undefined)?.value?.productionId,
-    people: checkpoint.state.people.map(person => ({ id: person.id, name: person.name })),
-  }), false, 'reporter.edit', { receipt: requestId })).value;
-}
-
-async function createProduction(input: SyncInput, transcript: Transcript, requestId: string, format: EditorialFormat | undefined, people: { id: string; name: string }[]) {
-  const text = transcriptText(transcript);
-  // The title and participants are suggestions: without them the production still waits for a person.
-  let insights: MaterialInsights | undefined;
-  try { insights = await analyzeMaterial(text, { format: 'auto', fileName: 'transcript.srt' }); }
-  catch (error) { logEvent('api', 'drive_analysis_failed', { error_code: safeCode(error) }); }
-  const production = driveProductionInput({ fileName: input.name.normalize('NFC'), size: input.size, text, transcriptId: transcript.id,
-    title: insights?.title, recordedOn: input.recordedOn, format, speakers: materialSpeakers(text, insights?.participants ?? []), people });
-  const result = await editorialRpc({ method: 'createFromSource', args: [production], requestId }) as { ok?: boolean; refusal?: { code?: string } };
-  if (!result.ok) logEvent('api', 'drive_production_refused', { error_code: String(result.refusal?.code ?? 'REFUSED').toUpperCase().slice(0, 60) });
+  // Transcribed: it waits on the board until a person opens it in the new-production steps.
+  return reply({ ...base, stage: 'ready', url: `${origins.app}${receivedHref(transcript.id)}` });
 }
 
 type UploadSession = { partSize: number; parts: { number: number; url: string }[] };

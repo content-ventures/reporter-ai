@@ -60,6 +60,7 @@ export const CLOUD = Object.freeze([
   'database/migrations/019-background-article-images.sql',
   'database/migrations/020-platform-admin.sql',
   'database/migrations/021-drive-intake.sql',
+  'database/migrations/022-drive-received.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 

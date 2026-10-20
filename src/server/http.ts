@@ -17,7 +17,7 @@ import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
 import { handleProfile } from './profile.ts';
 import { handleInvites, handlePlatform } from './platform.ts';
-import { handleDrive } from './drive-intake.ts';
+import { driveReceived, handleDrive } from './drive-intake.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { reporterIdentity } from './auth.ts';
 import { runWithReporterContext, type ReporterRequestContext } from './request-context.ts';
@@ -163,13 +163,14 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     if (path[0] === 'platform') return await handlePlatform(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest,identify: deps.identify });
     if (path[0] === 'invites') return await handleInvites(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest });
     // The Drive folder script has no session: it carries the intake secret and acts as one configured member.
-    if (path[0] === 'drive') return await handleDrive(request,path.slice(1),{ readJson: jsonBody,defer });
+    if (path[0] === 'drive' && path[1] === 'sync') return await handleDrive(request,path.slice(1),{ readJson: jsonBody,defer });
     const context = await guardReporterRequest(request, deps.identify);
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'visuals') return await handleVisualLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'profile') return await handleProfile(request,path.slice(1),jsonBody);
     if (request.method === 'GET' && path.length === 1 && path[0] === 'pipeline') return reply(await editorialPipeline());
+    if (request.method === 'GET' && path[0] === 'drive' && path[1] === 'received') return await driveReceived(path.slice(2));
     if (path[0] === 'workspace' && path.length === 1) {
       if (request.method === 'GET') {
         const query = new URL(request.url).searchParams;
