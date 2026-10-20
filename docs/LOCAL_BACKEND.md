@@ -55,14 +55,19 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
   Whisper sometimes returns a Portuguese stretch with every word cut at its first accented letter
   ("Então" -> "Ent", "ração" -> "ra") at normal confidence. A segment of 12 words or more with
   no accented letter is cut again with a 3-second margin and transcribed alone with word
-  timestamps. Only the words spoken inside the segment replace it, and only when the new text has
-  accents and about the same length; a failed or doubtful repair keeps the original. At most 20
-  segments per recording, inside the job's time budget (`garbledSegment`, `src/domain/reporter.ts`).
+  timestamps. The new words, cut at their first accent the same way, are aligned word by word with
+  the garbled ones; the span that matches within 12% replaces the segment, with its accents. Time
+  plays no part, so no word is lost or doubled at an edge, and a translation, a shorter text or
+  another stretch never aligns. A failed or doubtful repair keeps the original. At most 20 repairs
+  per recording, one at a time; a rate limit is waited out once (up to 30 s), then the rest are
+  left out (`repairedText`, `src/domain/reporter.ts`).
   No vocabulary prompt is sent: on a real stand interview it fixed one event name but replaced a
   30-second stretch with invented speech.
 - **Corrigir termo** (Material stage): a name the transcription misheard ("Q Show") is replaced by
   the right one ("Aquishow") across the material before the production exists, as whole words in
-  any case. Cue numbers and timestamps are never touched (`replaceTerm`, `src/domain/text/terms.ts`).
+  any case, also across a wrapped line. Cue numbers, timestamp lines and "[00:04:12]" stamps are
+  never touched, and a corrected speaker name keeps the reporter's choice for that speaker
+  (`replaceTerm`, `src/domain/text/terms.ts`).
   "Ver transcrição" reads the current text, with search.
 - The editable **Material** stage suggests an internal title from the actual topic and lists
   participants explicitly presented in the transcript, with literal evidence for confirmation.
