@@ -1,7 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
-import { citationDay, citationId, citationsFromArticle, citationView, locateCitation, podcastLink } from '../domain/citation-library.ts';
-import type { Citation, CitationLibraryView } from '../domain/citation-library.ts';
+import { citationDay, citationId, citationsFromArticle, citationUses, citationView, locateCitation, podcastLink } from '../domain/citation-library.ts';
+import type { Citation, CitationLibraryView, CitationUse } from '../domain/citation-library.ts';
 import type { EditorialCheckpoint } from '../ports/connected-workspace.ts';
 import { canOpenProduction } from '../domain/production.ts';
 import { can } from '../domain/permissions.ts';
@@ -16,20 +16,24 @@ export function citationRegistry(checkpoint: EditorialCheckpoint): CitationLibra
   const records = state.productions.filter(record => canOpenProduction(record.production,member));
   const accessibleSources = new Set(records.flatMap(record => record.production.sourceIds));
   const accessibleProductions = new Set(records.map(record => record.production.id));
-  const citations = new Map<string, Citation>();
+  const citations = new Map<string, Citation>(), appearances: (CitationUse & { citationId: string })[] = [];
   for (const record of records) {
     const bodies = [...record.pieces.map(piece => ({ body: piece.draft.body,at: piece.draft.updatedAt })),
       ...record.versions.map(version => ({ body: version.body,at: version.createdAt }))];
     for (const entry of bodies) {
       if (entry.body.type !== 'article') continue;
       for (const citation of citationsFromArticle(entry.body,state.sources.filter(source => record.production.sourceIds.includes(source.id)),
-        record.production.id,entry.at)) if (!citations.has(citation.id)) citations.set(citation.id,citation);
+        record.production.id,entry.at)) {
+        if (!citations.has(citation.id)) citations.set(citation.id,citation);
+        appearances.push({ citationId: citation.id,productionId: record.production.id,title: record.production.title,at: entry.at });
+      }
     }
   }
+  const uses = citationUses(appearances);
   for (const citation of checkpoint.citations ?? []) if (accessibleSources.has(citation.ref.sourceId) && accessibleProductions.has(citation.productionId)) citations.set(citation.id,citation);
   return { items: [...citations.values()].flatMap(citation => {
     const source = state.sources.find(source => source.id === citation.ref.sourceId);
-    return source ? [citationView(citation,source,state.people)] : [];
+    return source ? [citationView(citation,source,state.people,{ uses: uses.get(citation.id) ?? [] })] : [];
   }).sort((a,b) => b.createdAt.localeCompare(a.createdAt)), sources: state.sources.filter(source => source.rights.authorized && accessibleSources.has(source.id)).map(source => ({
     id: source.id,version: source.versions.at(-1)!.number,title: source.programName || source.title,
     productionId: records.find(record => record.production.sourceIds.includes(source.id))!.production.id,
@@ -79,7 +83,7 @@ export async function handleCitationLibrary(request: Request, path: string[], re
     const saved = checkpoint.citations ??= [];
     if (!saved.some(item => item.id === id) && saved.length >= 5000) throw new FlowError('LIBRARY_FULL',422);
     checkpoint.citations = [...saved.filter(item => item.id !== id),next];
-    return citationView(next,source,checkpoint.state.people);
+    return citationView(next,source,checkpoint.state.people,{ uses: previous?.uses ?? [] });
   },true,'reporter.edit',CITATION_SCOPE)).value;
   return Response.json(value,{ headers: { 'Cache-Control': 'no-store' } });
 }

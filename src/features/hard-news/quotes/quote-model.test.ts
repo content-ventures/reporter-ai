@@ -10,7 +10,7 @@ function citation(patch: Partial<CitationView> = {}): CitationView {
     createdAt: '2026-09-18T10:00:00.000Z', updatedAt: '2026-09-18T10:00:00.000Z', personId: 'person-1', authorConfirmed: true,
     relevance: 'Explica o voo direto.', podcastName: 'Cadeia do Pescado #41', podcastUrl: 'https://podcast.exemplo/41',
     speaker: 'Marina Castro', podcast: 'Cadeia do Pescado #41', sourceTitle: 'Entrevista com Marina', startMs: 872_000,
-    evidence: '', authorized: true, ready: true, participants: [], ...patch,
+    evidence: '', authorized: true, ready: true, participants: [], uses: [], ...patch,
   } as CitationView;
 }
 

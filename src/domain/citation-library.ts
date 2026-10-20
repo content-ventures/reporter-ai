@@ -8,6 +8,7 @@ import { segmentPlace, sourceVersion } from './source.ts';
 import type { SegmentPlace, Source } from './source.ts';
 import type { SourceRef } from './refs.ts';
 import type { Person } from './workspace.ts';
+import type { FactCheck } from './fact-check.ts';
 
 /** Literal words and their immutable transcript version; editorial metadata never rewrites them. */
 export type Citation = {
@@ -21,11 +22,16 @@ export type CitationInput = {
   personId?: string; authorConfirmed: boolean; relevance: string;
   podcastName?: string; podcastUrl?: string; recordedOn?: string; location?: string;
 };
+/** A production whose article (draft or version) carries the citation. */
+export type CitationUse = { productionId: string; title: string; at: string };
 export type CitationView = Citation & {
   /** `startMs` is the material's continuous time; `place` tells the part of a material sent in parts. */
   speaker: string; podcast: string; sourceTitle: string; startMs?: number; place?: SegmentPlace;
   evidence: string; authorized: boolean; ready: boolean;
   participants: { id: string; name: string }[];
+  /** Newest use first; one entry per production. */
+  uses: CitationUse[];
+  factCheck?: FactCheck;
 };
 export type CitationLibraryView = {
   items: CitationView[];
@@ -86,7 +92,19 @@ export function citationsFromArticle(body: ArticleBody, sources: readonly Source
   }
   return [...found.values()];
 }
-export function citationView(citation: Citation, source: Source, people: readonly Person[]): CitationView {
+/** Groups article appearances by citation: one use per production, the latest date kept, newest first. */
+export function citationUses(appearances: readonly (CitationUse & { citationId: string })[]): Map<string, CitationUse[]> {
+  const grouped = new Map<string, Map<string, CitationUse>>();
+  for (const { citationId, ...use } of appearances) {
+    const uses = grouped.get(citationId) ?? new Map<string, CitationUse>();
+    const known = uses.get(use.productionId);
+    if (!known || known.at < use.at) uses.set(use.productionId, use);
+    grouped.set(citationId, uses);
+  }
+  return new Map([...grouped].map(([id, uses]) => [id, [...uses.values()].sort((a, b) => b.at.localeCompare(a.at))]));
+}
+export function citationView(citation: Citation, source: Source, people: readonly Person[],
+  extra: { uses?: CitationUse[]; factCheck?: FactCheck } = {}): CitationView {
   const version = sourceVersion(source, citation.ref.sourceVersion);
   const segmentId = citation.ref.locator.type === 'segment' ? citation.ref.locator.segmentId : undefined;
   const segment = version?.content.segments.find(segment => segment.id === segmentId);
@@ -99,6 +117,7 @@ export function citationView(citation: Citation, source: Source, people: readonl
     ready: Boolean(authorized && person && citation.relevance.trim()),
     ...(segment?.startMs === undefined ? {} : { startMs: segment.startMs }),
     ...(place ? { place } : {}),
+    uses: extra.uses ?? [], ...(extra.factCheck ? { factCheck: extra.factCheck } : {}),
     participants: [...new Set(source.speakers.flatMap(speaker => speaker.personId ? [speaker.personId] : []))]
       .flatMap(id => { const person = people.find(person => person.id === id); return person ? [{ id, name: person.name }] : []; }) };
 }
