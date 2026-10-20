@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RejectedFile } from '@content-ventures/design-system/v3';
 import type { SourceIntake } from '@/registries';
-import type { MaterialReadPhase, MaterialReadProgress } from '@/ports';
+import type { EditorialFormat } from '@/domain';
+import type { MaterialReadPhase, MaterialReadProgress, ReadFile, ReadRefusal } from '@/ports';
+import type { Result } from '@/domain';
 import { useCommands } from '@/state';
 import { isPermissionRefusal, notifyRefusal } from '@/ui/permission-dialog';
 import type { MaterialFile } from './form';
@@ -32,11 +34,15 @@ export function rejectionMessage(reason: RejectedFile['reason'], intake: SourceI
   return reason === 'size' ? `O arquivo passa de ${megabytes(intake.maxBytes)}.` : `Envie um arquivo ${listOf(intake.extensions)}.`;
 }
 
-export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFile) => void) {
+/** What a file received from the Drive folder brings besides the text. */
+export type ReceivedExtras = { format?: EditorialFormat; recordedOn?: string };
+
+export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFile, received?: ReceivedExtras) => void) {
   const commands = useCommands();
   const [state, setState] = useState<FileReadState | null>(null);
   const run = useRef(0);
   const lastFile = useRef<File | null>(null);
+  const lastReceived = useRef<string | null>(null);
   const controller = useRef<AbortController | undefined>(undefined);
 
   useEffect(
@@ -47,20 +53,11 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
     [],
   );
 
-  const read = useCallback(
-    (file: File) => {
-      run.current += 1;
-      const token = run.current;
-      lastFile.current = file;
-      controller.current?.abort();
-      controller.current = new AbortController();
-      const text = /\.(txt|md|srt|vtt)$/i.test(file.name);
-      setState({ status: 'reading', name: file.name, size: file.size, phase: text ? 'reading' : 'uploading',message: text ? 'Lendo arquivo' : 'Preparando envio' });
+  /** One read's answer, shown at least briefly: the file, a refusal with its retry, or a permission popup. */
+  const settle = useCallback(
+    (token: number, file: () => { name: string; size: number }, reading: Promise<Result<ReadFile & { editorialFormat?: EditorialFormat; recordedOn?: string }, ReadRefusal | 'unavailable'>>) => {
       const started = performance.now();
-      void commands.ingest.read(file,{ signal: controller.current.signal,onStatus(progress) {
-        if (token !== run.current) return;
-        setState({ status: 'reading',name: file.name,size: file.size,...progress });
-      } }).then(async (result) => {
+      void reading.then(async (result) => {
         const rest = MIN_READ_MS - (performance.now() - started);
         if (rest > 0) await new Promise((resolve) => window.setTimeout(resolve, rest));
         if (token !== run.current) return;
@@ -73,8 +70,8 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
         if (!result.ok) {
           setState((current) => ({
             status: 'error',
-            name: file.name,
-            size: file.size,
+            name: file().name,
+            size: file().size,
             message: result.refusal.message,
             retry: result.refusal.code === 'read_failed' ? 'reread' : 'pick',
             phase: current?.phase ?? 'reading',
@@ -82,14 +79,60 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
           return;
         }
         setState(null);
-        onLoaded({ name: result.value.fileName, size: result.value.bytes, text: result.value.text,...(result.value.transcriptId ? { transcriptId: result.value.transcriptId } : {}) });
+        const value = result.value;
+        onLoaded({ name: value.fileName, size: value.bytes, text: value.text,...(value.transcriptId ? { transcriptId: value.transcriptId } : {}) },
+          lastReceived.current ? { ...(value.editorialFormat ? { format: value.editorialFormat } : {}),...(value.recordedOn ? { recordedOn: value.recordedOn } : {}) } : undefined);
       }).catch(() => {
         // An unexpected failure (not a refusal) must not leave the row "reading" forever.
         if (token !== run.current) return;
-        setState((current) => ({ status: 'error', name: file.name, size: file.size, message: 'Não foi possível ler o arquivo. Tente de novo.', retry: 'reread',phase: current?.phase ?? 'reading' }));
+        setState((current) => ({ status: 'error', name: file().name, size: file().size, message: 'Não foi possível ler o arquivo. Tente de novo.', retry: 'reread',phase: current?.phase ?? 'reading' }));
       });
     },
-    [commands, onLoaded],
+    [onLoaded],
+  );
+
+  const read = useCallback(
+    (file: File) => {
+      run.current += 1;
+      const token = run.current;
+      lastFile.current = file;
+      controller.current?.abort();
+      controller.current = new AbortController();
+      const text = /\.(txt|md|srt|vtt)$/i.test(file.name);
+      setState({ status: 'reading', name: file.name, size: file.size, phase: text ? 'reading' : 'uploading',message: text ? 'Lendo arquivo' : 'Preparando envio' });
+      lastReceived.current = null;
+      settle(token, () => file, commands.ingest.read(file,{ signal: controller.current.signal,onStatus(progress) {
+        if (token !== run.current) return;
+        setState({ status: 'reading',name: file.name,size: file.size,...progress });
+      } }));
+    },
+    [commands, settle],
+  );
+
+  /** A file the Drive folder brought in: read like an upload that already reached the server. */
+  const load = useCallback(
+    (id: string) => {
+      run.current += 1;
+      const token = run.current;
+      lastFile.current = null;
+      lastReceived.current = id;
+      controller.current?.abort();
+      controller.current = new AbortController();
+      const found = { name: 'Arquivo do Drive', size: 0 };
+      const opening = { phase: 'preparing' as const, message: 'Abrindo arquivo do Drive' };
+      setState({ status: 'reading', ...found, ...opening });
+      settle(token, () => found, commands.ingest.readReceived(id, { signal: controller.current.signal,
+        onFound(file) {
+          if (token !== run.current) return;
+          Object.assign(found, file);
+          setState({ status: 'reading', ...found, ...opening });
+        },
+        onStatus(progress) {
+          if (token !== run.current) return;
+          setState({ status: 'reading', ...found, ...progress });
+        } }));
+    },
+    [commands, settle],
   );
 
   const reject = useCallback(
@@ -116,10 +159,11 @@ export function useFileReader(intake: SourceIntake, onLoaded: (file: MaterialFil
   }, []);
 
   const retry = useCallback(() => {
-    const file = lastFile.current;
+    const file = lastFile.current, received = lastReceived.current;
     if (state?.status === 'error' && state.retry === 'reread' && file) read(file);
+    else if (state?.status === 'error' && state.retry === 'reread' && received) load(received);
     else reset();
-  }, [read, reset, state]);
+  }, [load, read, reset, state]);
 
-  return { state, read, reject, reset, retry };
+  return { state, read, load, reject, reset, retry };
 }

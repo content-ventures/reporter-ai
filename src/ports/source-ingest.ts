@@ -1,3 +1,4 @@
+import type { EditorialFormat } from '../domain/formats.ts';
 import type { ProductionId, SourceId } from '../domain/ids.ts';
 import type { Result } from '../domain/result.ts';
 import type { ParsedSegment, TranscriptFormat, TranscriptWarning } from '../domain/text/transcript-parse.ts';
@@ -41,6 +42,22 @@ export type FileReadOptions = {
   onProgress?: (progress: number,message: string) => void;
   onStatus?: (progress: MaterialReadProgress) => void;
 };
+/** A file the Drive folder brought in: it waits on the board until a person opens it in Nova produção. */
+export type ReceivedMaterial = {
+  id: string;
+  fileName: string;
+  size: number;
+  status: 'transcribing' | 'ready' | 'failed';
+  receivedAt: string;
+  /** Named by the Drive subfolder ("Painel", "Estande"…). */
+  format?: EditorialFormat;
+  /** YYYY-MM-DD. */
+  recordedOn?: string;
+  errorCode?: string;
+};
+/** `editorialFormat`: the format the Drive subfolder named (`format` is the transcript's). */
+export type ReceivedFile = ReadFile & { editorialFormat?: EditorialFormat; recordedOn?: string };
+export type ReceivedReadOptions = FileReadOptions & { onFound?: (file: { name: string; size: number }) => void };
 export type ReadLink = ReadFile & { sourceUrl: string; provider: 'youtube' | 'spotify'; title?: string; programName?: string };
 export type LinkReadOptions = FileReadOptions;
 
@@ -107,4 +124,8 @@ export interface SourceIngest {
   read(file: IngestFile, options?: FileReadOptions): Promise<Result<ReadFile, ReadRefusal>>;
   readLink(url: string, options?: LinkReadOptions): Promise<Result<ReadLink, ReadRefusal>>;
   analyze(text: string, options?: AnalyzeOptions): Promise<Result<SourceAnalysis, AnalyzeRefusal>>;
+  /** Files the Drive folder brought in (only a connected backend has them). */
+  received?(): Promise<Result<ReceivedMaterial[], ReadRefusal>>;
+  /** One received file, read like an upload: it waits for the transcription when needed. */
+  readReceived?(id: string, options?: ReceivedReadOptions): Promise<Result<ReceivedFile, ReadRefusal>>;
 }
