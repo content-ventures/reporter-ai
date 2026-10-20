@@ -7,7 +7,7 @@ import {
   MetaList, PageHeader, PageStack, Panel, Section, Select, Tabs, Timeline, toast,
 } from '@content-ventures/design-system/v3';
 import { RotateCw, Save } from '@content-ventures/design-system/v3/icons';
-import { PIPELINE_STEP_KEYS, PIPELINE_STEP_LABELS, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, withArticleAssist, withFormatFunnels } from '@/domain/pipeline';
+import { PIPELINE_STEP_KEYS, PIPELINE_STEP_LABELS, compactFunnels, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, withArticleAssist, withFormatFunnels } from '@/domain/pipeline';
 import type { PipelineDefinition, PipelineStepKey, PipelineView } from '@/domain/pipeline';
 import { useCan, useRuntime, useSession } from '@/state';
 import { useBreadcrumb, useLeaveGuard } from '@/ui/shell';
@@ -64,7 +64,7 @@ function PipelineConfig() {
   const [historyRevision,setHistoryRevision] = useState('');
   const [exitTo,setExitTo] = useState<string>();
   const departing = useRef(false);
-  const dirty = Boolean(view && draft && pipelineRevision(draft).hash !== pipelineRevision(editable(view.active.definition)).hash);
+  const dirty = Boolean(view && draft && pipelineRevision(compactFunnels(draft)).hash !== pipelineRevision(compactFunnels(view.active.definition)).hash);
   const templateError = draft ? validatePipelineTemplates(draft) : undefined;
   const load = useCallback(async () => {
     if (!port) return;
@@ -107,7 +107,7 @@ function PipelineConfig() {
     if (!port || !view || !draft || saving) return;
     setSaving(true); setFailure(undefined);
     try {
-      const result = await port.save(draft,view.active.revision);
+      const result = await port.save(compactFunnels(draft),view.active.revision);
       if (!result.ok) { setFailure(result.refusal.message); return; }
       setView(result.value); setDraft(editable(result.value.active.definition));
       toast(`Configuração ativada · revisão ${result.value.active.revision}`);

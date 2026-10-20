@@ -6,7 +6,7 @@ import { ungroundedTerms } from '../src/domain/grounding.ts';
 import { outlineResponseSchema } from '../src/server/editorial-validation.ts';
 import { validPipelineOutput } from '../src/server/pipeline-output.ts';
 import { parsePipelineDefinition } from '../src/server/pipeline.ts';
-import { defaultPipelineDefinition } from '../src/domain/pipeline.ts';
+import { compactFunnels, defaultPipelineDefinition, withFormatFunnels } from '../src/domain/pipeline.ts';
 
 process.env.REPORTER_LOCAL_MODE = 'true';
 process.env.GROQ_API_KEY = 'test-placeholder-not-a-real-key';
@@ -76,10 +76,9 @@ test('the outline of an event format carries the linha fina; the article outline
 });
 
 test('a saved definition with edited funnels passes the server contract', () => {
-  const definition = defaultPipelineDefinition();
-  definition.funnels!.stand!.intro.prompt += '\nAbra sempre pela empresa.';
-  assert.deepEqual(parsePipelineDefinition(definition).definition?.funnels?.stand?.intro.prompt, definition.funnels!.stand!.intro.prompt);
-  const legacy = defaultPipelineDefinition();
-  delete legacy.funnels;
-  assert.ok(parsePipelineDefinition(legacy).definition);
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  definition.funnels.stand.intro.prompt += '\nAbra sempre pela empresa.';
+  assert.deepEqual(parsePipelineDefinition(definition).definition?.funnels?.stand?.intro?.prompt, definition.funnels.stand.intro.prompt);
+  assert.ok(parsePipelineDefinition(compactFunnels(definition)).definition);
+  assert.ok(parsePipelineDefinition(defaultPipelineDefinition()).definition);
 });
