@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.9.1",
+  "currentVersion": "0.10.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,28 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.10.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-20",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 3 validated changes: show the speaker's company in the transcript panel; pin design system v0.4.0; copy the approved article text to the clipboard.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Copy the approved article text to the clipboard"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Pin design system v0.4.0"
+        },
+        {
+          "type": "Added",
+          "description": "Show the speaker's company in the transcript panel"
+        }
+      ]
+    },
     {
       "version": "0.9.1",
       "roadmapRelease": "R0",

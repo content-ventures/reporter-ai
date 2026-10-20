@@ -4,6 +4,17 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-20
+
+### Added
+
+- Copy the approved article text to the clipboard.
+- Show the speaker's company in the transcript panel.
+
+### Maintenance
+
+- Pin design system v0.4.0.
+
 ## [0.9.1] - 2026-10-19
 
 ### Fixed
