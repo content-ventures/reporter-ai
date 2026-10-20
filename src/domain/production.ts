@@ -6,6 +6,8 @@ import type { Result } from './result.ts';
 import { ARTICLE_SIZES, DEFAULT_ARTICLE_SIZE, isArticleSize } from './sizing.ts';
 import type { ArticleSize } from './sizing.ts';
 import { contentHash } from './text/hash.ts';
+import { FORMAT_SPECS, formatSizeOf, isEditorialFormat, normalizeEvent } from './formats.ts';
+import type { EditorialFormat, EventContext } from './formats.ts';
 
 /** Sections after the introduction of a new production (the default size's default). */
 export const DEFAULT_SECTIONS = ARTICLE_SIZES[DEFAULT_ARTICLE_SIZE].sections.default;
@@ -16,8 +18,14 @@ export type Brief = {
   angle?: string;
   /** Sections after the introduction, inside the size's range (Curto 1–3, Padrão 2–5). */
   sections: number;
-  /** "Tamanho do artigo": Curto (1 lauda) or Padrão (2 laudas). */
+  /** "Tamanho do artigo": Curto (1 lauda) or Padrão (2 laudas). Kept as Padrão under a format. */
   size: ArticleSize;
+  /** Event-coverage format (formats.ts); absent = the article of R1, unchanged. */
+  format?: EditorialFormat;
+  /** The format's size option id ("compact", "full"…); absent = the format's default. */
+  formatSize?: string;
+  /** The event a coverage belongs to, typed by a person: the closing box and known facts. */
+  event?: EventContext;
   /** Bumps on every change, so runs can record the exact brief they used. */
   revision: number;
 };
@@ -67,24 +75,42 @@ export function canOpenProduction(
 }
 
 export function briefHash(brief: Brief): string {
-  return contentHash({ angle: brief.angle?.trim() || undefined, sections: brief.sections, size: brief.size });
+  // Format fields join the hash only when present, so every brief written before them keeps its hash.
+  return contentHash({ angle: brief.angle?.trim() || undefined, sections: brief.sections, size: brief.size,
+    ...(brief.format ? { format: brief.format, formatSize: formatSizeOf(brief.format, brief.formatSize).id } : {}),
+    ...(brief.event ? { event: brief.event } : {}) });
 }
 
 export function toBriefRef(production: Production): BriefRef {
   return { kind: 'brief', productionId: production.id, revision: production.brief.revision, hash: briefHash(production.brief) };
 }
 
-export type BriefRefusal = 'sections_out_of_range' | 'unknown_size';
+export type BriefRefusal = 'sections_out_of_range' | 'unknown_size' | 'unknown_format';
 
-/** The size first (it sets the section range), then the sections: "Curto aceita de 1 a 3 seções." */
+/**
+ * The size first (it sets the section range), then the sections: "Curto aceita de 1 a 3 seções."
+ * A format brings its own size options and section range; its brief keeps `size` as Padrão.
+ * Only known fields survive, so a brief never carries data the hash and the prompts ignore.
+ */
 export function validateBrief(brief: Brief): Result<Brief, BriefRefusal> {
   if (!isArticleSize(brief.size)) return refuse('unknown_size', 'Tamanho desconhecido.');
-  const { label, sections } = ARTICLE_SIZES[brief.size];
+  if (brief.format !== undefined && !isEditorialFormat(brief.format)) return refuse('unknown_format', 'Formato desconhecido.');
+  const { label, sections } = brief.format
+    ? { label: FORMAT_SPECS[brief.format].label, sections: formatSizeOf(brief.format, brief.formatSize).sections }
+    : ARTICLE_SIZES[brief.size];
   if (!Number.isInteger(brief.sections) || brief.sections < sections.min || brief.sections > sections.max) {
     return refuse('sections_out_of_range', `${label} aceita de ${sections.min} a ${sections.max} seções.`);
   }
   const angle = brief.angle?.trim();
-  return ok(angle ? { ...brief, angle } : { sections: brief.sections, size: brief.size, revision: brief.revision });
+  const event = brief.format ? normalizeEvent(brief.event) : undefined;
+  return ok({
+    ...(angle ? { angle } : {}),
+    sections: brief.sections,
+    size: brief.size,
+    ...(brief.format ? { format: brief.format, formatSize: formatSizeOf(brief.format, brief.formatSize).id } : {}),
+    ...(event ? { event } : {}),
+    revision: brief.revision,
+  });
 }
 
 export type PlanRefusal = 'article_required';
