@@ -25,7 +25,8 @@ export type Commands = {
   production: ProductionCommands;
   generation: Pick<GenerationService, 'start' | 'cancel' | 'resume' | 'retry'>;
   export: Pick<ExportService, 'plan' | 'build' | 'buildFile'>;
-  ingest: Pick<SourceIngest, 'read' | 'readLink' | 'analyze'>;
+  /** `received` and `readReceived` exist only with a connected backend; elsewhere they refuse. */
+  ingest: Required<Pick<SourceIngest, 'read' | 'readLink' | 'analyze' | 'received' | 'readReceived'>>;
   /** "Retorno do piloto" (`record`) and 👍/👎 on AI output (`vote`, one per person and target). */
   feedback: Pick<FeedbackPort, 'record' | 'vote'>;
   /** Slides as PNG (`render`) and the template library's images: card covers (`thumbnail`) and every layout (`preview`). */
@@ -78,7 +79,7 @@ const PRODUCTION_METHODS: Methods<ProductionCommands> = {
 
 const GENERATION_METHODS: Methods<Commands['generation']> = { start: true, cancel: true, resume: true, retry: true };
 const EXPORT_METHODS: Methods<Commands['export']> = { plan: true, build: true, buildFile: true };
-const INGEST_METHODS: Methods<Commands['ingest']> = { read: true, readLink: true, analyze: true };
+const INGEST_METHODS: Methods<Commands['ingest']> = { read: true, readLink: true, analyze: true, received: true, readReceived: true };
 
 type AnyMethod = (...args: unknown[]) => unknown;
 
@@ -109,7 +110,9 @@ function deferred<T extends object>(
       if ((writes === 'all' || writes.has(name)) && readOnly(runtime)) return READ_ONLY_REFUSAL;
       const capability = needs[name as keyof T];
       if (capability && !can(await runtime.session.current(), capability)) return forbidden(capability);
-      const target = pick(runtime) as unknown as Record<string, AnyMethod>;
+      const target = pick(runtime) as unknown as Record<string, AnyMethod | undefined>;
+      // An optional port method the runtime does not have (the Drive files without a backend).
+      if (typeof target[name] !== 'function') return refuse('unavailable', 'Disponível apenas com o servidor conectado.');
       return target[name](...args);
     };
   }
@@ -122,8 +125,8 @@ export function createCommands(whenReady: () => Promise<Runtime>): Commands {
     generation: deferred<Commands['generation']>(whenReady, (runtime) => runtime.generation, GENERATION_METHODS, new Set(['start', 'retry', 'resume']),
       { start: 'piece.edit', retry: 'piece.edit', resume: 'piece.edit', cancel: 'piece.edit' }),
     export: deferred<Commands['export']>(whenReady, (runtime) => runtime.export, EXPORT_METHODS),
-    ingest: deferred<Commands['ingest']>(whenReady, (runtime) => runtime.ingest, INGEST_METHODS, new Set(),
-      { read: 'production.create', readLink: 'production.create', analyze: 'production.create' }),
+    ingest: deferred<Commands['ingest']>(whenReady, (runtime) => runtime.ingest as Commands['ingest'], INGEST_METHODS, new Set(),
+      { read: 'production.create', readLink: 'production.create', analyze: 'production.create', received: 'production.create', readReceived: 'production.create' }),
     feedback: deferred<Commands['feedback']>(whenReady, (runtime) => runtime.feedback, { record: true, vote: true }, 'all'),
     render: deferred<Commands['render']>(whenReady, (runtime) => runtime.render, { render: true, thumbnail: true, preview: true }),
     assets: {

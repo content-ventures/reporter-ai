@@ -12,6 +12,11 @@ export const OVERVIEW_HREF = '/';
 export const ACCOUNT_HREF = '/account';
 export const PRODUCTIONS_HREF = '/productions';
 export const NEW_PRODUCTION_HREF = '/productions/new';
+
+/** Nova produção opened on a file the Drive folder brought in (its card on the board). */
+export function receivedMaterialHref(id: string): string {
+  return `${NEW_PRODUCTION_HREF}?material=${encodeURIComponent(id)}`;
+}
 export const WHATS_NEW_HREF = '/whats-new';
 export const APPROVALS_HREF = '/approvals';
 

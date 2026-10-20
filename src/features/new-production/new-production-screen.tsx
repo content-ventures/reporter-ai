@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AccessState,
@@ -54,6 +54,7 @@ import {
   materialBlocker,
   toCreateInput,
   validateMaterial,
+  withFormat,
   withoutPersonLabel,
   type DraftField,
   type MaterialFile,
@@ -76,7 +77,7 @@ import {
   SAMPLE_TRANSCRIPT,
 } from './sample-material';
 import { SpeakersSection } from './speakers-section';
-import { useFileReader } from './use-file-reader';
+import { useFileReader, type ReceivedExtras } from './use-file-reader';
 import { useLinkReader, type ImportedLink } from './use-link-reader';
 import { useMaterialAnalysis } from './use-material-analysis';
 import { notifyRefusal } from '@/ui/permission-dialog';
@@ -109,7 +110,7 @@ function daysAgoIso(days: number): string {
  * A role that does not create productions never reaches the upload: a deep link answers
  * AccessState (nothing while the session is unknown, so the form never flashes).
  */
-export function NewProductionScreen() {
+export function NewProductionScreen({ received }: { received?: string } = {}) {
   const session = useSession();
   const creates = useCan('production.create');
   if (!session.data) return null;
@@ -124,10 +125,11 @@ export function NewProductionScreen() {
       />
     );
   }
-  return <NewProductionForm />;
+  return <NewProductionForm received={received} />;
 }
 
-function NewProductionForm() {
+/** `received`: a file the Drive folder brought in, opened as if it had just been uploaded here. */
+function NewProductionForm({ received }: { received?: string }) {
   const router = useRouter();
   const commands = useCommands();
   const intake: SourceIntake = { ...INTAKE,extensions: [...INTAKE.extensions,'.mp3','.m4a','.mp4','.wav','.ogg','.flac','.webm'],maxBytes: MAX_UPLOAD_BYTES };
@@ -137,7 +139,8 @@ function NewProductionForm() {
   const now = useNow();
   const today = now ? isoDay(now) : undefined;
 
-  const [draft, setDraft] = useState<NewProductionDraft>(EMPTY_DRAFT);
+  // A Drive file opens on "Arquivo", its progress on screen, as an upload just started would.
+  const [draft, setDraft] = useState<NewProductionDraft>(() => (received ? { ...EMPTY_DRAFT, mode: 'file' } : EMPTY_DRAFT));
   // A coverage reuses the event typed for the previous one on this device: the reporter types it once.
   const update = useCallback((patch: Partial<NewProductionDraft>) => setDraft((current) => {
     const next = { ...current, ...patch };
@@ -152,16 +155,30 @@ function NewProductionForm() {
   const analysis = analysisState.analysis;
   const readyAnalysis = analysisState.status === 'ready' ? analysis : undefined;
 
-  const onFileLoaded = useCallback((file: MaterialFile) => setDraft((current) => ({ ...current, file, speakers: {} })), []);
+  const onFileLoaded = useCallback((file: MaterialFile, extras?: ReceivedExtras) => setDraft((current) => {
+    const next: NewProductionDraft = { ...current, file, speakers: {} };
+    if (!extras) return next;
+    // The Drive subfolder names the format and the file's day dates the interview; both stay editable.
+    if (extras.recordedOn && !current.recordedOn) next.recordedOn = extras.recordedOn;
+    if (!extras.format || current.format) return next;
+    const formatted = { ...next, ...withFormat(extras.format) };
+    return formatted.event.name.trim() ? formatted : { ...formatted, event: lastEvent() ?? formatted.event };
+  }), []);
   const fileReader = useFileReader(intake, onFileLoaded);
   const onLinkLoaded = useCallback((value: ImportedLink) => setDraft((current) => ({
     ...current,linkFile: value.file,sourceUrl: value.sourceUrl,programName: current.programName?.trim() ? current.programName : value.programName,speakers: {},
   })),[]);
   const linkReader = useLinkReader(onLinkLoaded);
-  const [progressVisible,setProgressVisible] = useState(false);
+  const [progressVisible,setProgressVisible] = useState(Boolean(received));
   const showProgress = useCallback(() => setProgressVisible(true),[]);
   const closeProgress = useCallback(() => setProgressVisible(false),[]);
   const progress = materialProgress(draft,analysisState,fileReader.state,linkReader.state);
+  // Opened from a Drive card: the file arrives as an upload would. A remount (Strict Mode)
+  // cancels the reader's read, so every mount starts it again.
+  const loadReceived = useEffectEvent((id: string) => fileReader.load(id));
+  useEffect(() => {
+    if (received) loadReceived(received);
+  }, [received]);
 
   // ── Field ids for ErrorSummary (read in handlers only) ──
   const dropzoneId = useId();

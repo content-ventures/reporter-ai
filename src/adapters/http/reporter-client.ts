@@ -4,7 +4,8 @@ import { ok, refuse } from '../../domain/result.ts';
 import type { RunEvent } from '../../domain/run-events.ts';
 import type { ConnectedWorkspace, WorkspaceRefresh } from '../../ports/connected-workspace.ts';
 import type { GenerationService, RunListener, RunSnapshot } from '../../ports/generation.ts';
-import type { SourceIngest, MaterialInsights } from '../../ports/source-ingest.ts';
+import type { SourceIngest, MaterialInsights, ReceivedMaterial } from '../../ports/source-ingest.ts';
+import type { EditorialFormat } from '../../domain/formats.ts';
 import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES } from '../../domain/reporter.ts';
 import type { Transcript } from '../../domain/reporter.ts';
 import { detectTranscriptFormat } from '../../domain/text/transcript-parse.ts';
@@ -133,6 +134,13 @@ function uploadToken() {
 }
 
 type CloudUpload = { id: string;source_id: string;upload_endpoint: string };
+
+type ReceivedRow = { id: string; fileName: string; size: number | string; status: string; receivedAt: string; format?: string | null; recordedOn?: string | null; errorCode?: string | null };
+function receivedMaterial(row: ReceivedRow): ReceivedMaterial {
+  const status = row.status==='ready' ? 'ready' : row.status==='failed' ? 'failed' : 'transcribing';
+  return { id: row.id,fileName: row.fileName,size: Number(row.size) || 0,status,receivedAt: row.receivedAt,
+    ...(row.format ? { format: row.format as EditorialFormat } : {}),...(row.recordedOn ? { recordedOn: row.recordedOn } : {}),...(row.errorCode ? { errorCode: row.errorCode } : {}) };
+}
 async function functionRequest(endpoint: string,path: string,sourceId: string,token: string,signal?: AbortSignal) {
   const response = await fetch(new URL(path,endpoint.endsWith('/') ? endpoint : endpoint+'/'),{
     method: 'POST',headers: { 'content-type': 'application/json' },body: JSON.stringify({ sourceId,token }),signal,
@@ -229,6 +237,40 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           await new Promise<void>((resolve,reject) => { const timer = setTimeout(() => { options.signal?.removeEventListener('abort',abort);resolve(); },1000);const abort = () => { clearTimeout(timer);reject(new Error('Importação cancelada.')); };options.signal?.addEventListener('abort',abort,{ once: true }); });
         }
       } catch (error) { return refuse('read_failed',error instanceof Error ? error.message : 'Não foi possível importar este link.'); }
+    },
+    received: async () => {
+      try { return ok((await reporterRequest<{ items: ReceivedRow[] }>('/drive/received')).items.map(receivedMaterial)); }
+      catch (error) { return refuse(isForbidden(error) ? 'forbidden' : 'read_failed',error instanceof Error ? error.message : 'Não foi possível ler os arquivos do Drive.'); }
+    },
+    // A received file reads as an upload that already reached the server: it waits for the transcript.
+    async readReceived(id,options = {}) {
+      try {
+        const found = receivedMaterial(await reporterRequest<ReceivedRow>('/drive/received/'+encodeURIComponent(id),undefined,options.signal));
+        options.onFound?.({ name: found.fileName,size: found.size });
+        const extras = { ...(found.format ? { editorialFormat: found.format } : {}),...(found.recordedOn ? { recordedOn: found.recordedOn } : {}) };
+        for (;;) {
+          options.signal?.throwIfAborted();
+          const state = await reporterRequest<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+encodeURIComponent(id),undefined,options.signal);
+          const transcript = state.transcript;
+          if (transcript.status==='ready') {
+            const text = transcriptFileText(transcript);
+            options.onProgress?.(100,'Transcrição concluída');
+            options.onStatus?.({ phase: 'ready',message: 'Transcrição concluída' });
+            return ok({ text,fileName: found.fileName,format: detectTranscriptFormat(text,'transcript.srt'),bytes: found.size,transcriptId: transcript.id,...extras });
+          }
+          if (transcript.status==='failed') return refuse('read_failed','Não foi possível transcrever. Código: '+(transcript.error_code ?? 'TRANSCRIPTION_FAILED'));
+          const progress = transcript.job?.progress;
+          options.onStatus?.({ phase: progress?.phase==='transcribing' ? 'transcribing' : 'preparing',
+            message: progress?.phase==='transcribing' ? 'Transcrevendo áudio' : 'Preparando áudio para transcrição',
+            ...(progress?.phase==='transcribing' ? { done: progress.done,total: progress.total } : {}) });
+          options.onProgress?.(progress?.total ? 90+Math.round(progress.done/progress.total*9) : 89,
+            progress?.phase==='transcribing' ? `Transcrevendo trechos ${Math.min((progress.done ?? 0)+1,progress.total)} de ${progress.total}` : 'Preparando áudio para transcrição');
+          await new Promise<void>((resolve,reject) => { const timer = setTimeout(() => { options.signal?.removeEventListener('abort',abort); resolve(); },2000); const abort = () => { clearTimeout(timer); reject(new Error('Leitura cancelada.')); }; options.signal?.addEventListener('abort',abort,{ once: true }); });
+        }
+      } catch (error) {
+        if (isForbidden(error)) return refuse('forbidden',error.message);
+        return refuse('read_failed',error instanceof Error ? error.message : 'Não foi possível abrir o arquivo do Drive.');
+      }
     },
     analyze: async (text,options) => {
       const result = await local.analyze(text,options);

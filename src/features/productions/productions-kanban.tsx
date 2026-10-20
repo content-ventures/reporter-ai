@@ -26,8 +26,8 @@ import {
   VisuallyHidden,
 } from '@content-ventures/design-system/v3';
 import { Archive, ArrowUpRight, BadgeCheck, ChevronDown, FileText, GalleryHorizontal, Inbox, MoreHorizontal, Package, Telescope } from '@content-ventures/design-system/v3/icons';
-import type { ProductionListItem, ProductionListPage } from '@/ports';
-import { firstName, NEXT_STEP_LABELS } from '@/domain';
+import type { ProductionListItem, ProductionListPage, ReceivedMaterial } from '@/ports';
+import { firstName, FORMAT_SPECS, NEXT_STEP_LABELS } from '@/domain';
 import type { StageView } from '@/domain/stage';
 import type { KanbanMove } from '@content-ventures/design-system/v3';
 import { useCan, useCommands, useProductions, useSession, type QueryState } from '@/state';
@@ -40,6 +40,8 @@ import { SORT_LABELS } from './list-model';
 import { activeFilterCount, hasSearch, listFilter, LIST_SORTS, type ListSort } from './list-params';
 import { ProductionActiveFilters, ProductionFilterBand } from './production-filters';
 import { useBoardArrival } from './use-board-arrival';
+import { useReceivedMaterials } from './use-received-materials';
+import { receivedMaterialHref } from '@/ui/routes';
 import { useListParams } from './use-list-params';
 import { notifyRefusal } from '@/ui/permission-dialog';
 import { isReleased } from '@/registries';
@@ -48,6 +50,11 @@ import { DemoBadge } from '@/features/hard-news/demo-badge';
 
 const PAGE_SIZE = 50;
 const ARCHIVE_REASON = 'Disponível quando a IA terminar.';
+const RECEIVED_STATUS: Record<ReceivedMaterial['status'], { label: string; tone: 'blue' | 'teal' | 'red'; live?: boolean }> = {
+  transcribing: { label: 'Transcrevendo', tone: 'blue', live: true },
+  ready: { label: 'Pronto', tone: 'teal' },
+  failed: { label: 'Erro na transcrição', tone: 'red' },
+};
 type SearchState = { draft: string; url: string; pending?: string };
 const LANES = [
   { id: 'source', title: 'Material', icon: Inbox, count: 'Produção', plural: 'Produções' },
@@ -103,6 +110,9 @@ function ProductionsKanban() {
   const filterCount = activeFilterCount(params);
   const searching = hasSearch(params);
   const showChips = !filtersOpen && filterCount > 0;
+  // Files from the Drive folder wait in "Material" until someone opens them in Nova produção.
+  const createsProductions = useCan('production.create');
+  const received = useReceivedMaterials(createsProductions && !searching && filterCount === 0);
 
   useEffect(() => {
     if (params.tab !== 'all') setParams({ tab: 'all' }, { history: 'replace' });
@@ -273,7 +283,8 @@ function ProductionsKanban() {
             <KanbanBoard label="Etapas de produção e aprovações" fill>
               {BOARD_LANES.map((lane) => {
                 const laneRows = boardGroups[lane.id];
-                const count = lane.id === 'archived' ? archivedPage?.counts.archived ?? 0 : laneRows.length;
+                const laneReceived = lane.id === 'source' ? received : [];
+                const count = lane.id === 'archived' ? archivedPage?.counts.archived ?? 0 : laneRows.length + laneReceived.length;
                 const laneLoading = !page || (lane.id === 'archived' && !archivedPage);
                 const laneHasMore = lane.id === 'archived'
                   ? count > laneRows.length
@@ -296,6 +307,7 @@ function ProductionsKanban() {
                     }
                     footer={laneHasMore ? <Button variant="ghost" size="sm" onClick={() => setPageSize((size) => size + PAGE_SIZE)}>Carregar mais</Button> : undefined}
                   >
+                    {laneReceived.map((material) => <ReceivedCard key={`drive-${material.id}`} material={material} onOpen={() => router.push(receivedMaterialHref(material.id))} />)}
                     {drag.layout(lane.id, laneRows.map((item) => item.id)).map((entry) => {
                       if (entry.kind === 'slot') return <KanbanPlaceholder key={entry.key} height={entry.height} motion={entry.motion} slotKey={entry.key} />;
                       const item = itemById.get(entry.id);
@@ -454,5 +466,24 @@ function SortMenu({ sort, onChange }: { sort: ListSort; onChange: (sort: ListSor
       sections={[{ items: LIST_SORTS.map((value) => ({ label: SORT_LABELS[value], checked: value === sort, onSelect: () => onChange(value) })) }]}
       trigger={(props) => <Button {...props} variant="ghost" size="sm" trailingIcon={ChevronDown}>{SORT_LABELS[sort]}</Button>}
     />
+  );
+}
+
+/** A Drive file on the Material lane: the same card, opened in Nova produção like an upload. */
+function ReceivedCard({ material, onOpen }: { material: ReceivedMaterial; onOpen: () => void }) {
+  const status = RECEIVED_STATUS[material.status];
+  const title = material.fileName.replace(/\.[a-zA-Z0-9]+$/, '').replace(/[_\s]+/g, ' ').trim() || material.fileName;
+  const meta = material.format ? FORMAT_SPECS[material.format].label : 'Drive';
+  return (
+    <KanbanCard title={title} summary={meta} onOpen={onOpen}>
+      <KanbanCardRow start>
+        <Badge tone="gray" variant="soft" size="sm">Drive</Badge>
+        <Badge tone={status.tone} variant="soft" size="sm" live={status.live}>{status.label}</Badge>
+      </KanbanCardRow>
+      <KanbanCardRow>
+        <KanbanCardMeta title={material.fileName}>{meta}</KanbanCardMeta>
+        <RelativeTime at={material.receivedAt} />
+      </KanbanCardRow>
+    </KanbanCard>
   );
 }
