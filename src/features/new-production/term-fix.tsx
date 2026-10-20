@@ -20,7 +20,7 @@ export function TermFix({ text, onReplace }: {
   const [to, setTo] = useState('');
   const [query, setQuery] = useState('');
   const [done, setDone] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null);
-  const count = from.trim() ? termOccurrences(text, from) : 0;
+  const count = from.trim() ? termOccurrences(text, from, to) : 0;
   const ready = count > 0 && Boolean(to.trim());
   // Read from the text on screen, so a replacement shows at once, before the material is analyzed again.
   const viewer = useMemo<TranscriptSegment[]>(() => parseTranscript(text).segments.map((segment) => ({

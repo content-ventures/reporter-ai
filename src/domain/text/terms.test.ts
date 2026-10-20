@@ -79,3 +79,14 @@ test('a name fix that only regroups unlabeled cues by size is accepted', () => {
   assert.equal(fixed.refused, undefined);
   assert.equal(fixed.count, 1);
 });
+
+test('fixing a name to a longer one leaves the right name where it already is', () => {
+  const lines = 'Rafael Dias: Bom dia.\nAna Souza: Obrigada, Rafael.\nRafael Dias: Vamos lá.';
+  const fixed = correctTerm(lines, 'Rafael', 'Rafael Dias');
+  assert.equal(fixed.refused, undefined);
+  assert.equal(fixed.count, 1);
+  assert.equal(!fixed.refused ? fixed.text : '', 'Rafael Dias: Bom dia.\nAna Souza: Obrigada, Rafael Dias.\nRafael Dias: Vamos lá.');
+  assert.equal(termOccurrences(lines, 'Rafael', 'Rafael Dias'), 1);
+  assert.equal(replaceTerm('Bem-vindos à Brasil Seafood Show. A Seafood Show deste ano cresceu.', 'Seafood Show', 'Brasil Seafood Show').text,
+    'Bem-vindos à Brasil Seafood Show. A Brasil Seafood Show deste ano cresceu.');
+});
