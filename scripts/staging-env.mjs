@@ -7,7 +7,7 @@ import { assertStagingTarget } from './lib/staging-target.mjs';
 
 const PORTAL = '10000000-0000-0000-0000-000000000101';
 const SECRETS = ['REPORTER_WORKER_PASSWORD', 'REPORTER_RUNTIME_PASSWORD', 'REPORTER_APP_ORIGINS', 'GROQ_API_KEY', 'OPENAI_API_KEY',
-  'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY'];
+  'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY', 'TAVILY_API_KEY'];
 
 /**
  * Writes a mode-0600 env file that runs the server code against staging: owner, runtime and

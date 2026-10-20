@@ -8,7 +8,7 @@ import test from 'node:test';
 
 const staging = { REPORTER_ACCEPTANCE_TARGET: 'staging', NEON_API_KEY: 'key', NEON_PROJECT_ID: 'stage', NEON_BRANCH_ID: 'br-stage',
   REPORTER_WORKER_PASSWORD: 'worker', REPORTER_RUNTIME_PASSWORD: 'runtime', REPORTER_APP_ORIGINS: 'https://staging.example.test',
-  GROQ_API_KEY: 'groq', OPENAI_API_KEY: 'openai', ANTHROPIC_API_KEY: 'anthropic', PIXABAY_API_KEY: 'pixabay' };
+  GROQ_API_KEY: 'groq', OPENAI_API_KEY: 'openai', ANTHROPIC_API_KEY: 'anthropic', PIXABAY_API_KEY: 'pixabay', TAVILY_API_KEY: 'tavily' };
 const owner = 'postgresql://neondb_owner:owner-secret@ep-stage.example.test/neondb';
 const request = async () => Response.json({ branch: { id: 'br-stage', protected: false } });
 
