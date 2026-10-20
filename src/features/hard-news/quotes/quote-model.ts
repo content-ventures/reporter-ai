@@ -36,7 +36,7 @@ export function quoteOf(citation: CitationView): BankQuote {
     context: citation.relevance,
     recordedOn: citation.recordedOn ?? citation.createdAt.slice(0, 10),
     verified: citation.authorConfirmed,
-    uses: 0,
+    uses: citation.uses.length,
   };
 }
 

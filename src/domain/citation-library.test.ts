@@ -5,7 +5,7 @@ import type { Source } from './source.ts';
 import { joinTranscriptParts, parseTranscript } from './text/transcript-parse.ts';
 import { articlePlainText, articleStats } from './article.ts';
 import type { ArticleBody } from './article.ts';
-import { citationDay, citationView, citationsFromArticle, emphasizeArticleQuotes, locateCitation, podcastLink } from './citation-library.ts';
+import { citationDay, citationUses, citationView, citationsFromArticle, emphasizeArticleQuotes, locateCitation, podcastLink } from './citation-library.ts';
 const phrase = 'O controle de temperatura precisa acompanhar o pescado durante todo o transporte.';
 const ctx = { now: '2026-10-13T12:00:00Z',actorId: 'editor',newId: () => 'source' };
 function source(labeled = true) {
@@ -72,4 +72,14 @@ test('citationView tells which part a quote is heard in', () => {
   const singleView = view(createTranscriptSource({ workspaceId: 'workspace',title: 'Episódio',origin: 'podcast',authorized: true,parsed: parseTranscript(cue),speakerPeople: { 'Ana Costa': 'ana' } },ctx));
   assert.equal('place' in singleView,false);
   assert.equal(singleView.startMs,3_000);
+});
+test('uses count one per production, keep the latest date and list the newest first', () => {
+  const uses = citationUses([
+    { citationId: 'a',productionId: 'p1',title: 'Primeira',at: '2026-10-01T10:00:00Z' },
+    { citationId: 'a',productionId: 'p1',title: 'Primeira',at: '2026-10-03T10:00:00Z' },
+    { citationId: 'a',productionId: 'p2',title: 'Segunda',at: '2026-10-02T10:00:00Z' },
+    { citationId: 'b',productionId: 'p2',title: 'Segunda',at: '2026-10-02T10:00:00Z' },
+  ]);
+  assert.deepEqual(uses.get('a'),[{ productionId: 'p1',title: 'Primeira',at: '2026-10-03T10:00:00Z' },{ productionId: 'p2',title: 'Segunda',at: '2026-10-02T10:00:00Z' }]);
+  assert.equal(uses.get('b')?.length,1);
 });
