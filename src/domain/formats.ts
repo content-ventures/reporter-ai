@@ -187,9 +187,13 @@ export function formatLabel(brief: FormatBrief): string | undefined {
 /** Minutes of speech from which a stand interview fills "Completo" (the reporters record 3 to 5 min). */
 export const STAND_FULL_MINUTES = 3;
 
-/** Minutes of speech in a material: its recorded duration, or its words at 150 per minute. */
+/**
+ * Minutes of speech in a material: its words at 150 per minute, capped by the recorded duration. The
+ * duration is the last timestamp, so an excerpt cut from a longer recording would overstate it alone.
+ */
 export function materialMinutes(stats: { durationMs?: number; words: number }): number {
-  return stats.durationMs !== undefined ? stats.durationMs / 60000 : stats.words / 150;
+  const spoken = stats.words / 150;
+  return stats.durationMs !== undefined ? Math.min(spoken, stats.durationMs / 60000) : spoken;
 }
 
 /** "Completo" when a stand interview of 3 min or more is set to a smaller size; otherwise nothing. */
@@ -236,8 +240,12 @@ export function outletPunctuation(text: string): string {
   return text.replace(/\.”,/g, '”,').replace(/([.!?])”\./g, '$1”').replace(/:\s*\.(?=\s|$)/g, ':');
 }
 
-/** Spoken openers a quotation drops at its start without changing what was said ("Então, a gente…"). */
-const QUOTE_OPENERS = /^(?:(?:então|e aí|aí|bom|olha|ou seja|né|enfim|e)(?:,\s*|\s+))+/iu;
+/**
+ * Spoken openers a quotation drops at its start without changing what was said: "Então" and, only
+ * when a comma marks them as fillers, "Bom," "Olha," "Ou seja," "Né," "Enfim," "Aí,". "Bom produto…",
+ * "Olha só o tamanho…" or "Aí está…" carry meaning and stay.
+ */
+const QUOTE_OPENERS = /^(?:então(?:,\s*|\s+)|(?:bom|olha|ou seja|né|enfim|e aí|aí),\s*)+/iu;
 
 /**
  * A quotation of an event text opens on its first real word: a leading "Então," or "Bom," goes when

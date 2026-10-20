@@ -82,7 +82,12 @@ test('a literal quotation may only capitalize its first letter', () => {
   const quoted = (text: string) => [{ text, evidenceIds: ['e1'] }];
   assert.equal(articleQuotationIssue(quoted('“A gente reconhece que é um evento que tem uma conotação nacional”, afirmou.'), evidence), undefined);
   assert.equal(articleQuotationIssue(quoted('“A Gente reconhece que é um evento”, afirmou.'), evidence), 'UNSUPPORTED_ARTICLE_QUOTE');
-  assert.equal(quoteInSource('a gente reconhece o evento', 'A gente reconhece'), 'a gente reconhece');
+  assert.equal(quoteInSource('a gente reconhece o evento', 'A gente reconhece', true), 'a gente reconhece');
+  // Inside a sentence the capital is not the source's.
+  assert.equal(articleQuotationIssue(quoted('Ele disse que “A gente reconhece que é um evento que tem uma conotação nacional”.'), evidence), 'UNSUPPORTED_ARTICLE_QUOTE');
+  // One quotation written twice with another first capital counts once.
+  assert.equal(articleQuotationIssue([...quoted('“A gente reconhece que é um evento que tem uma conotação nacional”, afirmou.'),
+    ...quoted('Ele disse que “a gente reconhece que é um evento que tem uma conotação nacional”.')], evidence, 2), 'ARTICLE_QUOTES_REQUIRED');
   assert.equal(quoteInSource('o agente reconhece', 'Gente reconhece'), undefined, 'a cut word never becomes a quotation');
   assert.equal(unquoteUnsupported(quoted('“A gente reconhece que é um evento”, afirmou.'), evidence)[0].text, '“A gente reconhece que é um evento”, afirmou.');
 });

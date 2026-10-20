@@ -2,7 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import type { PipelineStepKey } from '../domain/pipeline.ts';
 import { PIPELINE_SENTENCE_PATTERN } from '../domain/pipeline.ts';
-import { articleLengthIssue, articleQuotationIssue, literalQuoteText, quoteInSource, quotedIn, quotedWords } from '../domain/article-policy.ts';
+import { articleLengthIssue, articleQuotationIssue, literalQuoteText, quoteInSource, quoteOpensSentence, quotedIn, quotedWords } from '../domain/article-policy.ts';
 import type { ArticleLengthLimits } from '../domain/article-policy.ts';
 import { countCharacters, textStats } from '../domain/text/stats.ts';
 
@@ -85,12 +85,13 @@ export function restoreLiteralQuoteCase(key:PipelineStepKey,value:unknown,eviden
   if(!['intro','section','article'].includes(key)||!outputs[key as 'intro'|'section'|'article'].safeParse(value).success)return value;
   const copy=structuredClone(value) as {paragraphs?:{text:string;evidenceIds:string[]}[];intro?:{text:string;evidenceIds:string[]}[];sections?:{paragraphs:{text:string;evidenceIds:string[]}[]}[]};
   for(const paragraph of [...(copy.paragraphs??copy.intro??[]),...(copy.sections??[]).flatMap(section=>section.paragraphs)]){
-    paragraph.text=paragraph.text.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu,(match,a,b,c)=>{
+    const original=paragraph.text;
+    paragraph.text=original.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu,(match,a,b,c,offset:number)=>{
       // Only the words are compared: a closing comma for the source's period is not a change.
       const quote=a??b??c,literal=literalQuoteText(quote),words=quotedWords(literal),folded=words.toLocaleLowerCase('pt-BR');
       const supported=[...paragraph.evidenceIds.map(id=>evidence.get(id)??''),...(passages?.(paragraph.evidenceIds)??[])];
       // A capital first letter opening the sentence is kept: the words are still the source's.
-      if(supported.some(text=>quoteInSource(literalQuoteText(text),words)!==undefined))return match;
+      if(supported.some(text=>quoteInSource(literalQuoteText(text),words,quoteOpensSentence(original,offset))!==undefined))return match;
       if(folded.length!==words.length)return match;
       for(const text of supported){
         const source=literalQuoteText(text),lower=source.toLocaleLowerCase('pt-BR');

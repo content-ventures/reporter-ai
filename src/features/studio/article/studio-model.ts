@@ -64,10 +64,16 @@ function editorSnapshotHash(body: ArticleBody): string {
   return draftSnapshotHash(normalized);
 }
 
-/** A server-driven title must not make untouched editor content look like a local edit. */
-export function externalDraftSync(current: ArticleBody, baseline: ArticleBody, stored: ArticleBody, localTitle: string | null, expected = false): 'current' | 'adopt' | 'local' {
+/**
+ * A server-driven title or linha fina must not make untouched editor content look like a local edit:
+ * only what the person typed here (`localTitle`, `localDek`) counts against the baseline.
+ */
+export function externalDraftSync(current: ArticleBody, baseline: ArticleBody, stored: ArticleBody, localTitle: string | null, expected = false, localDek: string | null = null): 'current' | 'adopt' | 'local' {
   if (editorSnapshotHash(current) === editorSnapshotHash(stored)) return 'current';
-  const local = { ...current, title: localTitle ?? baseline.title };
+  const local: ArticleBody = { ...current, title: localTitle ?? baseline.title };
+  const dek = (localDek ?? baseline.dek)?.trim();
+  if (dek) local.dek = dek;
+  else delete local.dek;
   return expected || editorSnapshotHash(local) === editorSnapshotHash(baseline) ? 'adopt' : 'local';
 }
 

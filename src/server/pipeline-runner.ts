@@ -10,7 +10,7 @@ import { restoreLiteralQuoteCase, validPipelineOutput, exceedsParagraphBudget, e
 import type { WritingContract } from './pipeline-output';
 import { countCharacters, countWords, textStats } from '../domain/text/stats.ts';
 import { reintroducedPeople, repeatedSentences } from '../domain/grounding.ts';
-import { articleLengthIssue, articleQuotationIssue, directQuotes, literalQuoteText, unquoteUnsupported } from '../domain/article-policy.ts';
+import { articleLengthIssue, articleQuotationIssue, directQuotes, hasQuote, literalQuoteText, quoteKey, unquoteUnsupported } from '../domain/article-policy.ts';
 
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceIds: z.array(z.string()).min(1).max(30) }).strict();
 type Outline = { title: string; sections: { title: string; evidenceIds: string[] }[] };
@@ -150,10 +150,11 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
     const written=literalQuoteText(values.history??'');
     const repeated=(value:unknown)=>{
       if(!grounding)return [];
+      // A quotation reused with another first capital is the same quotation.
       const seen=new Set<string>(),again:string[]=[];
       for(const quote of paragraphsOf(value).flatMap(p=>directQuotes(p.text)).map(literalQuoteText)){
-        if(seen.has(quote)||written.includes(quote))again.push(quote);
-        seen.add(quote);
+        if(seen.has(quoteKey(quote))||hasQuote(written,quote))again.push(quote);
+        seen.add(quoteKey(quote));
       }
       return again;
     };
@@ -174,9 +175,9 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
         paragraphs=paragraphs.flatMap(p=>{
           const kept=articleSentences(p.text).filter(sentence=>{
             const quotes=directQuotes(sentence).map(literalQuoteText);
-            if(grounding(sentence).length||quotes.some(quote=>used.has(quote)||written.includes(quote))
+            if(grounding(sentence).length||quotes.some(quote=>used.has(quoteKey(quote))||hasQuote(written,quote))
               ||repeatedSentences(sentence,values.history??'').length)return false;
-            quotes.forEach(quote=>used.add(quote));
+            quotes.forEach(quote=>used.add(quoteKey(quote)));
             return true;
           });
           // A person already introduced is named by the surname from here on.

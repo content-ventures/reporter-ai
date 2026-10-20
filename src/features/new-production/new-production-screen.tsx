@@ -157,15 +157,18 @@ function NewProductionForm({ received }: { received?: string }) {
   const analysis = analysisState.analysis;
   const readyAnalysis = analysisState.status === 'ready' ? analysis : undefined;
 
-  const onFileLoaded = useCallback((file: MaterialFile, extras?: ReceivedExtras) => setDraft((current) => {
-    const next: NewProductionDraft = { ...current, file, speakers: {} };
-    if (!extras) return next;
-    // The Drive subfolder names the format and the file's day dates the interview; both stay editable.
-    if (extras.recordedOn && !current.recordedOn) next.recordedOn = extras.recordedOn;
-    if (!extras.format || current.format) return next;
-    const formatted = { ...next, ...withFormat(extras.format) };
-    return formatted.event.name.trim() ? formatted : { ...formatted, event: lastEvent() ?? formatted.event };
-  }), []);
+  const onFileLoaded = useCallback((file: MaterialFile, extras?: ReceivedExtras) => {
+    // A Drive subfolder that names a format offers the previous event, as choosing the format does.
+    if (extras?.format) setEventSuggestion((current) => (current === undefined ? lastEvent() ?? null : current));
+    setDraft((current) => {
+      const next: NewProductionDraft = { ...current, file, speakers: {} };
+      if (!extras) return next;
+      // The Drive subfolder names the format and the file's day dates the interview; both stay editable.
+      if (extras.recordedOn && !current.recordedOn) next.recordedOn = extras.recordedOn;
+      if (!extras.format || current.format) return next;
+      return { ...next, ...withFormat(extras.format) };
+    });
+  }, []);
   const fileReader = useFileReader(intake, onFileLoaded);
   const onLinkLoaded = useCallback((value: ImportedLink) => setDraft((current) => ({
     ...current,linkFile: value.file,sourceUrl: value.sourceUrl,programName: current.programName?.trim() ? current.programName : value.programName,speakers: {},
