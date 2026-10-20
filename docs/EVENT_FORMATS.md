@@ -44,6 +44,7 @@ The specs live in `src/domain/formats.ts`. A brief without `format` is the R1 ar
 - **Linha fina.** It is planned with the title and saved with it. The cloud rebuilds the "v1 · IA" version from the run's events, so the `outline` event carries `dek` (`articleBodyFromRun`). Versions up to v0.12.0 lost it on save.
 - **No AI images.** An event coverage goes out with the newsroom's photos: the worker queues no image planning or generation for a format, and the worker flow on the Prompts page shows no image block.
 - **Quotation openings** (`tidyQuoteOpenings`). A spoken opener ("Então,", "Bom,", "Ou seja,", "E") is dropped at the start of a quotation when four words or more remain. A quotation that opens a sentence starts with a capital. The literal check allows that first capital and nothing else (`quoteInSource`), and the citation library keeps the source's spelling.
+- **One speaker, no labels.** A recording transcribed without speaker labels, with a single confirmed person in the Material, is that person's interview: the funnels attribute the answers to them, and the interviewer's questions are never quoted.
 - **Stand news first.** The stand funnel puts the novelty and the porta-voz's strongest line about it (exclusivity, first, "carro-chefe") in the title and the opening. Every funnel names the event as `event.name` writes it, because transcriptions misspell proper names.
 
 ## Prompts
