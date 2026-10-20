@@ -1,8 +1,8 @@
 import { ok, refuse } from '../../../domain/result.ts';
-import { findDuplicateSource, sourceContentHash } from '../../../domain/source.ts';
-import type { TranscriptContent } from '../../../domain/source.ts';
+import { findDuplicateSource, materialPartHashes, sourceContentHash } from '../../../domain/source.ts';
+import type { Source, TranscriptContent } from '../../../domain/source.ts';
 import { analyzeTranscript, detectTranscriptFormat, parseTranscript } from '../../../domain/text/transcript-parse.ts';
-import type { IngestLimits, SourceAnalysis, SourceIngest } from '../../../ports/source-ingest.ts';
+import type { DuplicateMatch, IngestLimits, SourceAnalysis, SourceIngest } from '../../../ports/source-ingest.ts';
 import { materialOutlook } from '../generation/outlook.ts';
 import type { LocalStore } from './local-store.ts';
 import { detach } from './queries.ts';
@@ -24,6 +24,12 @@ function extensionOf(name: string): string {
 }
 
 export function createLocalIngest(store: LocalStore, limits: IngestLimits = INGEST_LIMITS): SourceIngest {
+  const duplicateOf = (source: Source, part?: number): DuplicateMatch => ({
+    sourceId: source.id,
+    title: source.title,
+    productions: productionsUsingSource(store.state, source.id).map((entry) => ({ id: entry.production.id, title: entry.production.title })),
+    ...(part !== undefined ? { part } : {}),
+  });
   return {
     limits,
     async readLink() {
@@ -72,18 +78,23 @@ export function createLocalIngest(store: LocalStore, limits: IngestLimits = INGE
         warnings: parsed.warnings,
         short: analysis.words < limits.shortWords,
       };
+      if (parsed.parts) result.parts = parsed.parts;
       if (options.fileName) result.fileName = options.fileName;
       result.outlook = materialOutlook(parsed.segments, {
         ...(options.angle?.trim() ? { angle: options.angle.trim() } : {}),
         ...(options.speakerNames ? { speakerNames: options.speakerNames } : {}),
       });
       const duplicate = findDuplicateSource(store.state.sources, hash);
-      if (duplicate) {
-        result.duplicate = {
-          sourceId: duplicate.id,
-          title: duplicate.title,
-          productions: productionsUsingSource(store.state, duplicate.id).map((entry) => ({ id: entry.production.id, title: entry.production.title })),
-        };
+      if (duplicate) result.duplicate = duplicateOf(duplicate);
+      else if (parsed.parts) {
+        // A recording already saved alone (or inside another material) is flagged by its part.
+        const hashes = materialPartHashes(text) ?? [];
+        for (const [index, partHash] of hashes.entries()) {
+          const used = findDuplicateSource(store.state.sources, partHash);
+          if (!used) continue;
+          result.duplicate = duplicateOf(used, index + 1);
+          break;
+        }
       }
       return ok(detach(result));
     },

@@ -33,6 +33,7 @@ import { reporterDeploymentMode } from './deployment.ts';
 import { compactRunPreviews } from '../domain/run-events.ts';
 import { FULL_SCOPE, commitEditorialChanges, loadEditorialRows, loadedScope, type EditorialScope, type StoredReceipt } from './editorial-store.ts';
 import { scopeForRpc } from './editorial-scope.ts';
+import { materialPartsSchema, materialTranscriptIds } from './material-parts.ts';
 
 const ids = { next: () => randomUUID() };
 const identifier = z.string().min(1).max(128);
@@ -343,7 +344,7 @@ export async function editorialRpc(payload: unknown) {
     if (method === 'createFromSource') {
       const input = z.object({ title: z.string().trim().min(1).max(120), material: z.object({
         text: z.string().min(1).max(1048576),authorized: z.boolean(),origin: z.enum(['interview','podcast','event','talk','other']),
-        transcriptId: z.string().uuid().optional(),
+        transcriptId: z.string().uuid().optional(),parts: materialPartsSchema.optional(),
         programName: z.string().trim().max(160).optional(),sourceUrl: z.string().trim().max(2000).optional(),
         location: z.string().trim().max(160).optional(),recordedOn: z.string().max(10).optional(),
       }).passthrough(), brief: z.object({ sections: z.number().int().min(1).max(8),size: z.enum(['short','standard']),angle: z.string().max(600).optional(),
@@ -352,9 +353,11 @@ export async function editorialRpc(payload: unknown) {
       plan: z.array(z.enum(['article','carousel'])).max(2),speakers: z.array(z.object({ label: z.string().max(500) }).passthrough()).max(100).optional() }).passthrough().parse(args[0]);
       if (!citationDay(input.material.recordedOn) || input.material.sourceUrl && !podcastLink(input.material.sourceUrl))
         throw new FlowError('CITATION_METADATA_INVALID',422);
-      if (input.material.transcriptId) {
-        const { rows } = await client.query('SELECT status FROM public.reporter_transcripts WHERE id=$1 AND portal_id=$2',[input.material.transcriptId,checkpoint.state.workspace.id]);
-        if (rows[0]?.status !== 'ready') throw new FlowError('TRANSCRIPT_NOT_READY',422);
+      // Every recording of the material must be a ready transcript of this workspace.
+      const ids = materialTranscriptIds(input.material);
+      if (ids.length) {
+        const { rows } = await client.query('SELECT status FROM public.reporter_transcripts WHERE portal_id=$2 AND id = ANY($1::uuid[])',[ids,checkpoint.state.workspace.id]);
+        if (rows.length !== ids.length || rows.some(row => row.status !== 'ready')) throw new FlowError('TRANSCRIPT_NOT_READY',422);
       }
     }
     // Only named domain commands may mutate the server-owned aggregate; no snapshot upload.

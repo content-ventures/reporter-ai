@@ -17,7 +17,7 @@ const insightSchema = z.object({ title: z.string().trim().min(1).max(120), parti
   segmentId: z.string().min(1).max(128), excerpt: z.string().trim().min(1).max(500),
 }).strict()).max(12) }).strict();
 
-/** Metadata only: keep the opening, ending and distributed passages, never reassign voices. */
+/** Metadata only: keep the opening, ending, each part's opening and distributed passages, never reassign voices. */
 export function materialSample(segments: readonly ParsedSegment[], budget = 10000): ParsedSegment[] {
   const selected = new Map<string, ParsedSegment>(); let used = 0;
   const take = (segment: ParsedSegment | undefined, ceiling = budget) => {
@@ -29,6 +29,8 @@ export function materialSample(segments: readonly ParsedSegment[], budget = 1000
   for (const segment of segments) { take(segment, budget * 0.4); if (used >= budget * 0.35) break; }
   const openingSize = used;
   for (const segment of [...segments].reverse()) { take(segment, openingSize + budget * 0.2); if (used - openingSize >= budget * 0.15) break; }
+  // A material sent in parts: each recording opens with its own presentations.
+  for (let index = 1; index < segments.length; index++) if (segments[index].part !== segments[index - 1].part) { take(segments[index]); take(segments[index + 1]); }
   for (let anchor = 1; anchor < 9; anchor++) {
     const center = Math.floor(segments.length * anchor / 9);
     for (let offset = 0; offset < 3; offset++) take(segments[center + offset]);

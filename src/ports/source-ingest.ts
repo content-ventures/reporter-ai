@@ -1,7 +1,7 @@
 import type { EditorialFormat } from '../domain/formats.ts';
 import type { ProductionId, SourceId } from '../domain/ids.ts';
 import type { Result } from '../domain/result.ts';
-import type { ParsedSegment, TranscriptFormat, TranscriptWarning } from '../domain/text/transcript-parse.ts';
+import type { ParsedPart, ParsedSegment, TranscriptFormat, TranscriptWarning } from '../domain/text/transcript-parse.ts';
 
 /**
  * "Material" step of Nova produção: read a pasted text or a .txt/.md/.srt/.vtt file and show
@@ -79,6 +79,8 @@ export type DuplicateMatch = {
   sourceId: SourceId;
   title: string;
   productions: { id: ProductionId; title: string }[];
+  /** 1-based recording of the analysed material that was already used. */
+  part?: number;
 };
 
 export type SourceAnalysis = {
@@ -99,6 +101,8 @@ export type SourceAnalysis = {
   /** First few segments for the compact TranscriptViewer preview. */
   preview: ParsedSegment[];
   warnings: TranscriptWarning[];
+  /** What each recording adds, for a material sent in several files. */
+  parts?: ParsedPart[];
   short: boolean;
   /** Provider suggestion grounded in the material, separate from the simulated outlook. */
   topicTitle?: string;
