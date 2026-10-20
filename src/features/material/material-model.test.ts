@@ -36,6 +36,13 @@ describe('material model', () => {
     assert.equal(segments[2]?.start, undefined);
   });
 
+  it("shows the person's company beside the name", () => {
+    const withCompany: Participant[] = [
+      { label: 'Entrevistadora', segments: 1, words: 2, person: { id: 'person-clara', name: 'Clara Souto', initials: 'CS', organization: 'Aurora Calçados' } },
+    ];
+    assert.deepEqual(viewerSegments(VERSION, withCompany)[0]?.speaker, { id: 'Entrevistadora', name: 'Clara Souto', description: 'Aurora Calçados' });
+  });
+
   it('marks the segments of this source that the article cites', () => {
     const ref = (sourceId: string, segmentId: string) => ({ kind: 'source' as const, sourceId, sourceVersion: 1, locator: { type: 'segment' as const, segmentId } });
     const body = {
