@@ -22,7 +22,12 @@ import { workDirectory, sourcePreparationDirectory } from './storage';
 import { mapEditorialPassages } from './editorial-passages';
 import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
-import { contiguousSourcePassages, r1ArticleIssue, ARTICLE_POLICY_MESSAGES } from '../domain/article-policy.ts';
+import { contiguousSourcePassages, r1ArticleIssue, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
+import { articleContractFor } from '../domain/formats.ts';
+import { ungroundedTerms } from '../domain/grounding.ts';
+import { currentSourceVersion } from '../domain/source.ts';
+import type { Person } from '../domain/workspace.ts';
+import type { ProductionRecord } from '../domain/record.ts';
 import type { ArticlePolicyIssue } from '../domain/article-policy.ts';
 import { ARTICLE_ASSIST_KINDS, runArticleAssist } from './article-assist';
 import { citationsFromArticle, emphasizeArticleQuotes } from '../domain/citation-library.ts';
@@ -123,7 +128,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     const input = (await editorialTransaction('worker',async (_checkpoint,engine) => {
       const record = engine.records.record(job.meta.productionId);
       if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
-      return { record,templates: editorialTemplates() };
+      return { record,templates: editorialTemplates(),people: engine.store.state.people };
     },false,'reporter.edit',scope)).value;
     if (ARTICLE_ASSIST_KINDS.has(job.kind)) {
       lastStepId = 'assist';
@@ -150,9 +155,18 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     const source = candidates.map(c => '['+c.key+'] '+(c.speaker ? c.speaker+': ' : '')+c.text).join('\n');
     if (!source.trim()) throw new FlowError('EMPTY_EDITORIAL_SOURCE',422);
     const brief = JSON.stringify(input.record.production.brief);
+    const format = input.record.production.brief.format;
+    const people = confirmedPeople(input.record,input.people);
+    const today = new Intl.DateTimeFormat('pt-BR',{ timeZone: 'America/Sao_Paulo',weekday: 'long',day: 'numeric',month: 'long',year: 'numeric' }).format(new Date());
+    // Event formats: every number and name must exist in the material, the speakers or the event typed by a person.
+    const corpus = [...input.record.sources.flatMap(s => currentSourceVersion(s).content.segments.map(segment => segment.text)),
+      ...people.flatMap(person => [person.name,person.title ?? '',person.organization ?? '']),
+      ...Object.values(input.record.production.brief.event ?? {}),today].join('\n');
+    const grounding = format ? (text: string) => ungroundedTerms(text,corpus) : undefined;
     let inputTokens: number | null = 0,outputTokens: number | null = 0;
     let result: Awaited<ReturnType<typeof generateStructured>> | undefined;
-    const variables: PipelineVariables = { source,brief,sizing: JSON.stringify(sizing),outline: '',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '' };
+    const variables: PipelineVariables = { source,brief,sizing: JSON.stringify(sizing),outline: '',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '',
+      event: JSON.stringify({ event: input.record.production.brief.event ?? null,today }),people: JSON.stringify(people) };
     const writingStages = new Map<string,string>();
     let previewAt = 0,previewHash = '';
     const publishPreview = async (force = false) => {
@@ -174,7 +188,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       const streamText = writing && (key !== 'article' || index === 0);
       const expected = key === 'article' ? JSON.parse(values.outline) : key === 'section' ? JSON.parse(values.section) : undefined;
       const response = await executePipelineStep({ pipeline,key,index,variables: values,schema,directory,previousDirectory,factsDirectory,
-        validateOutput: value => editorialResponseValid(key,value,knownIds,input.record.production.brief.sections,expected),
+        validateOutput: value => editorialResponseValid(key,value,knownIds,input.record.production.brief.sections,expected)
+          && (key !== 'outline' || !grounding || outlineGrounded(value,grounding)),
         ...(key === 'article' && index === 0 || key === 'intro' || key === 'section' ? { deferWritingRevision: true } : {}),
         ...(['article', 'intro', 'section'].includes(key) ? { writingContract: { evidencePassages,evidence: new Map(candidates.map(candidate => [candidate.key, candidate.text])),
           ...(key === 'article' ? { limits: sizing, minQuotes: sizing.minQuotes } : {}) } } : {}),
@@ -213,7 +228,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     let layouts: ReturnType<typeof editorialCarouselLayouts> = [];
     if (job.kind === 'article.outline' || job.kind === 'article.draft' && !requestedOutline) {
       requestedOutline = await planEditorialOutline({ sections: input.record.production.brief.sections,candidates,variables,
-        curateQuotes: pipeline.definition.curateQuotes,call,normalize: outline => {
+        curateQuotes: pipeline.definition.curateQuotes,call,dek: Boolean(format),normalize: outline => {
           const valid = validateEditorialOutline(input.record,outline);
           if (!valid.ok) throw new FlowError('INVALID_OUTLINE',502);
           return { title: valid.value.title,intro: { quotes: valid.value.intro },sections: valid.value.sections };
@@ -237,7 +252,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         .map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}) })) });
       variables.outline = JSON.stringify(outline);
       if (pipeline.definition.articleMode === 'single') value = await writeCompleteArticle(outline, variables, sizing, call);
-      else value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages);
+      else value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages,grounding);
     }
     if (job.kind === 'carousel.copy') {
       const piece = input.record.pieces.find(p => p.id === job.meta.pieceId);
@@ -277,8 +292,9 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         if (sizing.headings) blocks.push({ id: reviewed?.sections[i].blockId ?? randomUUID(),type: 'heading',level: 2,inlines: [{ text: s.title }],ai: 'unreviewed' });
         s.paragraphs.forEach(add);
       });
-      const body = emphasizeArticleQuotes({ type: 'article' as const,title: article.title,blocks });
-      const issue = r1ArticleIssue(body, input.record.sources);
+      const dek = reviewed?.dek && !grounding?.(reviewed.dek).length ? reviewed.dek : undefined;
+      const body = emphasizeArticleQuotes({ type: 'article' as const,title: article.title,...(dek ? { dek } : {}),blocks });
+      const issue = r1ArticleIssue(body, input.record.sources, articleContractFor(input.record.production.brief));
       // No block/version is committed until the WHOLE sequential or single output passes.
       if (issue) throw new FlowError(issue, 502);
       if (!articlePlainText(body).trim()) throw new FlowError('EMPTY_ARTICLE',502);
@@ -342,7 +358,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
             ? 'O provedor atingiu o limite de uso. A geração foi interrompida; tente novamente ou escolha outro modelo em Prompts.'
             : code.endsWith('_QUOTA_EXHAUSTED') ? 'A conta do provedor está sem cota disponível. Confira o saldo ou escolha outro modelo em Prompts.'
             : code === 'INVALID_PROVIDER_OUTPUT' ? 'A resposta da IA não passou na validação. Tente novamente ou ajuste o modelo e o prompt em Prompts.'
-            : code in ARTICLE_POLICY_MESSAGES ? ARTICLE_POLICY_MESSAGES[code as ArticlePolicyIssue]
+            : code === 'UNGROUNDED_FACT' ? 'O texto usaria um número ou nome que não está no material. Gere de novo ou complete o material e os falantes.'
+            : code in ARTICLE_POLICY_MESSAGES ? articlePolicyMessage(code as ArticlePolicyIssue,articleContractFor(engine.records.record(job.meta.productionId)?.production.brief ?? {}))
             : code === 'ARTICLE_PART_SIZE_EXCEEDED' ? 'Uma parte do artigo excedeu seu orçamento. Ajuste a distribuição de evidências ou o prompt, sem cortar frases.'
             : 'O provedor não concluiu um resultado válido. Código: '+code,retryable: true };
           appendEditorialEvent(engine,current,{ type: 'step.failed',stepId: lastStepId,error });
@@ -353,4 +370,23 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     logEvent('worker','editorial_failed',{ generation_id: job.meta.runId,error_code: code });
   } finally { clearInterval(timer); }
   return true;
+}
+
+/** Speakers a person linked to someone, as the prompts name them: name, role and organisation. */
+function confirmedPeople(record: ProductionRecord, people: readonly Person[]) {
+  const byId = new Map(people.map(person => [person.id,person]));
+  const seen = new Set<string>();
+  return record.sources.flatMap(source => source.speakers.flatMap(speaker => {
+    const person = speaker.personId ? byId.get(speaker.personId) : undefined;
+    if (!person || seen.has(person.id)) return [];
+    seen.add(person.id);
+    return [{ label: speaker.label,name: person.name,...(person.title ? { title: person.title } : {}),...(person.organization ? { organization: person.organization } : {}) }];
+  }));
+}
+
+/** The outline's title, linha fina and intertítulos hold no number or name outside the known facts. */
+function outlineGrounded(value: unknown, grounding: (text: string) => string[]) {
+  const outline = value as { title?: string; dek?: string; sections?: { title?: string }[] };
+  return [outline.title,outline.dek,...(outline.sections ?? []).map(section => section.title)]
+    .every(text => !text || !grounding(text).length);
 }

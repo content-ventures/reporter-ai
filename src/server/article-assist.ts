@@ -2,7 +2,8 @@ import 'server-only';
 import { z } from 'zod';
 import { articleStats, blockText, findBlock, sliceText } from '../domain/article.ts';
 import type { ArticleBody, ArticleBlock } from '../domain/article.ts';
-import { articleQuotationIssue, directQuotes, literalQuoteText, R1_ARTICLE_LIMITS, r1ArticleIssue } from '../domain/article-policy.ts';
+import { articleQuotationIssue, directQuotes, literalQuoteText, r1ArticleIssue } from '../domain/article-policy.ts';
+import { articleContractFor } from '../domain/formats.ts';
 import { applySuggestion } from '../domain/suggestion.ts';
 import type { Suggestion, SuggestionProposal } from '../domain/suggestion.ts';
 import { dedupeRefs, refKey, segmentRef } from '../domain/refs.ts';
@@ -98,11 +99,12 @@ export function articleAssistSuggestions(value: unknown, context: AssistContext,
   const titles = new Set<string>();
   const literalEvidence = new Map(context.evidence.map(item => [item.id,item.text]));
   let combined = context.body;
+  const limits = articleContractFor(record.production.brief);
   const checkSize = (afterBody: ArticleBody) => {
     const before = articleStats(context.body), after = articleStats(afterBody);
-    if (!r1ArticleIssue(context.body,record.sources) && r1ArticleIssue(afterBody,record.sources)
-      || after.characters > Math.max(before.characters,R1_ARTICLE_LIMITS.maxChars) || after.words > Math.max(before.words,R1_ARTICLE_LIMITS.maxWords)
-      || after.characters < Math.min(before.characters,R1_ARTICLE_LIMITS.minChars) || after.words < Math.min(before.words,R1_ARTICLE_LIMITS.minWords))
+    if (!r1ArticleIssue(context.body,record.sources,limits) && r1ArticleIssue(afterBody,record.sources,limits)
+      || after.characters > Math.max(before.characters,limits.maxChars) || limits.maxWords !== undefined && after.words > Math.max(before.words,limits.maxWords)
+      || after.characters < Math.min(before.characters,limits.minChars) || limits.minWords !== undefined && after.words < Math.min(before.words,limits.minWords))
       throw new FlowError('ASSIST_SIZE_CONFLICT',502,true,5);
   };
   const suggestions = output.changes.map((change,index) => {
@@ -186,10 +188,10 @@ export async function runArticleAssist(job: EditorialJob, record: ProductionReco
     variables: { source: JSON.stringify(context.evidence.map(({ id,text,speaker }) => ({ id,text,...(speaker ? { speaker } : {}) }))),
       brief: JSON.stringify(record.production.brief), history: JSON.stringify({ title: context.body.title, blocks: context.body.blocks
         .filter(block => ['paragraph','heading','quote','list'].includes(block.type)).map(block => ({ id: block.id,type: block.type,text: blockText(block) })) }),
-      sizing: JSON.stringify({ ...R1_ARTICLE_LIMITS, current: articleStats(context.body), targetCharacters: context.targetCharacters,
+      sizing: JSON.stringify({ ...articleContractFor(record.production.brief), current: articleStats(context.body), targetCharacters: context.targetCharacters,
         sourceCoverage: 'selected-literal-excerpts' }), section: JSON.stringify({ action: context.kind,prompt: context.prompt,tone: context.tone,
         targets: context.targets.map((range,index) => ({ index, ...range,text: sliceText(context.body,range),blockType: findBlock(context.body,range.blockId)?.type })) }),
-      outline: '', futureSections: '', layouts: '', approvedArticle: '' },
+      outline: '', futureSections: '', layouts: '', approvedArticle: '', event: '', people: '' },
     validateOutput: value => { try { articleAssistSuggestions(value,context,record,job.meta.runId); return true; } catch { return false; } },
   });
   await guarded([{ type: 'step.completed',stepId: 'assist' }, { type: 'step.started',stepId: 'validate' }]);

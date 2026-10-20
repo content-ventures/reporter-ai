@@ -114,6 +114,8 @@ export type OutlineSectionInput = { blockId?: BlockId; title: string; quotes: So
  */
 export type OutlineInput = {
   title: string;
+  /** Linha fina planned with the title (event formats). */
+  dek?: string;
   intro?: { quotes: SourceRef[] };
   sections: OutlineSectionInput[];
   /** The outline run it came from (provenance only). */

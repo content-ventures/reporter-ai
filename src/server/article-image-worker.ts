@@ -73,7 +73,7 @@ export async function runArticleImageJob(owner: string,signal: AbortSignal,depen
       });
     };
     const response = await dependencies.plan({ pipeline: job.pipeline,key: 'images',schema: PIPELINE_SCHEMAS.images,
-      variables: { history: JSON.stringify(body),source: '',brief: '',sizing: '',outline: '',section: '',futureSections: '',layouts: '',approvedArticle: '' },
+      variables: { history: JSON.stringify(body),source: '',brief: '',sizing: '',outline: '',section: '',futureSections: '',layouts: '',approvedArticle: '', event: '', people: '' },
       directory: await workDirectory(claim.runId),signal: AbortSignal.any([combined,AbortSignal.timeout(30000)]),trace,
       validateOutput: value => { try { planArticleImages(body,value); return true; } catch { return false; } } });
     const planned = { ...body,...planArticleImages(body,response.value) };

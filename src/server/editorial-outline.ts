@@ -6,12 +6,14 @@ import type { OutlineInput } from '../ports/generation.ts';
 import { FlowError } from './errors';
 import { editorialResponseValid, outlineResponseSchema } from './editorial-validation';
 
-const proposalSchema = z.object({ title: z.string().min(1).max(500), introIds: z.array(z.string()).max(2),
+const proposalSchema = z.object({ title: z.string().min(1).max(500), dek: z.string().max(240).optional(), introIds: z.array(z.string()).max(2),
   sections: z.array(z.object({ title: z.string().min(1).max(120), evidenceIds: z.array(z.string()).min(1).max(20) }).strict()).min(1).max(8) }).strict();
 
 /** Automatic planning uses the same prompts and literal-evidence guards as a reviewed outline. */
-export async function planEditorialOutline({ sections: count, candidates, variables, curateQuotes, call, normalize }: {
+export async function planEditorialOutline({ sections: count, candidates, variables, curateQuotes, call, normalize, dek = false }: {
   sections: number;
+  /** Event formats also plan the linha fina with the title. */
+  dek?: boolean;
   candidates: readonly { key: string; ref: SourceRef }[];
   variables: PipelineVariables;
   curateQuotes: boolean;
@@ -20,7 +22,7 @@ export async function planEditorialOutline({ sections: count, candidates, variab
 }): Promise<OutlineInput> {
   const byKey = new Map(candidates.map(candidate => [candidate.key, candidate.ref]));
   const known = new Set(byKey.keys());
-  let proposal = proposalSchema.parse(await call('outline', outlineResponseSchema(count, [...known]), variables));
+  let proposal = proposalSchema.parse(await call('outline', outlineResponseSchema(count, [...known], dek), variables));
   if (!editorialResponseValid('outline', proposal, known, count)) throw new FlowError('INVALID_OUTLINE', 502);
   if (curateQuotes) {
     const selected = z.object({ introIds: z.array(z.string()).max(2), sectionIds: z.array(z.array(z.string()).min(1).max(20)) }).strict()
@@ -30,6 +32,8 @@ export async function planEditorialOutline({ sections: count, candidates, variab
       sections: proposal.sections.map((section, index) => ({ ...section, evidenceIds: selected.sectionIds[index] })) };
   }
   const refs = (ids: string[]) => ids.map(id => byKey.get(id)!);
-  return normalize({ title: proposal.title, intro: { quotes: refs(proposal.introIds) },
+  const planned = normalize({ title: proposal.title, intro: { quotes: refs(proposal.introIds) },
     sections: proposal.sections.map(section => ({ title: section.title, quotes: refs(section.evidenceIds) })) });
+  const line = proposal.dek?.trim().replace(/[.\s]+$/, '');
+  return line ? { ...planned, dek: line } : planned;
 }

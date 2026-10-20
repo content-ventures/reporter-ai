@@ -11,6 +11,7 @@ const VARIABLE_LABELS: Record<typeof PIPELINE_VARIABLES[number], string> = {
   source: 'Transcrição e evidências da fonte', brief: 'Pauta e quantidade de seções', sizing: 'Metas e limites de tamanho',
   outline: 'Estrutura do artigo', section: 'Seção atual ou pedido ao assistente', history: 'Texto já escrito',
   futureSections: 'Seções ainda não redigidas', layouts: 'Espaços e limites do modelo visual', approvedArticle: 'Versão aprovada do artigo',
+  event: 'Evento digitado na pauta e data de hoje', people: 'Pessoas confirmadas: nome, cargo e empresa',
 };
 
 export function PipelineEditor({ promptKey, draft, view, saving, dirty, invalid, error, onClose, onUpdate, onUpdateStep, onSave }: {

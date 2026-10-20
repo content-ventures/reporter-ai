@@ -3,8 +3,13 @@ import { PIPELINE_SCHEMAS } from '../domain/pipeline.ts';
 import type { PipelineStepKey } from '../domain/pipeline.ts';
 
 /** Constrain a podcast's actual structure in the provider grammar, not only after caching. */
-export function outlineResponseSchema(sections: number,ids: readonly string[]) {
+export function outlineResponseSchema(sections: number,ids: readonly string[],dek = false) {
   const schema = structuredClone(PIPELINE_SCHEMAS.outline);
+  // Event formats plan the linha fina with the title; the article's contract stays unchanged.
+  if (dek) {
+    schema.properties = { title: schema.properties.title,dek: { type: 'string',minLength: 1,maxLength: 240 },...schema.properties };
+    schema.required = Object.keys(schema.properties);
+  }
   const body = schema.properties.sections as { minItems: number; maxItems: number; items: { properties: { evidenceIds: { items: object } } } };
   body.minItems = body.maxItems = sections;
   // Large podcasts can exceed vendor enum ceilings; local validation always checks every id.
