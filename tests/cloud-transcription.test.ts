@@ -126,12 +126,14 @@ test('a garbled stretch is transcribed again with word timestamps; a failed or d
   });
   const input = { provider: 's3', bucket: 'reporter-source-media', key: 'incoming/a.ogg', size: 1, content_type: 'audio/ogg', language: 'pt-BR' };
   const repaired = 'Então eu trouxe alguns panoramas, como por exemplo, comparação com outras espécies, suínos, aves e também salmonicultura, de quanto nós estamos';
+  // The first pass's tokens with the cut words completed (letters only).
+  const expected = 'Então eu trouxe alguns panoramas como por exemplo comparação com outras espécies suínos aves e também salmonicultura de quanto nós estamos';
   try {
     const done = await processTranscript(input, directory, new AbortController().signal, async () => {}, make(repaired));
     assert.deepEqual(windows, [{ start: 7, duration: 16 }], 'only the garbled segment, with a 3 s margin');
-    assert.equal(done.segments?.[1].text, repaired);
+    assert.equal(done.segments?.[1].text, expected);
     assert.equal(done.segments?.[0].text, fine);
-    assert.equal(done.content, `${fine} ${repaired}`);
+    assert.equal(done.content, `${fine} ${expected}`);
     assert.equal(done.input_units, 46_000, 'the repair audio is counted');
     await assert.rejects(stat(join(directory, 'repair-1.flac')), { code: 'ENOENT' });
 
@@ -147,6 +149,8 @@ test('a rate-limited repair waits once and retries; a second limit leaves the re
   const directory = await mkdtemp(join(tmpdir(), 'reporter-repair-limit-'));
   const garbled = 'Ent eu trouxe alguns panoramas como por exemplo compara com outras esp su aves e tamb salmonicultura de quanto n estamos';
   const repaired = 'Então eu trouxe alguns panoramas, como por exemplo, comparação com outras espécies, suínos, aves e também salmonicultura, de quanto nós estamos';
+  // The first pass's tokens with the cut words completed (letters only).
+  const expected = 'Então eu trouxe alguns panoramas como por exemplo comparação com outras espécies suínos aves e também salmonicultura de quanto nós estamos';
   const waits: number[] = [];
   let calls = 0;
   const services = (limitEvery: boolean) => ({
@@ -169,7 +173,7 @@ test('a rate-limited repair waits once and retries; a second limit leaves the re
   try {
     const done = await processTranscript(input, directory, new AbortController().signal, async () => {}, services(false));
     assert.deepEqual(waits, [5000]);
-    assert.deepEqual(done.segments?.map(segment => segment.text), [repaired, repaired]);
+    assert.deepEqual(done.segments?.map(segment => segment.text), [expected, expected]);
     calls = 0; waits.length = 0;
     const limited = await processTranscript(input, directory, new AbortController().signal, async () => {}, services(true));
     assert.deepEqual(waits, [5000], 'one wait per recording');

@@ -115,17 +115,20 @@ export const REPAIR_AGREEMENT = 0.7;
 
 /**
  * The garbled segment with its cut words completed, or undefined when nothing can be completed safely.
- * The repair completes and never rewrites: every word of the first transcription stays as it was, and a
- * word cut at its accent ("Ent", "ra", "evolu") takes the new word that starts with exactly that piece
- * ("Então", "ração", "evolução"). The only words added are those that start with an accent ("é", "à",
- * "há"), which the failure drops whole, and only between two confirmed words. Only new words spoken
+ * The repair completes and never rewrites: every token of the first transcription stays as it was
+ * (case, punctuation, "&", "%"), and a word cut at its accent ("Ent", "ra", "evolu") takes the rest of
+ * the new word that starts with exactly that piece ("Então", "ração", "evolução"), its letters only. The only words added
+ * are those that start with an accent ("é", "à", "há"), which the failure drops whole, and only between
+ * two confirmed words with no first-pass word between them. Only new words spoken
  * inside the segment count, so a neighbour's "né" or "nós" never stands in for this segment's "não".
  * A new transcription that confirms less than REPAIR_AGREEMENT of the words (another stretch, a
  * translation) changes nothing.
  */
 export function repairedText(segment: Segment, words: readonly TimedWord[], windowStartSeconds: number): string | undefined {
-  const garbled = segment.text.trim().split(/\s+/u).filter(word => bare(word));
-  const target = garbled.map(bare);
+  // Every first-pass token is kept in the output; only those with letters or digits take part in the match.
+  const tokens = segment.text.trim().split(/\s+/u).filter(Boolean);
+  const order = tokens.flatMap((token, at) => bare(token) ? [at] : []);
+  const target = order.map(at => bare(tokens[at]));
   const offset = windowStartSeconds * 1000;
   const inside = words.filter(word => {
     const middle = offset + (word.start_ms + word.end_ms) / 2;
@@ -147,20 +150,26 @@ export function repairedText(segment: Segment, words: readonly TimedWord[], wind
     else j++;
   }
   const matched = new Map(pairs);
-  const out: string[] = [];
-  let restored = false;
-  for (let i = 0; i < m; i++) {
-    const j = matched.get(i);
-    if (j === undefined) { out.push(garbled[i]); continue; }
-    const word = inside[j].word.trim();
-    if (bare(word) !== target[i]) restored = true;
-    out.push(word);
-    // Words that start with an accent, dropped whole by the failure, between this word and the next confirmed one.
-    const next = pairs.find(([at]) => at > i)?.[1];
-    if (next !== undefined) for (let k = j + 1; k < next; k++) if (!cut[k]) { out.push(inside[k].word.trim()); restored = true; }
+  const completed = new Map<number, string>(), added = new Map<number, string[]>();
+  for (const [p, [i, j]] of pairs.entries()) {
+    const token = tokens[order[i]], word = inside[j].word.trim();
+    // A cut word keeps what the first pass wrote (case, a leading mark) and takes only the rest of the new word.
+    if (bare(word) !== target[i]) {
+      let letters = 0, at = 0;
+      while (at < word.length && letters < target[i].length) { if (/[\p{L}\p{N}]/u.test(word[at])) letters++; at++; }
+      completed.set(order[i], token + word.slice(at).replace(/[^\p{L}\p{M}\p{N}]+$/u, ''));
+    }
+    // Words that start with an accent, dropped whole, only when no first-pass word stands between the two confirmed words.
+    const next = pairs[p + 1];
+    if (next && next[0] === i + 1 && order[next[0]] === order[i] + 1) {
+      const between = inside.slice(j + 1, next[1]);
+      if (between.length && between.every((_, k) => !cut[j + 1 + k])) added.set(order[i], between.map(item => item.word.replace(/^[^\p{L}\p{M}\p{N}]+|[^\p{L}\p{M}\p{N}]+$/gu, '')).filter(Boolean));
+    }
   }
+  if (!completed.size && !added.size) return undefined;
+  const out = tokens.flatMap((token, at) => [completed.get(at) ?? token, ...(added.get(at) ?? [])]);
   const text = out.join(' ');
-  return restored && ACCENTED.test(text) ? text : undefined;
+  return ACCENTED.test(text) && matched.size ? text : undefined;
 }
 
 export function splitSource(text: string, max = 12000): string[] {

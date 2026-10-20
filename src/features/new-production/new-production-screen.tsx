@@ -179,7 +179,9 @@ function NewProductionForm({ received }: { received?: string }) {
     const speakers: Record<string, SpeakerChoice> = {};
     const moved = Object.entries(draft.speakers).map(([label, choice]) => ({ label, choice, next: replaceTerm(label, from, to) }));
     for (const { label, choice, next } of moved) if (!next.count) speakers[label.normalize('NFC')] = choice;
-    for (const { choice, next } of moved) if (next.count && !(next.text.normalize('NFC') in speakers)) speakers[next.text.normalize('NFC')] = choice;
+    // A new person named after the misheard label takes the corrected name too.
+    for (const { label, choice, next } of moved) if (next.count && !(next.text.normalize('NFC') in speakers))
+      speakers[next.text.normalize('NFC')] = choice.kind === 'new' && choice.name === label ? { ...choice, name: next.text.normalize('NFC') } : choice;
     const { text } = result;
     if (draft.mode === 'paste') update({ pasted: text, speakers });
     else if (draft.mode === 'file' && draft.file) update({ file: { ...draft.file, text }, speakers });

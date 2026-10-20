@@ -8,8 +8,9 @@ const GARBLED = 'Ent eu trouxe alguns panoramas como por exemplo compara com out
 const BEFORE = 'a parte de sanidade e como isso pode ser modificado a longo prazo.';
 const INSIDE = 'Então eu trouxe alguns panoramas, como por exemplo, comparação com outras espécies, suínos, aves e também salmonicultura, de quanto nós estamos em distribuição de custos, ou seja, quanto é ração, quanto é sanidade, quanto é genética, e para mostrar que sim, nós estamos no caminho certo, existe uma evolução';
 const AFTER = 'para acontecer, mas já evoluímos muito de 10 anos para cá.';
-// Every word of the first transcription stays ("pra"); only the cut ones are completed and the "é" restored.
-const REPAIRED = 'Então eu trouxe alguns panoramas, como por exemplo, comparação com outras espécies, suínos, aves e também salmonicultura, de quanto nós estamos em distribuição de custos, ou seja, quanto é ração, quanto é sanidade, quanto é genética, e pra mostrar que sim, nós estamos no caminho certo, existe uma evolução';
+// Every token of the first transcription stays as it wrote it ("pra", no commas); only the cut words are
+// completed, with letters only, and the "é" it dropped whole is restored between two confirmed words.
+const REPAIRED = 'Então eu trouxe alguns panoramas como por exemplo comparação com outras espécies suínos aves e também salmonicultura de quanto nós estamos em distribuição de custos ou seja quanto é ração quanto é sanidade quanto é genética e pra mostrar que sim nós estamos no caminho certo existe uma evolução';
 
 /** Words placed one after another from `startMs`, 300 ms apart (the window starts at 0 s). */
 const timed = (text: string, startMs: number): TimedWord[] =>
@@ -54,15 +55,32 @@ test("a neighbour's word never stands in for this segment's word, and nothing is
   assert.equal(repair(ending, '', 'e o produtor que trabalha com tilápia aqui no estado de Minas sabe que', 'Nós vamos crescer'),
     'e o produtor que trabalha com tilápia aqui no estado de Minas sabe que n');
   assert.equal(repair(ending, '', 'e o produtor que trabalha com tilápia aqui no estado de Minas sabe que isso não.', 'Certo'),
-    'e o produtor que trabalha com tilápia aqui no estado de Minas sabe que não.', 'an extra word is not added');
+    'e o produtor que trabalha com tilápia aqui no estado de Minas sabe que não', 'an extra word is not added');
   const opening = 'n acho que o pessoal que trabalha com til aqui no estado tem orgulho';
   assert.equal(repair(opening, 'a longo prazo, né?', 'Acho que o pessoal que trabalha com tilápia aqui no estado tem orgulho.'),
-    'n Acho que o pessoal que trabalha com tilápia aqui no estado tem orgulho.', 'the "né" before the segment is not this "n"');
+    'n acho que o pessoal que trabalha com tilápia aqui no estado tem orgulho', 'the "né" before the segment is not this "n"');
   assert.equal(repair(opening, 'prazo.', 'Não acho que o pessoal que trabalha com tilápia aqui no estado tem orgulho.'),
-    'Não acho que o pessoal que trabalha com tilápia aqui no estado tem orgulho.');
+    'não acho que o pessoal que trabalha com tilápia aqui no estado tem orgulho', 'the first pass wrote it lowercase');
   // Both "não" stay; the filler of the second transcription is not added.
   assert.equal(repair('Ent a gente fez um teste com o pessoal e voc sabe que n n', 'Olha',
     'Então a gente fez um teste com o pessoal e você sabe que não cara não.', 'Certo'),
-  'Então a gente fez um teste com o pessoal e você sabe que não não.');
+  'Então a gente fez um teste com o pessoal e você sabe que não não');
   assert.equal(repair(GARBLED, BEFORE, INSIDE.replace('Então eu', 'Então tipo eu'), AFTER), REPAIRED);
+});
+
+test('accent words go only between confirmed words with nothing between them; first-pass tokens keep their form', () => {
+  // "ele" was misheard the second time: the "é" is not moved ahead of it, and nothing is doubled.
+  assert.equal(repair('Ent ele muito bom no que faz e todo mundo sabe disso aqui na empresa', '',
+    'Então eli é muito bom no que faz e todo mundo sabe disso aqui na empresa'),
+  'Então ele muito bom no que faz e todo mundo sabe disso aqui na empresa');
+  assert.equal(repair('Ent isso e muito importante para a gente porque a gente trabalha com isso', '',
+    'Então isso é muito importante para a gente porque a gente trabalha com isso'),
+  'Então isso e muito importante para a gente porque a gente trabalha com isso');
+  // A question stays a question, a name keeps its capital, symbols stay.
+  assert.equal(repair('Voc vai votar no Lula? Eu n sei ainda se vou votar nele ou no outro candidato', '',
+    'Você vai votar no lula. Eu não sei ainda se vou votar nele ou no outro candidato'),
+  'Você vai votar no Lula? Eu não sei ainda se vou votar nele ou no outro candidato');
+  assert.equal(repair('A Johnson & Johnson cresceu 10 % no ano passado segundo o relat da empresa hoje', '',
+    'A Johnson Johnson cresceu 10 no ano passado segundo o relatório da empresa hoje'),
+  'A Johnson & Johnson cresceu 10 % no ano passado segundo o relatório da empresa hoje');
 });
