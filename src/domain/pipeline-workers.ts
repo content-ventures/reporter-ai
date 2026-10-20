@@ -40,6 +40,10 @@ const images: WorkerNode[] = [
   { id: 'photos', title: 'Buscar fotos', description: 'Busca no Pixabay. O texto é preservado se as imagens estiverem indisponíveis.', kind: 'automatic' },
 ];
 
+/** After the text is saved, its citations are checked on the web (fact-check-worker.ts). */
+const veracity: WorkerNode = { id: 'veracity', title: 'Checar veracidade das falas', description: 'Busca cada afirmação das citações na web e registra o veredito com a fonte.',
+  kind: 'automatic', condition: 'Em segundo plano; o texto não espera' };
+
 /** An event format's worker: its own structure, opening and parts, the article's shared steps around them, no AI images. */
 function formatWorkerFlow(format: EditorialFormat): WorkerNode[] {
   const spec = FORMAT_SPECS[format];
@@ -52,6 +56,7 @@ function formatWorkerFlow(format: EditorialFormat): WorkerNode[] {
     { id: 'section', title: spec.headings ? 'Seções' : 'Contexto', description: spec.headings ? 'Escreve cada intertítulo em sequência, com falas literais.' : 'Escreve o contexto da nota, sem intertítulo.', kind: 'prompt', prompt: funnelPromptKey(format, 'section'), condition: 'Repete uma vez por parte', scope: 'format' },
     { id: 'grounding', title: 'Checar fatos e repetições', description: 'Confere cada número e nome contra o material, as pessoas e o evento; revisa a parte ou remove a frase.', kind: 'automatic' },
     { id: 'validate', title: 'Validar o texto', description: 'Confere o teto do formato, as citações literais e a linha fina antes de salvar.', kind: 'automatic' },
+    veracity,
     { id: 'save', title: 'Texto pronto para revisão', description: 'Salva o rascunho com a linha fina, sem imagens de IA: a cobertura usa as fotos da redação. O box do evento sai na entrega. A aprovação é manual.', kind: 'output' },
   ];
 }
@@ -79,6 +84,7 @@ export function pipelineWorkerFlow(worker: PipelineWorkerKey, definition: Pipeli
     ...pipelineJobKeys(definition, 'article.draft').map(key => ({ id: key, prompt: key, kind: 'prompt' as const, ...details[key]! })),
     { id: 'validate', title: 'Validar o artigo', description: 'Confere estrutura, tamanho e citações na fonte antes de salvar.', kind: 'automatic' },
     ...images,
+    veracity,
     { id: 'save', title: 'Artigo pronto para revisão', description: 'Salva o rascunho e suas citações. A aprovação é manual.', kind: 'output' },
   ];
 }

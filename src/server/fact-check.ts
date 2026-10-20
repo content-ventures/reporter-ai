@@ -40,6 +40,19 @@ function store(checkpoint: EditorialCheckpoint, check: FactCheck) {
   checkpoint.factChecks = [...saved.filter(item => item.id !== check.id), check];
 }
 
+/** The pipeline's model for both judgements, and Tavily for the evidence. */
+export function factCheckProviders(model: string) {
+  return {
+    generate: async (instruction: string, input: unknown, schema: object, signal: AbortSignal) => {
+      const output = await generateStructured('', '', schema, signal, { model, temperature: 0.1, maxTokens: pipelineTokenLimit(model),
+        systemPrompt: instruction, userPrompt: JSON.stringify(input) });
+      return { value: output.value, model: output.model };
+    },
+    search: searchEvidence,
+    now: () => new Date().toISOString(),
+  };
+}
+
 /** Checks one citation now; a citation already checked is returned as is unless `force`. */
 export async function checkCitation(id: string, force: boolean): Promise<CitationView> {
   const read = (await editorialTransaction('runtime', async checkpoint => {
@@ -52,15 +65,7 @@ export async function checkCitation(id: string, force: boolean): Promise<Citatio
   try {
     result = await runFactCheck({ id, text: read.citation.text, speaker: read.citation.speaker,
       ...(read.citation.recordedOn ? { recordedOn: read.citation.recordedOn } : {}),
-      ...(read.citation.relevance.trim() ? { context: read.citation.relevance.trim() } : {}) }, {
-      generate: async (instruction, input, schema, signal) => {
-        const output = await generateStructured('', '', schema, signal, { model: read.model, temperature: 0.1, maxTokens: pipelineTokenLimit(read.model),
-          systemPrompt: instruction, userPrompt: JSON.stringify(input) });
-        return { value: output.value, model: output.model };
-      },
-      search: searchEvidence,
-      now: () => new Date().toISOString(),
-    }, AbortSignal.timeout(150000));
+      ...(read.citation.relevance.trim() ? { context: read.citation.relevance.trim() } : {}) }, factCheckProviders(read.model), AbortSignal.timeout(150000));
   } catch (error) {
     logEvent('fact_check', 'failed', { error_code: safeCode(error), duration_ms: Date.now() - started });
     throw error;

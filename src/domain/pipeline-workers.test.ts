@@ -6,7 +6,7 @@ import { PIPELINE_WORKERS, pipelineWorkerFlow } from './pipeline-workers.ts';
 test('article diagram follows the complete writer and optional quote selection', () => {
   const definition = { ...defaultPipelineDefinition(), articleMode: 'single' as const, curateQuotes: true };
   const nodes = pipelineWorkerFlow('article', definition);
-  assert.deepEqual(nodes.map(node => node.id), ['source', 'facts', 'outline', 'quotes', 'article', 'validate', 'images', 'photos', 'save']);
+  assert.deepEqual(nodes.map(node => node.id), ['source', 'facts', 'outline', 'quotes', 'article', 'validate', 'images', 'photos', 'veracity', 'save']);
   assert.ok(nodes.find(node => node.id === 'facts')?.condition);
   assert.ok(nodes.find(node => node.id === 'outline')?.condition);
   assert.deepEqual(pipelineWorkerFlow('article', { ...definition, curateQuotes: false }).filter(node => node.prompt).map(node => node.prompt), ['facts', 'outline', 'article', 'images']);
@@ -31,7 +31,7 @@ test('each event format has its own worker: its funnel prompts plus the shared s
     ['funnel:stand:section', 'format'],
   ]);
   // A coverage goes out with the newsroom's photos: no AI image block in its flow.
-  assert.deepEqual(nodes.filter(node => !node.prompt).map(node => node.id), ['source', 'grounding', 'validate', 'save']);
+  assert.deepEqual(nodes.filter(node => !node.prompt).map(node => node.id), ['source', 'grounding', 'validate', 'veracity', 'save']);
   assert.equal(pipelineWorkerFlow('note', defaultPipelineDefinition()).find(node => node.id === 'section')?.title, 'Contexto');
   assert.ok(pipelineWorkerFlow('article', defaultPipelineDefinition()).every(node => node.scope === undefined));
 });

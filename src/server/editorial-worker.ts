@@ -32,6 +32,8 @@ import type { ArticlePolicyIssue } from '../domain/article-policy.ts';
 import { ARTICLE_ASSIST_KINDS, runArticleAssist } from './article-assist';
 import { citationsFromArticle, emphasizeArticleQuotes } from '../domain/citation-library.ts';
 import type { Citation } from '../domain/citation-library.ts';
+import { AUTO_FACT_CHECKS } from './fact-check-pipeline.ts';
+import { tavilyConfigured } from './tavily';
 import type { EditorialJob, ServerImageAsset } from '../ports/connected-workspace.ts';
 import { articleImageTarget } from './article-image-task.ts';
 import { editorialResponseValid } from './editorial-validation';
@@ -96,6 +98,9 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         for (const citation of additions.citations) if (!existing.has(citation.id) && existing.size < 5000) existing.set(citation.id,citation);
         checkpoint.citations = [...existing.values()];
         checkpoint.imageAssets = [...(checkpoint.imageAssets ?? []),...additions.assets];
+        // The article's citations are fact-checked in the background on this run, like the images.
+        const checks = additions.citations.map(citation => citation.id).slice(0,AUTO_FACT_CHECKS);
+        if (checks.length && tavilyConfigured()) current.factCheck = { status: 'queued',citationIds: checks,done: 0,attempts: 0 };
         if (additions.queueImages) {
           const record = engine.records.record(job.meta.productionId);
           current.images = record ? articleImageTarget(record,job.meta.pieceId) : undefined;

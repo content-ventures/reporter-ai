@@ -6,6 +6,7 @@ import { pool } from './database.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { runEditorialJob } from './editorial-worker.ts';
 import { runArticleImageJob } from './article-image-worker.ts';
+import { runFactCheckJob } from './fact-check-worker.ts';
 import { logEvent,safeCode } from './errors.ts';
 import { runReporterJob } from './reporter-worker-jobs.ts';
 import { compactEditorialRows } from './worker-drain.ts';
@@ -29,7 +30,7 @@ async function main() {
     while (!stopping) {
       try {
         active = new AbortController();
-        const ran = await runReporterJob(owner,active.signal) || await runEditorialJob(owner,active.signal) || await runArticleImageJob(owner,active.signal);
+        const ran = await runReporterJob(owner,active.signal) || await runEditorialJob(owner,active.signal) || await runArticleImageJob(owner,active.signal) || await runFactCheckJob(owner,active.signal);
         active = undefined;
         if (ran) await compactEditorialRows().catch(error => logEvent('worker','compaction_failed',{ error_code: safeCode(error) }));
         else await delay(1000);
