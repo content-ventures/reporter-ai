@@ -33,6 +33,12 @@ test('an R1 citation reads as an interview quote with its source, minute and che
   assert.equal(quote.verified, true);
 });
 
+test('a quote of part 2 reads Parte 2 · 3:12', () => {
+  const place = { part: 2, count: 2, fileName: 'REC_0013.srt', startMs: 192_000 };
+  assert.equal(quoteOf(citation({ startMs: 1_092_000, place })).locator, 'Parte 2 · 3:12');
+  assert.equal(quoteOf(citation({ startMs: undefined, place: { part: 2, count: 2, fileName: 'REC_0013.txt' } })).locator, 'Parte 2');
+});
+
 test('without a program name the quote takes the source title, and an unsafe link is dropped', () => {
   const quote = quoteOf(citation({ podcastName: undefined, podcastUrl: 'http://inseguro.exemplo', recordedOn: '2026-09-01' }));
   assert.equal(quote.sourceTitle, 'Entrevista com Marina');

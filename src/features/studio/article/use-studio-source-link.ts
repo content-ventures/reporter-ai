@@ -34,7 +34,7 @@ export function useStudioSourceLink({
   const { editor, scrollToBlock, caretWasPlaced } = text;
   const [quoteIds] = useState(() => createBlockIdFactory({ prefix: 'cit' }));
   const segments: ViewerSegment[] = useMemo(
-    () => (source ? viewerSegments(source.version.content.segments, source.source.speakers, people) : []),
+    () => (source ? viewerSegments(source.version.content.segments, source.source.speakers, people, source.source.parts) : []),
     [source, people],
   );
   const [link, setLink] = useState<SourceLink | null>(null);

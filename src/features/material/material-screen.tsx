@@ -10,6 +10,7 @@ import {
   DescriptionList,
   EmptyState,
   ErrorState,
+  FileGlyph,
   LinkButton,
   List,
   ListItem,
@@ -18,12 +19,13 @@ import {
   Skeleton,
   SplitLayout,
   TranscriptViewer,
+  formatTimestamp,
   toast,
   type DescriptionItem,
   type TranscriptAction,
 } from '@content-ventures/design-system/v3';
 import { ArrowRight, Copy, Pencil, ScrollText, Sparkles } from '@content-ventures/design-system/v3/icons';
-import { briefSizeName, shortHash, type Brief, type ProductionId } from '@/domain';
+import { briefSizeName, shortHash, type Brief, type ProductionId, type SourcePart } from '@/domain';
 import type { Participant, SourceDetail } from '@/ports';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
 import { useCan, useCommands, usePiece, useSource } from '@/state';
@@ -63,7 +65,7 @@ function materialFacts(detail: SourceDetail): DescriptionItem[] {
   const items: DescriptionItem[] = [
     { label: 'Origem', value: SOURCE_ORIGIN_LABELS[source.origin] },
     { label: 'Data', value: source.recordedOn ? formatDate(source.recordedOn) : undefined, numeric: true },
-    { label: 'Arquivo', value: source.fileName ?? 'Texto colado' },
+    { label: 'Arquivo', value: source.parts ? plural(source.parts.length, 'parte', 'partes') : (source.fileName ?? 'Texto colado') },
     {
       label: 'Autorização',
       value: <AuthorizationValue detail={detail} />,
@@ -115,15 +117,60 @@ function briefFacts(brief: Brief): DescriptionItem[] {
   ];
 }
 
+/** One recording of a material sent in parts: where it starts; a click shows its first line. */
+function PartItem({ part, number, first, onShowPart }: { part: SourcePart; number: number; first?: string; onShowPart?: (segmentId: string) => void }) {
+  return (
+    <ListItem
+      density="sm"
+      leading={<FileGlyph name={part.fileName} />}
+      title={part.fileName}
+      titleLines={2}
+      description={part.startMs !== undefined ? `Parte ${number} · começa em ${formatTimestamp(part.startMs)}` : `Parte ${number}`}
+      meta={part.durationMs !== undefined ? formatTimestamp(part.durationMs) : undefined}
+      onClick={first && onShowPart ? () => onShowPart(first) : undefined}
+    />
+  );
+}
+
 /** `onEdit`/`onEditBrief` absent: someone who only reads (no "Editar pauta", no "Ligar pessoas"). */
-function MaterialAside({ detail, productionId, brief, onEdit, onEditBrief }: { detail: SourceDetail; productionId: ProductionId; brief: Brief | undefined; onEdit?: () => void; onEditBrief?: () => void }) {
+function MaterialAside({
+  detail,
+  productionId,
+  brief,
+  onEdit,
+  onEditBrief,
+  onShowPart,
+}: {
+  detail: SourceDetail;
+  productionId: ProductionId;
+  brief: Brief | undefined;
+  onEdit?: () => void;
+  onEditBrief?: () => void;
+  onShowPart?: (segmentId: string) => void;
+}) {
   const unmapped = withoutPerson(detail);
   const others = detail.productions.filter((production) => production.id !== productionId);
+  const parts = detail.source.parts;
   return (
     <Panel>
       <Section title="Material">
         <DescriptionList items={materialFacts(detail)} labelWidth={ASIDE_LABEL_WIDTH} label="Dados do material" />
       </Section>
+      {parts ? (
+        <Section title="Partes" meta={String(parts.length)}>
+          <List label="Partes do material" framed={false}>
+            {parts.map((part, index) => (
+              <PartItem
+                key={`${index}-${part.fileName}`}
+                part={part}
+                number={index + 1}
+                first={detail.version.content.segments.find((segment) => segment.part === index + 1)?.id}
+                onShowPart={onShowPart}
+              />
+            ))}
+          </List>
+        </Section>
+      ) : null}
       {brief ? (
         <Section title="Pauta" action={onEditBrief ? <LinkButton onClick={onEditBrief}>Editar pauta</LinkButton> : undefined}>
           <DescriptionList items={briefFacts(brief)} labelWidth={ASIDE_LABEL_WIDTH} label="Pauta da produção" />
@@ -344,7 +391,15 @@ export function MaterialScreen({ productionId }: { productionId: ProductionId })
             </Section>
           </Panel>
         }
-        aside={<MaterialAside detail={data} productionId={productionId} brief={detail?.brief} {...(canEdit ? { onEdit: () => setEditing(true), onEditBrief: () => setEditingBrief(true) } : {})} />}
+        aside={
+          <MaterialAside
+            detail={data}
+            productionId={productionId}
+            brief={detail?.brief}
+            onShowPart={setActiveId}
+            {...(canEdit ? { onEdit: () => setEditing(true), onEditBrief: () => setEditingBrief(true) } : {})}
+          />
+        }
       />
       <MaterialDrawer open={editing} onClose={() => setEditing(false)} detail={data} />
       <BriefDrawer productionId={productionId} open={editingBrief} onClose={() => setEditingBrief(false)} />
