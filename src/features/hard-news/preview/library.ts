@@ -1,3 +1,4 @@
+import type { ClaimKind, ClaimVerdict, FactCheck, FactSource } from '@/domain/fact-check';
 import type { ArchiveArticle, ArchiveImage, BankQuote, CmsConnection } from '@/domain/hard-news';
 import { archiveCopy } from '../images/images-model.ts';
 import type { BankProvider } from '../images/images-model.ts';
@@ -6,7 +7,67 @@ import type { Clock } from './news';
 
 /** Preview data of the R2 library: quote bank, published archive, image archive and the CMS. */
 
+// ── Checagem de exemplo (fontes fictícias) ───────────────────────────────────────────────
+
+const PORTAL = 'https://portal-do-pescado.exemplo';
+const source = (url: string, title: string, excerpt: string, publishedOn?: string): FactSource =>
+  ({ url, title, site: new URL(url).hostname, excerpt, ...(publishedOn ? { publishedOn } : {}) });
+const VOO = source(`${PORTAL}/voo-direto-curitiba`, 'Voo direto de Curitiba encurta caminho do filé fresco até Miami', 'A rota cargueira semanal reduziu de 72 para 48 horas o tempo entre o abate e a gôndola nos Estados Unidos.', '2026-09-12');
+const GELO = source(`${PORTAL}/glaciamento-infracao`, 'Glaciamento acima do limite é a infração mais comum', 'Fiscalizações encontraram excesso de gelo em 38% das amostras de filé congelado analisadas no último ano.', '2026-02-20');
+const RACAO = source(`${PORTAL}/racao-custo-tilapia`, 'Ração representa 70% do custo da tilápia', 'A ração responde por sete de cada dez reais gastos para produzir um quilo de tilápia.', '2026-08-30');
+const MANCHA = source(`${PORTAL}/mancha-branca-ceara`, 'Mancha branca volta a atingir viveiros no Ceará', 'Produtores de Aracati e Jaguaruana relatam perdas de até metade da produção em viveiros sem biossegurança.', '2026-10-05');
+const CAMARAO = source(`${PORTAL}/camarao-preco-mancha-branca`, 'Preço do camarão sobe 18% com a mancha branca', 'O quilo do camarão cinza médio passou de R$ 39 para R$ 46 em três semanas.', '2026-10-12');
+const TAINHA = source('https://boletim-da-pesca.exemplo/tainha-2026', 'Boletim da safra da tainha', 'A safra de 2025 foi a única abaixo da média nos últimos cinco anos; 2023 e 2024 ficaram acima dela.', '2026-07-10');
+const INSETO = source('https://revista-aquicola.exemplo/farinha-de-inseto-tambaqui', 'Farinha de inseto na ração de tambaqui', 'A inclusão de 15% de farinha de larva não alterou o ganho de peso dos juvenis de tambaqui.', '2026-08-18');
+const FRIO = source('https://instituto-do-frio.exemplo/vida-util-pescado', 'Vida útil do pescado fresco e temperatura', 'Cada grau acima de 2 °C reduz em cerca de um dia a vida útil do pescado fresco refrigerado.', '2025-11-03');
+const CREDITO = source('https://banco-de-fomento.exemplo/linha-aquicultura', 'Nova linha de crédito para aquicultura', 'A linha financia aeradores e tanques com carência de 24 meses.', '2026-10-15');
+
+type DemoClaim = [kind: ClaimKind, text: string, verdict?: ClaimVerdict, reason?: string, sources?: FactSource[]];
+function demoCheck(id: string, day: string, strength: number, why: string, claims: DemoClaim[]): FactCheck {
+  return { id, checkedAt: `${day}T14:00:00.000Z`, model: 'Demonstração', overrides: [], history: [], strength: { score: strength, reason: why },
+    claims: claims.map(([kind, text, verdict, reason, sources]) => ({ text, kind, ...(verdict ? { verdict } : {}), ...(reason ? { reason } : {}), sources: sources ?? [] })) };
+}
+
+const DEMO_CHECKS: Record<string, FactCheck> = {
+  'q-marina': demoCheck('q-marina', '2026-10-18', 5, 'Dado de tempo e rota concretos.', [
+    ['fact', 'O filé fresco chega aos Estados Unidos em 48 horas.', 'validated', 'O portal registra a queda de 72 para 48 horas.', [VOO]],
+    ['fact', 'Há voo direto para os Estados Unidos saindo de Curitiba e de Viracopos.', 'not_validated', 'A fonte confirma Curitiba; Viracopos não aparece.']]),
+  'q-henrique': demoCheck('q-henrique', '2026-10-17', 4, 'Imagem forte e citável.', [
+    ['opinion', 'O glaciamento precisa estar na frente da embalagem.'],
+    ['fact', 'O consumidor paga gelo achando que é peixe.', 'validated', 'Excesso de gelo em 38% das amostras fiscalizadas.', [GELO]]]),
+  'q-gilberto': demoCheck('q-gilberto', '2026-10-19', 5, 'Número concreto do custo.', [
+    ['fact', 'A ração é 70% do custo de produção.', 'validated', 'O levantamento indica sete de cada dez reais.', [RACAO]],
+    ['fact', 'O aumento da farinha de peixe chega ao produtor no mês seguinte.', 'not_validated', 'Nenhuma fonte trata do prazo de repasse.']]),
+  'q-raul': demoCheck('q-raul', '2026-10-19', 4, 'Relato direto do efeito da doença.', [
+    ['declared', 'Ele perdeu metade dos viveiros para a mancha branca em agosto.', 'validated', 'Produtores de Aracati relatam perdas de até metade.', [MANCHA]],
+    ['fact', 'O preço do camarão subiu.', 'validated', 'Alta de 18% em três semanas nas centrais.', [CAMARAO]]]),
+  'q-jorge': demoCheck('q-jorge', '2026-10-16', 3, 'Avaliação com dado de safra.', [
+    ['fact', 'A tainha voltou depois de três safras fracas.', 'disputed', 'O boletim registra uma safra fraca, a de 2025, não três.', [TAINHA]],
+    ['opinion', 'O defeso está funcionando.']]),
+  'q-lucia': demoCheck('q-lucia', '2026-10-15', 5, 'Resultado técnico preciso.', [
+    ['fact', 'A farinha de inseto entra em 15% da ração de tambaqui sem perda de crescimento.', 'validated', 'O ensaio com 15% não alterou o ganho de peso.', [INSETO]]]),
+  'q-vera': demoCheck('q-vera', '2026-10-14', 4, 'Regra prática fácil de citar.', [
+    ['fact', 'Cada grau acima da faixa tira um dia de prateleira do pescado fresco.', 'validated', 'O instituto estima cerca de um dia por grau acima de 2 °C.', [FRIO]]]),
+  'q-sonia': demoCheck('q-sonia', '2026-10-16', 4, 'Condição de crédito específica.', [
+    ['declared', 'O crédito tem carência de dois anos.', 'validated', 'A linha tem carência de 24 meses.', [CREDITO]],
+    ['opinion', 'A carência permite trocar o aerador antes de o tanque dar retorno.']]),
+  'q-thiago': demoCheck('q-thiago', '2026-10-12', 3, 'Caso concreto, sem dado público.', [
+    ['declared', 'A cooperativa fechou contrato com o varejo depois de padronizar o filé em 120 gramas.', 'not_validated', 'A busca não encontrou registro do contrato.']]),
+  'q-luana': demoCheck('q-luana', '2026-10-13', 4, 'Comparação de custos clara.', [
+    ['fact', 'Sem energia mais barata, o aerador é o maior custo depois da ração.', 'not_validated', 'As fontes tratam da conta de luz, não da ordem dos custos.']]),
+  'q-tadeu': demoCheck('q-tadeu', '2026-10-11', 2, 'Genérica, sem número.', [['forecast', 'O reajuste do salmão chega no pedido de dezembro.']]),
+  'q-claudia': demoCheck('q-claudia', '2026-10-10', 3, 'Opinião de quem compra.', [
+    ['opinion', 'Peixe às sextas é hábito antigo.'], ['opinion', 'A campanha só funciona se o preço da gôndola acompanhar.']]),
+  'q-elisa': demoCheck('q-elisa', '2026-10-17', 3, 'Previsão sobre a nova regra.', [
+    ['forecast', 'A inspeção em todo lote importado vai atrasar a liberação.'], ['opinion', 'A inspeção protege o produtor nacional.']]),
+  'q-patricia': demoCheck('q-patricia', '2026-10-09', 3, 'Posição clara sobre rotulagem.', [['opinion', 'A rotulagem precisa dizer o peso líquido sem gelo.']]),
+};
+
 export function seedQuotes(): BankQuote[] {
+  return quotes().map((quote) => (DEMO_CHECKS[quote.id] ? { ...quote, factCheck: DEMO_CHECKS[quote.id] } : quote));
+}
+
+function quotes(): BankQuote[] {
   return [
     { id: 'q-marina', text: 'O filé fresco só chega aos Estados Unidos em 48 horas porque hoje temos voo direto saindo de Curitiba e de Viracopos.', author: 'Marina Castro', role: 'diretora comercial da Cooperativa Oeste Peixes', topic: 'Exportação e mercado', origin: 'transcript', sourceTitle: 'Podcast Cadeia do Pescado #41', locator: '14:32', context: 'Explica por que o filé fresco ganhou espaço nas exportações.', recordedOn: '2026-09-18', verified: true, uses: 3 },
     { id: 'q-otavio', text: 'Exportar deixou de ser excedente. Hoje a gente planeja o viveiro pensando no cliente lá fora.', author: 'Otávio Mendes', role: 'presidente da Associação de Tilapicultores do Paraná', topic: 'Exportação e mercado', origin: 'event', sourceTitle: 'Painel de abertura da Feira do Pescado 2026', locator: '32:10', context: 'Fala sobre a mudança no planejamento dos produtores.', recordedOn: '2026-08-27', verified: true, uses: 1 },
