@@ -1,8 +1,9 @@
 import 'server-only';
 import { rm,stat } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { acceptedRepair,audioChunks,garbledSegment,MAX_REPAIRS,mergeSegments,repairWindow,wordsWithin,type Segment } from '../domain/reporter.ts';
+import { audioChunks,garbledSegment,MAX_REPAIRS,mergeSegments,repairedText,repairWindow,type Segment } from '../domain/reporter.ts';
 import { signedSourceUrl } from './cloud-storage.ts';
 import { withCloudMediaSource } from './cloud-media-source.ts';
 import { transaction } from './database.ts';
@@ -63,8 +64,11 @@ function databaseChunkStore(job: Job,owner: string): ChunkStore {
   };
 }
 
-const transcriptServices = { signedSourceUrl, verifySource, inspectMedia, prepareChunk, transcribeChunk, transcribeWindow, withCloudMediaSource };
-type TranscriptServices = Omit<typeof transcriptServices,'transcribeWindow'> & Partial<Pick<typeof transcriptServices,'transcribeWindow'>>;
+const wait = async (ms: number,signal: AbortSignal): Promise<void> => { await sleep(ms,undefined,{ signal }); };
+const transcriptServices = { signedSourceUrl, verifySource, inspectMedia, prepareChunk, transcribeChunk, transcribeWindow, withCloudMediaSource, wait };
+type TranscriptServices = Omit<typeof transcriptServices,'transcribeWindow' | 'wait'> & Partial<Pick<typeof transcriptServices,'transcribeWindow' | 'wait'>>;
+/** Longest rate-limit pause a repair waits for, once; past it the remaining repairs are left out. */
+const REPAIR_MAX_WAIT_MS = 30_000;
 
 export async function processTranscript(input: unknown,directory: string,signal: AbortSignal,progress: (phase: string,done: number,total: number) => Promise<void>,
   services: TranscriptServices = transcriptServices, options: { store?: ChunkStore; deadline?: number; now?: () => number } = {}) {
@@ -108,25 +112,37 @@ export async function processTranscript(input: unknown,directory: string,signal:
     else segments = mergeSegments(segments,result.segments,chunks[i].start);
     await progress('transcribing',i+1,chunks.length);
   }
-  // A garbled stretch (domain/reporter.ts) is transcribed again on its own, with word timestamps,
-  // and only the words spoken inside the segment replace it. Its text changes only when the new one
-  // reads as Portuguese; a failed or doubtful repair keeps what Whisper wrote the first time.
+  // A garbled stretch (domain/reporter.ts) is transcribed again on its own, with word timestamps. Its
+  // text changes only when the new words, cut at their accents, align with the garbled ones; anything
+  // doubtful keeps what Whisper wrote the first time. Repairs go one by one: a rate limit is waited out
+  // once, then the remaining repairs are left out rather than throttling the next recording.
   if (allTimed) {
-    const window = services.transcribeWindow ?? transcribeWindow;
-    for (const index of segments.flatMap((segment,at) => garbledSegment(segment,media.language) ? [at] : []).slice(0,MAX_REPAIRS)) {
-      if (signal.aborted) throw new FlowError('JOB_INTERRUPTED',503,true);
-      if (now()>deadline-YIELD_MARGIN_MS) break;
+    const window = services.transcribeWindow ?? transcribeWindow, pause = services.wait ?? wait;
+    let waited = false;
+    repairs: for (const index of segments.flatMap((segment,at) => garbledSegment(segment,media.language) ? [at] : []).slice(0,MAX_REPAIRS)) {
       const segment = segments[index],range = repairWindow(segment,duration),windowPath = join(directory,'repair-'+index+'.flac');
       try {
+        if (signal.aborted) throw new FlowError('JOB_INTERRUPTED',503,true);
+        if (now()>deadline-YIELD_MARGIN_MS) break;
         await services.prepareChunk(source,windowPath,range.start,range.duration,signal,remote);
-        const repair = await window(windowPath,media.language,signal);
+        let repair;
+        try { repair = await window(windowPath,media.language,signal); }
+        catch (error) {
+          const limited = error instanceof FlowError && error.code === 'GROQ_RATE_LIMIT';
+          const delay = limited ? Math.max(1,error.waitSeconds)*1000 : 0;
+          if (!limited || waited || delay>REPAIR_MAX_WAIT_MS || now()+delay>deadline-YIELD_MARGIN_MS) throw error;
+          waited = true;
+          await pause(delay,signal);
+          repair = await window(windowPath,media.language,signal);
+        }
         units = units===null || repair.input_units===null ? null : units+repair.input_units;
-        const text = wordsWithin(repair.words,range.start,segment);
-        if (acceptedRepair(segment.text,text)) segments[index] = { ...segment,text };
+        const text = repairedText(segment.text,repair.words);
+        if (text) segments[index] = { ...segment,text };
         else logEvent('worker','transcript_repair_rejected');
       } catch (error) {
         if (signal.aborted) throw new FlowError('JOB_INTERRUPTED',503,true);
         logEvent('worker','transcript_repair_failed',{ error_code: safeCode(error) });
+        if (error instanceof FlowError && error.code === 'GROQ_RATE_LIMIT') break repairs;
       } finally { await rm(windowPath,{ force: true }).catch(() => {}); }
     }
   }

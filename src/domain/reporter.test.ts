@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { acceptedRepair, garbledSegment, repairWindow, wordsWithin, type TimedWord } from './reporter.ts';
+import { garbledSegment, repairedText, repairWindow, type TimedWord } from './reporter.ts';
 
 // What Whisper returned for 88–105 s of a real stand interview: every word cut at its first accent.
 const GARBLED = 'Ent eu trouxe alguns panoramas como por exemplo compara com outras esp su aves e tamb salmonicultura de quanto n estamos em distribui de custos ou seja quanto ra quanto sanidade quanto gen e pra mostrar que sim n estamos no caminho certo existe uma evolu';
+// The same stretch transcribed again on its own, 84–109 s: the margin brings words of both neighbours.
+const WINDOW = 'a parte de sanidade e como isso pode ser modificado a longo prazo. Então eu trouxe alguns panoramas, como por exemplo, comparação com outras espécies, suínos, aves e também salmonicultura, de quanto nós estamos em distribuição de custos, ou seja, quanto é ração, quanto é sanidade, quanto é genética, e para mostrar que sim, nós estamos no caminho certo, existe uma evolução para acontecer, mas já evoluímos muito de 10 anos para cá.';
+const REPAIRED = 'Então eu trouxe alguns panoramas, como por exemplo, comparação com outras espécies, suínos, aves e também salmonicultura, de quanto nós estamos em distribuição de custos, ou seja, quanto é ração, quanto é sanidade, quanto é genética, e para mostrar que sim, nós estamos no caminho certo, existe uma evolução';
+const words = (text: string): TimedWord[] => text.split(' ').map((word, at) => ({ word, start_ms: at * 300, end_ms: at * 300 + 250 }));
 const segment = { start_ms: 88_160, end_ms: 105_629, text: GARBLED };
 
 test('a long Portuguese segment with no accented letter is garbled; normal speech is not', () => {
@@ -18,21 +22,28 @@ test('the window adds a margin inside the recording', () => {
   assert.deepEqual(repairWindow({ start_ms: 1000, end_ms: 4000, text: '' }, 5), { start: 0, duration: 5 });
 });
 
-test('only the words spoken inside the segment replace it, by the middle of each word', () => {
-  // Window from 84 s; times relative to it.
-  const words: TimedWord[] = [
-    { word: 'prazo.', start_ms: 3600, end_ms: 4000 },
-    { word: 'Então', start_ms: 4400, end_ms: 4700 }, { word: 'eu', start_ms: 4700, end_ms: 4800 },
-    { word: 'trouxe', start_ms: 4800, end_ms: 5100 }, { word: 'evolução', start_ms: 21_000, end_ms: 21_500 },
-    { word: 'para', start_ms: 21_700, end_ms: 21_900 },
-  ];
-  assert.equal(wordsWithin(words, 84, segment), 'Então eu trouxe evolução');
+test('the repair is the span of the new words that, cut at their accents, aligns with the garbled ones', () => {
+  // Real data: the margin words of both neighbours fall outside; "pra"/"para" is within the tolerance.
+  assert.equal(repairedText(GARBLED, words(WINDOW)), REPAIRED);
 });
 
-test('a repair is kept only when it reads as Portuguese again at about the same length', () => {
-  const repaired = 'Então eu trouxe alguns panoramas, como por exemplo, comparação com outras espécies, suínos, aves e também salmonicultura, de quanto nós estamos em distribuição de custos, ou seja, quanto é ração, quanto é sanidade, quanto é genética, e para mostrar que sim, nós estamos no caminho certo, existe uma evolução';
-  assert.equal(acceptedRepair(GARBLED, repaired), true);
-  assert.equal(acceptedRepair(GARBLED, GARBLED), false, 'the same failure again is not a repair');
-  assert.equal(acceptedRepair(GARBLED, 'Então eu trouxe alguns panoramas.'), false, 'a much shorter text loses speech');
-  assert.equal(acceptedRepair(GARBLED, `${repaired} ${repaired}`), false, 'a much longer text adds speech');
+test('a repair that does not explain the garbled words never replaces them', () => {
+  const window = words(WINDOW);
+  // Whisper stopped early: the tail of the speech would be lost.
+  assert.equal(repairedText(GARBLED, window.slice(0, 40)), undefined);
+  // A different stretch, or a translation of an English quote, does not align.
+  assert.equal(repairedText('the main goal of the project is to deliver value for our customers in Brazil',
+    words('o principal objetivo do projeto é entregar valor para os nossos clientes no Brasil')), undefined);
+  // Correct speech that simply has no accent stays as it was.
+  const plain = 'o pessoal que trabalha com peixe aqui no estado de Minas Gerais tem muito orgulho disso';
+  assert.equal(repairedText(plain, words(`${plain} É`)), undefined);
+});
+
+test('the edges come from the garbled words, not from timestamps: no word lost or doubled', () => {
+  // "n estamos" is "Não estamos" cut at its accent: the "Não" of the window is kept, the negation intact.
+  assert.equal(repairedText('n estamos no caminho certo e a sanidade tem um custo alto para o produtor hoje',
+    words('prazo. Não estamos no caminho certo e a sanidade tem um custo alto para o produtor hoje. Então')),
+  'Não estamos no caminho certo e a sanidade tem um custo alto para o produtor hoje.');
+  // The next segment's first word, inside the margin, is not appended.
+  assert.equal(repairedText(GARBLED, words(`${WINDOW} Certo, agora`)), REPAIRED);
 });
