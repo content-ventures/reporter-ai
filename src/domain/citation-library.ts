@@ -4,8 +4,8 @@ import { extractQuotes } from './quotes.ts';
 import { literalQuoteText, quoteSpelling } from './article-policy.ts';
 import { contentHash } from './text/hash.ts';
 import { countWords } from './text/stats.ts';
-import { sourceVersion } from './source.ts';
-import type { Source } from './source.ts';
+import { segmentPlace, sourceVersion } from './source.ts';
+import type { SegmentPlace, Source } from './source.ts';
 import type { SourceRef } from './refs.ts';
 import type { Person } from './workspace.ts';
 
@@ -22,7 +22,8 @@ export type CitationInput = {
   podcastName?: string; podcastUrl?: string; recordedOn?: string; location?: string;
 };
 export type CitationView = Citation & {
-  speaker: string; podcast: string; sourceTitle: string; startMs?: number;
+  /** `startMs` is the material's continuous time; `place` tells the part of a material sent in parts. */
+  speaker: string; podcast: string; sourceTitle: string; startMs?: number; place?: SegmentPlace;
   evidence: string; authorized: boolean; ready: boolean;
   participants: { id: string; name: string }[];
 };
@@ -89,6 +90,7 @@ export function citationView(citation: Citation, source: Source, people: readonl
   const version = sourceVersion(source, citation.ref.sourceVersion);
   const segmentId = citation.ref.locator.type === 'segment' ? citation.ref.locator.segmentId : undefined;
   const segment = version?.content.segments.find(segment => segment.id === segmentId);
+  const place = segment && segmentPlace(source, segment);
   const person = citation.authorConfirmed ? people.find(person => person.id === citation.personId) : undefined;
   const authorized = source.rights.authorized && version?.hash === citation.sourceHash
     && Boolean(segment && literalQuoteText(segment.text).includes(citation.text));
@@ -96,6 +98,7 @@ export function citationView(citation: Citation, source: Source, people: readonl
     sourceTitle: source.title, evidence: segment?.text ?? '', authorized,
     ready: Boolean(authorized && person && citation.relevance.trim()),
     ...(segment?.startMs === undefined ? {} : { startMs: segment.startMs }),
+    ...(place ? { place } : {}),
     participants: [...new Set(source.speakers.flatMap(speaker => speaker.personId ? [speaker.personId] : []))]
       .flatMap(id => { const person = people.find(person => person.id === id); return person ? [{ id, name: person.name }] : []; }) };
 }

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createTranscriptSource } from './source.ts';
-import { parseTranscript } from './text/transcript-parse.ts';
+import { createTranscriptSource, materialPartHashes } from './source.ts';
+import type { Source } from './source.ts';
+import { joinTranscriptParts, parseTranscript } from './text/transcript-parse.ts';
 import { articlePlainText, articleStats } from './article.ts';
 import type { ArticleBody } from './article.ts';
 import { citationDay, citationView, citationsFromArticle, emphasizeArticleQuotes, locateCitation, podcastLink } from './citation-library.ts';
@@ -52,4 +53,23 @@ test('a quotation the article opens with a capital is kept in the library as the
   const items = citationsFromArticle(body,[s],'production',ctx.now);
   assert.equal(items.length,1);assert.equal(items[0].text,lower);
   assert.equal(citationView(items[0],s,[{ id: 'ana',name: 'Ana Costa' }]).authorized,true);
+});
+test('citationView tells which part a quote is heard in', () => {
+  const opening = '1\n00:00:00,000 --> 00:00:05,000\nPedro Lima: Vamos falar de logística refrigerada.\n';
+  const cue = `1\n00:00:03,000 --> 00:00:08,000\nAna Costa: ${phrase}\n`;
+  const text = joinTranscriptParts([{ text: opening, fileName: 'parte-1.srt' }, { text: cue, fileName: 'parte-2.srt' }]);
+  const [first, second] = materialPartHashes(text) ?? [];
+  const parts = createTranscriptSource({ workspaceId: 'workspace',title: 'Episódio em partes',origin: 'podcast',authorized: true,parsed: parseTranscript(text),
+    parts: [{ fileName: 'parte-1.srt',hash: first },{ fileName: 'parte-2.srt',hash: second }],speakerPeople: { 'Ana Costa': 'ana' } },ctx);
+  const view = (source: Source) => {
+    const located = locateCitation(source,1,phrase);
+    assert.ok(located);
+    return citationView({ id: 'c',revision: 0,text: located.text,ref: located.ref,sourceHash: located.hash,productionId: 'production',
+      createdAt: ctx.now,updatedAt: ctx.now,authorConfirmed: true,personId: 'ana',relevance: '' },source,[{ id: 'ana',name: 'Ana Costa' }]);
+  };
+  assert.deepEqual(view(parts).place,{ part: 2,count: 2,fileName: 'parte-2.srt',startMs: 3_000 });
+  assert.equal(view(parts).startMs,5_000 + 3_000);
+  const singleView = view(createTranscriptSource({ workspaceId: 'workspace',title: 'Episódio',origin: 'podcast',authorized: true,parsed: parseTranscript(cue),speakerPeople: { 'Ana Costa': 'ana' } },ctx));
+  assert.equal('place' in singleView,false);
+  assert.equal(singleView.startMs,3_000);
 });

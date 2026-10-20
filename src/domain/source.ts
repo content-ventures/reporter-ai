@@ -4,7 +4,7 @@ import { ok, refuse } from './result.ts';
 import type { CommandContext, Result } from './result.ts';
 import { contentHash } from './text/hash.ts';
 import { normalizeSpaces } from './text/normalize.ts';
-import { segmentIdAt } from './text/transcript-parse.ts';
+import { formatTimestamp, parseTranscript, segmentIdAt, splitTranscriptParts } from './text/transcript-parse.ts';
 import type { ParsedTranscript, TranscriptFormat } from './text/transcript-parse.ts';
 
 /** `transcript` is live in R1; the others are reserved plug points (R2 news … R7 event). */
@@ -32,6 +32,8 @@ export type TranscriptSegment = {
   text: string;
   startMs?: number;
   endMs?: number;
+  /** 1-based recording of a material sent in parts. */
+  part?: number;
 };
 
 export type TranscriptContent = { type: 'transcript'; format: TranscriptFormat; segments: TranscriptSegment[] };
@@ -47,6 +49,9 @@ export type SourceVersion = {
   createdBy: ActorId;
   note?: string;
 };
+
+/** One recording of a material sent in parts; `startMs` is where it starts on the material's timeline. */
+export type SourcePart = { fileName: string; transcriptId?: string; hash: string; startMs?: number; durationMs?: number };
 
 export type SourceRights = {
   /** R1 is "transcrição autorizada": generation stays disabled until this is true (REQ-T.1). */
@@ -70,6 +75,8 @@ export type Source = {
   fileName?: string;
   /** Uploaded original and provider transcript in the local database. */
   transcriptId?: string;
+  /** The recordings of a material sent in parts (2+ only, in the chosen order). */
+  parts?: SourcePart[];
   speakers: Speaker[];
   rights: SourceRights;
   /** Ascending by `number`; never empty. */
@@ -89,6 +96,32 @@ export function sourceContentHash(content: SourceContent): string {
       endMs: segment.endMs,
     })),
   });
+}
+
+/** Content hash each recording would have saved alone (same rule as a single-file source). */
+export function materialPartHashes(text: string): string[] | undefined {
+  return splitTranscriptParts(text)?.map((part) => {
+    const parsed = parseTranscript(part);
+    return sourceContentHash({ type: 'transcript', format: parsed.format, segments: parsed.segments });
+  });
+}
+
+/** Where a segment of a material sent in parts is heard; `startMs` counts inside that part's file. */
+export type SegmentPlace = { part: number; count: number; fileName: string; startMs?: number };
+
+export function segmentPlace(source: Pick<Source, 'parts'>, segment: Pick<TranscriptSegment, 'part' | 'startMs'>): SegmentPlace | undefined {
+  if (!source.parts || segment.part === undefined) return undefined;
+  const part = source.parts[segment.part - 1];
+  if (!part) return undefined;
+  const place: SegmentPlace = { part: segment.part, count: source.parts.length, fileName: part.fileName };
+  if (segment.startMs !== undefined && part.startMs !== undefined) place.startMs = segment.startMs - part.startMs;
+  return place;
+}
+
+/** "Parte 2 · 03:12", or "Parte 2" when there is no time. */
+export function placeLabel(place: Pick<SegmentPlace, 'part' | 'startMs'>, time: (ms: number) => string | undefined = formatTimestamp): string {
+  const at = place.startMs === undefined ? undefined : time(place.startMs);
+  return at ? `Parte ${place.part} · ${at}` : `Parte ${place.part}`;
 }
 
 export function currentSourceVersion(source: Source): SourceVersion {
@@ -143,6 +176,8 @@ export type NewTranscriptSource = {
   location?: string;
   fileName?: string;
   parsed: ParsedTranscript;
+  /** One entry per recording of a joined material, in the order of `parsed.parts`. */
+  parts?: readonly { fileName: string; transcriptId?: string; hash: string }[];
   authorized: boolean;
   /** Optional label → person mapping chosen in "Falantes". */
   speakerPeople?: Record<string, PersonId>;
@@ -185,6 +220,19 @@ export function createTranscriptSource(input: NewTranscriptSource, ctx: CommandC
   if (input.sourceUrl?.trim()) source.sourceUrl = input.sourceUrl.trim();
   if (input.location?.trim()) source.location = input.location.trim();
   if (input.fileName) source.fileName = input.fileName;
+  const read = input.parsed.parts;
+  if (input.parts && read && input.parts.length === read.length && read.length > 1) {
+    source.parts = input.parts.map(({ fileName, transcriptId, hash }, index): SourcePart => {
+      const { startMs, durationMs } = read[index];
+      return {
+        fileName,
+        ...(transcriptId ? { transcriptId } : {}),
+        hash,
+        ...(startMs !== undefined ? { startMs } : {}),
+        ...(durationMs !== undefined ? { durationMs } : {}),
+      };
+    });
+  }
   return source;
 }
 
@@ -233,6 +281,9 @@ export function reviseSource(
       if (edit.afterSegmentId !== null && index < 0) {
         return refuse('unknown_segment', 'Trecho não encontrado nesta versão.', { segmentId: edit.afterSegmentId });
       }
+      // A new segment belongs to the recording of the segment before it (or the first one).
+      const part = (index < 0 ? segments[0] : segments[index])?.part;
+      if (part !== undefined) inserted.part = part;
       segments = [...segments.slice(0, index + 1), inserted, ...segments.slice(index + 1)];
       continue;
     }
@@ -279,7 +330,7 @@ export function mapSpeaker(source: Source, label: string, personId: PersonId | '
   };
 }
 
-/** Finds an existing source whose any version has the same content hash ("material duplicado"). */
+/** Finds an existing source whose any version, or any recording sent as a part, has the same content hash ("material duplicado"). */
 export function findDuplicateSource(sources: readonly Source[], hash: string): Source | undefined {
-  return sources.find((source) => source.versions.some((version) => version.hash === hash));
+  return sources.find((source) => source.versions.some((version) => version.hash === hash) || source.parts?.some((part) => part.hash === hash));
 }
