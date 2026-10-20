@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { analyzeTranscript, parseTranscript, sourceContentHash } from '../../domain/index.ts';
+import { MAX_MATERIAL_CHARS, analyzeTranscript, joinTranscriptParts, parseTranscript, sourceContentHash } from '../../domain/index.ts';
 import type { SourceAnalysis } from '../../ports/index.ts';
 import {
   EMPTY_DRAFT,
   EMPTY_EVENT,
   NEW_PRODUCTION_STEPS,
+  RECEIVED_PART,
+  addParts,
+  draftMaterial,
+  dropPart,
+  landPart,
+  materialTooLong,
+  movePart,
+  withMaterialText,
   draftAutomaticSections,
   draftSectionOptions,
   draftStructureLabel,
@@ -29,7 +37,7 @@ import {
   withSize,
   withoutPersonLabel,
 } from './form.ts';
-import type { NewProductionDraft } from './form.ts';
+import type { MaterialPart, NewProductionDraft } from './form.ts';
 import { SAMPLE_NEW_SPEAKER, SAMPLE_TRANSCRIPT } from './sample-material.ts';
 
 const PEOPLE = [
@@ -249,5 +257,88 @@ describe('Nova produção · event formats', () => {
     assert.equal(briefBlocker({ ...note, sections: 3 }), 'Nota curta aceita de 1 a 2 partes.');
     assert.equal(briefBlocker(note), undefined);
     assert.deepEqual(eventDraft({ name: 'APAS Show 2026' }), { ...EMPTY_EVENT, name: 'APAS Show 2026' });
+  });
+});
+
+describe('Nova produção · a material sent in parts', () => {
+  const srt = (text: string) => `1\n00:00:00,000 --> 00:00:05,000\nAna: ${text}\n`;
+  const part = (id: string, text?: string, extra: Partial<MaterialPart> = {}): MaterialPart => ({ id, name: `${id}.srt`, size: 10, ...(text !== undefined ? { text } : {}), ...extra });
+  const filed = (...parts: MaterialPart[]): NewProductionDraft => ({ ...EMPTY_DRAFT, mode: 'file', parts });
+
+  test('draftMaterial waits for every part', () => {
+    assert.deepEqual(draftMaterial(filed()), { text: '' });
+    assert.deepEqual(draftMaterial(filed(part('a'))), { text: '', pending: true });
+    assert.deepEqual(draftMaterial(filed(part('a', srt('um')))), { text: srt('um'), fileName: 'a.srt' });
+    assert.deepEqual(draftMaterial(filed(part('a', srt('um')), part('b'))), { text: '', pending: true });
+    const joined = draftMaterial(filed(part('a', srt('um')), part('b', srt('dois'))));
+    assert.deepEqual(joined, { text: joinTranscriptParts([{ text: srt('um'), fileName: 'a.srt' }, { text: srt('dois'), fileName: 'b.srt' }]), fileName: 'a.srt' });
+    assert.ok(joined.text.startsWith('\u001c\n'));
+    assert.deepEqual(draftMaterial({ ...EMPTY_DRAFT, pasted: '\u001c\nAna: oi' }), { text: '\nAna: oi' });
+    assert.deepEqual(draftMaterial({ ...EMPTY_DRAFT, mode: 'link', linkFile: { name: 'ep', size: 1, text: '\u001cAna: oi' } }), { text: 'Ana: oi', fileName: 'ep' });
+    const long = 'x'.repeat(MAX_MATERIAL_CHARS / 2);
+    assert.equal(materialTooLong(filed(part('a', long), part('b', long))), true);
+    assert.equal(materialTooLong(filed(part('a', long + long))), false);
+  });
+
+  test('toCreateInput sends the parts and the first transcript', () => {
+    const analysis = analysisOf(SAMPLE_TRANSCRIPT);
+    const single = toCreateInput(filed(part('a', SAMPLE_TRANSCRIPT, { transcriptId: 't-a' })), analysis, PEOPLE).material;
+    assert.equal(single.text, SAMPLE_TRANSCRIPT);
+    assert.equal(single.transcriptId, 't-a');
+    assert.equal(single.parts, undefined);
+    const two = toCreateInput(filed(part('a', srt('um')), part('b', srt('dois'), { transcriptId: 't-b' })), analysis, PEOPLE).material;
+    assert.equal(two.fileName, 'a.srt');
+    assert.equal(two.transcriptId, 't-b');
+    assert.deepEqual(two.parts, [{ fileName: 'a.srt' }, { fileName: 'b.srt', transcriptId: 't-b' }]);
+    const drive = filed(part('a', srt('um'), { transcriptId: 't-a' }), part(RECEIVED_PART, srt('dois'), { transcriptId: 't-drive', received: true }));
+    assert.equal(toCreateInput(drive, analysis, PEOPLE).material.transcriptId, 't-drive');
+  });
+
+  test('withMaterialText writes a corrected text back to every part', () => {
+    assert.deepEqual(withMaterialText({ ...EMPTY_DRAFT, pasted: 'Ana: oi' }, 'Ana: olá'), { pasted: 'Ana: olá' });
+    const link = { ...EMPTY_DRAFT, mode: 'link' as const, linkFile: { name: 'ep', size: 1, text: 'Ana: oi' } };
+    assert.deepEqual(withMaterialText(link, 'Ana: olá'), { linkFile: { name: 'ep', size: 1, text: 'Ana: olá' } });
+    assert.deepEqual(withMaterialText({ ...link, linkFile: null }, 'Ana: olá'), {});
+    assert.deepEqual(withMaterialText(filed(part('a', 'Ana: oi')), 'Ana: olá'), { parts: [part('a', 'Ana: olá')] });
+    // A .vtt part without its header and a cue part with one: only the header joining added goes away.
+    const bare = 'Ana: oi\n\nBia: tchau';
+    const headed = 'WEBVTT\n\n00:00.000 --> 00:05.000\nAna: oi';
+    const draft = filed(part('a', bare, { name: 'a.vtt' }), part('b', headed, { name: 'b.vtt' }));
+    const corrected = draftMaterial(draft).text.replaceAll('oi', 'olá');
+    assert.deepEqual(withMaterialText(draft, corrected), { parts: [
+      part('a', bare.replace('oi', 'olá'), { name: 'a.vtt' }),
+      part('b', headed.replace('oi', 'olá'), { name: 'b.vtt' }),
+    ] });
+    assert.deepEqual(withMaterialText(draft, 'Ana: olá'), {});
+    assert.deepEqual(withMaterialText(filed(part('a', bare), part('b', bare), part('c', bare)), corrected), {});
+  });
+
+  test('landPart, dropPart and movePart keep speaker choices until the last part goes', () => {
+    const speakers = { Ana: { kind: 'none' as const } };
+    const started = addParts({ ...filed(), speakers }, [part('a'), part('b')]);
+    assert.deepEqual(started.speakers, {});
+    assert.deepEqual(started.parts.map((each) => each.id), ['a', 'b']);
+    const chosen = { ...started, speakers };
+    const landed = landPart(chosen, 'b', { name: 'B.srt', size: 20, text: srt('dois'), transcriptId: 't-b' });
+    assert.deepEqual(landed.parts[1], { id: 'b', name: 'B.srt', size: 20, text: srt('dois'), transcriptId: 't-b' });
+    assert.equal(landed.speakers, speakers);
+    assert.equal(landPart(landed, 'gone', { name: 'x', size: 1, text: 'x' }), landed);
+    assert.equal(addParts(landed, [part('c')]).speakers, speakers);
+    const moved = movePart(landed, 1, 0);
+    assert.deepEqual(moved.parts.map((each) => each.id), ['b', 'a']);
+    assert.equal(moved.speakers, speakers);
+    assert.equal(movePart(landed, 0, 5), landed);
+    const one = dropPart(moved, 'b');
+    assert.deepEqual(one.parts.map((each) => each.id), ['a']);
+    assert.equal(one.speakers, speakers);
+    assert.equal(dropPart(one, 'gone'), one);
+    assert.deepEqual(dropPart(one, 'a'), { ...one, parts: [], speakers: {} });
+    const drive = landPart(filed(part(RECEIVED_PART, undefined, { received: true, name: 'Arquivo do Drive' })), RECEIVED_PART, { name: 'rec.mp3', size: 5, text: 'Ana: oi' });
+    assert.deepEqual(drive.parts, [{ id: RECEIVED_PART, name: 'rec.mp3', size: 5, text: 'Ana: oi', received: true }]);
+  });
+
+  test('a draft with a part still uploading is dirty', () => {
+    assert.equal(isDraftDirty(filed()), false);
+    assert.equal(isDraftDirty(filed(part('a'))), true);
   });
 });

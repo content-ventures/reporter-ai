@@ -32,6 +32,7 @@ import type { TermCorrection } from '@/domain/text/terms';
 import type { FileReadState } from './use-file-reader';
 import type { LinkReadState } from './use-link-reader';
 import type { MaterialAnalysis } from './use-material-analysis';
+import type { PartReads } from './use-file-reader';
 
 /**
  * "Material" (step 1, CONTRACT §3.9): paste or send the transcript, see what was understood
@@ -62,17 +63,19 @@ function specOf(intake: SourceIntake): string {
   return `${formats.join(', ')} ou ${last} · ${limit}`;
 }
 
-export function materialState(draft: NewProductionDraft, material: MaterialAnalysis, fileRead: FileReadState | null, linkRead: LinkReadState | null, invalid: boolean): SectionState {
-  if (invalid || material.status === 'error' || fileRead?.status === 'error' || linkRead?.status === 'error') return 'error';
+export function materialState(draft: NewProductionDraft, material: MaterialAnalysis, fileReads: PartReads, linkRead: LinkReadState | null, invalid: boolean): SectionState {
+  const reads = Object.values(fileReads);
+  if (invalid || material.status === 'error' || reads.some((read) => read.status === 'error') || linkRead?.status === 'error') return 'error';
   if (material.status === 'ready') return 'done';
-  if (material.status === 'analyzing' || fileRead?.status === 'reading' || linkRead?.status === 'reading') return 'active';
+  if (material.status === 'analyzing' || reads.some((read) => read.status === 'reading') || linkRead?.status === 'reading') return 'active';
   return (draft.mode === 'paste' && draft.pasted) || (draft.mode === 'link' && draft.sourceUrl) ? 'active' : 'empty';
 }
 
 export type MaterialSectionProps = {
   draft: NewProductionDraft;
   material: MaterialAnalysis;
-  fileRead: FileReadState | null;
+  /** Reads of the parts still being read or that failed, by part id. */
+  fileReads: PartReads;
   linkRead: LinkReadState | null;
   intake: SourceIntake;
   /** Validation message after a save attempt. */
@@ -87,11 +90,9 @@ export type MaterialSectionProps = {
   onShowProgress: () => void;
   onLinkChange: (url: string) => void;
   onImportLink: () => void;
-  onFile: (file: File) => void;
-  onReject: (rejected: RejectedFile) => void;
-  onRemoveFile: () => void;
-  onCancelRead: () => void;
-  onRetryRead: () => void;
+  onFiles: (files: File[], rejected: RejectedFile[]) => void;
+  onRemovePart: (id: string) => void;
+  onRetryPart: (id: string) => void;
   onCancelLink: () => void;
   onRetryLink: () => void;
   onRemoveLink: () => void;
@@ -103,7 +104,7 @@ export type MaterialSectionProps = {
 export function MaterialSection({
   draft,
   material,
-  fileRead,
+  fileReads,
   linkRead,
   intake,
   error,
@@ -117,11 +118,9 @@ export function MaterialSection({
   onShowProgress,
   onLinkChange,
   onImportLink,
-  onFile,
-  onReject,
-  onRemoveFile,
-  onCancelRead,
-  onRetryRead,
+  onFiles,
+  onRemovePart,
+  onRetryPart,
   onCancelLink,
   onRetryLink,
   onRemoveLink,
@@ -132,7 +131,9 @@ export function MaterialSection({
   const ready = material.status === 'ready' ? analysis : undefined;
   const duplicate = ready?.duplicate;
   const firstUse = duplicate?.productions[0];
-  const blank = draft.mode === 'paste' ? draft.pasted.trim() === '' : draft.mode === 'file' ? !draft.file && !fileRead : !draft.linkFile && !linkRead && !draft.sourceUrl?.trim();
+  const only = draft.parts.length === 1 ? draft.parts[0] : undefined;
+  const fileRead: FileReadState | undefined = only ? fileReads[only.id] : undefined;
+  const blank = draft.mode === 'paste' ? draft.pasted.trim() === '' : draft.mode === 'file' ? draft.parts.length === 0 : !draft.linkFile && !linkRead && !draft.sourceUrl?.trim();
   const hint = draft.mode === 'link' && blank ? 'YouTube com legendas ou Spotify com feed público' : blank ? (
     <LinkButton onClick={onUseSample}>Usar exemplo</LinkButton>
   ) : material.status === 'analyzing' ? (
@@ -198,25 +199,25 @@ export function MaterialSection({
             ) : fileRead?.status === 'reading' ? (
               <AgentTrace label={fileRead.name} steps={[{ id: 'read',label: fileRead.message,state: 'current',meta: formatBytes(fileRead.size) }]}
                 variant="compact" announce={false} action={<LinkButton onClick={onShowProgress}>Acompanhar</LinkButton>} />
-            ) : fileRead?.status === 'error' ? (
+            ) : fileRead?.status === 'error' && only ? (
               <FileRow
                 name={fileRead.name}
                 size={fileRead.size}
                 status="error"
                 message={fileRead.message}
-                onRetry={onRetryRead}
+                onRetry={() => onRetryPart(only.id)}
                 retryLabel={fileRead.retry === 'reread' ? 'Tentar de novo' : 'Escolher outro'}
-                onRemove={onCancelRead}
+                onRemove={() => onRemovePart(only.id)}
               />
-            ) : draft.file ? (
+            ) : only?.text !== undefined ? (
               <FileRow
-                name={draft.file.name}
-                size={draft.file.size}
+                name={only.name}
+                size={only.size}
                 status="done"
                 message={ready ? readLine(ready) : undefined}
-                onRemove={onRemoveFile}
+                onRemove={() => onRemovePart(only.id)}
               />
-            ) : (
+            ) : draft.parts.length > 0 ? null : (
               <Dropzone
                 id={dropzoneId}
                 describedBy={describedBy}
@@ -226,10 +227,7 @@ export function MaterialSection({
                 spec={specOf(intake)}
                 invalid={invalid}
                 error={rowError}
-                onFiles={(files, rejected) => {
-                  if (files[0]) onFile(files[0]);
-                  else if (rejected[0]) onReject(rejected[0]);
-                }}
+                onFiles={(files, rejected) => onFiles(files.slice(0, 1), rejected)}
               />
             )}
             {duplicate && firstUse ? (
