@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { toast } from '@content-ventures/design-system/v3';
-import { sizeOf, type RunId, type Suggestion, type TextRange } from '@/domain';
+import { briefMaxChars, type RunId, type Suggestion, type TextRange } from '@/domain';
 import { blockEntries, blockTextOf, type Editor } from '@/editor';
 import type { PieceView, ProductionDetail } from '@/ports';
 import { copilotTool, type CopilotTool } from '@/registries';
@@ -132,7 +132,7 @@ export function useStudioCopilot({
         case 'article.shorten':
           result = await commands.generation.start(
             'article.shorten',
-            target ? { ...base, target } : { ...base, ...(tool.toBriefSize ? { targetCharacters: sizeOf(production.brief.size).maxChars } : {}) },
+            target ? { ...base, target } : { ...base, ...(tool.toBriefSize ? { targetCharacters: briefMaxChars(production.brief) } : {}) },
             startOptions,
           );
           break;
@@ -167,7 +167,7 @@ export function useStudioCopilot({
         updateTurn(turn.id, { pending: false, error: 'Não foi possível enviar o pedido. Seu texto está preservado; tente novamente.' });
       } finally { sending.current = false; setSubmitting(false); }
     },
-    [currentSelection, editor, prepare, productionId, pieceId, commands, updateTurn, production.brief.size, setSuggestionFocus, activeAssist, showAssistant],
+    [currentSelection, editor, prepare, productionId, pieceId, commands, updateTurn, production.brief, setSuggestionFocus, activeAssist, showAssistant],
   );
 
   /** "Gerar de novo": the same request again, on the passage as it is now. */

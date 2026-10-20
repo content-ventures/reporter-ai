@@ -3,8 +3,8 @@
 import { Fragment, type ReactNode } from 'react';
 import { ActionBar, Badge, Button, ConfirmDialog, LinkButton, MetaList, SaveIndicator, Tooltip } from '@content-ventures/design-system/v3';
 import { Check } from '@content-ventures/design-system/v3/icons';
-import { charactersAbove } from '@/domain';
-import { formatCharacters, formatLaudasOf, plural } from '@/ui/format';
+import { briefCharactersAbove, briefSizeProgress } from '@/domain';
+import { formatCharacters, plural } from '@/ui/format';
 import { useStudio } from './studio-context';
 import { footerNeeds } from './studio-model';
 
@@ -106,9 +106,9 @@ export function TextReviewControl() {
 export function StudioFooter({ narrow = false }: { narrow?: boolean }) {
   const studio = useStudio();
   const { facts, approval, generation } = studio;
-  const size = studio.production.brief.size;
+  const brief = studio.production.brief;
   const chars = facts.characters;
-  const above = charactersAbove(chars, size);
+  const above = briefCharactersAbove(chars, brief);
   const reading = `${plural(facts.words, 'palavra', 'palavras')} · ${facts.minutes} min de leitura`;
 
   const sizeItem =
@@ -116,11 +116,11 @@ export function StudioFooter({ narrow = false }: { narrow?: boolean }) {
       generation.active ? 'Preparando o texto…' : 'Sem texto'
     ) : above > 0 ? (
       <LinkButton key="size" tone="text" size="inherit" onClick={() => studio.actions.runTool('shorten-to-brief')}>
-        {`${formatLaudasOf(chars, size)} · ${formatCharacters(above)} acima`}
+        {`${briefSizeProgress(chars, brief)} · ${formatCharacters(above)} acima`}
       </LinkButton>
     ) : (
       <Tooltip key="size" content={reading}>
-        {narrow ? formatLaudasOf(chars, size) : `${formatLaudasOf(chars, size)} · ${formatCharacters(chars)}`}
+        {narrow || brief.format ? briefSizeProgress(chars, brief) : `${briefSizeProgress(chars, brief)} · ${formatCharacters(chars)}`}
       </Tooltip>
     );
 

@@ -1,3 +1,4 @@
+import { eventBoxLines } from '../../../domain/formats.ts';
 import { NO_ASSETS } from '../../../domain/asset.ts';
 import type { AssetLookup } from '../../../domain/asset.ts';
 import type { CarouselBody } from '../../../domain/carousel.ts';
@@ -164,8 +165,9 @@ export function createLocalExportService(deps: LocalExportDeps): ExportService {
     const label = versionLabel(version);
     if (version.body.type === 'article') {
       const sources = exportImageSources(plan.files.filter((entry) => entry.versionId === version.id));
-      if (file.format === 'md') return textFile(file, articleToMarkdown(version.body, sources));
-      if (file.format === 'html') return textFile(file, articleToHtml(version.body, { versionLabel: `Artigo ${label}`, hash: version.hash }, sources));
+      const box = record.production.brief.format ? eventBoxLines(record.production.brief.event) : [];
+      if (file.format === 'md') return textFile(file, articleToMarkdown(version.body, sources, box));
+      if (file.format === 'html') return textFile(file, articleToHtml(version.body, { versionLabel: `Artigo ${label}`, hash: version.hash }, sources, box));
     }
     if (version.body.type === 'carousel') {
       if (file.format === 'json') return textFile(file, `${JSON.stringify(carouselJson(version, version.body), null, 2)}\n`);

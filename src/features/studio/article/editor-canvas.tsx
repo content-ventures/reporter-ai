@@ -19,7 +19,7 @@ import {
   Tooltip,
 } from '@content-ventures/design-system/v3';
 import { FileText, RotateCcw, Sparkles } from '@content-ventures/design-system/v3/icons';
-import { sizeOf, WRITING_FLOW } from '@/domain';
+import { briefMaxChars, briefSizeName, sizeOf, WRITING_FLOW } from '@/domain';
 import { EditorContent } from '@/editor';
 import { formatCharacters, formatLaudas, plural } from '@/ui/format';
 import { materialHref } from '@/ui/routes';
@@ -57,6 +57,7 @@ export function EditorCanvas() {
         <>
           <CoverSlot />
           <ArticleTitle />
+          <ArticleDek />
         </>
       }
       onWheel={studio.noteUserScroll}
@@ -98,6 +99,28 @@ function ArticleTitle() {
   );
 }
 
+/**
+ * "Linha fina" of an event format (and of any text that has one): the line under the title that
+ * completes it, as the outlet publishes it. Articles without a format and without one show nothing.
+ */
+function ArticleDek() {
+  const studio = useStudio();
+  if (!studio.production.brief.format && !studio.dek) return null;
+  const generating = studio.generation.active && !studio.dek;
+  return (
+    <EditableTitle
+      size="card"
+      as="h3"
+      label="Linha fina"
+      value={studio.dek}
+      placeholder={generating ? 'Gerando linha fina…' : 'Linha fina'}
+      maxLength={240}
+      readOnly={generating || !studio.canEdit || studio.readOnly || studio.generation.active}
+      onCommit={studio.commitDek}
+    />
+  );
+}
+
 /** Loading lives in the editor until the first preview replaces the skeleton paragraphs. */
 function PendingArticle() {
   const studio = useStudio();
@@ -135,14 +158,15 @@ function EmptyDraft() {
   const { generation } = studio;
   const guard = studio.production.guards.pieces.article?.generate;
   const source = studio.production.sources[0];
-  const spec = sizeOf(studio.production.brief.size);
+  const brief = studio.production.brief;
+  const maxChars = briefMaxChars(brief);
   const run = generation.run;
   const stopped = run && (run.status === 'failed' || run.status === 'cancelled') ? run : undefined;
   const failedStep = stopped?.steps.find((step) => step.state === 'error');
   const resume = stopped && generation.retryable;
   const meta = [
     source ? `Material v${source.version} · ${plural(source.words, 'palavra', 'palavras')}` : null,
-    `${spec.label}: até ${formatLaudas(spec.maxChars)} (${formatCharacters(spec.maxChars)})`,
+    brief.format ? `${briefSizeName(brief)}: até ${formatCharacters(maxChars)}` : `${sizeOf(brief.size).label}: até ${formatLaudas(maxChars)} (${formatCharacters(maxChars)})`,
   ]
     .filter(Boolean)
     .join(' · ');

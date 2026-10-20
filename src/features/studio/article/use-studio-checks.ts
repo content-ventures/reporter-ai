@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import type { WorkspaceView } from '@content-ventures/design-system/v3';
 import {
   articleContractFor,
+  briefMaxChars,
   articleImageSlots,
   COVER_BLOCK_ID,
   readiness,
@@ -86,8 +87,9 @@ export function useStudioChecks({
   const empty = isBlankBody(body) && !generating && !streaming.active;
   const size = production.brief.size;
   const tools = useMemo(
-    () => documentTools({ empty: isBlankBody(body), characters: facts.characters, size, headings: facts.outline.filter((entry) => entry.level === 2).length }),
-    [body, facts.characters, facts.outline, size],
+    () => documentTools({ empty: isBlankBody(body), characters: facts.characters, size, headings: facts.outline.filter((entry) => entry.level === 2).length,
+      ...(production.brief.format ? { maxChars: briefMaxChars(production.brief) } : {}) }),
+    [body, facts.characters, facts.outline, size, production.brief],
   );
 
   // Quotations lit as used (found in the transcript) or missing; R2 claims to check read as missing.

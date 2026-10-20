@@ -8,6 +8,7 @@ import {
   diffWords,
   foldForMatch,
   formatTimestamp,
+  groupDigits,
   normalizeArticle,
   shortenToSizeLabel,
   sizeOf,
@@ -190,11 +191,13 @@ export function mergeChecks(local: readonly CheckResult[], stored: readonly Chec
  * intertítulos" only with headings; "Encurtar para 2 laudas" (the brief's size) only when the
  * text passes the size's maximum.
  */
-export function documentTools(input: { empty: boolean; characters: number; size: ArticleSize; headings: number }): { id: string; label?: string }[] {
+export function documentTools(input: { empty: boolean; characters: number; size: ArticleSize; headings: number; maxChars?: number }): { id: string; label?: string }[] {
   if (input.empty) return [];
   const tools: { id: string; label?: string }[] = [{ id: 'titles', label: 'Títulos alternativos' }];
   if (input.headings > 0) tools.push({ id: 'suggest-subheadings' });
-  if (input.characters > sizeOf(input.size).maxChars) tools.push({ id: 'shorten-to-brief', label: shortenToSizeLabel(input.size) });
+  // An event format is sized in characters: "Encurtar para 1.500 caracteres".
+  const maxChars = input.maxChars ?? sizeOf(input.size).maxChars;
+  if (input.characters > maxChars) tools.push({ id: 'shorten-to-brief', label: input.maxChars === undefined ? shortenToSizeLabel(input.size) : `Encurtar para ${groupDigits(maxChars)} caracteres` });
   return tools;
 }
 
