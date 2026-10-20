@@ -180,3 +180,20 @@ test('a WhatsApp audio (.opus) is stored as the Ogg file it is and transcribed, 
   assert.equal(browser.status, 202, JSON.stringify(browser.body));
   assert.match(browser.body.object_key, /\.ogg$/, 'the browser upload stores the same way');
 });
+
+test('a copy that never reaches storage turns failed after an hour and leaves the board after two days', { timeout: 60_000 }, async () => {
+  const name = 'Painel sem acesso.mp3';
+  const lost = { fileId: '1RehearsalRevokedFile_qwe-456', name, size: 1234, folder: undefined, accessToken: 'ya29.revoked-access-token-0000' };
+  const refused = drive.refused;
+  const first = await sync(lost);
+  assert.equal(first.body.stage, 'uploading', JSON.stringify(first.body));
+  await settle();
+  assert.ok(drive.refused > refused, 'Drive refused the revoked token, so nothing was copied');
+  type Received = { id: string; status: string; errorCode?: string };
+  const listed = async () => (await call<{ items: Received[] }>('drive/received')).body.items.filter(item => item.id === first.body.transcriptId);
+  assert.deepEqual((await listed()).map(item => item.status), ['transcribing'], 'still within the hour the script keeps retrying');
+  await owner("UPDATE public.reporter_drive_intakes SET created_at=clock_timestamp()-interval '2 hours' WHERE transcript_id=$1", [first.body.transcriptId]);
+  assert.deepEqual((await listed()).map(item => [item.status, item.errorCode]), [['failed', 'UPLOAD_FAILED']]);
+  await owner("UPDATE public.reporter_drive_intakes SET created_at=clock_timestamp()-interval '3 days' WHERE transcript_id=$1", [first.body.transcriptId]);
+  assert.deepEqual(await listed(), [], 'a failed file leaves the board after two days');
+});
