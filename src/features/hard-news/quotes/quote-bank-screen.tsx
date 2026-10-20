@@ -89,7 +89,6 @@ export function QuoteBankScreen() {
   const { state } = useHardNews();
   const canEdit = useCan('production.create');
   const addNoteId = useId();
-  const checkNoteId = useId();
   const [tab, setTab] = useState<QuoteTab>('all');
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<QuoteFilters>(NO_FILTERS);
@@ -128,7 +127,6 @@ export function QuoteBankScreen() {
     <Pagination page={current} pageSize={pageSize} total={shown.length} onPageChange={setPage}
       onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} sizes={PAGE_SIZES} noun="citações" />
   );
-  const checkNote = busy ? (progress ? `Checando ${progress.done + 1} de ${progress.total}.` : 'Checando a fala.') : pending.length ? undefined : 'Nenhuma fala pendente.';
 
   return (
     <PageStack>
@@ -136,16 +134,12 @@ export function QuoteBankScreen() {
         title="Citações"
         actions={canEdit ? (
           <>
-            <Button
-              variant="secondary"
-              icon={BadgeCheck}
-              loading={Boolean(progress)}
-              aria-disabled={busy || !pending.length || undefined}
-              aria-describedby={checkNote ? checkNoteId : undefined}
-              onClick={busy || !pending.length ? undefined : () => void run(pending, false)}
-            >
-              Checar pendentes
-            </Button>
+            {/* Only when there is something to check; while a batch runs it says how far it is. */}
+            {pending.length || progress ? (
+              <Button variant="secondary" icon={BadgeCheck} loading={busy} onClick={busy ? undefined : () => void run(pending, false)}>
+                {progress ? `Checando ${Math.min(progress.done + 1, progress.total)} de ${progress.total}` : 'Checar pendentes'}
+              </Button>
+            ) : null}
             <Button
               variant="primary"
               icon={Plus}
@@ -157,7 +151,7 @@ export function QuoteBankScreen() {
             </Button>
           </>
         ) : undefined}
-        actionsNote={canEdit && checkNote ? { id: checkNoteId, text: checkNote } : canEdit && connected ? { id: addNoteId, text: FROM_TRANSCRIPT } : undefined}
+        actionsNote={canEdit && connected ? { id: addNoteId, text: FROM_TRANSCRIPT } : undefined}
       />
       <QuoteOverview entries={ranked} ready={ready} />
       <FilterBar
