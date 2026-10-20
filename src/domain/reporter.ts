@@ -149,9 +149,15 @@ export function repairedText(segment: Segment, words: readonly TimedWord[], wind
   for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
     head[i][j] = cut[j - 1] && target[i - 1] === cut[j - 1] ? head[i - 1][j - 1] + 1 : Math.max(head[i - 1][j], head[i][j - 1]);
   }
-  /** Another identical first-pass word could take this new word just as well: nothing tells which one it is. */
-  const ambiguous = (i: number, j: number) => target.some((token, other) =>
-    other !== i && token === cut[j] && head[other][j] + 1 + lcs[other + 1][j + 1] === total);
+  /**
+   * A pairing is used only when every best alignment makes it: this first-pass word can be neither left
+   * unpaired nor paired with another new word of the same cut. Otherwise nothing tells which is right.
+   */
+  const ambiguous = (i: number, j: number) => {
+    for (let k = 0; k <= n; k++) if (head[i][k] + lcs[i + 1][k] === total) return true;
+    for (let k = 0; k < n; k++) if (k !== j && cut[k] === target[i] && head[i][k] + 1 + lcs[i + 1][k + 1] === total) return true;
+    return false;
+  };
   const pairs: [number, number][] = [];
   for (let i = 0, j = 0; i < m && j < n;) {
     if (cut[j] && target[i] === cut[j]) { pairs.push([i, j]); i++; j++; }
