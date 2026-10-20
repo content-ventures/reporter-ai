@@ -1,3 +1,4 @@
+import { mediaOf } from '../../domain/reporter.ts';
 import { parseSourceLink } from '../../domain/source-link.ts';
 import type { NewProductionDraft } from './form.ts';
 import type { MaterialAnalysis } from './use-material-analysis.ts';
@@ -10,7 +11,7 @@ export function materialProgress(draft: NewProductionDraft, analysis: MaterialAn
   const name = draft.mode === 'file' ? file?.name ?? draft.file?.name ?? 'Arquivo'
     : draft.mode === 'link' ? (parseSourceLink(draft.sourceUrl ?? '')?.provider === 'youtube' ? 'Vídeo do YouTube' : 'Episódio do Spotify') : 'Texto colado';
   const size = draft.mode === 'file' ? file?.size ?? draft.file?.size : undefined;
-  const audio = draft.mode === 'file' ? /\.(mp3|m4a|mp4|wav|ogg|flac|webm)$/i.test(name)
+  const audio = draft.mode === 'file' ? mediaOf(name) !== undefined
     : draft.mode === 'link' && parseSourceLink(draft.sourceUrl ?? '')?.provider === 'spotify';
   const phase = read ? (read.phase === 'ready' ? 'analysis' : read.phase) : 'analysis';
   const failed = read?.status === 'error' || !read && analysis.status === 'error';

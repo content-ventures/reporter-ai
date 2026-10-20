@@ -6,6 +6,7 @@ import { UUID, articleEditSchema, carouselEditSchema, createSchema, revisionSche
 import { assertLocalMode, localContext } from "./config";
 import { command, resolveReporterContext, transaction } from "./database";
 import { FlowError, logEvent, safeCode } from "./errors";
+import { mediaOf } from '../domain/reporter.ts';
 import { receiveFile, workerAvailable } from "./storage";
 import { IDLE_QUEUE, queueStatus } from "./queue-status.ts";
 import { workerUrl } from "./worker-config.ts";
@@ -137,7 +138,7 @@ const messages: Record<string, string> = {
   REMOTE_MEDIA_UNAVAILABLE: 'O áudio público deste episódio não pôde ser importado. Envie o arquivo.',
   PIPELINE_STAGE_MISSING: 'A configuração precisa incluir a etapa Material antes de analisar.',
   FILE_TOO_LARGE: "O limite local é de 2 GB por arquivo.", TEXT_TOO_LARGE: "A transcrição TXT deve ter até 1 MB.",
-  UNSUPPORTED_MEDIA: "Envie MP3, MP4, M4A, WAV, OGG, FLAC, WEBM ou TXT.",
+  UNSUPPORTED_MEDIA: "Envie MP3, MP4, M4A, WAV, OGG, OPUS, FLAC, WEBM ou TXT.",
   INVALID_MEDIA: "Não foi possível ler o áudio deste arquivo.", NO_AUDIO_TRACK: "O arquivo não tem uma faixa de áudio.",
   MEDIA_DURATION: "O arquivo deve ter áudio com duração de até 3 horas.",
   INVALID_TEXT_ENCODING: "Salve a transcrição TXT em UTF-8.", INVALID_TRANSCRIPT: "A transcrição está vazia ou inválida.",
@@ -208,11 +209,10 @@ export async function handleReporter(request: Request, path: string[], deps: { d
       const input = z.object({ sourceId: UUID,token: z.string().min(32).max(128),name: z.string().trim().min(1).max(255),
         size: z.number().int().min(1).max(2*1024**3) }).strict().parse(await jsonBody(request));
       if (/[\x00-\x1f\x7f-\x9f\\/]/.test(input.name)) throw new FlowError('UNSUPPORTED_MEDIA',415);
-      const extension = input.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
-      const contentTypes: Record<string,string> = { mp3: 'audio/mpeg',m4a: 'audio/mp4',mp4: 'video/mp4',wav: 'audio/wav',
-        ogg: 'audio/ogg',flac: 'audio/flac',webm: 'video/webm' };
-      const contentType = extension ? contentTypes[extension] : undefined;
-      if (!extension || !contentType) throw new FlowError('UNSUPPORTED_MEDIA',415);
+      // The stored extension: an Opus file (WhatsApp audio) is stored as the Ogg file it is.
+      const media = mediaOf(input.name);
+      if (!media) throw new FlowError('UNSUPPORTED_MEDIA',415);
+      const { extension, contentType } = media;
       const objectKey = `incoming/${context.portal}/${input.sourceId}.${extension}`;
       const tokenHash = createHash('sha256').update(input.token,'utf8').digest('hex');
       const value = await transaction('runtime',async client => (await client.query(
@@ -247,7 +247,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
       if (imported.kind==='ready') return reply(imported);
       if (imported.kind === 'remote') {
         const id=randomUUID(),token=randomUUID()+randomUUID(),objectKey=`incoming/${context.portal}/${id}.${imported.extension}`;
-        const contentType=({mp3:'audio/mpeg',m4a:'audio/mp4',mp4:'video/mp4',wav:'audio/wav',ogg:'audio/ogg',flac:'audio/flac',webm:'video/webm'} as Record<string,string>)[imported.extension];
+        const contentType=mediaOf('.'+imported.extension)?.contentType;
         const value=await transaction('runtime',async client=>(await client.query('SELECT public.reporter_prepare_remote_link($1,$2,$3,$4,$5,$6,$7,$8) AS value',
           [id,imported.fileName,imported.size,contentType,objectKey,createHash('sha256').update(token).digest('hex'),key,imported.remoteUrl])).rows[0].value,requestId);
         kick();

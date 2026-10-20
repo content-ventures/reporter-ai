@@ -6,7 +6,7 @@ import type { ConnectedWorkspace, WorkspaceRefresh } from '../../ports/connected
 import type { GenerationService, RunListener, RunSnapshot } from '../../ports/generation.ts';
 import type { SourceIngest, MaterialInsights, ReceivedMaterial } from '../../ports/source-ingest.ts';
 import type { EditorialFormat } from '../../domain/formats.ts';
-import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES } from '../../domain/reporter.ts';
+import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES, MEDIA_EXTENSIONS } from '../../domain/reporter.ts';
 import type { Transcript } from '../../domain/reporter.ts';
 import { detectTranscriptFormat } from '../../domain/text/transcript-parse.ts';
 import { pipelineModelLabel } from '../../domain/pipeline.ts';
@@ -183,7 +183,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
   const uploads = new WeakMap<object,{ key: string;id?: string;sourceId?: string;token?: string;uploaded?: boolean }>();
   const links = new Map<string,{ key: string; id?: string; provider?: 'youtube' | 'spotify'; title?: string; programName?: string; fileName?: string; bytes?: number; sourceUrl?: string }>();
   return {
-    limits: { ...local.limits,extensions: [...local.limits.extensions,'.mp3','.m4a','.mp4','.wav','.ogg','.flac','.webm'],maxBytes: MAX_UPLOAD_BYTES },
+    limits: { ...local.limits,extensions: [...local.limits.extensions,...MEDIA_EXTENSIONS],maxBytes: MAX_UPLOAD_BYTES },
     async readLink(url,options = {}) {
       const known = links.get(url) ?? { key: crypto.randomUUID() };
       links.set(url,known);
@@ -294,7 +294,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
     async read(file,options = {}) {
       const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
       const textFile = local.limits.extensions.includes(extension);
-      if (!textFile && !['.mp3','.m4a','.mp4','.wav','.ogg','.flac','.webm'].includes(extension)) return refuse('unsupported_type','Formato de arquivo não suportado.');
+      if (!textFile && !MEDIA_EXTENSIONS.includes(extension)) return refuse('unsupported_type','Formato de arquivo não suportado.');
       if (file.size>(textFile ? MAX_TEXT_BYTES : MAX_UPLOAD_BYTES)) return refuse('too_large',textFile ? 'A transcrição deve ter até 1 MB.' : 'O arquivo deve ter até 2 GB.');
       if (!(file instanceof Blob)) return refuse('read_failed','Escolha um arquivo deste computador.');
       const upload = uploads.get(file) ?? { key: crypto.randomUUID() };

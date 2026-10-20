@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import type { Pool } from 'pg';
+import pg, { type Pool } from 'pg';
 import { installFakeProviders } from '../support/fake-providers.ts';
 import { startFakeS3 } from '../support/fake-s3.ts';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
@@ -22,11 +22,12 @@ const OWNER = { subject: 'rehearsal-drive-owner', email: 'drive@rehearsal.test',
 const SECRET = 'drive-rehearsal-secret-with-more-than-32-chars';
 const DRIVE_TOKEN = 'ya29.rehearsal-drive-access-token';
 const FILE_ID = '1RehearsalDriveFile_abc-123';
+const OPUS_ID = '1RehearsalWhatsAppAudio_xyz-789';
 
 let db: Awaited<ReturnType<typeof startRehearsalDatabase>>, s3: Awaited<ReturnType<typeof startFakeS3>>;
 let host: Awaited<ReturnType<typeof startWorkerHost>>, providers: ReturnType<typeof installFakeProviders>, workDir: string;
 let handleReporter: typeof import('../../src/server/http.ts').handleReporter;
-let media: Buffer, restoreDrive: () => void;
+let media: Buffer, opus: Buffer, restoreDrive: () => void;
 const drive = { ranges: [] as string[], refused: 0 };
 const deferred: Promise<void>[] = [];
 
@@ -42,6 +43,12 @@ const syncBody = (extra: Record<string, unknown> = {}) => ({ fileId: FILE_ID, na
 type Sync = { stage: string; transcriptId?: string; productionId?: string; url?: string; error?: string; retryAfter?: number };
 const sync = (extra?: Record<string, unknown>, secret = SECRET) => call<Sync>('drive/sync', syncBody(extra), { authorization: `Bearer ${secret}` });
 
+async function owner<T extends Record<string, unknown>>(sql: string, values: unknown[] = []) {
+  const client = new pg.Client({ connectionString: db.owner });
+  await client.connect();
+  try { return (await client.query(sql, values)).rows as T[]; } finally { await client.end(); }
+}
+
 async function settle() {
   while (deferred.length) await Promise.all(deferred.splice(0));
   await host.idle();
@@ -56,13 +63,14 @@ function installFakeDrive() {
     const headers = new Headers(init?.headers);
     const path = new URL(url);
     if (headers.get('authorization') !== `Bearer ${DRIVE_TOKEN}`) { drive.refused++; return new Response('{}', { status: 401 }); }
-    if (path.pathname !== `/drive/v3/files/${FILE_ID}` || path.searchParams.get('alt') !== 'media') return new Response('{}', { status: 404 });
+    const file = ({ [FILE_ID]: media, [OPUS_ID]: opus } as Record<string, Buffer>)[path.pathname.replace('/drive/v3/files/', '')];
+    if (!file || path.searchParams.get('alt') !== 'media') return new Response('{}', { status: 404 });
     const range = /^bytes=(\d+)-(\d+)$/.exec(headers.get('range') ?? '');
-    if (!range) return new Response(new Uint8Array(media));
-    drive.ranges.push(range[0]);
-    const start = Number(range[1]), end = Math.min(Number(range[2]), media.length - 1);
-    return new Response(new Uint8Array(media.subarray(start, end + 1)), { status: 206,
-      headers: { 'content-range': `bytes ${start}-${end}/${media.length}` } });
+    if (!range) return new Response(new Uint8Array(file));
+    if (file === media) drive.ranges.push(range[0]);
+    const start = Number(range[1]), end = Math.min(Number(range[2]), file.length - 1);
+    return new Response(new Uint8Array(file.subarray(start, end + 1)), { status: 206,
+      headers: { 'content-range': `bytes ${start}-${end}/${file.length}` } });
   };
   return () => { globalThis.fetch = inner; };
 }
@@ -78,6 +86,10 @@ before(async () => {
   execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=1300',
     '-ac', '1', '-ar', '8000', '-c:a', 'pcm_s16le', file]);
   media = await readFile(file);
+  // A WhatsApp voice note: Opus in an Ogg file, named `.opus`.
+  const voice = join(workDir, 'zap.opus');
+  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=20', '-ac', '1', '-c:a', 'libopus', '-b:a', '24k', voice]);
+  opus = await readFile(voice);
   Object.assign(process.env, {
     REPORTER_DEPLOYMENT_MODE: 'cloud', REPORTER_DATABASE_URL: db.runtime, REPORTER_WORKER_DATABASE_URL: db.worker,
     REPORTER_WORKER_PASSWORD: db.workerPassword, REPORTER_DEFAULT_PORTAL_ID: PORTAL, REPORTER_APP_ORIGINS: APP,
@@ -148,4 +160,23 @@ test('a file dropped in the folder is copied and transcribed, then waits on the 
   assert.equal(again.body.stage, 'ready', 'a later sync changes nothing');
   await settle();
   assert.equal(drive.ranges.length, 2, 'nothing was downloaded twice');
+});
+
+test('a WhatsApp audio (.opus) is stored as the Ogg file it is and transcribed, from Drive and from the browser', { timeout: 120_000 }, async () => {
+  const name = 'WhatsApp Audio 2026-10-20 at 09.37.11.opus';
+  const first = await sync({ fileId: OPUS_ID, name, size: opus.length, folder: undefined });
+  assert.equal(first.status, 202, JSON.stringify(first.body));
+  assert.equal(first.body.stage, 'uploading');
+  await settle();
+  const ready = await sync({ fileId: OPUS_ID, name, size: opus.length, folder: undefined });
+  assert.equal(ready.body.stage, 'ready', JSON.stringify(ready.body));
+  const [stored] = await owner<{ key: string; content_type: string; file_name: string; status: string }>(
+    'SELECT key,content_type,file_name,status FROM core.storage_objects WHERE file_name=$1', [name]);
+  assert.match(stored.key, /\.ogg$/);
+  assert.deepEqual([stored.content_type, stored.file_name, stored.status], ['audio/ogg', name, 'completed']);
+
+  const browser = await call<{ object_key: string }>('uploads', { sourceId: randomUUID(), token: randomUUID() + randomUUID(), name: 'zap.opus', size: opus.length },
+    { origin: APP, 'x-reporter-client': 'local', 'idempotency-key': 'rehearsal-opus-upload-01' });
+  assert.equal(browser.status, 202, JSON.stringify(browser.body));
+  assert.match(browser.body.object_key, /\.ogg$/, 'the browser upload stores the same way');
 });

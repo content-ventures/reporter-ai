@@ -18,6 +18,7 @@ test('a Drive file always derives the same upload ids, distinct per file and per
 test('only the audio and video the transcription accepts are taken', () => {
   assert.deepEqual(driveMedia('Painel abertura.MP3'), { extension: 'mp3', contentType: 'audio/mpeg' });
   assert.deepEqual(driveMedia('estande.m4a'), { extension: 'm4a', contentType: 'audio/mp4' });
+  assert.deepEqual(driveMedia('WhatsApp Audio 2026-10-20 at 09.37.11.opus'), { extension: 'ogg', contentType: 'audio/ogg' }, 'WhatsApp audio is the Ogg file it is');
   assert.equal(driveMedia('slides.pdf'), undefined);
   assert.equal(driveMedia('video.mov'), undefined);
   assert.equal(driveMedia('sem-extensao'), undefined);
