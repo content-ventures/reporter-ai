@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.12.0",
+  "currentVersion": "0.13.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,36 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.13.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-20",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 5 validated changes: fail abandoned drive copies and retry failed transcriptions; list no drive files outside the cloud; accept whatsapp opus audio.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Keep Drive files on the board until a production uses them"
+        },
+        {
+          "type": "Added",
+          "description": "Open Drive files in the new production form from the board"
+        },
+        {
+          "type": "Added",
+          "description": "Accept WhatsApp Opus audio"
+        },
+        {
+          "type": "Fixed",
+          "description": "List no Drive files outside the cloud"
+        },
+        {
+          "type": "Fixed",
+          "description": "Fail abandoned Drive copies and retry failed transcriptions"
+        }
+      ]
+    },
     {
       "version": "0.12.0",
       "roadmapRelease": "R0",

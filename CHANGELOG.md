@@ -4,6 +4,19 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-20
+
+### Added
+
+- Keep Drive files on the board until a production uses them.
+- Open Drive files in the new production form from the board.
+- Accept WhatsApp Opus audio.
+
+### Fixed
+
+- List no Drive files outside the cloud.
+- Fail abandoned Drive copies and retry failed transcriptions.
+
 ## [0.12.0] - 2026-10-20
 
 ### Added
