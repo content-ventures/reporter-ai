@@ -9,7 +9,7 @@ import { providerConfigured } from './config';
 
 const step = z.object({ prompt: z.string().min(1).max(20000),model: z.enum(PIPELINE_MODELS),
   temperature: z.number().min(0).max(2),maxTokens: z.number().int().min(512).max(32768) }).strict();
-const funnel = z.object(Object.fromEntries(FUNNEL_STEP_KEYS.map(key => [key,step])) as Record<typeof FUNNEL_STEP_KEYS[number],typeof step>).strict();
+const funnel = z.object(Object.fromEntries(FUNNEL_STEP_KEYS.map(key => [key,step.optional()])) as Record<typeof FUNNEL_STEP_KEYS[number],ReturnType<typeof step.optional>>).strict();
 export const pipelineDefinitionSchema = z.object({ systemPrompt: z.string().min(1).max(12000),
   articleMode: z.enum(['sequential','single']),curateQuotes: z.boolean(),steps: z.record(z.enum(PIPELINE_STEP_KEYS),step),
   funnels: z.partialRecord(z.enum(EDITORIAL_FORMATS),funnel).optional() }).strict();

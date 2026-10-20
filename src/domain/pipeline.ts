@@ -35,7 +35,7 @@ export type PipelineDefinition = {
   systemPrompt: string; articleMode: 'sequential' | 'single'; curateQuotes: boolean;
   steps: Record<PipelineStepKey, PipelineStep>;
   /** Event-format funnels; absent on revisions saved before them (`withFormatFunnels` fills them). */
-  funnels?: Partial<Record<EditorialFormat, FunnelDefinition>>;
+  funnels?: Partial<Record<EditorialFormat, Partial<FunnelDefinition>>>;
 };
 export const FUNNEL_STEP_LABELS: Record<FunnelStepKey, string> = { outline: 'Estrutura', intro: 'Abertura', section: 'Seções' };
 export type PipelineRevision = { revision: number; hash: string; savedAt: string | null; definition: PipelineDefinition };
@@ -295,7 +295,6 @@ Artigo aprovado:
 Layouts, slots e limites:
 {{layouts}}`),
     },
-    funnels: defaultFunnels(model),
   };
 }
 
@@ -345,11 +344,33 @@ export function defaultFunnels(model: PipelineModel): Record<EditorialFormat, Fu
  * Add the event-format funnels a definition lacks (revisions saved before them), on the model of
  * its writing steps. Existing prompts, including saved funnels, are never changed.
  */
-export function withFormatFunnels(definition: PipelineDefinition): PipelineDefinition {
+/** A definition with every funnel step present (saved revisions keep only the edited ones). */
+export type FilledPipelineDefinition = PipelineDefinition & { funnels: Record<EditorialFormat, FunnelDefinition> };
+
+export function withFormatFunnels(definition: PipelineDefinition): FilledPipelineDefinition {
   const defaults = defaultFunnels(definition.steps.intro.model);
   const funnels = Object.fromEntries(EDITORIAL_FORMATS.map(format => [format,
     { ...defaults[format], ...structuredClone(definition.funnels?.[format] ?? {}) }])) as Record<EditorialFormat, FunnelDefinition>;
   return { ...structuredClone(definition), funnels };
+}
+
+/**
+ * Only the funnel steps someone changed are stored: the defaults are filled in at run time and on
+ * the Prompts page (`withFormatFunnels`), so a saved revision does not carry ~100 KB of prompts
+ * nobody edited, and the page that reads the history stays light.
+ */
+export function compactFunnels(definition: PipelineDefinition): PipelineDefinition {
+  const { funnels, ...rest } = structuredClone(definition);
+  if (!funnels) return rest;
+  const defaults = defaultFunnels(definition.steps.intro.model);
+  const kept = Object.fromEntries(EDITORIAL_FORMATS.flatMap(format => {
+    const steps = Object.fromEntries(FUNNEL_STEP_KEYS.flatMap(key => {
+      const step = funnels[format]?.[key];
+      return step && JSON.stringify(step) !== JSON.stringify(defaults[format][key]) ? [[key, step]] : [];
+    }));
+    return Object.keys(steps).length ? [[format, steps]] : [];
+  }));
+  return Object.keys(kept).length ? { ...rest, funnels: kept as PipelineDefinition['funnels'] } : rest;
 }
 
 /**

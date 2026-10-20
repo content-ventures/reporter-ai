@@ -7,7 +7,7 @@ import type { PoolClient } from 'pg';
 import { createEditorialEngine, emptyEditorialCheckpoint, adoptEditorialIdentity, appendEditorialEvent, validateEditorialOutline, editorialContextHash, selectEditorialLocalRole,
   assembleCheckpoint, diffRows, hasChanges, splitCheckpoint } from '../runtime/editorial-engine.ts';
 import { contentHash } from '../domain/text/hash.ts';
-import { formatPipelineDefinition, pipelineRevision, pipelineRunSteps, pipelineJobKeys, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
+import { compactFunnels, formatPipelineDefinition, pipelineRevision, pipelineRunSteps, pipelineJobKeys, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
 import { isRunActive } from '../domain/run.ts';
 import { pendingReview, latestApproved } from '../domain/record.ts';
 import { sameVersionRef } from '../domain/refs.ts';
@@ -305,7 +305,8 @@ export async function editorialRpc(payload: unknown) {
       if (active.revision !== baseRevision) return refuse('conflict','A configuração foi alterada em outra aba. Recarregue antes de salvar.');
       const parsed = parsePipelineDefinition(args[0]);
       if (!parsed.definition) return refuse('invalid_config',parsed.error!);
-      const next = pipelineRevision(parsed.definition,active.revision+1,new Date().toISOString());
+      // Funnel prompts equal to the defaults are not stored; they are filled in at run time.
+      const next = pipelineRevision(compactFunnels(parsed.definition),active.revision+1,new Date().toISOString());
       if (next.hash === active.hash) return ok(pipelineView(checkpoint));
       checkpoint.pipelineHistory = [...(checkpoint.pipelineHistory ?? []),active].slice(-20);
       checkpoint.pipeline = next;

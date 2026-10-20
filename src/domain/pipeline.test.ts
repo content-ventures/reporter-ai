@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { defaultPipelineDefinition, formatPipelineDefinition, FUNNEL_STEP_KEYS, pipelineRevision, pipelineRunSteps, pipelineJobKeys, renderPipelinePrompt, validatePipelineTemplates, withFormatFunnels, PIPELINE_SCHEMAS } from './pipeline.ts';
+import { compactFunnels, defaultPipelineDefinition, formatPipelineDefinition, FUNNEL_STEP_KEYS, pipelineRevision, pipelineRunSteps, pipelineJobKeys, renderPipelinePrompt, validatePipelineTemplates, withFormatFunnels, PIPELINE_SCHEMAS } from './pipeline.ts';
 import { EDITORIAL_FORMATS } from './formats.ts';
 import type { PipelineVariables } from './pipeline.ts';
 
@@ -114,10 +114,10 @@ test('run steps represent the selected orchestration and real section count',() 
 });
 
 test('event funnels: defaults validate, keep the anti-invention rules and the house style', () => {
-  const definition = defaultPipelineDefinition();
+  const definition = withFormatFunnels(defaultPipelineDefinition());
   assert.equal(validatePipelineTemplates(definition), undefined);
   for (const format of EDITORIAL_FORMATS) {
-    const funnel = definition.funnels![format]!;
+    const funnel = definition.funnels[format];
     for (const key of FUNNEL_STEP_KEYS) {
       assert.match(funnel[key].prompt, /JORNALISMO, NUNCA INVENÇÃO/, `${format} ${key}`);
       assert.match(funnel[key].prompt, /\{\{event\}\}/, `${format} ${key}`);
@@ -131,7 +131,7 @@ test('event funnels: defaults validate, keep the anti-invention rules and the ho
 
 test('a saved revision without funnels gets the defaults; saved funnels are never changed', () => {
   const saved = defaultPipelineDefinition();
-  delete saved.funnels;
+  assert.equal(saved.funnels, undefined);
   const filled = withFormatFunnels(saved);
   assert.deepEqual(Object.keys(filled.funnels!).sort(), [...EDITORIAL_FORMATS].sort());
   assert.equal(filled.funnels!.stand!.intro.model, saved.steps.intro.model);
@@ -143,15 +143,28 @@ test('a saved revision without funnels gets the defaults; saved funnels are neve
 test('a format job writes part by part with the funnel prompts; the article steps stay the workspace\'s', () => {
   const base = { ...defaultPipelineDefinition(), articleMode: 'single' as const };
   const job = formatPipelineDefinition(base, 'panel');
+  const funnels = withFormatFunnels(base).funnels;
   assert.equal(job.articleMode, 'sequential');
-  assert.equal(job.steps.outline.prompt, base.funnels!.panel!.outline.prompt);
-  assert.equal(job.steps.section.prompt, base.funnels!.panel!.section.prompt);
+  assert.equal(job.steps.outline.prompt, funnels.panel.outline.prompt);
+  assert.equal(job.steps.section.prompt, funnels.panel.section.prompt);
   assert.equal(job.steps.carousel.prompt, base.steps.carousel.prompt);
   assert.equal(job.systemPrompt, base.systemPrompt);
 });
 
 test('a funnel prompt without its required data is refused on save', () => {
-  const definition = defaultPipelineDefinition();
-  definition.funnels!.note!.section = { ...definition.funnels!.note!.section, prompt: 'Escreva {{section}} {{history}} {{futureSections}} {{sizing}}' };
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  definition.funnels.note.section = { ...definition.funnels.note.section, prompt: 'Escreva {{section}} {{history}} {{futureSections}} {{sizing}}' };
   assert.equal(validatePipelineTemplates(definition), 'Nota curta · Seções: mantenha {{source}} para fornecer o contexto necessário.');
+});
+
+test('saved revisions keep only the funnel steps someone edited', () => {
+  const filled = withFormatFunnels(defaultPipelineDefinition());
+  assert.equal(compactFunnels(filled).funnels, undefined);
+  filled.funnels.stand.intro = { ...filled.funnels.stand.intro, prompt: filled.funnels.stand.intro.prompt + '\nAbra pela empresa.' };
+  const compact = compactFunnels(filled);
+  assert.deepEqual(Object.keys(compact.funnels!), ['stand']);
+  assert.deepEqual(Object.keys(compact.funnels!.stand!), ['intro']);
+  assert.equal(withFormatFunnels(compact).funnels.stand.intro.prompt, filled.funnels.stand.intro.prompt);
+  assert.equal(withFormatFunnels(compact).funnels.stand.outline.prompt, withFormatFunnels(defaultPipelineDefinition()).funnels.stand.outline.prompt);
+  assert.ok(JSON.stringify(compact).length < JSON.stringify(filled).length / 3);
 });
