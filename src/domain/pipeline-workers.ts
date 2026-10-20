@@ -1,14 +1,65 @@
 import { pipelineJobKeys, type PipelineDefinition, type PipelineStepKey } from './pipeline.ts';
+import { EDITORIAL_FORMATS, FORMAT_SPECS, type EditorialFormat } from './formats.ts';
+import type { FunnelStepKey } from './format-prompts.ts';
 
-export type PipelineWorkerKey = 'article' | 'carousel';
-export type WorkerNode = { id: string; title: string; description: string; prompt?: PipelineStepKey; condition?: string; kind: 'input' | 'prompt' | 'automatic' | 'output' };
-export const PIPELINE_WORKERS = [
+/** A prompt of an event-format funnel: "funnel:stand:intro". */
+export type FunnelPromptKey = `funnel:${EditorialFormat}:${FunnelStepKey}`;
+/** The prompt a block edits: a step of the article pipeline or of a format's funnel. */
+export type WorkerPromptKey = PipelineStepKey | FunnelPromptKey;
+
+export function funnelPromptKey(format: EditorialFormat, step: FunnelStepKey): FunnelPromptKey {
+  return `funnel:${format}:${step}`;
+}
+
+export type PipelineWorkerKey = 'article' | 'carousel' | EditorialFormat;
+/**
+ * A block of a worker's flow. `prompt` blocks are where AI writes, each with the prompt a person
+ * edits; the others are the flow the system runs by itself (input, automatic checks, output).
+ * `scope` says whether the prompt belongs to this format only or is shared with the article.
+ */
+export type WorkerNode = {
+  id: string; title: string; description: string; prompt?: WorkerPromptKey; condition?: string;
+  kind: 'input' | 'prompt' | 'automatic' | 'output'; scope?: 'format' | 'shared';
+};
+export type PipelineWorker = { key: PipelineWorkerKey; title: string; description: string; format?: EditorialFormat };
+
+const FORMAT_WORKER_TITLES: Record<EditorialFormat, string> = {
+  stand: 'Gerar cobertura de estande', panel: 'Gerar cobertura de painel', awards: 'Gerar premiação',
+  opening: 'Gerar abertura', note: 'Gerar nota curta',
+};
+
+export const PIPELINE_WORKERS: readonly PipelineWorker[] = [
   { key: 'article', title: 'Gerar artigo', description: 'Da fonte autorizada ao rascunho, com evidências e imagens.' },
   { key: 'carousel', title: 'Gerar carrossel', description: 'Do artigo aprovado aos textos dos slides no modelo escolhido.' },
-] as const;
+  ...EDITORIAL_FORMATS.map((format): PipelineWorker => ({ key: format, format, title: FORMAT_WORKER_TITLES[format],
+    description: `${FORMAT_SPECS[format].summary} No padrão da Seafood Brasil, só com fatos do material.` })),
+];
+
+const images: WorkerNode[] = [
+  { id: 'images', title: 'Sugestões de imagens', description: 'Planeja a capa e as imagens do corpo. Uma falha preserva o texto.', kind: 'prompt', prompt: 'images', condition: 'Complemento opcional', scope: 'shared' },
+  { id: 'photos', title: 'Buscar fotos', description: 'Busca no Pixabay. O texto é preservado se as imagens estiverem indisponíveis.', kind: 'automatic' },
+];
+
+/** An event format's worker: its own structure, opening and parts, the article's shared steps around them. */
+function formatWorkerFlow(format: EditorialFormat): WorkerNode[] {
+  const spec = FORMAT_SPECS[format];
+  return [
+    { id: 'source', title: 'Material, pauta e evento', description: 'Recebe a transcrição, as pessoas confirmadas, o formato escolhido e os dados do evento.', kind: 'input' },
+    { id: 'facts', title: 'Preparar fontes longas', description: 'Processa os trechos da fonte até caberem no contexto.', kind: 'prompt', prompt: 'facts', condition: 'Somente fontes com mais de 24 mil caracteres', scope: 'shared' },
+    { id: 'outline', title: 'Estrutura do formato', description: 'Planeja título, linha fina e intertítulos no padrão da Seafood Brasil.', kind: 'prompt', prompt: funnelPromptKey(format, 'outline'), scope: 'format' },
+    { id: 'quotes', title: 'Evidências e citações', description: 'Distribui os trechos da fonte entre as partes do texto.', kind: 'prompt', prompt: 'quotes', condition: 'Durante o planejamento da estrutura', scope: 'shared' },
+    { id: 'intro', title: 'Abertura', description: 'Escreve o lide e a apresentação de quem fala.', kind: 'prompt', prompt: funnelPromptKey(format, 'intro'), scope: 'format' },
+    { id: 'section', title: spec.headings ? 'Seções' : 'Contexto', description: spec.headings ? 'Escreve cada intertítulo em sequência, com falas literais.' : 'Escreve o contexto da nota, sem intertítulo.', kind: 'prompt', prompt: funnelPromptKey(format, 'section'), condition: 'Repete uma vez por parte', scope: 'format' },
+    { id: 'grounding', title: 'Checar fatos e repetições', description: 'Confere cada número e nome contra o material, as pessoas e o evento; revisa a parte ou remove a frase.', kind: 'automatic' },
+    { id: 'validate', title: 'Validar o texto', description: 'Confere o teto do formato, as citações literais e a linha fina antes de salvar.', kind: 'automatic' },
+    ...images,
+    { id: 'save', title: 'Texto pronto para revisão', description: 'Salva o rascunho com a linha fina. O box do evento sai na entrega. A aprovação é manual.', kind: 'output' },
+  ];
+}
 
 /** Mirrors editorial-worker.ts. Conditional planning is skipped when an outline is supplied. */
 export function pipelineWorkerFlow(worker: PipelineWorkerKey, definition: PipelineDefinition): WorkerNode[] {
+  if (worker !== 'article' && worker !== 'carousel') return formatWorkerFlow(worker);
   if (worker === 'carousel') return [
     { id: 'approved', title: 'Artigo aprovado', description: 'Usa a versão aprovada do artigo e o modelo escolhido.', kind: 'input' },
     { id: 'layouts', title: 'Preparar os slides', description: 'Define os espaços, a quantidade de slides e os limites de cada campo.', kind: 'automatic' },
@@ -28,8 +79,7 @@ export function pipelineWorkerFlow(worker: PipelineWorkerKey, definition: Pipeli
     { id: 'source', title: 'Fonte autorizada e pauta', description: 'Recebe a transcrição, participantes confirmados e o recorte editorial.', kind: 'input' },
     ...pipelineJobKeys(definition, 'article.draft').map(key => ({ id: key, prompt: key, kind: 'prompt' as const, ...details[key]! })),
     { id: 'validate', title: 'Validar o artigo', description: 'Confere estrutura, tamanho e citações na fonte antes de salvar.', kind: 'automatic' },
-    { id: 'images', title: 'Sugestões de imagens', description: 'Planeja a capa e as imagens do corpo. Uma falha preserva o texto.', kind: 'prompt', prompt: 'images', condition: 'Complemento opcional' },
-    { id: 'photos', title: 'Buscar fotos', description: 'Busca no Pixabay. O artigo é preservado se as imagens estiverem indisponíveis.', kind: 'automatic' },
+    ...images.map(node => ({ ...node, scope: undefined })),
     { id: 'save', title: 'Artigo pronto para revisão', description: 'Salva o rascunho e suas citações. A aprovação é manual.', kind: 'output' },
   ];
 }

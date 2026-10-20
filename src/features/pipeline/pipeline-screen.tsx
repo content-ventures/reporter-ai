@@ -7,7 +7,7 @@ import {
   MetaList, PageHeader, PageStack, Panel, Section, Select, Tabs, Timeline, toast,
 } from '@content-ventures/design-system/v3';
 import { RotateCw, Save } from '@content-ventures/design-system/v3/icons';
-import { PIPELINE_STEP_KEYS, PIPELINE_STEP_LABELS, compactFunnels, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, withArticleAssist, withFormatFunnels } from '@/domain/pipeline';
+import { PIPELINE_STEP_LABELS, compactFunnels, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, withArticleAssist, withFormatFunnels } from '@/domain/pipeline';
 import type { PipelineDefinition, PipelineStepKey, PipelineView } from '@/domain/pipeline';
 import { useCan, useRuntime, useSession } from '@/state';
 import { useBreadcrumb, useLeaveGuard } from '@/ui/shell';
@@ -123,7 +123,9 @@ function PipelineConfig() {
   if (runtime && !port) return <ErrorState heading="h1" title="Prompts disponíveis no motor conectado" description="Esta sessão usa a antiga simulação do front-end." size="page" />;
   if (!view || !draft) return <PageStack><PageHeader title="Prompts" /><Panel><Section title="Carregando prompts"><DescriptionList items={[]} loading /></Section></Panel></PageStack>;
 
-  const changed = (Object.keys(PROMPTS) as PromptKey[]).filter(key => promptChanged(key, draft, editable(view.active.definition)));
+  // Saved revisions keep only edited funnel steps: compare against the defaults filled in.
+  const active = editable(view.active.definition);
+  const changed = (Object.keys(PROMPTS) as PromptKey[]).filter(key => promptChanged(key, draft, active));
   const flowChanged = draft.articleMode !== view.active.definition.articleMode || draft.curateQuotes !== view.active.definition.curateQuotes;
   function reset(target: string) {
     if (!view) return;
@@ -148,12 +150,12 @@ function PipelineConfig() {
       {failure && <Alert tone="danger" title="Não foi possível salvar">{failure}</Alert>}
       {templateError && <Alert tone="danger" title="Revise as variáveis do prompt">{templateError}</Alert>}
       <Tabs label="Gerenciar prompts" value={pageTab} onChange={value => navigate(value)} items={[
-        { value: 'workers', label: 'Workers', count: PIPELINE_WORKERS.length }, { value: 'prompts', label: 'Todos os prompts', count: PIPELINE_STEP_KEYS.length + 1 },
+        { value: 'workers', label: 'Workers', count: PIPELINE_WORKERS.length }, { value: 'prompts', label: 'Todos os prompts', count: Object.keys(PROMPTS).length },
         { value: 'history', label: 'Histórico', count: view.history.length }, { value: 'runs', label: 'Execuções', count: view.runs.length },
       ]} />
       {dirty && <MetaList items={[`${changed.length} ${changed.length === 1 ? 'prompt alterado' : 'prompts alterados'}`, ...(flowChanged ? ['Fluxo alterado'] : [])]} />}
-      {pageTab === 'prompts' && <PipelineCatalog draft={draft} active={view.active.definition} onEdit={key => { setTab(key); setEditorOpen(true); }} />}
-      {pageTab === 'workers' && <PipelineWorkers worker={worker} onSelect={value => navigate('workers', value)} draft={draft} active={view.active.definition}
+      {pageTab === 'prompts' && <PipelineCatalog draft={draft} active={active} onEdit={key => { setTab(key); setEditorOpen(true); }} />}
+      {pageTab === 'workers' && <PipelineWorkers worker={worker} onSelect={value => navigate('workers', value)} draft={draft} active={active}
         saving={saving} onUpdate={update} onEdit={key => { setTab(key); setEditorOpen(true); }} />}
       {pageTab === 'history' && <Panel><Section title="Histórico de configurações" meta={`Revisão ${view.active.revision} ativa`}>
         <PageStack>

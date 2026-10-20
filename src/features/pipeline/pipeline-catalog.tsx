@@ -5,14 +5,10 @@ import { Badge, Button, EmptyState, FilterBar, Grid, MetaList, PageStack, Panel,
 import type { FunnelStepKey, PipelineDefinition, PipelineStep, PipelineStepKey } from '@/domain/pipeline';
 import { FUNNEL_STEP_KEYS, FUNNEL_STEP_LABELS, pipelineModelLabel } from '@/domain/pipeline';
 import { EDITORIAL_FORMATS, FORMAT_SPECS, type EditorialFormat } from '@/domain/formats';
+import { funnelPromptKey, type FunnelPromptKey, type WorkerPromptKey } from '@/domain/pipeline-workers';
 
-/** A prompt of an event-format funnel: "funnel:stand:intro". */
-export type FunnelPromptKey = `funnel:${EditorialFormat}:${FunnelStepKey}`;
-export type PromptKey = 'system' | PipelineStepKey | FunnelPromptKey;
-
-export function funnelPromptKey(format: EditorialFormat, step: FunnelStepKey): FunnelPromptKey {
-  return `funnel:${format}:${step}`;
-}
+export { funnelPromptKey, type FunnelPromptKey };
+export type PromptKey = 'system' | WorkerPromptKey;
 
 /** The format and step of a funnel prompt; undefined for the shared and article prompts. */
 export function funnelOf(key: PromptKey): { format: EditorialFormat; step: FunnelStepKey } | undefined {
