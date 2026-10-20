@@ -1,7 +1,7 @@
-import type { ArticleBlock, ArticleBody, Inline } from '../../../domain/article.ts';
+import type { ArticleBlock, ArticleBody } from '../../../domain/article.ts';
 import { creditLine } from '../../../domain/asset.ts';
 import type { ImageRef } from '../../../domain/asset.ts';
-import { normalizeLink } from '../../../domain/text/links.ts';
+import { escapeHtml, textBlockHtml } from '../../../domain/text/article-html.ts';
 import type { ImageSources } from './markdown.ts';
 
 /**
@@ -14,28 +14,6 @@ import type { ImageSources } from './markdown.ts';
  */
 
 const NO_IMAGES: ImageSources = new Map();
-
-export function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] as string);
-}
-
-export function inlineHtml(inline: Inline): string {
-  let html = escapeHtml(inline.text).replace(/\n/g, '<br>');
-  const marks = inline.marks ?? [];
-  if (marks.includes('strike')) html = `<s>${html}</s>`;
-  if (marks.includes('underline')) html = `<u>${html}</u>`;
-  if (marks.includes('italic')) html = `<em>${html}</em>`;
-  if (marks.includes('bold')) html = `<strong>${html}</strong>`;
-  if (marks.includes('link') && inline.href) {
-    const link = normalizeLink(inline.href);
-    if (link.ok) html = `<a href="${escapeHtml(link.href)}">${html}</a>`;
-  }
-  return html;
-}
-
-function inlinesHtml(inlines: readonly Inline[]): string {
-  return inlines.map(inlineHtml).join('');
-}
 
 export function imageHtml(image: ImageRef, sources: ImageSources, role: 'cover' | 'figure' = 'figure'): string {
   const source = sources.get(image.assetId);
@@ -50,23 +28,9 @@ export function imageHtml(image: ImageRef, sources: ImageSources, role: 'cover' 
 }
 
 function blockHtml(block: ArticleBlock, sources: ImageSources): string {
-  switch (block.type) {
-    case 'paragraph':
-      return `<p>${inlinesHtml(block.inlines)}</p>`;
-    case 'heading':
-      return `<h${block.level}>${inlinesHtml(block.inlines)}</h${block.level}>`;
-    case 'quote':
-      return `<blockquote><p>${inlinesHtml(block.inlines)}</p></blockquote>`;
-    case 'list': {
-      const tag = block.ordered ? 'ol' : 'ul';
-      return `<${tag}>\n${block.items.map((item) => `  <li>${inlinesHtml(item)}</li>`).join('\n')}\n</${tag}>`;
-    }
-    case 'divider':
-      return '<hr>';
-    case 'figure':
-      // An image slot ("Sugestão de imagem") is not publishable: the manifest lists it.
-      return block.image ? imageHtml(block.image, sources) : '';
-  }
+  // An image slot ("Sugestão de imagem") is not publishable: the manifest lists it.
+  if (block.type === 'figure') return block.image ? imageHtml(block.image, sources) : '';
+  return textBlockHtml(block);
 }
 
 export type HtmlMeta = { versionLabel: string; hash: string };

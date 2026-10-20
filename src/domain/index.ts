@@ -54,3 +54,4 @@ export * from './text/hash.ts';
 export * from './text/links.ts';
 export * from './text/diff.ts';
 export * from './text/transcript-parse.ts';
+export * from './text/article-clipboard.ts';
