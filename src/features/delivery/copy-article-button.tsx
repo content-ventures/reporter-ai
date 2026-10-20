@@ -2,7 +2,7 @@
 
 import { Button, toast } from '@content-ventures/design-system/v3';
 import { Copy } from '@content-ventures/design-system/v3/icons';
-import { articleClipboard, type ArticleClipboard, type VersionId } from '@/domain';
+import { articleClipboard, type ArticleClipboard, type EventBoxLine, type VersionId } from '@/domain';
 import { useVersion } from '@/state';
 
 /** Both flavours where the browser takes them; otherwise (or when it refuses HTML) the plain text. */
@@ -29,13 +29,13 @@ async function writeClipboard({ text, html }: ArticleClipboard): Promise<void> {
  * "Copiar texto": the approved article on the clipboard, ready to paste into the site — plain text
  * in a notepad, intertítulos, quotations and links in a rich editor (see `articleClipboard`).
  */
-export function CopyArticleButton({ versionId }: { versionId: VersionId }) {
+export function CopyArticleButton({ versionId, box = [] }: { versionId: VersionId; box?: readonly EventBoxLine[] }) {
   const version = useVersion(versionId);
   const body = version.data?.body.type === 'article' ? version.data.body : undefined;
 
   function copy() {
     if (!body) return;
-    writeClipboard(articleClipboard(body)).then(
+    writeClipboard(articleClipboard(body, box)).then(
       () => toast('Texto do artigo copiado'),
       () => toast('Não foi possível copiar', { tone: 'error' }),
     );

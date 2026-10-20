@@ -63,3 +63,17 @@ describe('article clipboard · "Copiar texto"', () => {
     assert.equal(html, '<h1>A &amp; B</h1>\n<p>&lt;b&gt;x&lt;/b&gt;</p>');
   });
 });
+
+describe('Copiar texto · event formats', () => {
+  test('the linha fina follows the title and the event box closes the text', () => {
+    const coverage: ArticleBody = { type: 'article', title: 'Hecke estreia no pescado', dek: 'Importadora leva merluza empanada à feira', blocks: [paragraphBlock(id('p1'), [{ text: 'A Hecke apresentou a merluza.' }])] };
+    const copied = articleClipboard(coverage, [
+      { kind: 'heading', text: 'Seafood Brasil na SSLA 2026' },
+      { kind: 'divider', text: '—' },
+      { kind: 'service', text: 'Data: de 20 a 22 de outubro' },
+    ]);
+    assert.equal(copied.text, 'Hecke estreia no pescado\n\nImportadora leva merluza empanada à feira\n\nA Hecke apresentou a merluza.\n\nSeafood Brasil na SSLA 2026\n\n—\n\nData: de 20 a 22 de outubro');
+    assert.ok(copied.html.includes('<p><em>Importadora leva merluza empanada à feira</em></p>'));
+    assert.ok(copied.html.endsWith('<h3>Seafood Brasil na SSLA 2026</h3>\n<hr>\n<p>Data: de 20 a 22 de outubro</p>'));
+  });
+});

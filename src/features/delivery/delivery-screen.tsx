@@ -22,7 +22,7 @@ import {
   type MenuItem,
 } from '@content-ventures/design-system/v3';
 import { BookOpen, Download, Lock, Package, TriangleAlert } from '@content-ventures/design-system/v3/icons';
-import { PIECE_LABELS, type MixedVersionsDetails, type PieceKind, type ProductionId, type VersionRef } from '@/domain';
+import { eventBoxLines, PIECE_LABELS, type MixedVersionsDetails, type PieceKind, type ProductionId, type VersionRef } from '@/domain';
 import type { DeliveryView, PackageFile, PieceView } from '@/ports';
 import { useCan, useCommands, useDelivery, useRuntime, useSimulation } from '@/state';
 import { plural } from '@/ui/format';
@@ -302,7 +302,10 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
   useCommandGroup(commandItems.length > 0 ? { label: 'Entrega', items: commandItems } : null);
 
   const viewSwitch = articleItem ? <Segmented label="Ver" size="sm" value={tab} onChange={setTab} options={TAB_OPTIONS} /> : null;
-  const copyText = articleItem ? <CopyArticleButton versionId={articleItem.version.versionId} /> : null;
+  // An event format pastes with its linha fina and the event box, as the outlet publishes it.
+  const briefOf = frame.production.data?.brief;
+  const box = briefOf?.format ? eventBoxLines(briefOf.event) : [];
+  const copyText = articleItem ? <CopyArticleButton versionId={articleItem.version.versionId} box={box} /> : null;
   // "Ver no pacote" only where the package lists what was left out (it can be built).
   const finalArticle = reading && articleItem ? <ArticleFinal item={articleItem} {...(exportable ? { onOpenPackage: () => setTab('package') } : {})} /> : null;
 
