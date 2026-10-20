@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.11.0",
+  "currentVersion": "0.12.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,36 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.12.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-20",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 5 validated changes: add the drive folder script and its setup; create productions from a drive folder; tell the workers apart by icon and group.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Give each event format its own worker"
+        },
+        {
+          "type": "Fixed",
+          "description": "Lay out the event box as labeled fields"
+        },
+        {
+          "type": "Added",
+          "description": "Tell the workers apart by icon and group"
+        },
+        {
+          "type": "Added",
+          "description": "Create productions from a Drive folder"
+        },
+        {
+          "type": "Documentation",
+          "description": "Add the Drive folder script and its setup"
+        }
+      ]
+    },
     {
       "version": "0.11.0",
       "roadmapRelease": "R0",

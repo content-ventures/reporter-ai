@@ -4,6 +4,22 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-20
+
+### Added
+
+- Give each event format its own worker.
+- Tell the workers apart by icon and group.
+- Create productions from a Drive folder.
+
+### Fixed
+
+- Lay out the event box as labeled fields.
+
+### Documentation
+
+- Add the Drive folder script and its setup.
+
 ## [0.11.0] - 2026-10-20
 
 ### Added
