@@ -7,7 +7,7 @@ export function outlineResponseSchema(sections: number,ids: readonly string[],de
   const schema = structuredClone(PIPELINE_SCHEMAS.outline);
   // Event formats plan the linha fina with the title; the article's contract stays unchanged.
   if (dek) {
-    schema.properties = { title: schema.properties.title,dek: { type: 'string',minLength: 1,maxLength: 240 },...schema.properties };
+    schema.properties = { title: schema.properties.title,dek: { type: 'string',minLength: 1,maxLength: 180 },...schema.properties };
     schema.required = Object.keys(schema.properties);
   }
   const body = schema.properties.sections as { minItems: number; maxItems: number; items: { properties: { evidenceIds: { items: object } } } };

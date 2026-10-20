@@ -2,6 +2,7 @@ import { createLocalPorts, assembleRecord, systemClock } from '../adapters/local
 import { applyRunUpdate } from '../adapters/local/generation/record-sync.ts';
 import { CAROUSEL_TEMPLATES } from '../fixtures/templates/catalog.ts';
 import { DEFAULT_FLOW_ID, flowById, gatesFor } from '../registries/index.ts';
+import { FORMAT_SPECS, formatSizeOf } from '../domain/formats.ts';
 import { R1_FLOW } from '../domain/stage.ts';
 import { compactRunPreviews, foldRun, stampRunEvent } from '../domain/run-events.ts';
 import type { RunEventPayload } from '../domain/run-events.ts';
@@ -85,7 +86,10 @@ export function editorialCandidates(record: ProductionRecord) {
     }))).map((candidate,index) => ({ ...candidate,key: String(index) }));
 }
 export function validateEditorialOutline(record: ProductionRecord, outline: OutlineInput) {
-  return normalizeOutline(outline,{ size: record.production.brief.size,material: readMaterial(record.sources),defaultTitle: () => record.production.title });
+  const { format,formatSize } = record.production.brief;
+  // An event format plans its own number of parts (a note has one, an awards text one per category).
+  const rule = format ? { label: FORMAT_SPECS[format].label,headings: FORMAT_SPECS[format].headings,sections: formatSizeOf(format,formatSize).sections } : undefined;
+  return normalizeOutline(outline,{ size: record.production.brief.size,...(rule ? { rule } : {}),material: readMaterial(record.sources),defaultTitle: () => record.production.title });
 }
 export type EditorialIdentity = { workspaceId: string;workspaceName: string;workspaceSlug: string;personId: string;name: string;title?: string | null;email?: string;avatarUrl?: string;roles: Role[];localOperator?: boolean };
 const LOCAL_IDENTITY: EditorialIdentity = { workspaceId: LOCAL_WORKSPACE,workspaceName: 'Reporter IA',workspaceSlug: 'reporter-ai-local',personId: LOCAL_OPERATOR,
