@@ -7,7 +7,7 @@ import type { PoolClient } from 'pg';
 import { createEditorialEngine, emptyEditorialCheckpoint, adoptEditorialIdentity, appendEditorialEvent, validateEditorialOutline, editorialContextHash, selectEditorialLocalRole,
   assembleCheckpoint, diffRows, hasChanges, splitCheckpoint } from '../runtime/editorial-engine.ts';
 import { contentHash } from '../domain/text/hash.ts';
-import { pipelineRevision, pipelineRunSteps, pipelineJobKeys, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
+import { formatPipelineDefinition, pipelineRevision, pipelineRunSteps, pipelineJobKeys, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
 import { isRunActive } from '../domain/run.ts';
 import { pendingReview, latestApproved } from '../domain/record.ts';
 import { sameVersionRef } from '../domain/refs.ts';
@@ -23,7 +23,8 @@ import { IDLE_QUEUE, queueStatus } from './queue-status.ts';
 import { FlowError, forbiddenError } from './errors';
 import { activePipeline, pipelineView, parsePipelineDefinition } from './pipeline';
 import { assertLocalMode, providerConfigured } from './config';
-import { r1ArticleIssue, ARTICLE_POLICY_MESSAGES } from '../domain/article-policy.ts';
+import { r1ArticleIssue, articlePolicyMessage } from '../domain/article-policy.ts';
+import { articleContractFor, EDITORIAL_FORMATS, EVENT_FIELDS, EVENT_FIELD_MAX } from '../domain/formats.ts';
 import { ARTICLE_ASSIST_KINDS, validateArticleAssistInput } from './article-assist';
 import { citationDay, podcastLink } from '../domain/citation-library.ts';
 import { currentReporterContext } from './request-context.ts';
@@ -228,7 +229,7 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   const piece = record.pieces.find(p => p.id === pieceId);
   if (!piece || piece.kind !== (kind.startsWith('carousel') ? 'carousel' : 'article')) return refuse('unknown_piece', 'Peça não encontrada.');
   if (pendingReview(record,pieceId)) return refuse('locked','Retire o envio para editar antes de gerar.');
-  if (['article.outline', 'article.draft'].includes(kind) && record.production.brief.size !== 'standard')
+  if (['article.outline', 'article.draft'].includes(kind) && !record.production.brief.format && record.production.brief.size !== 'standard')
     return refuse('unsupported_size', 'A R1 exige Padrão: 2.500–4.000 caracteres e 500–800 palavras. Altere o tamanho na pauta antes de gerar.');
   if (kind === 'article.draft' && input.outline) {
     const valid = validateEditorialOutline(record,input.outline as OutlineInput);
@@ -244,14 +245,17 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
     const valid = validateArticleAssistInput(record,pieceId,kind,input);
     if (!valid.ok) return valid;
   }
-  const pipeline = structuredClone(activePipeline(checkpoint));
+  const active = structuredClone(activePipeline(checkpoint));
+  // An event format writes with its own funnel prompts; the workspace keeps its saved revision.
+  const format = ['article.outline', 'article.draft'].includes(kind) ? record.production.brief.format : undefined;
+  const pipeline = format ? pipelineRevision(formatPipelineDefinition(active.definition,format),active.revision,active.savedAt) : active;
   if (ARTICLE_ASSIST_KINDS.has(kind) && !pipeline.definition.steps.assist)
     return refuse('provider_unavailable', 'Ative a etapa Assistente em Prompts antes de pedir ajustes.');
   const automaticOutline = kind === 'article.draft' && !input.outline;
   const keys = pipelineJobKeys(pipeline.definition,kind,automaticOutline);
   const missing = keys.find(key => !providerConfigured(pipelineModelProvider(pipeline.definition.steps[key].model)));
   if (missing) return refuse('provider_unavailable', 'Configure a chave de ' + pipelineModelLabel(pipeline.definition.steps[missing].model) + ' no servidor antes de gerar.');
-  checkpoint.pipeline ??= pipeline;
+  checkpoint.pipeline ??= active;
   const prompt = { key: 'reporter.pipeline.' + kind, version: String(pipeline.revision), hash: pipeline.hash };
   const model = pipeline.definition.steps[ARTICLE_ASSIST_KINDS.has(kind) ? 'assist' : kind === 'carousel.copy' ? 'carousel' : kind === 'article.outline' ? 'outline' : pipeline.definition.articleMode === 'single' ? 'article' : 'intro'].model;
   const started = engine.runs.begin({ productionId, kind: RUN_KIND_OF[kind], prompt,
@@ -330,8 +334,9 @@ export async function editorialRpc(payload: unknown) {
       const record = production ? engine.records.record(production.production.id) : undefined;
       const body = record?.pieces.find(piece => piece.id === args[0])?.draft.body;
       if (body?.type === 'article') {
-        const issue = r1ArticleIssue(body, record?.sources ?? []);
-        if (issue) return refuse('send_blocked', ARTICLE_POLICY_MESSAGES[issue]);
+        const limits = articleContractFor(record?.production.brief ?? { });
+        const issue = r1ArticleIssue(body, record?.sources ?? [], limits);
+        if (issue) return refuse('send_blocked', articlePolicyMessage(issue, limits));
       }
     }
     if (method === 'createFromSource') {
@@ -340,7 +345,9 @@ export async function editorialRpc(payload: unknown) {
         transcriptId: z.string().uuid().optional(),
         programName: z.string().trim().max(160).optional(),sourceUrl: z.string().trim().max(2000).optional(),
         location: z.string().trim().max(160).optional(),recordedOn: z.string().max(10).optional(),
-      }).passthrough(), brief: z.object({ sections: z.number().int().min(1).max(8),size: z.enum(['short','standard']),angle: z.string().max(600).optional() }),
+      }).passthrough(), brief: z.object({ sections: z.number().int().min(1).max(8),size: z.enum(['short','standard']),angle: z.string().max(600).optional(),
+        format: z.enum(EDITORIAL_FORMATS).optional(),formatSize: z.string().max(40).optional(),
+        event: z.object(Object.fromEntries(EVENT_FIELDS.map(key => [key,z.string().max(EVENT_FIELD_MAX).optional()]))).strict().optional() }),
       plan: z.array(z.enum(['article','carousel'])).max(2),speakers: z.array(z.object({ label: z.string().max(500) }).passthrough()).max(100).optional() }).passthrough().parse(args[0]);
       if (!citationDay(input.material.recordedOn) || input.material.sourceUrl && !podcastLink(input.material.sourceUrl))
         throw new FlowError('CITATION_METADATA_INVALID',422);

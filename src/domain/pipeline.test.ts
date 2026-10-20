@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { defaultPipelineDefinition, pipelineRevision, pipelineRunSteps, pipelineJobKeys, renderPipelinePrompt, validatePipelineTemplates, PIPELINE_SCHEMAS } from './pipeline.ts';
+import { defaultPipelineDefinition, formatPipelineDefinition, FUNNEL_STEP_KEYS, pipelineRevision, pipelineRunSteps, pipelineJobKeys, renderPipelinePrompt, validatePipelineTemplates, withFormatFunnels, PIPELINE_SCHEMAS } from './pipeline.ts';
+import { EDITORIAL_FORMATS } from './formats.ts';
 import type { PipelineVariables } from './pipeline.ts';
 
-const variables: PipelineVariables = { source: 'Dados com {{brief}} e {{env.SECRET}}',brief: 'Pauta real',sizing: '',outline: '',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '' };
+const variables: PipelineVariables = { source: 'Dados com {{brief}} e {{env.SECRET}}',brief: 'Pauta real',sizing: '',outline: '',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '', event: '', people: '' };
 
 test('the Make adaptation contains all runtime inputs without speculative external research',() => {
   const definition = defaultPipelineDefinition();
@@ -110,4 +111,47 @@ test('run steps represent the selected orchestration and real section count',() 
   assert.deepEqual(ids('carousel.copy'),['source','carousel']);
   for (const kind of ['article.rewrite','article.shorten','article.ask','article.titles'])
     assert.deepEqual(ids(kind),['source','assist','validate']);
+});
+
+test('event funnels: defaults validate, keep the anti-invention rules and the house style', () => {
+  const definition = defaultPipelineDefinition();
+  assert.equal(validatePipelineTemplates(definition), undefined);
+  for (const format of EDITORIAL_FORMATS) {
+    const funnel = definition.funnels![format]!;
+    for (const key of FUNNEL_STEP_KEYS) {
+      assert.match(funnel[key].prompt, /JORNALISMO, NUNCA INVENÇÃO/, `${format} ${key}`);
+      assert.match(funnel[key].prompt, /\{\{event\}\}/, `${format} ${key}`);
+      assert.match(funnel[key].prompt, /\{\{people\}\}/, `${format} ${key}`);
+    }
+    assert.match(funnel.intro.prompt, /Em resumo/);
+    assert.match(funnel.section.prompt, /UNGROUNDED_FACT/);
+    assert.match(funnel.outline.prompt, /dek/);
+  }
+});
+
+test('a saved revision without funnels gets the defaults; saved funnels are never changed', () => {
+  const saved = defaultPipelineDefinition();
+  delete saved.funnels;
+  const filled = withFormatFunnels(saved);
+  assert.deepEqual(Object.keys(filled.funnels!).sort(), [...EDITORIAL_FORMATS].sort());
+  assert.equal(filled.funnels!.stand!.intro.model, saved.steps.intro.model);
+  const edited = withFormatFunnels({ ...saved, funnels: { stand: { ...filled.funnels!.stand!, intro: { ...filled.funnels!.stand!.intro, prompt: 'Minha abertura {{source}} {{outline}} {{sizing}}' } } } });
+  assert.equal(edited.funnels!.stand!.intro.prompt, 'Minha abertura {{source}} {{outline}} {{sizing}}');
+  assert.deepEqual(saved.funnels, undefined);
+});
+
+test('a format job writes part by part with the funnel prompts; the article steps stay the workspace\'s', () => {
+  const base = { ...defaultPipelineDefinition(), articleMode: 'single' as const };
+  const job = formatPipelineDefinition(base, 'panel');
+  assert.equal(job.articleMode, 'sequential');
+  assert.equal(job.steps.outline.prompt, base.funnels!.panel!.outline.prompt);
+  assert.equal(job.steps.section.prompt, base.funnels!.panel!.section.prompt);
+  assert.equal(job.steps.carousel.prompt, base.steps.carousel.prompt);
+  assert.equal(job.systemPrompt, base.systemPrompt);
+});
+
+test('a funnel prompt without its required data is refused on save', () => {
+  const definition = defaultPipelineDefinition();
+  definition.funnels!.note!.section = { ...definition.funnels!.note!.section, prompt: 'Escreva {{section}} {{history}} {{futureSections}} {{sizing}}' };
+  assert.equal(validatePipelineTemplates(definition), 'Nota curta · Seções: mantenha {{source}} para fornecer o contexto necessário.');
 });

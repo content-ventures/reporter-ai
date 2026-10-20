@@ -1,4 +1,11 @@
 import { contentHash } from './text/hash.ts';
+import { EDITORIAL_FORMATS, FORMAT_SPECS } from './formats.ts';
+import type { EditorialFormat } from './formats.ts';
+import { FUNNEL_STEP_KEYS, defaultFunnelPrompt } from './format-prompts.ts';
+import type { FunnelStepKey } from './format-prompts.ts';
+
+export { FUNNEL_STEP_KEYS } from './format-prompts.ts';
+export type { FunnelStepKey } from './format-prompts.ts';
 
 export const PIPELINE_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'openai/gpt-4.1', 'openai/gpt-6-astra', 'anthropic/claude-sonnet-4-6'] as const;
 export type PipelineModel = typeof PIPELINE_MODELS[number];
@@ -22,10 +29,15 @@ export const PIPELINE_STEP_LABELS: Record<PipelineStepKey, string> = {
   intro: 'Escrever introdução', section: 'Escrever cada seção', article: 'Escrever artigo completo', assist: 'Assistente do artigo', images: 'Sugerir imagens', carousel: 'Escrever carrossel',
 };
 export type PipelineStep = { prompt: string; model: PipelineModel; temperature: number; maxTokens: number };
+/** An event format's own structure, opening and part prompts (formats.ts, format-prompts.ts). */
+export type FunnelDefinition = Record<FunnelStepKey, PipelineStep>;
 export type PipelineDefinition = {
   systemPrompt: string; articleMode: 'sequential' | 'single'; curateQuotes: boolean;
   steps: Record<PipelineStepKey, PipelineStep>;
+  /** Event-format funnels; absent on revisions saved before them (`withFormatFunnels` fills them). */
+  funnels?: Partial<Record<EditorialFormat, FunnelDefinition>>;
 };
+export const FUNNEL_STEP_LABELS: Record<FunnelStepKey, string> = { outline: 'Estrutura', intro: 'Abertura', section: 'Seções' };
 export type PipelineRevision = { revision: number; hash: string; savedAt: string | null; definition: PipelineDefinition };
 export type PipelineCall = {
   key: PipelineStepKey; index?: number; hash: string; model: string; status: 'running' | 'completed' | 'failed';
@@ -67,7 +79,7 @@ export const PIPELINE_SCHEMAS = {
     items: object({ ...imageSuggestion.properties, afterBlockId: { ...string, minLength: 1 } }) } }),
 };
 
-export const PIPELINE_VARIABLES = ['source', 'brief', 'sizing', 'outline', 'section', 'history', 'futureSections', 'layouts', 'approvedArticle'] as const;
+export const PIPELINE_VARIABLES = ['source', 'brief', 'sizing', 'outline', 'section', 'history', 'futureSections', 'layouts', 'approvedArticle', 'event', 'people'] as const;
 export type PipelineVariables = Record<typeof PIPELINE_VARIABLES[number], string>;
 const requiredVariables: Record<PipelineStepKey, readonly string[]> = {
   material: ['source'],
@@ -85,12 +97,18 @@ export function renderPipelinePrompt(template: string, variables: PipelineVariab
 }
 
 export function validatePipelineTemplates(definition: PipelineDefinition): string | undefined {
-  for (const [key, step] of Object.entries(definition.steps) as [PipelineStepKey, PipelineStep][]) {
+  const checked: [string, PipelineStepKey, PipelineStep][] = [
+    ...(Object.entries(definition.steps) as [PipelineStepKey, PipelineStep][]).map(([key, step]) => [PIPELINE_STEP_LABELS[key], key, step] as [string, PipelineStepKey, PipelineStep]),
+    ...(Object.entries(definition.funnels ?? {}) as [EditorialFormat, FunnelDefinition][]).flatMap(([format, funnel]) =>
+      (Object.entries(funnel) as [FunnelStepKey, PipelineStep][]).map(([key, step]) =>
+        [`${FORMAT_SPECS[format].label} · ${FUNNEL_STEP_LABELS[key]}`, key, step] as [string, PipelineStepKey, PipelineStep])),
+  ];
+  for (const [label, key, step] of checked) {
     const variables = [...step.prompt.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map(match => match[1]);
     const unknown = variables.find(variable => !PIPELINE_VARIABLES.includes(variable as typeof PIPELINE_VARIABLES[number]));
-    if (unknown) return `${PIPELINE_STEP_LABELS[key]}: variável desconhecida {{${unknown}}}.`;
+    if (unknown) return `${label}: variável desconhecida {{${unknown}}}.`;
     const missing = requiredVariables[key].find(variable => !variables.includes(variable));
-    if (missing) return `${PIPELINE_STEP_LABELS[key]}: mantenha {{${missing}}} para fornecer o contexto necessário.`;
+    if (missing) return `${label}: mantenha {{${missing}}} para fornecer o contexto necessário.`;
   }
   // The shared system message has no interpolation: what is edited is sent verbatim.
   if (/\{\{[\s\S]*?\}\}/.test(definition.systemPrompt)) return 'A mensagem de sistema não recebe variáveis; use-as no prompt da etapa.';
@@ -277,6 +295,7 @@ Artigo aprovado:
 Layouts, slots e limites:
 {{layouts}}`),
     },
+    funnels: defaultFunnels(model),
   };
 }
 
@@ -312,6 +331,36 @@ export function pipelineRunSteps(definition: PipelineDefinition, kind: string, s
   // Old immutable revisions did not have image planning; never rewrite their snapshots.
   if (kind === 'article.draft' && definition.steps.images) steps.push({ id: 'images', label: PIPELINE_STEP_LABELS.images });
   return steps;
+}
+
+/** The default funnels of the event formats, on the model the article writing uses. */
+export function defaultFunnels(model: PipelineModel): Record<EditorialFormat, FunnelDefinition> {
+  const step = (format: EditorialFormat, key: FunnelStepKey): PipelineStep =>
+    ({ prompt: defaultFunnelPrompt(format, key), model, temperature: key === 'outline' ? 0.2 : 0.3, maxTokens: pipelineModelReasons(model) ? 8192 : 4096 });
+  return Object.fromEntries(EDITORIAL_FORMATS.map(format => [format,
+    Object.fromEntries(FUNNEL_STEP_KEYS.map(key => [key, step(format, key)])) as FunnelDefinition])) as Record<EditorialFormat, FunnelDefinition>;
+}
+
+/**
+ * Add the event-format funnels a definition lacks (revisions saved before them), on the model of
+ * its writing steps. Existing prompts, including saved funnels, are never changed.
+ */
+export function withFormatFunnels(definition: PipelineDefinition): PipelineDefinition {
+  const defaults = defaultFunnels(definition.steps.intro.model);
+  const funnels = Object.fromEntries(EDITORIAL_FORMATS.map(format => [format,
+    { ...defaults[format], ...structuredClone(definition.funnels?.[format] ?? {}) }])) as Record<EditorialFormat, FunnelDefinition>;
+  return { ...structuredClone(definition), funnels };
+}
+
+/**
+ * The definition a job of an event format runs: the format's structure, opening and part prompts
+ * in place of the article's, written part by part (the mechanics that guard size and literal
+ * quotes). Everything else, the system message included, is the workspace's.
+ */
+export function formatPipelineDefinition(definition: PipelineDefinition, format: EditorialFormat): PipelineDefinition {
+  const funnel = withFormatFunnels(definition).funnels![format]!;
+  return { ...structuredClone(definition), articleMode: 'sequential',
+    steps: { ...structuredClone(definition.steps), outline: funnel.outline, intro: funnel.intro, section: funnel.section } };
 }
 
 /** Add only the new stage to a draft; never mutate a saved or running revision. */

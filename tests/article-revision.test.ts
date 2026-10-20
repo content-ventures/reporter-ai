@@ -8,7 +8,7 @@ import type { PipelineVariables,PipelineCall } from '../src/domain/pipeline.ts';
 import { executePipelineStep,writeCompleteArticle } from '../src/server/pipeline-runner.ts';
 import { cacheRead } from '../src/server/storage.ts';
 import { FlowError } from '../src/server/errors.ts';
-const vars: PipelineVariables = { source: 'Fonte sintética',brief: 'Pauta de teste',sizing: '{}',outline: '{}',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '' };
+const vars: PipelineVariables = { source: 'Fonte sintética',brief: 'Pauta de teste',sizing: '{}',outline: '{}',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '', event: '', people: '' };
 test('a first literal draft outside length can be measured for one revision but is NEVER cached', async () => {
   const a = 'A fonte confirma quatro fatos.',b = 'O episódio registra novos dados.';
   const value = { title: 'Teste',intro: [{ text: `“${a}”`,evidenceIds: ['a'] }],sections: [{ title: 'Fonte',paragraphs: [{ text: `“${b}”`,evidenceIds: ['b'] }] }] };

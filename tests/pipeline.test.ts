@@ -16,7 +16,7 @@ import { cacheRead, cacheWrite } from '../src/server/storage.ts';
 
 process.env.REPORTER_LOCAL_MODE = 'true';
 process.env.GROQ_API_KEY = 'test-placeholder-not-a-real-key';
-const variables: PipelineVariables = { source: '[e1] Fonte sintética {{brief}}',brief: 'Pauta de teste',sizing: '{}',outline: '{}',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '' };
+const variables: PipelineVariables = { source: '[e1] Fonte sintética {{brief}}',brief: 'Pauta de teste',sizing: '{}',outline: '{}',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '', event: '', people: '' };
 
 test('sequential oversize parts receive bounded measured revisions through the saved template',async()=>{
   const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};

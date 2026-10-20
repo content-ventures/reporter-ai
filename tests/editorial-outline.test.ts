@@ -5,7 +5,7 @@ import { planEditorialOutline as plan } from '../src/server/editorial-outline.ts
 import { articlePreview } from '../src/server/article-preview.ts';
 import type { PipelineVariables } from '../src/domain/pipeline.ts';
 
-const variables: PipelineVariables = { source: '', brief: '{}', sizing: '{}', outline: '', section: '', history: '', futureSections: '', layouts: '', approvedArticle: '' };
+const variables: PipelineVariables = { source: '', brief: '{}', sizing: '{}', outline: '', section: '', history: '', futureSections: '', layouts: '', approvedArticle: '', event: '', people: '' };
 
 function planEditorialOutline(record: Parameters<typeof validateEditorialOutline>[0], variables: PipelineVariables, curateQuotes: boolean, call: Parameters<typeof plan>[0]['call']) {
   return plan({ sections: record.production.brief.sections, candidates: editorialCandidates(record), variables, curateQuotes, call,

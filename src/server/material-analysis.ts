@@ -64,7 +64,7 @@ export async function runMaterialAnalysis(text: string, options: ParseTranscript
   if (pending.has(directory + key)) return pending.get(directory + key)!;
   const execute = async () => {
     const variables: PipelineVariables = { source: sample.map(segment => `[${segment.id}] ${segment.text}`).join('\n'),
-      brief: '', sizing: '', outline: '', section: '', history: '', futureSections: '', layouts: '', approvedArticle: '' };
+      brief: '', sizing: '', outline: '', section: '', history: '', futureSections: '', layouts: '', approvedArticle: '', event: '', people: '' };
     const result = await generateStructured('', '', PIPELINE_SCHEMAS.material, AbortSignal.timeout(180000), {
       ...step, systemPrompt: pipeline.definition.systemPrompt, userPrompt: renderPipelinePrompt(step.prompt, variables),
     });

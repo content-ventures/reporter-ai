@@ -116,7 +116,9 @@ export async function writeCompleteArticle(outline: Outline, variables: Pipeline
 export async function writeSequentialArticle(outline: Outline,variables: PipelineVariables,
   sizing: WritingSize,
   call: (key: PipelineStepKey,schema: object,variables: PipelineVariables,index?: number) => Promise<unknown>,
-  evidence?:ReadonlyMap<string,string>,evidencePassages?:(ids:readonly string[])=>readonly string[]) {
+  evidence?:ReadonlyMap<string,string>,evidencePassages?:(ids:readonly string[])=>readonly string[],
+  /** Event formats: the numbers and names of a text that the material, speakers and event lack. */
+  grounding?:(text:string)=>string[]) {
   const budgets = articleWritingBudgets(outline, sizing);
   const floors = articlePartFloors(outline, sizing, budgets);
   const introSchema = articlePartSchema('intro', budgets.intro);
@@ -140,12 +142,20 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   const minimums=(floor?:PartFloor)=>floor?{minChars:floor.chars,minWords:floor.words}:{};
   const part=async(key:'intro'|'section',schema:object,values:PipelineVariables,budget?:number,index?:number,floor?:PartFloor)=>{
     const paragraphsOf=(value:unknown)=>(value as {paragraphs:{text:string;evidenceIds:string[]}[]}).paragraphs;
+    const ungrounded=(value:unknown)=>grounding?[...new Set(paragraphsOf(value).flatMap(p=>grounding(p.text)))]:[];
     const hard=(value:unknown)=>exceedsParagraphBudget(key,value,budget)?'ARTICLE_PART_SIZE_EXCEEDED'
-      :evidence?articleQuotationIssue(paragraphsOf(value),evidence,0,evidencePassages):undefined;
+      :(evidence?articleQuotationIssue(paragraphsOf(value),evidence,0,evidencePassages):undefined)
+        ??(ungrounded(value).length?'UNGROUNDED_FACT':undefined);
     const short=(value:unknown)=>{if(!floor)return false;const size=measured(paragraphsOf(value));return size.chars<floor.chars||size.words<floor.words;};
     const repair=(draft:unknown)=>{
       let paragraphs=paragraphsOf(draft).map(p=>({...p}));
       if(evidence)paragraphs=unquoteUnsupported(paragraphs,evidence,evidencePassages);
+      // An invented number or name is never kept: its sentence goes, nothing is rewritten.
+      if(grounding)paragraphs=paragraphs.flatMap(p=>{
+        const kept=articleSentences(p.text).filter(sentence=>!grounding(sentence).length);
+        return kept.length?[{...p,text:kept.join(' ')}]:[];
+      });
+      if(!paragraphs.length)throw new FlowError('UNGROUNDED_FACT',502);
       if(budget!==undefined){
         while(paragraphs.length>1&&measured(paragraphs).chars>budget)paragraphs=paragraphs.slice(0,-1);
         if(measured(paragraphs).chars>budget){
@@ -188,6 +198,7 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
           :{currentSection:{...sizing.currentSection,budgetChars:targetTotalChars}}),
         outputParagraphs:{...sizing.outputParagraphs,preferredCount:count,targetCharsEach:Math.floor(targetTotalChars/count),targetWordsEach:Math.max(1,Math.floor(targetWords/count))},
         revisionFeedback:{scope:'current_part',attempt:revision,maxAttempts:2,violation,actualCharacters:measured(paragraphs).chars,actualWords:actual.words,
+          ...(violation==='UNGROUNDED_FACT'?{ungroundedTerms:ungrounded(value)}:{}),
           ...(floor?{minTotalChars:floor.chars,minTotalWords:floor.words}:{}),maxTotalChars:budget,targetTotalChars,previousDraft:value},
       })};
       value=await call(key,schema,requested,index);
