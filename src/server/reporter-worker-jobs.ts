@@ -112,9 +112,9 @@ export async function processTranscript(input: unknown,directory: string,signal:
     else segments = mergeSegments(segments,result.segments,chunks[i].start);
     await progress('transcribing',i+1,chunks.length);
   }
-  // A garbled stretch (domain/reporter.ts) is transcribed again on its own, with word timestamps. Its
-  // text changes only when the new words, cut at their accents, align with the garbled ones; anything
-  // doubtful keeps what Whisper wrote the first time. Repairs go one by one: a rate limit is waited out
+  // A garbled stretch (domain/reporter.ts) is transcribed again on its own, with word timestamps, and
+  // its cut words are completed from the new words spoken inside it; every other word stays as Whisper
+  // wrote it the first time, and anything doubtful leaves the segment unchanged. Repairs go one by one: a rate limit is waited out
   // once, then the remaining repairs are left out rather than throttling the next recording.
   if (allTimed) {
     const window = services.transcribeWindow ?? transcribeWindow, pause = services.wait ?? wait;
@@ -136,7 +136,7 @@ export async function processTranscript(input: unknown,directory: string,signal:
           repair = await window(windowPath,media.language,signal);
         }
         units = units===null || repair.input_units===null ? null : units+repair.input_units;
-        const text = repairedText(segment.text,repair.words);
+        const text = repairedText(segment,repair.words,range.start);
         if (text) segments[index] = { ...segment,text };
         else logEvent('worker','transcript_repair_rejected');
       } catch (error) {
