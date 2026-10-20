@@ -178,8 +178,10 @@ export function repairedText(segment: Segment, words: readonly TimedWord[], wind
     }
     // Words that start with an accent, dropped whole, only when no first-pass word stands between the two confirmed words.
     const next = pairs[p + 1];
-    // Never after the end of a sentence: the word would move into the next one.
-    if (next && next[0] === i + 1 && order[next[0]] === order[i] + 1 && !ambiguous(next[0], next[1]) && !/[.!?:;]$/u.test(token)) {
+    // Only between two plain words: after a sentence end, a quote or a bracket the word would move into
+    // another sentence or out of a quotation.
+    if (next && next[0] === i + 1 && order[next[0]] === order[i] + 1 && !ambiguous(next[0], next[1])
+      && /^\p{L}+$/u.test(token.normalize('NFC')) && /^\p{L}+$/u.test(tokens[order[next[0]]].normalize('NFC'))) {
       const between = inside.slice(j + 1, next[1]);
       if (between.length && between.every((_, k) => !cut[j + 1 + k])) added.set(order[i], between.map(item => item.word.replace(/^[^\p{L}\p{M}\p{N}]+|[^\p{L}\p{M}\p{N}]+$/gu, '')).filter(Boolean));
     }

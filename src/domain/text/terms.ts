@@ -106,7 +106,10 @@ export function correctTerm(text: string, from: string, to: string): TermCorrect
     const speech = rename ? replaceTerm(segment.text, from, to).text : segment.text;
     return speech.normalize('NFC').split(/\s+/u).filter(Boolean).map(word => `${speaker}\u0000${word}`);
   });
-  const kept = parseTranscript(text).format === parseTranscript(result.text).format
-    && JSON.stringify(said(text, true)) === JSON.stringify(said(result.text, false));
+  const before = parseTranscript(text), after = parseTranscript(result.text);
+  // Without any speaker before or after (a Whisper transcript), no word can change speaker.
+  const unlabeled = before.segments.every(segment => segment.speaker === undefined) && after.segments.every(segment => segment.speaker === undefined);
+  const kept = before.format === after.format
+    && (unlabeled || JSON.stringify(said(text, true)) === JSON.stringify(said(result.text, false)));
   return kept ? result : { refused: 'structure', count: result.count };
 }
