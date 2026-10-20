@@ -30,6 +30,7 @@ import { pieceHref, reviewHref } from '@/ui/routes';
 import { useCommandGroup } from '@/ui/shell';
 import { ProductionHeader, StagePage, useProductionFrame } from '@/features/production/production-frame';
 import { ArticleFinal } from './article-final';
+import { CopyArticleButton } from './copy-article-button';
 import { DeliveryAside } from './delivery-aside';
 import {
   blockedCopy,
@@ -301,6 +302,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
   useCommandGroup(commandItems.length > 0 ? { label: 'Entrega', items: commandItems } : null);
 
   const viewSwitch = articleItem ? <Segmented label="Ver" size="sm" value={tab} onChange={setTab} options={TAB_OPTIONS} /> : null;
+  const copyText = articleItem ? <CopyArticleButton versionId={articleItem.version.versionId} /> : null;
   // "Ver no pacote" only where the package lists what was left out (it can be built).
   const finalArticle = reading && articleItem ? <ArticleFinal item={articleItem} {...(exportable ? { onOpenPackage: () => setTab('package') } : {})} /> : null;
 
@@ -332,7 +334,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
 
   if (!view.result.ok) {
     return (
-      <StagePage header={<ProductionHeader actions={viewSwitch} />} label="Entrega">
+      <StagePage header={<ProductionHeader actions={viewSwitch ? <>{viewSwitch}{copyText}</> : null} />} label="Entrega">
         {finalArticle ?? (view.result.refusal.code === 'mixed_versions' ? (
           // The decision, with the record and the traceability of what is approved beside it.
           <SplitLayout
@@ -382,6 +384,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
           actions={
             <>
               {viewSwitch}
+              {copyText}
               {download}
             </>
           }
