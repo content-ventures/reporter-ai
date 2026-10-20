@@ -56,4 +56,22 @@ A format job writes part by part (`formatPipelineDefinition`). It reuses the mea
   - the format cases in `src/features/new-production/form.test.ts`.
 - **Backend:** `tests/event-formats.test.ts` covers revision on invented terms, the last resort, repeated quotes and facts, the unchanged article flow, the linha fina contract and saved funnels.
 - **Smoke:** `e2e/new-production-editor.spec.ts` chooses Cobertura de estande and checks that format, size and event reach generation.
-- **Live rehearsal** on 2026-10-19, with the production text model (OpenAI gpt-6-astra) on real event material: an APAS stand interview, an IFC panel, the Aquishow opening, an awards list and the SSLA 2026 release. The results are in the PR.
+- **Live rehearsal** on 2026-10-19, with the production text model (OpenAI gpt-6-astra) on real event material. It ran the worker's draft path in memory: outline with linha fina, quote curation, part-by-part writing, grounding and the format gate. The table shows the second round, after the fixes found in the first.
+
+| Case | Material | Body | Literal quotes | Terms without source | Time |
+|---|---|---|---|---|---|
+| Cobertura de estande · Completo | Hecke interview, APAS Show 2026 | 2,301 | 5 | 0 | 49 s |
+| Cobertura de painel · Padrão | ApexBrasil panel, IFC Brasil 2026 | 2,943 | 6 | 0 | 57 s |
+| Nota curta | SSLA 2026 press release | 906 | 0 | 0 | 21 s |
+| Premiação | Personalidades da Aquicultura, Aquishow 2026 | 832–1,407 | 0 | 0 | 27–33 s |
+| Abertura | Aquishow 2026 opening speeches | 2,893 | 5 | 0 | 37 s |
+
+The first round found five problems, each fixed and covered by a test:
+
+- a repeated quotation, fact or introduction;
+- the closing verb on a paraphrase;
+- the event address in the lede;
+- the outline checked against the article's section range;
+- speaker labels missing from the known facts.
+
+A provider glitch (a word in another script) led to the foreign-script rule in grounding. Groq's free tier (8,000 tokens a minute) makes a format text take several minutes. The worker waits and resumes from its cache, but production writes with OpenAI.

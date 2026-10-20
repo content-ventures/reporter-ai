@@ -59,3 +59,8 @@ test('a person already introduced is not introduced again', () => {
   assert.deepEqual(reintroducedPeople('detalhou Scorsin.', history, names), []);
   assert.deepEqual(reintroducedPeople('“Eu falei com Giaceli Scorsin”, contou Sousa.', history, names), []);
 });
+
+test('a word in another script that the material lacks is reported (provider glitch)', () => {
+  assert.deepEqual(ungroundedTerms('Confira a seguir os vencedores de cada categoria: معلمFIELDERROR?', material), ['معلمFIELDERROR']);
+  assert.deepEqual(ungroundedTerms('O diretor da BomPORTO, Sérgio Sousa, falou sobre o bacalhau.', material), []);
+});

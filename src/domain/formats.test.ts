@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITORIAL_FORMATS, FORMAT_SPECS, articleContractFor, eventBoxLines, formatLabel, formatSizeOf, normalizeEvent } from './formats.ts';
+import { EDITORIAL_FORMATS, FORMAT_SPECS, articleContractFor, articleGateFor, eventBoxLines, formatLabel, formatSizeOf, normalizeEvent, outletPunctuation } from './formats.ts';
 import { R1_ARTICLE_LIMITS } from './article-policy.ts';
 import { briefHash, validateBrief } from './production.ts';
 import type { Brief } from './production.ts';
@@ -56,4 +56,12 @@ test('the closing box is built from the typed event only', () => {
     'Data: De 20 a 22 de outubro de 2026', 'Horário: Das 13h às 20h', 'Local: Distrito Anhembi',
     'Acompanhe nossa cobertura especial no site e nas redes sociais.',
   ]);
+});
+
+test('a format blocks on its ceiling and quotes, never on its minimum; the article keeps R1', () => {
+  assert.deepEqual(articleGateFor({ format: 'opening' }), { maxChars: 5000, targetChars: 4500, minQuotes: 2 });
+  assert.deepEqual(articleGateFor({}), { ...R1_ARTICLE_LIMITS });
+  assert.equal(outletPunctuation('“Vendemos mais.”, explicou. “Somos líderes.”.'), '“Vendemos mais”, explicou. “Somos líderes.”');
+  assert.equal(outletPunctuation('“Por quê?”, perguntou.'), '“Por quê?”, perguntou.');
+  assert.equal(outletPunctuation('Confira a seguir os vencedores de cada categoria: .'), 'Confira a seguir os vencedores de cada categoria:');
 });

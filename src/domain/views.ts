@@ -42,7 +42,7 @@ import type { FlowDefinition, StageView } from './stage.ts';
 import { shortHash } from './text/hash.ts';
 import { countCharacters } from './text/stats.ts';
 import { enforceR1ArticleChecks } from './article-policy.ts';
-import { articleContractFor } from './formats.ts';
+import { articleGateFor } from './formats.ts';
 import { analyzeTranscript } from './text/transcript-parse.ts';
 
 /**
@@ -247,7 +247,7 @@ export function evaluatePieceChecks(
     // Real provider-backed productions obey R1. Historical UI simulation keeps
     // its demonstration checks, without pretending it passed the actual motor.
     if (record.runs.some(run => run.model.engine === 'provider') && !generation.running && !generation.interrupted && articleCharacters(body)) {
-      return enforceR1ArticleChecks(checks, body, record.sources, articleContractFor(record.production.brief));
+      return enforceR1ArticleChecks(checks, body, record.sources, articleGateFor(record.production.brief));
     }
     return checks;
   }

@@ -24,7 +24,7 @@ import { FlowError, forbiddenError } from './errors';
 import { activePipeline, pipelineView, parsePipelineDefinition } from './pipeline';
 import { assertLocalMode, providerConfigured } from './config';
 import { r1ArticleIssue, articlePolicyMessage } from '../domain/article-policy.ts';
-import { articleContractFor, EDITORIAL_FORMATS, EVENT_FIELDS, EVENT_FIELD_MAX } from '../domain/formats.ts';
+import { articleGateFor, EDITORIAL_FORMATS, EVENT_FIELDS, EVENT_FIELD_MAX } from '../domain/formats.ts';
 import { ARTICLE_ASSIST_KINDS, validateArticleAssistInput } from './article-assist';
 import { citationDay, podcastLink } from '../domain/citation-library.ts';
 import { currentReporterContext } from './request-context.ts';
@@ -334,7 +334,7 @@ export async function editorialRpc(payload: unknown) {
       const record = production ? engine.records.record(production.production.id) : undefined;
       const body = record?.pieces.find(piece => piece.id === args[0])?.draft.body;
       if (body?.type === 'article') {
-        const limits = articleContractFor(record?.production.brief ?? { });
+        const limits = articleGateFor(record?.production.brief ?? { });
         const issue = r1ArticleIssue(body, record?.sources ?? [], limits);
         if (issue) return refuse('send_blocked', articlePolicyMessage(issue, limits));
       }
