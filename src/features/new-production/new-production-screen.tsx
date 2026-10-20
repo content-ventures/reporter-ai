@@ -30,6 +30,7 @@ import {
 import { FileText, Sparkles, X } from '@content-ventures/design-system/v3/icons';
 import { materialMinutes, sizeOf } from '@/domain';
 import { sourceLinkMessage } from '@/domain/source-link';
+import { replaceTerm } from '@/domain/text/terms';
 import { MAX_UPLOAD_BYTES, MEDIA_EXTENSIONS } from '../../domain/reporter.ts';
 import type { PersonSummary, SourceAnalysis } from '@/ports';
 import { sourceKind, type SourceIntake } from '@/registries';
@@ -169,6 +170,15 @@ function NewProductionForm({ received }: { received?: string }) {
       return { ...next, ...withFormat(extras.format) };
     });
   }, []);
+  // "Corrigir termo": a misheard name is fixed in the material itself, before the production exists.
+  const replaceMaterialTerm = (from: string, to: string) => {
+    const { text, count } = replaceTerm(draftMaterial(draft).text, from, to);
+    if (!count) return 0;
+    if (draft.mode === 'paste') update({ pasted: text });
+    else if (draft.mode === 'file' && draft.file) update({ file: { ...draft.file, text } });
+    else if (draft.mode === 'link' && draft.linkFile) update({ linkFile: { ...draft.linkFile, text } });
+    return count;
+  };
   const fileReader = useFileReader(intake, onFileLoaded);
   const onLinkLoaded = useCallback((value: ImportedLink) => setDraft((current) => ({
     ...current,linkFile: value.file,sourceUrl: value.sourceUrl,programName: current.programName?.trim() ? current.programName : value.programName,speakers: {},
@@ -511,6 +521,7 @@ function NewProductionForm({ received }: { received?: string }) {
               onRetryLink={retryPreparation}
               onRemoveLink={() => { linkReader.reset();update({ linkFile: null,sourceUrl: '',speakers: {} }); }}
               onUseSample={fillSample}
+              onReplaceTerm={replaceMaterialTerm}
             />
             <SpeakersSection
               draft={draft}
