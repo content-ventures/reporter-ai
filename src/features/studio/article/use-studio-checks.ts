@@ -21,6 +21,7 @@ import type { PieceView, ProductionDetail } from '@/ports';
 import { articleChecksFor } from '@/registries';
 import { useDeskStudio } from '@/features/hard-news/studio/use-desk-studio';
 import { imagesToCheck, type ImageToCheck } from './image-model';
+import { useArticleVeracity } from './use-article-veracity';
 import { articleFacts, documentTools, isBlankBody, mergeChecks, nextInOrder, type ArticleFacts } from './studio-model';
 import { factsBodyOf } from './studio-session-model';
 import type { StudioGeneration } from './use-studio-generation';
@@ -62,6 +63,8 @@ export function useStudioChecks({
   const desk = useDeskStudio(production.id, factsBody, facts.quotes);
   const deskChecks = desk?.checks;
   const deskReplaces = desk?.replaces;
+  // The fact check of the quotations, from the citation bank: a warning, never a block.
+  const veracity = useArticleVeracity(production.id, facts.quotes, generating);
   const checks: CheckResult[] = useMemo(() => {
     const local = runChecks(articleChecksFor(), {
       body: factsBody,
@@ -71,10 +74,10 @@ export function useStudioChecks({
       assets: assetLookup,
       ...(production.charsAvailable !== undefined ? { materialChars: production.charsAvailable } : {}),
     });
-    const merged = mergeChecks(local, piece.checks, { body: factsBody, sources, limits: articleGateFor(production.brief) });
+    const merged = [...mergeChecks(local, piece.checks, { body: factsBody, sources, limits: articleGateFor(production.brief) }), ...(veracity ? [veracity] : [])];
     if (!deskChecks) return merged;
     return [...merged.filter((check) => !deskReplaces?.includes(check.id)), ...deskChecks];
-  }, [factsBody, production.brief, production.charsAvailable, sources, generating, piece.checks, assetLookup, deskChecks, deskReplaces]);
+  }, [factsBody, production.brief, production.charsAvailable, sources, generating, piece.checks, assetLookup, deskChecks, deskReplaces, veracity]);
   /** Images without credit, authorisation or file ("Imagens com crédito"), in reading order. */
   const imageIssues: ImageToCheck[] = useMemo(() => imagesToCheck(factsBody, assetLookup), [factsBody, assetLookup]);
   /**
