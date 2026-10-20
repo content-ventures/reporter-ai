@@ -1,13 +1,20 @@
 'use client';
 
-import { AttachedNote, Badge, Card, CardHeader, CardLink, Field, FieldGroup, Grid, MetaList, PageStack, Panel, Prose, Section, Select, SplitLayout, SwitchRow, Timeline } from '@content-ventures/design-system/v3';
-import { FolderUp, Sparkles, Settings2, CheckCircle2, Inbox } from '@content-ventures/design-system/v3/icons';
-import { PIPELINE_WORKERS, pipelineWorkerFlow, type PipelineWorkerKey, type WorkerNode } from '@/domain/pipeline-workers';
+import { AttachedNote, Badge, Card, CardHeader, CardLink, Field, FieldGroup, Grid, IconTile, MetaList, PageStack, Panel, Section, Select, SplitLayout, SwitchRow, Timeline, Tray, type Tone } from '@content-ventures/design-system/v3';
+import { CheckCircle2, FileText, GalleryHorizontal, Inbox, Megaphone, Presentation, Settings2, Sparkles, StickyNote, Store, Trophy, type LucideIcon } from '@content-ventures/design-system/v3/icons';
+import { PIPELINE_WORKERS, pipelineWorkerFlow, type PipelineWorker, type PipelineWorkerKey, type WorkerNode } from '@/domain/pipeline-workers';
+import { FORMAT_SPECS, formatRangeLabel } from '@/domain/formats';
 import { pipelineModelLabel, type PipelineDefinition } from '@/domain/pipeline';
 import { PROMPTS, promptChanged, promptStep, type PromptKey } from './pipeline-catalog';
 
 const FLOW_ICONS = { input: Inbox, prompt: Sparkles, automatic: Settings2, output: CheckCircle2 };
 const FLOW_LABELS: Record<WorkerNode['kind'], string> = { input: 'Fluxo · entrada', prompt: 'IA · prompt editável', automatic: 'Fluxo · automático', output: 'Fluxo · saída' };
+/** Each worker's mark: one icon and one tone, so the cards tell apart at a glance. */
+const WORKER_LOOK: Record<PipelineWorkerKey, { icon: LucideIcon; tone: Tone }> = {
+  article: { icon: FileText, tone: 'blue' }, carousel: { icon: GalleryHorizontal, tone: 'pink' },
+  stand: { icon: Store, tone: 'teal' }, panel: { icon: Presentation, tone: 'violet' }, awards: { icon: Trophy, tone: 'amber' },
+  opening: { icon: Megaphone, tone: 'orange' }, note: { icon: StickyNote, tone: 'green' },
+};
 const SCOPE_NOTES: Record<NonNullable<WorkerNode['scope']>, string> = {
   format: 'Prompt só deste formato: editar aqui não muda o artigo nem os outros formatos.',
   shared: 'Prompt compartilhado: vale para o artigo e para todos os formatos.',
@@ -24,20 +31,30 @@ export function PipelineWorkers({ worker, onSelect, draft, active, saving, onEdi
       description={PROMPTS[key].description} />
     <MetaList size="sm" items={[promptStep(key, draft) ? pipelineModelLabel(promptStep(key, draft)!.model) : 'Compartilhado entre os workers', ...changedBadge(key)]} />
   </Card>;
-  if (!worker) return <Grid columns="1:1" collapseBelow={760}>
-    {PIPELINE_WORKERS.map(item => {
-      const count = pipelineWorkerFlow(item.key, draft).filter(node => node.prompt).length;
-      return <Card key={item.key} interactive padding="lg">
-        <PageStack>
-          <CardHeader titleAs="h2" size="md" leading={<FolderUp size={20} />} title={item.title}
-            badge={item.format ? <Badge tone="violet" size="sm">Formato de evento</Badge> : undefined} />
-          <Prose variant="compact" measure="wide">{item.description}</Prose>
-          <MetaList items={[`${count} ${count === 1 ? 'bloco de IA' : 'blocos de IA'} no fluxo`]} />
-          <CardLink onClick={() => onSelect(item.key)} aria-label={`Abrir worker ${item.title}`}>Abrir fluxo</CardLink>
-        </PageStack>
-      </Card>;
-    })}
-  </Grid>;
+  const workerCard = (item: PipelineWorker) => {
+    const count = pipelineWorkerFlow(item.key, draft).filter(node => node.prompt).length;
+    const sizes = item.format ? FORMAT_SPECS[item.format].sizes : undefined;
+    return <Card key={item.key} interactive padding="md">
+      <PageStack>
+        <CardHeader titleAs="h2" leading={<IconTile icon={WORKER_LOOK[item.key].icon} tone={WORKER_LOOK[item.key].tone} size="lg" />}
+          title={<CardLink onClick={() => onSelect(item.key)} aria-label={`Abrir worker ${item.title}`}>{item.title}</CardLink>}
+          description={item.format ? FORMAT_SPECS[item.format].summary : item.description} />
+        <MetaList size="sm" items={[...(sizes ? [formatRangeLabel({ ...sizes[0], maxChars: sizes[sizes.length - 1].maxChars })] : []),
+          `${count} ${count === 1 ? 'bloco de IA' : 'blocos de IA'}`]} />
+      </PageStack>
+    </Card>;
+  };
+  if (!worker) {
+    const formats = PIPELINE_WORKERS.filter(item => item.format);
+    return <PageStack>
+      <Tray title="Artigo e carrossel" meta="Fluxo padrão da redação">
+        <Grid columns="1:1:1" collapseBelow={760} label="Artigo e carrossel">{PIPELINE_WORKERS.filter(item => !item.format).map(workerCard)}</Grid>
+      </Tray>
+      <Tray title="Formatos de evento" meta={`${formats.length} workers`}>
+        <Grid columns="1:1:1" collapseBelow={760} label="Formatos de evento">{formats.map(workerCard)}</Grid>
+      </Tray>
+    </PageStack>;
+  }
   const selected = PIPELINE_WORKERS.find(item => item.key === worker)!;
   const nodes = pipelineWorkerFlow(worker, draft);
   const aiBlocks = nodes.filter(node => node.prompt).length;
