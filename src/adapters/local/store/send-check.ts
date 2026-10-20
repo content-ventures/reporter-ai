@@ -40,7 +40,7 @@ export function sendItemsOf(record: ProductionRecord, piece: Piece, deps: SendCh
   const openSuggestionIds = pendingSuggestions(record, piece.id).map((suggestion) => suggestion.id);
   if (body.type === 'article') {
     const characters = articleCharacters(body);
-    return sendChecklist({ kind: piece.kind, checks, openSuggestionIds, running, empty: characters === 0, size: record.production.brief.size, characters });
+    return sendChecklist({ kind: piece.kind, checks, openSuggestionIds, running, empty: characters === 0, ...(record.production.brief.format ? {} : { size: record.production.brief.size }), characters });
   }
   const template = deps.templates.find((candidate) => candidate.id === body.templateId);
   return sendChecklist({

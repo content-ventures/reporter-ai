@@ -10,6 +10,7 @@ async function workspace(page: Page, refuseStart = false) {
   const checkpoint = emptyEditorialCheckpoint();
   const engine = createEditorialEngine(checkpoint, { next: () => randomUUID() });
   let revision = 0, creates = 0, starts = 0;
+  let created: NewProductionInput | undefined;
   let job: EditorialJob | undefined;
   await page.route('**/api/reporter/material/analysis', route => route.fulfill({ json: { title: 'Pauta sintética', participants: [], pipelineRevision: 1 } }));
   await page.route(url => url.pathname === '/api/reporter/workspace', async route => {
@@ -20,7 +21,8 @@ async function workspace(page: Page, refuseStart = false) {
     const { method, args } = route.request().postDataJSON();
     if (method === 'createFromSource') {
       creates++;
-      const result = await engine.commands.createFromSource(args[0] as NewProductionInput);
+      created = args[0] as NewProductionInput;
+      const result = await engine.commands.createFromSource(created);
       revision++;
       await route.fulfill({ json: result });
     } else if (method === 'generation.start') {
@@ -47,7 +49,7 @@ async function workspace(page: Page, refuseStart = false) {
       await route.fulfill({ json: { ok: true, value: { runId: run.id } } });
     } else throw new Error('Unexpected test command: ' + method);
   });
-  return { engine, counts: () => ({ creates, starts }), preview(text = 'Primeiro parágrafo chegando em tempo real.') {
+  return { engine, counts: () => ({ creates, starts }), created: () => created, preview(text = 'Primeiro parágrafo chegando em tempo real.') {
     expect(job).toBeDefined();
     appendEditorialEvent(engine, job!, { type: 'step.completed', stepId: 'source' });
     appendEditorialEvent(engine, job!, { type: 'step.started', stepId: 'article' });
@@ -127,3 +129,31 @@ for (const viewport of VIEWPORTS) {
     });
   });
 }
+
+test.describe('formato de evento na pauta', () => {
+  test.use({ viewport: { width: VIEWPORTS[0].width, height: VIEWPORTS[0].height } });
+  test('cobertura de estande leva formato, tamanho e evento até a geração', async ({ page }) => {
+    test.setTimeout(120_000);
+    const errors = watchErrors(page), replay = await workspace(page);
+    try {
+      await page.goto('/productions/new', { waitUntil: 'domcontentloaded' });
+      await page.getByRole('button', { name: 'Usar exemplo', exact: true }).click();
+      await expect(page.getByRole('dialog')).toBeHidden();
+      await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+      await page.getByRole('radio', { name: /Cobertura de estande/ }).check();
+      await page.getByRole('radio', { name: /Enxuto/ }).check();
+      await page.getByRole('textbox', { name: /^Evento/ }).fill('Seafood Show Latin America 2026');
+      await page.getByRole('textbox', { name: 'Data', exact: true }).fill('De 20 a 22 de outubro de 2026');
+      await page.getByRole('textbox', { name: 'Título interno', exact: true }).fill('Estande no SSLA');
+      await page.getByRole('button', { name: 'Gerar texto', exact: true }).click();
+      await page.waitForURL(/\/productions\/[^/]+\/article$/);
+      expect(replay.created()?.brief).toMatchObject({ sections: 1, size: 'standard', format: 'stand', formatSize: 'compact',
+        event: { name: 'Seafood Show Latin America 2026', dates: 'De 20 a 22 de outubro de 2026' } });
+      expect(replay.counts()).toEqual({ creates: 1, starts: 1 });
+      await expect(page.getByText('Gerando linha fina…', { exact: true })).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      expect(errors).toEqual([]);
+    } finally { replay.engine.store.dispose(); }
+  });
+});

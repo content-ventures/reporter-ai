@@ -142,7 +142,8 @@ function inProgressItem(ctx: ReadContext, { record, view }: Entry): InProgressIt
   const article = view.pieces.find((piece) => piece.kind === 'article');
   if (article && article.draft.characters > 0 && (view.situation.stage === 'article' || view.situation.stage === 'approval')) {
     item.characters = article.draft.characters;
-    item.size = view.brief.size;
+    // An event format is sized in characters: no lauda target ("de 2 laudas") next to it.
+    if (!view.brief.format) item.size = view.brief.size;
   }
   return item;
 }
