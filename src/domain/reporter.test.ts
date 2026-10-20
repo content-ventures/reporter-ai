@@ -47,3 +47,15 @@ test('the edges come from the garbled words, not from timestamps: no word lost o
   // The next segment's first word, inside the margin, is not appended.
   assert.equal(repairedText(GARBLED, words(`${WINDOW} Certo, agora`)), REPAIRED);
 });
+
+test('an extra word of the second decoding next to an edge never takes the place of the edge word', () => {
+  const garbledEnd = 'e o produtor que trabalha com til aqui no estado de Minas sabe que n';
+  assert.equal(repairedText(garbledEnd, words('prazo. E o produtor que trabalha com tilápia aqui no estado de Minas sabe que isso não. Certo')),
+    'E o produtor que trabalha com tilápia aqui no estado de Minas sabe que isso não.');
+  assert.equal(repairedText('a gente evoluiu muito no pa de 10 anos c', words('a gente evoluiu muito no país de 10 anos pra cá. Certo')),
+    'a gente evoluiu muito no país de 10 anos pra cá.');
+  assert.equal(repairedText('n acho que o pessoal que trabalha com til aqui no estado tem orgulho',
+    words('prazo. Não eu acho que o pessoal que trabalha com tilápia aqui no estado tem orgulho. E')),
+  'Não eu acho que o pessoal que trabalha com tilápia aqui no estado tem orgulho.');
+  assert.equal(repairedText(GARBLED, words(`a longo prazo. ${REPAIRED.replace('Então eu', 'Então tipo eu')} para acontecer`)), REPAIRED.replace('Então eu', 'Então tipo eu'));
+});

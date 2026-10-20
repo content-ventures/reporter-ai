@@ -5,6 +5,8 @@
  * touched: SRT/VTT cue numbers and timestamp lines, and "[00:04:12]" stamps inside the speech, so the
  * parser still reads every line with its time and speaker.
  */
+import { parseTranscript } from './transcript-parse.ts';
+
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 
 function termPattern(term: string): RegExp | undefined {
@@ -16,8 +18,8 @@ function termPattern(term: string): RegExp | undefined {
 
 /** A cue number, a VTT header or a timestamp line of an SRT/VTT file: never part of the speech. */
 const timingLine = (line: string) => /^\s*\d+\s*$/u.test(line) || line.includes('-->') || /^\s*WEBVTT\b/u.test(line);
-/** A time written inside the speech: "[00:04:12]", "(04:12)" or "00:04:12". */
-const STAMP = /\[\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?\]|\(\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?\)|(?<!\d)\d{1,2}:\d{2}:\d{2}(?:[.,]\d{1,3})?(?!\d)/gu;
+/** A time written inside the speech: "[00:04:12]", "(04:12)", "04:12" or "00:04:12". */
+const STAMP = /\[\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?\]|\(\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?\)|(?<![\d:])\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?(?![\d:])/gu;
 
 /** Applies `edit` to the speech only: runs of lines between timing lines, outside the stamps in them. */
 function editSpeech(text: string, edit: (speech: string) => string): string {
@@ -57,4 +59,25 @@ export function replaceTerm(text: string, from: string, to: string): { text: str
   let count = 0;
   const edited = editSpeech(text, speech => speech.replace(pattern, () => { count++; return replacement; }));
   return { text: count ? edited : text, count };
+}
+
+/**
+ * A correction for the Material: the replacement, refused when it would change how the material is
+ * read, not only its words. A speaker name the label rules do not accept ("Rafael du Pont:") would
+ * hand that speaker's lines to the previous one, and a broken stamp would drop every time; then the
+ * name is corrected in "Falantes" instead.
+ */
+export type TermCorrection = { text: string; count: number; refused?: undefined } | { refused: 'structure'; count: number };
+
+export function correctTerm(text: string, from: string, to: string): TermCorrection {
+  const result = replaceTerm(text, from, to);
+  if (!result.count) return result;
+  const before = parseTranscript(text), after = parseTranscript(result.text);
+  const kept = before.format === after.format && before.segments.length === after.segments.length
+    && before.segments.every((segment, at) => {
+      const next = after.segments[at];
+      const speaker = segment.speaker === undefined ? undefined : replaceTerm(segment.speaker, from, to).text.normalize('NFC');
+      return next.speaker?.normalize('NFC') === speaker && next.startMs === segment.startMs && next.endMs === segment.endMs;
+    });
+  return kept ? result : { refused: 'structure', count: result.count };
 }

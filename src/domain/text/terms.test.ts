@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { replaceTerm, termOccurrences } from './terms.ts';
+import { correctTerm, replaceTerm, termOccurrences } from './terms.ts';
 
 const SRT = `1
 00:00:00,000 --> 00:00:09,000
@@ -48,4 +48,25 @@ test('stamps inside the speech, wrapped lines and decomposed accents are handled
   assert.equal(termOccurrences(decomposed, 'Jose'), 0);
   assert.equal(replaceTerm(decomposed, 'José', 'Josué').text, 'Bom, falando de Josué e de Santa Fé.');
   assert.equal(replaceTerm('WEBVTT\n\n00:00.000 --> 00:04.000\nA WEBVTT dele.', 'WEBVTT', 'X').count, 1, 'the header stays, the speech changes');
+});
+
+test('a correction that would change who speaks or the times is refused; a plain name fix goes through', () => {
+  const lines = 'Ana Souza: Bom dia.\nRafael: Bom dia, Ana.\nAna Souza: Qual o objetivo?\nRafael: Crescer 20%.';
+  // Names the label rules do not read would hand Rafael's lines to Ana.
+  assert.deepEqual(correctTerm(lines, 'Rafael', "Rafael d'Ávila"), { refused: 'structure', count: 2 });
+  assert.deepEqual(correctTerm(lines, 'Rafael', 'Rafael du Pont'), { refused: 'structure', count: 2 });
+  const renamed = correctTerm(lines, 'Rafael', 'Rafael Silva');
+  assert.equal(renamed.refused, undefined);
+  assert.equal(renamed.count, 2);
+  // Bare mm:ss stamps are times, not words: only the speech changes and every line keeps its speaker.
+  const stamped = '04:12 - Rafael Dias: A cartela tem 04 tons.\n04:30 - Ana Souza: E 12 cores?\n05:12 - Rafael Dias: Sim, 12.';
+  const twelve = correctTerm(stamped, '12', 'doze');
+  assert.equal(twelve.count, 2);
+  assert.equal(twelve.refused, undefined);
+  assert.match(!twelve.refused ? twelve.text : '', /^04:12 - Rafael Dias: A cartela tem 04 tons\.$/mu);
+  const otter = correctTerm('Rafael Dias  04:12\nA cartela tem 04 tons.', '04', 'quatro');
+  assert.equal(otter.refused, undefined);
+  assert.equal(!otter.refused ? otter.text : '', 'Rafael Dias  04:12\nA cartela tem quatro tons.');
+  // The stand case: the event name is fixed and nothing else moves.
+  assert.equal(correctTerm(SRT, 'Q Show', 'Aquishow').count, 3);
 });

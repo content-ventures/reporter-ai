@@ -127,23 +127,32 @@ export function repairedText(garbled: string, words: readonly TimedWord[]): stri
   const source = positions.map(at => cutAtAccent(words[at].word));
   const m = target.length, n = source.length;
   if (!m || !n) return undefined;
-  // Fitting alignment: every garbled word aligned, any run of window words before and after left out.
-  let cost = new Array<number>(n + 1).fill(0), from = Array.from({ length: n + 1 }, (_, j) => j);
-  for (let i = 1; i <= m; i++) {
-    const next = new Array<number>(n + 1), nextFrom = new Array<number>(n + 1);
-    next[0] = i; nextFrom[0] = 0;
-    for (let j = 1; j <= n; j++) {
-      let best = cost[j - 1] + (target[i - 1] === source[j - 1] ? 0 : 1), start = from[j - 1];
-      if (cost[j] + 1 < best) { best = cost[j] + 1; start = from[j]; }
-      if (next[j - 1] + 1 < best) { best = next[j - 1] + 1; start = nextFrom[j - 1]; }
-      next[j] = best; nextFrom[j] = start;
-    }
-    cost = next; from = nextFrom;
+  // The first and the last garbled words are anchors: each must meet its own word, so an extra word
+  // of the second decoding next to an edge never takes the place of what the speaker said there.
+  const INF = Number.POSITIVE_INFINITY;
+  const cost = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(INF));
+  const begin = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(-1));
+  for (let j = 1; j <= n; j++) {
+    const exact = target[0] === source[j - 1] ? 0 : INF;
+    const extra = cost[1][j - 1] + 1;
+    if (exact <= extra) { cost[1][j] = exact; begin[1][j] = j - 1; } else { cost[1][j] = extra; begin[1][j] = begin[1][j - 1]; }
   }
-  let end = 1;
-  for (let j = 2; j <= n; j++) if (cost[j] < cost[end]) end = j;
-  if (cost[end] > Math.max(1, Math.round(m * REPAIR_TOLERANCE)) || from[end] >= end) return undefined;
-  const text = words.slice(positions[from[end]], positions[end - 1] + 1).map(word => word.word.trim()).filter(Boolean).join(' ');
+  for (let i = 2; i <= m; i++) for (let j = 1; j <= n; j++) {
+    let best = cost[i - 1][j - 1] + (target[i - 1] === source[j - 1] ? 0 : 1), from = begin[i - 1][j - 1];
+    if (cost[i - 1][j] + 1 < best) { best = cost[i - 1][j] + 1; from = begin[i - 1][j]; }
+    if (cost[i][j - 1] + 1 < best) { best = cost[i][j - 1] + 1; from = begin[i][j - 1]; }
+    cost[i][j] = best; begin[i][j] = from;
+  }
+  // The span ends where the last garbled word meets its own word, at the lowest cost (the nearest on a tie).
+  let end = -1, total = INF;
+  for (let j = 1; j <= n; j++) {
+    if (target[m - 1] !== source[j - 1]) continue;
+    const reached = m === 1 ? 0 : cost[m - 1][j - 1], from = m === 1 ? j - 1 : begin[m - 1][j - 1];
+    if (reached < total && from >= 0) { total = reached; end = j; }
+  }
+  if (end < 0 || total > Math.max(1, Math.round(m * REPAIR_TOLERANCE))) return undefined;
+  const first = m === 1 ? end - 1 : begin[m - 1][end - 1];
+  const text = words.slice(positions[first], positions[end - 1] + 1).map(word => word.word.trim()).filter(Boolean).join(' ');
   // Nothing to restore when the speech had no accent to lose: the original stays.
   return ACCENTED.test(text) ? text : undefined;
 }

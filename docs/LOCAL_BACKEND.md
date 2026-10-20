@@ -56,7 +56,8 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
   ("Então" -> "Ent", "ração" -> "ra") at normal confidence. A segment of 12 words or more with
   no accented letter is cut again with a 3-second margin and transcribed alone with word
   timestamps. The new words, cut at their first accent the same way, are aligned word by word with
-  the garbled ones; the span that matches within 12% replaces the segment, with its accents. Time
+  the garbled ones, the first and last garbled words as fixed anchors; the span that matches
+  within 12% replaces the segment, with its accents. Time
   plays no part, so no word is lost or doubled at an edge, and a translation, a shorter text or
   another stretch never aligns. A failed or doubtful repair keeps the original. At most 20 repairs
   per recording, one at a time; a rate limit is waited out once (up to 30 s), then the rest are
@@ -66,8 +67,9 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
 - **Corrigir termo** (Material stage): a name the transcription misheard ("Q Show") is replaced by
   the right one ("Aquishow") across the material before the production exists, as whole words in
   any case, also across a wrapped line. Cue numbers, timestamp lines and "[00:04:12]" stamps are
-  never touched, and a corrected speaker name keeps the reporter's choice for that speaker
-  (`replaceTerm`, `src/domain/text/terms.ts`).
+  never touched, and a corrected speaker name keeps the reporter's choice for that speaker. A
+  correction that would change who speaks or the times (a name the label rules do not read, a
+  broken stamp) is refused and points to "Falantes" (`correctTerm`, `src/domain/text/terms.ts`).
   "Ver transcrição" reads the current text, with search.
 - The editable **Material** stage suggests an internal title from the actual topic and lists
   participants explicitly presented in the transcript, with literal evidence for confirmation.
