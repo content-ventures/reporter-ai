@@ -11,6 +11,9 @@ import { FlowError } from './errors.ts';
  * is tested without network.
  */
 
+/** Citations of one generated article checked automatically: up to three searches each. */
+export const AUTO_FACT_CHECKS = 8;
+
 export type FactCheckSubject = { id: string; text: string; speaker: string; recordedOn?: string; context?: string };
 export type Generate = (instruction: string, input: unknown, schema: object, signal: AbortSignal) => Promise<{ value: unknown; model: string }>;
 export type Search = (query: string, signal: AbortSignal) => Promise<FactSource[]>;

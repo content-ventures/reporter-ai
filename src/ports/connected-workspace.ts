@@ -19,6 +19,11 @@ export type ArticleImageTask = {
   status: 'queued' | 'completed' | 'skipped' | 'failed';
   revision: number; basedOn: string; hash: string; attempts: number; error?: string;
 };
+/** The background fact check of a generated article's citations; `done` of them are settled. */
+export type FactCheckTask = {
+  status: 'queued' | 'completed' | 'failed';
+  citationIds: string[]; done: number; attempts: number; error?: string;
+};
 
 /** Server-owned aggregate. Browser copies are read projections, never write payloads. */
 export type EditorialState = {
@@ -36,6 +41,7 @@ export type EditorialJob = {
   pipeline?: PipelineRevision;
   calls?: PipelineCall[];
   images?: ArticleImageTask;
+  factCheck?: FactCheckTask;
   provider?: { name: string; model: string; requestId: string | null };
   lease?: { owner: string; until: number; fence: string };
 };

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { transaction } from './database.ts';
 import { runEditorialJob } from './editorial-worker.ts';
 import { runArticleImageJob } from './article-image-worker.ts';
+import { runFactCheckJob } from './fact-check-worker.ts';
 import { logEvent, safeCode } from './errors.ts';
 import { runRemoteIngest } from './remote-ingest.ts';
 import { runReporterJob } from './reporter-worker-jobs.ts';
@@ -38,7 +39,7 @@ export const drainServices: DrainServices = {
   pending: () => transaction('worker', async client =>
     (await client.query('SELECT public.reporter_worker_pending() AS pending')).rows[0]?.pending === true),
   run: async (owner, signal, deadline) => await runRemoteIngest(owner, signal)
-    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal) || await runArticleImageJob(owner, signal),
+    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal) || await runArticleImageJob(owner, signal) || await runFactCheckJob(owner, signal),
   now: Date.now,
   compact: () => compactEditorialRows(),
 };
