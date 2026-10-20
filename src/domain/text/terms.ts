@@ -101,14 +101,17 @@ export type TermCorrection = { text: string; count: number; refused?: undefined 
 export function correctTerm(text: string, from: string, to: string): TermCorrection {
   const result = replaceTerm(text, from, to);
   if (!result.count) return result;
-  // Who says each word, in order, leaving out the words of the term itself, which are what changes.
-  // Stretches may regroup and a split name may stay as it was; no other word may change speaker, and
-  // no label, identifier or time may turn into speech or vanish from it.
-  const plain = (word: string) => word.normalize('NFC').toLocaleLowerCase('pt-BR').replace(/[^\p{L}\p{M}\p{N}]/gu, '');
-  const changing = new Set(`${from} ${to}`.split(/\s+/u).map(plain).filter(Boolean));
+  // Who says each word, in order, with the term itself taken out of the speech, since it is what changes
+  // ("msd/Merck" compares as "/Merck"). Stretches may regroup and a split name may stay as it was; no
+  // other word may change speaker, and no label, identifier or time may turn into speech or vanish.
+  // The longer one first: taking "Rafael" out of "Rafael Dias" would leave a stray "Dias".
+  const masks = [from, to].sort((a, b) => b.trim().length - a.trim().length).map(term => termPattern(term, true))
+    .filter((mask): mask is RegExp => mask !== undefined);
+  const speech = (raw: string) => masks.reduce((rest, mask) => rest.replace(mask, ' '), raw.normalize('NFC'));
+  const plain = (word: string) => word.replace(/[^\p{L}\p{M}\p{N}]/gu, '');
   const said = (raw: string, rename: boolean) => parseTranscript(raw).segments.flatMap(segment => {
     const speaker = segment.speaker === undefined ? '' : (rename ? replaceTerm(segment.speaker, from, to).text : segment.speaker).normalize('NFC');
-    return segment.text.split(/\s+/u).filter(word => plain(word) && !changing.has(plain(word))).map(word => `${speaker}\u0000${word.normalize('NFC')}`);
+    return speech(segment.text).split(/\s+/u).filter(plain).map(word => `${speaker}\u0000${word}`);
   });
   const kept = parseTranscript(text).format === parseTranscript(result.text).format
     && JSON.stringify(said(text, true)) === JSON.stringify(said(result.text, false));
