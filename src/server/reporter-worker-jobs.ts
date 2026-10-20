@@ -2,12 +2,12 @@ import 'server-only';
 import { rm,stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { audioChunks,mergeSegments,type Segment } from '../domain/reporter.ts';
+import { acceptedRepair,audioChunks,garbledSegment,MAX_REPAIRS,mergeSegments,repairWindow,wordsWithin,type Segment } from '../domain/reporter.ts';
 import { signedSourceUrl } from './cloud-storage.ts';
 import { withCloudMediaSource } from './cloud-media-source.ts';
 import { transaction } from './database.ts';
 import { FlowError,logEvent,safeCode } from './errors.ts';
-import { generateEditorial,transcribeChunk,transcriptionModel,type ProviderResult } from './groq.ts';
+import { generateEditorial,transcribeChunk,transcribeWindow,transcriptionModel,type ProviderResult } from './groq.ts';
 import { inspectMedia,prepareChunk } from './media.ts';
 import { cacheRead,cacheWrite,verifySource,workDirectory } from './storage.ts';
 
@@ -63,9 +63,11 @@ function databaseChunkStore(job: Job,owner: string): ChunkStore {
   };
 }
 
-export async function processTranscript(input: unknown,directory: string,signal: AbortSignal,progress: (phase: string,done: number,total: number) => Promise<void>, services = {
-  signedSourceUrl, verifySource, inspectMedia, prepareChunk, transcribeChunk, withCloudMediaSource,
-}, options: { store?: ChunkStore; deadline?: number; now?: () => number } = {}) {
+const transcriptServices = { signedSourceUrl, verifySource, inspectMedia, prepareChunk, transcribeChunk, transcribeWindow, withCloudMediaSource };
+type TranscriptServices = Omit<typeof transcriptServices,'transcribeWindow'> & Partial<Pick<typeof transcriptServices,'transcribeWindow'>>;
+
+export async function processTranscript(input: unknown,directory: string,signal: AbortSignal,progress: (phase: string,done: number,total: number) => Promise<void>,
+  services: TranscriptServices = transcriptServices, options: { store?: ChunkStore; deadline?: number; now?: () => number } = {}) {
   const store = options.store ?? directoryChunkStore(directory);
   const deadline = options.deadline ?? Number.POSITIVE_INFINITY, now = options.now ?? Date.now;
   const media = z.discriminatedUnion('provider',[
@@ -105,6 +107,28 @@ export async function processTranscript(input: unknown,directory: string,signal:
     if (!result.segments) allTimed = false;
     else segments = mergeSegments(segments,result.segments,chunks[i].start);
     await progress('transcribing',i+1,chunks.length);
+  }
+  // A garbled stretch (domain/reporter.ts) is transcribed again on its own, with word timestamps,
+  // and only the words spoken inside the segment replace it. Its text changes only when the new one
+  // reads as Portuguese; a failed or doubtful repair keeps what Whisper wrote the first time.
+  if (allTimed) {
+    const window = services.transcribeWindow ?? transcribeWindow;
+    for (const index of segments.flatMap((segment,at) => garbledSegment(segment,media.language) ? [at] : []).slice(0,MAX_REPAIRS)) {
+      if (signal.aborted) throw new FlowError('JOB_INTERRUPTED',503,true);
+      if (now()>deadline-YIELD_MARGIN_MS) break;
+      const segment = segments[index],range = repairWindow(segment,duration),windowPath = join(directory,'repair-'+index+'.flac');
+      try {
+        await services.prepareChunk(source,windowPath,range.start,range.duration,signal,remote);
+        const repair = await window(windowPath,media.language,signal);
+        units = units===null || repair.input_units===null ? null : units+repair.input_units;
+        const text = wordsWithin(repair.words,range.start,segment);
+        if (acceptedRepair(segment.text,text)) segments[index] = { ...segment,text };
+        else logEvent('worker','transcript_repair_rejected');
+      } catch (error) {
+        if (signal.aborted) throw new FlowError('JOB_INTERRUPTED',503,true);
+        logEvent('worker','transcript_repair_failed',{ error_code: safeCode(error) });
+      } finally { await rm(windowPath,{ force: true }).catch(() => {}); }
+    }
   }
   const content = allTimed && segments.length ? segments.map(item => item.text).join(' ') : textParts.join('\n\n').trim();
   if (!content.trim()) throw new FlowError('NO_SPEECH_DETECTED',422);

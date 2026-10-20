@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { audioChunks } from '../src/domain/reporter.ts';
 import { processTranscript } from '../src/server/reporter-worker-jobs.ts';
 import { runMedia } from '../src/server/media.ts';
@@ -95,5 +95,49 @@ test('a later invocation resumes stored chunks and hands the job back before the
         [2, { start_ms: 0, duration_ms: 1, result: part('Old model', 'whisper-old') }]]) });
     assert.equal(done.content, 'Stored 1\n\nNew 1\n\nNew 2', 'a shifted window or another model is transcribed again');
     assert.deepEqual(saved, [1, 2]);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('a garbled stretch is transcribed again with word timestamps; a failed or doubtful repair keeps the original', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reporter-repair-'));
+  const garbled = 'Ent eu trouxe alguns panoramas como por exemplo compara com outras esp su aves e tamb salmonicultura de quanto n estamos';
+  const fine = 'A gente tem o município que mais produz tilápias no Brasil.';
+  const windows: { start: number; duration: number }[] = [];
+  let repairs = 0;
+  const make = (repairText: string | null) => ({
+    withCloudMediaSource: async <T>(url: string, _signal: AbortSignal, operation: (source: string) => Promise<T>) => operation(url),
+    signedSourceUrl: async () => 'https://storage.test/a.ogg', verifySource: async () => '',
+    inspectMedia: async () => ({ duration: 30, contentType: 'audio/ogg' }),
+    prepareChunk: async (_url: string, destination: string, start: number, duration: number) => {
+      if (basename(destination).startsWith('repair-')) windows.push({ start, duration });
+      await writeFile(destination, 'test');
+    },
+    transcribeChunk: async () => ({ provider: 'groq', model: transcriptionModel(), provider_request_id: null, usage_unit: 'audio_ms' as const,
+      input_units: 30_000, output_units: null, content: `${fine} ${garbled}`,
+      segments: [{ start_ms: 0, end_ms: 4000, text: fine }, { start_ms: 10_000, end_ms: 20_000, text: garbled }] }),
+    transcribeWindow: async () => {
+      repairs++;
+      if (repairText === null) throw new Error('provider unavailable');
+      // Relative to the window that starts 3 s before the segment: words between 3 s and 13 s are inside it.
+      const words = repairText.split(' ').map((word, at) => ({ word, start_ms: 3200 + at * 400, end_ms: 3500 + at * 400 }));
+      return { words: [{ word: 'prazo.', start_ms: 1000, end_ms: 1400 }, ...words], input_units: 16_000, provider_request_id: null };
+    },
+  });
+  const input = { provider: 's3', bucket: 'reporter-source-media', key: 'incoming/a.ogg', size: 1, content_type: 'audio/ogg', language: 'pt-BR' };
+  const repaired = 'Então eu trouxe alguns panoramas, como por exemplo, comparação com outras espécies, suínos, aves e também salmonicultura, de quanto nós estamos';
+  try {
+    const done = await processTranscript(input, directory, new AbortController().signal, async () => {}, make(repaired));
+    assert.deepEqual(windows, [{ start: 7, duration: 16 }], 'only the garbled segment, with a 3 s margin');
+    assert.equal(done.segments?.[1].text, repaired);
+    assert.equal(done.segments?.[0].text, fine);
+    assert.equal(done.content, `${fine} ${repaired}`);
+    assert.equal(done.input_units, 46_000, 'the repair audio is counted');
+    await assert.rejects(stat(join(directory, 'repair-1.flac')), { code: 'ENOENT' });
+
+    const failed = await processTranscript(input, directory, new AbortController().signal, async () => {}, make(null));
+    assert.equal(failed.segments?.[1].text, garbled, 'a provider failure never fails the transcript');
+    const doubtful = await processTranscript(input, directory, new AbortController().signal, async () => {}, make(garbled));
+    assert.equal(doubtful.segments?.[1].text, garbled, 'the same failure again is not a repair');
+    assert.equal(repairs, 3);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

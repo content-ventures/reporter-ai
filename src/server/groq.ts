@@ -2,7 +2,7 @@ import "server-only";
 import { openAsBlob } from "node:fs";
 import { stat } from "node:fs/promises";
 import { z } from "zod";
-import { splitSource, type Segment } from "../domain/reporter";
+import { splitSource, type Segment, type TimedWord } from "../domain/reporter";
 import { groqKey } from "./config";
 import { articleSchema, carouselSchema } from "./reporter-schema";
 import { FlowError } from "./errors";
@@ -83,16 +83,39 @@ function checkedTranscriptionModel() {
   return model;
 }
 
-export async function transcribeChunk(path: string, language: string, signal: AbortSignal): Promise<ProviderResult> {
+async function transcriptionBody(path: string, language: string, granularities: readonly ('segment' | 'word')[]) {
   if ((await stat(path)).size >= 24 * 1000 ** 2) throw new FlowError("AUDIO_CHUNK_TOO_LARGE", 413);
   const model = checkedTranscriptionModel();
   const body = new FormData();
   body.set("file", await openAsBlob(path, { type: "audio/flac" }), "audio.flac");
   body.set("model", model); body.set("language", language.split("-")[0]);
   body.set("response_format", "verbose_json"); body.set("temperature", "0");
-  body.append("timestamp_granularities[]", "segment");
+  for (const granularity of granularities) body.append("timestamp_granularities[]", granularity);
+  return { body, model };
+}
+
+export async function transcribeChunk(path: string, language: string, signal: AbortSignal): Promise<ProviderResult> {
+  const { body, model } = await transcriptionBody(path, language, ['segment']);
   const { data, requestId } = await request("audio/transcriptions", body, signal);
   return transcriptResult(data,requestId,model);
+}
+
+const windowResponseSchema = z.object({
+  duration: z.number().nonnegative().optional(),
+  words: z.array(z.object({ word: z.string().max(200), start: z.number().nonnegative(), end: z.number().nonnegative() })).max(20000).optional(),
+});
+
+/** A short window transcribed again with word timestamps, to replace one garbled segment (domain/reporter.ts). */
+export type WindowTranscript = { words: TimedWord[]; input_units: number | null; provider_request_id: string | null };
+
+export async function transcribeWindow(path: string, language: string, signal: AbortSignal): Promise<WindowTranscript> {
+  const { body } = await transcriptionBody(path, language, ['word']);
+  const { data, requestId } = await request("audio/transcriptions", body, signal);
+  const result = windowResponseSchema.safeParse(data);
+  if (!result.success) throw new FlowError('GROQ_INVALID_TRANSCRIPT',502);
+  return { words: (result.data.words ?? []).filter(word => word.word.trim() && word.end>=word.start)
+    .map(word => ({ word: word.word.trim(),start_ms: Math.round(word.start*1000),end_ms: Math.round(word.end*1000) })),
+  input_units: result.data.duration===undefined ? null : Math.round(result.data.duration*1000),provider_request_id: requestId };
 }
 
 const objectSchema = (properties: Record<string, unknown>) => ({ type: "object", additionalProperties: false, properties, required: Object.keys(properties) });

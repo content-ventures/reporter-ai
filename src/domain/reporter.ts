@@ -76,6 +76,47 @@ export function mergeSegments(previous: Segment[], incoming: Segment[], startSec
   return result;
 }
 
+/**
+ * Whisper sometimes returns a stretch of Portuguese with every word cut at its first accented letter
+ * ("Então" -> "Ent", "ração" -> "ra", "genética" -> "gen"), at normal confidence. A long Portuguese
+ * segment with no accented letter at all is that failure: it is transcribed again on its own.
+ */
+export const GARBLED_MIN_WORDS = 12;
+/** Seconds of audio around a garbled segment, so the new transcription starts and ends on whole words. */
+export const REPAIR_MARGIN_SECONDS = 3;
+/** Garbled segments transcribed again per recording, at most. */
+export const MAX_REPAIRS = 20;
+export type TimedWord = { word: string; start_ms: number; end_ms: number };
+
+const ACCENTED = /[áàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÜÇ]/u;
+const wordCount = (text: string) => text.trim().split(/\s+/u).filter(Boolean).length;
+
+export function garbledSegment(segment: Segment, language: string): boolean {
+  return language.toLowerCase().startsWith('pt') && wordCount(segment.text) >= GARBLED_MIN_WORDS && !ACCENTED.test(segment.text);
+}
+
+/** The audio window transcribed again for a segment: the segment plus a margin, inside the recording. */
+export function repairWindow(segment: Segment, durationSeconds: number): { start: number; duration: number } {
+  const start = Math.max(0, segment.start_ms / 1000 - REPAIR_MARGIN_SECONDS);
+  const end = Math.min(durationSeconds, segment.end_ms / 1000 + REPAIR_MARGIN_SECONDS);
+  return { start, duration: Math.max(0, end - start) };
+}
+
+/** The words of a window's transcription spoken inside the segment, by the middle of each word. */
+export function wordsWithin(words: readonly TimedWord[], windowStartSeconds: number, segment: Segment): string {
+  const offset = windowStartSeconds * 1000;
+  return words.filter(word => {
+    const middle = offset + (word.start_ms + word.end_ms) / 2;
+    return middle >= segment.start_ms && middle <= segment.end_ms;
+  }).map(word => word.word.trim()).filter(Boolean).join(' ');
+}
+
+/** A repair replaces the garbled text only when it reads as Portuguese again and keeps about the same length. */
+export function acceptedRepair(garbled: string, repaired: string): boolean {
+  const before = wordCount(garbled), after = wordCount(repaired);
+  return ACCENTED.test(repaired) && after >= Math.ceil(before * 0.6) && after <= Math.floor(before * 1.6) + 1;
+}
+
 export function splitSource(text: string, max = 12000): string[] {
   const chunks: string[] = [];
   let rest = text.trim();
