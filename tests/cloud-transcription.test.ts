@@ -7,6 +7,7 @@ import { audioChunks } from '../src/domain/reporter.ts';
 import { processTranscript } from '../src/server/reporter-worker-jobs.ts';
 import { runMedia } from '../src/server/media.ts';
 import { transcriptionModel } from '../src/server/groq.ts';
+import { FlowError } from '../src/server/errors.ts';
 
 test('406 MiB cloud media is transcribed in bounded overlapping chunks and a retry reuses completed parts', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'reporter-cloud-chunks-'));
@@ -139,5 +140,39 @@ test('a garbled stretch is transcribed again with word timestamps; a failed or d
     const doubtful = await processTranscript(input, directory, new AbortController().signal, async () => {}, make(garbled));
     assert.equal(doubtful.segments?.[1].text, garbled, 'the same failure again is not a repair');
     assert.equal(repairs, 3);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('a rate-limited repair waits once and retries; a second limit leaves the remaining repairs out', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reporter-repair-limit-'));
+  const garbled = 'Ent eu trouxe alguns panoramas como por exemplo compara com outras esp su aves e tamb salmonicultura de quanto n estamos';
+  const repaired = 'Então eu trouxe alguns panoramas, como por exemplo, comparação com outras espécies, suínos, aves e também salmonicultura, de quanto nós estamos';
+  const waits: number[] = [];
+  let calls = 0;
+  const services = (limitEvery: boolean) => ({
+    withCloudMediaSource: async <T>(url: string, _signal: AbortSignal, operation: (source: string) => Promise<T>) => operation(url),
+    signedSourceUrl: async () => 'https://storage.test/a.ogg', verifySource: async () => '',
+    inspectMedia: async () => ({ duration: 60, contentType: 'audio/ogg' }),
+    prepareChunk: async (_url: string, destination: string) => { await writeFile(destination, 'test'); },
+    transcribeChunk: async () => ({ provider: 'groq', model: transcriptionModel(), provider_request_id: null, usage_unit: 'audio_ms' as const,
+      input_units: 60_000, output_units: null, content: `${garbled} ${garbled}`,
+      segments: [{ start_ms: 10_000, end_ms: 20_000, text: garbled }, { start_ms: 30_000, end_ms: 40_000, text: garbled }] }),
+    transcribeWindow: async () => {
+      calls++;
+      if (limitEvery || calls === 1) throw new FlowError('GROQ_RATE_LIMIT', 502, true, 5);
+      return { words: repaired.split(' ').map((word, at) => ({ word, start_ms: at * 300, end_ms: at * 300 + 250 })), input_units: 16_000, provider_request_id: null };
+    },
+    wait: async (ms: number) => { waits.push(ms); },
+  });
+  const input = { provider: 's3', bucket: 'reporter-source-media', key: 'incoming/a.ogg', size: 1, content_type: 'audio/ogg', language: 'pt-BR' };
+  try {
+    const done = await processTranscript(input, directory, new AbortController().signal, async () => {}, services(false));
+    assert.deepEqual(waits, [5000]);
+    assert.deepEqual(done.segments?.map(segment => segment.text), [repaired, repaired]);
+    calls = 0; waits.length = 0;
+    const limited = await processTranscript(input, directory, new AbortController().signal, async () => {}, services(true));
+    assert.deepEqual(waits, [5000], 'one wait per recording');
+    assert.equal(calls, 2, 'after the second limit no further repair is sent');
+    assert.deepEqual(limited.segments?.map(segment => segment.text), [garbled, garbled], 'the transcript completes with the original text');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

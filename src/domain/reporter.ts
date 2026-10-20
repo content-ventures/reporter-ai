@@ -102,19 +102,50 @@ export function repairWindow(segment: Segment, durationSeconds: number): { start
   return { start, duration: Math.max(0, end - start) };
 }
 
-/** The words of a window's transcription spoken inside the segment, by the middle of each word. */
-export function wordsWithin(words: readonly TimedWord[], windowStartSeconds: number, segment: Segment): string {
-  const offset = windowStartSeconds * 1000;
-  return words.filter(word => {
-    const middle = offset + (word.start_ms + word.end_ms) / 2;
-    return middle >= segment.start_ms && middle <= segment.end_ms;
-  }).map(word => word.word.trim()).filter(Boolean).join(' ');
+/** A word as compared: lowercase, letters and digits only. */
+const bare = (word: string) => word.normalize('NFC').toLocaleLowerCase('pt-BR').replace(/[^\p{L}\p{N}]/gu, '');
+/** A word as the failure writes it: cut at its first accented letter ("Então" -> "ent", "é" -> ""). */
+function cutAtAccent(word: string): string {
+  const plain = bare(word), at = plain.search(ACCENTED);
+  return at < 0 ? plain : plain.slice(0, at);
 }
 
-/** A repair replaces the garbled text only when it reads as Portuguese again and keeps about the same length. */
-export function acceptedRepair(garbled: string, repaired: string): boolean {
-  const before = wordCount(garbled), after = wordCount(repaired);
-  return ACCENTED.test(repaired) && after >= Math.ceil(before * 0.6) && after <= Math.floor(before * 1.6) + 1;
+/** Share of the garbled words a repair may differ by (two decodings write "pra" or "para"). */
+export const REPAIR_TOLERANCE = 0.12;
+
+/**
+ * The repaired text of a garbled segment, or undefined when the new transcription does not explain it.
+ * The garbled words are the real ones cut at their first accent, so the window's words are cut the same
+ * way and aligned word by word with them (free start and end: the margin's words fall outside). The span
+ * that matches, within REPAIR_TOLERANCE, is the segment again, with its accents. Time plays no part: two
+ * decodings place a word a few hundred milliseconds apart, and a word lost or doubled at an edge would
+ * change what was said. A translation, a shorter text or a different stretch never aligns.
+ */
+export function repairedText(garbled: string, words: readonly TimedWord[]): string | undefined {
+  const target = garbled.split(/\s+/u).map(bare).filter(Boolean);
+  const positions = words.flatMap((word, at) => cutAtAccent(word.word) ? [at] : []);
+  const source = positions.map(at => cutAtAccent(words[at].word));
+  const m = target.length, n = source.length;
+  if (!m || !n) return undefined;
+  // Fitting alignment: every garbled word aligned, any run of window words before and after left out.
+  let cost = new Array<number>(n + 1).fill(0), from = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const next = new Array<number>(n + 1), nextFrom = new Array<number>(n + 1);
+    next[0] = i; nextFrom[0] = 0;
+    for (let j = 1; j <= n; j++) {
+      let best = cost[j - 1] + (target[i - 1] === source[j - 1] ? 0 : 1), start = from[j - 1];
+      if (cost[j] + 1 < best) { best = cost[j] + 1; start = from[j]; }
+      if (next[j - 1] + 1 < best) { best = next[j - 1] + 1; start = nextFrom[j - 1]; }
+      next[j] = best; nextFrom[j] = start;
+    }
+    cost = next; from = nextFrom;
+  }
+  let end = 1;
+  for (let j = 2; j <= n; j++) if (cost[j] < cost[end]) end = j;
+  if (cost[end] > Math.max(1, Math.round(m * REPAIR_TOLERANCE)) || from[end] >= end) return undefined;
+  const text = words.slice(positions[from[end]], positions[end - 1] + 1).map(word => word.word.trim()).filter(Boolean).join(' ');
+  // Nothing to restore when the speech had no accent to lose: the original stays.
+  return ACCENTED.test(text) ? text : undefined;
 }
 
 export function splitSource(text: string, max = 12000): string[] {
