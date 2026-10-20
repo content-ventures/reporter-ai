@@ -22,7 +22,7 @@ import { workDirectory, sourcePreparationDirectory } from './storage';
 import { mapEditorialPassages } from './editorial-passages';
 import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
-import { contiguousSourcePassages, r1ArticleIssue, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
+import { contiguousSourcePassages, r1ArticleIssue, unquoteUnsupported, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
 import { articleContractFor, articleGateFor, outletPunctuation, tidyQuoteOpenings } from '../domain/formats.ts';
 import { ungroundedTerms } from '../domain/grounding.ts';
 import { currentSourceVersion } from '../domain/source.ts';
@@ -293,7 +293,11 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         if (sizing.headings) blocks.push({ id: reviewed?.sections[i].blockId ?? randomUUID(),type: 'heading',level: 2,inlines: [{ text: s.title }],ai: 'unreviewed' });
         s.paragraphs.forEach(add);
       });
-      const dek = reviewed?.dek && !grounding?.(reviewed.dek).length ? reviewed.dek : undefined;
+      // The linha fina is checked like a sentence of the text: no invented term, and a quotation in it
+      // keeps its marks only when its words are literal in the material.
+      const plannedDek = reviewed?.dek && !grounding?.(reviewed.dek).length ? reviewed.dek : undefined;
+      const dek = plannedDek ? unquoteUnsupported([{ text: plannedDek,evidenceIds: candidates.map(candidate => candidate.key) }],
+        new Map(candidates.map(candidate => [candidate.key,candidate.text])))[0].text : undefined;
       const body = emphasizeArticleQuotes({ type: 'article' as const,title: article.title,...(dek ? { dek } : {}),blocks });
       const issue = r1ArticleIssue(body, input.record.sources, articleGateFor(input.record.production.brief));
       // No block/version is committed until the WHOLE sequential or single output passes.

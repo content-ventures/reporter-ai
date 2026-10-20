@@ -80,11 +80,17 @@ test('a quotation opens on its first real word, with a capital when it opens the
   // Inside a sentence the quotation keeps its case; a short one keeps its opener.
   assert.equal(tidyQuoteOpenings('Ele explicou que “a gente reconhece o evento nacional”.'), 'Ele explicou que “a gente reconhece o evento nacional”.');
   assert.equal(tidyQuoteOpenings('“Então, sim”, disse.'), '“Então, sim”, disse.');
+  // A word that carries meaning is never an opener: without a comma, "Bom", "Olha", "Aí", "Enfim" and "E" stay.
+  for (const kept of ['“Bom produto é o que a gente vende aqui”, disse.', '“Olha só o tamanho do camarão que a gente trouxe”, disse.',
+    '“Aí está a diferença do nosso produto”, disse.', '“Enfim conseguimos a habilitação para exportar”, disse.', '“E o mercado tende a crescer este ano”, disse.'])
+    assert.equal(tidyQuoteOpenings(kept), kept);
 });
 
 test('a stand interview of 3 minutes or more suggests Completo when a smaller size is chosen', () => {
   assert.equal(materialMinutes({ durationMs: 196_584, words: 563 }).toFixed(1), '3.3');
   assert.equal(materialMinutes({ words: 300 }), 2);
+  // An excerpt cut from a longer recording: its last timestamp is not its length.
+  assert.ok(materialMinutes({ durationMs: 690_000, words: 26 }) < 1);
   assert.equal(suggestedFormatSize('stand', 'compact', 3.3)?.label, 'Completo');
   assert.equal(suggestedFormatSize('stand', 'full', 3.3), undefined);
   assert.equal(suggestedFormatSize('stand', 'compact', 2.5), undefined);

@@ -149,7 +149,7 @@ export function useStudioText({
     const stored = draft.body as ArticleBody;
     const current = handle.getBody();
     if (!current) return;
-    const action = externalDraftSync(current, sync.syncedBody(), stored, localTitle, expectReload.current);
+    const action = externalDraftSync(current, sync.syncedBody(), stored, localTitle, expectReload.current, localDek);
     if (action === 'current') {
       sync.adopt(draft.revision, stored);
       return;
@@ -164,7 +164,7 @@ export function useStudioText({
     // Edits on top of an external change: the text on screen wins and is saved next.
     sync.adopt(draft.revision);
     handle.flush();
-  }, [draft.revision, draft.body, editor, handle, streaming.active, sync, localTitle]);
+  }, [draft.revision, draft.body, editor, handle, streaming.active, sync, localTitle, localDek]);
 
   const scrollToBlock = useCallback(
     (blockId: BlockId) => {

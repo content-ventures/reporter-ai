@@ -2,7 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import { articleStats, blockText, findBlock, sliceText } from '../domain/article.ts';
 import type { ArticleBody, ArticleBlock } from '../domain/article.ts';
-import { articleQuotationIssue, directQuotes, literalQuoteText, r1ArticleIssue } from '../domain/article-policy.ts';
+import { articleQuotationIssue, directQuotes, hasQuote, literalQuoteText, r1ArticleIssue } from '../domain/article-policy.ts';
 import { articleContractFor } from '../domain/formats.ts';
 import { applySuggestion } from '../domain/suggestion.ts';
 import type { Suggestion, SuggestionProposal } from '../domain/suggestion.ts';
@@ -138,7 +138,7 @@ export function articleAssistSuggestions(value: unknown, context: AssistContext,
         proposal = { kind: 'replace-text', text: change.text, ...(sourceRefs.length ? { sourceRefs } : {}) };
       }
       const proposedText = change.kind === 'list' ? change.items.join('\n') : change.text;
-      if (change.kind !== 'heading' && directQuotes(original).some(quote => !literalQuoteText(proposedText).includes(literalQuoteText(quote))))
+      if (change.kind !== 'heading' && directQuotes(original).some(quote => !hasQuote(literalQuoteText(proposedText), quote)))
         throw new FlowError('ASSIST_QUOTES_REMOVED',502,true,5);
       if (block.type === 'quote' && proposedText !== original)
         throw new FlowError('UNSUPPORTED_ARTICLE_QUOTE',502,true,5);

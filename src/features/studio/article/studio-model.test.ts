@@ -67,6 +67,14 @@ describe('studio model', () => {
     assert.equal(externalDraftSync({ ...body, title: stored.title }, body, stored, 'Título digitado'), 'local');
   });
 
+  it('adopts a generated event text whose linha fina the server wrote, unless the person typed one', () => {
+    const stored: ArticleBody = { ...body, title: 'Novo título', dek: 'Linha fina gerada', blocks: [paragraphBlock('new', 'Novo texto.', { ai: 'unreviewed', sourceRefs: [ref('s1')] })] };
+    // The editor already shows the stored title and linha fina over its old blocks.
+    const onScreen = { ...body, title: stored.title, dek: stored.dek };
+    assert.equal(externalDraftSync(onScreen, body, stored, null), 'adopt');
+    assert.equal(externalDraftSync({ ...onScreen, dek: 'Digitada aqui' }, body, stored, null, false, 'Digitada aqui'), 'local');
+  });
+
   it('autosaves a review-only change without changing the approved-content hash', () => {
     const reviewed: ArticleBody = { ...body, blocks: body.blocks.map(block => block.ai === 'unreviewed' ? { ...block, ai: 'reviewed' as const } : block) };
     assert.equal(bodyHash(body), bodyHash(reviewed));

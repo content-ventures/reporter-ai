@@ -55,6 +55,19 @@ test('a part that repeats a quotation, a fact or an introduction goes back with 
   assert.equal(result.sections[0].paragraphs[0].text, 'A linha leva ervas finas, segundo Scorsin.');
 });
 
+test('a quotation reused with another first capital is still a repeat', async () => {
+  const violations: string[] = [];
+  await writeSequentialArticle(outline, variables, sizing, async (key, _schema, values) => {
+    if (key === 'intro') return { paragraphs: [{ text: 'Segundo Scorsin, “o produto vem congelado da Patagônia todos os meses”.', evidenceIds: ['e1'] }] };
+    const feedback = JSON.parse(values.sizing).revisionFeedback;
+    if (feedback) violations.push(feedback.violation);
+    return violations.length === 0
+      ? { title: 'Novidade no estande', paragraphs: [{ text: '“O produto vem congelado da Patagônia todos os meses”, disse Scorsin.', evidenceIds: ['e1'] }] }
+      : { title: 'Novidade no estande', paragraphs: [{ text: 'A linha leva ervas finas, segundo Scorsin.', evidenceIds: ['e1'] }] };
+  }, undefined, undefined, grounding, ['Giaceli Scorsin']);
+  assert.deepEqual(violations, ['REPEATED_QUOTE']);
+});
+
 test('the article flow is unchanged: no grounding, no repetition checks without a format', async () => {
   let calls = 0;
   const result = await writeSequentialArticle(outline, variables, sizing, async key => {

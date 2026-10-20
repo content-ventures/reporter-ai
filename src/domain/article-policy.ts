@@ -46,11 +46,27 @@ function lowerFirst(text: string) {
   const first = /^\p{Lu}/u.exec(text)?.[0];
   return first ? first.toLocaleLowerCase('pt-BR') + text.slice(first.length) : text;
 }
-/** The quoted words as the source writes them, allowing only that first capital; undefined when absent. */
-export function quoteInSource(source: string, words: string): string | undefined {
+/** True when the quotation mark at `index` opens a sentence: the paragraph start, or after . ! ? : … */
+export function quoteOpensSentence(text: string, index: number): boolean {
+  return /(?:^|[.!?:…])\s*$/u.test(text.slice(0, index));
+}
+/**
+ * The quoted words as the source writes them; undefined when absent. Only a quotation that opens a
+ * sentence may differ by its first capital ("A gente…" for "a gente…"); inside a sentence it must match.
+ */
+export function quoteInSource(source: string, words: string, opensSentence = false): string | undefined {
   if (quotedIn(source, words)) return words;
   const lowered = lowerFirst(words);
-  return lowered !== words && quotedIn(source, lowered) ? lowered : undefined;
+  return opensSentence && lowered !== words && quotedIn(source, lowered) ? lowered : undefined;
+}
+/** One key per quotation whatever its first capital: a quotation reused with another case is the same one. */
+export function quoteKey(text: string): string {
+  return lowerFirst(literalQuoteText(text));
+}
+/** The text already carries this quotation, with or without its first capital. */
+export function hasQuote(text: string, quote: string): boolean {
+  const literal = literalQuoteText(quote), lowered = lowerFirst(literal);
+  return text.includes(literal) || text.includes(lowered) || text.includes(lowered.charAt(0).toLocaleUpperCase('pt-BR') + lowered.slice(1));
 }
 /** The same rule for a plain substring (the citation library matches whole quotations inside one segment). */
 export function quoteSpelling(source: string, literal: string): string | undefined {
@@ -59,7 +75,11 @@ export function quoteSpelling(source: string, literal: string): string | undefin
   return lowered !== literal && source.includes(lowered) ? lowered : undefined;
 }
 export function directQuotes(text: string): string[] {
-  return [...text.matchAll(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu)].map(match => match[1] ?? match[2] ?? match[3]);
+  return quoteMatches(text).map(match => match.quote);
+}
+/** Each quotation with the position of its opening mark. */
+export function quoteMatches(text: string): { quote: string; index: number }[] {
+  return [...text.matchAll(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu)].map(match => ({ quote: match[1] ?? match[2] ?? match[3], index: match.index }));
 }
 /** Join cited slices only when they touch inside the SAME immutable transcript segment.
  * A missing sentence, source/version boundary or speaker turn cannot become a quotation. */
@@ -86,9 +106,9 @@ export function unquoteUnsupported<T extends { text: string; evidenceIds: readon
     // An unclosed quotation cannot be told apart from the text around it: drop every mark.
     if ((paragraph.text.match(/[“”"«»]/gu)?.length ?? 0) !== directQuotes(paragraph.text).length * 2)
       return { ...paragraph, text: paragraph.text.replace(/[“”"«»]/gu, '') };
-    return { ...paragraph, text: paragraph.text.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu, (match, a, b, c) => {
-      const words = quotedWords(literalQuoteText(a ?? b ?? c));
-      return supported.some(source => quoteInSource(source, words) !== undefined) ? match : a ?? b ?? c;
+    return { ...paragraph, text: paragraph.text.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu, (match, a, b, c, offset: number) => {
+      const words = quotedWords(literalQuoteText(a ?? b ?? c)), opens = quoteOpensSentence(paragraph.text, offset);
+      return supported.some(source => quoteInSource(source, words, opens) !== undefined) ? match : a ?? b ?? c;
     }) };
   });
 }
@@ -98,17 +118,17 @@ export function articleQuotationIssue(paragraphs: readonly { text: string; evide
   const distinct = new Set<string>();
   for (const paragraph of paragraphs) {
     if (paragraph.evidenceIds.some(id => !evidence.has(id))) return 'UNKNOWN_EVIDENCE';
-    const quoted = directQuotes(paragraph.text);
+    const quoted = quoteMatches(paragraph.text);
     // Unclosed quotes must not bypass literal validation.
     const delimiters = paragraph.text.match(/[“”"«»]/gu)?.length ?? 0;
     if (delimiters !== quoted.length * 2) return 'UNSUPPORTED_ARTICLE_QUOTE';
-    for (const quote of quoted) {
-      const literal = literalQuoteText(quote), words = quotedWords(literal);
+    for (const { quote, index } of quoted) {
+      const literal = literalQuoteText(quote), words = quotedWords(literal), opens = quoteOpensSentence(paragraph.text, index);
       const supported=[...paragraph.evidenceIds.map(id=>evidence.get(id)??''),...(passages?.(paragraph.evidenceIds)??[])];
-      if (!supported.some(text=>quoteInSource(literalQuoteText(text),words)!==undefined))
-        return 'UNSUPPORTED_ARTICLE_QUOTE';
-      // A quoted brand name is not one of the required substantive quotations.
-      if (countWords(words) >= 4) distinct.add(words);
+      const spelling = supported.map(text=>quoteInSource(literalQuoteText(text),words,opens)).find(found=>found!==undefined);
+      if (spelling === undefined) return 'UNSUPPORTED_ARTICLE_QUOTE';
+      // A quoted brand name is not one of the required substantive quotations; one quotation counts once.
+      if (countWords(words) >= 4) distinct.add(spelling);
     }
   }
   if (distinct.size < minimum) return 'ARTICLE_QUOTES_REQUIRED';
