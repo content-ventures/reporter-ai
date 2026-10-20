@@ -4,10 +4,13 @@ import {
   analyzeTranscript,
   detectTranscriptFormat,
   formatTimestamp,
+  joinTranscriptParts,
   MAX_SEGMENT_CHARS,
   parseTimestamp,
   parseTranscript,
+  splitTranscriptParts,
 } from './transcript-parse.ts';
+import type { TranscriptPartText } from './transcript-parse.ts';
 
 describe('timestamps', () => {
   test('parse mm:ss, h:mm:ss and fractions with comma or dot', () => {
@@ -198,5 +201,137 @@ describe('analyzeTranscript', () => {
       { label: 'Ana', segments: 2, words: 5 },
       { label: 'Bia', segments: 1, words: 1 },
     ]);
+  });
+});
+
+describe('a material sent in parts', () => {
+  const srt = (...cues: [string, string, string][]) =>
+    cues.map(([from, to, text], index) => `${index + 1}\n00:${from},000 --> 00:${to},000\n${text}\n`).join('\n');
+  const whisperOne = srt(['00:00', '00:04', 'Primeira frase da parte um.'], ['00:05', '00:09', 'Segunda frase da parte um.']);
+  const whisperTwo = srt(['00:00', '00:03', 'Primeira frase da parte dois.'], ['00:04', '00:07', 'Segunda frase da parte dois.']);
+  const notes = 'Texto livre da entrevista.\n\nSegundo parágrafo das anotações.';
+  const parse = (parts: TranscriptPartText[]) => parseTranscript(joinTranscriptParts(parts));
+
+  test('joinTranscriptParts keeps a single recording byte for byte', () => {
+    const text = '﻿Ana: Oi.\r\nBia: Olá.\r\n';
+    assert.equal(joinTranscriptParts([{ text }]), text);
+    assert.equal(joinTranscriptParts([{ text, fileName: 'entrevista.srt' }]), text);
+    assert.equal(joinTranscriptParts([]), '');
+    assert.equal(splitTranscriptParts(text), undefined);
+  });
+
+  test('joined parts split back to the texts that were joined', () => {
+    const joined = joinTranscriptParts([{ text: 'Ana: Oi.\r\nBia: Olá.' }, { text: 'Texto \u001c solto.\n' }, { text: '' }]);
+    assert.ok(joined.startsWith('\u001c\n'));
+    assert.deepEqual(splitTranscriptParts(joined), ['Ana: Oi.\nBia: Olá.', 'Texto  solto.\n', '']);
+    assert.deepEqual(splitTranscriptParts(joined.replaceAll('\n', '\r\n')), splitTranscriptParts(joined));
+    assert.equal(joinTranscriptParts([{ text: 'a\u001cb' }]), 'ab');
+  });
+
+  test('parts are parsed alone: ids run on and part 2 starts where part 1 ends', () => {
+    const parsed = parse([{ text: whisperOne, fileName: 'parte-1.srt' }, { text: whisperTwo, fileName: 'parte-2.srt' }]);
+    assert.equal(parsed.format, 'srt');
+    assert.deepEqual(
+      parsed.segments.map((segment) => [segment.id, segment.part, segment.startMs, segment.endMs]),
+      [
+        ['seg-001', 1, 0, 4_000],
+        ['seg-002', 1, 5_000, 9_000],
+        ['seg-003', 2, 9_000, 12_000],
+        ['seg-004', 2, 13_000, 16_000],
+      ],
+    );
+    assert.deepEqual(parsed.parts, [
+      { format: 'srt', segments: 2, startMs: 0, durationMs: 9_000 },
+      { format: 'srt', segments: 2, startMs: 9_000, durationMs: 7_000 },
+    ]);
+    assert.equal(analyzeTranscript(parsed.segments).durationMs, 9_000 + 7_000);
+  });
+
+  test('a cue cut at the end of a part never merges with the next part', () => {
+    const parsed = parse([
+      { text: srt(['00:00', '00:04', 'A conversa continua e']), fileName: 'parte-1.srt' },
+      { text: '1\n00:00:00,300 --> 00:00:02,000\ndepois termina.\n', fileName: 'parte-2.srt' },
+    ]);
+    assert.deepEqual(parsed.segments.map((segment) => [segment.text, segment.part, segment.startMs]), [
+      ['A conversa continua e', 1, 0],
+      ['depois termina.', 2, 4_300],
+    ]);
+  });
+
+  test("an unlabeled opening never inherits the previous part's speaker", () => {
+    const parsed = parse([{ text: 'Ana: Oi, tudo bem?\nBia: Tudo ótimo.\nAna: Que bom.' }, { text: notes }]);
+    const second = parsed.segments.filter((segment) => segment.part === 2);
+    assert.equal(second.length, 2);
+    assert.ok(second.every((segment) => segment.speaker === undefined));
+    assert.deepEqual(parsed.speakers, ['Ana', 'Bia']);
+  });
+
+  test('a .srt part and a .txt part keep every line', () => {
+    for (const parts of [
+      [{ text: whisperOne, fileName: 'parte-1.srt' }, { text: notes, fileName: 'notas.txt' }],
+      [{ text: notes, fileName: 'notas.txt' }, { text: whisperOne, fileName: 'parte-1.srt' }],
+    ]) {
+      const parsed = parse(parts);
+      assert.ok(parsed.warnings.every((warning) => warning.code !== 'malformed_cue'));
+      const texts = parsed.segments.map((segment) => segment.text);
+      for (const line of ['Texto livre da entrevista.', 'Segundo parágrafo das anotações.', 'Primeira frase da parte um.', 'Segunda frase da parte um.']) {
+        assert.ok(texts.includes(line), line);
+      }
+    }
+  });
+
+  test('a .vtt without header and a .srt without numbers still read as cues; joining again adds no second header', () => {
+    const parts = [
+      { text: '00:01.000 --> 00:03.000\nAna: Bom dia.\n\n00:03.500 --> 00:05.000\nBia: Bom dia, Ana.\n', fileName: 'a.vtt' },
+      { text: '00:00:01,000 --> 00:00:02,000\nPrimeira fala.\n\n00:00:02,500 --> 00:00:04,000\nSegunda fala.\n', fileName: 'b.srt' },
+    ];
+    const joined = joinTranscriptParts(parts);
+    const parsed = parseTranscript(joined);
+    assert.deepEqual(parsed.warnings, []);
+    parts.forEach((part, index) => {
+      const alone = parseTranscript(part.text, { fileName: part.fileName }).segments.map((segment) => segment.text);
+      assert.deepEqual(parsed.segments.filter((segment) => segment.part === index + 1).map((segment) => segment.text), alone);
+    });
+    const again = splitTranscriptParts(joined)?.map((text, index) => ({ text, fileName: parts[index].fileName })) ?? [];
+    assert.equal(joinTranscriptParts(again), joined);
+  });
+
+  test('an untimed part adds no time', () => {
+    const parsed = parse([{ text: whisperOne, fileName: 'parte-1.srt' }, { text: 'Texto sem tempo.' }, { text: whisperTwo, fileName: 'parte-3.srt' }]);
+    const middle = parsed.segments.filter((segment) => segment.part === 2);
+    assert.ok(middle.length > 0 && middle.every((segment) => segment.startMs === undefined && segment.endMs === undefined));
+    assert.deepEqual(parsed.parts?.[1], { format: 'plain', segments: 1 });
+    assert.equal(parsed.parts?.[2].startMs, 9_000);
+    assert.equal(parsed.segments.find((segment) => segment.part === 3)?.startMs, 9_000);
+  });
+
+  test('speakers are merged in order; warnings carry their part; empty and no_speakers are computed once', () => {
+    const labeled = ['1', '00:00:01,000 --> 00:00:03,000', 'Caio: Fala um.', '', '2', '00:00:04,000 --> 00:00:06,000', 'Bia: Fala dois.', '', 'sem tempo', 'texto solto'].join('\n');
+    const mixed = parse([{ text: 'Ana: Oi.\nBia: Olá.' }, { text: labeled }, { text: '' }]);
+    assert.deepEqual(mixed.speakers, ['Ana', 'Bia', 'Caio']);
+    assert.deepEqual(mixed.warnings, [
+      { code: 'malformed_cue', message: 'Trecho sem marcação de tempo foi ignorado.', line: 9, part: 2 },
+      { code: 'empty', message: 'A parte 3 não tem falas.', part: 3 },
+    ]);
+    assert.deepEqual(mixed.parts?.[2], { format: 'plain', segments: 0 });
+    assert.deepEqual(parse([{ text: 'Primeiro texto.' }, { text: 'Segundo texto.' }]).warnings, parseTranscript('Um texto.').warnings);
+    const empty = parse([{ text: '' }, { text: '  ' }]);
+    assert.deepEqual(empty.warnings.map((warning) => [warning.code, warning.part]), [['empty', 1], ['empty', 2], ['empty', undefined]]);
+  });
+
+  test('an envelope ignores fileName and format options', () => {
+    const joined = joinTranscriptParts([{ text: whisperOne, fileName: 'parte-1.srt' }, { text: notes }]);
+    assert.deepEqual(parseTranscript(joined, { fileName: 'x.srt', format: 'srt' }), parseTranscript(joined));
+  });
+
+  test('reordering parts renumbers ids; the same order parses the same', () => {
+    const one = { text: whisperOne, fileName: 'parte-1.srt' };
+    const two = { text: whisperTwo, fileName: 'parte-2.srt' };
+    const forward = parse([one, two]);
+    const backward = parse([two, one]);
+    assert.deepEqual(forward, parse([one, two]));
+    assert.deepEqual(backward.segments.map((segment) => segment.id), forward.segments.map((segment) => segment.id));
+    assert.equal(backward.segments[0].text, 'Primeira frase da parte dois.');
+    assert.deepEqual(backward.parts?.map((part) => part.startMs), [0, 7_000]);
   });
 });

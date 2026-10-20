@@ -5,7 +5,9 @@ import { countWords, readingMinutes } from './stats.ts';
  * Transcript parsing for pasted text and uploaded files (.txt, .md, .srt, .vtt).
  * - "Nome: fala" lines become speakers and segments (with optional [00:12] timestamps);
  * - SRT/VTT cues keep their timings; consecutive cues of one speaker are merged;
- * - nothing is invented: a timestamp exists only when the material has one (REQ-T.7).
+ * - nothing is invented: a timestamp exists only when the material has one (REQ-T.7);
+ * - a material sent in several files arrives as one text, each recording opened by a `PART_BREAK`
+ *   line; every recording is parsed alone and the results are joined on one timeline.
  */
 
 export type TranscriptFormat = 'plain' | 'speaker-lines' | 'srt' | 'vtt';
@@ -16,11 +18,17 @@ export type ParsedSegment = {
   text: string;
   startMs?: number;
   endMs?: number;
+  /** 1-based recording, only in a material of 2+ parts. */
+  part?: number;
 };
 
 export type TranscriptWarningCode = 'empty' | 'no_speakers' | 'malformed_cue';
 
-export type TranscriptWarning = { code: TranscriptWarningCode; message: string; line?: number };
+/** With `part`, `line` counts from that part's start. */
+export type TranscriptWarning = { code: TranscriptWarningCode; message: string; line?: number; part?: number };
+
+/** What one recording adds to a joined material; startMs = where it starts on the material's timeline (timed parts only). */
+export type ParsedPart = { format: TranscriptFormat; segments: number; startMs?: number; durationMs?: number };
 
 export type ParsedTranscript = {
   format: TranscriptFormat;
@@ -28,6 +36,8 @@ export type ParsedTranscript = {
   /** Distinct speaker labels in order of first appearance. */
   speakers: string[];
   warnings: TranscriptWarning[];
+  /** One entry per recording, only for a material of 2+ parts. */
+  parts?: ParsedPart[];
 };
 
 export type ParseTranscriptOptions = {
@@ -38,6 +48,18 @@ export type ParseTranscriptOptions = {
 
 /** Segments longer than this are split at sentence boundaries so citations stay precise. */
 export const MAX_SEGMENT_CHARS = 1200;
+
+/** Line that opens each recording of a material sent in several files (U+001C, never typed). */
+export const PART_BREAK = '\u001C';
+export const MAX_MATERIAL_PARTS = 10;
+/** Whole joined text; same cap as /material/analysis and createFromSource. */
+export const MAX_MATERIAL_CHARS = 1_048_576;
+
+export type TranscriptPartText = { text: string; fileName?: string };
+
+const PART_OPENING = `${PART_BREAK}\n`;
+const EMPTY_MESSAGE = 'Nenhum texto encontrado no material.';
+const NO_SPEAKERS_MESSAGE = 'Nenhum falante identificado. Use linhas no formato "Nome: fala".';
 const SPLIT_TARGET_CHARS = 700;
 const CUE_MERGE_GAP_MS = 2000;
 const UNLABELED_CUE_MAX_CHARS = 600;
@@ -209,10 +231,8 @@ function finalize(drafts: Draft[], format: TranscriptFormat, warnings: Transcrip
       segments.push(segment);
     });
   }
-  if (segments.length === 0) warnings.push({ code: 'empty', message: 'Nenhum texto encontrado no material.' });
-  else if (speakers.length === 0) {
-    warnings.push({ code: 'no_speakers', message: 'Nenhum falante identificado. Use linhas no formato "Nome: fala".' });
-  }
+  if (segments.length === 0) warnings.push({ code: 'empty', message: EMPTY_MESSAGE });
+  else if (speakers.length === 0) warnings.push({ code: 'no_speakers', message: NO_SPEAKERS_MESSAGE });
   return { format, segments, speakers, warnings };
 }
 
@@ -351,7 +371,62 @@ function mergeCues(cues: Cue[]): Draft[] {
   return drafts;
 }
 
+function cleanPart({ text, fileName }: TranscriptPartText): string {
+  const body = normalizeNewlines(text).replaceAll(PART_BREAK, '');
+  const wanted = detectTranscriptFormat(body, fileName);
+  const seen = detectTranscriptFormat(body);
+  // Inside a joined text only the content decides the format: keep what the file name decided.
+  return (wanted === 'vtt' && seen !== 'vtt') || (wanted === 'srt' && seen === 'plain') ? `WEBVTT\n\n${body}` : body;
+}
+
+/** One text for a material sent in several files; a single recording stays byte for byte. */
+export function joinTranscriptParts(parts: readonly TranscriptPartText[]): string {
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0].text.replaceAll(PART_BREAK, '');
+  return parts.map((part) => `${PART_OPENING}${cleanPart(part)}`).join('\n');
+}
+
+/** The recordings of a joined material, in order; `undefined` when the text is a single recording. */
+export function splitTranscriptParts(raw: string): string[] | undefined {
+  const text = normalizeNewlines(raw);
+  return text.startsWith(PART_OPENING) ? text.slice(PART_OPENING.length).split(`\n${PART_OPENING}`) : undefined;
+}
+
+/** Joins recordings parsed alone: ids run on, times continue and each segment keeps its part. */
+function joinParsed(parsed: readonly ParsedTranscript[]): ParsedTranscript {
+  const segments: ParsedSegment[] = [];
+  const speakers: string[] = [];
+  const warnings: TranscriptWarning[] = [];
+  const parts: ParsedPart[] = [];
+  let offset = 0;
+  parsed.forEach((one, index) => {
+    const part = index + 1;
+    const { durationMs } = analyzeTranscript(one.segments);
+    for (const segment of one.segments) {
+      const joined: ParsedSegment = { ...segment, id: segmentIdAt(segments.length), part };
+      if (segment.startMs !== undefined) joined.startMs = segment.startMs + offset;
+      if (segment.endMs !== undefined) joined.endMs = segment.endMs + offset;
+      segments.push(joined);
+    }
+    for (const speaker of one.speakers) if (!speakers.includes(speaker)) speakers.push(speaker);
+    for (const warning of one.warnings) if (warning.code === 'malformed_cue') warnings.push({ ...warning, part });
+    if (one.segments.length === 0) warnings.push({ code: 'empty', message: `A parte ${part} não tem falas.`, part });
+    parts.push({ format: one.format, segments: one.segments.length, ...(durationMs !== undefined ? { startMs: offset, durationMs } : {}) });
+    offset += durationMs ?? 0;
+  });
+  if (segments.length === 0) warnings.push({ code: 'empty', message: EMPTY_MESSAGE });
+  else if (speakers.length === 0) warnings.push({ code: 'no_speakers', message: NO_SPEAKERS_MESSAGE });
+  return { format: parsed[0]?.format ?? 'plain', segments, speakers, warnings, parts };
+}
+
+/** A joined material ignores `options`: each recording is detected from its own content. */
 export function parseTranscript(raw: string, options: ParseTranscriptOptions = {}): ParsedTranscript {
+  const parts = splitTranscriptParts(raw);
+  if (parts && parts.length > 1) return joinParsed(parts.map((part) => parseOne(part, {})));
+  return parseOne(parts ? parts[0] : raw, options);
+}
+
+function parseOne(raw: string, options: ParseTranscriptOptions): ParsedTranscript {
   const requested = options.format ?? 'auto';
   const format = requested === 'auto' ? detectTranscriptFormat(raw, options.fileName) : requested;
   if (format === 'srt' || format === 'vtt') {
