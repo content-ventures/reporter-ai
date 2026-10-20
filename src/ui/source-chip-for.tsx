@@ -1,7 +1,7 @@
 'use client';
 
 import { SourceChip, type SourceChipState, type SourceKind } from '@content-ventures/design-system/v3';
-import { formatTimestamp, resolveSourceRef, type Source, type SourceRef } from '@/domain';
+import { formatTimestamp, placeLabel, resolveSourceRef, segmentPlace, type Source, type SourceRef } from '@/domain';
 import type { EvidenceView, PersonSummary } from '@/ports';
 
 /**
@@ -57,7 +57,9 @@ export function resolveChip(
   }
   const person = resolved.speaker?.personId ? options.people?.find((entry) => entry.id === resolved.speaker?.personId) : undefined;
   const speakerLabel = resolved.speaker?.label ?? resolved.segment?.speaker;
-  const time = resolved.segment?.startMs !== undefined ? formatTimestamp(resolved.segment.startMs) : undefined;
+  // A material sent in parts names the part and the time inside its file ("Parte 2 · 03:12").
+  const place = resolved.segment && segmentPlace(resolved.source, resolved.segment);
+  const time = place ? placeLabel(place) : resolved.segment?.startMs !== undefined ? formatTimestamp(resolved.segment.startMs) : undefined;
   const meta = [person && speakerLabel && speakerLabel !== person.name ? speakerLabel : undefined, time].filter(Boolean).join(' · ');
   return {
     kind,

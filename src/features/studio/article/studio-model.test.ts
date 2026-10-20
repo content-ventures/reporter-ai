@@ -207,6 +207,24 @@ describe('studio model', () => {
     assert.equal(excerptLabel(segments[1]), 'Fala de M.');
   });
 
+  it('excerptLabel names the part of a material in parts', () => {
+    const segments = [
+      { id: 's1', speaker: 'Ana', text: 'Abertura.', startMs: 2_000, part: 1 },
+      { id: 's2', speaker: 'Ana', text: 'Segunda gravação.', startMs: 212_000, part: 2 },
+      { id: 's3', speaker: 'Ana', text: 'Sem tempo.', part: 2 },
+    ];
+    const parts = [
+      { fileName: 'REC_0012.srt', hash: 'h1', startMs: 0, durationMs: 20_000 },
+      { fileName: 'REC_0013.srt', hash: 'h2', startMs: 20_000, durationMs: 300_000 },
+    ];
+    const inParts = viewerSegments(segments, [{ label: 'Ana' }], [], parts);
+    assert.deepEqual(inParts.map(excerptLabel), ['Trecho Parte 1 · 00:02', 'Trecho Parte 2 · 03:12', 'Trecho Parte 2']);
+    assert.equal(inParts[1]?.start, 212_000);
+    const single = viewerSegments(segments, [{ label: 'Ana' }], []);
+    assert.equal(single[1]?.place, undefined);
+    assert.equal(excerptLabel(single[1]), 'Trecho 03:32');
+  });
+
   it("puts the mapped person's company beside the name, only when there is one", () => {
     const segments = viewerSegments(
       [

@@ -1,6 +1,7 @@
 import { podcastLink } from '../../../domain/citation-library.ts';
 import type { CitationInput, CitationView } from '../../../domain/citation-library.ts';
 import type { BankQuote } from '../../../domain/hard-news.ts';
+import { placeLabel } from '../../../domain/source.ts';
 
 /**
  * The R1 citation library (`CitationLibrary` port) read as the R2 quote bank. An R1 citation is a
@@ -18,10 +19,10 @@ export function locatorOf(startMs: number | undefined): string | undefined {
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}` : `${minutes}:${seconds}`;
 }
 
-/** An R1 citation as a quote of the bank (an interview, with no topic or role in R1). */
+/** An R1 citation as a quote of the bank (an interview, with no topic or role in R1); "Parte 2 · 3:12" in a material sent in parts. */
 export function quoteOf(citation: CitationView): BankQuote {
   const sourceUrl = podcastLink(citation.podcastUrl);
-  const locator = locatorOf(citation.startMs);
+  const locator = citation.place ? placeLabel(citation.place, locatorOf) : locatorOf(citation.startMs);
   return {
     id: citation.id,
     text: citation.text,

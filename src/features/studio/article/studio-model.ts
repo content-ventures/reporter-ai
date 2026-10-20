@@ -10,6 +10,8 @@ import {
   formatTimestamp,
   groupDigits,
   normalizeArticle,
+  placeLabel,
+  segmentPlace,
   shortenToSizeLabel,
   sizeOf,
   textReviewOf,
@@ -423,7 +425,8 @@ export function targetLabel(body: ArticleBody, target: readonly TextRange[]): st
 
 /** `description`: the person's organization, beside the name ("Fabiana Souza · Seafood Brasil"). */
 export type ViewerSpeaker = { id: string; name: string; src?: string; description?: string };
-export type ViewerSegment = { id: string; speaker?: ViewerSpeaker; start?: number; end?: number; text: string };
+/** `place`: the part of a material sent in parts and the time inside its file ("Parte 2 · 03:12"). */
+export type ViewerSegment = { id: string; speaker?: ViewerSpeaker; start?: number; end?: number; text: string; place?: string };
 
 export type PersonLike = { id: string; name: string; avatarUrl?: string; organization?: string };
 
@@ -432,6 +435,7 @@ export function viewerSegments(
   segments: readonly TranscriptSegment[],
   speakers: readonly Speaker[],
   people: readonly PersonLike[],
+  parts?: Source['parts'],
 ): ViewerSegment[] {
   const bySpeaker = new Map<string, ViewerSpeaker>();
   for (const speaker of speakers) {
@@ -446,12 +450,15 @@ export function viewerSegments(
     if (segment.speaker) entry.speaker = bySpeaker.get(segment.speaker) ?? { id: segment.speaker, name: segment.speaker };
     if (segment.startMs !== undefined) entry.start = segment.startMs;
     if (segment.endMs !== undefined) entry.end = segment.endMs;
+    const place = segmentPlace({ parts }, segment);
+    if (place) entry.place = placeLabel(place);
     return entry;
   });
 }
 
-/** Chip label of a transcript excerpt: "Trecho 12:48", or the speaker when there is no time. */
-export function excerptLabel(segment: Pick<ViewerSegment, 'start' | 'speaker'> | undefined): string {
+/** Chip label of a transcript excerpt: "Trecho 12:48" ("Trecho Parte 2 · 03:12" in a material sent in parts), or the speaker when there is no time. */
+export function excerptLabel(segment: Pick<ViewerSegment, 'start' | 'speaker' | 'place'> | undefined): string {
+  if (segment?.place) return `Trecho ${segment.place}`;
   if (segment?.start !== undefined) return `Trecho ${formatTimestamp(segment.start)}`;
   return segment?.speaker ? `Fala de ${segment.speaker.name}` : 'Trecho';
 }
