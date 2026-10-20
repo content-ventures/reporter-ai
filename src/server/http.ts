@@ -19,7 +19,7 @@ import { handleCitationLibrary } from './citation-library';
 import { handleFactCheck } from './fact-check';
 import { handleProfile } from './profile.ts';
 import { handleInvites, handlePlatform } from './platform.ts';
-import { driveReceived, handleDrive } from './drive-intake.ts';
+import { driveReceived, driveRetry, handleDrive } from './drive-intake.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { reporterIdentity } from './auth.ts';
 import { runWithReporterContext, type ReporterRequestContext } from './request-context.ts';
@@ -214,6 +214,12 @@ export async function handleReporter(request: Request, path: string[], deps: { d
       return reply({ transcript,worker_online: await workerAvailable(),stalled: queue.stalled });
     }
     if (request.method !== "POST") return reply({ error: "NOT_FOUND", message: "Rota não encontrada." }, 404);
+    if (path[0] === 'drive' && path[1] === 'received' && path.length === 4 && path[3] === 'retry') {
+      await requireCapability('production.create');
+      const retried = await driveRetry(path[2],await jsonBody(request),idempotencyKey(request));
+      kick();
+      return retried;
+    }
     // Material intake belongs to whoever creates productions; refused before any fetch, upload or AI call.
     if (path.length === 1 && ['uploads','files','links'].includes(path[0]) || path.join('/') === 'material/analysis') await requireCapability('production.create');
     if (path.length===1 && path[0]==='uploads') {

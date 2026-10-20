@@ -266,7 +266,8 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           if (transcript.status==='failed') {
             if (!retried && state.worker_online) {
               retried = true;
-              const response = await fetch('/api/reporter/transcripts/'+encodeURIComponent(transcript.id)+'/retry',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local',
+              // The Drive retry runs as the member the intake uploads as: any editor may open the card.
+              const response = await fetch('/api/reporter/drive/received/'+encodeURIComponent(transcript.id)+'/retry',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local',
                 'idempotency-key': 'drive-'+transcript.id+'-retry-'+transcript.revision },body: JSON.stringify({ revision: transcript.revision }),signal: options.signal });
               if (response.ok) continue;
             }

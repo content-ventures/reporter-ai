@@ -90,6 +90,25 @@ export async function driveReceived(path: string[]) {
   return reply(items[0]);
 }
 
+/**
+ * POST drive/received/:id/retry: a failed transcription of a received file, queued again. The file
+ * belongs to the member the intake uploads as, so the retry runs as that member, for any editor
+ * who opens the card (a browser upload is retried by its own uploader).
+ */
+export async function driveRetry(id: string, body: unknown, key: string) {
+  const transcriptId = z.string().uuid().parse(id);
+  const { revision } = z.object({ revision: z.number().int().positive() }).strict().parse(body);
+  if (reporterDeploymentMode() !== 'cloud') throw new FlowError('NOT_FOUND', 404);
+  const received = await transaction('runtime', async client => (await client.query('SELECT public.reporter_drive_received($1) AS value', [transcriptId])).rows[0].value as unknown[]);
+  if (!received[0]) throw new FlowError('NOT_FOUND', 404);
+  const email = process.env.REPORTER_DRIVE_OWNER_EMAIL?.trim();
+  const owner = email ? await resolveServiceContext(email) : null;
+  if (!owner) throw new FlowError('DRIVE_OWNER_UNKNOWN', 503);
+  const generation = await runWithReporterContext(owner, () => transaction('runtime', async client => (await client.query(
+    'SELECT public.reporter_retry($1,$2,$3,$4) AS value', ['transcript', transcriptId, revision, key])).rows[0].value as string));
+  return reply({ id: transcriptId, generation_id: generation }, 202);
+}
+
 async function syncFile(input: SyncInput, secret: string, origins: { app: string; worker: string }, context: ReporterRequestContext, defer: Defer) {
   const ids = driveIds(secret, input.fileId), media = driveMedia(input.name)!;
   const name = input.name.normalize('NFC');
