@@ -26,7 +26,8 @@ import type { SourceAnalysis } from '@/ports';
 import type { SourceIntake } from '@/registries';
 import { formatCount } from '@/ui/format';
 import { productionHref } from '@/ui/routes';
-import { analysisLine, type MaterialMode, type NewProductionDraft } from './form';
+import { analysisLine, draftMaterial, type MaterialMode, type NewProductionDraft } from './form';
+import { TermFix } from './term-fix';
 import type { FileReadState } from './use-file-reader';
 import type { LinkReadState } from './use-link-reader';
 import type { MaterialAnalysis } from './use-material-analysis';
@@ -94,6 +95,8 @@ export type MaterialSectionProps = {
   onRetryLink: () => void;
   onRemoveLink: () => void;
   onUseSample: () => void;
+  /** "Corrigir termo": replaces a misheard name across the material; returns how many changed. */
+  onReplaceTerm: (from: string, to: string) => number;
 };
 
 export function MaterialSection({
@@ -122,6 +125,7 @@ export function MaterialSection({
   onRetryLink,
   onRemoveLink,
   onUseSample,
+  onReplaceTerm,
 }: MaterialSectionProps) {
   const analysis = material.analysis;
   const ready = material.status === 'ready' ? analysis : undefined;
@@ -248,6 +252,12 @@ export function MaterialSection({
           </>
         )}
       </FormRow>
+      {/* Stays on screen while the corrected material is analyzed again: the last analysis is kept meanwhile. */}
+      {!blank && analysis?.segments.length ? (
+        <FormRow label="Corrigir termo" optional>
+          <TermFix text={draftMaterial(draft).text} onReplace={onReplaceTerm} />
+        </FormRow>
+      ) : null}
     </FormSection>
   );
 }

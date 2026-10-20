@@ -141,6 +141,12 @@ test.describe('formato de evento na pauta', () => {
       await page.goto('/productions/new', { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Usar exemplo', exact: true }).click();
       await expect(page.getByRole('dialog')).toBeHidden();
+      // "Corrigir termo": a misheard word is fixed in the material before the production exists.
+      await page.getByRole('textbox', { name: 'Trocar', exact: true }).fill('estúdio');
+      await expect(page.getByText('1 ocorrência', { exact: true })).toBeVisible();
+      await page.getByRole('textbox', { name: 'Por', exact: true }).fill('auditório');
+      await page.getByRole('textbox', { name: 'Por', exact: true }).press('Enter');
+      await expect(page.getByText('1 troca: estúdio → auditório', { exact: true })).toBeVisible();
       await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
       await page.getByRole('button', { name: 'Continuar', exact: true }).click();
       await page.getByRole('radio', { name: /Cobertura de estande/ }).check();
@@ -158,6 +164,8 @@ test.describe('formato de evento na pauta', () => {
       expect(replay.created()?.brief).toMatchObject({ sections: 1, size: 'standard', format: 'stand', formatSize: 'compact',
         event: { name: 'Seafood Show Latin America 2026', dates: 'De 20 a 22 de outubro de 2026' } });
       expect(replay.counts()).toEqual({ creates: 1, starts: 1 });
+      expect(replay.created()?.material.text).toContain('auditório');
+      expect(replay.created()?.material.text).not.toContain('estúdio');
       await expect(page.getByText('Gerando linha fina…', { exact: true })).toBeVisible();
       await expectNoHorizontalOverflow(page);
       expect(errors).toEqual([]);
