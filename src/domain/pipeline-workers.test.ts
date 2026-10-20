@@ -23,14 +23,15 @@ test('carousel never inherits transcription, outline or article prompts', () => 
   assert.deepEqual(nodes.filter(node => node.prompt).map(node => node.prompt), ['carousel']);
 });
 
-test('each event format has its own worker: its funnel prompts plus the shared steps, flow blocks around them', () => {
+test('each event format has its own worker: its funnel prompts plus the shared steps, flow blocks around them, no AI images', () => {
   assert.deepEqual(PIPELINE_WORKERS.map(worker => worker.key), ['article', 'carousel', 'stand', 'panel', 'awards', 'opening', 'note']);
   const nodes = pipelineWorkerFlow('stand', defaultPipelineDefinition());
   assert.deepEqual(nodes.filter(node => node.prompt).map(node => [node.prompt, node.scope]), [
     ['facts', 'shared'], ['funnel:stand:outline', 'format'], ['quotes', 'shared'], ['funnel:stand:intro', 'format'],
-    ['funnel:stand:section', 'format'], ['images', 'shared'],
+    ['funnel:stand:section', 'format'],
   ]);
-  assert.deepEqual(nodes.filter(node => !node.prompt).map(node => node.id), ['source', 'grounding', 'validate', 'photos', 'save']);
+  // A coverage goes out with the newsroom's photos: no AI image block in its flow.
+  assert.deepEqual(nodes.filter(node => !node.prompt).map(node => node.id), ['source', 'grounding', 'validate', 'save']);
   assert.equal(pipelineWorkerFlow('note', defaultPipelineDefinition()).find(node => node.id === 'section')?.title, 'Contexto');
   assert.ok(pipelineWorkerFlow('article', defaultPipelineDefinition()).every(node => node.scope === undefined));
 });

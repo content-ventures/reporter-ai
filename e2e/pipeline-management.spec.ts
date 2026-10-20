@@ -60,7 +60,8 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole('heading', { name: 'Gerar cobertura de estande', level: 1 })).toBeVisible();
       const stand = page.getByRole('list', { name: 'Fluxo do worker Gerar cobertura de estande' });
       await expect(stand.getByTestId('worker-node-grounding')).toBeVisible();
-      await expect(stand.getByText('IA · editável')).toHaveCount(6);
+      await expect(stand.getByText('IA · editável')).toHaveCount(5);
+      await expect(stand.getByTestId('worker-node-images')).toHaveCount(0);
       // Default funnel prompts are not stored in the revision; they must not read as edited.
       await expect(stand.getByText('Alterado', { exact: true })).toHaveCount(0);
       await stand.getByRole('button', { name: 'Editar Estrutura do formato' }).click();

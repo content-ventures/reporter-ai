@@ -2,7 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import type { PipelineStepKey } from '../domain/pipeline.ts';
 import { PIPELINE_SENTENCE_PATTERN } from '../domain/pipeline.ts';
-import { articleLengthIssue, articleQuotationIssue, literalQuoteText, quotedIn, quotedWords } from '../domain/article-policy.ts';
+import { articleLengthIssue, articleQuotationIssue, literalQuoteText, quoteInSource, quotedIn, quotedWords } from '../domain/article-policy.ts';
 import type { ArticleLengthLimits } from '../domain/article-policy.ts';
 import { countCharacters, textStats } from '../domain/text/stats.ts';
 
@@ -89,7 +89,8 @@ export function restoreLiteralQuoteCase(key:PipelineStepKey,value:unknown,eviden
       // Only the words are compared: a closing comma for the source's period is not a change.
       const quote=a??b??c,literal=literalQuoteText(quote),words=quotedWords(literal),folded=words.toLocaleLowerCase('pt-BR');
       const supported=[...paragraph.evidenceIds.map(id=>evidence.get(id)??''),...(passages?.(paragraph.evidenceIds)??[])];
-      if(supported.some(text=>quotedIn(literalQuoteText(text),words)))return match;
+      // A capital first letter opening the sentence is kept: the words are still the source's.
+      if(supported.some(text=>quoteInSource(literalQuoteText(text),words)!==undefined))return match;
       if(folded.length!==words.length)return match;
       for(const text of supported){
         const source=literalQuoteText(text),lower=source.toLocaleLowerCase('pt-BR');

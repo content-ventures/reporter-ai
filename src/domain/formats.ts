@@ -9,6 +9,7 @@
  * that closes a coverage text is built from it, never written by the AI.
  */
 import { R1_ARTICLE_LIMITS } from './article-policy.ts';
+import { countWords } from './text/stats.ts';
 import { charactersAbove, formatLaudasOf, groupDigits, sizeLabel, sizeOf } from './sizing.ts';
 import type { ArticleSize } from './sizing.ts';
 
@@ -183,6 +184,21 @@ export function formatLabel(brief: FormatBrief): string | undefined {
   return spec.sizes.length > 1 ? `${spec.label} · ${formatSizeOf(brief.format, brief.formatSize).label}` : spec.label;
 }
 
+/** Minutes of speech from which a stand interview fills "Completo" (the reporters record 3 to 5 min). */
+export const STAND_FULL_MINUTES = 3;
+
+/** Minutes of speech in a material: its recorded duration, or its words at 150 per minute. */
+export function materialMinutes(stats: { durationMs?: number; words: number }): number {
+  return stats.durationMs !== undefined ? stats.durationMs / 60000 : stats.words / 150;
+}
+
+/** "Completo" when a stand interview of 3 min or more is set to a smaller size; otherwise nothing. */
+export function suggestedFormatSize(format: EditorialFormat | undefined, sizeId: string | undefined, minutes: number | undefined): FormatSizeSpec | undefined {
+  if (format !== 'stand' || minutes === undefined || minutes < STAND_FULL_MINUTES) return undefined;
+  const full = FORMAT_SPECS.stand.sizes.find(size => size.id === 'full');
+  return full && formatSizeOf('stand', sizeId).id !== full.id ? full : undefined;
+}
+
 /** "1.200–2.300 caracteres": a format size's range, as the pauta shows it. */
 export function formatRangeLabel(option: FormatSizeSpec): string {
   return `${groupDigits(option.minChars)}–${groupDigits(option.maxChars)} caracteres`;
@@ -218,4 +234,21 @@ export function briefSizeName(brief: SizedBrief): string {
 export function outletPunctuation(text: string): string {
   // A sentence that opens a list ends with a colon; the output contract still appends a stop.
   return text.replace(/\.”,/g, '”,').replace(/([.!?])”\./g, '$1”').replace(/:\s*\.(?=\s|$)/g, ':');
+}
+
+/** Spoken openers a quotation drops at its start without changing what was said ("Então, a gente…"). */
+const QUOTE_OPENERS = /^(?:(?:então|e aí|aí|bom|olha|ou seja|né|enfim|e)(?:,\s*|\s+))+/iu;
+
+/**
+ * A quotation of an event text opens on its first real word: a leading "Então," or "Bom," goes when
+ * four words or more remain, and a quotation that opens a sentence starts with a capital. The words
+ * stay the source's: the literal check allows only that capital (article-policy.ts).
+ */
+export function tidyQuoteOpenings(text: string): string {
+  return text.replace(/(^|[.!?:]\s+|\s)“([^”]+)”/gu, (_match, before: string, quote: string) => {
+    const trimmed = quote.replace(QUOTE_OPENERS, '');
+    const kept = trimmed !== quote && countWords(trimmed) >= 4 ? trimmed : quote;
+    const opensSentence = before === '' || /[.!?:]\s+$/u.test(before);
+    return `${before}“${opensSentence ? kept.charAt(0).toLocaleUpperCase('pt-BR') + kept.slice(1) : kept}”`;
+  });
 }

@@ -41,6 +41,23 @@ export function quotedIn(source: string, words: string) {
   }
   return false;
 }
+/** A quotation may capitalize its first letter when it opens a sentence: “A gente…” for "a gente…". */
+function lowerFirst(text: string) {
+  const first = /^\p{Lu}/u.exec(text)?.[0];
+  return first ? first.toLocaleLowerCase('pt-BR') + text.slice(first.length) : text;
+}
+/** The quoted words as the source writes them, allowing only that first capital; undefined when absent. */
+export function quoteInSource(source: string, words: string): string | undefined {
+  if (quotedIn(source, words)) return words;
+  const lowered = lowerFirst(words);
+  return lowered !== words && quotedIn(source, lowered) ? lowered : undefined;
+}
+/** The same rule for a plain substring (the citation library matches whole quotations inside one segment). */
+export function quoteSpelling(source: string, literal: string): string | undefined {
+  if (source.includes(literal)) return literal;
+  const lowered = lowerFirst(literal);
+  return lowered !== literal && source.includes(lowered) ? lowered : undefined;
+}
 export function directQuotes(text: string): string[] {
   return [...text.matchAll(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu)].map(match => match[1] ?? match[2] ?? match[3]);
 }
@@ -71,7 +88,7 @@ export function unquoteUnsupported<T extends { text: string; evidenceIds: readon
       return { ...paragraph, text: paragraph.text.replace(/[“”"«»]/gu, '') };
     return { ...paragraph, text: paragraph.text.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu, (match, a, b, c) => {
       const words = quotedWords(literalQuoteText(a ?? b ?? c));
-      return supported.some(source => quotedIn(source, words)) ? match : a ?? b ?? c;
+      return supported.some(source => quoteInSource(source, words) !== undefined) ? match : a ?? b ?? c;
     }) };
   });
 }
@@ -88,7 +105,7 @@ export function articleQuotationIssue(paragraphs: readonly { text: string; evide
     for (const quote of quoted) {
       const literal = literalQuoteText(quote), words = quotedWords(literal);
       const supported=[...paragraph.evidenceIds.map(id=>evidence.get(id)??''),...(passages?.(paragraph.evidenceIds)??[])];
-      if (!supported.some(text=>quotedIn(literalQuoteText(text),words)))
+      if (!supported.some(text=>quoteInSource(literalQuoteText(text),words)!==undefined))
         return 'UNSUPPORTED_ARTICLE_QUOTE';
       // A quoted brand name is not one of the required substantive quotations.
       if (countWords(words) >= 4) distinct.add(words);

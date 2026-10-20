@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITORIAL_FORMATS, FORMAT_SPECS, articleContractFor, articleGateFor, eventBoxLines, formatLabel, formatSizeOf, normalizeEvent, outletPunctuation } from './formats.ts';
+import { EDITORIAL_FORMATS, FORMAT_SPECS, articleContractFor, articleGateFor, eventBoxLines, formatLabel, formatSizeOf, materialMinutes, normalizeEvent, outletPunctuation, suggestedFormatSize, tidyQuoteOpenings } from './formats.ts';
 import { R1_ARTICLE_LIMITS } from './article-policy.ts';
 import { briefHash, validateBrief } from './production.ts';
 import type { Brief } from './production.ts';
@@ -69,4 +69,24 @@ test('a format blocks on its ceiling and quotes, never on its minimum; the artic
 test('a service value typed with its own label keeps one label', () => {
   const lines = eventBoxLines({ name: 'SSLA 2026', dates: 'Data: de 20 a 22 de outubro', venue: 'local: Distrito Anhembi' });
   assert.deepEqual(lines.filter((line) => line.kind === 'service').map((line) => line.text), ['Data: de 20 a 22 de outubro', 'Local: Distrito Anhembi']);
+});
+
+test('a quotation opens on its first real word, with a capital when it opens the sentence', () => {
+  assert.equal(tidyQuoteOpenings('Ele destacou Minas Gerais. “a gente reconhece que é um evento nacional”, afirmou.'),
+    'Ele destacou Minas Gerais. “A gente reconhece que é um evento nacional”, afirmou.');
+  assert.equal(tidyQuoteOpenings('“Então o mercado tende a ser bastante estável até meados de 2027”, finalizou Blanch.'),
+    '“O mercado tende a ser bastante estável até meados de 2027”, finalizou Blanch.');
+  assert.equal(tidyQuoteOpenings('Segundo ele: “bom, a vacina é o nosso carro-chefe hoje”.'), 'Segundo ele: “A vacina é o nosso carro-chefe hoje”.');
+  // Inside a sentence the quotation keeps its case; a short one keeps its opener.
+  assert.equal(tidyQuoteOpenings('Ele explicou que “a gente reconhece o evento nacional”.'), 'Ele explicou que “a gente reconhece o evento nacional”.');
+  assert.equal(tidyQuoteOpenings('“Então, sim”, disse.'), '“Então, sim”, disse.');
+});
+
+test('a stand interview of 3 minutes or more suggests Completo when a smaller size is chosen', () => {
+  assert.equal(materialMinutes({ durationMs: 196_584, words: 563 }).toFixed(1), '3.3');
+  assert.equal(materialMinutes({ words: 300 }), 2);
+  assert.equal(suggestedFormatSize('stand', 'compact', 3.3)?.label, 'Completo');
+  assert.equal(suggestedFormatSize('stand', 'full', 3.3), undefined);
+  assert.equal(suggestedFormatSize('stand', 'compact', 2.5), undefined);
+  assert.equal(suggestedFormatSize('note', undefined, 5), undefined);
 });

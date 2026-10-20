@@ -57,6 +57,19 @@ function streamToSecondBlock(): RunEvent[] {
 }
 
 describe('foldRun', () => {
+  test('the saved version keeps the linha fina an event format announced with its title', () => {
+    const fold = foldRun([
+      started(),
+      event({ type: 'outline', title: 'MSD destaca vacina na Aquishow', dek: 'Laboratório apresenta a única vacina contra o iridovírus', sections: [] }),
+      event({ type: 'block.started', block: { id: 'b1', type: 'paragraph' } }),
+      event({ type: 'block.completed', block: paragraphBlock('b1', 'A MSD participou da feira.', { ai: 'unreviewed' }) }),
+      event({ type: 'run.completed' }),
+    ])!;
+    assert.equal(articleBodyFromRun(fold).dek, 'Laboratório apresenta a única vacina contra o iridovírus');
+    // An article run announces no linha fina, and its body has none.
+    assert.equal(articleBodyFromRun(foldRun(streamToSecondBlock())!).dek, undefined);
+  });
+
   test('provider previews never become usable output and clear on retry, failure, cancellation and completion', () => {
     const begin = started();
     const preview = { type: 'article' as const,title: 'Preview',blocks: [paragraphBlock('p','Unvalidated prose')] };

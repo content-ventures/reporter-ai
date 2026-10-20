@@ -52,6 +52,8 @@ export type RunEvent =
   | (EventBase & {
       type: 'outline';
       title?: string;
+      /** An event format's linha fina, saved with the title. */
+      dek?: string;
       sections: OutlineSection[];
       intro?: OutlineIntro;
       cover?: ImageSlot;
@@ -124,6 +126,8 @@ export type RunFold = {
   /** Highest `seq` applied; later deltas with a lower or equal seq are ignored (idempotent replay). */
   seq: number;
   title?: string;
+  /** The linha fina an event format announced with its title (`ArticleBody.dek` of the output). */
+  dek?: string;
   outline: OutlineSection[];
   /** The cover suggestion the outline announced (`ArticleBody.coverSlot` of the output). */
   coverSlot?: ImageSlot;
@@ -228,6 +232,7 @@ export function applyRunEvent(fold: RunFold, event: RunEvent): RunFold {
     case 'outline':
       next.outline = event.sections;
       if (event.title !== undefined) next.title = event.title;
+      if (event.dek) next.dek = event.dek;
       if (event.cover) next.coverSlot = event.cover;
       if (event.coverImage) { next.coverImage = event.coverImage;delete next.coverSlot; }
       if (event.size) next.size = event.size;
@@ -431,6 +436,7 @@ export function articleBodyFromRun(fold: RunFold, options: { title?: string; inc
     }
   }
   const body: ArticleBody = { type: 'article', title: (options.title ?? fold.title ?? '').trim(), blocks };
+  if (fold.dek?.trim()) body.dek = fold.dek.trim();
   if (fold.coverImage) body.cover = fold.coverImage;
   else if (fold.coverSlot) body.coverSlot = fold.coverSlot;
   return body;

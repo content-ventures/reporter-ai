@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { contiguousSourcePassages, articleLengthIssue, articleQuotationIssue, literalQuoteText, R1_ARTICLE_LIMITS, r1ArticleIssue } from './article-policy.ts';
+import { contiguousSourcePassages, articleLengthIssue, articleQuotationIssue, literalQuoteText, quoteInSource, R1_ARTICLE_LIMITS, r1ArticleIssue, unquoteUnsupported } from './article-policy.ts';
 import { articleStats, headingBlock, listBlock, paragraphBlock } from './article.ts';
 import { createKit, sampleSource } from './testing/scenario.ts';
 
@@ -75,4 +75,14 @@ test('a literal quotation may cross adjacent cited sentences in one source segme
   const filler=Array(510).fill('fato').join(' ')+'.';
   const body={type:'article' as const,title:'Título',blocks:[paragraphBlock('body',filler),paragraphBlock('q1',quote.text,{sourceRefs:refs.slice(0,2)}),paragraphBlock('q2',`“${third}”`,{sourceRefs:[refs[2]]})]};
   assert.equal(r1ArticleIssue(body,[source]),undefined,'the final persisted article uses the same literal range validation');
+});
+
+test('a literal quotation may only capitalize its first letter', () => {
+  const evidence = new Map([['e1', 'a gente reconhece que é um evento que tem uma conotação nacional']]);
+  const quoted = (text: string) => [{ text, evidenceIds: ['e1'] }];
+  assert.equal(articleQuotationIssue(quoted('“A gente reconhece que é um evento que tem uma conotação nacional”, afirmou.'), evidence), undefined);
+  assert.equal(articleQuotationIssue(quoted('“A Gente reconhece que é um evento”, afirmou.'), evidence), 'UNSUPPORTED_ARTICLE_QUOTE');
+  assert.equal(quoteInSource('a gente reconhece o evento', 'A gente reconhece'), 'a gente reconhece');
+  assert.equal(quoteInSource('o agente reconhece', 'Gente reconhece'), undefined, 'a cut word never becomes a quotation');
+  assert.equal(unquoteUnsupported(quoted('“A gente reconhece que é um evento”, afirmou.'), evidence)[0].text, '“A gente reconhece que é um evento”, afirmou.');
 });
