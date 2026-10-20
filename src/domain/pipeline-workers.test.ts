@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { defaultPipelineDefinition } from './pipeline.ts';
-import { pipelineWorkerFlow } from './pipeline-workers.ts';
+import { PIPELINE_WORKERS, pipelineWorkerFlow } from './pipeline-workers.ts';
 
 test('article diagram follows the complete writer and optional quote selection', () => {
   const definition = { ...defaultPipelineDefinition(), articleMode: 'single' as const, curateQuotes: true };
@@ -21,4 +21,16 @@ test('carousel never inherits transcription, outline or article prompts', () => 
   const nodes = pipelineWorkerFlow('carousel', defaultPipelineDefinition());
   assert.deepEqual(nodes.map(node => node.id), ['approved', 'layouts', 'carousel', 'validate', 'save']);
   assert.deepEqual(nodes.filter(node => node.prompt).map(node => node.prompt), ['carousel']);
+});
+
+test('each event format has its own worker: its funnel prompts plus the shared steps, flow blocks around them', () => {
+  assert.deepEqual(PIPELINE_WORKERS.map(worker => worker.key), ['article', 'carousel', 'stand', 'panel', 'awards', 'opening', 'note']);
+  const nodes = pipelineWorkerFlow('stand', defaultPipelineDefinition());
+  assert.deepEqual(nodes.filter(node => node.prompt).map(node => [node.prompt, node.scope]), [
+    ['facts', 'shared'], ['funnel:stand:outline', 'format'], ['quotes', 'shared'], ['funnel:stand:intro', 'format'],
+    ['funnel:stand:section', 'format'], ['images', 'shared'],
+  ]);
+  assert.deepEqual(nodes.filter(node => !node.prompt).map(node => node.id), ['source', 'grounding', 'validate', 'photos', 'save']);
+  assert.equal(pipelineWorkerFlow('note', defaultPipelineDefinition()).find(node => node.id === 'section')?.title, 'Contexto');
+  assert.ok(pipelineWorkerFlow('article', defaultPipelineDefinition()).every(node => node.scope === undefined));
 });

@@ -54,6 +54,21 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId('worker-node-carousel')).toBeVisible();
       await expect(page.getByTestId('worker-node-outline')).toHaveCount(0);
       await expectNoHorizontalOverflow(page);
+      // An event format has its own worker: its AI blocks open the format's own prompts.
+      await page.getByRole('navigation', { name: 'Trilha de navegação' }).getByRole('link', { name: 'Prompts', exact: true }).click();
+      await page.getByRole('button', { name: 'Abrir worker Gerar cobertura de estande' }).click();
+      await expect(page.getByRole('heading', { name: 'Gerar cobertura de estande', level: 1 })).toBeVisible();
+      const stand = page.getByRole('list', { name: 'Fluxo do worker Gerar cobertura de estande' });
+      await expect(stand.getByTestId('worker-node-grounding')).toBeVisible();
+      await expect(stand.getByText('IA · editável')).toHaveCount(6);
+      // Default funnel prompts are not stored in the revision; they must not read as edited.
+      await expect(stand.getByText('Alterado', { exact: true })).toHaveCount(0);
+      await stand.getByRole('button', { name: 'Editar Estrutura do formato' }).click();
+      const funnel = page.getByRole('dialog', { name: 'Cobertura de estande · Estrutura', exact: true });
+      await expect(funnel.getByRole('textbox', { name: 'Instruções do prompt' })).toHaveValue(/COBERTURA DE ESTANDE/);
+      await funnel.getByRole('button', { name: 'Fechar edição' }).click();
+      await expectNoHorizontalOverflow(page);
+      await page.screenshot({ path: test.info().outputPath('stand-flow.png'), fullPage: true });
       await page.getByRole('navigation', { name: 'Trilha de navegação' }).getByRole('link', { name: 'Prompts', exact: true }).click();
       await page.getByRole('tab', { name: /^Todos os prompts/ }).click();
       await expect(page.getByRole('heading', { name: 'Prompts', level: 1 })).toBeVisible();
