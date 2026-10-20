@@ -65,7 +65,7 @@ for (const viewport of VIEWPORTS) {
       await page.screenshot({ path: test.info().outputPath('prompts.png'), fullPage: true });
       await search.fill('nao-existe');
       await expect(page.getByText('Nenhum prompt encontrado', { exact: true })).toBeVisible();
-      await search.fill('estrutura');
+      await search.fill('estrutura do artigo');
       await expect(page.getByRole('button', { name: /^Editar / })).toHaveCount(1);
       await page.getByRole('button', { name: 'Editar Estrutura do artigo', exact: true }).click();
       const editor = page.getByRole('dialog', { name: 'Estrutura do artigo', exact: true });

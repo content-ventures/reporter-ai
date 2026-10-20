@@ -157,7 +157,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
   const canPoint = deciding && returnGuard.allowed && pieceKind === 'article';
   const mode: ReviewMode = view.mode;
   const characters = version?.characters;
-  const size = detail?.brief.size;
+  const size = detail?.brief.format ? undefined : detail?.brief.size;
   // A covered news story checks its quotations against the quote bank in the studio, not a transcript.
   const reviewChecks = data && desk ? data.checks.filter((check) => check.id !== 'article.quotes') : data?.checks;
   const checks = data && reviewChecks

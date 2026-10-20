@@ -4,7 +4,14 @@ import { analyzeTranscript, parseTranscript, sourceContentHash } from '../../dom
 import type { SourceAnalysis } from '../../ports/index.ts';
 import {
   EMPTY_DRAFT,
+  EMPTY_EVENT,
   NEW_PRODUCTION_STEPS,
+  draftAutomaticSections,
+  draftSectionOptions,
+  draftStructureLabel,
+  eventDraft,
+  withFormat,
+  withFormatSize,
   STEP_LABELS,
   analysisLine,
   briefBlocker,
@@ -200,5 +207,47 @@ describe('Nova produção form', () => {
     assert.equal(isDraftDirty(EMPTY_DRAFT), false);
     assert.equal(isDraftDirty({ ...EMPTY_DRAFT, title: 'x' }), true);
     assert.equal(isDraftDirty({ ...EMPTY_DRAFT, size: 'short' }), true);
+  });
+});
+
+describe('Nova produção · event formats', () => {
+  test('choosing a format brings its default size and sections; the article comes back unchanged', () => {
+    const stand = { ...sample, ...withFormat('stand') };
+    assert.equal(stand.formatSize, 'full');
+    assert.equal(stand.sections, 2);
+    assert.deepEqual(draftSectionOptions(stand), ['2', '3']);
+    assert.equal(draftStructureLabel(stand, 2, false), 'Automático: abertura + 2 seções');
+    assert.equal(draftAutomaticSections({ ...sample, ...withFormat('note') }), 1);
+    assert.equal(draftStructureLabel({ ...sample, ...withFormat('note') }, 1, true), 'Abertura + 1 parte');
+    const back = { ...stand, ...withFormat(undefined) };
+    assert.equal(back.format, undefined);
+    assert.equal(back.sections, 3);
+    assert.ok(isDraftDirty(stand));
+  });
+
+  test('a chosen section count is fitted when the format size changes', () => {
+    const stand = { ...sample, ...withFormat('stand'), sections: 3, sectionsCustom: true };
+    assert.deepEqual(withFormatSize(stand, 'compact'), { formatSize: 'compact', sections: 2 });
+    assert.deepEqual(withFormatSize({ ...stand, sectionsCustom: false }, 'compact'), { formatSize: 'compact', sections: 1 });
+  });
+
+  test('the command input carries the format, its size and the named event only', () => {
+    const analysis = analysisOf(SAMPLE_TRANSCRIPT);
+    const draft: NewProductionDraft = { ...sample, ...withFormat('stand'), formatSize: 'compact', sections: 1,
+      event: { ...EMPTY_EVENT, name: ' Seafood Show Latin America 2026 ', dates: 'De 20 a 22 de outubro de 2026' } };
+    assert.deepEqual(toCreateInput(draft, analysis, PEOPLE).brief, {
+      sections: 1, size: 'standard', format: 'stand', formatSize: 'compact',
+      event: { name: 'Seafood Show Latin America 2026', dates: 'De 20 a 22 de outubro de 2026' },
+    });
+    assert.equal(toCreateInput({ ...draft, event: EMPTY_EVENT }, analysis, PEOPLE).brief.event, undefined);
+    assert.equal(toCreateInput({ ...sample }, analysis, PEOPLE).brief.format, undefined);
+  });
+
+  test('summary and blocker speak the format', () => {
+    const note = { ...sample, ...withFormat('note') };
+    assert.equal(briefSummary(note.size, note.sections, 2, note), 'Nota curta · 1 parte · 2 falantes');
+    assert.equal(briefBlocker({ ...note, sections: 3 }), 'Nota curta aceita de 1 a 2 partes.');
+    assert.equal(briefBlocker(note), undefined);
+    assert.deepEqual(eventDraft({ name: 'APAS Show 2026' }), { ...EMPTY_EVENT, name: 'APAS Show 2026' });
   });
 });

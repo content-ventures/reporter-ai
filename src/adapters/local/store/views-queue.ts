@@ -46,7 +46,7 @@ function itemOf(ctx: ReadContext, record: ProductionRecord, piece: Piece, versio
   if (request?.dueOn) item.dueOn = request.dueOn;
   if (version.body.type === 'article') {
     item.characters = articleCharacters(version.body);
-    item.size = record.production.brief.size;
+    if (!record.production.brief.format) item.size = record.production.brief.size;
   } else {
     item.slides = version.body.slides.length;
   }
