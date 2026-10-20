@@ -1,3 +1,4 @@
+import type { EventBoxLine } from '../../../domain/formats.ts';
 import type { ArticleBlock, ArticleBody } from '../../../domain/article.ts';
 import { creditLine } from '../../../domain/asset.ts';
 import type { ImageRef } from '../../../domain/asset.ts';
@@ -35,7 +36,7 @@ function blockHtml(block: ArticleBlock, sources: ImageSources): string {
 
 export type HtmlMeta = { versionLabel: string; hash: string };
 
-export function articleToHtml(body: ArticleBody, meta: HtmlMeta, sources: ImageSources = NO_IMAGES): string {
+export function articleToHtml(body: ArticleBody, meta: HtmlMeta, sources: ImageSources = NO_IMAGES, box: readonly EventBoxLine[] = []): string {
   const title = escapeHtml(body.title.trim());
   return [
     '<!doctype html>',
@@ -48,10 +49,22 @@ export function articleToHtml(body: ArticleBody, meta: HtmlMeta, sources: ImageS
     '</head>',
     '<body>',
     '<article>',
-    ...[body.cover ? imageHtml(body.cover, sources, 'cover') : '', `<h1>${title}</h1>`, ...body.blocks.map((block) => blockHtml(block, sources))].filter(Boolean),
+    ...[body.cover ? imageHtml(body.cover, sources, 'cover') : '', `<h1>${title}</h1>`,
+      body.dek ? `<p data-role="dek">${escapeHtml(body.dek.trim())}</p>` : '',
+      ...body.blocks.map((block) => blockHtml(block, sources)),
+      ...(box.length ? ['<aside data-role="event-box">', ...box.map(boxLineHtml), '</aside>'] : [])].filter(Boolean),
     '</article>',
     '</body>',
     '</html>',
     '',
   ].join('\n');
+}
+
+/** One line of the event box: heading, paragraph, divider, the event's name or a service line. */
+function boxLineHtml(line: EventBoxLine): string {
+  const text = escapeHtml(line.text);
+  if (line.kind === 'heading') return `<h3>${text}</h3>`;
+  if (line.kind === 'divider') return '<hr>';
+  if (line.kind === 'label') return `<p><strong>${text}</strong></p>`;
+  return `<p>${text}</p>`;
 }

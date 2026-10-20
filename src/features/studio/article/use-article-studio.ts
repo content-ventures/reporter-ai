@@ -267,6 +267,8 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
     title: text.title,
     storedTitle: text.storedTitle,
     commitTitle: text.commitTitle,
+    dek: text.dek,
+    commitDek: text.commitDek,
     titleFocus,
     body: text.body,
     facts: checking.facts,

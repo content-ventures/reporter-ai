@@ -9,7 +9,8 @@
  * that closes a coverage text is built from it, never written by the AI.
  */
 import { R1_ARTICLE_LIMITS } from './article-policy.ts';
-import { groupDigits } from './sizing.ts';
+import { charactersAbove, formatLaudasOf, groupDigits, sizeLabel, sizeOf } from './sizing.ts';
+import type { ArticleSize } from './sizing.ts';
 
 export const EDITORIAL_FORMATS = ['stand', 'panel', 'awards', 'opening', 'note'] as const;
 export type EditorialFormat = typeof EDITORIAL_FORMATS[number];
@@ -173,4 +174,27 @@ export function formatLabel(brief: FormatBrief): string | undefined {
 /** "1.200–2.300 caracteres": a format size's range, as the pauta shows it. */
 export function formatRangeLabel(option: FormatSizeSpec): string {
   return `${groupDigits(option.minChars)}–${groupDigits(option.maxChars)} caracteres`;
+}
+
+/** A brief as the size displays read it: the article size, or a format and its option. */
+export type SizedBrief = FormatBrief & { size: ArticleSize };
+
+/** The most characters the brief's text should have: the format option's, or the lauda size's. */
+export function briefMaxChars(brief: SizedBrief): number {
+  return brief.format ? formatSizeOf(brief.format, brief.formatSize).maxChars : sizeOf(brief.size).maxChars;
+}
+
+/** Characters past that maximum; 0 inside it. */
+export function briefCharactersAbove(chars: number, brief: SizedBrief): number {
+  return brief.format ? Math.max(0, Math.round(chars) - briefMaxChars(brief)) : charactersAbove(chars, brief.size);
+}
+
+/** "1,4 de 2 laudas" for the article; "2.140 de 2.300 caracteres" for a format, sized in characters. */
+export function briefSizeProgress(chars: number, brief: SizedBrief): string {
+  return brief.format ? `${groupDigits(chars)} de ${groupDigits(briefMaxChars(brief))} caracteres` : formatLaudasOf(chars, brief.size);
+}
+
+/** "Padrão · 2 laudas", or the format's name: "Cobertura de estande · Completo". */
+export function briefSizeName(brief: SizedBrief): string {
+  return formatLabel(brief) ?? sizeLabel(brief.size);
 }

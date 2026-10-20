@@ -8,6 +8,7 @@ import type { CarouselBody, CarouselTemplate } from './carousel.ts';
 import type { BlockId, CheckId } from './ids.ts';
 import type { PieceKind } from './piece.ts';
 import type { Brief } from './production.ts';
+import { formatSizeOf } from './formats.ts';
 import { checkQuotes } from './quotes.ts';
 import type { TextRange, VersionRef } from './refs.ts';
 import { ARTICLE_SIZE_IDS, groupDigits, laudaUnit, sizeFit, sizeMeta, sizeOf } from './sizing.ts';
@@ -111,11 +112,20 @@ const ISSUE_DETAIL: Record<ImageIssue, (count: number) => string> = {
  * person could still grow (Curto: does the news stand? Padrão: it fits the smaller size). The
  * partial text of an interrupted generation is not measured: it is short because the run stopped.
  */
-export function sizeCheck(body: ArticleBody, brief: Pick<Brief, 'size'>, generation: GenerationState, materialChars?: number): CheckOutcome {
+export function sizeCheck(body: ArticleBody, brief: Pick<Brief, 'size' | 'format' | 'formatSize'>, generation: GenerationState, materialChars?: number): CheckOutcome {
   if (generation.running) return { status: 'na', meta: '—', detail: 'Gerando' };
   if (generation.interrupted) return { status: 'na', meta: '—', detail: 'Geração interrompida' };
   const chars = articleCharacters(body);
   if (chars === 0) return { status: 'na', meta: '—', detail: 'Sem texto' };
+  if (brief.format) {
+    // An event format is sized in characters, by the range of its option (formats.ts).
+    const option = formatSizeOf(brief.format, brief.formatSize);
+    const meta = `${groupDigits(chars)}/${groupDigits(option.maxChars)}`;
+    const progress = { current: chars, total: option.maxChars };
+    if (chars > option.maxChars) return { status: 'warn', meta, detail: `Passa ${groupDigits(chars - option.maxChars)} caracteres de ${groupDigits(option.maxChars)}`, progress };
+    if (chars < option.minChars) return { status: 'info', meta, detail: `Abaixo de ${groupDigits(option.minChars)} caracteres: confira se o texto se sustenta`, progress };
+    return { status: 'pass', meta, detail: `${groupDigits(chars)} de até ${groupDigits(option.maxChars)} caracteres`, progress };
+  }
   const spec = sizeOf(brief.size);
   const meta = sizeMeta(chars, spec.id);
   const progress = { current: chars, total: spec.maxChars };

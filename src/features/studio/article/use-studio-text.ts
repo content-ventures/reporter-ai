@@ -59,6 +59,10 @@ export function useStudioText({
   const [body, setBody] = useState<ArticleBody>(draft.body as ArticleBody);
   const storedTitle = (draft.body as ArticleBody).title;
   const title = localTitle ?? (storedTitle || (generation.active ? (generation.live?.fold.title ?? '') : ''));
+  // Linha fina: edited outside the document, like the title, and kept by every save.
+  const [localDek, setLocalDek] = useState<string | null>(null);
+  const storedDek = (draft.body as ArticleBody).dek ?? '';
+  const dek = localDek ?? storedDek;
 
   // ——— Images (cover and figures): display data and paste/drop, handed to the editor ———
   const editorRef = useRef<Editor | null>(null);
@@ -69,6 +73,7 @@ export function useStudioText({
   const handle = useArticleEditor({
     initialBody: draft.body as ArticleBody,
     title,
+    dek,
     label: 'Texto do artigo',
     readOnly: readOnly || locked || (generation.active && generation.run?.model?.engine === 'provider'),
     // The proposal read in the paragraph and the AI marker in the gutter come from the DS factory.
@@ -153,7 +158,7 @@ export function useStudioText({
       expectReload.current = false;
       setArticleBody(editor, stored);
       sync.adopt(draft.revision, stored);
-      queueMicrotask(() => { setBody(stored); setLocalTitle(null); });
+      queueMicrotask(() => { setBody(stored); setLocalTitle(null); setLocalDek(null); });
       return;
     }
     // Edits on top of an external change: the text on screen wins and is saved next.
@@ -209,6 +214,19 @@ export function useStudioText({
     [handle, sync],
   );
 
+  const commitDek = useCallback(
+    (value: string) => {
+      setLocalDek(value);
+      const current = handle.getBody();
+      if (!current) return;
+      const next: ArticleBody = { ...current };
+      if (value.trim()) next.dek = value.trim();
+      else delete next.dek;
+      void sync.save(next);
+    },
+    [handle, sync],
+  );
+
   return {
     sync,
     body,
@@ -216,6 +234,8 @@ export function useStudioText({
     storedTitle,
     setLocalTitle,
     commitTitle,
+    dek,
+    commitDek,
     images,
     handle,
     editor,

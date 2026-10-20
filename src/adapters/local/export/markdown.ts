@@ -1,3 +1,4 @@
+import type { EventBoxLine } from '../../../domain/formats.ts';
 import type { ArticleBlock, ArticleBody, Inline } from '../../../domain/article.ts';
 import { creditLine } from '../../../domain/asset.ts';
 import type { ImageRef } from '../../../domain/asset.ts';
@@ -92,11 +93,16 @@ function blockMarkdown(block: ArticleBlock, sources: ImageSources): string {
 }
 
 /** The cover follows the title (featured image), then the body in order; open image slots are left out. */
-export function articleToMarkdown(body: ArticleBody, sources: ImageSources = NO_IMAGES): string {
+export function articleToMarkdown(body: ArticleBody, sources: ImageSources = NO_IMAGES, box: readonly EventBoxLine[] = []): string {
   const parts = [
     `# ${escapeLineStart(escapeMarkdown(body.title.trim()))}`,
+    // Linha fina: the line under the title, as the outlet publishes it.
+    body.dek ? `*${escapeMarkdown(body.dek.trim())}*` : '',
     body.cover ? imageMarkdown(body.cover, sources) : '',
     ...body.blocks.map((block) => blockMarkdown(block, sources)),
+    // The event box closes a coverage: built from the event the reporter typed, never by the AI.
+    ...box.map((line) => line.kind === 'heading' ? `### ${escapeLineStart(escapeMarkdown(line.text))}`
+      : line.kind === 'label' ? `**${escapeMarkdown(line.text)}**` : escapeLineStart(escapeMarkdown(line.text))),
   ].filter((part) => part.trim().length > 0);
   return `${parts.join('\n\n')}\n`;
 }

@@ -287,6 +287,8 @@ function readBlockOptions(attrs: Record<string, unknown> | undefined): Pick<Arti
 
 export type DocToArticleOptions = {
   title?: string;
+  /** Linha fina, edited outside the document like the title. */
+  dek?: string;
   /**
    * Keep empty paragraphs, headings and quotes. Off by default: the trailing empty paragraph
    * TipTap keeps for the caret is not content, so a draft equal to v1 hashes like v1.
@@ -354,6 +356,8 @@ export function docToArticle(doc: PmNodeJSON, options: DocToArticleOptions = {})
     if (block) blocks.push(block);
   });
   const body: ArticleBody = { type: 'article', title: options.title ?? '', blocks };
+  const dek = options.dek?.trim();
+  if (dek) body.dek = dek;
   const cover = readImageRef(doc.attrs?.[DOC_ATTR.cover]);
   if (cover) body.cover = cover;
   else {

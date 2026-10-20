@@ -43,6 +43,8 @@ export type UseArticleEditorOptions = {
   initialBody: ArticleBody;
   /** Latest title, copied into the body handed to `onChange` (the title is edited outside). */
   title?: string;
+  /** Latest linha fina, copied like the title. */
+  dek?: string;
   readOnly?: boolean;
   /**
    * Debounced; `revision` counts the person's document changes in this editor instance (it is
@@ -107,9 +109,9 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
       content: articleToDoc(initialBody, { emptyBlockId: initialBody.blocks.length === 0 ? newBlockId() : undefined, figureSources }),
     };
   });
-  const latest = useRef({ onChange: options.onChange, title: options.title ?? initialBody.title, readOnly });
+  const latest = useRef({ onChange: options.onChange, title: options.title ?? initialBody.title, dek: options.dek ?? initialBody.dek, readOnly });
   useEffect(() => {
-    latest.current = { onChange: options.onChange, title: options.title ?? initialBody.title, readOnly };
+    latest.current = { onChange: options.onChange, title: options.title ?? initialBody.title, dek: options.dek ?? initialBody.dek, readOnly };
   });
   const flushRef = useRef<() => void>(() => undefined);
 
@@ -158,8 +160,8 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
       timer = undefined;
       if (!pending || editor.isDestroyed || isStreaming(editor.state)) return;
       pending = false;
-      const { onChange, title } = latest.current;
-      onChange?.(docBody(editor.state.doc, { title }), revision);
+      const { onChange, title, dek } = latest.current;
+      onChange?.(docBody(editor.state.doc, { title, dek }), revision);
     };
     const schedule = () => {
       if (timer) clearTimeout(timer);
@@ -199,7 +201,7 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
   }, [editor, debounceMs]);
 
   const flush = useCallback(() => flushRef.current(), []);
-  const getBody = useCallback(() => (editor ? docBody(editor.state.doc, { title: latest.current.title }) : null), [editor]);
+  const getBody = useCallback(() => (editor ? docBody(editor.state.doc, { title: latest.current.title, dek: latest.current.dek }) : null), [editor]);
   return useMemo(() => ({ editor, flush, getBody }), [editor, flush, getBody]);
 }
 
