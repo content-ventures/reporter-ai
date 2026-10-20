@@ -4,6 +4,18 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-20
+
+### Fixed
+
+- Keep the linha fina and tidy event coverage texts.
+- Attribute an unlabeled interview to its only speaker.
+- Harden quote cleanup, linha fina sync and event offer.
+
+### Added
+
+- Confirm the last event and suggest Completo.
+
 ## [0.13.0] - 2026-10-20
 
 ### Added
