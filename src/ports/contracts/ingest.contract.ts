@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { joinTranscriptParts } from '../../domain/text/transcript-parse.ts';
 import type { IngestFile } from '../source-ingest.ts';
-import { CONTRACT_TRANSCRIPT, unwrap, withPorts } from './fixture.ts';
+import { CONTRACT_TRANSCRIPT, createSample, unwrap, withPorts } from './fixture.ts';
 import type { PortsFactory } from './fixture.ts';
 
 /** SourceIngest contract: what Nova produção shows before anything is saved. */
@@ -11,6 +12,8 @@ function file(name: string, text: string, size = text.length): IngestFile {
 }
 
 const SRT = ['1', '00:00:01,000 --> 00:00:04,000', 'Helena Duarte: A torrefação mudou a nossa margem.', '', '2', '00:00:05,000 --> 00:00:09,500', 'Helena Duarte: Antes a gente vendia o grão cru.', ''].join('\n');
+
+const SRT_SECOND = ['1', '00:00:00,500 --> 00:00:03,000', 'Helena Duarte: Depois veio a cafeteria-escola.', '', '2', '00:00:03,500 --> 00:00:06,000', 'Helena Duarte: Hoje formamos baristas da comunidade.', ''].join('\n');
 
 const VTT = ['WEBVTT', '', '00:00:01.000 --> 00:00:03.000', '<v Repórter>Como nasceu a cooperativa?', '', '00:00:03.500 --> 00:00:08.000', '<v Helena Duarte>Nasceu em 2019, com doze famílias.', ''].join('\n');
 
@@ -40,6 +43,31 @@ export function ingestPortContract(name: string, make: PortsFactory): void {
         const vtt = unwrap(await ports.ingest.analyze(vttFile.text, { fileName: vttFile.fileName }));
         assert.equal(vtt.stats.hasTimestamps, true);
         assert.ok(vtt.speakers.some((speaker) => speaker.label === 'Helena Duarte'));
+      }));
+
+    it('analyze reads a material in parts as one transcript', () =>
+      withPorts(make, async (ports) => {
+        const first = unwrap(await ports.ingest.analyze(SRT, { fileName: 'parte-1.srt' }));
+        const second = unwrap(await ports.ingest.analyze(SRT_SECOND, { fileName: 'parte-2.srt' }));
+        const text = joinTranscriptParts([{ text: SRT, fileName: 'parte-1.srt' }, { text: SRT_SECOND, fileName: 'parte-2.srt' }]);
+        const joined = unwrap(await ports.ingest.analyze(text, { fileName: 'parte-1.srt' }));
+        assert.equal(joined.parts?.length, 2);
+        assert.deepEqual(joined.parts?.map((part) => part.segments), [first.segments.length, second.segments.length]);
+        assert.equal(joined.stats.durationMs, (first.stats.durationMs ?? 0) + (second.stats.durationMs ?? 0));
+        assert.equal(new Set(joined.segments.map((segment) => segment.id)).size, joined.segments.length);
+        assert.deepEqual(joined.segments.map((segment) => segment.part), [...first.segments.map(() => 1), ...second.segments.map(() => 2)]);
+        assert.equal(first.parts, undefined, 'a single recording has no parts');
+      }));
+
+    it('a recording already used is flagged inside another material', () =>
+      withPorts(make, async (ports) => {
+        const sample = await createSample(ports);
+        const analysis = unwrap(await ports.ingest.analyze(joinTranscriptParts([{ text: CONTRACT_TRANSCRIPT }, { text: SRT, fileName: 'parte-2.srt' }])));
+        assert.equal(analysis.duplicate?.sourceId, sample.sourceId);
+        assert.equal(analysis.duplicate?.part, 1);
+        assert.ok(analysis.duplicate?.productions.some((production) => production.id === sample.productionId));
+        const alone = unwrap(await ports.ingest.analyze(SRT, { fileName: 'parte-2.srt' }));
+        assert.equal(alone.duplicate, undefined, 'the other recording is new');
       }));
 
     it('refuses unsupported, oversized, empty and unreadable files', () =>

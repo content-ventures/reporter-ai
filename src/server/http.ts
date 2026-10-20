@@ -88,6 +88,7 @@ const messages: Record<string, string> = {
   CITATION_CONFLICT: 'Esta citação foi alterada em outra aba. Recarregue antes de salvar.',
   FORBIDDEN: 'Você não tem permissão para isso.',
   TRANSCRIPT_NOT_READY: 'A transcrição ainda não está pronta. Aguarde sua conclusão antes de criar a produção.',
+  MATERIAL_PARTS_INVALID: 'As partes do material não conferem. Envie os arquivos de novo.',
   SOURCE_NOT_AUTHORIZED: 'Este material não está autorizado para uso.',
   IMAGE_DRAFT_CONFLICT: 'O rascunho mudou ou ainda há alterações não salvas. Aguarde o salvamento antes de buscar imagens.',
   ARTICLE_LOCKED: 'Aguarde a geração terminar ou retire o artigo da aprovação antes de preencher imagens.',

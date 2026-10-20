@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { paragraphBlock } from '../../domain/article.ts';
+import { joinTranscriptParts } from '../../domain/text/transcript-parse.ts';
 import type { ChangeNotice } from '../common.ts';
+import type { MaterialPartInput, NewProductionInput } from '../production-commands.ts';
 import {
   CONTRACT_TRANSCRIPT,
   createSample,
@@ -19,6 +21,15 @@ import type { PortsFactory } from './fixture.ts';
  * ProductionCommands + ProductionQueries contract, part 1: creation, drafts, versions, list,
  * activity, notifications, archive, feedback. Any adapter (local simulation, Supabase…) must pass.
  */
+
+// Two recordings of one interview, each timed from zero as a recorder saves them.
+const PART_ONE = ['1', '00:00:01,000 --> 00:00:04,000', 'Helena Duarte: A cooperativa nasceu em 2019.', '', '2', '00:00:04,500 --> 00:00:08,000', 'Helena Duarte: Eram doze famílias.', ''].join('\n');
+const PART_TWO = ['1', '00:00:00,500 --> 00:00:03,000', 'Helena Duarte: Depois veio a torrefação própria.', '', '2', '00:00:03,500 --> 00:00:06,000', 'Helena Duarte: A margem mudou.', ''].join('\n');
+const PART_NAMES = ['parte-1.srt', 'parte-2.srt'];
+
+function partsMaterial(text: string, parts?: readonly MaterialPartInput[]): NewProductionInput['material'] {
+  return { text, origin: 'interview', authorized: true, ...(parts ? { parts } : {}) };
+}
 
 export function productionPortsContract(name: string, make: PortsFactory): void {
   describe(`${name} · production ports contract`, () => {
@@ -155,6 +166,50 @@ export function productionPortsContract(name: string, make: PortsFactory): void 
         }
         assert.deepEqual(await ports.queries.list(), before);
         assert.equal((await ports.queries.activity()).total, 0);
+      }));
+
+    it('createFromSource joins the parts into one source', () =>
+      withPorts(make, async (ports) => {
+        // The server checks each transcript id against its stored transcripts; the simulation keeps any id.
+        const ids = ports.validatesBeforeEngine ? undefined : ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'];
+        const text = joinTranscriptParts([{ text: PART_ONE, fileName: PART_NAMES[0] }, { text: PART_TWO, fileName: PART_NAMES[1] }]);
+        const analysis = unwrap(await ports.ingest.analyze(text, { fileName: PART_NAMES[0] }), 'analyze');
+        const alone = unwrap(await ports.ingest.analyze(PART_ONE, { fileName: PART_NAMES[0] }), 'analyze part 1');
+        const parts = PART_NAMES.map((fileName, index) => ({ fileName, ...(ids ? { transcriptId: ids[index] } : {}) }));
+        const sample = await createSample(ports, { material: { ...partsMaterial(text, parts), fileName: PART_NAMES[0], ...(ids ? { transcriptId: ids[0] } : {}) } });
+        const { source, version } = unwrap(await ports.queries.source(sample.sourceId), 'source');
+        assert.deepEqual(source.parts?.map((part) => part.fileName), PART_NAMES);
+        assert.equal(source.versions[0].hash, analysis.hash, 'the saved material is the analysed one');
+        assert.equal(source.parts?.[0].hash, alone.hash, 'each part keeps the hash it has alone');
+        assert.equal(source.parts?.[1].startMs, alone.stats.durationMs);
+        assert.equal(source.transcriptId, ids?.[0]);
+        assert.deepEqual(source.parts?.map((part) => part.transcriptId), ids ?? [undefined, undefined]);
+        assert.deepEqual(version.content.segments.map((segment) => segment.part), analysis.segments.map((_, index) => (index < alone.segments.length ? 1 : 2)));
+      }));
+
+    it('refuses parts that do not match the material, changing nothing', () =>
+      withPorts(make, async (ports) => {
+        const reused = await createSample(ports);
+        const before = await ports.queries.list();
+        const activity = (await ports.queries.activity()).total;
+        const joined = joinTranscriptParts([{ text: CONTRACT_TRANSCRIPT }, { text: PART_TWO, fileName: PART_NAMES[1] }]);
+        const two = PART_NAMES.map((fileName) => ({ fileName }));
+        const attempts = [
+          ['parts without a joined text', newProductionInput({ material: partsMaterial(CONTRACT_TRANSCRIPT, two) }), 'invalid_parts'],
+          ['a joined text without parts', newProductionInput({ material: partsMaterial(joined) }), 'invalid_parts'],
+          ['more parts than recordings', newProductionInput({ material: partsMaterial(joined, [...two, { fileName: 'parte-3.srt' }]) }), 'invalid_parts'],
+          // The server refuses a single part by shape before the engine sees it.
+          ['a single part', newProductionInput({ material: partsMaterial(CONTRACT_TRANSCRIPT, two.slice(0, 1)) }), ports.validatesBeforeEngine ? 'invalid_input' : 'invalid_parts'],
+          ['parts on a reused source', newProductionInput({ material: partsMaterial(joined, two), reuseSourceId: reused.sourceId }), 'invalid_parts'],
+          ['a part without speech', newProductionInput({ material: partsMaterial(joinTranscriptParts([{ text: CONTRACT_TRANSCRIPT }, { text: ' \n ' }]), two) }), 'empty_material'],
+        ] as const;
+        for (const [label, input, code] of attempts) {
+          const result = await ports.commands.createFromSource(input);
+          assert.equal(!result.ok && result.refusal.code, code, label);
+          if (!result.ok && code === 'empty_material') assert.equal(result.refusal.message, 'A parte 2 não tem falas.');
+        }
+        assert.deepEqual(await ports.queries.list(), before);
+        assert.equal((await ports.queries.activity()).total, activity);
       }));
 
     it('keeps generation blocked until the material is authorised', () =>

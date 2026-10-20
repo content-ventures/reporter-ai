@@ -33,6 +33,13 @@ test('long-source metadata includes opening, middle and ending within a bounded 
   assert.ok(sample.reduce((total, segment) => total + segment.text.length + segment.id.length + 16, 0) <= 10000);
   assert.ok(sample.length < long.length);
 });
+test('materialSample takes the opening of every part', () => {
+  const untagged = Array.from({ length: 120 }, (_, index) => ({ id: 'seg-' + index, text: String(index) + ' conteúdo'.repeat(100) }));
+  const tagged = untagged.map((segment, index) => ({ ...segment, part: Math.floor(index / 40) + 1 }));
+  const sampled = (segments: typeof untagged) => materialSample(segments).map(segment => segment.id);
+  assert.ok(!sampled(untagged).includes('seg-40') && !sampled(untagged).includes('seg-80'), 'a single file keeps its sample');
+  for (const id of ['seg-0', 'seg-40', 'seg-80', 'seg-119']) assert.ok(sampled(tagged).includes(id), id);
+});
 test('material uses the exact saved prompts; concurrent reads share one request and edited prompts invalidate cache', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'reporter-material-test-'));
   const original = globalThis.fetch, requests: { messages: { content: string }[] }[] = [];

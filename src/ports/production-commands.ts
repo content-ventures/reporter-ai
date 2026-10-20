@@ -41,6 +41,9 @@ export type SpeakerAssignment = {
   unattributed?: true;
 };
 
+/** One recording of a material sent in several files. */
+export type MaterialPartInput = { fileName: string; transcriptId?: string };
+
 export type NewProductionInput = {
   /** "Título interno". */
   title: string;
@@ -60,6 +63,8 @@ export type NewProductionInput = {
     location?: string;
     /** "Material autorizado": generation stays blocked while false (REQ-T.1). */
     authorized: boolean;
+    /** 2+ recordings, in the order of a `joinTranscriptParts` text. */
+    parts?: readonly MaterialPartInput[];
   };
   /** Reuse a saved source instead of creating one (duplicate material, REQ-2.1 prep). */
   reuseSourceId?: SourceId;
@@ -79,6 +84,7 @@ export type CreateProductionRefusal =
   | 'article_required'
   | 'unknown_person'
   | 'unknown_source'
+  | 'invalid_parts'
   | ForbiddenRefusal;
 
 export type CreatedProduction = {

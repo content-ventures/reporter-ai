@@ -6,11 +6,11 @@ import { validateBrief, validatePlan } from '../../../domain/production.ts';
 import { ok, refuse } from '../../../domain/result.ts';
 import { isRunActive } from '../../../domain/run.ts';
 import type { CommandContext, Result } from '../../../domain/result.ts';
-import { createTranscriptSource, mapSpeaker, toSourceVersionRef } from '../../../domain/source.ts';
+import { createTranscriptSource, mapSpeaker, materialPartHashes, toSourceVersionRef } from '../../../domain/source.ts';
 import type { Source } from '../../../domain/source.ts';
 import type { FlowDefinition } from '../../../domain/stage.ts';
 import { WRITING_FLOW } from '../../../domain/stage.ts';
-import { parseTranscript } from '../../../domain/text/transcript-parse.ts';
+import { MAX_MATERIAL_PARTS, PART_BREAK, parseTranscript } from '../../../domain/text/transcript-parse.ts';
 import type { Person } from '../../../domain/workspace.ts';
 import { can, forbidden } from '../../../domain/permissions.ts';
 import type { PersonSummary } from '../../../ports/common.ts';
@@ -43,6 +43,7 @@ type ProductionLevelCommands = Pick<
 
 const PRODUCTION_NOT_FOUND = refuse('not_found', 'Não encontramos esta produção.');
 const SOURCE_NOT_FOUND = refuse('not_found', 'Não encontramos este material.');
+const INVALID_PARTS = refuse('invalid_parts', 'As partes do material não conferem. Envie os arquivos de novo.');
 
 type PeopleResolution = { people: Person[]; mapping: Record<string, PersonId>; unattributed: string[] };
 
@@ -144,6 +145,7 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
         let source: Source;
         const isNewSource = input.reuseSourceId === undefined;
         let newlyAuthorized = input.material.authorized;
+        if (input.material.parts && input.reuseSourceId !== undefined) return INVALID_PARTS;
         if (input.reuseSourceId !== undefined) {
           const existing = state.sources.find((candidate) => candidate.id === input.reuseSourceId);
           if (!existing) return refuse('unknown_source', 'Material não encontrado.');
@@ -156,7 +158,14 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
             ...(input.material.format ? { format: input.material.format } : {}),
             ...(input.material.fileName ? { fileName: input.material.fileName } : {}),
           });
+          // Parts and the joined text must name the same recordings; a single text never carries the marker.
+          const sent = input.material.parts;
+          const count = parsed.parts?.length ?? 0;
+          if ((sent?.length ?? 0) !== count || (sent && sent.length > MAX_MATERIAL_PARTS) || (!count && input.material.text.includes(PART_BREAK))) return INVALID_PARTS;
+          const empty = parsed.parts?.findIndex((part) => part.segments === 0) ?? -1;
+          if (empty >= 0) return refuse('empty_material', `A parte ${empty + 1} não tem falas.`, { part: empty + 1 });
           if (parsed.segments.length === 0) return refuse('empty_material', 'Cole ou envie o material antes de continuar.');
+          const hashes = sent ? materialPartHashes(input.material.text) : undefined;
           source = createTranscriptSource(
             {
               workspaceId: state.workspace.id,
@@ -172,6 +181,7 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
               ...(input.material.sourceUrl ? { sourceUrl: input.material.sourceUrl } : {}),
               ...(input.material.location ? { location: input.material.location } : {}),
               ...(input.material.fileName ? { fileName: input.material.fileName } : {}),
+              ...(sent && hashes ? { parts: sent.map((part, index) => ({ ...part, hash: hashes[index] })) } : {}),
             },
             ctx,
           );
