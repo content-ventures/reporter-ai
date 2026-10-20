@@ -171,12 +171,14 @@ function NewProductionForm({ received }: { received?: string }) {
     });
   }, []);
   // "Corrigir termo": a misheard name is fixed in the material itself, before the production exists.
+  // A corrected speaker name keeps the choice the reporter already made for that speaker.
   const replaceMaterialTerm = (from: string, to: string) => {
     const { text, count } = replaceTerm(draftMaterial(draft).text, from, to);
     if (!count) return 0;
-    if (draft.mode === 'paste') update({ pasted: text });
-    else if (draft.mode === 'file' && draft.file) update({ file: { ...draft.file, text } });
-    else if (draft.mode === 'link' && draft.linkFile) update({ linkFile: { ...draft.linkFile, text } });
+    const speakers = Object.fromEntries(Object.entries(draft.speakers).map(([label, choice]) => [replaceTerm(label, from, to).text, choice]));
+    if (draft.mode === 'paste') update({ pasted: text, speakers });
+    else if (draft.mode === 'file' && draft.file) update({ file: { ...draft.file, text }, speakers });
+    else if (draft.mode === 'link' && draft.linkFile) update({ linkFile: { ...draft.linkFile, text }, speakers });
     return count;
   };
   const fileReader = useFileReader(intake, onFileLoaded);
