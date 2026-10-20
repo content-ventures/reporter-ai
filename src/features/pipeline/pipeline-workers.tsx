@@ -4,7 +4,7 @@ import { Badge, Card, CardHeader, CardLink, Field, FieldGroup, Grid, MetaList, P
 import { FolderUp, FileText, Settings2, CheckCircle2, Inbox } from '@content-ventures/design-system/v3/icons';
 import { PIPELINE_WORKERS, pipelineWorkerFlow, type PipelineWorkerKey, type WorkerNode } from '@/domain/pipeline-workers';
 import { pipelineModelLabel, type PipelineDefinition } from '@/domain/pipeline';
-import { PROMPTS, promptChanged, type PromptKey } from './pipeline-catalog';
+import { PROMPTS, promptChanged, promptStep, type PromptKey } from './pipeline-catalog';
 
 export function PipelineWorkers({ worker, onSelect, draft, active, saving, onEdit, onUpdate }: {
   worker?: PipelineWorkerKey; onSelect: (key?: PipelineWorkerKey) => void;
@@ -14,7 +14,7 @@ export function PipelineWorkers({ worker, onSelect, draft, active, saving, onEdi
   const promptCard = (key: PromptKey) => <Card interactive padding="md">
     <CardHeader titleAs="h3" title={<CardLink onClick={() => onEdit(key)} aria-label={`Editar ${PROMPTS[key].title}`}>{PROMPTS[key].title}</CardLink>}
       description={PROMPTS[key].description} />
-    <MetaList size="sm" items={[key === 'system' ? 'Compartilhado entre os workers' : pipelineModelLabel(draft.steps[key].model),
+    <MetaList size="sm" items={[promptStep(key, draft) ? pipelineModelLabel(promptStep(key, draft)!.model) : 'Compartilhado entre os workers',
       ...(promptChanged(key, draft, active) ? [<Badge key="changed" tone="amber" size="sm">Alterado</Badge>] : [])]} />
   </Card>;
   if (!worker) return <Grid columns="1:1" collapseBelow={760}>

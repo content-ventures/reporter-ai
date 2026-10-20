@@ -7,11 +7,14 @@ import {
   MetaList, PageHeader, PageStack, Panel, Section, Select, Tabs, Timeline, toast,
 } from '@content-ventures/design-system/v3';
 import { RotateCw, Save } from '@content-ventures/design-system/v3/icons';
-import { PIPELINE_STEP_KEYS, PIPELINE_STEP_LABELS, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, withArticleAssist } from '@/domain/pipeline';
+import { PIPELINE_STEP_KEYS, PIPELINE_STEP_LABELS, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, withArticleAssist, withFormatFunnels } from '@/domain/pipeline';
 import type { PipelineDefinition, PipelineStepKey, PipelineView } from '@/domain/pipeline';
 import { useCan, useRuntime, useSession } from '@/state';
 import { useBreadcrumb, useLeaveGuard } from '@/ui/shell';
-import { PipelineCatalog, promptChanged, type PromptKey } from './pipeline-catalog';
+import { PipelineCatalog, PROMPTS, promptChanged, withPromptStep, type PromptKey } from './pipeline-catalog';
+
+/** What the page edits: the saved definition with the stages and funnels added after it was saved. */
+const editable = (definition: PipelineDefinition) => withFormatFunnels(withArticleAssist(definition));
 import { PipelineWorkers } from './pipeline-workers';
 import { PIPELINE_WORKERS, type PipelineWorkerKey } from '@/domain/pipeline-workers';
 import { PipelineEditor } from './pipeline-editor';
@@ -61,12 +64,12 @@ function PipelineConfig() {
   const [historyRevision,setHistoryRevision] = useState('');
   const [exitTo,setExitTo] = useState<string>();
   const departing = useRef(false);
-  const dirty = Boolean(view && draft && pipelineRevision(draft).hash !== view.active.hash);
+  const dirty = Boolean(view && draft && pipelineRevision(draft).hash !== pipelineRevision(editable(view.active.definition)).hash);
   const templateError = draft ? validatePipelineTemplates(draft) : undefined;
   const load = useCallback(async () => {
     if (!port) return;
     setLoading(true); setFailure(undefined);
-    try { const next = await port.get(); setView(next); setDraft(withArticleAssist(next.active.definition)); }
+    try { const next = await port.get(); setView(next); setDraft(editable(next.active.definition)); }
     catch (error) { setFailure(error instanceof Error ? error.message : 'Não foi possível carregar os prompts.'); }
     finally { setLoading(false); }
   },[port]);
@@ -74,7 +77,7 @@ function PipelineConfig() {
     if (!port) return;
     let live = true;
     void port.get().then(next => {
-      if (live) { setView(next); setDraft(withArticleAssist(next.active.definition)); }
+      if (live) { setView(next); setDraft(editable(next.active.definition)); }
     }).catch(error => { if (live) setFailure(error instanceof Error ? error.message : 'Não foi possível carregar os prompts.'); });
     return () => { live = false; };
   },[port]);
@@ -106,7 +109,7 @@ function PipelineConfig() {
     try {
       const result = await port.save(draft,view.active.revision);
       if (!result.ok) { setFailure(result.refusal.message); return; }
-      setView(result.value); setDraft(structuredClone(result.value.active.definition));
+      setView(result.value); setDraft(editable(result.value.active.definition));
       toast(`Configuração ativada · revisão ${result.value.active.revision}`);
     } catch { setFailure('Não foi possível ativar a configuração. Seus prompts continuam nesta página.'); }
     finally { setSaving(false); }
@@ -114,19 +117,19 @@ function PipelineConfig() {
   const update = (patch: Partial<PipelineDefinition>) => setDraft(previous => previous ? { ...previous,...patch } : previous);
   const updateStep = (patch: Partial<PipelineDefinition['steps'][PipelineStepKey]>) => {
     if (tab === 'system') return;
-    setDraft(previous => previous ? { ...previous,steps: { ...previous.steps,[tab]: { ...previous.steps[tab],...patch } } } : previous);
+    setDraft(previous => previous ? withPromptStep(previous,tab,patch) : previous);
   };
   if (runtimeError || (failure && !view)) return <ErrorState heading="h1" title="Não foi possível abrir os prompts" description={failure ?? runtimeError?.message} onRetry={() => void load()} size="page" />;
   if (runtime && !port) return <ErrorState heading="h1" title="Prompts disponíveis no motor conectado" description="Esta sessão usa a antiga simulação do front-end." size="page" />;
   if (!view || !draft) return <PageStack><PageHeader title="Prompts" /><Panel><Section title="Carregando prompts"><DescriptionList items={[]} loading /></Section></Panel></PageStack>;
 
-  const changed = (['system', ...PIPELINE_STEP_KEYS] as PromptKey[]).filter(key => promptChanged(key, draft, view.active.definition));
+  const changed = (Object.keys(PROMPTS) as PromptKey[]).filter(key => promptChanged(key, draft, editable(view.active.definition)));
   const flowChanged = draft.articleMode !== view.active.definition.articleMode || draft.curateQuotes !== view.active.definition.curateQuotes;
   function reset(target: string) {
     if (!view) return;
     const definition = target === 'active' ? view.active.definition : view.history.find(revision => String(revision.revision) === target)?.definition;
     if (definition) {
-      setDraft(withArticleAssist(structuredClone({ ...definition, steps: { ...view.active.definition.steps, ...definition.steps } })));
+      setDraft(editable(structuredClone({ ...definition, steps: { ...view.active.definition.steps, ...definition.steps } })));
       setFailure(undefined);
       if (target !== 'active') toast(`Revisão ${target} carregada para edição`, { description: 'Salve e ative para usá-la nas próximas gerações.' });
     }
