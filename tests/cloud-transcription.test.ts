@@ -160,7 +160,8 @@ test('a rate-limited repair waits once and retries; a second limit leaves the re
     transcribeWindow: async () => {
       calls++;
       if (limitEvery || calls === 1) throw new FlowError('GROQ_RATE_LIMIT', 502, true, 5);
-      return { words: repaired.split(' ').map((word, at) => ({ word, start_ms: at * 300, end_ms: at * 300 + 250 })), input_units: 16_000, provider_request_id: null };
+      // Relative to the window, which starts 3 s before the segment: the words fall inside it.
+      return { words: repaired.split(' ').map((word, at) => ({ word, start_ms: 3200 + at * 300, end_ms: 3450 + at * 300 })), input_units: 16_000, provider_request_id: null };
     },
     wait: async (ms: number) => { waits.push(ms); },
   });

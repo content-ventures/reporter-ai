@@ -110,51 +110,57 @@ function cutAtAccent(word: string): string {
   return at < 0 ? plain : plain.slice(0, at);
 }
 
-/** Share of the garbled words a repair may differ by (two decodings write "pra" or "para"). */
-export const REPAIR_TOLERANCE = 0.12;
+/** Share of the garbled words the new transcription must confirm, in order, for the repair to be used. */
+export const REPAIR_AGREEMENT = 0.7;
 
 /**
- * The repaired text of a garbled segment, or undefined when the new transcription does not explain it.
- * The garbled words are the real ones cut at their first accent, so the window's words are cut the same
- * way and aligned word by word with them (free start and end: the margin's words fall outside). The span
- * that matches, within REPAIR_TOLERANCE, is the segment again, with its accents. Time plays no part: two
- * decodings place a word a few hundred milliseconds apart, and a word lost or doubled at an edge would
- * change what was said. A translation, a shorter text or a different stretch never aligns.
+ * The garbled segment with its cut words completed, or undefined when nothing can be completed safely.
+ * The repair completes and never rewrites: every word of the first transcription stays as it was, and a
+ * word cut at its accent ("Ent", "ra", "evolu") takes the new word that starts with exactly that piece
+ * ("Então", "ração", "evolução"). The only words added are those that start with an accent ("é", "à",
+ * "há"), which the failure drops whole, and only between two confirmed words. Only new words spoken
+ * inside the segment count, so a neighbour's "né" or "nós" never stands in for this segment's "não".
+ * A new transcription that confirms less than REPAIR_AGREEMENT of the words (another stretch, a
+ * translation) changes nothing.
  */
-export function repairedText(garbled: string, words: readonly TimedWord[]): string | undefined {
-  const target = garbled.split(/\s+/u).map(bare).filter(Boolean);
-  const positions = words.flatMap((word, at) => cutAtAccent(word.word) ? [at] : []);
-  const source = positions.map(at => cutAtAccent(words[at].word));
-  const m = target.length, n = source.length;
+export function repairedText(segment: Segment, words: readonly TimedWord[], windowStartSeconds: number): string | undefined {
+  const garbled = segment.text.trim().split(/\s+/u).filter(word => bare(word));
+  const target = garbled.map(bare);
+  const offset = windowStartSeconds * 1000;
+  const inside = words.filter(word => {
+    const middle = offset + (word.start_ms + word.end_ms) / 2;
+    return middle >= segment.start_ms && middle <= segment.end_ms && word.word.trim();
+  });
+  const cut = inside.map(word => cutAtAccent(word.word));
+  const m = target.length, n = inside.length;
   if (!m || !n) return undefined;
-  // The first and the last garbled words are anchors: each must meet its own word, so an extra word
-  // of the second decoding next to an edge never takes the place of what the speaker said there.
-  const INF = Number.POSITIVE_INFINITY;
-  const cost = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(INF));
-  const begin = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(-1));
-  for (let j = 1; j <= n; j++) {
-    const exact = target[0] === source[j - 1] ? 0 : INF;
-    const extra = cost[1][j - 1] + 1;
-    if (exact <= extra) { cost[1][j] = exact; begin[1][j] = j - 1; } else { cost[1][j] = extra; begin[1][j] = begin[1][j - 1]; }
+  // Longest common subsequence of the garbled words and the new words cut at their accents.
+  const lcs = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) {
+    lcs[i][j] = cut[j] && target[i] === cut[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
   }
-  for (let i = 2; i <= m; i++) for (let j = 1; j <= n; j++) {
-    let best = cost[i - 1][j - 1] + (target[i - 1] === source[j - 1] ? 0 : 1), from = begin[i - 1][j - 1];
-    if (cost[i - 1][j] + 1 < best) { best = cost[i - 1][j] + 1; from = begin[i - 1][j]; }
-    if (cost[i][j - 1] + 1 < best) { best = cost[i][j - 1] + 1; from = begin[i][j - 1]; }
-    cost[i][j] = best; begin[i][j] = from;
+  if (lcs[0][0] < Math.ceil(m * REPAIR_AGREEMENT)) return undefined;
+  const pairs: [number, number][] = [];
+  for (let i = 0, j = 0; i < m && j < n;) {
+    if (cut[j] && target[i] === cut[j]) { pairs.push([i, j]); i++; j++; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) i++;
+    else j++;
   }
-  // The span ends where the last garbled word meets its own word, at the lowest cost (the nearest on a tie).
-  let end = -1, total = INF;
-  for (let j = 1; j <= n; j++) {
-    if (target[m - 1] !== source[j - 1]) continue;
-    const reached = m === 1 ? 0 : cost[m - 1][j - 1], from = m === 1 ? j - 1 : begin[m - 1][j - 1];
-    if (reached < total && from >= 0) { total = reached; end = j; }
+  const matched = new Map(pairs);
+  const out: string[] = [];
+  let restored = false;
+  for (let i = 0; i < m; i++) {
+    const j = matched.get(i);
+    if (j === undefined) { out.push(garbled[i]); continue; }
+    const word = inside[j].word.trim();
+    if (bare(word) !== target[i]) restored = true;
+    out.push(word);
+    // Words that start with an accent, dropped whole by the failure, between this word and the next confirmed one.
+    const next = pairs.find(([at]) => at > i)?.[1];
+    if (next !== undefined) for (let k = j + 1; k < next; k++) if (!cut[k]) { out.push(inside[k].word.trim()); restored = true; }
   }
-  if (end < 0 || total > Math.max(1, Math.round(m * REPAIR_TOLERANCE))) return undefined;
-  const first = m === 1 ? end - 1 : begin[m - 1][end - 1];
-  const text = words.slice(positions[first], positions[end - 1] + 1).map(word => word.word.trim()).filter(Boolean).join(' ');
-  // Nothing to restore when the speech had no accent to lose: the original stays.
-  return ACCENTED.test(text) ? text : undefined;
+  const text = out.join(' ');
+  return restored && ACCENTED.test(text) ? text : undefined;
 }
 
 export function splitSource(text: string, max = 12000): string[] {

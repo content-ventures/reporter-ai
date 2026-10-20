@@ -55,13 +55,14 @@ prune Docker, delete an existing user volume or touch another project. `db:flow`
   Whisper sometimes returns a Portuguese stretch with every word cut at its first accented letter
   ("Então" -> "Ent", "ração" -> "ra") at normal confidence. A segment of 12 words or more with
   no accented letter is cut again with a 3-second margin and transcribed alone with word
-  timestamps. The new words, cut at their first accent the same way, are aligned word by word with
-  the garbled ones, the first and last garbled words as fixed anchors; the span that matches
-  within 12% replaces the segment, with its accents. Time
-  plays no part, so no word is lost or doubled at an edge, and a translation, a shorter text or
-  another stretch never aligns. A failed or doubtful repair keeps the original. At most 20 repairs
-  per recording, one at a time; a rate limit is waited out once (up to 30 s), then the rest are
-  left out (`repairedText`, `src/domain/reporter.ts`).
+  timestamps. The repair completes and never rewrites: every word of the first transcription stays
+  as it was, and a word cut at its accent ("Ent", "ra") takes the new word spoken inside the segment
+  that starts with exactly that piece ("Então", "ração"). The only words added are those that start
+  with an accent ("é", "à"), dropped whole by the failure, between two confirmed words. A
+  neighbour's word is outside the segment, so it never stands in for this one, and a new
+  transcription confirming less than 70% of the words (another stretch, a translation) changes
+  nothing. At most 20 repairs per recording, one at a time; a rate limit is waited out once (up to
+  30 s), then the rest are left out (`repairedText`, `src/domain/reporter.ts`).
   No vocabulary prompt is sent: on a real stand interview it fixed one event name but replaced a
   30-second stretch with invented speech.
 - **Corrigir termo** (Material stage): a name the transcription misheard ("Q Show") is replaced by
