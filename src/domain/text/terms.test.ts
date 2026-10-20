@@ -132,3 +132,12 @@ test('names split by line breaks, cues or tags do not block a fix; a blank line 
   const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nBem-vindos ao Q\n\nShow abertura\n00:00:03.000 --> 00:00:05.000\nque reúne 300 marcas.\n';
   assert.equal(correctTerm(vtt, 'Q Show', 'Aquishow').count, 0);
 });
+
+test('a name glued to another word by a slash, a hyphen or a dot does not block the fix', () => {
+  const srt = '1\n00:00:00,000 --> 00:00:04,000\nA msd veio para a feira, a msd/Merck trouxe a vacina.\n\n2\n00:00:04,000 --> 00:00:08,000\nA msd cresceu.';
+  const fixed = correctTerm(srt, 'msd', 'MSD');
+  assert.equal(fixed.refused, undefined);
+  assert.equal(fixed.count, 3);
+  assert.equal(correctTerm('Rafael Dias: O Q Show abriu hoje?\nBeatriz Almeida: Sim. O pós-Q Show também conta.', 'Q Show', 'Aquishow').refused, undefined);
+  assert.equal(correctTerm('Beatriz Almeida: A aquishow abre amanhã, inscrições em aquishow.com.br.', 'aquishow', 'Aquishow').refused, undefined);
+});
