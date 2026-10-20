@@ -28,18 +28,24 @@ BEGIN
     VALUES(portal,p_transcript,p_file_name,p_format,p_recorded_on) ON CONFLICT(portal_id,transcript_id) DO NOTHING;
 END $$;
 
--- Received files no production uses yet (one of them with p_transcript), newest first.
+-- Received files no production uses yet (one of them with p_transcript), newest first. A copy that
+-- has not reached storage an hour after the first sync was abandoned by the folder script: it reads
+-- as failed. Failed files leave the board after two days, the others after thirty.
 CREATE OR REPLACE FUNCTION public.reporter_drive_received(p_transcript uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
 DECLARE portal uuid := core.reporter_require('reporter.read');
 BEGIN
   RETURN coalesce((SELECT jsonb_agg(jsonb_build_object('id',i.transcript_id,'fileName',i.file_name,'format',i.format,
-      'recordedOn',i.recorded_on,'receivedAt',i.created_at,'size',s.size,'status',t.status,'errorCode',t.error_code) ORDER BY i.created_at DESC)
+      'recordedOn',i.recorded_on,'receivedAt',i.created_at,'size',s.size,'status',x.state,
+      'errorCode',CASE WHEN t.status='failed' THEN t.error_code WHEN x.state='failed' THEN 'UPLOAD_FAILED' END) ORDER BY i.created_at DESC)
     FROM public.reporter_drive_intakes i
     JOIN public.reporter_transcripts t ON t.portal_id=i.portal_id AND t.id=i.transcript_id
     JOIN core.storage_objects s ON s.portal_id=t.portal_id AND s.id=t.source_object_id
+    CROSS JOIN LATERAL (SELECT CASE WHEN t.status='ready' THEN 'ready'
+      WHEN t.status='failed' OR (s.status='pending' AND i.created_at<clock_timestamp()-interval '1 hour') THEN 'failed'
+      ELSE 'transcribing' END AS state) x
     WHERE i.portal_id=portal AND (p_transcript IS NULL OR i.transcript_id=p_transcript)
-      AND i.created_at>clock_timestamp()-interval '30 days'
+      AND i.created_at>clock_timestamp()-CASE WHEN x.state='failed' THEN interval '2 days' ELSE interval '30 days' END
       AND NOT EXISTS(SELECT FROM public.reporter_ed_sources e WHERE e.portal_id=portal AND e.doc->>'transcriptId'=i.transcript_id::text)),'[]'::jsonb);
 END $$;
 ALTER FUNCTION public.reporter_drive_intake_record(uuid,text,text,date) OWNER TO reporter_executor;

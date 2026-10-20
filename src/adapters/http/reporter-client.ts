@@ -242,14 +242,19 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
       try { return ok((await reporterRequest<{ items: ReceivedRow[] }>('/drive/received')).items.map(receivedMaterial)); }
       catch (error) { return refuse(isForbidden(error) ? 'forbidden' : 'read_failed',error instanceof Error ? error.message : 'Não foi possível ler os arquivos do Drive.'); }
     },
-    // A received file reads as an upload that already reached the server: it waits for the transcript.
+    // A received file reads as an upload that already reached the server: it waits for the copy and
+    // the transcript, and a failed transcription is retried once, as an upload's is.
     async readReceived(id,options = {}) {
+      let retried = false;
       try {
-        const found = receivedMaterial(await reporterRequest<ReceivedRow>('/drive/received/'+encodeURIComponent(id),undefined,options.signal));
+        const path = '/drive/received/'+encodeURIComponent(id);
+        const found = receivedMaterial(await reporterRequest<ReceivedRow>(path,undefined,options.signal));
         options.onFound?.({ name: found.fileName,size: found.size });
         const extras = { ...(found.format ? { editorialFormat: found.format } : {}),...(found.recordedOn ? { recordedOn: found.recordedOn } : {}) };
-        for (;;) {
+        for (let round = 0; ; round++) {
           options.signal?.throwIfAborted();
+          const current = round === 0 ? found : receivedMaterial(await reporterRequest<ReceivedRow>(path,undefined,options.signal));
+          if (current.errorCode === 'UPLOAD_FAILED') return refuse('read_failed','O arquivo não chegou do Drive. Coloque uma cópia dele na pasta Entrada.');
           const state = await reporterRequest<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+encodeURIComponent(id),undefined,options.signal);
           const transcript = state.transcript;
           if (transcript.status==='ready') {
@@ -258,14 +263,24 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
             options.onStatus?.({ phase: 'ready',message: 'Transcrição concluída' });
             return ok({ text,fileName: found.fileName,format: detectTranscriptFormat(text,'transcript.srt'),bytes: found.size,transcriptId: transcript.id,...extras });
           }
-          if (transcript.status==='failed') return refuse('read_failed','Não foi possível transcrever. Código: '+(transcript.error_code ?? 'TRANSCRIPTION_FAILED'));
+          if (transcript.status==='failed') {
+            if (!retried && state.worker_online) {
+              retried = true;
+              const response = await fetch('/api/reporter/transcripts/'+encodeURIComponent(transcript.id)+'/retry',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local',
+                'idempotency-key': 'drive-'+transcript.id+'-retry-'+transcript.revision },body: JSON.stringify({ revision: transcript.revision }),signal: options.signal });
+              if (response.ok) continue;
+            }
+            return refuse('read_failed','Não foi possível transcrever. Código: '+(transcript.error_code ?? 'TRANSCRIPTION_FAILED'));
+          }
           const progress = transcript.job?.progress;
+          // No job yet: the server is still copying the file from Drive.
+          const copying = !transcript.job;
           options.onStatus?.({ phase: progress?.phase==='transcribing' ? 'transcribing' : 'preparing',
-            message: progress?.phase==='transcribing' ? 'Transcrevendo áudio' : 'Preparando áudio para transcrição',
+            message: copying ? 'Copiando arquivo do Drive' : progress?.phase==='transcribing' ? 'Transcrevendo áudio' : 'Preparando áudio para transcrição',
             ...(progress?.phase==='transcribing' ? { done: progress.done,total: progress.total } : {}) });
           options.onProgress?.(progress?.total ? 90+Math.round(progress.done/progress.total*9) : 89,
-            progress?.phase==='transcribing' ? `Transcrevendo trechos ${Math.min((progress.done ?? 0)+1,progress.total)} de ${progress.total}` : 'Preparando áudio para transcrição');
-          await new Promise<void>((resolve,reject) => { const timer = setTimeout(() => { options.signal?.removeEventListener('abort',abort); resolve(); },2000); const abort = () => { clearTimeout(timer); reject(new Error('Leitura cancelada.')); }; options.signal?.addEventListener('abort',abort,{ once: true }); });
+            progress?.phase==='transcribing' ? `Transcrevendo trechos ${Math.min((progress.done ?? 0)+1,progress.total)} de ${progress.total}` : copying ? 'Copiando arquivo do Drive' : 'Preparando áudio para transcrição');
+          await new Promise<void>((resolve,reject) => { const timer = setTimeout(() => { options.signal?.removeEventListener('abort',abort); resolve(); },3000); const abort = () => { clearTimeout(timer); reject(new Error('Leitura cancelada.')); }; options.signal?.addEventListener('abort',abort,{ once: true }); });
         }
       } catch (error) {
         if (isForbidden(error)) return refuse('forbidden',error.message);
