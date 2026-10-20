@@ -19,7 +19,8 @@ The specs live in `src/domain/formats.ts`. A brief without `format` is the R1 ar
 ## What the reporter fills in
 
 - **Formato, Tamanho, Seções and Entregas.** The carousel stays an optional output. It is derived from the approved text, as before.
-- **Evento**: name, box title, box paragraph, date, hours, venue, address and closing call. The reporter types it once. The form reuses the last event typed on that device.
+- **Evento**: name, box title, box paragraph, date, hours, venue, address and closing call. The reporter types it once. The form offers the last event typed on that device ("Mesmo evento da última cobertura: …?"), and fills it only after "Usar". A material from another fair would otherwise go out with the wrong box.
+- **Tamanho.** A stand interview of 3 min or more set to Enxuto gets a hint to use Completo (`suggestedFormatSize`). The minutes come from the transcript's duration, or from its words at 150 per minute.
 - **The closing box.** It is built from those fields, never written by the AI. It is exported after the body in `.md` and `.html` (`eventBoxLines`).
 
 ## Never invent
@@ -37,6 +38,13 @@ The specs live in `src/domain/formats.ts`. A brief without `format` is the R1 ar
    - a sentence restating an earlier one (`REPEATED_FACT`);
    - a person introduced twice (`REINTRODUCED_PERSON`).
 4. **Style references.** Each funnel prompt embeds one cleaned published text as a style reference. It is marked as "not a source", and grounding removes any of its names or numbers that leak into the text.
+
+## What the text carries
+
+- **Linha fina.** It is planned with the title and saved with it. The cloud rebuilds the "v1 · IA" version from the run's events, so the `outline` event carries `dek` (`articleBodyFromRun`). Versions up to v0.12.0 lost it on save.
+- **No AI images.** An event coverage goes out with the newsroom's photos: the worker queues no image planning or generation for a format, and the worker flow on the Prompts page shows no image block.
+- **Quotation openings** (`tidyQuoteOpenings`). A spoken opener ("Então,", "Bom,", "Ou seja,", "E") is dropped at the start of a quotation when four words or more remain. A quotation that opens a sentence starts with a capital. The literal check allows that first capital and nothing else (`quoteInSource`), and the citation library keeps the source's spelling.
+- **Stand news first.** The stand funnel puts the novelty and the porta-voz's strongest line about it (exclusivity, first, "carro-chefe") in the title and the opening. Every funnel names the event as `event.name` writes it, because transcriptions misspell proper names.
 
 ## Prompts
 

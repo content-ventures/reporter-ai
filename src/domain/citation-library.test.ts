@@ -43,3 +43,13 @@ test('podcast links and dates reject unsafe or impossible metadata', () => {
   assert.equal(podcastLink('https://example.com/episode'),'https://example.com/episode');
   assert.equal(citationDay('2026-02-30'),false);assert.equal(citationDay('2026-99-22'),false);assert.equal(citationDay('2026-10-12'),true);
 });
+test('a quotation the article opens with a capital is kept in the library as the source writes it', () => {
+  const lower = 'o controle de temperatura precisa acompanhar o pescado durante todo o transporte.';
+  const s = createTranscriptSource({ workspaceId: 'workspace',title: 'Episódio de teste sintético',origin: 'podcast',authorized: true,
+    parsed: parseTranscript(`Ana Costa: Então ${lower}`,{ format: 'speaker-lines' }),speakerPeople: { 'Ana Costa': 'ana' } },ctx);
+  const body: ArticleBody = { type: 'article',title: 'Teste',blocks: [{ id: 'p',type: 'paragraph',inlines: [{ text: `Ela disse: “O controle de temperatura precisa acompanhar o pescado durante todo o transporte.”` }],
+    sourceRefs: [{ kind: 'source',sourceId: s.id,sourceVersion: 1,locator: { type: 'segment',segmentId: s.versions[0].content.segments[0].id } }] }] };
+  const items = citationsFromArticle(body,[s],'production',ctx.now);
+  assert.equal(items.length,1);assert.equal(items[0].text,lower);
+  assert.equal(citationView(items[0],s,[{ id: 'ana',name: 'Ana Costa' }]).authorized,true);
+});

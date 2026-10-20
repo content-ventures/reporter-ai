@@ -36,11 +36,11 @@ export const PIPELINE_WORKERS: readonly PipelineWorker[] = [
 ];
 
 const images: WorkerNode[] = [
-  { id: 'images', title: 'Sugestões de imagens', description: 'Planeja a capa e as imagens do corpo. Uma falha preserva o texto.', kind: 'prompt', prompt: 'images', condition: 'Complemento opcional', scope: 'shared' },
+  { id: 'images', title: 'Sugestões de imagens', description: 'Planeja a capa e as imagens do corpo. Uma falha preserva o texto.', kind: 'prompt', prompt: 'images', condition: 'Complemento opcional' },
   { id: 'photos', title: 'Buscar fotos', description: 'Busca no Pixabay. O texto é preservado se as imagens estiverem indisponíveis.', kind: 'automatic' },
 ];
 
-/** An event format's worker: its own structure, opening and parts, the article's shared steps around them. */
+/** An event format's worker: its own structure, opening and parts, the article's shared steps around them, no AI images. */
 function formatWorkerFlow(format: EditorialFormat): WorkerNode[] {
   const spec = FORMAT_SPECS[format];
   return [
@@ -52,8 +52,7 @@ function formatWorkerFlow(format: EditorialFormat): WorkerNode[] {
     { id: 'section', title: spec.headings ? 'Seções' : 'Contexto', description: spec.headings ? 'Escreve cada intertítulo em sequência, com falas literais.' : 'Escreve o contexto da nota, sem intertítulo.', kind: 'prompt', prompt: funnelPromptKey(format, 'section'), condition: 'Repete uma vez por parte', scope: 'format' },
     { id: 'grounding', title: 'Checar fatos e repetições', description: 'Confere cada número e nome contra o material, as pessoas e o evento; revisa a parte ou remove a frase.', kind: 'automatic' },
     { id: 'validate', title: 'Validar o texto', description: 'Confere o teto do formato, as citações literais e a linha fina antes de salvar.', kind: 'automatic' },
-    ...images,
-    { id: 'save', title: 'Texto pronto para revisão', description: 'Salva o rascunho com a linha fina. O box do evento sai na entrega. A aprovação é manual.', kind: 'output' },
+    { id: 'save', title: 'Texto pronto para revisão', description: 'Salva o rascunho com a linha fina, sem imagens de IA: a cobertura usa as fotos da redação. O box do evento sai na entrega. A aprovação é manual.', kind: 'output' },
   ];
 }
 
@@ -79,7 +78,7 @@ export function pipelineWorkerFlow(worker: PipelineWorkerKey, definition: Pipeli
     { id: 'source', title: 'Fonte autorizada e pauta', description: 'Recebe a transcrição, participantes confirmados e o recorte editorial.', kind: 'input' },
     ...pipelineJobKeys(definition, 'article.draft').map(key => ({ id: key, prompt: key, kind: 'prompt' as const, ...details[key]! })),
     { id: 'validate', title: 'Validar o artigo', description: 'Confere estrutura, tamanho e citações na fonte antes de salvar.', kind: 'automatic' },
-    ...images.map(node => ({ ...node, scope: undefined })),
+    ...images,
     { id: 'save', title: 'Artigo pronto para revisão', description: 'Salva o rascunho e suas citações. A aprovação é manual.', kind: 'output' },
   ];
 }

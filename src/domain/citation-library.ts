@@ -1,7 +1,7 @@
 import type { ArticleBody, Inline } from './article.ts';
 import { blockText } from './article.ts';
 import { extractQuotes } from './quotes.ts';
-import { literalQuoteText } from './article-policy.ts';
+import { literalQuoteText, quoteSpelling } from './article-policy.ts';
 import { contentHash } from './text/hash.ts';
 import { countWords } from './text/stats.ts';
 import { sourceVersion } from './source.ts';
@@ -45,10 +45,12 @@ export function citationDay(value: string | undefined): boolean {
 }
 /** Exact substring in ONE segment. Never assign an unlabeled voice to an introduced participant. */
 export function locateCitation(source: Source, versionNumber: number, text: string,preferredSegment?: string) {
-  const version = sourceVersion(source, versionNumber), literal = literalQuoteText(text);
-  if (!version || literal.length < 24 || literal.length > 1200 || countWords(literal) < 4) return undefined;
-  const segment = version.content.segments.find(segment => (!preferredSegment || segment.id === preferredSegment) && literalQuoteText(segment.text).includes(literal));
+  const version = sourceVersion(source, versionNumber), quoted = literalQuoteText(text);
+  if (!version || quoted.length < 24 || quoted.length > 1200 || countWords(quoted) < 4) return undefined;
+  const segment = version.content.segments.find(segment => (!preferredSegment || segment.id === preferredSegment) && quoteSpelling(literalQuoteText(segment.text), quoted) !== undefined);
   if (!segment) return undefined;
+  // The library keeps the words as the source writes them, even when the article opens them with a capital.
+  const literal = quoteSpelling(literalQuoteText(segment.text), quoted)!;
   const speaker = segment.speaker ? source.speakers.find(speaker => speaker.label === segment.speaker) : undefined;
   const ref: SourceRef = { kind: 'source', sourceId: source.id, sourceVersion: version.number,
     locator: { type: 'segment', segmentId: segment.id } };
@@ -67,7 +69,7 @@ export function citationsFromArticle(body: ArticleBody, sources: readonly Source
       if (!source?.rights.authorized || ref.locator.type !== 'segment') continue;
       const segmentId = ref.locator.segmentId;
       const segment = sourceVersion(source, ref.sourceVersion)?.content.segments.find(segment => segment.id === segmentId);
-      if (!segment || !literalQuoteText(segment.text).includes(literalQuoteText(quote.text))) continue;
+      if (!segment || quoteSpelling(literalQuoteText(segment.text), literalQuoteText(quote.text)) === undefined) continue;
       const located = locateCitation(source,ref.sourceVersion,quote.text,segmentId);
       if (!located) continue;
       const id = citationId(located.ref, located.text);

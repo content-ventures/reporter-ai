@@ -23,7 +23,7 @@ import { mapEditorialPassages } from './editorial-passages';
 import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
 import { contiguousSourcePassages, r1ArticleIssue, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
-import { articleContractFor, articleGateFor, outletPunctuation } from '../domain/formats.ts';
+import { articleContractFor, articleGateFor, outletPunctuation, tidyQuoteOpenings } from '../domain/formats.ts';
 import { ungroundedTerms } from '../domain/grounding.ts';
 import { currentSourceVersion } from '../domain/source.ts';
 import type { Person } from '../domain/workspace.ts';
@@ -287,7 +287,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       const article = z.object({ title: z.string().min(1).max(500),intro: z.array(paragraph).min(1).max(3),sections: z.array(z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict()).min(1).max(8) }).strict().parse(value);
       if (reviewed && (article.title !== reviewed.title || article.sections.length !== reviewed.sections.length || article.sections.some((s,i) => s.title !== reviewed.sections[i].title))) throw new FlowError('OUTLINE_NOT_FOLLOWED',502);
       const blocks: ArticleBlock[] = [];
-      const add = (p: z.infer<typeof paragraph>) => blocks.push({ id: randomUUID(),type: 'paragraph',inlines: [{ text: format ? outletPunctuation(p.text) : p.text }],sourceRefs: refs(p.evidenceIds),ai: 'unreviewed' });
+      const add = (p: z.infer<typeof paragraph>) => blocks.push({ id: randomUUID(),type: 'paragraph',inlines: [{ text: format ? tidyQuoteOpenings(outletPunctuation(p.text)) : p.text }],sourceRefs: refs(p.evidenceIds),ai: 'unreviewed' });
       article.intro.forEach(add);
       article.sections.forEach((s,i) => {
         if (sizing.headings) blocks.push({ id: reviewed?.sections[i].blockId ?? randomUUID(),type: 'heading',level: 2,inlines: [{ text: s.title }],ai: 'unreviewed' });
@@ -302,12 +302,14 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       // Persist the validated text and enqueue optional images in the SAME transaction.
       // The completed text run stays editable while the image worker uses its own lease.
       additions = { assets: [],citations: citationsFromArticle(body,input.record.sources,job.meta.productionId,new Date().toISOString()),
-        queueImages: Boolean(pipeline.definition.steps.images),
+        // An event coverage goes out with the newsroom's photos: no AI images are planned or generated.
+        queueImages: Boolean(pipeline.definition.steps.images) && !format,
         ...(result ? { provider: { name: result.provider,model: result.model,requestId: result.provider_request_id } } : {}) };
-      events.push({ type: 'outline',title: article.title,sections: [] });
+      // The saved version is rebuilt from these events: the linha fina travels with the title.
+      events.push({ type: 'outline',title: article.title,...(body.dek ? { dek: body.dek } : {}),sections: [] });
       for (const block of body.blocks) events.push({ type: 'block.started',block: { id: block.id,type: block.type } },{ type: 'block.completed',block });
       if (pipeline.definition.steps.images) events.push({ type: 'step.skipped',stepId: 'images' },
-        { type: 'step.progress',stepId: 'images',meta: 'Imagens em segundo plano; o artigo está disponível.' });
+        { type: 'step.progress',stepId: 'images',meta: format ? 'Sem imagens de IA: use as fotos da cobertura.' : 'Imagens em segundo plano; o artigo está disponível.' });
     } else {
       const raw = z.object({ slides: z.record(z.string(),z.object({ slots: z.record(z.string(),z.string().max(2000)),sourceBlockIds: z.array(z.string()).min(1).max(20) }).strict()) }).strict().parse(value);
       if (Object.keys(raw.slides).length !== layouts.length || layouts.some((_layout,i) => !raw.slides[String(i)])) throw new FlowError('INVALID_SLIDE_COUNT',502);
