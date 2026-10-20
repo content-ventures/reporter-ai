@@ -4,8 +4,9 @@
  * Runs every minute on Google's servers, as the account that owns the event folder. Files
  * dropped in "Entrada" (or in a subfolder named after a format: Estande, Painel, Premiação,
  * Abertura, Nota) move to "Processando" and are synced with Reporter IA, which copies them
- * from Drive, transcribes them and creates the production. Each file ends in "Prontos" (its
- * description links the production) or in "Erro" (its description says why).
+ * from Drive and transcribes them; each then waits on the board's Material lane for Nova produção.
+ * Each file ends in "Prontos" (its description links Nova produção with it) or in "Erro" (its
+ * description says why).
  *
  * Setup: Project Settings → Script Properties
  *   REPORTER_URL           https://<the Reporter IA address>
@@ -16,7 +17,6 @@
 const ROOT_FOLDER_ID = '1o1waqxjwIY22EoREIm6covJ2e1_t_BCb';
 const FOLDERS = { inbox: 'Entrada', processing: 'Processando', done: 'Prontos', failed: 'Erro' };
 const MAX_UPLOAD_TRIES = 3;
-const MAX_CREATE_TRIES = 5;
 const MAX_ERRORS = 10;
 const TICK_BUDGET_MS = 4.5 * 60 * 1000;
 
@@ -45,7 +45,7 @@ function tick() {
     for (const [file, format] of arrivals) {
       const media = target_(file);
       save_(file.getId(), { mediaId: media.getId(), name: media.getName(), size: media.getSize(), folder: format,
-        recordedOn: Utilities.formatDate(media.getDateCreated(), 'America/Sao_Paulo', 'yyyy-MM-dd'), next: 0, uploads: 0, creates: 0, errors: 0 });
+        recordedOn: Utilities.formatDate(media.getDateCreated(), 'America/Sao_Paulo', 'yyyy-MM-dd'), next: 0, uploads: 0, errors: 0 });
       file.moveTo(folders.processing);
       console.log(`Recebido: ${media.getName()}${format ? ` (${format})` : ''}`);
     }
@@ -77,7 +77,6 @@ function sync_(settings, file, state, folders) {
     if (body.stage === 'ready') return finish_(file, folders.done, `Reporter IA: ${body.url}`, `Pronto: ${state.name} → ${body.url}`);
     if (body.stage === 'failed') return finish_(file, folders.failed, `Reporter IA: ${body.error || 'TRANSCRIPTION_FAILED'}`, `Erro: ${state.name} (${body.error})`);
     if (body.stage === 'uploading' && ++state.uploads > MAX_UPLOAD_TRIES) return finish_(file, folders.failed, 'Reporter IA: UPLOAD_FAILED', `Erro: ${state.name} não foi copiado`);
-    if (body.stage === 'creating' && ++state.creates > MAX_CREATE_TRIES) return finish_(file, folders.failed, 'Reporter IA: PRODUCTION_FAILED', `Erro: ${state.name} sem produção`);
     state.errors = 0;
     state.next = Date.now() + (Number(body.retryAfter) || 60) * 1000;
     console.log(`${state.name}: ${body.stage}${body.progress !== undefined ? ` ${body.progress}%` : ''}`);
@@ -134,7 +133,7 @@ function load_(id) {
   // A file moved into "Processando" by hand: take it as it is.
   const file = DriveApp.getFileById(id), media = target_(file);
   return { mediaId: media.getId(), name: media.getName(), size: media.getSize(), folder: '',
-    recordedOn: Utilities.formatDate(media.getDateCreated(), 'America/Sao_Paulo', 'yyyy-MM-dd'), next: 0, uploads: 0, creates: 0, errors: 0 };
+    recordedOn: Utilities.formatDate(media.getDateCreated(), 'America/Sao_Paulo', 'yyyy-MM-dd'), next: 0, uploads: 0, errors: 0 };
 }
 
 function save_(id, state) {

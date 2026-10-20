@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -109,7 +110,7 @@ test('the sync refuses a wrong secret and files the transcription cannot read', 
   assert.equal(deferred.length, 0);
 });
 
-test('a file dropped in the folder is copied, transcribed and becomes one production awaiting authorization', { timeout: 300_000 }, async () => {
+test('a file dropped in the folder is copied and transcribed, then waits on the board until Nova produção uses it', { timeout: 300_000 }, async () => {
   const first = await sync();
   assert.equal(first.status, 202, JSON.stringify(first.body));
   assert.equal(first.body.stage, 'uploading');
@@ -117,30 +118,34 @@ test('a file dropped in the folder is copied, transcribed and becomes one produc
   assert.equal(drive.refused, 0);
   assert.deepEqual(drive.ranges.sort(), ['bytes=0-16777215', `bytes=16777216-${media.length - 1}`].sort(), 'each part is read once, by range');
 
-  const transcribed = await sync();
-  assert.equal(transcribed.body.stage, 'creating', JSON.stringify(transcribed.body));
-  assert.equal(transcribed.body.transcriptId, first.body.transcriptId);
-  await settle();
-
   const ready = await sync();
   assert.equal(ready.body.stage, 'ready', JSON.stringify(ready.body));
-  assert.ok(ready.body.productionId);
-  assert.equal(ready.body.url, `${APP}/productions/${ready.body.productionId}`);
+  assert.equal(ready.body.transcriptId, first.body.transcriptId);
+  assert.equal(ready.body.url, `${APP}/productions/new?material=${first.body.transcriptId}`, 'the Drive file links to the new-production steps');
 
-  type Workspace = { state: { productions: { production: { id: string; title: string; brief: { format?: string } }; pieces: { kind: string }[] }[];
-    sources: { id: string; rights: { authorized: boolean }; origin?: string }[] } };
-  const workspace = await call<Workspace>('workspace');
-  const created = workspace.body.state.productions.filter(entry => entry.production.id === ready.body.productionId);
-  assert.equal(created.length, 1);
-  assert.equal(created[0].production.brief.format, 'panel', 'the Painel subfolder chose the format');
-  assert.deepEqual(created[0].pieces.map(piece => piece.kind), ['article']);
-  assert.ok(workspace.body.state.sources.length >= 1);
-  assert.ok(workspace.body.state.sources.every(source => source.rights.authorized === false), 'the speakers have not authorized yet');
+  type Received = { id: string; fileName: string; status: string; format?: string; recordedOn?: string; size: number };
+  const listed = await call<{ items: Received[] }>('drive/received');
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+  assert.deepEqual(listed.body.items.map(item => [item.id, item.fileName, item.status, item.format, item.recordedOn, Number(item.size)]),
+    [[first.body.transcriptId, 'Painel sustentabilidade.wav', 'ready', 'panel', '2026-10-20', media.length]], 'the Painel subfolder named the format');
+  const one = await call<Received>(`drive/received/${first.body.transcriptId}`);
+  assert.equal(one.body.id, first.body.transcriptId);
+
+  type Workspace = { state: { productions: unknown[] } };
+  const before = await call<Workspace>('workspace');
+  assert.equal(before.body.state.productions.length, 0, 'the intake creates no production by itself');
+
+  const transcript = await call<{ transcript: { segments: { start_ms: number; end_ms: number; text: string }[] } }>(`transcripts/${first.body.transcriptId}`);
+  const text = transcript.body.transcript.segments.map((segment, index) => `${index + 1}\n00:00:0${index},000 --> 00:00:0${index + 1},000\n${segment.text}`).join('\n\n');
+  const created = await call<{ ok: boolean }>('workspace', { method: 'createFromSource', requestId: randomUUID(), args: [{ title: 'Painel de sustentabilidade',
+    plan: ['article'], brief: { sections: 3, size: 'standard', format: 'panel' },
+    material: { text, transcriptId: first.body.transcriptId, origin: 'event', authorized: true, recordedOn: '2026-10-20' } }] }, { origin: APP });
+  assert.equal(created.body.ok, true, JSON.stringify(created.body));
+  const after = await call<{ items: Received[] }>('drive/received');
+  assert.deepEqual(after.body.items, [], 'a file that became a production leaves the board');
 
   const again = await sync();
-  assert.equal(again.body.productionId, ready.body.productionId, 'a later sync finds the same production');
+  assert.equal(again.body.stage, 'ready', 'a later sync changes nothing');
   await settle();
-  const after = await call<Workspace>('workspace');
-  assert.equal(after.body.state.productions.length, workspace.body.state.productions.length, 'nothing was created twice');
   assert.equal(drive.ranges.length, 2, 'nothing was downloaded twice');
 });
