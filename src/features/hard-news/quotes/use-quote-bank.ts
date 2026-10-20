@@ -1,8 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CitationLibraryView } from '@/domain/citation-library';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CitationLibraryView, CitationView } from '@/domain/citation-library';
+import { recheck } from '@/domain/fact-check';
+import type { FactCheck } from '@/domain/fact-check';
 import type { BankQuote } from '@/domain/hard-news';
+import type { ClaimDecision } from '@/ports/citation-library';
 import { useRuntime } from '@/state';
 import { notifyRefusal, refusalOf } from '@/ui/permission-dialog';
 import { useHardNews } from '../state/hard-news-provider';
@@ -18,7 +21,25 @@ export type QuoteBank = {
   connected: boolean;
   /** Saves a quote; resolves `false` when it failed, after saying why. */
   save: (quote: BankQuote) => Promise<boolean>;
+  /** Fact-checks the quotes one after the other; stops at the first refusal. Resolves how many were checked. */
+  check: (ids: readonly string[], force?: boolean) => Promise<number>;
+  /** The editor's verdict on one claim of the last check. */
+  decide: (id: string, decision: ClaimDecision) => Promise<boolean>;
+  /** Quotes being checked now. */
+  checking: ReadonlySet<string>;
+  /** "3 de 20" while a batch runs. */
+  progress?: { done: number; total: number };
 };
+
+/** The preview has no web search: its check marks every claim as not validated, and says so. */
+function previewCheck(quote: BankQuote, now: string): FactCheck {
+  const factual = /\d/.test(quote.text);
+  return recheck(quote.factCheck, { id: quote.id, checkedAt: now, model: 'Demonstração', strength: { score: factual ? 4 : 3, reason: 'Demonstração sem modelo.' },
+    claims: [factual ? { text: quote.text, kind: 'fact', verdict: 'not_validated', reason: 'Demonstração: a busca na web roda na versão conectada.', sources: [] }
+      : { text: quote.text, kind: 'opinion', sources: [] }] });
+}
+
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * The quote bank's data. In the connected build it is the R1 citation library (`CitationLibrary`
@@ -29,6 +50,9 @@ export function useQuoteBank(): QuoteBank {
   const port = useRuntime().runtime?.citations;
   const [view, setView] = useState<CitationLibraryView>();
   const [failed, setFailed] = useState(false);
+  const [checking, setChecking] = useState<ReadonlySet<string>>(new Set());
+  const [progress, setProgress] = useState<{ done: number; total: number }>();
+  const quotesRef = useRef<BankQuote[]>([]);
 
   useEffect(() => {
     if (!port || view || failed) return undefined;
@@ -46,6 +70,13 @@ export function useQuoteBank(): QuoteBank {
   }, [port, view, failed]);
 
   const quotes = useMemo(() => (port ? (view?.items ?? []).map(quoteOf) : state.quotes), [port, view, state.quotes]);
+  useEffect(() => {
+    quotesRef.current = quotes;
+  }, [quotes]);
+
+  const replace = useCallback((item: CitationView) => {
+    setView((current) => current && { ...current, items: current.items.map((entry) => (entry.id === item.id ? item : entry)) });
+  }, []);
 
   const save = useCallback(async (quote: BankQuote) => {
     if (!port) {
@@ -64,5 +95,50 @@ export function useQuoteBank(): QuoteBank {
     }
   }, [port, view, actions]);
 
-  return { quotes, ready: port ? Boolean(view) || failed : ready, connected: Boolean(port), save };
+  const check = useCallback(async (ids: readonly string[], force = false) => {
+    let done = 0;
+    if (ids.length > 1) setProgress({ done: 0, total: ids.length });
+    try {
+      for (const id of ids) {
+        setChecking(new Set([id]));
+        try {
+          if (port) replace(await port.check(id, force));
+          else {
+            const quote = quotesRef.current.find((item) => item.id === id);
+            if (!quote) continue;
+            await pause(600);
+            actions.saveQuote({ ...quote, factCheck: previewCheck(quote, new Date().toISOString()) });
+          }
+        } catch (error) {
+          notifyRefusal(done ? `Checagem parada depois de ${done} ${done === 1 ? 'fala' : 'falas'}` : 'Não foi possível checar a fala',
+            refusalOf(error, 'Tente de novo em instantes.'));
+          return done;
+        }
+        done += 1;
+        if (ids.length > 1) setProgress({ done, total: ids.length });
+      }
+      return done;
+    } finally {
+      setChecking(new Set());
+      setProgress(undefined);
+    }
+  }, [port, replace, actions]);
+
+  const decide = useCallback(async (id: string, decision: ClaimDecision) => {
+    try {
+      if (port) replace(await port.decide(id, decision));
+      else {
+        const quote = quotesRef.current.find((item) => item.id === id);
+        if (!quote?.factCheck) return false;
+        actions.saveQuote({ ...quote, factCheck: { ...quote.factCheck, overrides: [...quote.factCheck.overrides,
+          { ...decision, personId: 'preview', at: new Date().toISOString() }] } });
+      }
+      return true;
+    } catch (error) {
+      notifyRefusal('Não foi possível salvar o veredito', refusalOf(error, 'Tente de novo em instantes.'));
+      return false;
+    }
+  }, [port, replace, actions]);
+
+  return { quotes, ready: port ? Boolean(view) || failed : ready, connected: Boolean(port), save, check, decide, checking, ...(progress ? { progress } : {}) };
 }

@@ -4,6 +4,8 @@
  * index) without changing the screens. Pure TypeScript: no framework, no I/O.
  */
 
+import type { FactCheck } from './fact-check.ts';
+
 // ── F2.1 · Fontes de notícias ─────────────────────────────────────────────────────────────────
 
 export type FeedState = 'active' | 'paused' | 'failing';
@@ -384,8 +386,13 @@ export type BankQuote = {
   /** Context of the passage, in the desk's words. */
   context: string;
   recordedOn: string;
+  /** The author was confirmed with the source ("Autoria conferida"). */
   verified: boolean;
   uses: number;
+  /** The productions that used it, newest first; the connected build only. */
+  usedIn?: { productionId: string; title: string; at: string }[];
+  /** Veracity of what was said (`fact-check.ts`); absent until checked. */
+  factCheck?: FactCheck;
 };
 
 // ── F2.12 · Acervo ───────────────────────────────────────────────────────────────────────────

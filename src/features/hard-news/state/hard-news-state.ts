@@ -226,7 +226,11 @@ export function migrate(stored: HardNewsState, now: number): HardNewsState {
   const freshNews = seedNews(clock).filter((item) => !newsIds.has(item.id));
   const freshImages = seedImages().filter((image) => !imageIds.has(image.id));
   const quoteIds = new Set(moved.quotes.map((quote) => quote.id));
-  const freshQuotes = seedQuotes().filter((quote) => !quoteIds.has(quote.id));
+  const seededQuotes = seedQuotes();
+  const freshQuotes = seededQuotes.filter((quote) => !quoteIds.has(quote.id));
+  // Example fact checks arrived after some desks were saved: a quote nobody checked takes its example.
+  const examples = new Map(seededQuotes.flatMap((quote) => (quote.factCheck ? [[quote.id, quote.factCheck] as const] : [])));
+  const quotes = moved.quotes.map((quote) => (quote.factCheck || !examples.has(quote.id) ? quote : { ...quote, factCheck: examples.get(quote.id)! }));
   const articleIds = new Set(moved.archive.map((article) => article.id));
   const freshArticles = seedArchive(clock).filter((article) => !articleIds.has(article.id));
   const archive = freshArticles.length ? [...moved.archive, ...freshArticles] : moved.archive;
@@ -235,7 +239,7 @@ export function migrate(stored: HardNewsState, now: number): HardNewsState {
     ...moved,
     news: freshNews.length ? [...moved.news, ...freshNews] : moved.news,
     images: freshImages.length ? [...moved.images, ...freshImages] : moved.images,
-    quotes: freshQuotes.length ? [...moved.quotes, ...freshQuotes] : moved.quotes,
+    quotes: freshQuotes.length ? [...quotes, ...freshQuotes] : quotes,
     archive,
     lastAsk: moved.lastAsk ?? seedAsk(archive, clock.ago(130)),
     map: withSeedExclusions(moved.map, clock),

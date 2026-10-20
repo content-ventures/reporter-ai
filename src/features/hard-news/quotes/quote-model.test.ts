@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { CitationView } from '../../../domain/citation-library.ts';
-import { citationInputOf, locatorOf, quoteOf } from './quote-model.ts';
+import type { BankQuote } from '../../../domain/hard-news.ts';
+import { bankSummary, citationInputOf, DEFAULT_SORT, inTab, kindDistribution, locatorOf, matchesFilters, NO_FILTERS, pendingBatch, QUOTE_TABS, quoteOf, rankQuote, sortQuotes, verdictDistribution } from './quote-model.ts';
 
 function citation(patch: Partial<CitationView> = {}): CitationView {
   return {
@@ -56,4 +57,31 @@ test('saving keeps the words, source and speaker and takes the desk context, dat
   assert.equal(input.recordedOn, '2026-09-20');
   assert.equal(input.authorConfirmed, false);
   assert.equal(input.podcastName, 'Cadeia do Pescado #41');
+});
+
+const site = { url: 'https://www.embrapa.br/x', title: 'Embrapa', site: 'embrapa.br', excerpt: 'Trecho.' };
+function quote(id: string, verdicts: ('validated' | 'disputed' | 'not_validated' | 'opinion')[] | null, patch: Partial<BankQuote> = {}): BankQuote {
+  const base = quoteOf(citation({ id }));
+  return { ...base, ...patch, ...(verdicts ? { factCheck: { id, checkedAt: '2026-10-20T12:00:00Z', model: 'test', overrides: [], history: [],
+    strength: { score: 5, reason: '' }, claims: verdicts.map((verdict, index) => verdict === 'opinion' ? { text: `Opinião ${index}`, kind: 'opinion' as const, sources: [] }
+      : { text: `Fato ${index}`, kind: 'fact' as const, verdict, sources: verdict === 'not_validated' ? [] : [site] }) } } : {}) };
+}
+
+test('the ranking puts the best first, keeps unchecked quotes last and caps a disputed one', () => {
+  const entries = [quote('a', ['validated', 'opinion'], { uses: 5 }), quote('b', null, { uses: 9 }), quote('c', ['disputed'], { uses: 9 }), quote('d', ['not_validated'], { uses: 0 })].map(rankQuote);
+  assert.deepEqual(sortQuotes(entries, DEFAULT_SORT).map(entry => entry.quote.id), ['a', 'd', 'c', 'b']);
+  assert.deepEqual(sortQuotes(entries, { key: 'score', direction: 'asc' }).map(entry => entry.quote.id), ['c', 'd', 'a', 'b']);
+  assert.equal(entries[2].score?.total, 30);
+  assert.deepEqual(QUOTE_TABS.map(tab => entries.filter(entry => inTab(entry, tab.value)).map(entry => entry.quote.id)),
+    [['a', 'b', 'c', 'd'], ['a'], ['c', 'd'], ['b']]);
+});
+
+test('filters, summary and distributions read the effective claims', () => {
+  const entries = [quote('a', ['validated', 'opinion'], { uses: 2 }), quote('b', null, { uses: 1, verified: false }), quote('c', ['disputed'])].map(rankQuote);
+  assert.deepEqual(entries.filter(entry => matchesFilters(entry, { ...NO_FILTERS, kind: 'opinion' })).map(entry => entry.quote.id), ['a']);
+  assert.deepEqual(entries.filter(entry => matchesFilters(entry, { ...NO_FILTERS, authorship: 'pending' })).map(entry => entry.quote.id), ['b']);
+  assert.deepEqual(bankSummary(entries), { total: 3, checked: 2, disputed: 1, averageScore: Math.round((entries[0].score!.total + 30) / 2), uses: 3 });
+  assert.deepEqual(kindDistribution(entries), { fact: 2, declared: 0, opinion: 1, forecast: 0 });
+  assert.equal(verdictDistribution(entries).pending, 1);
+  assert.deepEqual(pendingBatch(entries), ['b']);
 });
