@@ -1,4 +1,4 @@
-import { CHARS_PER_LAUDA, DEFAULT_ARTICLE_SIZE, groupDigits, sectionBudget, sizeOf, SIZE_TOLERANCE } from '../domain/index.ts';
+import { CHARS_PER_LAUDA, DEFAULT_ARTICLE_SIZE, FORMAT_SPECS, formatSizeOf, groupDigits, sectionBudget, sizeOf, SIZE_TOLERANCE } from '../domain/index.ts';
 import type { ArticleSize, Brief, FlowId } from '../domain/index.ts';
 import type { DraftSizeInstructions } from '../ports/index.ts';
 import { sectionStepId } from './recipes.ts';
@@ -75,7 +75,8 @@ export function sizingPolicyFor(flowId: FlowId): SizingPolicy {
 }
 
 /** The size contract of a brief (Hard News): numbers, budgets per section and the model's sentence. */
-export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections'>): DraftSizeInstructions {
+export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'format' | 'formatSize'>): DraftSizeInstructions {
+  if (brief.format) return formatSizeInstructions(brief as Pick<Brief, 'size' | 'sections' | 'formatSize'> & { format: NonNullable<Brief['format']> });
   const spec = sizeOf(brief.size);
   const budget = sectionBudget(spec.id, brief.sections);
   return {
@@ -94,5 +95,32 @@ export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections'>): 
     sections: Array.from({ length: Math.max(0, brief.sections) }, (_, index) => ({ stepId: sectionStepId(index + 1), budgetChars: budget.sectionChars })),
     instruction: spec.id === 'standard' ? HARD_NEWS_SIZING.instruction
       : `Escreva até ${groupDigits(spec.maxChars)} caracteres; se o material não sustentar, escreva menos e não complete.`,
+  };
+}
+
+/**
+ * The size contract of an event format (formats.ts): its option's range and target, the format's
+ * minimum of literal quotes and its intertítulos rule. Characters only: the outlet sizes these
+ * texts by characters, and the words of a short note say nothing a character count does not.
+ */
+function formatSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'formatSize'> & { format: NonNullable<Brief['format']> }): DraftSizeInstructions {
+  const spec = FORMAT_SPECS[brief.format], option = formatSizeOf(brief.format, brief.formatSize);
+  const count = Math.max(1, Math.round(brief.sections));
+  const introChars = Math.round(option.targetChars * spec.introShare);
+  const budgetChars = Math.floor((option.targetChars - introChars) / count);
+  return {
+    size: brief.size,
+    laudas: Math.ceil(option.maxChars / CHARS_PER_LAUDA),
+    charsPerLauda: CHARS_PER_LAUDA,
+    minChars: option.minChars,
+    maxChars: option.maxChars,
+    targetChars: option.targetChars,
+    minQuotes: spec.minQuotes,
+    tolerance: SIZE_TOLERANCE,
+    headings: spec.headings,
+    neverPad: true,
+    introChars,
+    sections: Array.from({ length: count }, (_, index) => ({ stepId: sectionStepId(index + 1), budgetChars })),
+    instruction: `${spec.label}: escreva entre ${groupDigits(option.minChars)} e ${groupDigits(option.maxChars)} caracteres, perto de ${groupDigits(option.targetChars)}, com ao menos ${spec.minQuotes} citações literais. Se o material não sustentar, escreva menos e não complete.`,
   };
 }

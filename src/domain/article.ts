@@ -73,6 +73,8 @@ export type InlineBlock = ParagraphBlock | HeadingBlock | QuoteBlock;
 export type ArticleBody = {
   type: 'article';
   title: string;
+  /** "Linha fina": the line under the title that completes it. Absent on articles without one. */
+  dek?: string;
   blocks: ArticleBlock[];
   /** "Imagem de destaque" (16:9, above the title). Absent on articles without one. */
   cover?: ImageRef;
@@ -183,6 +185,8 @@ function normalizeBlock(block: ArticleBlock): ArticleBlock {
 /** Canonical body. The cover suggestion only stands while there is no cover. */
 export function normalizeArticle(body: ArticleBody): ArticleBody {
   const out: ArticleBody = { type: 'article', title: body.title.trim(), blocks: body.blocks.map(normalizeBlock) };
+  const dek = body.dek?.trim();
+  if (dek) out.dek = dek;
   if (body.cover) out.cover = normalizeImageRef(body.cover);
   else if (body.coverSlot) out.coverSlot = normalizeImageSlot(body.coverSlot);
   return out;
@@ -209,6 +213,7 @@ export function articleHash(body: ArticleBody): string {
   const inlinesKey = (inlines: Inline[]) => inlines.map((inline) => [inline.text, inline.marks ?? [], inline.href ?? '']);
   return contentHash({
     title: normalized.title,
+    dek: normalized.dek,
     cover: normalized.cover ? imageKey(normalized.cover) : undefined,
     coverSlot: normalized.coverSlot ? slotKey(normalized.coverSlot) : undefined,
     blocks: normalized.blocks.map((block) => {

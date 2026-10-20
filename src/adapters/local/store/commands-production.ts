@@ -248,7 +248,8 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
         if (baseRevision !== undefined && baseRevision !== current.revision) {
           return refuse('conflict', 'A pauta mudou depois que você começou a editar. Confira a versão atual e salve de novo.', { expected: current.revision, received: baseRevision });
         }
-        const brief = validateBrief({ ...input, revision: current.revision + 1 });
+        // The drawer edits angle, size and sections: a format and its event stay unless the input sets them.
+        const brief = validateBrief({ format: current.format, formatSize: current.formatSize, event: current.event, ...input, revision: current.revision + 1 });
         if (!brief.ok) return brief;
         return ok({ state: withProduction(state, touch(production, { brief: brief.value }, ctx.now)), value: brief.value, productionIds: [productionId] });
       });

@@ -16,6 +16,7 @@ import {
   words,
 } from '../../../domain/index.ts';
 import { enforceR1ArticleChecks } from '../../../domain/article-policy.ts';
+import type { ArticlePolicyLimits } from '../../../domain/article-policy.ts';
 import type {
   ArticleBlock,
   ArticleSize,
@@ -176,10 +177,10 @@ export function sameBody(a: ArticleBody, b: ArticleBody): boolean {
  * Local checks of the live text: the domain article checks on what is on screen, with the
  * "Geração concluída" result (run state) taken from the store, which owns the run.
  */
-export function mergeChecks(local: readonly CheckResult[], stored: readonly CheckResult[], live?: { body: ArticleBody; sources: readonly Source[] }): CheckResult[] {
+export function mergeChecks(local: readonly CheckResult[], stored: readonly CheckResult[], live?: { body: ArticleBody; sources: readonly Source[]; limits?: ArticlePolicyLimits }): CheckResult[] {
   const merged = local.map((check) => (check.id === 'article.generation' ? (stored.find((entry) => entry.id === check.id) ?? check) : check));
   const hasR1Contract = stored.some(check => check.id === 'article.length' && check.blocking);
-  return live && hasR1Contract ? enforceR1ArticleChecks(merged, live.body, live.sources) : merged;
+  return live && hasR1Contract ? enforceR1ArticleChecks(merged, live.body, live.sources, live.limits) : merged;
 }
 
 // ——— Copilot tools that make sense for the text on screen ———

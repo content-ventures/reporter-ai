@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import type { WorkspaceView } from '@content-ventures/design-system/v3';
 import {
+  articleContractFor,
   articleImageSlots,
   COVER_BLOCK_ID,
   readiness,
@@ -69,7 +70,7 @@ export function useStudioChecks({
       assets: assetLookup,
       ...(production.charsAvailable !== undefined ? { materialChars: production.charsAvailable } : {}),
     });
-    const merged = mergeChecks(local, piece.checks, { body: factsBody, sources });
+    const merged = mergeChecks(local, piece.checks, { body: factsBody, sources, limits: articleContractFor(production.brief) });
     if (!deskChecks) return merged;
     return [...merged.filter((check) => !deskReplaces?.includes(check.id)), ...deskChecks];
   }, [factsBody, production.brief, production.charsAvailable, sources, generating, piece.checks, assetLookup, deskChecks, deskReplaces]);

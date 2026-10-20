@@ -97,11 +97,14 @@ export function articleQuotationIssue(paragraphs: readonly { text: string; evide
   if (distinct.size < minimum) return 'ARTICLE_QUOTES_REQUIRED';
 }
 
+/** Length and quote rules of a body: R1's article by default, an event format's otherwise (formats.ts). */
+export type ArticlePolicyLimits = ArticleLengthLimits & { minQuotes?: number };
+
 /** The same contract also protects sending a manually edited draft for approval. */
-export function r1ArticleIssue(body: ArticleBody, sources: readonly Source[]): ArticlePolicyIssue | undefined {
-  return articleLengthIssue(articleStats(body), R1_ARTICLE_LIMITS) ?? r1ArticleQuotationIssue(body, sources);
+export function r1ArticleIssue(body: ArticleBody, sources: readonly Source[], limits: ArticlePolicyLimits = R1_ARTICLE_LIMITS): ArticlePolicyIssue | undefined {
+  return articleLengthIssue(articleStats(body), limits) ?? r1ArticleQuotationIssue(body, sources, limits.minQuotes ?? 0);
 }
-export function r1ArticleQuotationIssue(body: ArticleBody, sources: readonly Source[]): ArticlePolicyIssue | undefined {
+export function r1ArticleQuotationIssue(body: ArticleBody, sources: readonly Source[], minQuotes: number = R1_ARTICLE_LIMITS.minQuotes): ArticlePolicyIssue | undefined {
   const evidence = new Map<string, string>(),references=new Map<string,SourceRef>();
   const paragraphs = body.blocks.filter(block => block.type === 'paragraph' || block.type === 'quote' || block.type === 'heading' || block.type === 'list').map(block => {
     const evidenceIds = (block.sourceRefs ?? []).flatMap(ref => {
@@ -114,19 +117,32 @@ export function r1ArticleQuotationIssue(body: ArticleBody, sources: readonly Sou
     const text = blockText(block);
     return { text: block.type === 'quote' && !directQuotes(text).length ? `“${text}”` : text, evidenceIds };
   });
-  return articleQuotationIssue(paragraphs, evidence, R1_ARTICLE_LIMITS.minQuotes,ids=>contiguousSourcePassages(sources,ids.flatMap(id=>references.get(id)?[references.get(id)!]:[])));
+  return articleQuotationIssue(paragraphs, evidence, minQuotes,ids=>contiguousSourcePassages(sources,ids.flatMap(id=>references.get(id)?[references.get(id)!]:[])));
 }
 
 /** Shared by persisted read models and live, unsaved editor content. */
-export function enforceR1ArticleChecks(checks: readonly CheckResult[], body: ArticleBody, sources: readonly Source[]): CheckResult[] {
-  const length = articleLengthIssue(articleStats(body), R1_ARTICLE_LIMITS);
-  const quotes = r1ArticleQuotationIssue(body, sources);
+export function enforceR1ArticleChecks(checks: readonly CheckResult[], body: ArticleBody, sources: readonly Source[], limits: ArticlePolicyLimits = R1_ARTICLE_LIMITS): CheckResult[] {
+  const length = articleLengthIssue(articleStats(body), limits);
+  const quotes = r1ArticleQuotationIssue(body, sources, limits.minQuotes ?? 0);
   return checks.map(check => {
     if (check.id !== 'article.length' && check.id !== 'article.quotes') return check;
     const issue = check.id === 'article.length' ? length : quotes;
     return { ...check, blocking: true, status: issue ? 'fail' as const : 'pass' as const,
-      ...(issue ? { detail: ARTICLE_POLICY_MESSAGES[issue] } : {}) };
+      ...(issue ? { detail: articlePolicyMessage(issue, limits) } : {}) };
   });
+}
+
+const thousands = (value: number) => String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+/** The message of an issue under the given limits; R1's limits give exactly `ARTICLE_POLICY_MESSAGES`. */
+export function articlePolicyMessage(issue: ArticlePolicyIssue, limits: ArticlePolicyLimits = R1_ARTICLE_LIMITS): string {
+  if (limits === R1_ARTICLE_LIMITS) return ARTICLE_POLICY_MESSAGES[issue];
+  switch (issue) {
+    case 'ARTICLE_SIZE_TOO_SHORT': return `O texto precisa de pelo menos ${thousands(limits.minChars ?? 0)} caracteres no corpo. Desenvolva mais fatos da fonte, sem repetir ou inventar.`;
+    case 'ARTICLE_SIZE_EXCEEDED': return `O corpo do texto excedeu ${thousands(limits.maxChars ?? 0)} caracteres. Encurte sem cortar frases ou remover ressalvas essenciais.`;
+    case 'ARTICLE_QUOTES_REQUIRED': return `O texto precisa de pelo menos ${limits.minQuotes} ${limits.minQuotes === 1 ? 'citação literal' : 'citações literais distintas'} da transcrição, com suas referências.`;
+    default: return ARTICLE_POLICY_MESSAGES[issue];
+  }
 }
 
 export const ARTICLE_POLICY_MESSAGES: Record<ArticlePolicyIssue, string> = {

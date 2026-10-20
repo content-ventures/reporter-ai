@@ -5,6 +5,7 @@ import type { IsoDateTime, PersonId, PieceId, ProductionId, SourceId, Suggestion
 import type { PieceBody, PieceKind } from '../domain/piece.ts';
 import type { Brief } from '../domain/production.ts';
 import type { ArticleSize } from '../domain/sizing.ts';
+import type { EditorialFormat, EventContext } from '../domain/formats.ts';
 import type { VersionRef } from '../domain/refs.ts';
 import type { Result } from '../domain/result.ts';
 import type { DecideRefusal } from '../domain/rules/decide.ts';
@@ -63,7 +64,7 @@ export type NewProductionInput = {
   /** Reuse a saved source instead of creating one (duplicate material, REQ-2.1 prep). */
   reuseSourceId?: SourceId;
   speakers?: SpeakerAssignment[];
-  brief: { angle?: string; sections: number; size: ArticleSize };
+  brief: BriefInput;
   /** Article is mandatory; carousel optional. */
   plan: PieceKind[];
   ownerId?: PersonId;
@@ -74,6 +75,7 @@ export type CreateProductionRefusal =
   | 'empty_material'
   | 'sections_out_of_range'
   | 'unknown_size'
+  | 'unknown_format'
   | 'article_required'
   | 'unknown_person'
   | 'unknown_source'
@@ -88,7 +90,7 @@ export type CreatedProduction = {
 /** Opens an owned, empty article in the existing studio; no material or AI run is created. */
 export type BlankProductionInput = { title: string; brief: BriefInput };
 export type CreatedBlankProduction = { productionId: ProductionId; pieceId: PieceId };
-export type CreateBlankRefusal = 'empty_title' | 'sections_out_of_range' | 'unknown_size' | 'forbidden';
+export type CreateBlankRefusal = 'empty_title' | 'sections_out_of_range' | 'unknown_size' | 'unknown_format' | 'forbidden';
 
 // ── Estúdio ──────────────────────────────────────────────────────────────────────────────
 
@@ -108,8 +110,9 @@ export type RestoreRefusal = NotFoundRefusal | ForbiddenRefusal | 'unknown_versi
 
 export type SavedVersion = { version: VersionView; revision: number };
 
-export type BriefInput = { angle?: string; sections: number; size: ArticleSize };
-export type BriefRefusal = NotFoundRefusal | ForbiddenRefusal | 'conflict' | 'sections_out_of_range' | 'unknown_size';
+/** The pauta a person sets: an event format (formats.ts) is optional; without it, the article of R1. */
+export type BriefInput = { angle?: string; sections: number; size: ArticleSize; format?: EditorialFormat; formatSize?: string; event?: EventContext };
+export type BriefRefusal = NotFoundRefusal | ForbiddenRefusal | 'conflict' | 'sections_out_of_range' | 'unknown_size' | 'unknown_format';
 
 /** `personId: null` with `unattributed` is "Sem atribuição"; without it, the label is left undecided. */
 export type SpeakerMapping = { label: string; personId: PersonId | null; newPerson?: PersonDetails; unattributed?: true };
