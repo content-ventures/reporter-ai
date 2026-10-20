@@ -19,22 +19,25 @@ import { startWorkerHost } from '../support/worker-host.ts';
 const APP = 'http://127.0.0.1:3998';
 const PORTAL = '10000000-0000-0000-0000-000000000101';
 const OWNER = { subject: 'rehearsal-drive-owner', email: 'drive@rehearsal.test', name: 'Dona da pasta', image: undefined, emailVerified: true };
+const COLLEAGUE = { subject: 'rehearsal-colleague', email: 'colega@rehearsal.test', name: 'Colega da redação', image: undefined, emailVerified: true };
 const SECRET = 'drive-rehearsal-secret-with-more-than-32-chars';
 const DRIVE_TOKEN = 'ya29.rehearsal-drive-access-token';
 const FILE_ID = '1RehearsalDriveFile_abc-123';
 const OPUS_ID = '1RehearsalWhatsAppAudio_xyz-789';
+const BROKEN_ID = '1RehearsalCorruptFile_zzz-321';
 
 let db: Awaited<ReturnType<typeof startRehearsalDatabase>>, s3: Awaited<ReturnType<typeof startFakeS3>>;
 let host: Awaited<ReturnType<typeof startWorkerHost>>, providers: ReturnType<typeof installFakeProviders>, workDir: string;
 let handleReporter: typeof import('../../src/server/http.ts').handleReporter;
 let media: Buffer, opus: Buffer, restoreDrive: () => void;
+const corrupt = Buffer.alloc(4096, 7);
 const drive = { ranges: [] as string[], refused: 0 };
 const deferred: Promise<void>[] = [];
 
-async function call<T = Record<string, unknown>>(path: string, body?: unknown, headers: Record<string, string> = {}) {
+async function call<T = Record<string, unknown>>(path: string, body?: unknown, headers: Record<string, string> = {}, who: typeof OWNER = OWNER) {
   const request = new Request(`${APP}/api/reporter/${path}`, body === undefined ? undefined : { method: 'POST',
     headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
-  const response = await handleReporter(request, path.split('/'), { defer: task => { deferred.push(task()); }, identify: async () => OWNER });
+  const response = await handleReporter(request, path.split('/'), { defer: task => { deferred.push(task()); }, identify: async () => who });
   return { status: response.status, body: await response.json() as T };
 }
 
@@ -63,7 +66,7 @@ function installFakeDrive() {
     const headers = new Headers(init?.headers);
     const path = new URL(url);
     if (headers.get('authorization') !== `Bearer ${DRIVE_TOKEN}`) { drive.refused++; return new Response('{}', { status: 401 }); }
-    const file = ({ [FILE_ID]: media, [OPUS_ID]: opus } as Record<string, Buffer>)[path.pathname.replace('/drive/v3/files/', '')];
+    const file = ({ [FILE_ID]: media, [OPUS_ID]: opus, [BROKEN_ID]: corrupt } as Record<string, Buffer>)[path.pathname.replace('/drive/v3/files/', '')];
     if (!file || path.searchParams.get('alt') !== 'media') return new Response('{}', { status: 404 });
     const range = /^bytes=(\d+)-(\d+)$/.exec(headers.get('range') ?? '');
     if (!range) return new Response(new Uint8Array(file));
@@ -76,7 +79,7 @@ function installFakeDrive() {
 }
 
 before(async () => {
-  db = await startRehearsalDatabase([{ email: OWNER.email, role: 'editor' }]);
+  db = await startRehearsalDatabase([{ email: OWNER.email, role: 'editor' }, { email: COLLEAGUE.email, role: 'editor' }]);
   s3 = await startFakeS3({ bucket: 'reporter-source-media', corsOrigins: [APP] });
   providers = installFakeProviders();
   restoreDrive = installFakeDrive();
@@ -196,4 +199,25 @@ test('a copy that never reaches storage turns failed after an hour and leaves th
   assert.deepEqual((await listed()).map(item => [item.status, item.errorCode]), [['failed', 'UPLOAD_FAILED']]);
   await owner("UPDATE public.reporter_drive_intakes SET created_at=clock_timestamp()-interval '3 days' WHERE transcript_id=$1", [first.body.transcriptId]);
   assert.deepEqual(await listed(), [], 'a failed file leaves the board after two days');
+});
+
+test('any editor who opens a failed Drive transcription retries it, though the file belongs to the intake owner', { timeout: 120_000 }, async () => {
+  const broken = { fileId: BROKEN_ID, name: 'Gravação corrompida.mp3', size: corrupt.length, folder: undefined };
+  assert.equal((await sync(broken)).body.stage, 'uploading');
+  await settle();
+  const failed = await sync(broken);
+  assert.equal(failed.body.stage, 'failed', JSON.stringify(failed.body));
+  const id = failed.body.transcriptId!;
+  const listed = async () => (await call<{ items: { id: string; status: string }[] }>('drive/received', undefined, {}, COLLEAGUE)).body.items.find(item => item.id === id);
+  assert.equal((await listed())?.status, 'failed');
+  const [before] = await owner<{ revision: number }>('SELECT revision FROM public.reporter_transcripts WHERE id=$1', [id]);
+  const headers = { origin: APP, 'x-reporter-client': 'local' };
+  const direct = await call(`transcripts/${id}/retry`, { revision: before.revision }, { ...headers, 'idempotency-key': `plain-${id}` }, COLLEAGUE);
+  assert.equal(direct.status, 422, 'the plain retry belongs to the uploader, and the colleague did not upload it');
+  const retried = await call(`drive/received/${id}/retry`, { revision: before.revision }, { ...headers, 'idempotency-key': `drive-${id}-retry-${before.revision}` }, COLLEAGUE);
+  assert.equal(retried.status, 202, JSON.stringify(retried.body));
+  await settle();
+  const [after] = await owner<{ revision: number; status: string }>('SELECT revision,status FROM public.reporter_transcripts WHERE id=$1', [id]);
+  assert.ok(after.revision > before.revision + 1, 'the worker took the file again');
+  assert.equal(after.status, 'failed', 'a corrupt file fails again, now with a fresh attempt');
 });
