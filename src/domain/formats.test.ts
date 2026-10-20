@@ -65,3 +65,8 @@ test('a format blocks on its ceiling and quotes, never on its minimum; the artic
   assert.equal(outletPunctuation('“Por quê?”, perguntou.'), '“Por quê?”, perguntou.');
   assert.equal(outletPunctuation('Confira a seguir os vencedores de cada categoria: .'), 'Confira a seguir os vencedores de cada categoria:');
 });
+
+test('a service value typed with its own label keeps one label', () => {
+  const lines = eventBoxLines({ name: 'SSLA 2026', dates: 'Data: de 20 a 22 de outubro', venue: 'local: Distrito Anhembi' });
+  assert.deepEqual(lines.filter((line) => line.kind === 'service').map((line) => line.text), ['Data: de 20 a 22 de outubro', 'Local: Distrito Anhembi']);
+});

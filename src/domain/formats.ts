@@ -138,7 +138,8 @@ export function eventBoxLines(event: EventContext | undefined): EventBoxLine[] {
     .filter(([, value]) => Boolean(value));
   if (service.length) {
     lines.push({ kind: 'divider', text: '—' }, { kind: 'label', text: event.name.toLocaleUpperCase('pt-BR') });
-    for (const [label, value] of service) lines.push({ kind: 'service', text: `${label}: ${value}` });
+    // A value typed with its own label ("Data: de 20 a 22…") keeps one label only.
+    for (const [label, value] of service) lines.push({ kind: 'service', text: `${label}: ${value!.replace(new RegExp(`^${label}\\s*:\\s*`, 'iu'), '')}` });
   }
   if (event.cta) lines.push({ kind: 'paragraph', text: event.cta });
   return lines;

@@ -7,6 +7,8 @@ import {
   ChoiceCard,
   DatePicker,
   Disclosure,
+  Field,
+  FieldGroup,
   FormRow,
   FormSection,
   Grid,
@@ -186,26 +188,35 @@ export function BriefStep({ draft, update, charsAvailable, existing = false, tit
             )}
           </FormRow>
           {draft.event.name.trim() ? (
-            <FormRow label="Box do evento">
-              <Disclosure summary="Título, texto e serviço" defaultOpen={!draft.event.about.trim()}>
-                <Grid columns="1:1" gap="sm" collapseBelow={480}>
-                  <Input aria-label="Título do box" value={draft.event.boxTitle} maxLength={EVENT_MAX}
-                    placeholder={`Seafood Brasil na ${draft.event.name.trim()}`} onChange={(event) => setEvent('boxTitle', event.target.value)} />
-                  <Input aria-label="Data" value={draft.event.dates} maxLength={EVENT_MAX} placeholder="Data: de 20 a 22 de outubro de 2026"
-                    onChange={(event) => setEvent('dates', event.target.value)} />
-                  <Input aria-label="Horário" value={draft.event.hours} maxLength={EVENT_MAX} placeholder="Horário: das 13h às 20h"
-                    onChange={(event) => setEvent('hours', event.target.value)} />
-                  <Input aria-label="Local" value={draft.event.venue} maxLength={EVENT_MAX} placeholder="Local: Distrito Anhembi"
-                    onChange={(event) => setEvent('venue', event.target.value)} />
-                  <Input aria-label="Endereço" value={draft.event.address} maxLength={EVENT_MAX} placeholder="Endereço"
-                    onChange={(event) => setEvent('address', event.target.value)} />
-                  <Input aria-label="Chamada final" value={draft.event.cta} maxLength={EVENT_MAX}
-                    placeholder="Acompanhe nossa cobertura especial no site e nas redes sociais." onChange={(event) => setEvent('cta', event.target.value)} />
-                </Grid>
-                <Textarea aria-label="Texto do box" autoSize={{ minRows: 2, maxRows: 6 }} maxLength={EVENT_MAX} value={draft.event.about}
-                  placeholder="Parágrafo sobre o evento, como no portal" onChange={(event) => setEvent('about', event.target.value)} />
-              </Disclosure>
-            </FormRow>
+            <>
+              <FormRow label="Box do evento">
+                <FieldGroup label="Serviço" columns={1}>
+                  <Grid columns="1:1" collapseBelow={480}>
+                    {([
+                      ['boxTitle', 'Título do box', `Seafood Brasil na ${draft.event.name.trim()}`],
+                      ['dates', 'Data', 'De 20 a 22 de outubro de 2026'],
+                      ['hours', 'Horário', 'Das 13h às 20h'],
+                      ['venue', 'Local', 'Distrito Anhembi'],
+                      ['address', 'Endereço', 'Av. Olavo Fontoura, 1209 – São Paulo/SP'],
+                      ['cta', 'Chamada final', 'Acompanhe a cobertura no site e nas redes'],
+                    ] as const).map(([key, label, example]) => (
+                      <Field key={key} label={label}>
+                        {(props) => (
+                          <Input id={props.id} aria-describedby={props.describedBy} value={draft.event[key]} maxLength={EVENT_MAX}
+                            placeholder={example} onChange={(event) => setEvent(key, event.target.value)} />
+                        )}
+                      </Field>
+                    ))}
+                  </Grid>
+                </FieldGroup>
+              </FormRow>
+              <FormRow label="Texto do box" optional>
+                {({ id, describedBy }) => (
+                  <Textarea id={id} aria-describedby={describedBy} autoSize={{ minRows: 2, maxRows: 6 }} maxLength={EVENT_MAX} value={draft.event.about}
+                    placeholder="Parágrafo sobre o evento, como no portal" onChange={(event) => setEvent('about', event.target.value)} />
+                )}
+              </FormRow>
+            </>
           ) : null}
         </>
       ) : null}
