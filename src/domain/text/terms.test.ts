@@ -90,3 +90,15 @@ test('fixing a name to a longer one leaves the right name where it already is', 
   assert.equal(replaceTerm('Bem-vindos à Brasil Seafood Show. A Seafood Show deste ano cresceu.', 'Seafood Show', 'Brasil Seafood Show').text,
     'Bem-vindos à Brasil Seafood Show. A Brasil Seafood Show deste ano cresceu.');
 });
+
+test('a two-word term never swallows the next line\'s speaker, and a case-only fix is applied', () => {
+  const lines = 'Dias: Quem responde é a Ana\nSouza: Eu respondo.\nSouza: E completo.\nDias: Obrigado.';
+  assert.equal(termOccurrences(lines, 'Ana Souza'), 0, 'in "Nome: fala" text each line is its own turn');
+  assert.equal(correctTerm(lines, 'Ana Souza', 'Ana Sousa').count, 0);
+  const srt = '1\n00:00:00,000 --> 00:00:04,000\nA msd veio para a aquishow.\n\n2\n00:00:04,000 --> 00:00:08,000\nA Msd trouxe a vacina.';
+  assert.equal(termOccurrences(srt, 'msd', 'MSD'), 2);
+  const fixed = correctTerm(srt, 'msd', 'MSD');
+  assert.equal(fixed.count, 2);
+  assert.match(!fixed.refused ? fixed.text : '', /A MSD veio para a aquishow\.[\s\S]*A MSD trouxe a vacina\./u);
+  assert.equal(termOccurrences('A MSD e a MSD.', 'msd', 'MSD'), 0, 'already right, nothing to change');
+});

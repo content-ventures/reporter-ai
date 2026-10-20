@@ -5,16 +5,22 @@
  * touched: SRT/VTT cue numbers and timestamp lines, and "[00:04:12]" stamps inside the speech, so the
  * parser still reads every line with its time and speaker.
  */
-import { parseTranscript } from './transcript-parse.ts';
+import { detectTranscriptFormat, parseTranscript } from './transcript-parse.ts';
 
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 
-function termPattern(term: string): RegExp | undefined {
+/**
+ * A term as whole words. `crossLines`: a cue of an SRT/VTT file may wrap one sentence over two lines;
+ * in "Nome: fala" text every line is its own turn, and a match across lines would swallow a label.
+ * `exact`: the case as typed (the right name), not any case (the misheard one).
+ */
+function termPattern(term: string, crossLines = false, exact = false): RegExp | undefined {
   const words = term.normalize('NFC').trim().split(/\s+/u).filter(Boolean);
   if (!words.length) return undefined;
   // A combining accent belongs to its word: "Jose" never matches the start of a decomposed "José".
-  return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${words.map(escape).join('\\s+')}(?![\\p{L}\\p{M}\\p{N}])`, 'giu');
+  return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${words.map(escape).join(crossLines ? '\\s+' : '[^\\S\\n]+')}(?![\\p{L}\\p{M}\\p{N}])`, exact ? 'gu' : 'giu');
 }
+const crossesLines = (text: string) => ['srt', 'vtt'].includes(detectTranscriptFormat(text));
 
 /** A cue number, a VTT header or a timestamp line of an SRT/VTT file: never part of the speech. */
 const timingLine = (line: string) => /^\s*\d+\s*$/u.test(line) || line.includes('-->') || /^\s*WEBVTT\b/u.test(line);
@@ -47,8 +53,8 @@ function editSpeech(text: string, edit: (speech: string) => string): string {
  * Where `from` occurs as a whole word but not inside a whole occurrence of `to`: fixing "Rafael" to
  * "Rafael Dias" leaves an existing "Rafael Dias" as it is.
  */
-function occurrences(speech: string, pattern: RegExp, to: string): number[] {
-  const right = termPattern(to), kept: [number, number][] = [];
+function occurrences(speech: string, pattern: RegExp, to: string, crossLines: boolean): number[] {
+  const right = termPattern(to, crossLines, true), kept: [number, number][] = [];
   if (right) for (const match of speech.matchAll(right)) kept.push([match.index, match.index + match[0].length]);
   return [...speech.matchAll(pattern)].map(match => match.index)
     .filter(at => !kept.some(([start, end]) => at >= start && at < end));
@@ -56,20 +62,20 @@ function occurrences(speech: string, pattern: RegExp, to: string): number[] {
 
 /** How many times the term appears in the speech of a transcript, not counting the right name itself. */
 export function termOccurrences(text: string, term: string, to = ''): number {
-  const pattern = termPattern(term);
+  const cross = crossesLines(text), pattern = termPattern(term, cross);
   if (!pattern) return 0;
   let count = 0;
-  editSpeech(text, speech => { count += occurrences(speech, pattern, to).length; return speech; });
+  editSpeech(text, speech => { count += occurrences(speech, pattern, to, cross).length; return speech; });
   return count;
 }
 
 /** The transcript with every whole-word occurrence of `from` written as `to`, and how many changed. */
 export function replaceTerm(text: string, from: string, to: string): { text: string; count: number } {
-  const pattern = termPattern(from), replacement = to.normalize('NFC').trim();
+  const cross = crossesLines(text), pattern = termPattern(from, cross), replacement = to.normalize('NFC').trim();
   if (!pattern || !replacement) return { text, count: 0 };
   let count = 0;
   const edited = editSpeech(text, speech => {
-    const at = new Set(occurrences(speech, pattern, replacement));
+    const at = new Set(occurrences(speech, pattern, replacement, cross));
     return speech.replace(pattern, (found: string, offset: number) => {
       if (!at.has(offset)) return found;
       count++;

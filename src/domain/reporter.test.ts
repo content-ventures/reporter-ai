@@ -94,3 +94,15 @@ test('a cut word keeps its own punctuation after the completion, and an ambiguou
     'ele falou nação hoje e a gente voltou pro trabalho cedo de manhã'),
   'ele falou na na hoje e a gente voltou pro trabalho cedo de manhã');
 });
+
+test('a pairing is used only when every best alignment makes it, from either side', () => {
+  const base = 'eu acho que essa gente sabe disso muito bem ';
+  // The negation stays: "n" could be "né" or "não" just as well.
+  assert.equal(repair(`${base}eu n sei`, '', `${base}eu né não sei`), undefined);
+  assert.equal(repair(`${base}falou a gente`, '', `${base}falou ação a gente`), undefined);
+  assert.equal(repair(`${base}e a na hoje`, '', `${base}e a nação na hoje`), undefined);
+  assert.equal(repair(`${base}x z na y`, '', `${base}x nação z y`), undefined);
+  assert.equal(repair(`${base}que a casa`, '', `${base}que é a casa que a casa`), undefined);
+  // The clear cases still repair.
+  assert.equal(repair(GARBLED, BEFORE, INSIDE, AFTER), REPAIRED);
+});
