@@ -11,7 +11,7 @@ test('release preflight reports every missing name without leaking configured va
 
 test('release preflight accepts the existing OpenAI and Claude credential aliases', () => {
   const environment = Object.fromEntries(['NEON_API_KEY', 'NEON_PROJECT_ID', 'NEON_BRANCH_ID',
-    'REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'PIXABAY_API_KEY', 'OPEN_AI_API_KEY', 'CLAUDE_API_KEY'].map(name => [name, 'present']));
+    'REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'PIXABAY_API_KEY', 'TAVILY_API_KEY', 'OPEN_AI_API_KEY', 'CLAUDE_API_KEY'].map(name => [name, 'present']));
   const values = releaseEnvironment(environment);
   assert.equal(values.OPENAI_API_KEY, 'present'); assert.equal(values.ANTHROPIC_API_KEY, 'present');
 });
@@ -23,11 +23,11 @@ test('release rejects expired API keys and sanitizes network errors before any d
     error => /could not reach/.test(error.message) && !/URL contains secret/.test(error.message));
 });
 
-test('provider preflight checks all four APIs with server credentials', async () => {
+test('provider preflight checks all five APIs with server credentials', async () => {
   const names = [];
-  await checkProviders({ GROQ_API_KEY: 'groq', OPENAI_API_KEY: 'openai', ANTHROPIC_API_KEY: 'claude', PIXABAY_API_KEY: 'photos' }, async (url, options) => {
+  await checkProviders({ GROQ_API_KEY: 'groq', OPENAI_API_KEY: 'openai', ANTHROPIC_API_KEY: 'claude', PIXABAY_API_KEY: 'photos', TAVILY_API_KEY: 'search' }, async (url, options) => {
     names.push(new URL(url).hostname);
     assert.ok(options.signal); return new Response('{}');
   });
-  assert.deepEqual(names.sort(), ['api.anthropic.com', 'api.groq.com', 'api.openai.com', 'pixabay.com']);
+  assert.deepEqual(names.sort(), ['api.anthropic.com', 'api.groq.com', 'api.openai.com', 'api.tavily.com', 'pixabay.com']);
 });

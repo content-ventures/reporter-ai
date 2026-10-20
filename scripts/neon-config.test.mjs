@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // Evaluating the config needs placeholder deployment values; nothing connects anywhere.
-for (const name of ["REPORTER_WORKER_PASSWORD", "GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "PIXABAY_API_KEY"]) process.env[name] ??= "config-test-only";
+for (const name of ["REPORTER_WORKER_PASSWORD", "GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "PIXABAY_API_KEY", "TAVILY_API_KEY"]) process.env[name] ??= "config-test-only";
 process.env.DATABASE_URL ??= "postgresql://owner:placeholder@localhost/test";
 process.env.REPORTER_APP_ORIGINS ??= "https://reporter.invalid";
 const { default: config } = await import("../neon.ts");

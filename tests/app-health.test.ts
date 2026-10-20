@@ -8,7 +8,7 @@ import { handleReporter } from '../src/server/http.ts';
 const CLOUD = {
   REPORTER_DATABASE_URL: 'postgresql://reporter_runtime:secret-runtime@db.example.test/reporter', NEON_AUTH_BASE_URL: 'https://auth.example.test',
   NEON_AUTH_COOKIE_SECRET: 'secret-cookie-value', REPORTER_WORKER_URL: 'https://worker.example.test/', REPORTER_WORKER_PASSWORD: 'secret-worker',
-  GROQ_API_KEY: 'secret-groq', OPENAI_API_KEY: 'secret-openai', CLAUDE_API_KEY: 'secret-claude', PIXABAY_API_KEY: 'secret-pixabay',
+  GROQ_API_KEY: 'secret-groq', OPENAI_API_KEY: 'secret-openai', CLAUDE_API_KEY: 'secret-claude', PIXABAY_API_KEY: 'secret-pixabay', TAVILY_API_KEY: 'secret-tavily',
   VERCEL_GIT_COMMIT_SHA: 'abc1234', VERCEL_ENV: 'production',
 };
 

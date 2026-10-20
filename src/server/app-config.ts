@@ -17,6 +17,7 @@ export function appConfiguration(environment: Environment = process.env) {
     openai: present(environment, 'OPENAI_API_KEY', 'OPEN_AI_API_KEY'),
     anthropic: present(environment, 'ANTHROPIC_API_KEY', 'CLAUDE_API_KEY'),
     pixabay: present(environment, 'PIXABAY_API_KEY'),
+    tavily: present(environment, 'TAVILY_API_KEY'),
   };
 }
 

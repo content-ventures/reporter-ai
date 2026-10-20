@@ -49,6 +49,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
     steps:
       - name: Keep Neon identifiers out of the logs
         run: |

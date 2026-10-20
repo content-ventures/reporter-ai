@@ -76,6 +76,7 @@ const functions = {
       OPENAI_API_KEY: requiredAny('OPENAI_API_KEY','OPEN_AI_API_KEY'),
       ANTHROPIC_API_KEY: requiredAny('ANTHROPIC_API_KEY','CLAUDE_API_KEY'),
       PIXABAY_API_KEY: required('PIXABAY_API_KEY'),
+      TAVILY_API_KEY: required('TAVILY_API_KEY'),
     },
     bundler: bundleWorker,
   },
