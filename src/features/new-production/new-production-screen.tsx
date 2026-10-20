@@ -24,6 +24,7 @@ import {
   focusField,
   toast,
   type FormError,
+  type RejectedFile,
   type SectionState,
   type StepState,
 } from '@content-ventures/design-system/v3';
@@ -42,6 +43,9 @@ import { useNow } from '@/ui/time';
 import { BriefStep } from './brief-sections';
 import {
   EMPTY_DRAFT,
+  RECEIVED_PART,
+  addParts,
+  dropPart,
   eventDraft,
   type EventDraft,
   NEW_PRODUCTION_STEPS,
@@ -52,6 +56,7 @@ import {
   draftMaterial,
   hasMaterial,
   isDraftDirty,
+  landPart,
   materialBlocker,
   toCreateInput,
   validateMaterial,
@@ -60,12 +65,13 @@ import {
   type DraftField,
   type MaterialFile,
   type MaterialMode,
+  type MaterialPart,
   type NewProductionDraft,
   type NewProductionStep,
   type SpeakerChoice,
 } from './form';
 import { MaterialSection, materialState } from './material-section';
-import { materialProgress } from './material-progress';
+import { CANCELLABLE, materialProgress } from './material-progress';
 import { MaterialProgressDialog } from './material-progress-dialog';
 import { usePreviewSpeakers } from './preview-speakers';
 import {
@@ -78,7 +84,7 @@ import {
   SAMPLE_TRANSCRIPT,
 } from './sample-material';
 import { SpeakersSection } from './speakers-section';
-import { useFileReader, type ReceivedExtras } from './use-file-reader';
+import { rejectionMessage, useFileReader, type ReceivedExtras } from './use-file-reader';
 import { useLinkReader, type ImportedLink } from './use-link-reader';
 import { useMaterialAnalysis } from './use-material-analysis';
 import { notifyRefusal } from '@/ui/permission-dialog';
@@ -140,8 +146,10 @@ function NewProductionForm({ received }: { received?: string }) {
   const now = useNow();
   const today = now ? isoDay(now) : undefined;
 
-  // A Drive file opens on "Arquivo", its progress on screen, as an upload just started would.
-  const [draft, setDraft] = useState<NewProductionDraft>(() => (received ? { ...EMPTY_DRAFT, mode: 'file' } : EMPTY_DRAFT));
+  // A Drive file opens on "Arquivo" as its one part, its progress on screen, as an upload just started would.
+  const [draft, setDraft] = useState<NewProductionDraft>(() => (received
+    ? { ...EMPTY_DRAFT, mode: 'file', parts: [{ id: RECEIVED_PART, name: 'Arquivo do Drive', size: 0, received: true }] }
+    : EMPTY_DRAFT));
   // A coverage offers the event typed for the previous one on this device, never fills it by itself:
   // a material from another fair would otherwise go out with the wrong box. Undefined: not read yet.
   const [eventSuggestion, setEventSuggestion] = useState<EventDraft | null>();
@@ -158,12 +166,13 @@ function NewProductionForm({ received }: { received?: string }) {
   const analysis = analysisState.analysis;
   const readyAnalysis = analysisState.status === 'ready' ? analysis : undefined;
 
-  const onFileLoaded = useCallback((file: MaterialFile, extras?: ReceivedExtras) => {
+  const onFileLoaded = useCallback((id: string, file: MaterialFile | undefined, extras?: ReceivedExtras) => {
     // A Drive subfolder that names a format offers the previous event, as choosing the format does.
     if (extras?.format) setEventSuggestion((current) => (current === undefined ? lastEvent() ?? null : current));
     setDraft((current) => {
-      const next: NewProductionDraft = { ...current, file, speakers: {} };
-      if (!extras) return next;
+      if (!file) return dropPart(current, id);
+      const next: NewProductionDraft = landPart(current, id, file);
+      if (!extras || next === current) return next;
       // The Drive subfolder names the format and the file's day dates the interview; both stay editable.
       if (extras.recordedOn && !current.recordedOn) next.recordedOn = extras.recordedOn;
       if (!extras.format || current.format) return next;
@@ -196,10 +205,10 @@ function NewProductionForm({ received }: { received?: string }) {
   const [progressVisible,setProgressVisible] = useState(Boolean(received));
   const showProgress = useCallback(() => setProgressVisible(true),[]);
   const closeProgress = useCallback(() => setProgressVisible(false),[]);
-  const progress = materialProgress(draft,analysisState,fileReader.state,linkReader.state);
+  const progress = materialProgress(draft,analysisState,draft.parts.length === 1 ? fileReader.reads[draft.parts[0].id] ?? null : null,linkReader.state,fileReader.reads);
   // Opened from a Drive card: the file arrives as an upload would. A remount (Strict Mode)
   // cancels the reader's read, so every mount starts it again.
-  const loadReceived = useEffectEvent((id: string) => fileReader.load(id));
+  const loadReceived = useEffectEvent((id: string) => fileReader.load(RECEIVED_PART, id));
   useEffect(() => {
     if (received) loadReceived(received);
   }, [received]);
@@ -281,7 +290,10 @@ function NewProductionForm({ received }: { received?: string }) {
   // ── Actions ──
   const setMode = (mode: MaterialMode) => {
     closeProgress();
-    if (mode!=='file') fileReader.reset();
+    if (mode!=='file') {
+      fileReader.cancelAll();
+      setDraft(withReadParts);
+    }
     if (mode!=='link') linkReader.reset();
     update({ mode,speakers: {} });
   };
@@ -296,31 +308,63 @@ function NewProductionForm({ received }: { received?: string }) {
     showProgress();
     linkReader.read(draft.sourceUrl ?? '');
   };
-  const importFile = (file: File) => {
-    update({ file: null,speakers: {} });
+  const partSeq = useRef(0);
+  const importFiles = (files: File[], rejected: RejectedFile[]) => {
+    for (const refused of rejected) toast('Arquivo não aceito', { tone: 'error', description: rejectionMessage(refused.reason, intake) });
+    const added = files.map((file) => ({ file, part: { id: `part-${++partSeq.current}`, name: file.name, size: file.size, lastModified: file.lastModified } satisfies MaterialPart }));
+    if (added.length === 0) return;
+    setDraft((current) => addParts(current, added.map(({ part }) => part)));
     showProgress();
-    fileReader.read(file);
+    for (const { file, part } of added) fileReader.read(part.id, file);
+  };
+  const removePart = (id: string) => {
+    fileReader.cancel(id);
+    setDraft((current) => dropPart(current, id));
+    // The drop area comes back on the next frame when the last part goes.
+    window.requestAnimationFrame(() => focusField(`${dropzoneId}-dropzone`));
+  };
+  const retryPart = (id: string) => {
+    const read = fileReader.reads[id];
+    if (read?.status === 'error' && read.retry === 'pick') { removePart(id); return; }
+    showProgress();
+    fileReader.retry(id);
+  };
+  /** Every part that failed: read again when it can be, given up when another file is needed. */
+  const retryFailedParts = (picksOnly: boolean) => {
+    for (const part of draft.parts) {
+      const read = fileReader.reads[part.id];
+      if (read?.status !== 'error') continue;
+      if (read.retry === 'pick') removePart(part.id);
+      else if (!picksOnly) fileReader.retry(part.id);
+    }
   };
   const cancelPreparation = () => {
-    if (draft.mode === 'file') fileReader.reset();
+    if (draft.mode === 'file') {
+      for (const part of draft.parts) {
+        const read = fileReader.reads[part.id];
+        if (read?.status !== 'reading' || !CANCELLABLE.includes(read.phase)) continue;
+        fileReader.cancel(part.id);
+        setDraft((current) => dropPart(current, part.id));
+      }
+    }
     if (draft.mode === 'link') linkReader.reset();
     closeProgress();
   };
   const retryPreparation = () => {
-    if (progress?.retry === 'pick') { fileReader.retry();closeProgress();return; }
+    if (progress?.retry === 'pick') { retryFailedParts(true);closeProgress();return; }
     showProgress();
-    if (progress?.retry === 'file') fileReader.retry();
+    if (progress?.retry === 'file') retryFailedParts(false);
     else if (progress?.retry === 'link') linkReader.retry();
     else analysisState.retry?.();
   };
   const setSpeaker = (label: string, choice: SpeakerChoice) => setDraft((current) => ({ ...current, speakers: { ...current.speakers, [label]: choice } }));
 
   const fillSample = useCallback(() => {
-    fileReader.reset();
+    fileReader.cancelAll();
     linkReader.reset();
     showProgress();
     setDraft((current) => ({
-      ...current,
+      ...withReadParts(current),
       mode: 'paste',
       pasted: SAMPLE_TRANSCRIPT,
       title: SAMPLE_TITLE,
@@ -507,11 +551,11 @@ function NewProductionForm({ received }: { received?: string }) {
             <MaterialSection
               draft={draft}
               material={analysisState}
-              fileRead={fileReader.state}
+              fileReads={fileReader.reads}
               linkRead={linkReader.state}
               intake={intake}
               error={materialIssue}
-              state={materialState(draft, analysisState, fileReader.state, linkReader.state, Boolean(materialIssue))}
+              state={materialState(draft, analysisState, fileReader.reads, linkReader.state, Boolean(materialIssue))}
               dropzoneId={dropzoneId}
               textareaRef={textareaRef}
               linkRef={linkRef}
@@ -521,11 +565,9 @@ function NewProductionForm({ received }: { received?: string }) {
               onShowProgress={showProgress}
               onLinkChange={changeLink}
               onImportLink={importLink}
-              onFile={importFile}
-              onReject={(rejected) => { fileReader.reject(rejected);showProgress(); }}
-              onRemoveFile={() => update({ file: null, speakers: {} })}
-              onCancelRead={cancelPreparation}
-              onRetryRead={retryPreparation}
+              onFiles={importFiles}
+              onRemovePart={removePart}
+              onRetryPart={retryPart}
               onCancelLink={cancelPreparation}
               onRetryLink={retryPreparation}
               onRemoveLink={() => { linkReader.reset();update({ linkFile: null,sourceUrl: '',speakers: {} }); }}
@@ -594,6 +636,11 @@ function NewProductionForm({ received }: { received?: string }) {
       />
     </>
   );
+}
+
+/** Leaving "Arquivo" keeps the parts already read; a part still on its way goes with its read. */
+function withReadParts(draft: NewProductionDraft): NewProductionDraft {
+  return draft.parts.every((part) => part.text !== undefined) ? draft : { ...draft, parts: draft.parts.filter((part) => part.text !== undefined) };
 }
 
 const LAST_EVENT_KEY = 'reporter.new-production.last-event';

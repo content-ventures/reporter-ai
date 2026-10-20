@@ -25,8 +25,9 @@ test('large uploads use actual transferred bytes, with no invented progress duri
 });
 
 test('text files and YouTube captions skip audio transcription and keep analysis distinct from reading', () => {
-  const draft = { ...EMPTY_DRAFT,mode: 'file' as const,file: { name: 'transcricao.txt',size: 250,text: 'Material' } };
+  const draft = { ...EMPTY_DRAFT,mode: 'file' as const,parts: [{ id: 'a',name: 'transcricao.txt',size: 250,text: 'Material' }] };
   const progress = materialProgress(draft,analyzing,null,null)!;
+  assert.equal(progress.name,'transcricao.txt');
   assert.equal(progress.steps.length,2);
   assert.deepEqual(progress.steps.map(step => step.state),['done','current']);
   assert.equal(progress.upload,undefined);

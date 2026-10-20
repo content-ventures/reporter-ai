@@ -1,16 +1,22 @@
 import { mediaOf } from '../../domain/reporter.ts';
 import { parseSourceLink } from '../../domain/source-link.ts';
+import type { MaterialReadPhase } from '../../ports/index.ts';
 import type { NewProductionDraft } from './form.ts';
 import type { MaterialAnalysis } from './use-material-analysis.ts';
-import type { FileReadState } from './use-file-reader.ts';
+import type { FileReadState, PartReads } from './use-file-reader.ts';
 import type { LinkReadState } from './use-link-reader.ts';
 
-export function materialProgress(draft: NewProductionDraft, analysis: MaterialAnalysis, file: FileReadState | null, link: LinkReadState | null) {
-  const read = draft.mode === 'file' ? file : draft.mode === 'link' ? link : null;
+/** Phases a read can still be called off in ("Cancelar envio"). */
+export const CANCELLABLE: readonly MaterialReadPhase[] = ['reading', 'locating', 'uploading'];
+
+/** `file`: the read of the one part; without it, the first part still being read or that failed. */
+export function materialProgress(draft: NewProductionDraft, analysis: MaterialAnalysis, file: FileReadState | null, link: LinkReadState | null, reads: PartReads = {}) {
+  const fileRead = file ?? draft.parts.map((part) => reads[part.id]).find(Boolean) ?? null;
+  const read = draft.mode === 'file' ? fileRead : draft.mode === 'link' ? link : null;
   if (!read && analysis.status === 'idle') return null;
-  const name = draft.mode === 'file' ? file?.name ?? draft.file?.name ?? 'Arquivo'
+  const name = draft.mode === 'file' ? fileRead?.name ?? draft.parts[0]?.name ?? 'Arquivo'
     : draft.mode === 'link' ? (parseSourceLink(draft.sourceUrl ?? '')?.provider === 'youtube' ? 'Vídeo do YouTube' : 'Episódio do Spotify') : 'Texto colado';
-  const size = draft.mode === 'file' ? file?.size ?? draft.file?.size : undefined;
+  const size = draft.mode === 'file' ? fileRead?.size ?? draft.parts[0]?.size : undefined;
   const audio = draft.mode === 'file' ? mediaOf(name) !== undefined
     : draft.mode === 'link' && parseSourceLink(draft.sourceUrl ?? '')?.provider === 'spotify';
   const phase = read ? (read.phase === 'ready' ? 'analysis' : read.phase) : 'analysis';
@@ -29,7 +35,7 @@ export function materialProgress(draft: NewProductionDraft, analysis: MaterialAn
   const steps = labels.map((label,i) => ({ id: String(i),label,
     state: status === 'ready' || i < index ? 'done' as const : i > index ? 'upcoming' as const : status === 'error' ? 'error' as const : 'current' as const,
     ...(i === index && status !== 'ready' ? { detail: chunks ?? message } : {}) }));
-  const retry = read?.status === 'error' ? (draft.mode === 'file' && file?.status === 'error' && file.retry === 'pick' ? 'pick' as const : draft.mode === 'file' ? 'file' as const : 'link' as const) : 'analysis' as const;
-  return { status,phase,name,size,steps,upload,retry,canCancel: read?.status === 'reading' && ['reading','locating','uploading'].includes(phase),
+  const retry = read?.status === 'error' ? (draft.mode === 'file' && fileRead?.status === 'error' && fileRead.retry === 'pick' ? 'pick' as const : draft.mode === 'file' ? 'file' as const : 'link' as const) : 'analysis' as const;
+  return { status,phase,name,size,steps,upload,retry,canCancel: read?.status === 'reading' && CANCELLABLE.includes(read.phase),
     largeUpload: status === 'running' && phase === 'uploading' && size !== undefined && size >= 100 * 1024 ** 2 };
 }

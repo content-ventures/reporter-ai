@@ -1,4 +1,5 @@
 import { DEFAULT_ARTICLE_SIZE, EVENT_FIELDS, FORMAT_SPECS, expectedDraftChars, fitSections, foldForMatch, formatLabel, formatSizeOf, formatLaudas, normalizeEvent, sizeLabel, sizeOf } from '../../domain/index.ts';
+import { MAX_MATERIAL_CHARS, MAX_MATERIAL_PARTS, PART_BREAK, joinTranscriptParts, normalizeNewlines, splitTranscriptParts } from '../../domain/index.ts';
 import type { ArticleSize, EditorialFormat, EventContext, PieceKind, SourceOrigin } from '../../domain/index.ts';
 import type { NewProductionInput, SourceAnalysis, SpeakerAssignment } from '../../ports/index.ts';
 import { podcastLink } from '../../domain/citation-library.ts';
@@ -32,10 +33,19 @@ export type SpeakerChoice =
 
 export type MaterialFile = { name: string; size: number; text: string; transcriptId?: string };
 
+export { MAX_MATERIAL_PARTS };
+
+/** Id of the one part a file received from the Drive folder opens as. */
+export const RECEIVED_PART = 'received';
+
+/** One recording of the file material, in the chosen order; `text` arrives once it is read. */
+export type MaterialPart = { id: string; name: string; size: number; lastModified?: number; text?: string; transcriptId?: string; received?: true };
+
 export type NewProductionDraft = {
   mode: MaterialMode;
   pasted: string;
-  file: MaterialFile | null;
+  /** "Arquivo": the recordings of the material, in order. */
+  parts: readonly MaterialPart[];
   linkFile: MaterialFile | null;
   /** "Os falantes autorizaram o uso" (required to continue). */
   authorized: boolean;
@@ -77,7 +87,7 @@ export type PersonOption = { id: string; name: string };
 export const EMPTY_DRAFT: NewProductionDraft = {
   mode: 'paste',
   pasted: '',
-  file: null,
+  parts: [],
   linkFile: null,
   authorized: false,
   speakers: {},
@@ -97,11 +107,81 @@ export const MAX_ANGLE_LENGTH = 600;
 
 // ── Material ─────────────────────────────────────────────────────────────────────────────
 
-/** The material the active mode points at (switching modes keeps both). */
-export function draftMaterial(draft: NewProductionDraft): { text: string; fileName?: string } {
-  if (draft.mode === 'file') return draft.file ? { text: draft.file.text, fileName: draft.file.name } : { text: '' };
-  if (draft.mode === 'link') return draft.linkFile ? { text: draft.linkFile.text, fileName: draft.linkFile.name } : { text: '' };
-  return { text: draft.pasted };
+/**
+ * The material the active mode points at (switching modes keeps both). Several parts travel as
+ * one joined text named after the first; `pending` while any part is still being read.
+ */
+export function draftMaterial(draft: NewProductionDraft): { text: string; fileName?: string; pending?: true } {
+  if (draft.mode === 'file') {
+    const { parts } = draft;
+    if (parts.length === 0) return { text: '' };
+    if (parts.some((part) => part.text === undefined)) return { text: '', pending: true };
+    return { text: joinTranscriptParts(parts.map((part) => ({ text: part.text ?? '', fileName: part.name }))), fileName: parts[0].name };
+  }
+  if (draft.mode === 'link') return draft.linkFile ? { text: draft.linkFile.text.replaceAll(PART_BREAK, ''), fileName: draft.linkFile.name } : { text: '' };
+  return { text: draft.pasted.replaceAll(PART_BREAK, '') };
+}
+
+/** A read finished: the part with that id gets its file (a part removed meanwhile stays removed). */
+export function landPart(draft: NewProductionDraft, id: string, file: MaterialFile): NewProductionDraft {
+  if (!draft.parts.some((part) => part.id === id)) return draft;
+  return {
+    ...draft,
+    parts: draft.parts.map((part) => (part.id === id ? {
+      id,
+      name: file.name,
+      size: file.size,
+      text: file.text,
+      ...(part.lastModified !== undefined ? { lastModified: part.lastModified } : {}),
+      ...(file.transcriptId ? { transcriptId: file.transcriptId } : {}),
+      ...(part.received ? { received: true as const } : {}),
+    } : part)),
+  };
+}
+
+/** Speaker choices go only with the last part: the remaining ones still carry those speakers. */
+export function dropPart(draft: NewProductionDraft, id: string): NewProductionDraft {
+  if (!draft.parts.some((part) => part.id === id)) return draft;
+  const parts = draft.parts.filter((part) => part.id !== id);
+  return { ...draft, parts, ...(parts.length === 0 ? { speakers: {} } : {}) };
+}
+
+export function movePart(draft: NewProductionDraft, from: number, to: number): NewProductionDraft {
+  const last = draft.parts.length - 1;
+  if (from === to || Math.min(from, to) < 0 || Math.max(from, to) > last) return draft;
+  const parts = [...draft.parts];
+  const [moved] = parts.splice(from, 1);
+  parts.splice(to, 0, moved);
+  return { ...draft, parts };
+}
+
+/** New parts go after the others; a material started over forgets the previous speakers. */
+export function addParts(draft: NewProductionDraft, added: readonly MaterialPart[]): NewProductionDraft {
+  if (added.length === 0) return draft;
+  return { ...draft, parts: [...draft.parts, ...added], ...(draft.parts.length === 0 ? { speakers: {} } : {}) };
+}
+
+const ADDED_HEADER = 'WEBVTT\n\n';
+
+/** A corrected material text written back where it came from; `{}` when it no longer fits the parts. */
+export function withMaterialText(draft: NewProductionDraft, text: string): Partial<NewProductionDraft> {
+  if (draft.mode === 'paste') return { pasted: text };
+  if (draft.mode === 'link') return draft.linkFile ? { linkFile: { ...draft.linkFile, text } } : {};
+  if (draft.parts.length === 1) return { parts: [{ ...draft.parts[0], text }] };
+  const texts = splitTranscriptParts(text);
+  if (!texts || texts.length !== draft.parts.length) return {};
+  return {
+    parts: draft.parts.map((part, index) => {
+      // Joining heads a cue file named .vtt/.srt with WEBVTT when its text has none: take it off again.
+      const added = texts[index].startsWith(ADDED_HEADER) && !/^WEBVTT\b/.test(normalizeNewlines(part.text ?? '').trimStart());
+      return { ...part, text: added ? texts[index].slice(ADDED_HEADER.length) : texts[index] };
+    }),
+  };
+}
+
+/** Several parts whose joined text passes what one material may carry. */
+export function materialTooLong(draft: NewProductionDraft): boolean {
+  return draft.mode === 'file' && draft.parts.length > 1 && draftMaterial(draft).text.length > MAX_MATERIAL_CHARS;
 }
 
 export function hasMaterial(draft: NewProductionDraft): boolean {
@@ -112,6 +192,7 @@ export function hasMaterial(draft: NewProductionDraft): boolean {
 export function isDraftDirty(draft: NewProductionDraft): boolean {
   return (
     hasMaterial(draft) ||
+    draft.parts.length > 0 ||
     draft.title.trim() !== '' ||
     draft.angle.trim() !== '' ||
     draft.recordedOn !== '' ||
@@ -396,8 +477,13 @@ export function toCreateInput(draft: NewProductionDraft, analysis: SourceAnalysi
     plan: planKinds(draft.plan),
   };
   if (material.fileName) input.material.fileName = material.fileName;
-  const transcriptId = draft.mode === 'file' ? draft.file?.transcriptId : draft.mode === 'link' ? draft.linkFile?.transcriptId : undefined;
+  const transcriptId = draft.mode === 'file'
+    ? draft.parts.find((part) => part.received)?.transcriptId ?? draft.parts.find((part) => part.transcriptId)?.transcriptId
+    : draft.mode === 'link' ? draft.linkFile?.transcriptId : undefined;
   if (transcriptId) input.material.transcriptId = transcriptId;
+  if (draft.mode === 'file' && draft.parts.length > 1) {
+    input.material.parts = draft.parts.map((part) => ({ fileName: part.name, ...(part.transcriptId ? { transcriptId: part.transcriptId } : {}) }));
+  }
   if (draft.recordedOn) input.material.recordedOn = draft.recordedOn;
   if (draft.programName?.trim()) input.material.programName = draft.programName.trim();
   if (draft.location?.trim()) input.material.location = draft.location.trim();
