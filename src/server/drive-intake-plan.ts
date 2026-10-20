@@ -1,22 +1,15 @@
 import { createHmac } from 'node:crypto';
 import { EDITORIAL_FORMATS, FORMAT_SPECS } from '../domain/formats.ts';
 import type { EditorialFormat } from '../domain/formats.ts';
+import { mediaOf } from '../domain/reporter.ts';
 
 /**
  * The pure half of the Drive folder intake: stable ids per Drive file, the folder that names a
  * format and the byte ranges of each upload part. No I/O, so it is tested without a server.
  */
 
-/** Audio and video the transcription accepts, by extension (the browser upload's list). */
-export const DRIVE_MEDIA_TYPES: Readonly<Record<string, string>> = {
-  mp3: 'audio/mpeg', m4a: 'audio/mp4', mp4: 'video/mp4', wav: 'audio/wav', ogg: 'audio/ogg', flac: 'audio/flac', webm: 'video/webm',
-};
-
-export function driveMedia(name: string): { extension: string; contentType: string } | undefined {
-  const extension = name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
-  const contentType = extension ? DRIVE_MEDIA_TYPES[extension] : undefined;
-  return extension && contentType ? { extension, contentType } : undefined;
-}
+/** Audio and video the transcription accepts: the browser upload's list. */
+export const driveMedia = mediaOf;
 
 function uuidFrom(digest: Buffer): string {
   const bytes = Buffer.from(digest.subarray(0, 16));

@@ -8,7 +8,7 @@ import { join, basename, extname } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import busboy from "busboy";
-import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES } from "../domain/reporter";
+import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES, MEDIA_EXTENSIONS } from "../domain/reporter";
 import { UUID } from "./reporter-schema";
 import { FlowError } from "./errors";
 import { inspectMedia } from "./media";
@@ -94,7 +94,7 @@ export async function receiveFile(request: Request) {
     name = basename((info.filename ?? "").replace(/\\/g, "/")).normalize("NFC");
     const extension = extname(name).toLowerCase();
     if (field !== "file" || !name || name.length > 255 || /[\x00-\x1f\x7f-\x9f]/.test(name) ||
-      ![".mp3",".mp4",".m4a",".wav",".ogg",".flac",".webm",".txt",".md",".srt",".vtt"].includes(extension)) {
+      ![...MEDIA_EXTENSIONS,".txt",".md",".srt",".vtt"].includes(extension)) {
       failure = new FlowError("UNSUPPORTED_MEDIA", 415); file.resume(); return;
     }
     file.on("limit", () => { failure = new FlowError("FILE_TOO_LARGE", 413); });

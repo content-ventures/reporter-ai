@@ -1,6 +1,25 @@
 export const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
 export const MAX_TEXT_BYTES = 1024 ** 2;
 export const MAX_DURATION_SECONDS = 3 * 60 * 60;
+
+/**
+ * Audio and video the transcription reads, by extension. Opus (WhatsApp audio) is an Ogg file:
+ * it is stored as `.ogg`, which every stored-key rule already accepts.
+ */
+const MEDIA_TYPES: Readonly<Record<string, { contentType: string; stored: string }>> = {
+  mp3: { contentType: 'audio/mpeg', stored: 'mp3' }, m4a: { contentType: 'audio/mp4', stored: 'm4a' },
+  mp4: { contentType: 'video/mp4', stored: 'mp4' }, wav: { contentType: 'audio/wav', stored: 'wav' },
+  ogg: { contentType: 'audio/ogg', stored: 'ogg' }, opus: { contentType: 'audio/ogg', stored: 'ogg' },
+  flac: { contentType: 'audio/flac', stored: 'flac' }, webm: { contentType: 'video/webm', stored: 'webm' },
+};
+/** `.mp3`, `.m4a`…: what a file picker accepts as audio or video. */
+export const MEDIA_EXTENSIONS: readonly string[] = Object.keys(MEDIA_TYPES).map(extension => `.${extension}`);
+
+/** The stored extension and content type of an audio or video file name; `undefined` for anything else. */
+export function mediaOf(name: string): { extension: string; contentType: string } | undefined {
+  const type = MEDIA_TYPES[name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() ?? ''];
+  return type ? { extension: type.stored, contentType: type.contentType } : undefined;
+}
 export const CHUNK_SECONDS = 600;
 export const CHUNK_OVERLAP_SECONDS = 2;
 export type Slide = { title?: string; body: string };

@@ -30,7 +30,7 @@ import {
 import { FileText, Sparkles, X } from '@content-ventures/design-system/v3/icons';
 import { sizeOf } from '@/domain';
 import { sourceLinkMessage } from '@/domain/source-link';
-import { MAX_UPLOAD_BYTES } from '../../domain/reporter.ts';
+import { MAX_UPLOAD_BYTES, MEDIA_EXTENSIONS } from '../../domain/reporter.ts';
 import type { PersonSummary, SourceAnalysis } from '@/ports';
 import { sourceKind, type SourceIntake } from '@/registries';
 import { useCan, useCommands, usePeople, useSession } from '@/state';
@@ -132,7 +132,7 @@ export function NewProductionScreen({ received }: { received?: string } = {}) {
 function NewProductionForm({ received }: { received?: string }) {
   const router = useRouter();
   const commands = useCommands();
-  const intake: SourceIntake = { ...INTAKE,extensions: [...INTAKE.extensions,'.mp3','.m4a','.mp4','.wav','.ogg','.flac','.webm'],maxBytes: MAX_UPLOAD_BYTES };
+  const intake: SourceIntake = { ...INTAKE,extensions: [...INTAKE.extensions,...MEDIA_EXTENSIONS],maxBytes: MAX_UPLOAD_BYTES };
   const peopleQuery = usePeople();
   const people = peopleQuery.data ?? NO_PEOPLE;
   // From the shared page clock after hydration (the server never computes "today").
