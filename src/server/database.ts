@@ -28,18 +28,29 @@ export function pool(role: "runtime" | "worker") {
 }
 
 const ROLES = new Set<Role>(['admin','editor','approver','creative_reviewer']);
-export async function resolveReporterContext(identity: { subject: string; email: string; name: string; image?: string; emailVerified: boolean }): Promise<ReporterRequestContext | null> {
-  if (reporterDeploymentMode() !== 'cloud' || !identity.email || !identity.emailVerified) return null;
-  const { rows } = await pool('runtime').query<{
-    tenant_id: string;portal_id: string;user_id: string;workspace_name: string;workspace_slug: string;user_name: string;user_email: string;user_image: string | null;roles: string[];
-  }>('SELECT * FROM public.reporter_session_context($1,$2,$3,$4,$5,$6)',[
-    identity.subject,identity.email,identity.name,identity.image ?? null,identity.emailVerified,cloudPortalId(),
-  ]);
-  const row = rows[0];
+type ContextRow = {
+  tenant_id: string;portal_id: string;user_id: string;workspace_name: string;workspace_slug: string;user_name: string;user_email: string;user_image: string | null;roles: string[];
+};
+function contextOf(row: ContextRow | undefined): ReporterRequestContext | null {
   if (!row) return null;
   return { tenant: row.tenant_id,portal: row.portal_id,actor: row.user_id,workspaceName: row.workspace_name,
     workspaceSlug: row.workspace_slug,name: row.user_name,email: row.user_email,image: row.user_image ?? undefined,
     roles: row.roles.filter((role): role is Role => ROLES.has(role as Role)) };
+}
+
+export async function resolveReporterContext(identity: { subject: string; email: string; name: string; image?: string; emailVerified: boolean }): Promise<ReporterRequestContext | null> {
+  if (reporterDeploymentMode() !== 'cloud' || !identity.email || !identity.emailVerified) return null;
+  const { rows } = await pool('runtime').query<ContextRow>('SELECT * FROM public.reporter_session_context($1,$2,$3,$4,$5,$6)',[
+    identity.subject,identity.email,identity.name,identity.image ?? null,identity.emailVerified,cloudPortalId(),
+  ]);
+  return contextOf(rows[0]);
+}
+
+/** A member the server acts for without a session (the Drive folder intake), found by email. */
+export async function resolveServiceContext(email: string): Promise<ReporterRequestContext | null> {
+  if (reporterDeploymentMode() !== 'cloud' || !email.trim()) return null;
+  const { rows } = await pool('runtime').query<ContextRow>('SELECT * FROM public.reporter_service_context($1,$2)',[email.trim(),cloudPortalId()]);
+  return contextOf(rows[0]);
 }
 
 export async function transaction<T>(role: "runtime" | "worker", operation: (client: PoolClient) => Promise<T>, requestId: string = randomUUID()): Promise<T> {
