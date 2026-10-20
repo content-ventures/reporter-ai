@@ -79,6 +79,11 @@ export function receivedHref(transcriptId: string) {
 export async function driveReceived(path: string[]) {
   const id = path.length === 1 ? z.string().uuid().parse(path[0]) : path.length === 0 ? null : undefined;
   if (id === undefined) throw new FlowError('NOT_FOUND', 404);
+  // The intake runs only in the cloud: a local database has no received files (nor their table).
+  if (reporterDeploymentMode() !== 'cloud') {
+    if (id === null) return reply({ items: [] });
+    throw new FlowError('NOT_FOUND', 404);
+  }
   const items = await transaction('runtime', async client => (await client.query('SELECT public.reporter_drive_received($1) AS value', [id])).rows[0].value as unknown[]);
   if (id === null) return reply({ items });
   if (!items[0]) throw new FlowError('NOT_FOUND', 404);
