@@ -91,7 +91,9 @@ function nameTokens(text: string): string[] {
     words.forEach((word, index) => {
       const acronym = /^\p{Lu}{2,}$/u.test(word) || /^\p{Lu}+\p{Ll}*\p{Lu}+/u.test(word);
       const capital = /^\p{Lu}\p{Ll}{2,}/u.test(word);
-      if (acronym || capital && index > 0) tokens.push(word);
+      // A word in another script (a model glitch such as "معلمFIELDERROR") is checked like a name.
+      const foreign = /\p{L}/u.test(word) && /[^\p{Script=Latin}\p{N}\p{P}\p{S}]/u.test(word);
+      if (acronym || foreign || capital && index > 0) tokens.push(word);
     });
   }
   return tokens;

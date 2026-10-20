@@ -23,7 +23,7 @@ import { mapEditorialPassages } from './editorial-passages';
 import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
 import { contiguousSourcePassages, r1ArticleIssue, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
-import { articleContractFor, outletPunctuation } from '../domain/formats.ts';
+import { articleContractFor, articleGateFor, outletPunctuation } from '../domain/formats.ts';
 import { ungroundedTerms } from '../domain/grounding.ts';
 import { currentSourceVersion } from '../domain/source.ts';
 import type { Person } from '../domain/workspace.ts';
@@ -295,7 +295,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       });
       const dek = reviewed?.dek && !grounding?.(reviewed.dek).length ? reviewed.dek : undefined;
       const body = emphasizeArticleQuotes({ type: 'article' as const,title: article.title,...(dek ? { dek } : {}),blocks });
-      const issue = r1ArticleIssue(body, input.record.sources, articleContractFor(input.record.production.brief));
+      const issue = r1ArticleIssue(body, input.record.sources, articleGateFor(input.record.production.brief));
       // No block/version is committed until the WHOLE sequential or single output passes.
       if (issue) throw new FlowError(issue, 502);
       if (!articlePlainText(body).trim()) throw new FlowError('EMPTY_ARTICLE',502);

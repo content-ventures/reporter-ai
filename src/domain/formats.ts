@@ -164,6 +164,17 @@ export function articleContractFor(brief: FormatBrief): ArticleContract {
   return { minChars: option.minChars, maxChars: option.maxChars, targetChars: option.targetChars, minQuotes: spec.minQuotes };
 }
 
+/**
+ * What blocks a text: R1's limits for the article; for a format, its ceiling and its quotes. A
+ * format's minimum guides the writing but never fails it: when the material gives less, the text
+ * comes out shorter (never padded) and "Tamanho" says so.
+ */
+export function articleGateFor(brief: FormatBrief): ArticleContract | Omit<ArticleContract, 'minChars'> {
+  if (!brief.format) return articleContractFor(brief);
+  const contract = articleContractFor(brief);
+  return { maxChars: contract.maxChars, targetChars: contract.targetChars, minQuotes: contract.minQuotes };
+}
+
 /** "Cobertura de estande · Completo", or undefined for the article. */
 export function formatLabel(brief: FormatBrief): string | undefined {
   if (!brief.format) return undefined;
@@ -204,5 +215,6 @@ export function briefSizeName(brief: SizedBrief): string {
  * closing period moves; "?" and "!" carry meaning and stay. The literal-quote check accepts it.
  */
 export function outletPunctuation(text: string): string {
-  return text.replace(/\.”,/g, '”,');
+  // A sentence that opens a list ends with a colon; the output contract still appends a stop.
+  return text.replace(/\.”,/g, '”,').replace(/([.!?])”\./g, '$1”').replace(/:\s*\.(?=\s|$)/g, ':');
 }
