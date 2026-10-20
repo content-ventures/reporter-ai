@@ -18,7 +18,9 @@ function termPattern(term: string, crossLines = false, exact = false): RegExp | 
   const words = term.normalize('NFC').trim().split(/\s+/u).filter(Boolean);
   if (!words.length) return undefined;
   // A combining accent belongs to its word: "Jose" never matches the start of a decomposed "José".
-  return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${words.map(escape).join(crossLines ? '\\s+' : '[^\\S\\n]+')}(?![\\p{L}\\p{M}\\p{N}])`, exact ? 'gu' : 'giu');
+  // Inside a cue a sentence wraps over one line break; a blank line separates cues and is never crossed.
+  const space = crossLines ? '(?:[^\\S\\n]+|[^\\S\\n]*\\n[^\\S\\n]*)' : '[^\\S\\n]+';
+  return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${words.map(escape).join(space)}(?![\\p{L}\\p{M}\\p{N}])`, exact ? 'gu' : 'giu');
 }
 const crossesLines = (text: string) => ['srt', 'vtt'].includes(detectTranscriptFormat(text));
 
@@ -99,17 +101,16 @@ export type TermCorrection = { text: string; count: number; refused?: undefined 
 export function correctTerm(text: string, from: string, to: string): TermCorrection {
   const result = replaceTerm(text, from, to);
   if (!result.count) return result;
-  // Who says each word, in order. Stretches may regroup by size when a name grows or shrinks; no word
-  // may change speaker, and a label may neither appear nor vanish.
+  // Who says each word, in order, leaving out the words of the term itself, which are what changes.
+  // Stretches may regroup and a split name may stay as it was; no other word may change speaker, and
+  // no label, identifier or time may turn into speech or vanish from it.
+  const plain = (word: string) => word.normalize('NFC').toLocaleLowerCase('pt-BR').replace(/[^\p{L}\p{M}\p{N}]/gu, '');
+  const changing = new Set(`${from} ${to}`.split(/\s+/u).map(plain).filter(Boolean));
   const said = (raw: string, rename: boolean) => parseTranscript(raw).segments.flatMap(segment => {
     const speaker = segment.speaker === undefined ? '' : (rename ? replaceTerm(segment.speaker, from, to).text : segment.speaker).normalize('NFC');
-    const speech = rename ? replaceTerm(segment.text, from, to).text : segment.text;
-    return speech.normalize('NFC').split(/\s+/u).filter(Boolean).map(word => `${speaker}\u0000${word}`);
+    return segment.text.split(/\s+/u).filter(word => plain(word) && !changing.has(plain(word))).map(word => `${speaker}\u0000${word.normalize('NFC')}`);
   });
-  const before = parseTranscript(text), after = parseTranscript(result.text);
-  // Without any speaker before or after (a Whisper transcript), no word can change speaker.
-  const unlabeled = before.segments.every(segment => segment.speaker === undefined) && after.segments.every(segment => segment.speaker === undefined);
-  const kept = before.format === after.format
-    && (unlabeled || JSON.stringify(said(text, true)) === JSON.stringify(said(result.text, false)));
+  const kept = parseTranscript(text).format === parseTranscript(result.text).format
+    && JSON.stringify(said(text, true)) === JSON.stringify(said(result.text, false));
   return kept ? result : { refused: 'structure', count: result.count };
 }
