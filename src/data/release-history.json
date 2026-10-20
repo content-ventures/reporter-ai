@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.10.0",
+  "currentVersion": "0.11.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,52 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.11.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-20",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 9 validated changes: copy event formats with their linha fina and box; store only the funnel prompts someone edited; never fail a format text for being short.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Add event coverage formats to the brief"
+        },
+        {
+          "type": "Added",
+          "description": "Write event formats through grounded funnels"
+        },
+        {
+          "type": "Added",
+          "description": "Choose event format, size and event in the pauta"
+        },
+        {
+          "type": "Added",
+          "description": "Edit the linha fina and size formats by characters"
+        },
+        {
+          "type": "Fixed",
+          "description": "Tune event funnels from live rehearsals"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover event formats in the pauta, smoke and docs"
+        },
+        {
+          "type": "Fixed",
+          "description": "Never fail a format text for being short"
+        },
+        {
+          "type": "Improved",
+          "description": "Store only the funnel prompts someone edited"
+        },
+        {
+          "type": "Added",
+          "description": "Copy event formats with their linha fina and box"
+        }
+      ]
+    },
     {
       "version": "0.10.0",
       "roadmapRelease": "R0",

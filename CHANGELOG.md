@@ -4,6 +4,29 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-20
+
+### Added
+
+- Add event coverage formats to the brief.
+- Write event formats through grounded funnels.
+- Choose event format, size and event in the pauta.
+- Edit the linha fina and size formats by characters.
+- Copy event formats with their linha fina and box.
+
+### Fixed
+
+- Tune event funnels from live rehearsals.
+- Never fail a format text for being short.
+
+### Maintenance
+
+- Cover event formats in the pauta, smoke and docs.
+
+### Improved
+
+- Store only the funnel prompts someone edited.
+
 ## [0.10.0] - 2026-10-20
 
 ### Added
