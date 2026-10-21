@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { CLAIM_KINDS, MAX_CHECKED_CLAIMS, checkable, settleClaim } from '../domain/fact-check.ts';
 import type { FactCheck, FactClaim, FactSource } from '../domain/fact-check.ts';
+import type { Citation } from '../domain/citation-library.ts';
+import { isSuggestedCitation } from '../domain/citation-suggestions.ts';
 import { FlowError } from './errors.ts';
 
 /**
@@ -13,6 +15,11 @@ import { FlowError } from './errors.ts';
 
 /** Citations of one generated article checked automatically: up to three searches each. */
 export const AUTO_FACT_CHECKS = 8;
+
+/** What a generated text queues for that check: the citations it quotes, never a suggested passage it did not quote. */
+export function autoFactCheckIds(citations: readonly Pick<Citation, 'id' | 'origin' | 'authorConfirmed'>[]): string[] {
+  return citations.filter(citation => !isSuggestedCitation(citation)).map(citation => citation.id).slice(0, AUTO_FACT_CHECKS);
+}
 
 export type FactCheckSubject = { id: string; text: string; speaker: string; recordedOn?: string; context?: string };
 export type Generate = (instruction: string, input: unknown, schema: object, signal: AbortSignal) => Promise<{ value: unknown; model: string }>;

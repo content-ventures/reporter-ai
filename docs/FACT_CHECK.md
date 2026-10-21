@@ -62,8 +62,8 @@ A disputed claim caps the score at 30, so a popular but disputed quote never ran
 
 ## When it runs
 
-- **On demand.** On the Citações page, "Checar" checks one quote. A recheck of a quote that was already checked runs again. "Checar pendentes" checks up to 20 quotes one after the other and stops at the first refusal, such as exhausted credits.
-- **After generation.** When an article or event text is generated, the worker queues the check of up to 8 of its citations on the completed run (`job.factCheck`), alongside the optional images. `fact-check-worker.ts` claims the run with its own lease (`reporter_ed_fact_check_claim`). It skips citations that are already checked and saves each result as it settles. A missing key, a refused key or exhausted credits fail the task without retries. The text never waits.
+- **On demand.** On the Citações page, "Checar" checks one quote. A recheck of a quote that was already checked runs again. "Checar pendentes" checks up to 20 quotes one after the other and stops at the first refusal, such as exhausted credits. A suggested citation ("Sugerida", an outline passage the text did not quote) stays out of "Pendentes" and of that batch until a person confirms its author; "Checar" still checks it on request.
+- **After generation.** When an article or event text is generated, the worker queues the check of up to 8 of the citations the text quotes on the completed run (`job.factCheck`), alongside the optional images. The suggested citations saved with them are not queued. `fact-check-worker.ts` claims the run with its own lease (`reporter_ed_fact_check_claim`). It skips citations that are already checked and saves each result as it settles. A missing key, a refused key or exhausted credits fail the task without retries. The text never waits.
 - **In the studio.** The Checagem shows "Veracidade das falas". A disputed quotation, or one that no source validated, is a warning that points to the quotation and never blocks sending: the editor decides whether to add context or a counterpoint, or to use another quote.
 
 ## Configuration and cost
