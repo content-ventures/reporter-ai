@@ -94,7 +94,7 @@ test('Notícias e Fontes leem o servidor: manchetes primeiro e texto ao abrir; o
   await expect(page.getByRole('heading', { level: 1, name: 'Notícias', exact: true })).toBeVisible();
   await expect(page.getByText('Demo', { exact: true })).toHaveCount(0);
   const headline = page.getByTestId(`news-card-${STORY.id}`);
-  await expect(headline.getByRole('heading', { name: STORY.title, exact: true })).toBeVisible();
+  await expect(headline.getByRole('heading', { name: `Ler notícia: ${STORY.title}`, exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toHaveCount(0);
   await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
   expect(detailReads, 'a manchete não carrega o texto antes de ser aberta').toBe(0);

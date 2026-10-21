@@ -1,9 +1,8 @@
 'use client';
 
-import { Badge, BrandMark, Card, CardLink, EditableTitle, MediaFrame, MetaList, PageStack, Prose, formatRelative } from '@content-ventures/design-system/v3';
+import { Badge, BrandMark, Card, CardHeader, CardLink, MediaFrame, MetaList, PageStack, formatRelative } from '@content-ventures/design-system/v3';
 import type { NewsItem } from '@/domain/hard-news';
 import type { SourceRating } from '@/domain/news-source-rating';
-import { SOURCE_RELEVANCE_LABELS } from '@/domain/news-source-rating';
 import { newsLogoUrl } from '@/domain/news-branding';
 import { SourceRatingBadge } from '../source-rating';
 import { returnLabel } from './radar-model';
@@ -15,32 +14,26 @@ const DECISIONS = {
   discarded: { label: 'Descartada', tone: 'gray' },
 } as const;
 
-/** A headline previews the received lead; reading and editorial decisions start on click. */
-export function HeadlineCard({ item, rating, now, featured = false, onSelect }: {
-  item: NewsItem; rating?: SourceRating; now: number; featured?: boolean; onSelect: (id: string) => void;
+/** A compact, consistent cover and headline; the received text opens on click. */
+export function HeadlineCard({ item, rating, now, onSelect }: {
+  item: NewsItem; rating?: SourceRating; now: number; onSelect: (id: string) => void;
 }) {
-  const limit = featured ? 320 : 150;
-  const excerpt = item.excerpt.length > limit ? `${item.excerpt.slice(0, limit).replace(/\s+\S*$/, '')}…` : item.excerpt;
   const decision = item.status === 'new' ? undefined : DECISIONS[item.status];
-  return <Card as="article" padding={featured ? 'lg' : 'md'} interactive data-testid={`news-card-${item.id}`}>
+  return <Card as="article" padding="sm" interactive data-testid={`news-card-${item.id}`}>
     <PageStack>
-      {item.imageUrl ? <MediaFrame src={item.imageUrl} alt={`Imagem da notícia: ${item.title}`} ratio="16/9" fit="cover" /> : null}
+      <MediaFrame src={item.imageUrl} alt={`Imagem da notícia: ${item.title}`} ratio="3/1" fit="cover" />
       <MetaList size="sm" items={[
-        <BrandMark key="logo" name={item.source} src={newsLogoUrl(item.url)} size={featured ? 'md' : 'sm'} decorative />,
+        <BrandMark key="logo" name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />,
         item.source,
         formatRelative(new Date(Math.min(Date.parse(item.publishedAt), now)), new Date(now)),
-      ]} />
-      <EditableTitle value={item.title} label="Manchete" readOnly as="h3" size={featured ? 'document' : 'card'} onCommit={() => undefined} />
-      {excerpt ? <Prose variant="compact" measure="wide">{excerpt}</Prose> : null}
-      <MetaList size="sm" items={[
-        <SourceRatingBadge key="rating" rating={rating} />,
-        featured && rating ? `Relevância ${SOURCE_RELEVANCE_LABELS[rating.relevance].toLowerCase()}` : null,
+        <SourceRatingBadge key="rating" rating={rating} compact />,
         decision ? <Badge key="decision" variant="text" tone={decision.tone} dot>{decision.label}</Badge> : null,
         item.status === 'later' && item.laterUntil ? returnLabel(item.laterUntil, now) : null,
-        item.translation?.status === 'translated' ? 'Traduzida · pt-BR' : null,
         item.duplicates.length ? `${item.duplicates.length + 1} veículos` : null,
       ]} />
-      <CardLink onClick={() => onSelect(item.id)} aria-label={`Ler notícia: ${item.title}`}>Ler notícia</CardLink>
+      <CardHeader size="md" titleAs="h3" title={
+        <CardLink onClick={() => onSelect(item.id)} aria-label={`Ler notícia: ${item.title}`}>{item.title}</CardLink>
+      } />
     </PageStack>
   </Card>;
 }

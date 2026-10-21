@@ -54,18 +54,13 @@ export function RadarBoard(props: RadarBoardProps) {
 
 function Headlines({ items, feeds, now, tab, query, onSelect, onClearFilters, visibleCount: limit, onLoadMore }: Pick<RadarBoardProps, 'feeds' | 'now' | 'tab' | 'query' | 'onSelect' | 'onClearFilters' | 'visibleCount' | 'onLoadMore'> & { items: NewsItem[] }) {
   if (!items.length) return <EmptyQueue query={query} onClearFilters={onClearFilters} decided={tab === 'decided'} />;
-  const [lead, ...rest] = items.slice(0, limit);
-  const card = (item: NewsItem, featured = false) => <HeadlineCard key={item.id} item={item}
-    rating={sourceForNews(item, feeds)?.rating} now={now} featured={featured} onSelect={onSelect} />;
+  const card = (item: NewsItem) => <HeadlineCard key={item.id} item={item}
+    rating={sourceForNews(item, feeds)?.rating} now={now} onSelect={onSelect} />;
   return <PageStack data-testid="news-headlines">
     <Section title={tab === 'open' ? 'Últimas manchetes' : 'Notícias decididas'} meta={`${items.length} ${items.length === 1 ? 'notícia' : 'notícias'}`}>
       <PageStack>
-        {tab === 'open' && !query ? <Grid columns="2:1" collapseBelow={960}>
-          {card(lead, true)}
-          {rest.length ? <PageStack>{rest.slice(0, 2).map(item => card(item))}</PageStack> : null}
-        </Grid> : null}
-        <Grid as="ul" label="Manchetes" columns="auto" min={300} gap="md">
-          {(tab === 'open' && !query ? rest.slice(2) : items.slice(0, limit)).map(item => card(item))}
+        <Grid as="section" label="Manchetes" columns="auto" min={280} gap="sm">
+          {items.slice(0, limit).map(item => card(item))}
         </Grid>
         {items.length > limit ? <Button variant="secondary" onClick={onLoadMore}>Carregar mais manchetes</Button> : null}
       </PageStack>
