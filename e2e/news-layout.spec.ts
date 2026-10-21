@@ -207,7 +207,8 @@ for (const viewport of VIEWPORTS) {
       await expect(second.getByText('Imagem indisponível', { exact: true })).toHaveCount(0);
       const broken = page.getByTestId(`news-card-${THIRD}`);
       await expect(broken.getByRole('img', { name: /imagem indisponível/i })).toBeVisible();
-      await expect(broken.getByText('Imagem indisponível', { exact: true })).toBeVisible();
+      // The DS keeps the accessible label and icon, hiding the caption below 112 px.
+      await expect(broken.locator('[data-state="error"] svg')).toBeVisible();
       await expect(page.getByTestId('news-headlines').getByText('Os novos dados ajudam a acompanhar a produção, o comércio e os próximos desafios do setor.', { exact: true })).toHaveCount(0);
       await expectCompactHeadlines(page);
       if (viewport.width === 1440 || viewport.width === 709) await page.screenshot({ path: test.info().outputPath(`news-compact-${viewport.width}.png`), animations: 'disabled' });
@@ -263,6 +264,8 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(2);
       await expect(page.getByRole('heading', { level: 2, name: 'Tilápia · últimas 24 h', exact: true })).toBeVisible();
       await first.getByRole('button', { name: `Ler notícia: ${FIRST_TITLE}`, exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`/news\\?item=${FIRST}$`));
+      await expect(page.getByRole('heading', { level: 2, name: FIRST_TITLE, exact: true })).toBeVisible();
       await page.goBack();
       await expect(topic).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(2);
