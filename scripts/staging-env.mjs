@@ -7,7 +7,9 @@ import { assertStagingTarget } from './lib/staging-target.mjs';
 
 const PORTAL = '10000000-0000-0000-0000-000000000101';
 const SECRETS = ['REPORTER_WORKER_PASSWORD', 'REPORTER_RUNTIME_PASSWORD', 'REPORTER_APP_ORIGINS', 'GROQ_API_KEY', 'OPENAI_API_KEY',
-  'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY', 'TAVILY_API_KEY'];
+  'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY'];
+/** Passed on when present: the fact check stays off without it. */
+const OPTIONAL = ['TAVILY_API_KEY'];
 
 /**
  * Writes a mode-0600 env file that runs the server code against staging: owner, runtime and
@@ -46,6 +48,7 @@ export async function writeStagingEnvironment(file, environment = process.env, {
     REPORTER_DATABASE_URL: role('runtime', values.REPORTER_RUNTIME_PASSWORD), REPORTER_WORKER_DATABASE_URL: role('worker', values.REPORTER_WORKER_PASSWORD),
     REPORTER_WORKER_URL: deployed.NEON_FUNCTION_REPORTERWORKER_BASE_URL,
     ...Object.fromEntries(SECRETS.map(name => [name, values[name]])),
+    ...Object.fromEntries(OPTIONAL.filter(name => values[name]?.trim()).map(name => [name, values[name]])),
   };
   await appendFile(file, `\n${Object.entries(settings).map(([name, value]) => `${name}=${JSON.stringify(value)}`).join('\n')}\n`, { mode: 0o600 });
 }

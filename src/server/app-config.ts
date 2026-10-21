@@ -17,8 +17,12 @@ export function appConfiguration(environment: Environment = process.env) {
     openai: present(environment, 'OPENAI_API_KEY', 'OPEN_AI_API_KEY'),
     anthropic: present(environment, 'ANTHROPIC_API_KEY', 'CLAUDE_API_KEY'),
     pixabay: present(environment, 'PIXABAY_API_KEY'),
-    tavily: present(environment, 'TAVILY_API_KEY'),
   };
+}
+
+/** Settings that turn a feature on; their absence turns it off, never the deployment. */
+export function optionalConfiguration(environment: Environment = process.env) {
+  return { tavily: present(environment, 'TAVILY_API_KEY') };
 }
 
 /** Which worker the app wakes, comparable with a worker URL without revealing it. */
@@ -40,6 +44,6 @@ export function appHealth(environment: Environment = process.env) {
     commit: environment.VERCEL_GIT_COMMIT_SHA?.trim() || 'unknown',
     environment: environment.VERCEL_ENV?.trim() || 'local',
     ready: mode !== 'cloud' || Object.values(configured).every(Boolean),
-    configured, worker: workerFingerprint(environment.REPORTER_WORKER_URL),
+    configured, optional: optionalConfiguration(environment), worker: workerFingerprint(environment.REPORTER_WORKER_URL),
   };
 }
