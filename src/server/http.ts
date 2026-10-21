@@ -17,6 +17,7 @@ import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
 import { handleFactCheck } from './fact-check';
+import { readNewsSearch, saveNewsSearch, requestNewsSearch } from './news-search.ts';
 import { handleNews, requireNewsEdit } from './news-intake.ts';
 import { discoverNewsSources } from './news-discovery.ts';
 import { decideNewsItem } from './news-decisions.ts';
@@ -87,6 +88,12 @@ function reply(value: unknown, status = 200) {
 }
 const messages: Record<string, string> = {
   ...NEWS_MESSAGES,
+  NEWS_SEARCH_INVALID: 'Confira o portal, setor e temas. Use até 6 temas e um limite de 1 a 48 buscas por dia.',
+  NEWS_SEARCH_CONFLICT: 'A configuração mudou em outra sessão. Feche e abra novamente para atualizar.',
+  NEWS_SEARCH_MISSING: 'Configure os temas e o portal antes de buscar notícias.',
+  NEWS_SEARCH_PAUSED: 'Ative a busca complementar antes de buscar notícias.',
+  NEWS_SEARCH_LIMIT: 'O limite diário de buscas foi atingido. A coleta retoma no próximo dia UTC.',
+  NEWS_SEARCH_EXCLUDED: 'Este endereço pertence ao portal cliente ou a um domínio excluído da coleta.',
   NEWS_DECISION_INVALID: 'Confira a decisão e tente novamente.',
   NEWS_DECISION_CONFLICT: 'Esta notícia foi alterada por outra pessoa. Confira a situação atual antes de decidir novamente.',
   NEWS_PAGE_CURSOR_INVALID: 'Não foi possível continuar a leitura das notícias. Atualize o radar e tente novamente.',
@@ -190,6 +197,12 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
+    if (path[0] === 'news' && path[1] === 'search') {
+      if (path.length === 2 && request.method === 'GET') return reply(await readNewsSearch());
+      if (path.length === 2 && request.method === 'POST') { const view = await saveNewsSearch(await jsonBody(request)); kick(); return reply(view); }
+      if (path.length === 3 && path[2] === 'collect' && request.method === 'POST') { const view = await requestNewsSearch(); kick(); return reply(view); }
+      throw new FlowError('NOT_FOUND',404);
+    }
     if (path[0] === 'news' && path[1] === 'discover' && path.length === 2 && request.method === 'POST') {
       await requireNewsEdit();
       return reply(await discoverNewsSources(await jsonBody(request), undefined, request.signal));
