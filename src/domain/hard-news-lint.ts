@@ -10,6 +10,8 @@
  * - body rules run with every quotation (“…”, "…", «…») blanked out, so a speaker's own words never
  *   count against the newsroom; the headline is read whole, because it is always the newsroom's.
  * Word boundaries are Unicode-aware: "único" and "amanhã" match as whole words, "unicórnio" does not.
+ * A relative date is "amanhã" or "ontem" in the body; in the headline "hoje" counts too, because a
+ * headline's "hoje" always means the day it went out, while the body's often means "nowadays".
  */
 import { inlinesText } from './article.ts';
 import type { ArticleBody, ParagraphBlock } from './article.ts';
@@ -61,6 +63,7 @@ const CRUTCH = W('em resumo|em síntese|sendo assim|neste sentido|vale ressaltar
 const SELF_CLAIM = W('(?:o|a|os|as) (?:únic[oa]s?|pioneir[oa]s?|primeir[oa]s?) (?:empresa|marca|indústria|fabricante|laboratório|produto|vacina|do Brasil|do país|do mercado|no Brasil|no país|no mercado|a oferecer|a lançar|a produzir)|líder(?:es)? (?:de|do|no|em) (?:mercado|segmento|setor)|pioneir[oa]s?');
 const CLAIM_ATTRIBUTION = W('disse|afirmou|informou|segundo|de acordo com|diz ser|afirma ser|se diz|se apresenta como');
 const RELATIVE_DATE = W('amanhã|ontem');
+const HEADLINE_RELATIVE_DATE = W('hoje|amanhã|ontem');
 /** Folded function words of four letters or more: sharing one says nothing about the lide's subject. */
 const STOPWORDS = new Set(['para', 'pela', 'pelo', 'pelas', 'pelos', 'como', 'mais', 'menos', 'entre', 'sobre', 'esta', 'este', 'estas', 'estes',
   'essa', 'esse', 'isso', 'isto', 'desta', 'deste', 'dessa', 'desse', 'nesta', 'neste', 'nessa', 'nesse', 'seus', 'suas', 'mesmo', 'mesma',
@@ -136,6 +139,8 @@ export function hardNewsLint(body: ArticleBody, options: HardNewsLintOptions): {
   const softVerbs = headlineSoftVerbs(body.title);
   for (const verb of softVerbs) report('HEADLINE_SOFT_VERB', verb);
   for (const claim of found(SELF_CLAIM, body.title)) report('HEADLINE_SELF_CLAIM', claim);
+  const headlineDates = found(HEADLINE_RELATIVE_DATE, body.title);
+  for (const date of headlineDates) report('RELATIVE_DATE', `headline: ${date}`);
 
   const unquoted = texts.map(outsideQuotes).join('\n');
   const evaluative = found(EVALUATIVE, unquoted);
@@ -181,7 +186,7 @@ export function hardNewsLint(body: ArticleBody, options: HardNewsLintOptions): {
     promotional,
     crutches,
     selfClaimsUnattributed: unattributed.length,
-    relativeDates: relativeDates.length,
+    relativeDates: headlineDates.length + relativeDates.length,
     quotes: seen.size,
     repeatedQuotes: quotations.length - seen.size,
     averageQuoteWords: quotations.length ? Math.round(quoteWords / quotations.length * 10) / 10 : 0,

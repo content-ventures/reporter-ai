@@ -239,6 +239,22 @@ test('awards list every winner and every nominee the material names, with a numb
   assert.match(awards.intro.prompt, /os vencedores e os indicados vêm nas seções/);
 });
 
+test('headlines and texts carry the date as the event gives it, never hoje, amanhã or ontem', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  assert.ok(HARD_NEWS.includes('- Datas: no título e no texto, a data ou o dia da semana como o evento ou a fonte os trazem ("nesta terça-feira", "em 20 de outubro"); fora das aspas, nunca "hoje", "amanhã" ou "ontem", mesmo que a pauta ou a fonte os usem.'));
+  // The shared block reaches every headline: the structure prompts of the funnels and the 3.0 system message.
+  for (const format of EDITORIAL_FORMATS) {
+    assert.ok(definition.funnels[format].outline.prompt.includes(HARD_NEWS), format);
+    for (const key of ['intro', 'section'] as const)
+      assert.match(definition.funnels[format][key].prompt, /Fora das aspas, nunca escreva "hoje", "amanhã" ou "ontem", nem ao lado da data/, `${format} ${key}`);
+  }
+  assert.ok(definition.systemPrompt.includes(HARD_NEWS));
+  const note = definition.funnels.note;
+  assert.match(note.outline.prompt, /use o dia da semana ou a data como a fonte ou o evento os trazem \("nesta terça-feira"\), nunca "hoje", "amanhã" ou "ontem", mesmo que a pauta os use/);
+  assert.match(note.intro.prompt, /Datas exatamente como a fonte, event e event\.today as trazem; nunca "hoje", "amanhã" ou "ontem", nem ao lado da data/);
+  assert.doesNotMatch(note.intro.prompt, /"ontem" sem a data/);
+});
+
 test('the newsroom\'s note on a curated quote is never a source', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
   for (const prompt of [definition.steps.outline.prompt, ...EDITORIAL_FORMATS.map(format => definition.funnels[format].outline.prompt)])

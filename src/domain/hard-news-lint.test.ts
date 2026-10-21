@@ -65,6 +65,20 @@ test('boundaries around accented letters', () => {
   assert.deepEqual(codes(article('Empresa lança selo', ['Montemos a linha em São Paulo, disse o diretor.'])), []);
 });
 
+test('a relative date in the headline is flagged too', () => {
+  const lint = (title: string, text = 'O ministro da Pesca abre a feira nesta terça-feira (20), em São Paulo.') => hardNewsLint(article(title, [text]), { minQuotes: 0 });
+  // The rehearsal's note: the pauta said "amanhã" and the headline kept it while the body had the date.
+  const note = lint('Ministro da Pesca participa amanhã da abertura do Seafood Show');
+  assert.deepEqual(note.issues, [{ code: 'RELATIVE_DATE', detail: 'headline: amanhã' }]);
+  assert.equal(note.metrics.relativeDates, 1);
+  assert.deepEqual(details(article('Feira abre hoje em São Paulo', ['A feira abriu na terça-feira (20).']), 'RELATIVE_DATE'), ['headline: hoje']);
+  assert.deepEqual(details(article('Exportação cai em relação a ontem', ['O ministro disse ontem que a feira cresceu.']), 'RELATIVE_DATE'), ['headline: ontem', 'ontem']);
+  assert.equal(lint('Ministro da Pesca participa amanhã da abertura', 'O ministro participa amanhã da abertura.').metrics.relativeDates, 2);
+  // An absolute date passes, and the body's "hoje" (nowadays) is not a relative date.
+  assert.deepEqual(lint('Ministro da Pesca participa nesta terça-feira da abertura do Seafood Show').issues, []);
+  assert.deepEqual(lint('Feira abre em 20 de outubro', 'Hoje o Brasil exporta tilápia a 30 países, segundo a associação.').issues, []);
+});
+
 test('evaluative attribution outside quotes only', () => {
   const body = article('Fábrica dobra a produção', ['O diretor ressaltou que a fábrica cresceu. “A gente destaca o sabor do peixe”, disse.']);
   assert.deepEqual(details(body, 'EVALUATIVE_ATTRIBUTION'), ['ressaltou']);
