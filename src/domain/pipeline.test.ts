@@ -189,6 +189,19 @@ test('the newsroom\'s note on a curated quote is never a source', () => {
     assert.doesNotMatch(definition.funnels[format][key].prompt, /relevance/, `${format} ${key}`);
 });
 
+test('the style references follow the rules they illustrate', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  // The awards winner is the person of the list, the institution her affiliation, and no number the list lacks.
+  const awards = definition.funnels.awards.intro.prompt;
+  assert.match(awards, /Título: Ana Souza, da Cooperativa Rio Claro, vence categoria Produção/);
+  assert.match(awards, />> Ouro: Ana Souza, da Cooperativa Rio Claro \| Projeto:/);
+  assert.doesNotMatch(awards, /Cooperativa Rio Claro venceu|30%/);
+  // A price, a rate, a projection or a schedule names its source.
+  for (const [format, pattern] of [['stand', /R\$ 24,90, segundo a empresa/], ['opening', /6% ao ano, segundo o secretário/],
+    ['panel', /Segundo ela, a projeção/], ['note', /Segundo a empresa, o primeiro embarque/]] as const)
+    assert.match(definition.funnels[format].section.prompt, pattern, format);
+});
+
 test('a saved revision without funnels gets the defaults; saved funnels are never changed', () => {
   const saved = defaultPipelineDefinition();
   assert.equal(saved.funnels, undefined);

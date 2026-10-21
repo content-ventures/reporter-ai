@@ -16,7 +16,7 @@ const details = (body: ArticleBody, code: HardNewsIssueCode, options: HardNewsLi
 
 /** The stand style reference of the funnel prompts (an invented text). */
 const STAND = article('Pescados Litoral lança tilápia defumada em porções de 200 gramas na Feira Modelo 2026', [
-  'A Pescados Litoral lançou na Feira Modelo 2026 uma tilápia defumada em porções de 200 gramas, voltada ao varejo. O produto chega às gôndolas do Sudeste em julho, com preço sugerido de R$ 24,90.',
+  'A Pescados Litoral lançou na Feira Modelo 2026 uma tilápia defumada em porções de 200 gramas, voltada ao varejo. O produto chega às gôndolas do Sudeste em julho, com preço sugerido de R$ 24,90, segundo a empresa.',
   'O diretor comercial da empresa, Ricardo Lemos, disse que a porção menor atende a um pedido dos supermercados. “O cliente quer levar uma refeição para duas pessoas, não um quilo de peixe”, afirmou.',
   { heading: 'Meta de vendas e capacidade da fábrica' },
   'Segundo Lemos, a linha deve responder por 15% das vendas de congelados no primeiro ano. A fábrica passou a operar em dois turnos para atender os pedidos.',
@@ -127,7 +127,7 @@ test('metrics', () => {
   assert.equal(metrics.leadNumber, true);
   assert.equal(metrics.headlineNumber, true);
   assert.deepEqual(metrics.headlineSoftVerbs, []);
-  assert.equal(metrics.neutral, 6);
+  assert.equal(metrics.neutral, 7);
   assert.equal(metrics.evaluative, 0);
   assert.equal(metrics.quotes, 3);
   assert.equal(metrics.averageQuoteWords, 10);
