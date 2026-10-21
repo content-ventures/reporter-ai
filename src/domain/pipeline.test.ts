@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compactFunnels, defaultPipelineDefinition, formatPipelineDefinition, FUNNEL_STEP_KEYS, pipelineRevision, pipelineRunSteps, pipelineJobKeys, renderPipelinePrompt, validatePipelineTemplates, withFormatFunnels, PIPELINE_SCHEMAS } from './pipeline.ts';
 import { EDITORIAL_FORMATS } from './formats.ts';
+import { HARD_NEWS } from './format-prompts.ts';
 import type { PipelineVariables } from './pipeline.ts';
 
 const variables: PipelineVariables = { source: 'Dados com {{brief}} e {{env.SECRET}}',brief: 'Pauta real',sizing: '',outline: '',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '', event: '', people: '' };
@@ -131,6 +132,24 @@ test('event funnels: defaults validate, keep the anti-invention rules and the ho
     assert.match(funnel.section.prompt, /UNGROUNDED_FACT/);
     assert.match(funnel.outline.prompt, /dek/);
   }
+});
+
+test('every funnel writes hard news', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  assert.equal(validatePipelineTemplates(definition), undefined);
+  for (const format of EDITORIAL_FORMATS) {
+    const funnel = definition.funnels[format];
+    for (const key of ['outline', 'intro', 'section'] as const) assert.ok(funnel[key].prompt.includes(HARD_NEWS), `${format} ${key}`);
+    for (const key of ['intro', 'section'] as const) assert.doesNotMatch(funnel[key].prompt, /explica, ressalta|Verbos de atribuição variados|citações longas/, `${format} ${key}`);
+    assert.match(funnel.outline.prompt, /de 1 a 4 ids para a abertura/, format);
+    // The style references are invented examples, never a published text of a real company or event.
+    assert.match(funnel.intro.prompt, /exemplo fictício/, format);
+    assert.doesNotMatch(funnel.intro.prompt, /BomPORTO|Friocenter|Frescatto|Trident|Gregolin|Édipo|Aquishow|APAS Show|IFC Brasil|SENA/, format);
+    for (const key of FUNNEL_STEP_KEYS) assert.ok(funnel[key].prompt.length <= 20000, `${format} ${key}: ${funnel[key].prompt.length}`);
+  }
+  assert.doesNotMatch(definition.funnels.stand.outline.prompt, /Verbos da casa/);
+  assert.doesNotMatch(definition.funnels.awards.intro.prompt, /Confira a seguir/);
+  assert.match(definition.funnels.stand.section.prompt, /Gravação de estande sem rótulos de falante/);
 });
 
 test('a saved revision without funnels gets the defaults; saved funnels are never changed', () => {
