@@ -5,7 +5,8 @@ const DAY = 24 * 60 * 60_000;
 const STOP = new Set(`a ao aos as com como da das de do dos e em entre esse esta este foi mais na nas no nos o os ou para pela pelas pelo pelos por que se sem sobre sua suas seu seus um uma uns umas até após ante
   the and for from into that this with are has have how new its their over under will not you your las los del con una por sus para como que
   anos ano hoje ontem amanhã semana mês meses dias dia durante nesta neste neste essas esses ser são está estão ter tem todo todos toda todas cada quando onde ainda também muito contra antes depois agora
-  anuncia anunciado aumenta ampliar amplia avanço avança busca chega crescem cresce debate destaca desenvolve discute discute discutem entrega entregará expande fortalece ganha impulsiona lança mais marca novo nova novos novas apresenta promove reforça reúne reconhece relança revela terá traz vai vão podem pode primeiro primeira maior maiores melhor melhores próximo próxima próximos próximas`.split(/\s+/));
+  anuncia anunciado aumenta ampliar amplia avanço avança busca chega crescem cresce debate destaca desenvolve discute discutem entrega entregará expande fortalece ganha impulsiona lança marca novo nova novos novas apresenta promove reforça reúne reconhece relança revela terá traz vai vão podem pode primeiro primeira maior maiores melhor melhores próximo próxima próximos próximas
+  acompanha conecta participa participação compartilha realiza realizará recebe recebeu publica publicado aponta apontam acontece confirma consolida conhecimento conhecimentos compromisso sucesso resultado resultados`.split(/\s+/).map(normalize));
 
 function normalize(value: string): string {
   return value.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('pt-BR');

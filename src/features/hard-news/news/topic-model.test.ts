@@ -54,4 +54,5 @@ test('a single story or common headline words never manufacture a topic', () => 
   assert.deepEqual(newsTopics([], NOW), []);
   assert.deepEqual(newsTopics([item('1', 'Aquicultura e aquicultura')], NOW), []);
   assert.deepEqual(newsTopics([item('1', 'Novas para hoje'), item('2', 'Hoje anuncia novas')], NOW), []);
+  assert.deepEqual(newsTopics([item('1', 'Conecta participação'), item('2', 'Participação conecta')], NOW), []);
 });

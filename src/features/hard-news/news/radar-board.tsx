@@ -56,7 +56,7 @@ export function RadarBoard(props: RadarBoardProps) {
   const items = tab === 'open' ? [...hero, ...groups.flatMap(group => group.items)] : decided;
   return <PageStack data-testid="news-headlines">
     {tab === 'open' ? <TopicRadar topics={props.topics} active={props.topic?.key} onSelect={props.onTopic} onClear={props.onClearTopic} /> : null}
-    <Headlines visibleCount={props.visibleCount} onLoadMore={props.onLoadMore} topic={props.topic} onClearTopic={props.onClearTopic}
+    <Headlines visibleCount={props.visibleCount} onLoadMore={props.onLoadMore} topic={tab === 'open' ? props.topic : undefined} onClearTopic={props.onClearTopic}
       items={items} feeds={feeds} now={now} tab={tab} query={query} onSelect={onSelect} onClearFilters={onClearFilters} />
   </PageStack>;
 }
