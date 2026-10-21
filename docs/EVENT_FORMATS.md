@@ -58,8 +58,11 @@ Every format is written as hard news (notícia). The shared `HARD_NEWS` block is
 - **Lead.** The first sentence is the news: who, what, when and where, in 40 words or fewer, with no quote. It never opens with the event, the ceremony, the programme, the theme, someone's presence or a scene. How or why comes in the second sentence.
 - **Inverted pyramid.** Parts go from the most to the least important. The last part ends on its last relevant fact, with no recap, moral or forced closing quote.
 - **Headline.** The fact, with a concrete verb in the present tense, a number when there is one, and 90 characters at most. It never uses destaca, aposta em, reforça, discute, debate, marca, leva, traz or foca em.
+- **Dates.** The headline and the text give the date or weekday as the event or the source writes it. Outside quotes they never say "hoje", "amanhã" or "ontem", even when the pauta does. Without a date, the fact goes undated.
 - **Attribution and tone.** Disse, afirmou, informou, segundo or de acordo com, never ressalta, avalia, pontua or destaca. No promotional adjective outside quotes, and never "Confira".
-- **Quotes.** Short: one idea in one or two sentences. A section carries one literal quote whenever its evidence holds a quotable line: an identified speaker, never the interviewer, four words or more. Awards sections are lists of winners with no quotes.
+- **Quotes.** Short: one idea in one or two sentences. A section carries one literal quote whenever its evidence holds a quotable line: an identified speaker, never the interviewer, four words or more. A second short quote joins the section whenever it brings a number, a reason, a position or a forecast the text does not carry yet. It never repeats a paraphrase, never sits in the lead's first sentence, is always attributed and is never the interviewer's. Curation selects up to two quotable passages per section. The format minimums do not change.
+- **Panels.** Every speaker with a quotable line is quoted at least once. Each section is developed with the speaker's arguments, data and examples up to near the target, and stops when the evidence ends.
+- **Awards.** Sections are lists with no quotes: every winner, then every nominee or finalist the material names, in their category's section or, without categories, in the last one. A number of winners or nominees appears only when the source writes it.
 
 The opening selects up to four evidence ids, so the lead's fact can come with every sentence of the quote that supports it. The limit is the same in the outline and curation schemas (`pipeline.ts`, `editorial-outline.ts`, `pipeline-output.ts`).
 
@@ -74,8 +77,8 @@ A format job writes part by part (`formatPipelineDefinition`). It reuses the mea
 The article prompts ship as **editorial prompts 3.0** (`defaultPipelineDefinition`). Models, temperatures and token limits are the same as in 2.0.
 
 - **System message.** It carries the same `HARD_NEWS` block as the funnels, so the R1 article follows the same lead, order, headline, attribution, self-claim and quote rules.
-- **Planning.** The outline decides the news first and makes it the title, with a concrete verb and none of the banned ones. The outline and the curation select up to four opening ids. Curation asks for `sizing.minQuotes` distinct quotes, with one quotable line per section when the source has one.
-- **Writing.** The opening starts with a lead of 40 words or fewer, with no quote. The sections go from the most to the least important and prefer `curated: true` entries. Outline, curation, opening, sections and the single-call article read `{{people}}` for names and roles.
+- **Planning.** The outline decides the news first and makes it the title, with a concrete verb and none of the banned ones. The outline and the curation select up to four opening ids. Curation asks for `sizing.minQuotes` distinct quotes, with one quotable line per section when the source has one and a second when it adds information.
+- **Writing.** The opening starts with a lead of 40 words or fewer, with no quote. The sections and the single-call article add a second short quote when it brings new information. The sections go from the most to the least important and prefer `curated: true` entries. Outline, curation, opening, sections and the single-call article read `{{people}}` for names and roles.
 - **Long materials.** When a passage holds a quotable line of an identified speaker, the facts step copies it word for word, with the speaker and its id, in at most five records. An interviewer's question is never copied.
 - **Assistant.** It keeps its three tones, and all three write hard news. It reads neither `{{people}}` nor `{{event}}`, because it does not receive them.
 - **Unchanged.** The R1 article gets no linha fina, no grounding and no change to house punctuation.
@@ -125,7 +128,7 @@ A recording without speaker labels gives no curated quotes and no suggestions, b
   - the funnel and preset 3.0 tests in `src/domain/pipeline.test.ts`;
   - `src/domain/pipeline-preset.test.ts` and `src/features/pipeline/preset-upgrade-model.test.ts` (the upgrade and its diff);
   - `src/domain/evidence-hints.test.ts`, `src/domain/citation-suggestions.test.ts` and `src/features/hard-news/quotes/quote-model.test.ts`;
-  - `src/domain/hard-news-lint.test.ts`, the hard-news rules measured in a written text. The lint is a rehearsal metric, not a studio check;
+  - `src/domain/hard-news-lint.test.ts`, the hard-news rules measured in a written text, with a relative date flagged in the headline as well as in the body. The lint is a rehearsal metric, not a studio check;
   - `src/registries/sizing-formats.test.ts`;
   - the format cases in `src/features/new-production/form.test.ts`.
 - **Backend:**
