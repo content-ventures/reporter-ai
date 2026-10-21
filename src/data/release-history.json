@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.17.0",
+  "currentVersion": "0.18.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,212 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.18.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-21",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 49 validated changes: say which repeats the opening cleanup removes; never date a relative time from the day of writing; keep relative dates and opening ids apart.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Fixed",
+          "description": "Drop the quote minimum from formats without one"
+        },
+        {
+          "type": "Added",
+          "description": "Measure hard-news rules in a written text"
+        },
+        {
+          "type": "Added",
+          "description": "Select up to four opening passages"
+        },
+        {
+          "type": "Added",
+          "description": "Write every event format as hard news"
+        },
+        {
+          "type": "Added",
+          "description": "Curate event-format evidence with the format's prompt"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe the hard-news funnels"
+        },
+        {
+          "type": "Added",
+          "description": "Move the article prompts to preset 3.0"
+        },
+        {
+          "type": "Added",
+          "description": "Upgrade untouched prompts to preset 3.0"
+        },
+        {
+          "type": "Added",
+          "description": "Offer the 3.0 prompts on the Prompts page"
+        },
+        {
+          "type": "Added",
+          "description": "Prefer curated citations and literal quotable lines"
+        },
+        {
+          "type": "Added",
+          "description": "Suggest outline passages the text did not quote"
+        },
+        {
+          "type": "Added",
+          "description": "Mark suggested citations in the citation bank"
+        },
+        {
+          "type": "Fixed",
+          "description": "Show the recording date only when the source has one"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe preset 3.0, curated and suggested quotes"
+        },
+        {
+          "type": "Added",
+          "description": "Ask a part for the quote its evidence allows"
+        },
+        {
+          "type": "Fixed",
+          "description": "Never ask a part to quote the interviewer"
+        },
+        {
+          "type": "Fixed",
+          "description": "Offer a part only lines the text has not quoted"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep a part's floor and lead when asking for a quote"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep a valid part when its quote request fails"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep the newsroom's quote note out of the facts"
+        },
+        {
+          "type": "Fixed",
+          "description": "Make the style references follow their own rules"
+        },
+        {
+          "type": "Fixed",
+          "description": "Mark only the sentences a curated quote covers"
+        },
+        {
+          "type": "Fixed",
+          "description": "Show format curation as off when curation is off"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep the focus after the 3.0 prompts are applied"
+        },
+        {
+          "type": "Documentation",
+          "description": "Say revision 1 misses the outline cache once"
+        },
+        {
+          "type": "Documentation",
+          "description": "Note the dates earlier versions saved"
+        },
+        {
+          "type": "Fixed",
+          "description": "Scope the quote request's interviewer rule to its list"
+        },
+        {
+          "type": "Added",
+          "description": "Add a second quote when it brings new information"
+        },
+        {
+          "type": "Added",
+          "description": "Quote every panel speaker and develop each thesis"
+        },
+        {
+          "type": "Fixed",
+          "description": "List every awards nominee the material names"
+        },
+        {
+          "type": "Fixed",
+          "description": "Date headlines and texts as the event gives them"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe second quotes, panel speakers, nominees, dates"
+        },
+        {
+          "type": "Fixed",
+          "description": "Quote an unnamed voice while the article lacks quotes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Give an awards nominee list its own last section"
+        },
+        {
+          "type": "Fixed",
+          "description": "Attribute an unlabeled voice as part of the episode"
+        },
+        {
+          "type": "Fixed",
+          "description": "Add a second quote only when it carries its own fact"
+        },
+        {
+          "type": "Fixed",
+          "description": "Settle the panel, date and last-section quote rules"
+        },
+        {
+          "type": "Fixed",
+          "description": "Lead a note with what happens and the event's full name"
+        },
+        {
+          "type": "Fixed",
+          "description": "Stop counting the brand noun as a soft headline verb"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe nominee sections, neutral voices and quote rules"
+        },
+        {
+          "type": "Fixed",
+          "description": "Ask for a second quote instead of only allowing it"
+        },
+        {
+          "type": "Fixed",
+          "description": "Reconcile suggested citations with the fact check"
+        },
+        {
+          "type": "Fixed",
+          "description": "Check only quotes with the person who said them"
+        },
+        {
+          "type": "Added",
+          "description": "Hold quotes without their author under Sem autor"
+        },
+        {
+          "type": "Fixed",
+          "description": "Recheck a quote when its author is linked"
+        },
+        {
+          "type": "Fixed",
+          "description": "Drop opening ids a section repeats"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep relative dates and opening ids apart"
+        },
+        {
+          "type": "Fixed",
+          "description": "Never date a relative time from the day of writing"
+        },
+        {
+          "type": "Documentation",
+          "description": "Say which repeats the opening cleanup removes"
+        }
+      ]
+    },
     {
       "version": "0.17.0",
       "roadmapRelease": "R0",

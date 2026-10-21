@@ -4,6 +4,66 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-21
+
+### Fixed
+
+- Drop the quote minimum from formats without one.
+- Show the recording date only when the source has one.
+- Never ask a part to quote the interviewer.
+- Offer a part only lines the text has not quoted.
+- Keep a part's floor and lead when asking for a quote.
+- Keep a valid part when its quote request fails.
+- Keep the newsroom's quote note out of the facts.
+- Make the style references follow their own rules.
+- Mark only the sentences a curated quote covers.
+- Show format curation as off when curation is off.
+- Keep the focus after the 3.0 prompts are applied.
+- Scope the quote request's interviewer rule to its list.
+- List every awards nominee the material names.
+- Date headlines and texts as the event gives them.
+- Quote an unnamed voice while the article lacks quotes.
+- Give an awards nominee list its own last section.
+- Attribute an unlabeled voice as part of the episode.
+- Add a second quote only when it carries its own fact.
+- Settle the panel, date and last-section quote rules.
+- Lead a note with what happens and the event's full name.
+- Stop counting the brand noun as a soft headline verb.
+- Ask for a second quote instead of only allowing it.
+- Reconcile suggested citations with the fact check.
+- Check only quotes with the person who said them.
+- Recheck a quote when its author is linked.
+- Drop opening ids a section repeats.
+- Keep relative dates and opening ids apart.
+- Never date a relative time from the day of writing.
+
+### Added
+
+- Measure hard-news rules in a written text.
+- Select up to four opening passages.
+- Write every event format as hard news.
+- Curate event-format evidence with the format's prompt.
+- Move the article prompts to preset 3.0.
+- Upgrade untouched prompts to preset 3.0.
+- Offer the 3.0 prompts on the Prompts page.
+- Prefer curated citations and literal quotable lines.
+- Suggest outline passages the text did not quote.
+- Mark suggested citations in the citation bank.
+- Ask a part for the quote its evidence allows.
+- Add a second quote when it brings new information.
+- Quote every panel speaker and develop each thesis.
+- Hold quotes without their author under Sem autor.
+
+### Documentation
+
+- Describe the hard-news funnels.
+- Describe preset 3.0, curated and suggested quotes.
+- Say revision 1 misses the outline cache once.
+- Note the dates earlier versions saved.
+- Describe second quotes, panel speakers, nominees, dates.
+- Describe nominee sections, neutral voices and quote rules.
+- Say which repeats the opening cleanup removes.
+
 ## [0.17.0] - 2026-10-21
 
 ### Added
