@@ -38,6 +38,8 @@ import { decidedOf, heroOf, lastRead, pulse, queueOf, waitLabel, wireGroups } fr
 import { RadarActivity, RadarBoard, RadarSkeleton, type RadarBoardProps } from './radar-board';
 import { NewsFilters } from './news-filters';
 import { useRadar } from './use-radar';
+import { matchesTopic, newsTopics } from './topic-model';
+import type { NewsTopic } from './topic-model';
 
 /** On a first visit with no record of the last look, the last 90 minutes are "Novas". */
 const FIRST_LOOK_MS = 90 * 60_000;
@@ -66,6 +68,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const [query, setQuery] = useState('');
   const [sourceTier, setSourceTier] = useState<SourceTierFilter>('all');
   const [sourceId, setSourceId] = useState('all');
+  const [topic, setTopic] = useState<Pick<NewsTopic, 'key' | 'label'>>();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [headlineLimit, setHeadlineLimit] = useState(24);
@@ -100,14 +103,15 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const board = useMemo(() => {
     const filtered = state.news.filter(item => matchesSourceTier(item, state.feeds, sourceTier)
       && (sourceId === 'all' || (item.feedId ?? sourceForNews(item, state.feeds)?.id) === sourceId));
-    const queue = queueOf(filtered, query);
+    const topics = newsTopics(filtered, now);
+    const queue = queueOf(topic ? filtered.filter(item => matchesTopic(item, topic.key, now)) : filtered, query);
     const { hero, overflow } = triage ? heroOf(queue, 1) : { hero: [], overflow: 0 };
     const rest = queue.filter((item) => !hero.includes(item));
     const groups = wireGroups(rest, seenSince, now);
     const decided = decidedOf(filtered, query);
     const ordered = tab === 'open' ? [...hero, ...groups.flatMap((group) => group.items)] : decided;
-    return { hero, overflow, groups, decided, ordered, open: queue.length };
-  }, [now, query, seenSince, sourceId, sourceTier, state.feeds, state.news, tab, triage]);
+    return { hero, overflow, groups, decided, ordered, open: queue.length, topics };
+  }, [now, query, seenSince, sourceId, sourceTier, state.feeds, state.news, tab, topic, triage]);
 
   useEffect(() => {
     if (!loadMoreFocus.current) return;
@@ -155,6 +159,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     const item = state.news.find((candidate) => candidate.id === id);
     if (item) {
       setTab(item.status === 'new' ? 'open' : 'decided');
+      if (topic && !matchesTopic(item, topic.key, now)) setTopic(undefined);
       if (!matchesQuery(item, query)) setQuery('');
       if (!matchesSourceTier(item, state.feeds, sourceTier)) setSourceTier('all');
       if (sourceId !== 'all' && (item.feedId ?? sourceForNews(item, state.feeds)?.id) !== sourceId) setSourceId('all');
@@ -289,7 +294,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const header = (
     <PageHeader
       variant="frame"
-      title="Notícias"
+      title={selectedId ? 'Notícias' : 'Radar de notícias'}
       status={live ? (anyActive ? <Badge variant="text" tone="green" dot>Ao vivo</Badge> : <Badge variant="text" tone="gray" dot="hollow">Parado</Badge>) : undefined}
       meta={live && read ? [`Lido ${waitLabel(read, now)}`] : undefined}
       actions={phone ? undefined : (
@@ -303,18 +308,21 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     />
   );
 
-  const clearFilters = () => { setQuery(''); setSourceTier('all'); setSourceId('all'); setSelectedId(undefined); };
-  const filters = <NewsFilters tab={tab} onTab={value => { setTab(value); setSelectedId(undefined); }}
+  const clearFilters = () => { setQuery(''); setTopic(undefined); setSourceTier('all'); setSourceId('all'); setSelectedId(undefined); };
+  const filters = <NewsFilters tab={tab} onTab={value => { setTab(value); setTopic(undefined); setSelectedId(undefined); }}
     counts={live ? { open: board.open, decided: board.decided.length } : undefined}
-    query={query} onQuery={value => { setQuery(value); setSelectedId(undefined); }}
+    query={query} onQuery={value => { setQuery(value); setTopic(undefined); setSelectedId(undefined); }}
     open={filtersOpen} onOpen={setFiltersOpen}
-    tier={sourceTier} onTier={value => { setSourceTier(value); setSelectedId(undefined); }}
-    source={sourceId} onSource={value => { setSourceId(value); setSelectedId(undefined); }} feeds={state.feeds} />;
+    tier={sourceTier} onTier={value => { setSourceTier(value); setTopic(undefined); setSelectedId(undefined); }}
+    source={sourceId} onSource={value => { setSourceId(value); setTopic(undefined); setSelectedId(undefined); }} feeds={state.feeds} />;
   const radarProps: RadarBoardProps = {
     triage, tab, now, news: state.news, feeds: state.feeds, pulse: signals, seenSince,
     goal: { covered: coveredToday(state.news, now), perDay: state.goal.perDay },
     hero: board.hero, overflow: board.overflow, groups: board.groups, decided: board.decided,
-    query: query || (sourceTier !== 'all' || sourceId !== 'all' ? 'fonte' : ''),
+    query: query || (topic || sourceTier !== 'all' || sourceId !== 'all' ? 'filtro' : ''),
+    topics: query ? [] : board.topics, topic,
+    onTopic: value => { setTopic({ key: value.key, label: value.label }); setHeadlineLimit(24); },
+    onClearTopic: () => setTopic(undefined),
     selectedId: shown?.id, onSelect: select,
     visibleCount: headlineLimit, onLoadMore: () => {
       loadMoreFocus.current = board.ordered[headlineLimit]?.id;

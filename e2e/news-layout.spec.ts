@@ -78,8 +78,8 @@ async function expectCompactHeadlines(page: Page) {
   expect(states).toHaveLength(3);
   for (const box of states) {
     expect(box.mediaHeight, 'a imagem continua compacta').toBeGreaterThan(0);
-    expect(box.mediaHeight, 'a imagem não domina o card').toBeLessThanOrEqual(131);
-    expect(box.mediaWidth / box.mediaHeight, 'a imagem e os dois placeholders usam proporção 3:1').toBeCloseTo(3, 1);
+    expect(box.mediaHeight, 'a miniatura não domina o card').toBeLessThanOrEqual(96);
+    expect(box.mediaWidth / box.mediaHeight, 'foto, marca e erro reservam a mesma miniatura quadrada').toBeCloseTo(1, 1);
   }
   expect(Math.max(...states.map(box => box.mediaHeight)) - Math.min(...states.map(box => box.mediaHeight)),
     'imagem carregada, ausente e quebrada reservam a mesma altura').toBeLessThanOrEqual(1);
@@ -190,7 +190,8 @@ for (const viewport of VIEWPORTS) {
       const searchBox = (await search.boundingBox())!;
       const firstBox = (await first.boundingBox())!;
       expect(firstBox.y, 'as manchetes vêm depois da busca').toBeGreaterThanOrEqual(searchBox.y + searchBox.height);
-      expect(firstBox.y - searchBox.y - searchBox.height, 'as manchetes começam perto da busca, sem gráficos entre elas').toBeLessThan(190);
+      expect(firstBox.y - searchBox.y - searchBox.height, 'o radar de assuntos é compacto e deixa as manchetes próximas da busca').toBeLessThan(330);
+      await expect(page.getByRole('heading', { level: 2, name: 'Em pauta', exact: true })).toBeVisible();
       const overviewWidth = (await article.boundingBox())!.width;
       // Decision shortcuts must not act on a story the person has not opened.
       await page.keyboard.press('c');
@@ -202,8 +203,8 @@ for (const viewport of VIEWPORTS) {
       const image = await loadedNewsImage(first, 1);
       const second = page.getByTestId(`news-card-${SECOND}`);
       await expect(second.locator(`img[src^="${IMAGE_ORIGIN}/"]`)).toHaveCount(0);
-      await expect(second.getByRole('img', { name: /imagem indisponível/i })).toBeVisible();
-      await expect(second.getByText('Imagem indisponível', { exact: true })).toBeVisible();
+      await expect(second.getByRole('img', { name: 'Marca de Revista Aquicultura; notícia sem foto', exact: true })).toBeVisible();
+      await expect(second.getByText('Imagem indisponível', { exact: true })).toHaveCount(0);
       const broken = page.getByTestId(`news-card-${THIRD}`);
       await expect(broken.getByRole('img', { name: /imagem indisponível/i })).toBeVisible();
       await expect(broken.getByText('Imagem indisponível', { exact: true })).toBeVisible();
@@ -256,6 +257,17 @@ for (const viewport of VIEWPORTS) {
       const first = page.getByTestId(`news-card-${FIRST}`);
       const second = page.getByTestId(`news-card-${SECOND}`);
       await expect(first).toBeVisible();
+      const topic = page.getByRole('button', { name: 'Explorar assunto: Tilápia', exact: true });
+      await topic.click();
+      await expect(topic).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(2);
+      await expect(page.getByRole('heading', { level: 2, name: 'Tilápia · últimas 24 h', exact: true })).toBeVisible();
+      await first.getByRole('button', { name: `Ler notícia: ${FIRST_TITLE}`, exact: true }).click();
+      await page.goBack();
+      await expect(topic).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(2);
+      await page.getByRole('button', { name: 'Limpar assunto', exact: true }).click();
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(18);
       await search.fill('tilápia');
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(2);
       await page.getByRole('button', { name: /^Filtros/ }).click();

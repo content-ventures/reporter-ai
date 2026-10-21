@@ -20,6 +20,8 @@ import { HEADLINE_MIN_WIDTH, HeadlineCard } from './headline-card';
 import { arrivedAt, intakePulse, sinceLabel, waitLabel } from './radar-model';
 import type { Pulse, WireGroup } from './radar-model';
 import { RadarSide } from './radar-side';
+import { TopicRadar } from './topic-radar';
+import type { NewsTopic } from './topic-model';
 
 export type RadarBoardProps = {
   /** The AI's triage exists (the simulation): "Cobrir agora", priorities and the day's goal. */
@@ -36,6 +38,10 @@ export type RadarBoardProps = {
   groups: WireGroup[];
   decided: NewsItem[];
   query: string;
+  topics: NewsTopic[];
+  topic?: Pick<NewsTopic, 'key' | 'label'>;
+  onTopic: (topic: NewsTopic) => void;
+  onClearTopic: () => void;
   selectedId?: string;
   onSelect: (id: string) => void;
   visibleCount: number;
@@ -48,24 +54,26 @@ export type RadarBoardProps = {
 export function RadarBoard(props: RadarBoardProps) {
   const { tab, now, feeds, hero, groups, decided, query, onSelect, onClearFilters } = props;
   const items = tab === 'open' ? [...hero, ...groups.flatMap(group => group.items)] : decided;
-  return <Headlines visibleCount={props.visibleCount} onLoadMore={props.onLoadMore}
-    items={items} feeds={feeds} now={now} tab={tab} query={query} onSelect={onSelect} onClearFilters={onClearFilters} />;
+  return <PageStack data-testid="news-headlines">
+    {tab === 'open' ? <TopicRadar topics={props.topics} active={props.topic?.key} onSelect={props.onTopic} onClear={props.onClearTopic} /> : null}
+    <Headlines visibleCount={props.visibleCount} onLoadMore={props.onLoadMore} topic={props.topic} onClearTopic={props.onClearTopic}
+      items={items} feeds={feeds} now={now} tab={tab} query={query} onSelect={onSelect} onClearFilters={onClearFilters} />
+  </PageStack>;
 }
 
-function Headlines({ items, feeds, now, tab, query, onSelect, onClearFilters, visibleCount: limit, onLoadMore }: Pick<RadarBoardProps, 'feeds' | 'now' | 'tab' | 'query' | 'onSelect' | 'onClearFilters' | 'visibleCount' | 'onLoadMore'> & { items: NewsItem[] }) {
+function Headlines({ items, feeds, now, tab, query, onSelect, onClearFilters, visibleCount: limit, onLoadMore, topic, onClearTopic }: Pick<RadarBoardProps, 'feeds' | 'now' | 'tab' | 'query' | 'onSelect' | 'onClearFilters' | 'visibleCount' | 'onLoadMore' | 'topic' | 'onClearTopic'> & { items: NewsItem[] }) {
   if (!items.length) return <EmptyQueue query={query} onClearFilters={onClearFilters} decided={tab === 'decided'} />;
   const card = (item: NewsItem) => <HeadlineCard key={item.id} item={item}
     rating={sourceForNews(item, feeds)?.rating} now={now} onSelect={onSelect} />;
-  return <PageStack data-testid="news-headlines">
-    <Section title={tab === 'open' ? 'Últimas manchetes' : 'Notícias decididas'} meta={`${items.length} ${items.length === 1 ? 'notícia' : 'notícias'}`}>
+  return <Section title={tab === 'open' ? topic ? `${topic.label} · últimas 24 h` : 'Últimas manchetes' : 'Notícias decididas'} meta={`${items.length} ${items.length === 1 ? 'notícia' : 'notícias'}`}
+    action={topic ? <Button variant="ghost" size="sm" onClick={onClearTopic}>Limpar assunto</Button> : undefined}>
       <PageStack>
         <Grid as="section" label="Manchetes" columns="auto" min={HEADLINE_MIN_WIDTH} gap="sm">
           {items.slice(0, limit).map(item => card(item))}
         </Grid>
         {items.length > limit ? <Button variant="secondary" onClick={onLoadMore}>Carregar mais manchetes</Button> : null}
       </PageStack>
-    </Section>
-  </PageStack>;
+    </Section>;
 }
 
 /** Collection health stays available without competing with editorial decisions. */
