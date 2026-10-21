@@ -91,7 +91,7 @@ test('Notícias e Fontes leem o servidor: manchetes primeiro e texto ao abrir; o
   const errors = watchErrors(page);
   const writes = watchWrites(page);
   await page.goto('/news');
-  await expect(page.getByRole('heading', { level: 1, name: 'Notícias', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Radar de notícias', exact: true })).toBeVisible();
   await expect(page.getByText('Demo', { exact: true })).toHaveCount(0);
   const headline = page.getByTestId(`news-card-${STORY.id}`);
   await expect(headline.getByRole('heading', { name: `Ler notícia: ${STORY.title}`, exact: true })).toBeVisible();
