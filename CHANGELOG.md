@@ -4,6 +4,40 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-21
+
+### Added
+
+- Define outlet policies and managed writing contracts.
+- Orchestrate bounded reviews and direct web research.
+- Persist configured execution and external provenance.
+- Integrate direct Gemini generation and model controls.
+- Edit shared editorial policies and writing guidance.
+- Manage stage models and research from the frontend.
+- Inspect editorial audits and web provenance.
+- Edit recording dates with conflict and audit checks.
+
+### Fixed
+
+- Preserve article contracts and grounded source evidence.
+- Exclude research from legacy interview preparation.
+- Preserve export provenance and clean source titles.
+- Normalize hyphenated evidence consistently.
+- Include web source URLs and retrieval provenance.
+
+### Maintenance
+
+- Verify review audits and research isolation.
+- Verify search failures and saved configuration.
+- Support optional Gemini credentials in deployment.
+- Cover browser controls and source dates.
+- Preserve settings across prompt preset upgrades.
+
+### Documentation
+
+- Document editorial standards and closeout plan.
+- Record deployment readiness and editorial limits.
+
 ## [0.19.0] - 2026-10-21
 
 ### Added

@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.19.0",
+  "currentVersion": "0.20.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,96 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.20.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-21",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 20 validated changes: preserve settings across prompt preset upgrades; record deployment readiness and editorial limits; include web source urls and retrieval provenance.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Define outlet policies and managed writing contracts"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve article contracts and grounded source evidence"
+        },
+        {
+          "type": "Added",
+          "description": "Orchestrate bounded reviews and direct web research"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify review audits and research isolation"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify search failures and saved configuration"
+        },
+        {
+          "type": "Added",
+          "description": "Persist configured execution and external provenance"
+        },
+        {
+          "type": "Added",
+          "description": "Integrate direct Gemini generation and model controls"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Support optional Gemini credentials in deployment"
+        },
+        {
+          "type": "Added",
+          "description": "Edit shared editorial policies and writing guidance"
+        },
+        {
+          "type": "Added",
+          "description": "Manage stage models and research from the frontend"
+        },
+        {
+          "type": "Added",
+          "description": "Inspect editorial audits and web provenance"
+        },
+        {
+          "type": "Added",
+          "description": "Edit recording dates with conflict and audit checks"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover browser controls and source dates"
+        },
+        {
+          "type": "Fixed",
+          "description": "Exclude research from legacy interview preparation"
+        },
+        {
+          "type": "Documentation",
+          "description": "Document editorial standards and closeout plan"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve export provenance and clean source titles"
+        },
+        {
+          "type": "Fixed",
+          "description": "Normalize hyphenated evidence consistently"
+        },
+        {
+          "type": "Fixed",
+          "description": "Include web source URLs and retrieval provenance"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record deployment readiness and editorial limits"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Preserve settings across prompt preset upgrades"
+        }
+      ]
+    },
     {
       "version": "0.19.0",
       "roadmapRelease": "R0",
