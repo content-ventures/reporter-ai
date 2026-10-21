@@ -8,6 +8,7 @@
  */
 
 const fold = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase('pt-BR');
+const lexicalKey = (text: string) => fold(text).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 
 const UNITS = ['zero', 'um', 'dois', 'tres', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez', 'onze', 'doze', 'treze',
   'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
@@ -127,13 +128,13 @@ function nameTokens(text: string): string[] {
  */
 export function ungroundedTerms(text: string, corpus: string): string[] {
   const numbers = corpusNumbers(corpus);
-  const known = ` ${fold(corpus + ' ' + geographicalAliases(corpus)).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ')} `;
+  const known = ` ${lexicalKey(corpus + ' ' + geographicalAliases(corpus))} `;
   const missing: string[] = [];
   const add = (term: string) => { if (!missing.includes(term)) missing.push(term); };
   const unquoted = text.replace(/[“"«][^”"»]*[”"»]/g, ' ');
   for (const match of unquoted.matchAll(NUMBER)) if (!numberGrounded(match[0], numbers)) add(match[0]);
   for (const token of nameTokens(text)) {
-    const folded = fold(token);
+    const folded = lexicalKey(token);
     if (GENERIC.has(folded)) continue;
     if (!known.includes(` ${folded} `)) add(token);
   }
