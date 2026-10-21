@@ -82,6 +82,15 @@ test('several parts: one step per part and the analysis waits for all', () => {
   assert.equal(tooLong.steps[2].state,'error');
 });
 
+test('a part without speech fails the material, with no retry', () => {
+  const analysis = { parts: [{ format: 'srt' as const,segments: 1,startMs: 0,durationMs: 5000 },{ format: 'vtt' as const,segments: 0 }] };
+  const progress = materialProgress(parted({ id: 'a',text: srt('um') },{ id: 'b',text: 'WEBVTT\n\nNOTE só notas' }),
+    { status: 'ready',analysis: analysis as MaterialAnalysis['analysis'],message: undefined },null,null)!;
+  assert.equal(progress.status,'error');
+  assert.equal(progress.retry,undefined);
+  assert.deepEqual(progress.steps.map(step => step.state),['done','error','done']);
+});
+
 test('a failed part keeps the others running; retry is parts; cancel count', () => {
   const upload = (id: string) => ({ status: 'reading' as const,name: `${id}.mp3`,size: 6 * 1024 ** 2,phase: 'uploading' as const,message: 'Enviando arquivo' });
   const failed = { status: 'error' as const,name: 'c.mp3',size: 1,phase: 'uploading' as const,message: 'Conexão perdida.',retry: 'reread' as const };

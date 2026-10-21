@@ -39,6 +39,7 @@ import type { LinkReadState } from './use-link-reader';
 import type { MaterialAnalysis } from './use-material-analysis';
 import type { PartReads } from './use-file-reader';
 import { plural } from '@/ui/format';
+import { partsIssue } from './form';
 import { partSlots, partViews, type PartView } from './material-parts';
 
 /**
@@ -84,6 +85,7 @@ function specOf(intake: SourceIntake): string {
 export function materialState(draft: NewProductionDraft, material: MaterialAnalysis, fileReads: PartReads, linkRead: LinkReadState | null, invalid: boolean): SectionState {
   const reads = Object.values(fileReads);
   if (invalid || material.status === 'error' || reads.some((read) => read.status === 'error') || linkRead?.status === 'error') return 'error';
+  if (partsIssue(draft, material.status === 'ready' ? material.analysis : undefined)) return 'error';
   if (material.status === 'ready') return 'done';
   if (material.status === 'analyzing' || reads.some((read) => read.status === 'reading') || linkRead?.status === 'reading') return 'active';
   return (draft.mode === 'paste' && draft.pasted) || (draft.mode === 'link' && draft.sourceUrl) ? 'active' : 'empty';
@@ -160,11 +162,13 @@ export function MaterialSection({
   const views = draft.mode === 'file' && draft.parts.length > 1 ? partViews(draft, fileReads, ready) : [];
   const slots = partSlots(draft);
   const failedParts = views.flatMap((view) => (view.status.kind === 'error' ? [`Parte ${view.number}: ${view.status.message}`] : []));
+  // "Acompanhar envio" only while a part is on its way; beside a failed part nothing is analysed either.
+  const sending = views.some((view) => view.status.kind === 'reading');
   const hint = draft.mode === 'link' && blank ? 'YouTube com legendas ou Spotify com feed público' : blank ? (
     <LinkButton onClick={onUseSample}>Usar exemplo</LinkButton>
-  ) : views.some((view) => view.status.kind !== 'ready') ? (
+  ) : sending ? (
     <LinkButton onClick={onShowProgress}>Acompanhar envio</LinkButton>
-  ) : material.status === 'analyzing' ? (
+  ) : failedParts.length > 0 ? undefined : material.status === 'analyzing' ? (
     <LinkButton onClick={onShowProgress}>Acompanhar análise</LinkButton>
   ) : material.status === 'error' && material.retry ? (
     <LinkButton onClick={material.retry}>Tentar analisar novamente</LinkButton>
@@ -172,7 +176,7 @@ export function MaterialSection({
     readLine(analysis)
   ) : views.length > 0 && ready ? readLine(ready) : undefined;
   const partsError = failedParts.length > 1 ? `${failedParts.length} partes não concluídas.` : failedParts[0];
-  const rowError = error ?? partsError ?? (material.status === 'error' ? material.message : linkRead?.status === 'error' ? linkRead.message : undefined);
+  const rowError = error ?? partsError ?? partsIssue(draft, ready) ?? (material.status === 'error' ? material.message : linkRead?.status === 'error' ? linkRead.message : undefined);
   const partActions = (view: PartView, index: number): RowAction[] => {
     const moves: RowAction[] = [
       { id: 'up', label: 'Mover para cima', icon: ArrowUp, hidden: index === 0, onSelect: () => onMovePart(index, index - 1) },

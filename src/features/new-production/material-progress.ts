@@ -70,6 +70,8 @@ function partsProgress(draft: NewProductionDraft, analysis: MaterialAnalysis, re
   const parts = partViews(draft, reads, analysis.status === 'ready' ? analysis.analysis : undefined);
   const reading = parts.filter((part) => part.status.kind === 'reading');
   const failed = parts.flatMap((part) => (part.status.kind === 'error' ? [part.status] : []));
+  // A part without speech stops the material as a failed part does; only another file helps.
+  const empty = parts.some((part) => part.status.kind === 'ready' && part.status.empty);
   const allRead = parts.every((part) => part.status.kind === 'ready');
   const tooLong = allRead && materialTooLong(draft);
   const analysisState: StepState = !allRead ? 'upcoming' : tooLong || analysis.status === 'error' ? 'error' : analysis.status === 'ready' ? 'done' : 'current';
@@ -77,14 +79,14 @@ function partsProgress(draft: NewProductionDraft, analysis: MaterialAnalysis, re
     id: part.id,
     label: `Parte ${part.number}`,
     file: part.name,
-    state: part.status.kind === 'ready' ? 'done' : part.status.kind === 'error' ? 'error' : 'current',
+    state: part.status.kind === 'ready' ? (part.status.empty ? 'error' : 'done') : part.status.kind === 'error' ? 'error' : 'current',
     ...(part.status.kind === 'ready' && part.status.durationMs !== undefined ? { meta: formatTimestamp(part.status.durationMs) } : {}),
   }));
   steps.push({ id: 'analysis', label: 'Analisar material', state: analysisState, ...(analysisState === 'current' ? { detail: ANALYZING }
     : analysisState === 'error' ? { detail: tooLong ? MATERIAL_TOO_LONG : analysis.message ?? 'Tente analisar o material novamente.' } : {}) });
   const cancellable = reading.filter((part) => part.status.kind === 'reading' && part.status.cancellable).length;
-  const status = reading.length > 0 ? 'running' : failed.length > 0 || analysisState === 'error' ? 'error' : analysisState === 'done' ? 'ready' : 'running';
-  const retry = failed.some((part) => part.retry === 'reread') ? 'parts' : failed.length > 0 ? 'pick' : tooLong ? undefined : 'analysis';
+  const status = reading.length > 0 ? 'running' : failed.length > 0 || empty || analysisState === 'error' ? 'error' : analysisState === 'done' ? 'ready' : 'running';
+  const retry = failed.some((part) => part.retry === 'reread') ? 'parts' : failed.length > 0 ? 'pick' : tooLong || empty ? undefined : 'analysis';
   return {
     status,
     phase: 'parts',
