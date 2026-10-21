@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge, BrandMark, Card, CardHeader, CardLink, Grid, MediaFrame, MetaList, formatRelative } from '@content-ventures/design-system/v3';
+import { Badge, BrandMark, Card, CardHeader, CardLink, EditableTitle, Grid, GridItem, MediaFrame, MetaList, formatRelative } from '@content-ventures/design-system/v3';
 import type { NewsItem } from '@/domain/hard-news';
 import type { SourceRating } from '@/domain/news-source-rating';
 import { newsLogoUrl } from '@/domain/news-branding';
@@ -18,31 +18,41 @@ const DECISIONS = {
 } as const;
 
 /** A compact, consistent cover and headline; the received text opens on click. */
-export function HeadlineCard({ item, rating, now, onSelect }: {
+export function HeadlineCard({ item, rating, now, onSelect, variant = 'compact', signal }: {
   item: NewsItem; rating?: SourceRating; now: number; onSelect: (id: string) => void;
+  variant?: 'compact' | 'feature' | 'tile'; signal?: string;
 }) {
   const decision = item.status === 'new' ? undefined : DECISIONS[item.status];
-  return <Card as="article" padding="sm" interactive data-testid={`news-card-${item.id}`}>
-    <Grid columns="1:2" collapseBelow={false} gap="sm" align="start">
-      <MediaFrame src={item.imageUrl ?? newsLogoUrl(item.url)}
-        alt={item.imageUrl ? `Imagem da notícia: ${item.title}` : `Marca de ${item.source}; notícia sem foto`}
-        ratio="1/1" maxHeight={96} fit={item.imageUrl ? 'cover' : 'contain'} />
-      <Grid columns="auto" min={HEADLINE_MIN_WIDTH} gap="sm">
-      <MetaList size="sm" items={[
+  const feature = variant === 'feature';
+  const compact = variant === 'compact';
+  const content = <Grid columns="1:1" gap="sm">
+      {signal ? <GridItem span="full"><MetaList size="sm" items={[<Badge key="signal" tone={signal === 'Prioridade alta' ? 'orange' : 'blue'} size="sm">{signal}</Badge>]} /></GridItem> : null}
+      <GridItem span="full"><MetaList size="sm" items={[
         <BrandMark key="logo" name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />,
         item.source,
-      ]} />
-      <CardHeader size="md" titleAs="h3" title={
+      ]} /></GridItem>
+      <GridItem span="full">{feature ? <EditableTitle value={item.title} as="h3" size="page" label="Manchete principal" readOnly onCommit={() => undefined} /> : <CardHeader size="md" titleAs="h3" title={
         <CardLink onClick={() => onSelect(item.id)} aria-label={`Ler notícia: ${item.title}`}>{item.title}</CardLink>
-      } />
-      <MetaList size="sm" items={[
+      } />}</GridItem>
+      <GridItem span="full"><MetaList size="sm" items={[
         formatRelative(new Date(Math.min(Date.parse(item.publishedAt), now)), new Date(now)),
         <SourceRatingBadge key="rating" rating={rating} compact />,
         decision ? <Badge key="decision" variant="text" tone={decision.tone} dot>{decision.label}</Badge> : null,
         item.status === 'later' && item.laterUntil ? returnLabel(item.laterUntil, now) : null,
         item.duplicates.length ? `${item.duplicates.length + 1} veículos` : null,
-      ]} />
-      </Grid>
-    </Grid>
+      ]} /></GridItem>
+      {feature ? <GridItem span="full"><CardLink onClick={() => onSelect(item.id)} aria-label={`Ler notícia: ${item.title}`}>Ler notícia</CardLink></GridItem> : null}
+    </Grid>;
+  const alt = item.imageUrl ? `Imagem da notícia: ${item.title}` : `Marca de ${item.source}; notícia sem foto`;
+  return <Card as="article" padding="sm" interactive data-testid={`news-card-${item.id}`} data-news-layout={variant}>
+    {compact ? <Grid columns="1:2" collapseBelow={false} gap="sm" align="start">
+      <MediaFrame src={item.imageUrl ?? newsLogoUrl(item.url)} alt={alt} ratio="1/1" maxHeight={96} fit={item.imageUrl ? 'cover' : 'contain'} />
+      {content}
+    </Grid> : <Grid columns="1:1" gap="sm">
+      <GridItem span="full"><MediaFrame src={item.imageUrl} ratio={feature ? '16/7' : '16/9'} alt={alt}>
+        {!item.imageUrl ? <BrandMark name={alt} src={newsLogoUrl(item.url)} size="lg" /> : undefined}
+      </MediaFrame></GridItem>
+      <GridItem span="full">{content}</GridItem>
+    </Grid>}
   </Card>;
 }

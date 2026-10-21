@@ -64,48 +64,40 @@ async function clickImage(page: Page, image: Locator) {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
-/** Compare real geometry before scrolling; source-image availability must not change the grid. */
-async function expectCompactHeadlines(page: Page) {
-  const cards = page.getByTestId(/^news-card-/);
-  const boxes = await cards.evaluateAll(elements => elements.map(element => {
-    const { x, y, width, height } = element.getBoundingClientRect();
-    const media = element.querySelector('[data-state][data-radius]');
-    if (!media) throw new Error('Every headline needs a media frame, including missing images.');
-    const { width: mediaWidth, height: mediaHeight } = media.getBoundingClientRect();
-    return { x, y, width, height, mediaWidth, mediaHeight };
+/** The lead is intentionally larger; missing and broken photos keep each tier's geometry. */
+async function expectPortalHeadlines(page: Page) {
+  const lead = page.locator('[data-news-layout="feature"]');
+  const tiles = page.locator('[data-news-layout="tile"]');
+  const compact = page.locator('[data-news-layout="compact"]');
+  await expect(lead).toHaveCount(1);
+  await expect(tiles).toHaveCount(3);
+  const sizes = await tiles.evaluateAll(elements => elements.map(element => {
+    const box = element.querySelector('[data-state][data-radius]')!.getBoundingClientRect();
+    return { width: box.width, height: box.height };
   }));
-  const states = boxes.slice(0, 3);
-  expect(states).toHaveLength(3);
-  for (const box of states) {
-    expect(box.mediaHeight, 'a imagem continua compacta').toBeGreaterThan(0);
-    expect(box.mediaHeight, 'a miniatura não domina o card').toBeLessThanOrEqual(96);
-    expect(box.mediaWidth / box.mediaHeight, 'foto, marca e erro reservam a mesma miniatura quadrada').toBeCloseTo(1, 1);
-  }
-  expect(Math.max(...states.map(box => box.mediaHeight)) - Math.min(...states.map(box => box.mediaHeight)),
-    'imagem carregada, ausente e quebrada reservam a mesma altura').toBeLessThanOrEqual(1);
-  const rows: typeof boxes[] = [];
-  for (const box of boxes) {
-    const row = rows.find(entries => Math.abs(entries[0].y - box.y) <= 1);
-    if (row) row.push(box);
-    else rows.push([box]);
-  }
-  for (const row of rows.filter(entries => entries.length > 1)) {
-    expect(Math.max(...row.map(box => box.height)) - Math.min(...row.map(box => box.height)),
-      'cards da mesma linha têm a mesma altura').toBeLessThanOrEqual(1);
+  for (const size of sizes) expect(size.width / size.height).toBeCloseTo(16 / 9, 1);
+  expect(Math.max(...sizes.map(size => size.height)) - Math.min(...sizes.map(size => size.height)),
+    'foto ausente e quebrada preservam a mesma área nos destaques').toBeLessThanOrEqual(1);
+  const leadFont = await lead.getByRole('heading', { level: 3 }).evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+  const secondaryFont = await tiles.first().getByRole('heading', { level: 3 }).evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+  expect(leadFont, 'a manchete principal tem peso visual maior').toBeGreaterThan(secondaryFont);
+  for (const media of await compact.locator('[data-state][data-radius]').all()) {
+    const box = (await media.boundingBox())!;
+    expect(box.height).toBeLessThanOrEqual(96);
+    expect(box.width / box.height).toBeCloseTo(1, 1);
   }
   const viewport = page.viewportSize()!;
-  const narrowDesktop = viewport.width === 709;
-  const minimum = narrowDesktop ? 4 : viewport.width < 768 ? 2 : 6;
-  if (viewport.width >= 709) expect(rows[0].length, 'o primeiro card compartilha a grade, sem hero').toBeGreaterThanOrEqual(2);
-  const targets = narrowDesktop ? cards.getByRole('heading', { level: 3 }) : cards;
-  const targetBoxes = await targets.evaluateAll(elements => elements.map(element => {
-    const { x, y, width, height } = element.getBoundingClientRect();
-    return { x, y, width, height };
-  }));
-  const fullyVisible = targetBoxes.filter(box => box.x >= -1 && box.y >= -1
-    && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1);
-  expect(fullyVisible.length, `${minimum} manchetes completas antes de rolar`).toBeGreaterThanOrEqual(minimum);
-  for (let index = 0; index < minimum; index++) await expect(targets.nth(index)).toBeInViewport({ ratio: 1 });
+  if (viewport.width >= 1280) {
+    const leadBox = (await lead.boundingBox())!;
+    const latestBox = (await compact.first().boundingBox())!;
+    expect(latestBox.x, 'últimas notícias ficam ao lado da manchete').toBeGreaterThan(leadBox.x + leadBox.width);
+    const headings = await page.getByTestId(/^news-card-/).getByRole('heading').evaluateAll(elements => elements.map(el => {
+      const { y, height } = el.getBoundingClientRect();
+      return { y, height };
+    }));
+    expect(headings.filter(box => box.y >= 0 && box.y + box.height <= viewport.height).length,
+      'várias manchetes são legíveis antes de rolar').toBeGreaterThanOrEqual(5);
+  }
 }
 
 test('carrega mais manchetes com foco útil e preserva a página e a busca ao voltar da leitura', async ({ page }) => {
@@ -180,7 +172,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId('news-headlines')).toBeVisible();
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(18);
       await entirelyVisible(page, search);
-      await expect(first.getByRole('heading', { name: `Ler notícia: ${FIRST_TITLE}`, exact: true })).toBeVisible();
+      await expect(first.getByRole('heading', { name: FIRST_TITLE, exact: true })).toBeVisible();
       await expect(decisions).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Outras ações da notícia', exact: true })).toHaveCount(0);
@@ -207,12 +199,12 @@ for (const viewport of VIEWPORTS) {
       await expect(second.getByText('Imagem indisponível', { exact: true })).toHaveCount(0);
       const broken = page.getByTestId(`news-card-${THIRD}`);
       await expect(broken.getByRole('img', { name: /imagem indisponível/i })).toBeVisible();
-      // The DS keeps the accessible label and icon, hiding the caption below 112 px.
+      // A failed photo keeps the same reserved area as its neighboring secondary stories.
       await expect(broken.locator('[data-state="error"] svg')).toBeVisible();
       await expect(page.getByTestId('news-headlines').getByText('Os novos dados ajudam a acompanhar a produção, o comércio e os próximos desafios do setor.', { exact: true })).toHaveCount(0);
-      await expectCompactHeadlines(page);
-      if (viewport.width === 1440 || viewport.width === 709) await page.screenshot({ path: test.info().outputPath(`news-compact-${viewport.width}.png`), animations: 'disabled' });
-      const headline = first.getByRole('heading', { name: `Ler notícia: ${FIRST_TITLE}`, exact: true });
+      await expectPortalHeadlines(page);
+      if (viewport.width === 1440 || viewport.width === 709) await page.screenshot({ path: test.info().outputPath(`news-portal-${viewport.width}.png`), animations: 'disabled' });
+      const headline = first.getByRole('heading', { name: FIRST_TITLE, exact: true });
       await headline.scrollIntoViewIfNeeded();
       await entirelyVisible(page, headline);
       await clickImage(page, image);

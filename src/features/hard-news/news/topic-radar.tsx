@@ -4,16 +4,12 @@ import { Badge, Button, Card, CardHeader, CardLink, Carousel, Grid, GridItem, Ic
 import { Info } from '@content-ventures/design-system/v3/icons';
 import type { NewsTopic } from './topic-model';
 
-export function TopicRadar({ topics, active, onSelect, onClear }: {
+export function TopicRadar({ topics, active, onSelect, onClear, layout = 'rail' }: {
   topics: NewsTopic[]; active?: string; onSelect: (topic: NewsTopic) => void; onClear: () => void;
+  layout?: 'rail' | 'list';
 }) {
   if (!topics.length) return null;
-  return <Grid columns="1:1" gap="sm">
-    <GridItem span="full"><CardHeader size="md" titleAs="h2" title="Em pauta" meta="Últimas 24 h" actions={active
-    ? <Button variant="ghost" size="sm" onClick={onClear}>Ver todas</Button>
-    : <Tooltip content="Termos recorrentes nas manchetes coletadas. A linha mostra publicações em intervalos de 4 horas; o número de fontes conta portais distintos."><IconButton label="Como os assuntos são identificados" icon={Info} variant="ghost" size="sm" /></Tooltip>} /></GridItem>
-    <GridItem span="full"><Carousel label="Assuntos recorrentes nas fontes" perView={3}>
-      {topics.map((topic, index) => <Card key={topic.key} padding="sm" interactive selected={active === topic.key} data-testid={`news-topic-${topic.key}`}>
+  const cards = topics.map((topic, index) => <Card key={topic.key} padding="sm" interactive selected={active === topic.key} data-testid={`news-topic-${topic.key}`}>
           <Grid columns="auto" min={280} gap="sm">
             <CardHeader size="md" titleAs="h3" leading={<Badge tone={active === topic.key ? 'blue' : 'gray'} size="sm">{index + 1}</Badge>}
               title={<CardLink aria-pressed={active === topic.key} aria-label={`Explorar assunto: ${topic.label}`} onClick={() => onSelect(topic)}>{topic.label}</CardLink>} />
@@ -22,7 +18,13 @@ export function TopicRadar({ topics, active, onSelect, onClear }: {
               <Sparkline points={topic.points} height={20} fluid tone="gray" />
             </Grid>
           </Grid>
-        </Card>)}
-    </Carousel></GridItem>
+        </Card>);
+  return <Grid columns="1:1" gap="sm">
+    <GridItem span="full"><CardHeader size="md" titleAs="h2" title="Em pauta" meta="Últimas 24 h" actions={active
+    ? <Button variant="ghost" size="sm" onClick={onClear}>Ver todas</Button>
+    : <Tooltip content="Termos recorrentes nas manchetes coletadas. A linha mostra publicações em intervalos de 4 horas; o número de fontes conta portais distintos."><IconButton label="Como os assuntos são identificados" icon={Info} variant="ghost" size="sm" /></Tooltip>} /></GridItem>
+    <GridItem span="full">{layout === 'rail' ? <Carousel label="Assuntos recorrentes nas fontes" perView={3}>{cards}</Carousel>
+      : <Grid columns="1:1" gap="sm">{cards.map((card, index) => <GridItem key={topics[index].key} span="full">{card}</GridItem>)}</Grid>}
+    </GridItem>
   </Grid>;
 }

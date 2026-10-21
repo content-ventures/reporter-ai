@@ -36,6 +36,7 @@ import { matchesQuery, nextAfter } from './news-model';
 import type { DeskTab } from './news-model';
 import { decidedOf, heroOf, lastRead, pulse, queueOf, waitLabel, wireGroups } from './radar-model';
 import { RadarActivity, RadarBoard, RadarSkeleton, type RadarBoardProps } from './radar-board';
+import { editionOrder } from './edition-model';
 import { NewsFilters } from './news-filters';
 import { useRadar } from './use-radar';
 import { matchesTopic, newsTopics } from './topic-model';
@@ -109,8 +110,9 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     const rest = queue.filter((item) => !hero.includes(item));
     const groups = wireGroups(rest, seenSince, now);
     const decided = decidedOf(filtered, query);
-    const ordered = tab === 'open' ? [...hero, ...groups.flatMap((group) => group.items)] : decided;
-    return { hero, overflow, groups, decided, ordered, open: queue.length, topics };
+    const edition = tab === 'open' && !query && !topic && sourceId === 'all' && sourceTier === 'all';
+    const ordered = tab === 'open' ? edition ? editionOrder(queue, now, triage) : [...hero, ...groups.flatMap((group) => group.items)] : decided;
+    return { hero, overflow, groups, decided, ordered, edition, open: queue.length, topics };
   }, [now, query, seenSince, sourceId, sourceTier, state.feeds, state.news, tab, topic, triage]);
 
   useEffect(() => {
@@ -316,7 +318,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     tier={sourceTier} onTier={value => { setSourceTier(value); setTopic(undefined); setSelectedId(undefined); }}
     source={sourceId} onSource={value => { setSourceId(value); setTopic(undefined); setSelectedId(undefined); }} feeds={state.feeds} />;
   const radarProps: RadarBoardProps = {
-    triage, tab, now, news: state.news, feeds: state.feeds, pulse: signals, seenSince,
+    triage, edition: board.edition, ordered: board.ordered, tab, now, news: state.news, feeds: state.feeds, pulse: signals, seenSince,
     goal: { covered: coveredToday(state.news, now), perDay: state.goal.perDay },
     hero: board.hero, overflow: board.overflow, groups: board.groups, decided: board.decided,
     query: query || (topic || sourceTier !== 'all' || sourceId !== 'all' ? 'filtro' : ''),

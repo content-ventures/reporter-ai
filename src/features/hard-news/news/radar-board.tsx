@@ -22,10 +22,13 @@ import type { Pulse, WireGroup } from './radar-model';
 import { RadarSide } from './radar-side';
 import { TopicRadar } from './topic-radar';
 import type { NewsTopic } from './topic-model';
+import { NewsEdition } from './news-edition';
 
 export type RadarBoardProps = {
   /** The AI's triage exists (the simulation): "Cobrir agora", priorities and the day's goal. */
   triage: boolean;
+  edition: boolean;
+  ordered: NewsItem[];
   tab: 'open' | 'decided';
   now: number;
   news: readonly NewsItem[];
@@ -52,8 +55,11 @@ export type RadarBoardProps = {
 
 /** The first view is a full-width edition of headlines, never an automatically opened story. */
 export function RadarBoard(props: RadarBoardProps) {
-  const { tab, now, feeds, hero, groups, decided, query, onSelect, onClearFilters } = props;
-  const items = tab === 'open' ? [...hero, ...groups.flatMap(group => group.items)] : decided;
+  const { tab, now, feeds, ordered: items, query, onSelect, onClearFilters } = props;
+  if (props.edition && items.length) return <PageStack data-testid="news-headlines">
+    <NewsEdition items={items} feeds={feeds} now={now} triage={props.triage} topics={props.topics} onTopic={props.onTopic}
+      onSelect={onSelect} limit={props.visibleCount} onLoadMore={props.onLoadMore} />
+  </PageStack>;
   return <PageStack data-testid="news-headlines">
     {tab === 'open' ? <TopicRadar topics={props.topics} active={props.topic?.key} onSelect={props.onTopic} onClear={props.onClearTopic} /> : null}
     <Headlines visibleCount={props.visibleCount} onLoadMore={props.onLoadMore} topic={tab === 'open' ? props.topic : undefined} onClearTopic={props.onClearTopic}
