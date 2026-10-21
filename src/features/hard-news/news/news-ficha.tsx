@@ -60,9 +60,8 @@ const PRIORITIES: { value: NewsPriority; label: string }[] = [
 const at = (iso: string, now: number) => formatRelative(new Date(Math.min(Date.parse(iso), now)), new Date(now));
 
 /**
- * The open story beside the radar, in the order an editor decides: who published it and when,
- * what it says (the lead), why the AI ranked it (score, reasons, the person's own call), who
- * else ran it, and the original text on demand. After "Cobrir", the research starts right here.
+ * The selected story opens with its publication details and available source text ready to read.
+ * A separate lead remains visible only when the body does not already contain it in full.
  */
 export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
   const dossier = useDossier(item.productionId);
@@ -71,6 +70,8 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
   const canEdit = useCan('production.edit');
   // News on the server come without their text: the open story reads it once.
   const pending = live && item.paragraphs !== undefined;
+  const excerpt = item.excerpt.replace(/\s+/g, ' ').trim();
+  const excerptInBody = !pending && excerpt !== '' && item.body.join(' ').replace(/\s+/g, ' ').includes(excerpt);
   const [failedId, setFailedId] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const [translating, setTranslating] = useState(false);
@@ -123,7 +124,7 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
           : undefined}>Exibindo o texto original.</Alert>
       ) : null}
       {item.status === 'covered' && dossier ? <ResearchTrace dossier={dossier} /> : null}
-      <Prose variant="read" size="sm" measure="wide">{item.excerpt}</Prose>
+      {excerpt && !excerptInBody ? <Prose variant="read" size="sm" measure="wide">{item.excerpt}</Prose> : null}
       {live ? null : <AiReading item={item} />}
       {item.duplicates.length > 0 ? <WhoPublished item={item} now={now} /> : null}
       {pending ? failedId === item.id
@@ -247,10 +248,10 @@ function NewsText({ item }: { item: NewsItem }) {
   }), [item]);
   const editor = useArticleReader({ body });
   const translated = item.translation?.status === 'translated';
-  const summary = translated ? item.contentKind === 'feed' ? 'Texto traduzido (feed)' : 'Notícia traduzida'
+  const summary = translated ? item.contentKind === 'feed' ? 'Texto recebido do feed · traduzido' : 'Notícia traduzida'
     : item.contentKind === 'feed' ? 'Texto recebido do feed' : item.contentKind === 'article' ? 'Texto extraído da página' : 'Texto original';
   return (
-    <Disclosure summary={summary} meta={`${item.body.length} ${item.body.length === 1 ? 'parágrafo' : 'parágrafos'}`} headingLevel="h3">
+    <Disclosure summary={summary} meta={`${item.body.length} ${item.body.length === 1 ? 'parágrafo' : 'parágrafos'}`} headingLevel="h3" defaultOpen>
       <Prose variant="read" size="sm" measure="wide" label={translated ? 'Texto traduzido' : 'Texto original'}>
         <EditorContent editor={editor} />
       </Prose>

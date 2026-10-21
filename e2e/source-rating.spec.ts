@@ -131,10 +131,11 @@ test('o radar exibe e filtra a força da fonte sem transformar a avaliação em 
   await page.route('**/api/reporter/news', route => route.fulfill({ json: snapshot() }));
   const errors = watchErrors(page);
   await page.goto('/news');
-  const reference = page.getByTestId('news-row-rating-story-0');
-  const other = page.getByTestId('news-row-rating-story-1');
-  await expect(reference.getByText('A1', { exact: true })).toBeVisible();
+  const reference = page.getByTestId('news-card-rating-story-0');
+  const other = page.getByTestId('news-card-rating-story-1');
+  await expect(reference.getByText('A1 · Referência', { exact: true })).toBeVisible();
   await expect(other.getByText('Não avaliada', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Filtros', exact: true }).click();
   await choose(page, 'Força editorial da fonte', 'A1 · Referência');
   await expect(reference).toBeVisible();
@@ -146,7 +147,9 @@ test('o radar exibe e filtra a força da fonte sem transformar a avaliação em 
   await expect(reference).toHaveCount(0);
   await choose(page, 'Força editorial da fonte', 'A1 · Referência');
   await reference.click();
-  await expect(page.getByRole('tabpanel', { name: 'Notícia', exact: true }).getByText('A1 · Referência', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/news\?item=rating-story-0$/);
+  await expect(page.getByTestId('news-headlines')).toHaveCount(0);
+  await expect(page.locator('[data-ws-stop="main"]').getByText('A1 · Referência', { exact: true })).toBeVisible();
   await expect(page.getByText('Relevância alta', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toBeVisible();
   await expectNoHorizontalOverflow(page);

@@ -76,18 +76,29 @@ const STORY = {
   paragraphs: 3, duplicates: [{ source: 'g1.globo.com', url: 'https://g1.globo.com/agro/auditoria', publishedAt: AT }], status: 'new',
 };
 
-test('Notícias e Fontes leem o servidor: sem Demo, sem triagem, texto sob demanda; o Início da R1 não muda', async ({ page }) => {
+test('Notícias e Fontes leem o servidor: manchetes primeiro e texto ao abrir; o Início da R1 não muda', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const checkpoint = emptyEditorialCheckpoint();
   await page.route('**/api/reporter/workspace', (route) => route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } }));
   await page.route('**/api/reporter/news?**', (route) => route.fulfill({ json: { at: AT, sources: [SOURCE], items: [STORY], rssApp: false } }));
   await page.route('**/api/reporter/news', (route) => route.fulfill({ json: { at: AT, sources: [SOURCE], items: [STORY], rssApp: false } }));
-  await page.route(`**/api/reporter/news/items/${STORY.id}`, (route) => route.fulfill({ json: { item: { ...STORY, paragraphs: undefined, body: [...STORY.body, 'Nenhuma recomendação foi apontada.', 'A decisão final sai em novembro.'] } } }));
+  let detailReads = 0;
+  await page.route(`**/api/reporter/news/items/${STORY.id}`, (route) => {
+    detailReads += 1;
+    return route.fulfill({ json: { item: { ...STORY, paragraphs: undefined, body: [...STORY.body, 'Nenhuma recomendação foi apontada.', 'A decisão final sai em novembro.'] } } });
+  });
   const errors = watchErrors(page);
   const writes = watchWrites(page);
   await page.goto('/news');
   await expect(page.getByRole('heading', { level: 1, name: 'Notícias', exact: true })).toBeVisible();
   await expect(page.getByText('Demo', { exact: true })).toHaveCount(0);
+  const headline = page.getByTestId(`news-card-${STORY.id}`);
+  await expect(headline.getByRole('heading', { name: STORY.title, exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toHaveCount(0);
+  await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
+  expect(detailReads, 'a manchete não carrega o texto antes de ser aberta').toBe(0);
+  await headline.click();
+  await expect(page).toHaveURL(new RegExp(`/news\\?item=${STORY.id}$`));
   await expect(page.getByRole('heading', { level: 2, name: STORY.title })).toBeVisible();
   await expect(page.getByRole('img', { name: SOURCE.name, exact: true }).locator('img')).toHaveAttribute('src', /peixebr\.com\.br/);
   await expect.poll(() => page.getByRole('img', { name: SOURCE.name, exact: true }).locator('img').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
@@ -95,8 +106,8 @@ test('Notícias e Fontes leem o servidor: sem Demo, sem triagem, texto sob deman
   await expect(page.getByRole('heading', { name: 'Cobrir agora' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cobrir', exact: true })).toHaveCount(0);
   await expect(page.getByText('2 veículos').first()).toBeVisible();
-  await page.getByText('Texto original', { exact: true }).click();
   await expect(page.getByText('A decisão final sai em novembro.')).toBeVisible();
+  expect(detailReads).toBeGreaterThan(0);
   await expectHeadingOutline(page);
 
   await page.goto('/news/sources');
@@ -167,7 +178,6 @@ for (const viewport of VIEWPORTS) {
       await expect(original).toHaveAttribute('href', translated.url);
       await expect(original).toHaveAttribute('target', '_blank');
       await expect(original).toHaveAttribute('rel', /noopener/);
-      await page.getByText('Texto traduzido (feed)', { exact: true }).click();
       await expect(page.getByText(translated.body[0], { exact: true })).toBeVisible();
       await expectHeadingOutline(page);
       await expectNoHorizontalOverflow(page);
@@ -191,7 +201,6 @@ for (const viewport of VIEWPORTS) {
       await page.clock.fastForward(60_000);
       await expect(page.getByText('Tradução automática · pt-BR', { exact: true })).toBeVisible();
       await expect(page.getByRole('heading', { level: 2, name: translated.title, exact: true })).toBeVisible();
-      await page.getByText('Texto traduzido (feed)', { exact: true }).click();
       await expect(page.getByText(translated.body[0], { exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Tentar tradução novamente', exact: true })).toHaveCount(0);
       expect(retries).toBe(1);
@@ -283,7 +292,7 @@ for (const viewport of VIEWPORTS) {
       expect(retried).toEqual([`/api/reporter/news/sources/${secondId}/read`]);
       await dialog.getByRole('button', { name: 'Ir para notícias', exact: true }).click();
       await expect(dialog).toHaveCount(0);
-      await expect(page.getByTestId(`news-row-${secondStory.id}`)).toBeVisible();
+      await expect(page.getByTestId(`news-card-${secondStory.id}`)).toBeVisible();
       expect(errors).toEqual([]);
     });
   });
@@ -307,10 +316,12 @@ test('notícia fora da janela do radar abre pelo link e a seleção permanece ao
   await page.goto(`/news?item=${linked.id}`);
   await expect(page.getByRole('heading', { level: 2, name: linked.title, exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Selecionar para redação', exact: true }).click();
-  await expect(page.getByRole('tab', { name: /Decididas/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('[data-ws-stop="footer"]').getByText('Selecionada para redação', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Voltar para a fila', exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading', { level: 2, name: linked.title, exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: /Decididas/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('[data-ws-stop="footer"]').getByText('Selecionada para redação', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Voltar para a fila', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toHaveCount(0);
   expect(writes).toEqual([{ revision: 0, action: 'select' }]);
 });

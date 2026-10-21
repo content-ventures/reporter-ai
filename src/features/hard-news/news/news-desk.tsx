@@ -16,16 +16,16 @@ import {
   toast,
   WorkspaceLayout,
 } from '@content-ventures/design-system/v3';
-import type { WorkspaceView } from '@content-ventures/design-system/v3';
 import { Activity, AlertTriangle, CheckCheck, Ellipsis, Link2, Newspaper, Plus, Rss, Target } from '@content-ventures/design-system/v3/icons';
 import type { NewsItem } from '@/domain/hard-news';
 import { matchesSourceTier, sourceForNews } from '@/domain/news-source-match';
 import type { SourceTierFilter } from '@/domain/news-source-match';
 import { useCan } from '@/state';
 import { useDocumentTitle } from '@/ui/use-document-title';
+import { useBreadcrumb } from '@/ui/shell';
 import { usePhone } from '@/ui/use-phone';
 import { useNow } from '@/ui/time';
-import { NEWS_SOURCES_HREF, researchHref } from '../routes';
+import { NEWS_HREF, NEWS_SOURCES_HREF, researchHref } from '../routes';
 import { useHardNews, useNewsWatch } from '../state/hard-news-provider';
 import { DiscoverSourcesDialog } from '../sources/discover-sources-dialog';
 import { coveredToday } from '../state/hard-news-state';
@@ -46,10 +46,10 @@ const FIRST_LOOK_MS = 90 * 60_000;
 export function NewsDeskFromUrl() {
   const params = useSearchParams();
   const item = params.get('item') ?? undefined;
-  return <NewsDesk key={item ?? 'radar'} initialItem={item} />;
+  return <NewsDesk initialItem={item} />;
 }
 
-/** The inbox and reader share one frame; collection health lives in a secondary drawer. */
+/** Headline overview first; the URL opens an explicit story and browser history returns to it. */
 export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const { state, ready, actions, demo, live: onServer, newsFailed } = useHardNews();
   useNewsWatch();
@@ -68,8 +68,13 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const [sourceId, setSourceId] = useState('all');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | undefined>(initialItem);
-  const [view, setView] = useState<WorkspaceView>(initialItem ? 'main' : 'start');
+  const [headlineLimit, setHeadlineLimit] = useState(24);
+  const overviewScroll = useRef(0);
+  const returnFocus = useRef<string | undefined>(undefined);
+  const selectedId = initialItem;
+  function setSelectedId(id: string | undefined) {
+    if (id !== selectedId) router.push(id ? `${NEWS_HREF}?item=${encodeURIComponent(id)}` : NEWS_HREF, { scroll: false });
+  }
   const [importing, setImporting] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [failedItem, setFailedItem] = useState<string>();
@@ -104,17 +109,25 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   }, [now, query, seenSince, sourceId, sourceTier, state.feeds, state.news, tab, triage]);
 
   const signals = useMemo(() => pulse(state.news, state.feeds, seenSince, now), [now, seenSince, state.feeds, state.news]);
-  // The open story is explicit: on a wide frame the first story opens once, and nothing that
-  // arrives or re-sorts later replaces it (the decision bar always acts on what the person sees).
-  if (live && selectedId === undefined && board.ordered[0]) setSelectedId(board.ordered[0].id);
-  const selected = state.news.find((item) => item.id === selectedId);
-  const shown = selectedId ? selected : board.ordered[0];
+  // Merely visiting the radar never reads a body or enables a decision on an unseen story.
+  const shown = state.news.find((item) => item.id === selectedId);
+  const selected = shown;
+  useBreadcrumb(selectedId ? [{ label: 'Notícias', href: NEWS_HREF }, { label: 'Matéria' }] : null);
   useEffect(() => {
     if (!onServer || !ready || !selectedId || selected) return;
     let active = true;
     void actions.loadBody(selectedId).then(found => { if (active && !found) setFailedItem(selectedId); });
     return () => { active = false; };
   }, [actions, onServer, ready, selectedId, selected, bodyAttempt]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const main = document.querySelector<HTMLElement>('[data-ws-stop="main"]');
+      main?.querySelector<HTMLElement>('[role="region"]')?.scrollTo({ top: selectedId ? 0 : overviewScroll.current });
+      if (selectedId) main?.focus({ preventScroll: true });
+      else if (returnFocus.current) document.querySelector<HTMLElement>(`[data-testid="news-card-${returnFocus.current}"] button[data-card-link]`)?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selectedId]);
   const read = lastRead(state.feeds);
   const anyActive = state.feeds.some((feed) => feed.state === 'active');
   useDocumentTitle(live ? (signals.fresh.count > 0 ? `(${signals.fresh.count}) Notícias` : 'Notícias') : null);
@@ -126,6 +139,10 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
 
   /** Opens a story from anywhere (board, strip, toast): its tab, its place on the board, the ficha. */
   function select(id: string) {
+    if (!selectedId) {
+      overviewScroll.current = document.querySelector<HTMLElement>('[data-ws-stop="main"] [role="region"]')?.scrollTop ?? 0;
+      returnFocus.current = id;
+    }
     const item = state.news.find((candidate) => candidate.id === id);
     if (item) {
       setTab(item.status === 'new' ? 'open' : 'decided');
@@ -134,13 +151,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       if (sourceId !== 'all' && (item.feedId ?? sourceForNews(item, state.feeds)?.id) !== sourceId) setSourceId('all');
     }
     setSelectedId(id);
-    setView('main');
     setActivityOpen(false);
-    requestAnimationFrame(() => {
-      document.querySelector(`[data-testid="news-card-${id}"], [data-testid="news-row-${id}"]`)?.scrollIntoView({ block: 'nearest' });
-      // In tabs (tablet, phone) the story replaces the board: focus follows it.
-      document.querySelector<HTMLElement>('[data-ws-stop="main"]')?.focus();
-    });
   }
 
   const { region } = useRadar(select, !triage);
@@ -213,9 +224,9 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   }
 
   // J/K walk the board, C covers, A postpones until tomorrow (never while typing or in a menu).
-  const latest = useRef({ ordered: board.ordered, shown, cover, postpone, tab, canCover, triage });
+  const latest = useRef({ ordered: board.ordered, shown, cover, postpone, tab, canCover, triage, select });
   useEffect(() => {
-    latest.current = { ordered: board.ordered, shown, cover, postpone, tab, canCover, triage };
+    latest.current = { ordered: board.ordered, shown, cover, postpone, tab, canCover, triage, select };
   });
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -231,8 +242,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
         const next = ordered[key === 'j' ? Math.min(ordered.length - 1, index + 1) : Math.max(0, index - 1)];
         if (!next) return;
         event.preventDefault();
-        setSelectedId(next.id);
-        document.querySelector(`[data-testid="news-card-${next.id}"], [data-testid="news-row-${next.id}"]`)?.scrollIntoView({ block: 'nearest' });
+        latest.current.select(next.id);
       } else if (key === 'c' && current && currentTab === 'open' && current.status === 'new' && (!latest.current.triage || current.classification) && allowed) {
         event.preventDefault();
         void latest.current.cover(current);
@@ -297,6 +307,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     hero: board.hero, overflow: board.overflow, groups: board.groups, decided: board.decided,
     query: query || (sourceTier !== 'all' || sourceId !== 'all' ? 'fonte' : ''),
     selectedId: shown?.id, onSelect: select,
+    visibleCount: headlineLimit, onLoadMore: () => setHeadlineLimit(value => value + 24),
     onEditGoal: () => { setActivityOpen(false); setGoalOpen(true); }, onClearFilters: clearFilters,
   };
   const inbox = onServer && newsFailed ? (
@@ -321,15 +332,13 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
 
   return (
     <>
-      <WorkspaceLayout docked data-fixed-footer="" storageKey="reporter.news-inbox"
-        header={header} mainLabel="Notícia" mainMin={480} narrowBelow={900}
-        viewsLabel="Mesa de notícias" view={view} onViewChange={setView} defaultView="start"
-        start={{ label: 'Radar', defaultSize: 440, min: 360, max: 520, collapsible: false, flush: true,
-          header: filters, content: inbox }}
-        footer={narrow => live && shown && (!narrow || view === 'main') ? <DecisionBar item={shown} covering={covering} canCover={canCover} demo={demo}
+      <WorkspaceLayout docked data-fixed-footer="" header={header}
+        mainLabel={selectedId ? 'Notícia' : 'Manchetes'}
+        mainHeader={!selectedId ? filters : undefined}
+        footer={live && shown ? <DecisionBar item={shown} covering={covering} canCover={canCover} demo={demo}
           onCover={item => void cover(item)} onPostpone={postpone} onDiscard={discard} /> : undefined}
       >
-        {reader}
+        {selectedId ? reader : inbox}
       </WorkspaceLayout>
       <Drawer open={activityOpen} onClose={() => setActivityOpen(false)} title="Atividade do radar" size="lg">
         <RadarActivity {...radarProps} />

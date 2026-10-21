@@ -65,54 +65,63 @@ for (const viewport of VIEWPORTS) {
   test.describe(`radar e leitura em ${viewport.width}`, () => {
     test.use(viewport.width < 768 ? { viewport, hasTouch: true, isMobile: true } : { viewport });
 
-    test('prioriza a fila e mantém leitura e decisões dentro da tela', async ({ page }) => {
+    test('abre manchetes sem selecionar e só mostra leitura expandida e decisões após o clique', async ({ page }) => {
       await mockDesk(page);
       const errors = watchErrors(page);
+      const writes: string[] = [];
+      page.on('request', request => {
+        if (new URL(request.url()).pathname.startsWith('/api/') && request.method() !== 'GET') writes.push(request.url());
+      });
       await page.goto('/news');
-      const radar = page.locator('[data-ws-stop="start"]');
       const article = page.locator('[data-ws-stop="main"]');
       const decisions = page.locator('[data-ws-stop="footer"]');
       const search = page.getByRole('searchbox', { name: 'Buscar notícias', exact: true });
-      const first = page.getByTestId(`news-row-${FIRST}`);
+      const first = page.getByTestId(`news-card-${FIRST}`);
+      await expect(page.getByTestId('news-headlines')).toBeVisible();
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(18);
       await entirelyVisible(page, search);
-      await entirelyVisible(page, first);
+      await entirelyVisible(page, first.getByRole('heading', { name: FIRST_TITLE, exact: true }));
+      await expect(decisions).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Outras ações da notícia', exact: true })).toHaveCount(0);
+      await expect(page.getByText('Parágrafo 1 da notícia 1.', { exact: false })).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Chegadas', exact: true })).toHaveCount(0);
       await expect(page.getByRole('combobox', { name: 'Força editorial da fonte', exact: true })).toHaveCount(0);
       const searchBox = (await search.boundingBox())!;
       const firstBox = (await first.boundingBox())!;
-      expect(firstBox.y, 'a fila vem depois da busca').toBeGreaterThanOrEqual(searchBox.y + searchBox.height);
-      expect(firstBox.y - searchBox.y - searchBox.height, 'a lista começa perto da busca, sem gráficos entre elas').toBeLessThan(190);
+      expect(firstBox.y, 'as manchetes vêm depois da busca').toBeGreaterThanOrEqual(searchBox.y + searchBox.height);
+      expect(firstBox.y - searchBox.y - searchBox.height, 'as manchetes começam perto da busca, sem gráficos entre elas').toBeLessThan(190);
+      const overviewWidth = (await article.boundingBox())!.width;
+      // Decision shortcuts must not act on a story the person has not opened.
+      await page.keyboard.press('c');
+      await page.keyboard.press('a');
+      await expect(page.getByTestId('news-headlines')).toBeVisible();
+      expect(writes).toEqual([]);
       await expectNoHorizontalOverflow(page);
 
       await first.click();
+      await expect(page).toHaveURL(new RegExp(`/news\\?item=${FIRST}$`));
+      await expect(page.getByTestId('news-headlines')).toHaveCount(0);
+      await expect(search).toHaveCount(0);
+      await expect(page.locator('[data-ws-stop="start"]')).toHaveCount(0);
       const heading = article.getByRole('heading', { name: FIRST_TITLE, exact: true });
       await entirelyVisible(page, heading);
       await entirelyVisible(page, article.getByRole('link', { name: /^Ver original/ }));
+      const back = page.getByRole('navigation', { name: 'Trilha de navegação', exact: true }).getByRole('link', { name: 'Notícias', exact: true });
+      await entirelyVisible(page, back);
+      await expect(back).toHaveAttribute('href', '/news');
       for (const name of ['Outras ações da notícia', 'Selecionar para redação']) {
         await entirelyVisible(page, decisions.getByRole('button', { name, exact: true }));
       }
       await entirelyVisible(page, decisions);
       await entirelyVisible(page, article);
-      if (viewport.width >= 900) {
-        await entirelyVisible(page, radar);
-        const radarBox = (await radar.boundingBox())!, articleBox = (await article.boundingBox())!;
-        expect(radarBox.width).toBeGreaterThanOrEqual(360);
-        expect(radarBox.width).toBeLessThanOrEqual(520);
-        expect(articleBox.width).toBeGreaterThanOrEqual(480);
-        expect(articleBox.x).toBeGreaterThanOrEqual(radarBox.x + radarBox.width);
-      } else {
-        await expect(page.getByRole('tab', { name: 'Notícia', exact: true })).toHaveAttribute('aria-selected', 'true');
-        await expect(page.getByRole('tabpanel', { name: 'Radar', exact: true })).toBeHidden();
-      }
-      await article.getByRole('button', { name: /^Texto recebido do feed/ }).click();
+      expect((await article.boundingBox())!.width, 'a leitura ocupa toda a largura usada pelo overview').toBeCloseTo(overviewWidth, 0);
+      // The received text is expanded on entry, without an additional disclosure click.
+      await expect(article.getByText('Parágrafo 1 da notícia 1.', { exact: false })).toBeVisible();
       await article.getByText('Parágrafo 12 da notícia 1.', { exact: false }).scrollIntoViewIfNeeded();
       for (const name of ['Outras ações da notícia', 'Selecionar para redação']) {
         await entirelyVisible(page, decisions.getByRole('button', { name, exact: true }));
       }
-      const writes: string[] = [];
-      page.on('request', request => {
-        if (new URL(request.url()).pathname.startsWith('/api/') && request.method() !== 'GET') writes.push(request.url());
-      });
       await decisions.getByRole('button', { name: 'Outras ações da notícia', exact: true }).click();
       for (const name of ['Por 2 horas', 'Até amanhã cedo', 'Fora do mapa editorial']) {
         await entirelyVisible(page, page.getByRole('menuitem', { name, exact: true }));
@@ -121,19 +130,20 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole('menuitem', { name: 'Por 2 horas', exact: true })).toHaveCount(0);
       expect(writes, 'consultar as ações não grava decisões').toEqual([]);
       await expectNoHorizontalOverflow(page);
+      await expectHeadingOutline(page);
       expect(errors).toEqual([]);
     });
 
-    test('combina filtros, limpa recortes e abre atividade sem perder a notícia nem a busca', async ({ page }) => {
+    test('preserva busca e filtros ao voltar por breadcrumb e navegador, e permite consultar atividade', async ({ page }) => {
       await mockDesk(page);
       const errors = watchErrors(page);
       await page.goto('/news');
       const search = page.getByRole('searchbox', { name: 'Buscar notícias', exact: true });
-      const first = page.getByTestId(`news-row-${FIRST}`);
-      const second = page.getByTestId(`news-row-${SECOND}`);
+      const first = page.getByTestId(`news-card-${FIRST}`);
+      const second = page.getByTestId(`news-card-${SECOND}`);
       await expect(first).toBeVisible();
       await search.fill('tilápia');
-      await expect(page.getByTestId(/^news-row-/)).toHaveCount(2);
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(2);
       await page.getByRole('button', { name: /^Filtros/ }).click();
       await choose(page, 'Força editorial da fonte', 'A1 · Referência');
       await choose(page, 'Fonte', 'Instituto do Pescado');
@@ -143,24 +153,28 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole('button', { name: /^Filtros/ }).click();
       await expect(page.getByRole('combobox', { name: 'Fonte', exact: true })).toHaveCount(0);
       await expect(page.getByRole('group', { name: 'Filtros aplicados', exact: true })).toBeVisible();
-      await page.getByRole('button', { name: 'Limpar filtros', exact: true }).click();
-      await expect(first).toBeVisible();
-      await expect(second).toBeVisible();
-      await page.getByRole('button', { name: 'Limpar busca', exact: true }).click();
-      await expect(search).toHaveValue('');
-      await expect(page.getByTestId(/^news-row-/)).toHaveCount(18);
-      await search.fill('tilápia');
-      await second.click();
+      await first.click();
       const article = page.locator('[data-ws-stop="main"]');
-      await expect(article.getByRole('heading', { name: SECOND_TITLE, exact: true })).toBeVisible();
+      await expect(article.getByRole('heading', { name: FIRST_TITLE, exact: true })).toBeVisible();
+      await expect(page.getByTestId('news-headlines')).toHaveCount(0);
+      await page.getByRole('navigation', { name: 'Trilha de navegação', exact: true }).getByRole('link', { name: 'Notícias', exact: true }).click();
+      await expect(page).toHaveURL(/\/news$/);
+      await expect(search).toHaveValue('tilápia');
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(1);
+      await expect(first).toBeVisible();
+      await expect(page.getByRole('group', { name: 'Filtros aplicados', exact: true })).toContainText('Instituto do Pescado');
+      await expect(page.getByRole('group', { name: 'Filtros aplicados', exact: true })).toContainText('A1');
+      await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
 
-      if (viewport.width < 900) {
-        await page.getByRole('tab', { name: 'Radar', exact: true }).click();
-        await expect(search).toHaveValue('tilápia');
-        await expect(page.getByTestId(/^news-row-/)).toHaveCount(2);
-        await page.getByRole('tab', { name: 'Notícia', exact: true }).click();
-        await expect(article.getByRole('heading', { name: SECOND_TITLE, exact: true })).toBeVisible();
-      }
+      await first.click();
+      await expect(page).toHaveURL(new RegExp(`/news\\?item=${FIRST}$`));
+      await page.goBack();
+      await expect(page).toHaveURL(/\/news$/);
+      await expect(search).toHaveValue('tilápia');
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(1);
+      await expect(first).toBeVisible();
+      await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
+
       if (viewport.width < 768) {
         await page.getByRole('button', { name: 'Mais ações', exact: true }).click();
         await page.getByRole('menuitem', { name: 'Ver atividade', exact: true }).click();
@@ -172,17 +186,22 @@ for (const viewport of VIEWPORTS) {
       await expectNoHorizontalOverflow(page);
       await activity.getByRole('button', { name: 'Fechar painel', exact: true }).click();
       await expect(activity).toHaveCount(0);
-      await expect(article.getByRole('heading', { name: SECOND_TITLE, exact: true })).toBeVisible();
-      if (viewport.width < 900) await page.getByRole('tab', { name: 'Radar', exact: true }).click();
+      await expect(search).toHaveValue('tilápia');
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(1);
+      await page.getByRole('button', { name: 'Limpar filtros', exact: true }).click();
+      await expect(first).toBeVisible();
+      await expect(second).toBeVisible();
       await expect(search).toHaveValue('tilápia');
       await page.getByRole('button', { name: 'Limpar busca', exact: true }).click();
+      await expect(search).toHaveValue('');
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(18);
       await page.getByRole('button', { name: /^Filtros/ }).click();
       await choose(page, 'Fonte', 'Alerta pescado');
-      await expect(page.getByTestId(/^news-row-/)).toHaveCount(6);
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(6);
       await expect(first).toHaveCount(0);
       await expect(second).toHaveCount(0);
       await page.getByRole('button', { name: 'Limpar', exact: true }).click();
-      await expect(page.getByTestId(/^news-row-/)).toHaveCount(18);
+      await expect(page.getByTestId(/^news-card-/)).toHaveCount(18);
       await expectNoHorizontalOverflow(page);
       await expectHeadingOutline(page);
       expect(errors).toEqual([]);
