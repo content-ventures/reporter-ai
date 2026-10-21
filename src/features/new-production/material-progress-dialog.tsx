@@ -1,14 +1,21 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Button, PageStack, LiveRegion, Prose, Progress, ProgressSteps, ResponsiveDialog, Section, formatBytes } from '@content-ventures/design-system/v3';
-import type { materialProgress } from './material-progress';
+import { Button, PageStack, LiveRegion, MiddleEllipsis, Prose, Progress, ProgressSteps, ResponsiveDialog, Section, formatBytes, type ProgressStep } from '@content-ventures/design-system/v3';
+import type { MaterialProgress } from './material-progress';
+import { partLine } from './material-section';
 
-type ProgressState = NonNullable<ReturnType<typeof materialProgress>>;
+/** A part's step shows its file and where its read stands under "Parte N". */
+function stepsOf(progress: MaterialProgress): ProgressStep[] {
+  return progress.steps.map(({ file, ...step }, index) => {
+    const part = progress.parts?.[index];
+    return file && part ? { ...step, detail: <><MiddleEllipsis text={file} />{partLine(part)}</> } : step;
+  });
+}
 
 export function MaterialProgressDialog({ open, progress, onClose, onCancel, onRetry }: {
   open: boolean;
-  progress: ProgressState | null;
+  progress: MaterialProgress | null;
   onClose: () => void;
   onCancel: () => void;
   onRetry: () => void;
@@ -23,18 +30,20 @@ export function MaterialProgressDialog({ open, progress, onClose, onCancel, onRe
   const title = status === 'ready' ? 'Material pronto' : status === 'error' ? 'Material não concluído' : 'Preparando material';
   const source = progress ? [progress.name,progress.size !== undefined ? formatBytes(progress.size) : undefined].filter(Boolean).join(' · ') : undefined;
   const upload = progress?.upload;
+  const cancelLabel = progress?.phase === 'parts' ? ((progress.cancelCount ?? 0) > 1 ? 'Cancelar envios' : 'Cancelar envio')
+    : progress?.phase === 'uploading' ? 'Cancelar envio' : 'Cancelar importação';
   return (
     <ResponsiveDialog open={open && Boolean(progress)} onClose={onClose} title={title} size="md"
       footer={status === 'error' ? (
         <>
           <Button variant="ghost" onClick={onClose}>Voltar ao material</Button>
-          <Button variant="primary" onClick={onRetry}>{progress?.retry === 'pick' ? 'Escolher outro arquivo' : 'Tentar novamente'}</Button>
+          {progress?.retry ? <Button variant="primary" onClick={onRetry}>{progress.retry === 'pick' ? 'Escolher outro arquivo' : 'Tentar novamente'}</Button> : null}
         </>
       ) : status === 'ready' ? (
         <Button variant="primary" onClick={onClose}>Revisar material</Button>
       ) : (
         <>
-          {progress?.canCancel ? <Button variant="ghost" onClick={onCancel}>{progress.phase === 'uploading' ? 'Cancelar envio' : 'Cancelar importação'}</Button> : null}
+          {progress?.canCancel ? <Button variant="ghost" onClick={onCancel}>{cancelLabel}</Button> : null}
           <Button onClick={onClose}>Acompanhar na página</Button>
         </>
       )}
@@ -43,7 +52,7 @@ export function MaterialProgressDialog({ open, progress, onClose, onCancel, onRe
         <Section>
           <PageStack>
             <Prose variant="compact" measure="wide">{source}</Prose>
-            <ProgressSteps label="Preparo do material" steps={progress.steps} />
+            <ProgressSteps label="Preparo do material" steps={stepsOf(progress)} />
             {status !== 'error' ? <Progress aria-label={status === 'ready' ? 'Material pronto' : upload ? 'Envio do arquivo' : 'Processamento do material'}
               value={status === 'ready' ? 100 : upload?.percent}
               valueText={upload ? `${formatBytes(upload.sent)} de ${formatBytes(upload.total)} · ${upload.percent}%` : undefined} /> : null}

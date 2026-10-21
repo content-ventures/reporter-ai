@@ -184,6 +184,36 @@ export function materialTooLong(draft: NewProductionDraft): boolean {
   return draft.mode === 'file' && draft.parts.length > 1 && draftMaterial(draft).text.length > MAX_MATERIAL_CHARS;
 }
 
+export const MATERIAL_TOO_LONG = 'O material passa de 1 MB de texto. Remova uma parte para continuar.';
+
+type PickedFile = { name: string; size: number; lastModified?: number };
+
+function sameFile(a: PickedFile, b: PickedFile): boolean {
+  return a.name === b.name && a.size === b.size && (a.lastModified === undefined || b.lastModified === undefined || a.lastModified === b.lastModified);
+}
+
+/**
+ * Files picked for the material, in recording order (REC_0012 before REC_0013): a file already
+ * among the parts is `repeated`, and what passes the limit of parts is `over`.
+ */
+export function choosePartFiles<T extends PickedFile>(parts: readonly PickedFile[], files: readonly T[]): { accepted: T[]; repeated: T[]; over: T[] } {
+  const sorted = [...files].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { numeric: true, sensitivity: 'base' }));
+  const room = Math.max(0, MAX_MATERIAL_PARTS - parts.length);
+  const chosen: { accepted: T[]; repeated: T[]; over: T[] } = { accepted: [], repeated: [], over: [] };
+  for (const file of sorted) {
+    if ([...parts, ...chosen.accepted].some((taken) => sameFile(taken, file))) chosen.repeated.push(file);
+    else if (chosen.accepted.length >= room) chosen.over.push(file);
+    else chosen.accepted.push(file);
+  }
+  return chosen;
+}
+
+/** "A parte 2 não tem falas…" when one recording of the material brought no speech. */
+export function emptyPartMessage(analysis: Pick<SourceAnalysis, 'parts'> | undefined): string | undefined {
+  const index = analysis?.parts?.findIndex((part) => part.segments === 0) ?? -1;
+  return index >= 0 ? `A parte ${index + 1} não tem falas. Remova ou troque o arquivo.` : undefined;
+}
+
 export function hasMaterial(draft: NewProductionDraft): boolean {
   return draftMaterial(draft).text.trim().length > 0;
 }
@@ -399,8 +429,16 @@ export function withFormatSize(draft: Pick<NewProductionDraft, 'format' | 'secti
 
 // ── Blockers (visible reason next to the primary) and validation ─────────────────────────
 
-/** Why "Continuar" cannot move on from Material (COPY §6.1); `undefined` when it can. */
-export function materialBlocker(draft: NewProductionDraft): string | undefined {
+/**
+ * Why "Continuar" cannot move on from Material (COPY §6.1); `undefined` when it can. A material in
+ * parts first waits for every part (`failed`: parts whose read failed).
+ */
+export function materialBlocker(draft: NewProductionDraft, failed = 0): string | undefined {
+  if (draft.mode === 'file' && draft.parts.length > 1) {
+    if (failed > 0) return 'Tente de novo ou remova a parte que falhou.';
+    if (draftMaterial(draft).pending) return 'Aguarde o envio das partes.';
+    if (materialTooLong(draft)) return MATERIAL_TOO_LONG;
+  }
   if (!hasMaterial(draft)) return draft.mode === 'file' ? 'Envie o arquivo da transcrição para continuar.' :
     draft.mode === 'link' ? 'Importe o link para continuar.' : 'Cole a transcrição para continuar.';
   if (!draft.authorized) return 'Marque a autorização dos falantes para continuar.';
