@@ -1,6 +1,8 @@
 'use client';
 
 import { newsLogoUrl } from '@/domain/news-branding';
+import { sourceForNews } from '@/domain/news-source-match';
+import { SourceRatingBadge } from '../source-rating';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -60,7 +62,8 @@ const at = (iso: string, now: number) => formatRelative(new Date(Math.min(Date.p
  */
 export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
   const dossier = useDossier(item.productionId);
-  const { live, actions } = useHardNews();
+  const { live, actions, state } = useHardNews();
+  const source = sourceForNews(item, state.feeds);
   const canEdit = useCan('production.edit');
   // News on the server come without their text: the open story reads it once.
   const pending = live && item.paragraphs !== undefined;
@@ -106,6 +109,7 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
           </ButtonLink>
         )}
       />
+      <SourceRatingBadge rating={source?.rating} relevance />
       {item.translation?.status === 'translated' ? <Badge variant="text" tone="gray" size="sm">Tradução automática · pt-BR</Badge> : null}
       {item.translation?.status === 'pending' ? <Prose variant="compact" measure="wide">Preparando tradução · exibindo original</Prose> : null}
       {item.translation?.status === 'failed' ? (

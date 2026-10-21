@@ -12,6 +12,10 @@ import {
   CardHeader,
   ConfirmDialog,
   EmptyState,
+  Field,
+  FilterBand,
+  FilterBar,
+  FilterField,
   Grid,
   IconButton,
   LinkButton,
@@ -26,14 +30,17 @@ import {
 } from '@content-ventures/design-system/v3';
 import { AlertTriangle, Ellipsis, Pause, Play, Plus, RefreshCw, Rss, Trash2 } from '@content-ventures/design-system/v3/icons';
 import type { NewsFeed } from '@/domain/hard-news';
+import { isRateableNewsSource, SOURCE_RELEVANCE_LABELS, SOURCE_TIER_LABELS, sourceRatingRank } from '@/domain/news-source-rating';
 import { useCan } from '@/state';
 import { useBreadcrumb } from '@/ui/shell';
 import { RelativeTime } from '@/ui/time';
 import { NEWS_HREF } from '../routes';
 import { useHardNews, useNewsWatch } from '../state/hard-news-provider';
+import { SourceRatingBadge } from '../source-rating';
 import { AddFeedDialog } from './add-feed-dialog';
 import { DiscoverSourcesDialog } from './discover-sources-dialog';
 import { FEED_STATE, feedOrigin, INTERVAL_OPTIONS } from './feed-format';
+import { SourceRatingDialog } from './source-rating-dialog';
 
 /**
  * Fontes (F2.1, REQ-2.1): the RSS feeds the desk reads, how often, and whether each one answers.
@@ -47,11 +54,26 @@ export function SourcesScreen() {
   const [discovering, setDiscovering] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [removing, setRemoving] = useState<NewsFeed>();
+  const [rating, setRating] = useState<{ id: string; mode: 'view' | 'edit' }>();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [tierFilter, setTierFilter] = useState('all');
+  const [relevanceFilter, setRelevanceFilter] = useState('all');
+  const [order, setOrder] = useState('current');
   useBreadcrumb([{ label: 'Notícias', href: NEWS_HREF }, { label: 'Fontes' }]);
   useNewsWatch();
 
   const feeds = state.feeds;
   const failing = ready ? feeds.filter((feed) => feed.state === 'failing') : [];
+  const filterCount = Number(tierFilter !== 'all') + Number(relevanceFilter !== 'all');
+  const visibleFeeds = feeds.filter((feed) => {
+    const rateable = isRateableNewsSource(feed);
+    const tier = rateable ? feed.rating?.tier ?? 'unrated' : 'aggregator';
+    return (tierFilter === 'all' || tier === tierFilter)
+      && (relevanceFilter === 'all' || (rateable && feed.rating?.relevance === relevanceFilter));
+  });
+  if (order === 'strength') visibleFeeds.sort((a, b) => sourceRatingRank(isRateableNewsSource(a) ? a.rating : undefined) - sourceRatingRank(isRateableNewsSource(b) ? b.rating : undefined));
+  const ratingFeed = rating ? feeds.find((feed) => feed.id === rating.id) : undefined;
+  const clearFilters = () => { setTierFilter('all'); setRelevanceFilter('all'); };
 
   async function retry(feed: NewsFeed) {
     toast(`Lendo ${feed.name} de novo`);
@@ -111,8 +133,27 @@ export function SourcesScreen() {
                 { label: 'Última leitura', value: ready && lastRead ? <RelativeTime at={lastRead} /> : '—', loading: !ready },
               ]}
             />
+            <FilterBar filtersOpen={filtersOpen} onFiltersOpenChange={setFiltersOpen} filterCount={filterCount} bandId="source-rating-filters"
+              actions={<Select label="Ordenar fontes" size="sm" value={order} onChange={setOrder} options={[
+                { value: 'current', label: 'Ordem atual' }, { value: 'strength', label: 'Força editorial' },
+              ]} />} />
+            <FilterBand id="source-rating-filters" open={filtersOpen} onClear={filterCount ? clearFilters : undefined}>
+              <FilterField><Field label="Força editorial">
+                {({ id }) => <Select id={id} size="sm" value={tierFilter} onChange={setTierFilter} options={[
+                  { value: 'all', label: 'Todas' },
+                  ...Object.entries(SOURCE_TIER_LABELS).map(([value, label]) => ({ value, label: `${value} · ${label}` })),
+                  { value: 'unrated', label: 'Não avaliadas' }, { value: 'aggregator', label: 'Agregadores' },
+                ]} />}
+              </Field></FilterField>
+              <FilterField><Field label="Relevância para o veículo">
+                {({ id }) => <Select id={id} size="sm" value={relevanceFilter} onChange={setRelevanceFilter} options={[
+                  { value: 'all', label: 'Todas' }, ...Object.entries(SOURCE_RELEVANCE_LABELS).map(([value, label]) => ({ value, label })),
+                ]} />}
+              </Field></FilterField>
+            </FilterBand>
+            {ready && visibleFeeds.length === 0 ? <EmptyState title="Nenhuma fonte neste filtro" actions={<Button variant="secondary" onClick={clearFilters}>Limpar filtros</Button>} /> : null}
             <Grid columns="1:1:1" collapseBelow={1024} as="ul">
-              {feeds.map((feed) => (
+              {visibleFeeds.map((feed) => (
                 <FeedCard
                   key={feed.id}
                   feed={feed}
@@ -121,6 +162,7 @@ export function SourcesScreen() {
                   onPause={(paused) => void change(feed, { paused }, paused ? `${feed.name} pausada` : `${feed.name} retomada`)}
                   onRemove={() => setRemoving(feed)}
                   onInterval={(everyMinutes) => void change(feed, { everyMinutes })}
+                  onRating={(mode) => setRating({ id: feed.id, mode })}
                 />
               ))}
             </Grid>
@@ -129,6 +171,7 @@ export function SourcesScreen() {
       </PageStack>
       <AddFeedDialog open={adding} onClose={() => setAdding(false)} />
       {discovering ? <DiscoverSourcesDialog open onClose={() => setDiscovering(false)} /> : null}
+      {rating && ratingFeed ? <SourceRatingDialog key={`${rating.id}:${rating.mode}`} feed={ratingFeed} mode={rating.mode} onClose={() => setRating(undefined)} /> : null}
       <ConfirmDialog
         open={removing !== undefined}
         onClose={() => setRemoving(undefined)}
@@ -150,15 +193,17 @@ export function SourcesScreen() {
 }
 
 /** One source: its mark, how it is doing, its last 7 days, how often the desk reads it. */
-function FeedCard({ feed, canEdit, onRetry, onPause, onRemove, onInterval }: {
+function FeedCard({ feed, canEdit, onRetry, onPause, onRemove, onInterval, onRating }: {
   feed: NewsFeed;
   canEdit: boolean;
   onRetry: () => void;
   onPause: (paused: boolean) => void;
   onRemove: () => void;
   onInterval: (minutes: number) => void;
+  onRating: (mode: 'view' | 'edit') => void;
 }) {
   const state = FEED_STATE[feed.state];
+  const rateable = isRateableNewsSource(feed);
   const card = (
     <Card padding="md" as="div">
       <PageStack>
@@ -174,6 +219,7 @@ function FeedCard({ feed, canEdit, onRetry, onPause, onRemove, onInterval }: {
               align="end"
               sections={[{
                 items: [
+                  ...(rateable ? [{ label: feed.rating ? 'Editar avaliação' : 'Avaliar fonte', onSelect: () => onRating('edit') }] : []),
                   feed.state === 'failing'
                     ? { label: 'Tentar de novo', icon: RefreshCw, onSelect: onRetry }
                     : feed.state === 'paused'
@@ -186,6 +232,10 @@ function FeedCard({ feed, canEdit, onRetry, onPause, onRemove, onInterval }: {
             />
           ) : undefined}
         />
+        {rateable ? <MetaList size="sm" items={[
+          <SourceRatingBadge key="rating" rating={feed.rating} relevance />,
+          ...(feed.rating || canEdit ? [<LinkButton key="view" size="sm" onClick={() => onRating(feed.rating ? 'view' : 'edit')}>{feed.rating ? 'Ver avaliação' : 'Avaliar fonte'}</LinkButton>] : []),
+        ]} /> : <Badge variant="soft" size="sm" tone="gray">Agregador</Badge>}
         {feed.lastWeek && feed.lastWeek.length > 1 ? (
           <Sparkline points={feed.lastWeek} tone={feed.state === 'failing' ? 'red' : feed.state === 'paused' ? 'gray' : 'blue'} fluid height={40} />
         ) : null}

@@ -13,6 +13,7 @@ import {
   ListItem,
   ListItemSkeleton,
   MetricStrip,
+  MetaList,
   PageStack,
   Panel,
   Section,
@@ -21,6 +22,9 @@ import {
 import type { MetricProps } from '@content-ventures/design-system/v3';
 import { Telescope } from '@content-ventures/design-system/v3/icons';
 import { newsLogoUrl } from '@/domain/news-branding';
+import { sourceForNews } from '@/domain/news-source-match';
+import type { SourceRating } from '@/domain/news-source-rating';
+import { SourceRatingBadge } from '../source-rating';
 import { priorityOf } from '@/domain/hard-news';
 import type { NewsFeed, NewsItem } from '@/domain/hard-news';
 import { NEWS_SOURCES_HREF } from '../routes';
@@ -68,15 +72,15 @@ export function RadarBoard(props: RadarBoardProps) {
             <EmptyState size="inline" icon={Telescope} title={query ? 'Nada com prioridade alta na busca' : 'Nada para cobrir agora'} />
           ) : (
             <Grid as="ul" label="Cobrir agora" columns={hero.length >= 3 ? '1:1:1' : '1:1'} collapseBelow={640}>
-              {hero.map((item) => <NewsCard key={item.id} item={item} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
+              {hero.map((item) => <NewsCard key={item.id} item={item} rating={sourceForNews(item, feeds)?.rating} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
             </Grid>
           )}
         </Section>
       ) : null}
       <Grid columns="3:2" collapseBelow={640} align="start">
         {tab === 'open'
-          ? <Wire triage={triage} groups={groups} query={query} now={now} selectedId={selectedId} onSelect={onSelect} onMarkSeen={onMarkSeen} />
-          : <Decided items={decided} query={query} now={now} selectedId={selectedId} onSelect={onSelect} />}
+          ? <Wire triage={triage} feeds={feeds} groups={groups} query={query} now={now} selectedId={selectedId} onSelect={onSelect} onMarkSeen={onMarkSeen} />
+          : <Decided feeds={feeds} items={decided} query={query} now={now} selectedId={selectedId} onSelect={onSelect} />}
         <RadarSide triage={triage} news={news} feeds={feeds} now={now} />
       </Grid>
     </PageStack>
@@ -155,10 +159,10 @@ function IntakeStrip({ now, news, pulse, seenSince, onSelect }: RadarBoardProps)
   return <MetricStrip label="Sinais do radar" items={items} />;
 }
 
-type ListProps = { query: string; now: number; selectedId?: string; onSelect: (id: string) => void };
+type ListProps = { feeds: readonly NewsFeed[]; query: string; now: number; selectedId?: string; onSelect: (id: string) => void };
 
 /** "Na fila": everything else waiting, by arrival, with the AI's priority as a dot + word. */
-function Wire({ triage, groups, query, now, selectedId, onSelect, onMarkSeen }: ListProps & { triage: boolean; groups: WireGroup[]; onMarkSeen: () => void }) {
+function Wire({ triage, feeds, groups, query, now, selectedId, onSelect, onMarkSeen }: ListProps & { triage: boolean; groups: WireGroup[]; onMarkSeen: () => void }) {
   const total = groups.reduce((sum, group) => sum + group.items.length, 0);
   const fresh = groups.some((group) => group.id === 'new');
   return (
@@ -170,7 +174,7 @@ function Wire({ triage, groups, query, now, selectedId, onSelect, onMarkSeen }: 
           <List label="Na fila" framed={false} bleed>
             {groups.map((group) => (
               <ListGroup key={group.id} label={group.label} meta={group.items.length}>
-                {group.items.map((item) => <WireRow key={item.id} triage={triage} item={item} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
+                {group.items.map((item) => <WireRow key={item.id} triage={triage} item={item} rating={sourceForNews(item, feeds)?.rating} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
               </ListGroup>
             ))}
           </List>
@@ -180,7 +184,7 @@ function Wire({ triage, groups, query, now, selectedId, onSelect, onMarkSeen }: 
   );
 }
 
-function WireRow({ triage, item, now, selected, onSelect }: { triage: boolean; item: NewsItem; now: number; selected: boolean; onSelect: (id: string) => void }) {
+function WireRow({ triage, item, rating, now, selected, onSelect }: { triage: boolean; item: NewsItem; rating?: SourceRating; now: number; selected: boolean; onSelect: (id: string) => void }) {
   const priority = priorityOf(item);
   const facts = [item.source, arrivalLabel(item, now)];
   if (item.classification) facts.push(item.classification.topic);
@@ -191,9 +195,11 @@ function WireRow({ triage, item, now, selected, onSelect }: { triage: boolean; i
       title={item.title}
       titleLines={2}
       description={facts.join(' · ')}
-      meta={!triage
-        ? (outlets > 1 ? <Badge variant="text" tone="gray">{`${outlets} veículos`}</Badge> : undefined)
-        : priority ? <PriorityBadge priority={priority} size="sm" /> : <Spinner size={14} tone="muted" label="A IA está lendo" />}
+      meta={<MetaList size="sm" items={[
+        <SourceRatingBadge key="source" rating={rating} compact />,
+        !triage ? (outlets > 1 ? <Badge key="spread" variant="text" tone="gray">{`${outlets} veículos`}</Badge> : null)
+          : priority ? <PriorityBadge key="priority" priority={priority} size="sm" /> : <Spinner key="reading" size={14} tone="muted" label="A IA está lendo" />,
+      ]} />}
       selected={selected}
       onClick={() => onSelect(item.id)}
       data-testid={`news-row-${item.id}`}
@@ -209,7 +215,7 @@ const DECIDED_BADGE = {
 } as const;
 
 /** "Decididas": what the desk covered, postponed or discarded, the latest decision first. */
-function Decided({ items, query, now, selectedId, onSelect }: ListProps & { items: NewsItem[] }) {
+function Decided({ items, feeds, query, now, selectedId, onSelect }: ListProps & { items: NewsItem[] }) {
   return (
     <Panel label="Decididas">
       <Section title="Decididas" meta={items.length}>
@@ -226,8 +232,8 @@ function Decided({ items, query, now, selectedId, onSelect }: ListProps & { item
                 leading={<BrandMark name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />}
                 title={item.title}
                 titleLines={2}
-                description={[who, detail].filter(Boolean).join(' · ')}
-                meta={badge ? <Badge variant="text" tone={badge.tone} dot>{badge.label}</Badge> : undefined}
+                description={[item.source, who, detail].filter(Boolean).join(' · ')}
+                meta={<MetaList size="sm" items={[<SourceRatingBadge key="source" rating={sourceForNews(item, feeds)?.rating} compact />, badge ? <Badge key="decision" variant="text" tone={badge.tone} dot>{badge.label}</Badge> : null]} />}
                 selected={item.id === selectedId}
                 onClick={() => onSelect(item.id)}
                 data-testid={`news-row-${item.id}`}
