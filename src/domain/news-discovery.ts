@@ -1,7 +1,7 @@
 import type { FactSource } from './fact-check.ts';
 import { canonicalUrl, cleanText, isNewsAddress } from './news-intake.ts';
 
-/** A portal supplies its public description; a sector is the person's explicit search context. */
+/** The client portal supplies context only; discovery finds other publishers to collect. */
 export type NewsDiscoveryInput = { portalUrl?: string; sector?: string; region?: string };
 export type NewsDiscoveryContext = {
   portal?: { url: string; title: string; description?: string };
@@ -34,13 +34,25 @@ export const NEWS_DISCOVERY_LIMITS = {
   candidates: 8, concurrency: 4, feedsPerSite: 2, fallbackFeeds: 2, sampleItems: 3,
 } as const;
 
-/** Uses only the entered sector or the site's own words, without inventing an editorial map. */
-export function discoveryQueries(context: NewsDiscoveryContext): string[] {
+export function portalDomains(urls: readonly string[]): string[] {
+  return [...new Set(urls.filter(isNewsAddress).map(url => new URL(url).hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '')))];
+}
+
+/** Includes subdomains, but never unrelated hosts that merely contain the client's name. */
+export function isPortalAddress(url: string, portalUrls: readonly string[]): boolean {
+  if (!isNewsAddress(url)) return false;
+  const host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+  return portalDomains(portalUrls).some(domain => host === domain || host.endsWith(`.${domain}`));
+}
+
+/** Uses the entered sector or the site's own words, excluding the client from both searches. */
+export function discoveryQueries(context: NewsDiscoveryContext, portalUrls: readonly string[] = context.portal ? [context.portal.url] : []): string[] {
   const topic = cleanText(context.sector || context.portal?.description || context.portal?.title).slice(0, 160);
   const region = cleanText(context.region).slice(0, 70);
+  const exclusions = portalDomains(portalUrls).map(domain => `-site:${domain}`).join(' ');
   return [
-    `${topic} ${region} portal revista especializada notícias`.replace(/\s+/g, ' ').trim(),
-    `${topic} ${region} últimas notícias`.replace(/\s+/g, ' ').trim(),
+    `${topic} ${region} portal revista especializada notícias ${exclusions}`.replace(/\s+/g, ' ').trim(),
+    `${topic} ${region} notícias RSS ${exclusions}`.replace(/\s+/g, ' ').trim(),
   ];
 }
 
@@ -54,13 +66,13 @@ export function discoveryAddress(value: string): boolean {
     && !/\/article\/(view|download)\//i.test(url.pathname);
 }
 
-/** One verifiable result per site. The portal itself remains useful when explicitly supplied. */
-export function discoveryCandidates(results: readonly FactSource[], portalUrl?: string): FactSource[] {
+/** One external result per site; the client portal is never a source to subscribe to. */
+export function discoveryCandidates(results: readonly FactSource[], portals: string | readonly string[] = []): FactSource[] {
   const host = (url: string) => new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-  const ownHost = portalUrl && isNewsAddress(portalUrl) ? host(portalUrl) : undefined;
+  const portalUrls = typeof portals === 'string' ? [portals] : portals;
   const seen = new Set<string>();
   const candidates = results.filter(result => {
-    if (!discoveryAddress(result.url) || !canonicalUrl(result.url)) return false;
+    if (!discoveryAddress(result.url) || !canonicalUrl(result.url) || isPortalAddress(result.url, portalUrls)) return false;
     const catalogue = /reposit[oó]rio (digital|institucional|de materiais)|biblioteca digital|peri[oó]dicos (cient[ií]ficos|acad[eê]micos)|teses e disserta[cç][oõ]es|open journal systems|\bdspace\b/i
       .test(`${result.title} ${result.excerpt}`);
     if (catalogue && !/\/(noticias?|news|imprensa)\b/i.test(new URL(result.url).pathname)) return false;
@@ -69,7 +81,5 @@ export function discoveryCandidates(results: readonly FactSource[], portalUrl?: 
     seen.add(key);
     return true;
   });
-  // A supplied portal is a real starting point; prefer its own entry over unrelated results.
-  candidates.sort((a, b) => Number(host(b.url) === ownHost) - Number(host(a.url) === ownHost));
   return candidates.slice(0, NEWS_DISCOVERY_LIMITS.candidates);
 }

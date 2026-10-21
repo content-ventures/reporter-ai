@@ -145,8 +145,8 @@ export function DiscoverSourcesDialog({ open, onClose }: { open: boolean; onClos
         <Stepper label="Configuração das fontes" steps={STEPS} current={step} />
         {step === 0 ? (
           <>
-            <FieldGroup label="Contexto da cobertura" hint="Informe o site do veículo ou o setor que deseja acompanhar.">
-              <Field label="Site do veículo" optional>
+            <FieldGroup label="Contexto da cobertura" hint="Informe seu site ou setor. O site serve como contexto e não entra nas fontes sugeridas.">
+              <Field label="Site do seu veículo (contexto)" optional>
                 {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="url" inputMode="url" placeholder="https://"
                   value={portalUrl} disabled={busy} autoFocus onChange={event => { setPortalUrl(event.target.value); setError(undefined); }} onKeyDown={onEnter} />}
               </Field>

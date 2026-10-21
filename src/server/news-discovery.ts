@@ -2,12 +2,11 @@ import 'server-only';
 import { DomUtils, parseDocument } from 'htmlparser2';
 import { z } from 'zod';
 import type { FactSource } from '../domain/fact-check.ts';
-import { discoveryCandidates, discoveryQueries, NEWS_DISCOVERY_LIMITS } from '../domain/news-discovery.ts';
+import { discoveryCandidates, discoveryQueries, isPortalAddress, NEWS_DISCOVERY_LIMITS } from '../domain/news-discovery.ts';
 import type { NewsDiscoveryContext, NewsDiscoveryResult, NewsSourceSuggestion } from '../domain/news-discovery.ts';
 import { canonicalUrl, cleanText, isNewsAddress, NEWS_LIMITS } from '../domain/news-intake.ts';
 import { FlowError } from './errors.ts';
 import { fetchText } from './news-fetch.ts';
-import type { FetchedText } from './news-fetch.ts';
 import { discoverFeeds, htmlText, parseFeed } from './news-parse.ts';
 import type { ParsedFeed } from './news-parse.ts';
 import { entriesFor, FEED_ACCEPT } from './news-reader.ts';
@@ -78,8 +77,11 @@ function announcedFeeds(html: string, base: string): string[] {
 }
 
 /** A successful parse proves availability; only dates the feed supplied count as recent news. */
-function verified(base: NewsSourceSuggestion, feed: ParsedFeed, url: string, now: number): NewsSourceSuggestion {
-  const dated = feed.entries.filter(entry => {
+function verified(base: NewsSourceSuggestion, feed: ParsedFeed, url: string, now: number, portalUrls: readonly string[]): NewsSourceSuggestion | undefined {
+  if (isPortalAddress(url, portalUrls) || (feed.site && isPortalAddress(feed.site, portalUrls))) return undefined;
+  const external = feed.entries.filter(entry => !entry.url || !isPortalAddress(entry.url, portalUrls));
+  if (feed.entries.length && !external.length) return undefined;
+  const dated = external.filter(entry => {
     const date = entry.publishedAt ? Date.parse(entry.publishedAt) : NaN;
     return Number.isFinite(date) && date <= now && date >= now - NEWS_LIMITS.firstReadDays * 86_400_000;
   });
@@ -91,37 +93,36 @@ function verified(base: NewsSourceSuggestion, feed: ParsedFeed, url: string, now
 }
 
 /** Conventional URLs are probes, never suggestions until their response parses as a real feed. */
-async function verifyCandidate(evidence: FactSource, deps: NewsDiscoveryServices, parentSignal: AbortSignal, seed?: FetchedText): Promise<NewsSourceSuggestion> {
+async function verifyCandidate(evidence: FactSource, deps: NewsDiscoveryServices, parentSignal: AbortSignal, portalUrls: readonly string[]): Promise<NewsSourceSuggestion | undefined> {
   const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(NEWS_DISCOVERY_LIMITS.siteTimeoutMs)]);
   const base = baseSuggestion(evidence), visited = new Set<string>();
-  if (seed?.url === evidence.url) base.reason = `Portal informado: ${evidence.excerpt.slice(0, 240)}`;
   let reachable = false;
   let feedAttempts = 0;
   let origin = base.site;
   const read = async (url: string, feed = false) => {
-    if (seed?.url === url) return seed;
     const readSignal = AbortSignal.any([signal, AbortSignal.timeout(NEWS_DISCOVERY_LIMITS.readTimeoutMs)]);
     return bounded(readSignal, () => deps.fetch(url, { maxBytes: feed ? NEWS_LIMITS.feedBytes : NEWS_LIMITS.pageBytes,
       accept: feed ? FEED_ACCEPT : PAGE_ACCEPT, signal: readSignal }));
   };
   const tryFeed = async (url: string) => {
-    if (visited.has(url) || !isNewsAddress(url)) return undefined;
+    if (visited.has(url) || !isNewsAddress(url) || isPortalAddress(url, portalUrls)) return undefined;
     visited.add(url);
     try {
       const fetched = await read(url, true);
       const feed = fetched.status === 200 ? parseFeed(fetched.text) : undefined;
-      return feed && !/^(comments|comentários|comentarios)\b/i.test(feed.title ?? '') ? verified(base, feed, fetched.url, deps.now()) : undefined;
+      return feed && !/^(comments|comentários|comentarios)\b/i.test(feed.title ?? '') ? verified(base, feed, fetched.url, deps.now(), portalUrls) : undefined;
     } catch { return undefined; }
   };
   for (const address of [...new Set([evidence.url, base.site])]) {
     if (signal.aborted) break;
     try {
       const page = await read(address);
+      if (isPortalAddress(page.url, portalUrls)) return undefined;
       if (page.status !== 200) continue;
       reachable = true;
       origin = new URL(page.url).origin;
       const direct = parseFeed(page.text);
-      if (direct) return verified(base, direct, page.url, deps.now());
+      if (direct) return verified(base, direct, page.url, deps.now(), portalUrls);
       for (const url of announcedFeeds(page.text, page.url)) {
         if (feedAttempts >= NEWS_DISCOVERY_LIMITS.feedsPerSite || visited.has(url)) continue;
         feedAttempts += 1;
@@ -151,12 +152,10 @@ export async function discoverNewsSources(value: unknown, deps: NewsDiscoverySer
   signal.throwIfAborted();
   const input = parsed.data;
   const context: NewsDiscoveryContext = { ...(input.sector ? { sector: cleanText(input.sector) } : {}), ...(input.region ? { region: cleanText(input.region) } : {}) };
-  let portalPage: FetchedText | undefined;
   if (input.portalUrl) {
     try {
       const portal = await bounded(signal, () => deps.fetch(input.portalUrl!, { maxBytes: NEWS_LIMITS.pageBytes, accept: PAGE_ACCEPT, signal }));
       if (portal.status !== 200) throw new Error('PORTAL_UNREADABLE');
-      portalPage = portal;
       context.portal = portalDescription(portal.text, portal.url);
     } catch {
       throw refusal('NEWS_DISCOVERY_PORTAL', 'Não foi possível ler o portal. Confira o endereço ou pesquise apenas pelo setor.');
@@ -165,32 +164,27 @@ export async function discoverNewsSources(value: unknown, deps: NewsDiscoverySer
       || /^(home|início|inicio|bem-vindo|bem vindo)$/i.test(context.portal.title)))
       throw refusal('NEWS_DISCOVERY_CONTEXT', 'O portal não informa seu tema no título ou na descrição. Informe o setor para orientar a busca.');
   }
-  const queries = discoveryQueries(context);
+  const portalUrls = [input.portalUrl, context.portal?.url].filter((url): url is string => Boolean(url));
+  const queries = discoveryQueries(context, portalUrls);
   let results: FactSource[];
   try { results = (await Promise.all(queries.map(query => bounded(signal, () => deps.search(query, signal))))).flat(); }
   catch (error) {
     if (signal.aborted) throw refusal('NEWS_DISCOVERY_TIMEOUT', 'A busca de fontes demorou mais que o esperado. Tente novamente.', 504);
     throw error;
   }
-  const portal = context.portal;
-  if (portal) results.unshift({ url: portal.url, title: portal.title, site: new URL(portal.url).hostname,
-    excerpt: portal.description || portal.title });
-  const candidates = discoveryCandidates(results, portal?.url), suggestions: NewsSourceSuggestion[] = [];
+  const candidates = discoveryCandidates(results, portalUrls), checked: (NewsSourceSuggestion | undefined)[] = [];
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(NEWS_DISCOVERY_LIMITS.concurrency, candidates.length) }, async () => {
     while (next < candidates.length) {
       const index = next++;
-      suggestions[index] = await verifyCandidate(candidates[index], deps, signal, portalPage);
+      checked[index] = await verifyCandidate(candidates[index], deps, signal, portalUrls);
     }
   }));
   callerSignal?.throwIfAborted();
+  const suggestions = checked.filter((item): item is NewsSourceSuggestion => Boolean(item));
   const order = { verified: 0, 'no-feed': 1, unavailable: 2 };
-  const ownHost = portal && new URL(portal.url).hostname.toLowerCase().replace(/^www\./, '');
-  const isOwnPortal = (suggestion: NewsSourceSuggestion) => Boolean(ownHost
-    && new URL(suggestion.site).hostname.toLowerCase().replace(/^www\./, '') === ownHost);
   // Keep the search's relevance order among available feeds; publication volume is not relevance.
   suggestions.sort((a, b) => order[a.status] - order[b.status]
-    || Number(isOwnPortal(b)) - Number(isOwnPortal(a))
     || Number(b.recentItems > 0) - Number(a.recentItems > 0));
   return { context, queries, suggestions, checkedAt: new Date(deps.now()).toISOString() };
 }

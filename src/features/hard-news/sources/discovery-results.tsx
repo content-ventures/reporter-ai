@@ -1,6 +1,7 @@
 'use client';
 
-import { Badge, Checkbox, List, ListItem, MetaList, PageStack, Prose, Section, TextLink } from '@content-ventures/design-system/v3';
+import { Badge, BrandMark, CardHeader, Checkbox, List, ListItem, MetaList, PageStack, Prose, Section, TextLink } from '@content-ventures/design-system/v3';
+import { newsLogoUrl } from '@/domain/news-branding';
 import type { NewsSourceSuggestion } from '@/domain/news-discovery';
 import type { NewsFeed } from '@/domain/hard-news';
 
@@ -41,9 +42,11 @@ export function DiscoveryResults({ suggestions, feeds, selected, toggle }: {
         const verified = selectableSource(suggestion);
         const existing = registeredSource(suggestion, feeds);
         return (
-          <Section key={suggestion.id} variant="panel" title={suggestion.name} titleAs="h3"
-            action={verified ? <Checkbox aria-label={`Selecionar ${suggestion.name}`} checked={Boolean(existing) || selected.has(suggestion.id)}
-              disabled={Boolean(existing)} onChange={() => toggle(suggestion.id)} /> : undefined}>
+          <Section key={suggestion.id} variant="panel">
+            <CardHeader title={suggestion.name} titleAs="h3"
+              leading={<BrandMark name={suggestion.name} src={newsLogoUrl(suggestion.site)} size="sm" decorative />}
+              actions={verified ? <Checkbox aria-label={`Selecionar ${suggestion.name}`} checked={Boolean(existing) || selected.has(suggestion.id)}
+                disabled={Boolean(existing)} onChange={() => toggle(suggestion.id)} /> : undefined} />
             <MetaList size="sm" items={[
               <TextLink key="site" href={suggestion.site} external>{new URL(suggestion.site).hostname.replace(/^www\./, '')}</TextLink>,
               <Badge key="status" size="sm" variant="soft" tone={existing ? 'gray' : verified ? 'green' : 'amber'}>

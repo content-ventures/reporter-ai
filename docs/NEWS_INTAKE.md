@@ -21,12 +21,14 @@ added, so it arrives with its news. Removing a source keeps its news and deletes
 ## Start with a portal or sector
 
 The empty radar and Fontes offer **Descobrir fontes**. Enter a portal URL, a sector, or both, with
-an optional region. The server reads public portal metadata and uses the existing Tavily search
-integration to find candidate publishers. Every selectable suggestion has a feed that was actually
+an optional region. The portal is the client publication that will create articles, not an intake
+source. The server reads its public metadata only as context and uses the existing Tavily search
+integration to find external publishers. The entered and redirected client domains, including their
+subdomains, are excluded from candidates, feed identities and sample article links. Every selectable suggestion has a feed that was actually
 fetched and parsed, a search reference, a reason and recent sample headlines. Inaccessible sites and
 sites without a verified feed remain visible with their limitation; they cannot be subscribed to.
 
-Review the selection, then add the sources. Discovery itself writes nothing. Each selected source
+Choose the external sources, then add them. Discovery itself writes nothing. Each selected source
 is saved and read immediately, with its own result and number of newly imported stories. A source
 whose first collection fails stays registered and can be retried without a duplicate subscription.
 A valid feed with no recent stories says so; it never receives invented sample news. Existing feeds
@@ -104,6 +106,11 @@ decision bar offers **Selecionar para redação**, **Adiar** and **Descartar**, 
 under Decididas. Selection keeps the article's source material ready for the writing workflow;
 it does not create a production or generate a Hard News article. The AI's editorial classification
 (F2.4) is still outside this delivery. The fixtures build keeps the simulated desk.
+
+Source suggestions, source lists and the radar display publisher favicons through the public
+Design System `BrandMark`, using the same image service as the integration catalogue. Only the
+publisher hostname is sent to that service; article paths and query parameters are not. Failed
+images use the Design System fallback.
 
 Feed text can be only a summary. The story labels it as **Texto recebido do feed**; manually
 imported pages use **Texto extraído da página**. The original link and publication attribution
