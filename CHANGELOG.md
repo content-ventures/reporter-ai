@@ -4,6 +4,33 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-21
+
+### Added
+
+- Parse a material joined from several recordings.
+- Keep each recording of a material sent in parts.
+- Create one source from the parts of a material.
+- Show where each part of a material starts.
+- Send an interview recorded in several files.
+
+### Changed
+
+- Hold the file material as ordered parts.
+
+### Maintenance
+
+- Cover a material sent in two parts.
+
+### Fixed
+
+- Read a .srt part with .vtt cues as it reads alone.
+- Sample the opening of every part before the rest.
+- Say why a material in parts cannot go on.
+- Keep the speakers when a part joins an analysis.
+- State the number of parts once.
+- Correct a misheard name in every part of a material.
+
 ## [0.15.0] - 2026-10-21
 
 ### Fixed

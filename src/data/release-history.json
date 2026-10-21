@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.15.0",
+  "currentVersion": "0.16.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,68 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.16.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-21",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 13 validated changes: correct a misheard name in every part of a material; state the number of parts once; keep the speakers when a part joins an analysis.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Parse a material joined from several recordings"
+        },
+        {
+          "type": "Added",
+          "description": "Keep each recording of a material sent in parts"
+        },
+        {
+          "type": "Added",
+          "description": "Create one source from the parts of a material"
+        },
+        {
+          "type": "Added",
+          "description": "Show where each part of a material starts"
+        },
+        {
+          "type": "Changed",
+          "description": "Hold the file material as ordered parts"
+        },
+        {
+          "type": "Added",
+          "description": "Send an interview recorded in several files"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover a material sent in two parts"
+        },
+        {
+          "type": "Fixed",
+          "description": "Read a .srt part with .vtt cues as it reads alone"
+        },
+        {
+          "type": "Fixed",
+          "description": "Sample the opening of every part before the rest"
+        },
+        {
+          "type": "Fixed",
+          "description": "Say why a material in parts cannot go on"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep the speakers when a part joins an analysis"
+        },
+        {
+          "type": "Fixed",
+          "description": "State the number of parts once"
+        },
+        {
+          "type": "Fixed",
+          "description": "Correct a misheard name in every part of a material"
+        }
+      ]
+    },
     {
       "version": "0.15.0",
       "roadmapRelease": "R0",
