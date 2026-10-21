@@ -141,3 +141,12 @@ test('a name glued to another word by a slash, a hyphen or a dot does not block 
   assert.equal(correctTerm('Rafael Dias: O Q Show abriu hoje?\nBeatriz Almeida: Sim. O pós-Q Show também conta.', 'Q Show', 'Aquishow').refused, undefined);
   assert.equal(correctTerm('Beatriz Almeida: A aquishow abre amanhã, inscrições em aquishow.com.br.', 'aquishow', 'Aquishow').refused, undefined);
 });
+
+test('lengthening a name leaves the longer name where it already is, in any case', () => {
+  const srt = '1\n00:00:00,000 --> 00:00:04,000\nBem-vindos à Brasil Seafood show, a maior feira.\n\n2\n00:00:04,000 --> 00:00:08,000\nA Seafood Show deste ano cresceu.';
+  assert.equal(termOccurrences(srt, 'Seafood Show', 'Brasil Seafood Show'), 1);
+  const fixed = correctTerm(srt, 'Seafood Show', 'Brasil Seafood Show');
+  assert.equal(fixed.refused, undefined);
+  assert.equal(fixed.count, 1);
+  assert.match(!fixed.refused ? fixed.text : '', /Bem-vindos à Brasil Seafood show,[\s\S]*A Brasil Seafood Show deste ano cresceu\./u);
+});
