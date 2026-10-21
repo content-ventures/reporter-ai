@@ -12,6 +12,7 @@ import type { Citation } from '../domain/citation-library.ts';
 import type { FactCheck } from '../domain/fact-check.ts';
 import type { ImageAsset } from '../domain/asset.ts';
 import type { WorkspaceDelta } from './editorial-rows.ts';
+import type { WritingTrace } from '../domain/writing-orchestration.ts';
 
 export type ServerImageAsset = { productionId: string; asset: ImageAsset; fileKey?: string };
 /** Optional work on a completed text run; never locks editing or changes its outcome. */
@@ -40,6 +41,7 @@ export type EditorialJob = {
   cacheSourceRunId?: string;
   pipeline?: PipelineRevision;
   calls?: PipelineCall[];
+  writingTraces?: WritingTrace[];
   images?: ArticleImageTask;
   factCheck?: FactCheckTask;
   provider?: { name: string; model: string; requestId: string | null };

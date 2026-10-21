@@ -12,7 +12,7 @@ import { IDLE_QUEUE, queueStatus } from "./queue-status.ts";
 import { workerUrl } from "./worker-config.ts";
 import { kickWorker, shouldHealStall, shouldWakeForNews, type Defer } from "./worker-kick.ts";
 import { ingestSourceLink } from './source-link';
-import { editorialWorkspace, editorialRpc, editorialPipeline, requireCapability } from './editorial';
+import { editorialWorkspace, editorialRpc, editorialPipeline, editorialWritingRun, requireCapability } from './editorial';
 import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
@@ -130,6 +130,18 @@ const messages: Record<string, string> = {
   IMAGE_TOO_LARGE: 'A imagem original excede 10 MB. Escolha outra imagem.',
   OPENAI_KEY_MISSING: 'A geração de imagens precisa da chave da OpenAI no servidor.',
   OPENAI_AUTH_INVALID: 'A chave da OpenAI foi recusada. Confira a chave no servidor.',
+  GEMINI_KEY_MISSING: 'Configure a chave do Gemini no servidor antes de usar este modelo.',
+  GEMINI_AUTH_INVALID: 'A chave do Gemini foi recusada. Confira a chave e as permissões no servidor.',
+  GEMINI_MODEL_UNAVAILABLE: 'O modelo Gemini escolhido não está disponível para esta chave. Escolha outro modelo na orquestração.',
+  GEMINI_INPUT_REJECTED: 'O Gemini recusou a configuração desta etapa. Confira o modelo e os limites na orquestração.',
+  GEMINI_RATE_LIMIT: 'O Gemini atingiu o limite de uso. Confira a cota ou aguarde antes de tentar de novo.',
+  GEMINI_QUOTA_EXHAUSTED: 'A cota do Gemini acabou. Confira a conta antes de tentar de novo.',
+  GEMINI_UNAVAILABLE: 'O Gemini não respondeu. Tente de novo.',
+  GEMINI_REQUEST_FAILED: 'O Gemini não concluiu a etapa. Confira a execução antes de tentar de novo.',
+  GEMINI_INVALID_RESPONSE: 'O Gemini retornou uma resposta inválida. Tente de novo.',
+  WRITING_RUN_NOT_FOUND: 'Execução não encontrada neste workspace.',
+  WRITING_RESEARCH_INVALID: 'Confira os limites e as consultas da pesquisa de redação antes de gerar novamente.',
+  WRITING_RESEARCH_FAILED: 'A pesquisa de contexto falhou. Veja as consultas na execução, confira a Tavily ou escolha continuar apenas com o conteúdo original.',
   IMAGE_GENERATION_REFUSED: 'A IA não gerou esta imagem. Ajuste a descrição e gere de novo.',
   IMAGE_GENERATION_FAILED: 'Não foi possível gerar a imagem. Tente de novo.',
   IMAGE_UNAVAILABLE: 'Arquivo da biblioteca indisponível. Selecione outra imagem.',
@@ -213,6 +225,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     if (path[0] === 'visuals') return await handleVisualLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'profile') return await handleProfile(request,path.slice(1),jsonBody);
     if (request.method === 'GET' && path.length === 1 && path[0] === 'pipeline') return reply(await editorialPipeline());
+    if (request.method === 'GET' && path.length === 3 && path[0] === 'pipeline' && path[1] === 'runs') return reply(await editorialWritingRun(path[2]));
     if (request.method === 'GET' && path[0] === 'drive' && path[1] === 'received') return await driveReceived(path.slice(2));
     if (path[0] === 'workspace' && path.length === 1) {
       if (request.method === 'GET') {

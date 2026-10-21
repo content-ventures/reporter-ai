@@ -19,13 +19,13 @@ export function safeCode(error: unknown): string {
   if (error instanceof FlowError) return error.code;
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
   if (["40001","42501","23514","22023","55000","ECONNREFUSED","ENOENT"].includes(code)) return code;
-  if (error instanceof Error && ["LOCAL_MODE_DISABLED","GROQ_KEY_MISSING","OPENAI_KEY_MISSING","ANTHROPIC_KEY_MISSING","DATABASE_CONFIGURATION","AUTH_CONTEXT_MISSING"].includes(error.message)) return error.message;
+  if (error instanceof Error && ["LOCAL_MODE_DISABLED","GROQ_KEY_MISSING","OPENAI_KEY_MISSING","ANTHROPIC_KEY_MISSING","GEMINI_KEY_MISSING","DATABASE_CONFIGURATION","AUTH_CONTEXT_MISSING"].includes(error.message)) return error.message;
   return "INTERNAL_ERROR";
 }
 
 /** Quota waits are not malformed-output attempts; still bound the total waiting window. */
 export function editorialRetryPolicy(error: unknown, attempts: number, createdAt: string, interrupted = false, now = Date.now()) {
-  const limited = error instanceof FlowError && /^(GROQ|OPENAI|ANTHROPIC)_RATE_LIMIT$/.test(error.code);
+  const limited = error instanceof FlowError && /^(GROQ|OPENAI|ANTHROPIC|GEMINI)_RATE_LIMIT$/.test(error.code);
   const nextAttempts = limited ? Math.max(0, attempts - 1) : attempts;
   const age = now - Date.parse(createdAt);
   const withinWindow = Number.isFinite(age) && age >= 0 && age < 5 * 60 * 1000;
