@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { runFactCheck, EXTRACTION_INSTRUCTION } from './fact-check-pipeline.ts';
+import { AUTO_FACT_CHECKS, autoFactCheckIds, runFactCheck, EXTRACTION_INSTRUCTION } from './fact-check-pipeline.ts';
 import type { Generate, Search } from './fact-check-pipeline.ts';
 import type { FactSource } from '../domain/fact-check.ts';
 
@@ -56,4 +56,14 @@ test('beyond three checkable claims nothing is searched, and opinions alone skip
 test('an output outside the contract is refused, never stored', async () => {
   const broken = providers({ claims: [] }, null, {});
   await assert.rejects(runFactCheck(subject, { ...broken, now }, AbortSignal.timeout(1000)), { message: 'FACT_CHECK_INVALID' });
+});
+
+test('a generated text queues only the citations it quotes, up to the automatic limit', () => {
+  const quoted = Array.from({ length: AUTO_FACT_CHECKS + 1 }, (_, index) => ({ id: `q${index}`, origin: 'article' as const, authorConfirmed: true }));
+  const suggestion = { id: 's1', origin: 'outline' as const, authorConfirmed: false };
+  assert.deepEqual(autoFactCheckIds([suggestion, ...quoted.slice(0, 2)]), ['q0', 'q1']);
+  assert.deepEqual(autoFactCheckIds([suggestion]), []);
+  assert.equal(autoFactCheckIds([...quoted, suggestion]).length, AUTO_FACT_CHECKS);
+  // Once a person confirms its author, an outline passage is a citation like any other.
+  assert.deepEqual(autoFactCheckIds([{ ...suggestion, authorConfirmed: true }]), ['s1']);
 });

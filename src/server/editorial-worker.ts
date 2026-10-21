@@ -33,9 +33,9 @@ import type { ArticlePolicyIssue } from '../domain/article-policy.ts';
 import { ARTICLE_ASSIST_KINDS, runArticleAssist } from './article-assist';
 import { citationsFromArticle, emphasizeArticleQuotes } from '../domain/citation-library.ts';
 import type { Citation } from '../domain/citation-library.ts';
-import { AUTO_FACT_CHECKS } from './fact-check-pipeline.ts';
+import { autoFactCheckIds } from './fact-check-pipeline.ts';
 import { tavilyConfigured } from './tavily';
-import { isSuggestedCitation, mergeCitationAdditions, suggestedCitations } from '../domain/citation-suggestions.ts';
+import { mergeCitationAdditions, suggestedCitations } from '../domain/citation-suggestions.ts';
 import { curatedEvidence, explainedHints, planningSource, quotableShortlist, writingSource } from '../domain/evidence-hints.ts';
 import type { EditorialJob, ServerImageAsset } from '../ports/connected-workspace.ts';
 import { articleImageTarget } from './article-image-task.ts';
@@ -101,7 +101,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         checkpoint.imageAssets = [...(checkpoint.imageAssets ?? []),...additions.assets];
         // The article's citations are fact-checked in the background on this run, like the images.
         // Suggested passages the text did not quote wait for a person instead.
-        const checks = additions.citations.filter(citation => !isSuggestedCitation(citation)).map(citation => citation.id).slice(0,AUTO_FACT_CHECKS);
+        const checks = autoFactCheckIds(additions.citations);
         if (checks.length && tavilyConfigured()) current.factCheck = { status: 'queued',citationIds: checks,done: 0,attempts: 0 };
         if (additions.queueImages) {
           const record = engine.records.record(job.meta.productionId);
