@@ -22,7 +22,7 @@ export function appConfiguration(environment: Environment = process.env) {
 
 /** Settings that turn a feature on; their absence turns it off, never the deployment. */
 export function optionalConfiguration(environment: Environment = process.env) {
-  return { tavily: present(environment, 'TAVILY_API_KEY') };
+  return { tavily: present(environment, 'TAVILY_API_KEY'), gemini: present(environment, 'GEMINI_API_KEY', 'GOOGLE_API_KEY') };
 }
 
 /** Which worker the app wakes, comparable with a worker URL without revealing it. */

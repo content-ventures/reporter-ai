@@ -90,7 +90,7 @@ export async function runFactCheckJob(owner: string, signal: AbortSignal, deadli
           if (combined.aborted || terminal(code) || !(error instanceof FlowError)) throw error;
           if (!error.retryable) {
             // A model provider refusing (credit as a 400, a retired model as a 404) refuses every citation: fail the job.
-            if (/^(?:GROQ|OPENAI|ANTHROPIC)_/.test(code)) throw error;
+            if (/^(?:GROQ|OPENAI|ANTHROPIC|GEMINI)_/.test(code)) throw error;
             logEvent('worker', 'fact_check_skipped', { generation_id: claim.runId, error_code: code }); break;
           }
           // Another try only when it can finish inside this invocation; else the task is handed on.

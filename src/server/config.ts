@@ -66,7 +66,8 @@ export function providerConfigured(provider: TextProvider) {
 }
 function providerCredential(provider: TextProvider) {
   const names = provider === 'openai' ? ['OPENAI_API_KEY', 'OPEN_AI_API_KEY']
-    : provider === 'anthropic' ? ['ANTHROPIC_API_KEY', 'CLAUDE_API_KEY'] : ['GROQ_API_KEY'];
+    : provider === 'anthropic' ? ['ANTHROPIC_API_KEY', 'CLAUDE_API_KEY']
+    : provider === 'gemini' ? ['GEMINI_API_KEY', 'GOOGLE_API_KEY'] : ['GROQ_API_KEY'];
   return names.map(name => process.env[name]?.trim()).find(Boolean);
 }
 export function providerKey(provider: TextProvider) {

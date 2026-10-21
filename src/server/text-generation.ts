@@ -1,12 +1,13 @@
 import 'server-only';
 import { z } from 'zod';
-import { PIPELINE_MODELS, pipelineModelProvider, pipelineModelReasons } from '../domain/pipeline.ts';
-import type { TextProvider } from '../domain/pipeline.ts';
+import { PIPELINE_MODELS, pipelineDefaultEffort, pipelineModelProvider, pipelineModelReasons } from '../domain/pipeline.ts';
+import type { PipelineReasoningEffort, TextProvider } from '../domain/pipeline.ts';
 import { providerConfigured, providerKey } from './config';
 import { FlowError } from './errors';
 import { readOpenAIStream } from './openai-stream';
+import { GEMINI_INTERACTIONS_URL, geminiRequest, readGeminiResult } from './gemini';
 
-export type StructuredOptions = { model: string; temperature: number; maxTokens: number; systemPrompt: string; userPrompt: string; onText?: (text: string) => Promise<void> };
+export type StructuredOptions = { model: string; temperature: number; maxTokens: number; effort?: PipelineReasoningEffort; systemPrompt: string; userPrompt: string; onText?: (text: string) => Promise<void> };
 export function generationModel() {
   return process.env.REPORTER_GENERATION_MODEL ?? process.env.GROQ_GENERATION_MODEL ?? (providerConfigured('openai') ? 'openai/gpt-4.1'
     : providerConfigured('anthropic') ? 'anthropic/claude-sonnet-4-6' : 'openai/gpt-oss-120b');
@@ -46,19 +47,26 @@ async function readJson(response: Response, limit: number) {
 async function request(provider: TextProvider, body: object, signal: AbortSignal, onText?: StructuredOptions['onText']) {
   const key = providerKey(provider), prefix = provider.toUpperCase();
   const url = provider === 'openai' ? 'https://api.openai.com/v1/responses'
-    : provider === 'anthropic' ? 'https://api.anthropic.com/v1/messages' : 'https://api.groq.com/openai/v1/chat/completions';
+    : provider === 'anthropic' ? 'https://api.anthropic.com/v1/messages'
+    : provider === 'gemini' ? GEMINI_INTERACTIONS_URL : 'https://api.groq.com/openai/v1/chat/completions';
   try {
     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json',
-      ...(provider === 'anthropic' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' } : { Authorization: 'Bearer ' + key }),
+      ...(provider === 'anthropic' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
+        : provider === 'gemini' ? { 'x-goog-api-key': key } : { Authorization: 'Bearer ' + key }),
     }, body: JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(180000)]) });
     if (!response.ok) {
       // Inspect machine codes only, never persist or reflect the provider's message/body.
-      let code = '';
-      try { code = z.object({ error: z.object({ code: z.string().optional(), type: z.string().optional() }) }).parse(await readJson(response, 16384)).error.code ?? ''; } catch { /* HTTP status is sufficient. */ }
+      let code = '', invalidKey = false;
+      try {
+        const error = z.object({ error: z.object({ code: z.union([z.string(), z.number()]).optional(), status: z.string().optional(),
+          details: z.array(z.object({ reason: z.string().optional() })).optional() }) }).parse(await readJson(response, 16384)).error;
+        code = typeof error.code === 'string' ? error.code : error.status ?? '';
+        invalidKey = provider === 'gemini' && Boolean(error.details?.some(detail => ['API_KEY_INVALID', 'API_KEY_EXPIRED'].includes(detail.reason ?? '')));
+      } catch { /* HTTP status is sufficient. */ }
       const invalidOutput = response.status === 400 && ['json_validate_failed', 'generation_failed'].includes(code);
       const waitHeader = response.headers.get('retry-after');
       const wait = waitHeader ? Number(waitHeader) || (Date.parse(waitHeader) - Date.now()) / 1000 : 5;
-      const terminalCode = response.status === 401 || response.status === 403 ? prefix + '_AUTH_INVALID'
+      const terminalCode = invalidKey || response.status === 401 || response.status === 403 ? prefix + '_AUTH_INVALID'
         : response.status === 429 && code === 'insufficient_quota' ? prefix + '_QUOTA_EXHAUSTED'
         : response.status === 429 ? prefix + '_RATE_LIMIT' : invalidOutput ? prefix + '_OUTPUT_RETRY'
         : response.status === 400 ? prefix + '_INPUT_REJECTED' : response.status === 404 ? prefix + '_MODEL_UNAVAILABLE' : prefix + '_REQUEST_FAILED';
@@ -87,9 +95,12 @@ export async function generateStructured(source: string, instruction: string, sc
     ...(options?.onText ? { stream: true } : {}),
     text: { format: { type: 'json_schema', name: 'reporter_output', strict: true, schema } },
   } : provider === 'anthropic' ? {
-    model: apiModel, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }], max_tokens: maxTokens, temperature,
-    output_config: { format: { type: 'json_schema', schema: anthropicSchema(schema) } },
-  } : {
+    model: apiModel, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }], max_tokens: maxTokens,
+    ...(pipelineModelReasons(model) ? { thinking: { type: 'adaptive' } } : { temperature }),
+    output_config: { format: { type: 'json_schema', schema: anthropicSchema(schema) },
+      ...(pipelineModelReasons(model) ? { effort: options?.effort ?? pipelineDefaultEffort(model) } : {}),
+    },
+  } : provider === 'gemini' ? geminiRequest(apiModel, systemPrompt, userPrompt, maxTokens, schema) : {
     model: apiModel, messages, max_completion_tokens: maxTokens, ...(options ? { temperature } : {}), reasoning_effort: 'low',
     response_format: { type: 'json_schema', json_schema: { name: 'reporter_output', strict: true, schema } },
   };
@@ -111,6 +122,8 @@ export async function generateStructured(source: string, instruction: string, sc
     content = envelope.content.filter(part => part.type === 'text').map(part => part.text ?? '').join('');
     responseId = envelope.id; inputTokens = envelope.usage ? envelope.usage.input_tokens + (envelope.usage.cache_creation_input_tokens ?? 0) + (envelope.usage.cache_read_input_tokens ?? 0) : null;
     outputTokens = envelope.usage?.output_tokens ?? null;
+  } else if (provider === 'gemini') {
+    ({ content, responseId, inputTokens, outputTokens } = readGeminiResult(data));
   } else {
     const envelope = z.object({ id: z.string().optional(), choices: z.array(z.object({ finish_reason: z.string(), message: z.object({ content: z.string().nullable(), refusal: z.string().nullable().optional() }) })),
       usage: z.object({ prompt_tokens: z.number().nonnegative(), completion_tokens: z.number().nonnegative() }).optional() }).parse(data);
