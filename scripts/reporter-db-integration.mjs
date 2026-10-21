@@ -110,6 +110,12 @@ function newsSourceRatingPasses(output) {
   return passes.join("\n");
 }
 
+function newsImagePasses(output) {
+  const passes = output.split("\n").filter(line => line.startsWith("PASS "));
+  if (passes.length !== 2) throw new Error("Not all news image integration groups completed");
+  return passes.join("\n");
+}
+
 function newsTranslationPasses(output) {
   const passes = output.split("\n").filter(line => line.startsWith("PASS "));
   if (passes.length !== 6) throw new Error("Not all news translation integration groups completed");
@@ -243,6 +249,7 @@ export async function verifyFreshBootstrap(source, baseline) {
     console.log(newsDecisionPasses(run(await readFile(resolve(root, "database/tests/news-decisions.integration.sql"), "utf8"))));
     console.log(newsTranslationPasses(run(await readFile(resolve(root, "database/tests/news-translations.integration.sql"), "utf8"))));
     console.log(newsSourceRatingPasses(run(await readFile(resolve(root, "database/tests/news-source-ratings.integration.sql"), "utf8"))));
+    console.log(newsImagePasses(run(await readFile(resolve(root, "database/tests/news-images.integration.sql"), "utf8"))));
     await verifyCatalog(run, baseline);
     console.log("PASS fresh official-entrypoint bootstrap and PostgreSQL integration suite");
     await verifyConcurrency(id);
@@ -289,5 +296,6 @@ export async function runIntegration() {
   console.log(newsDecisionPasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/news-decisions.integration.sql"), "utf8"))));
   console.log(newsTranslationPasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/news-translations.integration.sql"), "utf8"))));
   console.log(newsSourceRatingPasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/news-source-ratings.integration.sql"), "utf8"))));
+  console.log(newsImagePasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/news-images.integration.sql"), "utf8"))));
   await verifyFreshBootstrap(source, baseline);
 }

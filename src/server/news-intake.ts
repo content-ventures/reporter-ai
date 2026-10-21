@@ -1,5 +1,6 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { FEED_INTERVALS } from '../domain/hard-news.ts';
 import type { NewsFeed, NewsItem, NewsTranslation } from '../domain/hard-news.ts';
@@ -17,6 +18,7 @@ import { claimSource, entriesFor, FEED_ACCEPT, ingest, markFailed, readSource } 
 import type { NewsClaim, ReadResult } from './news-reader.ts';
 import { createRssAppFeed, deleteRssAppFeed, rssAppConfigured } from './rss-app.ts';
 import { newsTranslationConfigured } from './news-translation.ts';
+import { privateAddress } from './public-address.ts';
 
 /** F2.1 routes under `/api/reporter/news`. Reads need membership; every write needs `reporter.edit` (checked in SQL). */
 
@@ -28,13 +30,23 @@ type StoredSource = {
 export type StoredItem = {
   id: string; sourceId?: string; via: 'rss' | 'url'; url: string; title: string; outlet: string; excerpt: string;
   publishedAt: string; importedAt: string; updatedAt?: string; duplicates: { source: string; url: string; publishedAt: string }[];
-  paragraphs: number; body?: string[];
+  paragraphs: number; body?: string[]; imageUrl?: string;
   status?: 'new' | 'selected' | 'later' | 'discarded'; decisionRevision?: number;
   decidedBy?: string; decidedAt?: string; laterUntil?: string; discardReason?: string; returnedAt?: string;
   translation?: NewsTranslation & { title?: string; excerpt?: string; body?: string[] };
 };
 
 const iso = (value: string | undefined) => (value ? new Date(value).toISOString() : undefined);
+
+/** Image display validates the supplied address without an extra fetch or DNS lookup. */
+function newsImageUrl(value: string | undefined): string | undefined {
+  const image = value?.trim();
+  if (!image || !isNewsAddress(image)) return undefined;
+  const hostname = new URL(image).hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === 'local' || hostname.endsWith('.local')
+    || isIP(hostname) && privateAddress(hostname)) return undefined;
+  return image;
+}
 
 export function feedView(source: StoredSource): NewsFeed {
   const lastWeek = source.lastWeek ?? [];
@@ -60,10 +72,12 @@ export function itemView(item: StoredItem): NewsItem {
   const excerpt = translated?.excerpt ?? item.excerpt;
   const body = translated ? translated.body ?? (excerpt ? [excerpt] : []) : item.body ?? (excerpt ? [excerpt] : []);
   const translation = item.translation;
+  const imageUrl = newsImageUrl(item.imageUrl);
   return {
     id: item.id,
     title: translated?.title ?? item.title,
     url: item.url,
+    ...(imageUrl ? { imageUrl } : {}),
     source: item.outlet,
     ...(item.sourceId ? { feedId: item.sourceId } : {}),
     via: item.via,

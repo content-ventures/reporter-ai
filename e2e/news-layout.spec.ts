@@ -6,8 +6,11 @@ import { expectHeadingOutline, expectNoHorizontalOverflow, watchErrors } from '.
 const VIEWPORTS = [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 390, height: 844 }];
 const FIRST = '10000000-0000-4000-8000-000000000001';
 const SECOND = '10000000-0000-4000-8000-000000000002';
+const THIRD = '10000000-0000-4000-8000-000000000003';
 const FIRST_TITLE = 'Tilápia brasileira amplia presença no mercado externo e produtores discutem os próximos investimentos';
 const SECOND_TITLE = 'Tilápia ganha novo estudo sobre alimentação e qualidade da água';
+const IMAGE_ORIGIN = 'https://images.example';
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAKAAAABaCAMAAAAIGK1gAAAAA1BMVEUpWoLTBBdnAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAJUlEQVRo3u3BgQAAAADDoPlTX+EAVQEAAAAAAAAAAAAAAAAAvAY4mgABuJr0lwAAAABJRU5ErkJggg==', 'base64');
 
 async function mockDesk(page: Page, count = 18) {
   const checkpoint = emptyEditorialCheckpoint();
@@ -27,20 +30,38 @@ async function mockDesk(page: Page, count = 18) {
       id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
       title: index === 0 ? FIRST_TITLE : index === 1 ? SECOND_TITLE : `Cadeia do pescado acompanha pesquisa e mercado ${index + 1}`,
       source: feed.name, feedId: feed.id, url: feed.url.replace('/feed/', `/noticia-${index + 1}/`),
+      ...(index === 0 || index === 24 ? { imageUrl: `${IMAGE_ORIGIN}/news-${index + 1}.png` }
+        : index === 2 ? { imageUrl: `${IMAGE_ORIGIN}/broken.png` } : {}),
       via: 'rss', contentKind: 'feed', status: 'new', publishedAt, importedAt: publishedAt,
       excerpt: 'Os novos dados ajudam a acompanhar a produção, o comércio e os próximos desafios do setor.',
       body: Array.from({ length: 12 }, (_, paragraph) => `Parágrafo ${paragraph + 1} da notícia ${index + 1}. Pesquisadores e produtores apresentam os resultados, explicam a metodologia e discutem seus efeitos sobre a cadeia do pescado no Brasil.`),
       duplicates: [], decisionRevision: 0,
     };
   });
-  await page.route('https://www.google.com/s2/favicons?**', route => route.fulfill({ contentType: 'image/png',
-    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64') }));
+  await page.route('https://www.google.com/s2/favicons?**', route => route.fulfill({ contentType: 'image/png', body: PNG }));
+  // A corrupt image response exercises decode failure without an unrelated HTTP console error.
+  await page.route(`${IMAGE_ORIGIN}/**`, route => route.fulfill({ contentType: 'image/png',
+    body: route.request().url().endsWith('/broken.png') ? Buffer.from('invalid PNG') : PNG }));
   await page.route('**/api/reporter/workspace', route => route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } }));
   await page.route('**/api/reporter/news**', route => {
     const path = new URL(route.request().url()).pathname;
     if (path.startsWith('/api/reporter/news/items/')) return route.fulfill({ json: { item: items.find(item => path.endsWith(item.id)) } });
     return route.fulfill({ json: { at: new Date().toISOString(), sources: feeds, items, rssApp: false } });
   });
+}
+
+async function loadedNewsImage(card: Locator, index: number) {
+  const image = card.locator(`img[src="${IMAGE_ORIGIN}/news-${index}.png"]`);
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((node: HTMLImageElement) => [node.complete, node.naturalWidth, node.naturalHeight])).toEqual([true, 160, 90]);
+  return image;
+}
+
+/** CardLink stretches over the media; click the image's real screen coordinates. */
+async function clickImage(page: Page, image: Locator) {
+  await image.scrollIntoViewIfNeeded();
+  const box = (await image.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
 test('carrega mais manchetes com foco útil e preserva a página e a busca ao voltar da leitura', async ({ page }) => {
@@ -59,14 +80,17 @@ test('carrega mais manchetes com foco útil e preserva a página e a busca ao vo
   const card = page.getByTestId('news-card-10000000-0000-4000-8000-000000000025');
   const open = card.getByRole('button', { name: 'Ler notícia: Cadeia do pescado acompanha pesquisa e mercado 25', exact: true });
   await expect(open).toBeFocused();
+  const image = await loadedNewsImage(card, 25);
+  await image.scrollIntoViewIfNeeded();
   await expect(card).toBeInViewport();
   const before = (await card.boundingBox())!.y;
-  await open.click();
+  await clickImage(page, image);
   await expect(page.getByRole('heading', { level: 2, name: 'Cadeia do pescado acompanha pesquisa e mercado 25', exact: true })).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/\/news$/);
   await expect(search).toHaveValue('a');
   await expect(page.getByTestId(/^news-card-/)).toHaveCount(30);
+  await loadedNewsImage(card, 25);
   await expect(open).toBeFocused();
   await expect(card).toBeInViewport();
   await expect.poll(async () => Math.abs((await card.boundingBox())!.y - before), { message: 'a volta mantém a posição entre as manchetes carregadas' }).toBeLessThan(3);
@@ -112,7 +136,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId('news-headlines')).toBeVisible();
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(18);
       await entirelyVisible(page, search);
-      await entirelyVisible(page, first.getByRole('heading', { name: FIRST_TITLE, exact: true }));
+      await expect(first.getByRole('heading', { name: FIRST_TITLE, exact: true })).toBeVisible();
       await expect(decisions).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Outras ações da notícia', exact: true })).toHaveCount(0);
@@ -131,7 +155,17 @@ for (const viewport of VIEWPORTS) {
       expect(writes).toEqual([]);
       await expectNoHorizontalOverflow(page);
 
-      await first.click();
+      const image = await loadedNewsImage(first, 1);
+      const second = page.getByTestId(`news-card-${SECOND}`);
+      await expect(second.locator(`img[src^="${IMAGE_ORIGIN}/"]`)).toHaveCount(0);
+      await expect(second.getByText('Imagem indisponível', { exact: true })).toHaveCount(0);
+      const broken = page.getByTestId(`news-card-${THIRD}`);
+      await expect(broken.getByRole('img', { name: /imagem indisponível/i })).toBeVisible();
+      await expect(broken.getByText('Imagem indisponível', { exact: true })).toBeVisible();
+      const headline = first.getByRole('heading', { name: FIRST_TITLE, exact: true });
+      await headline.scrollIntoViewIfNeeded();
+      await entirelyVisible(page, headline);
+      await clickImage(page, image);
       await expect(page).toHaveURL(new RegExp(`/news\\?item=${FIRST}$`));
       await expect(page.getByTestId('news-headlines')).toHaveCount(0);
       await expect(search).toHaveCount(0);
@@ -185,7 +219,7 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole('button', { name: /^Filtros/ }).click();
       await expect(page.getByRole('combobox', { name: 'Fonte', exact: true })).toHaveCount(0);
       await expect(page.getByRole('group', { name: 'Filtros aplicados', exact: true })).toBeVisible();
-      await first.click();
+      await clickImage(page, await loadedNewsImage(first, 1));
       const article = page.locator('[data-ws-stop="main"]');
       await expect(article.getByRole('heading', { name: FIRST_TITLE, exact: true })).toBeVisible();
       await expect(page.getByTestId('news-headlines')).toHaveCount(0);
@@ -194,17 +228,19 @@ for (const viewport of VIEWPORTS) {
       await expect(search).toHaveValue('tilápia');
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(1);
       await expect(first).toBeVisible();
+      await loadedNewsImage(first, 1);
       await expect(page.getByRole('group', { name: 'Filtros aplicados', exact: true })).toContainText('Instituto do Pescado');
       await expect(page.getByRole('group', { name: 'Filtros aplicados', exact: true })).toContainText('A1');
       await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
 
-      await first.click();
+      await clickImage(page, await loadedNewsImage(first, 1));
       await expect(page).toHaveURL(new RegExp(`/news\\?item=${FIRST}$`));
       await page.goBack();
       await expect(page).toHaveURL(/\/news$/);
       await expect(search).toHaveValue('tilápia');
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(1);
       await expect(first).toBeVisible();
+      await loadedNewsImage(first, 1);
       await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
 
       if (viewport.width < 768) {
