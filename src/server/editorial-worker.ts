@@ -271,7 +271,7 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     }
     // Event formats: every number and name must exist in the material, the speakers or the event typed by a person.
     // Speaker labels are part of what the material says ("Categoria Personalidade Feminina: …" parses as one).
-    const corpus = [...input.record.sources.flatMap(s => currentSourceVersion(s).content.segments.map(segment => (segment.speaker ? segment.speaker + ': ' : '') + segment.text)),
+    const corpus = [...input.record.sources.filter(source => !source.research).flatMap(s => currentSourceVersion(s).content.segments.map(segment => (segment.speaker ? segment.speaker + ': ' : '') + segment.text)),
       ...people.flatMap(person => [person.name,person.title ?? '',person.organization ?? '']),
       ...Object.values(input.record.production.brief.event ?? {}),today].join('\n');
     const grounding = format ? (text: string) => ungroundedTerms(text,corpus) : undefined;
