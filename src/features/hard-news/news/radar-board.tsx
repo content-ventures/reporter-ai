@@ -201,6 +201,7 @@ function WireRow({ triage, item, now, selected, onSelect }: { triage: boolean; i
 }
 
 const DECIDED_BADGE = {
+  selected: { label: 'Selecionada', tone: 'blue' },
   covered: { label: 'Coberta', tone: 'green' },
   later: { label: 'Adiada', tone: 'amber' },
   discarded: { label: 'Descartada', tone: 'gray' },

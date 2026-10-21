@@ -24,11 +24,13 @@ import {
 } from '@content-ventures/design-system/v3';
 import { AlertTriangle, Ellipsis, Pause, Play, Plus, RefreshCw, Rss, Trash2 } from '@content-ventures/design-system/v3/icons';
 import type { NewsFeed } from '@/domain/hard-news';
+import { useCan } from '@/state';
 import { useBreadcrumb } from '@/ui/shell';
 import { RelativeTime } from '@/ui/time';
 import { NEWS_HREF } from '../routes';
 import { useHardNews, useNewsWatch } from '../state/hard-news-provider';
 import { AddFeedDialog } from './add-feed-dialog';
+import { DiscoverSourcesDialog } from './discover-sources-dialog';
 import { FEED_STATE, feedOrigin, INTERVAL_OPTIONS } from './feed-format';
 
 /**
@@ -37,8 +39,11 @@ import { FEED_STATE, feedOrigin, INTERVAL_OPTIONS } from './feed-format';
  * last read and the day's count per feed. Removing a feed never removes the news it brought.
  */
 export function SourcesScreen() {
-  const { state, ready, actions } = useHardNews();
+  const { state, ready, actions, live, newsFailed } = useHardNews();
+  const canEdit = useCan('production.edit');
   const [adding, setAdding] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [removing, setRemoving] = useState<NewsFeed>();
   useBreadcrumb([{ label: 'Notícias', href: NEWS_HREF }, { label: 'Fontes' }]);
   useNewsWatch();
@@ -65,18 +70,33 @@ export function SourcesScreen() {
   const duplicates = state.news.reduce((total, item) => total + item.duplicates.length, 0);
   const lastRead = feeds.map((feed) => feed.lastReadAt ?? '').sort().pop();
 
+  async function refresh() {
+    setRefreshing(true);
+    try { await actions.refreshNews(); } finally { setRefreshing(false); }
+  }
+
   return (
     <>
       <PageStack>
         <PageHeader
           title="Fontes"
-          actions={<Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Adicionar fonte</Button>}
+          actions={canEdit ? <>
+            {live && feeds.length > 0 ? <Button variant="secondary" icon={Rss} onClick={() => setDiscovering(true)}>Descobrir fontes</Button> : null}
+            <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Adicionar fonte</Button>
+          </> : undefined}
         />
-        {ready && feeds.length === 0 ? (
+        {live && newsFailed ? (
+          <EmptyState icon={AlertTriangle} title="Não foi possível carregar as fontes" description="Tente novamente para ver as fontes cadastradas."
+            actions={<Button variant="primary" loading={refreshing} onClick={() => void refresh()}>Tentar novamente</Button>} />
+        ) : ready && feeds.length === 0 ? (
           <EmptyState
             icon={Rss}
             title="Nenhuma fonte cadastrada"
-            actions={<Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Adicionar fonte</Button>}
+            description={canEdit && live ? 'Encontre fontes para o seu veículo ou setor e receba as primeiras notícias.' : undefined}
+            actions={canEdit ? <>
+              {live ? <Button variant="primary" icon={Rss} onClick={() => setDiscovering(true)}>Descobrir fontes</Button> : null}
+              <Button variant={live ? 'secondary' : 'primary'} icon={Plus} onClick={() => setAdding(true)}>Adicionar fonte</Button>
+            </> : undefined}
           />
         ) : (
           <>
@@ -94,6 +114,7 @@ export function SourcesScreen() {
                 <FeedCard
                   key={feed.id}
                   feed={feed}
+                  canEdit={canEdit}
                   onRetry={() => void retry(feed)}
                   onPause={(paused) => void change(feed, { paused }, paused ? `${feed.name} pausada` : `${feed.name} retomada`)}
                   onRemove={() => setRemoving(feed)}
@@ -105,6 +126,7 @@ export function SourcesScreen() {
         )}
       </PageStack>
       <AddFeedDialog open={adding} onClose={() => setAdding(false)} />
+      {discovering ? <DiscoverSourcesDialog open onClose={() => setDiscovering(false)} /> : null}
       <ConfirmDialog
         open={removing !== undefined}
         onClose={() => setRemoving(undefined)}
@@ -126,8 +148,9 @@ export function SourcesScreen() {
 }
 
 /** One source: its mark, how it is doing, its last 7 days, how often the desk reads it. */
-function FeedCard({ feed, onRetry, onPause, onRemove, onInterval }: {
+function FeedCard({ feed, canEdit, onRetry, onPause, onRemove, onInterval }: {
   feed: NewsFeed;
+  canEdit: boolean;
   onRetry: () => void;
   onPause: (paused: boolean) => void;
   onRemove: () => void;
@@ -143,7 +166,7 @@ function FeedCard({ feed, onRetry, onPause, onRemove, onInterval }: {
           title={feed.name}
           badge={<Badge variant="soft" size="sm" tone={state.tone} dot={feed.state === 'paused' ? 'hollow' : true}>{state.label}</Badge>}
           description={feedOrigin(feed)}
-          actions={(
+          actions={canEdit ? (
             <Menu
               label={`Ações de ${feed.name}`}
               align="end"
@@ -159,7 +182,7 @@ function FeedCard({ feed, onRetry, onPause, onRemove, onInterval }: {
               }]}
               trigger={(props) => <IconButton {...props} label={`Ações de ${feed.name}`} icon={Ellipsis} variant="ghost" size="sm" />}
             />
-          )}
+          ) : undefined}
         />
         {feed.lastWeek && feed.lastWeek.length > 1 ? (
           <Sparkline points={feed.lastWeek} tone={feed.state === 'failing' ? 'red' : feed.state === 'paused' ? 'gray' : 'blue'} fluid height={40} />
@@ -176,7 +199,7 @@ function FeedCard({ feed, onRetry, onPause, onRemove, onInterval }: {
           label={`Frequência de ${feed.name}`}
           value={String(feed.everyMinutes)}
           options={INTERVAL_OPTIONS}
-          disabled={feed.state === 'paused'}
+          disabled={!canEdit || feed.state === 'paused'}
           onChange={(value) => onInterval(Number(value))}
         />
       </PageStack>
@@ -187,7 +210,7 @@ function FeedCard({ feed, onRetry, onPause, onRemove, onInterval }: {
     <AttachedNote
       tone="red"
       icon={AlertTriangle}
-      note={<>{feed.lastError ?? 'Não responde.'} <LinkButton size="sm" tone="inherit" onClick={onRetry}>Tentar de novo</LinkButton></>}
+      note={<>{feed.lastError ?? 'Não responde.'} {canEdit ? <LinkButton size="sm" tone="inherit" onClick={onRetry}>Tentar de novo</LinkButton> : null}</>}
     >
       {card}
     </AttachedNote>
