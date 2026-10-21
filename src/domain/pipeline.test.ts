@@ -181,6 +181,14 @@ test('the quote request lets a part decline and never reaches the interviewer', 
   assert.doesNotMatch(definition.steps.quotes.prompt, /uma única pessoa em people/);
 });
 
+test('the newsroom\'s note on a curated quote is never a source', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  for (const prompt of [definition.steps.outline.prompt, ...EDITORIAL_FORMATS.map(format => definition.funnels[format].outline.prompt)])
+    assert.match(prompt, /a nota da redação que acompanha cada uma não é fonte: nenhum fato dela entra no título/);
+  for (const format of EDITORIAL_FORMATS) for (const key of ['intro', 'section'] as const)
+    assert.doesNotMatch(definition.funnels[format][key].prompt, /relevance/, `${format} ${key}`);
+});
+
 test('a saved revision without funnels gets the defaults; saved funnels are never changed', () => {
   const saved = defaultPipelineDefinition();
   assert.equal(saved.funnels, undefined);

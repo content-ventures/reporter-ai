@@ -49,7 +49,7 @@ test('a curated citation maps to the sentences inside it and to the sentence tha
   assert.equal(curated.lines[0].speaker, 'Ana Costa');
   assert.equal('relevance' in curated.lines[0], false, 'an empty relevance is left out');
   assert.equal(curated.lines[1].relevance, 'r'.repeat(200));
-  assert.deepEqual(curated.byKey.get('0'), { citationId: both.id, relevance: 'r'.repeat(200) });
+  assert.deepEqual(curated.byKey.get('0'), { citationId: both.id }, 'the note stays with the planning lines');
   assert.deepEqual(curated.byKey.get('2'), { citationId: part.id });
 });
 
@@ -79,8 +79,8 @@ test('the planning source is the context alone when there is nothing to add', ()
   assert.equal(planningSource('contexto', { byKey: new Map(), lines: [] }, []), 'contexto');
   const curated = curatedEvidence([saved(source, MARKET)], [source], all);
   assert.equal(planningSource('contexto', curated, [all[2]]), 'contexto'
-    + '\n\nFALAS CURADAS (conferidas pela redação no banco de citações; os ids são os da fonte):\n'
-    + `[1] Ana Costa: ${MARKET} — por que importa: Mostra o investimento da empresa.`
+    + '\n\nFALAS CURADAS (conferidas pela redação no banco de citações; os ids são os da fonte; a nota da redação diz por que a fala importa e não é fonte: nenhum fato dela entra no título, na linha fina, nos intertítulos nem no texto):\n'
+    + `[1] Ana Costa: ${MARKET} — nota da redação (não é fonte): Mostra o investimento da empresa.`
     + '\n\nFALAS LITERAIS CITÁVEIS (frases exatas da transcrição original, com seus ids):\n'
     + `[2] Ana Costa: ${EXPORT}`);
 });
@@ -102,14 +102,15 @@ test('the shortlist takes the best quotable line of each third in turn, in mater
   assert.deepEqual(quotableShortlist(all, identified, new Set(), size(['1', '4', '7']) - 1).map(candidate => candidate.key), ['1', '4']);
 });
 
-test('the writing source is unchanged without curated lines and marks the curated ones', () => {
+test('the writing source is unchanged without curated lines and marks the curated ones, never with their note', () => {
   const source = material(), all = candidates(source), selected = new Set(['1', '2']);
   const today = JSON.stringify({ context: 'contexto', literalEvidence: all.filter(candidate => selected.has(candidate.key))
     .map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}) })) });
   assert.equal(writingSource('contexto', all, selected, new Map()), today);
-  const marked = JSON.parse(writingSource('contexto', all, selected, new Map([['1', { citationId: 'c', relevance: 'Mostra o investimento.' }], ['2', { citationId: 'd' }]])));
+  const curated = curatedEvidence([saved(source, MARKET)], [source], all);
+  const marked = JSON.parse(writingSource('contexto', all, selected, new Map([...curated.byKey, ['2', { citationId: 'd' }]])));
   assert.deepEqual(marked.literalEvidence, [
-    { id: '1', text: MARKET, speaker: 'Ana Costa', curated: true, relevance: 'Mostra o investimento.' },
+    { id: '1', text: MARKET, speaker: 'Ana Costa', curated: true },
     { id: '2', text: EXPORT, speaker: 'Ana Costa', curated: true },
   ]);
 });
