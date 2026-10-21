@@ -1,4 +1,4 @@
-import { articlePlainText, articleStats } from './article.ts';
+import { blockText, articleStats } from './article.ts';
 import type { ArticleBody } from './article.ts';
 import { articlePolicyMessage, r1ArticleQuotationIssue } from './article-policy.ts';
 import type { ArticleLengthLimits, ArticlePolicyIssue } from './article-policy.ts';
@@ -7,11 +7,13 @@ import type { FormatBrief } from './formats.ts';
 import { ungroundedTerms } from './grounding.ts';
 import { currentSourceVersion } from './source.ts';
 import type { Source } from './source.ts';
+import type { SourceRef } from './refs.ts';
+import { sourceAttributionGroundingText } from './source-attribution-grounding.ts';
 import type { WritingReview } from './writing-orchestration.ts';
 
 /** Collect every objective failure before spending the one permitted correction. */
 export function writingArticleChecks(body: ArticleBody, sources: readonly Source[], brief: FormatBrief, extraCorpus: readonly string[] = [],
-  options?: { minimumQuotes: number }): WritingReview['issues'] {
+  options?: { minimumQuotes: number; titleSourceRefs?: readonly SourceRef[]; dekSourceRefs?: readonly SourceRef[] }): WritingReview['issues'] {
   const limits: ArticleLengthLimits & { minQuotes: number } = writingArticleLimits(brief, options?.minimumQuotes), stats = articleStats(body);
   const codes: ArticlePolicyIssue[] = [];
   if (limits.minChars !== undefined && stats.characters < limits.minChars) codes.push('ARTICLE_SIZE_TOO_SHORT');
@@ -27,7 +29,9 @@ export function writingArticleChecks(body: ArticleBody, sources: readonly Source
     const corpus = [...sources.flatMap(source => currentSourceVersion(source).content.segments.map(segment => (segment.speaker ? segment.speaker + ': ' : '') + segment.text)),
       ...sources.flatMap(source => source.recordedOn ? [source.recordedOn] : []),
       ...Object.values(brief.event ?? {}), ...extraCorpus].join('\n');
-    const missing = ungroundedTerms([body.title, body.dek ?? '', articlePlainText(body)].join('\n'), corpus);
+    const passages = [{ text: body.title, refs: options?.titleSourceRefs ?? [] }, { text: body.dek ?? '', refs: options?.dekSourceRefs ?? [] },
+      ...body.blocks.map(block => ({ text: blockText(block), refs: block.sourceRefs ?? [] }))];
+    const missing = [...new Set(passages.flatMap(({ text, refs }) => ungroundedTerms(sourceAttributionGroundingText(text, sources, refs), corpus)))];
     if (missing.length) issues.push({ id: 'contract-UNGROUNDED_FACT', severity: 'major', code: 'UNGROUNDED_FACT', blockId: '$article', evidenceIds: [],
       message: `Confira termos sem correspondência no conteúdo ou nos dados confirmados: ${missing.slice(0, 20).map(term => term.slice(0, 80)).join(', ')}${missing.length > 20 ? ` e mais ${missing.length - 20}` : ''}.`,
       suggestion: 'Confira nomes e números no material original. Use somente dados sustentados ou sinalize necessidade de apuração; não substitua por novos dados inventados.' });
