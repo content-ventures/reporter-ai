@@ -170,8 +170,10 @@ export type WritingGuide = {
   updatedBy: string;
   voice: string;
   headline: string;
+  dek?: string;
   lead: string;
   attribution: string;
+  composition?: Partial<Record<'paragraphs' | 'headings' | 'emphasis' | 'lists' | 'closing' | 'length' | 'links' | 'figures', string>>;
   rules: GuideRule[];
   terms: PreferredTerm[];
   examples: GuideExample[];

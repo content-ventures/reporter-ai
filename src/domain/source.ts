@@ -71,6 +71,8 @@ export type Source = {
   recordedOn?: string;
   programName?: string;
   sourceUrl?: string;
+  /** Immutable web context collected for a writing run; never an original interview. */
+  research?: { provider: 'tavily'; runId: string; query: string; retrievedAt: IsoDateTime; publishedOn: string | null };
   location?: string;
   fileName?: string;
   /** Uploaded original and provider transcript in the local database. */

@@ -3,23 +3,42 @@ import { EDITORIAL_FORMATS, FORMAT_SPECS } from './formats.ts';
 import type { EditorialFormat } from './formats.ts';
 import { FUNNEL_STEP_KEYS, HARD_NEWS, defaultFunnelPrompt } from './format-prompts.ts';
 import type { FunnelStepKey } from './format-prompts.ts';
+import type { EditorialPolicy } from './editorial-policy.ts';
+import type { WritingOrchestration } from './writing-orchestration.ts';
 
 export { FUNNEL_STEP_KEYS } from './format-prompts.ts';
 export type { FunnelStepKey } from './format-prompts.ts';
 
-export const PIPELINE_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'openai/gpt-4.1', 'openai/gpt-6-astra', 'anthropic/claude-sonnet-4-6'] as const;
+export const PIPELINE_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'openai/gpt-4.1', 'openai/gpt-6-astra', 'anthropic/claude-sonnet-4-6',
+  'anthropic/claude-opus-5-5', 'anthropic/claude-fable-5-1',
+  'google/gemini-3.8-flash', 'google/gemini-4-argon'] as const;
 export type PipelineModel = typeof PIPELINE_MODELS[number];
-export type TextProvider = 'groq' | 'openai' | 'anthropic';
+export const PIPELINE_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type PipelineReasoningEffort = typeof PIPELINE_REASONING_EFFORTS[number];
+/** Verified against the direct Anthropic model catalog on 2026-10-21. */
+export function pipelineModelEffortOptions(model: string): readonly PipelineReasoningEffort[] {
+  return model === 'anthropic/claude-opus-5-5' || model === 'anthropic/claude-fable-5-1' ? PIPELINE_REASONING_EFFORTS : [];
+}
+export type TextProvider = 'groq' | 'openai' | 'anthropic' | 'gemini';
 export function pipelineModelProvider(model: string): TextProvider {
   if (model === 'openai/gpt-4.1' || model === 'openai/gpt-6-astra') return 'openai';
-  if (model === 'anthropic/claude-sonnet-4-6') return 'anthropic';
+  if (model === 'anthropic/claude-sonnet-4-6' || pipelineModelEffortOptions(model).length > 0) return 'anthropic';
+  if (model === 'google/gemini-3.8-flash' || model === 'google/gemini-4-argon') return 'gemini';
   return 'groq';
 }
-export const TEXT_PROVIDER_LABELS: Record<TextProvider, string> = { groq: 'Groq', openai: 'OpenAI', anthropic: 'Claude' };
-export function pipelineModelReasons(model: string) { return model === 'openai/gpt-6-astra'; }
+export const TEXT_PROVIDER_LABELS: Record<TextProvider, string> = { groq: 'Groq', openai: 'OpenAI', anthropic: 'Claude', gemini: 'Gemini' };
+export function pipelineModelReasons(model: string) {
+  return model === 'openai/gpt-6-astra' || pipelineModelProvider(model) === 'gemini' || pipelineModelEffortOptions(model).length > 0;
+}
+export function pipelineDefaultEffort(model: string): PipelineReasoningEffort | undefined {
+  if (model === 'anthropic/claude-opus-5-5') return 'medium';
+  if (model === 'anthropic/claude-fable-5-1') return 'high';
+  return pipelineModelReasons(model) ? 'low' : undefined;
+}
+/** Product budget, intentionally below some providers' maximum output windows. */
 export function pipelineTokenLimit(model: string) { return pipelineModelReasons(model) ? 32768 : 8192; }
 export function pipelineModelLabel(model: string) {
-  return TEXT_PROVIDER_LABELS[pipelineModelProvider(model)] + ' · ' + model.replace(/^(openai|anthropic)\//, '');
+  return TEXT_PROVIDER_LABELS[pipelineModelProvider(model)] + ' · ' + model.replace(/^(openai|anthropic|google)\//, '');
 }
 export const PIPELINE_STEP_KEYS = ['material', 'facts', 'outline', 'quotes', 'intro', 'section', 'article', 'assist', 'images', 'carousel'] as const;
 export type PipelineStepKey = typeof PIPELINE_STEP_KEYS[number];
@@ -28,11 +47,14 @@ export const PIPELINE_STEP_LABELS: Record<PipelineStepKey, string> = {
   facts: 'Preparar fontes longas', outline: 'Criar outline', quotes: 'Selecionar evidências e citações',
   intro: 'Escrever introdução', section: 'Escrever cada seção', article: 'Escrever artigo completo', assist: 'Assistente do artigo', images: 'Sugerir imagens', carousel: 'Escrever carrossel',
 };
-export type PipelineStep = { prompt: string; model: PipelineModel; temperature: number; maxTokens: number };
+export type PipelineStep = { prompt: string; model: PipelineModel; temperature: number; maxTokens: number; effort?: PipelineReasoningEffort };
 /** An event format's own structure, curation, opening and part prompts (formats.ts, format-prompts.ts). */
 export type FunnelDefinition = Record<FunnelStepKey, PipelineStep>;
 export type PipelineDefinition = {
   systemPrompt: string; articleMode: 'sequential' | 'single'; curateQuotes: boolean;
+  /** Workspace map and guide, captured with the settings used by each generation. */
+  editorial?: EditorialPolicy;
+  writing?: WritingOrchestration;
   steps: Record<PipelineStepKey, PipelineStep>;
   /** Event-format funnels; absent on revisions saved before them (`withFormatFunnels` fills them). */
   funnels?: Partial<Record<EditorialFormat, Partial<FunnelDefinition>>>;
@@ -46,7 +68,8 @@ export type PipelineCall = {
 export type PipelineView = {
   active: PipelineRevision; history: PipelineRevision[];
   providers?: Partial<Record<TextProvider, boolean>>;
-  runs: { runId: string; productionId: string; label: string; status: string; pipelineRevision: number; pipelineHash: string; calls: PipelineCall[] }[];
+  researchProviders?: { tavily: boolean };
+  runs: { runId: string; productionId: string; label: string; status: string; pipelineRevision: number; pipelineHash: string; calls: PipelineCall[]; writing?: { stages: number; decision?: string } }[];
 };
 
 const object = (properties: Record<string, unknown>) => ({ type: 'object', additionalProperties: false, properties, required: Object.keys(properties) });
@@ -347,6 +370,17 @@ export function pipelineJobKeys(definition: PipelineDefinition, kind: string, au
 }
 
 export function pipelineRunSteps(definition: PipelineDefinition, kind: string, sections: number, automaticOutline = true) {
+  if (kind === 'article.draft' && definition.writing?.enabled) return [
+    { id: 'source', label: 'Preparar conteúdo' },
+    { id: 'writing-plan-1', label: 'Preparar e planejar' },
+    ...(definition.writing.research?.enabled ? [{ id: 'writing-research-1', label: 'Pesquisar contexto' }] : []),
+    { id: 'writing-write-1', label: 'Redigir artigo completo' },
+    { id: 'writing-review-1', label: 'Revisar artigo' },
+    ...(definition.writing.maxCorrections ? [
+      { id: 'writing-correct-1', label: 'Corrigir artigo' },
+      { id: 'writing-review-2', label: 'Conferir correção' },
+    ] : []),
+  ];
   if (kind.startsWith('article.') && !['article.outline', 'article.draft'].includes(kind))
     return [{ id: 'source', label: 'Preparando texto e evidências' }, { id: 'assist', label: 'Escrevendo proposta' }, { id: 'validate', label: 'Conferindo proposta' }];
   const steps = [{ id: 'source', label: 'Preparando a fonte' }];
