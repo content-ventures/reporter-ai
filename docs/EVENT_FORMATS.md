@@ -113,7 +113,7 @@ After a text is written, the outline passages it did not quote go to the citatio
 - **Limits.** A suggestion is stored with `origin: 'outline'`, revision 0 and the author not confirmed. A run adds at most 10, and a production keeps at most 40. Suggestions do not count toward the 5,000 entries that people and texts keep.
 - **A later quote wins.** When a text quotes the same words, that quote replaces an untouched suggestion, in the bank and in the list.
 - **On Citações.** A suggestion has a violet "Sugerida" badge and its own "Sugeridas" tab. It is never "Conferida", never counted under "A conferir", and it cannot be copied with attribution. The drawer says the structure suggested it and that it must be checked with the source. Once a person confirms it, it is a checked quote like any other, and it can become curated.
-- **Recording date.** A card shows the recording date only when the source has one. It never shows the day the text was written, and saving a quote without a date stores none.
+- **Recording date.** A card shows the recording date only when the source has one. It never shows the day the text was written, and saving a quote without a date stores none. A quote from an undated source saved in Citações before this change may still store the day it was saved as its recording date, because the old card filled the date in; it cannot be told from a date an editor typed, which is often the same day in event coverage, so it is not cleared automatically. Emptying the date and saving removes it.
 
 A recording without speaker labels gives no curated quotes and no suggestions, because its lines have no linked speaker (`locateCitation`).
 
