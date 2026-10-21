@@ -53,6 +53,20 @@ test('a curated citation maps to the sentences inside it and to the sentence tha
   assert.deepEqual(curated.byKey.get('2'), { citationId: part.id });
 });
 
+test('a curated citation marks the sentences it covers by position, never a shorter sentence repeated inside it', () => {
+  const said = ['É isso.', 'É isso que a gente faz há 20 anos.', 'O mercado cresceu muito com o peixe fresco todos os dias.', 'A empresa abriu duas lojas.'];
+  const source = createTranscriptSource({ workspaceId: 'workspace', title: 'Entrevista sintética', origin: 'interview', authorized: true,
+    parsed: parseTranscript(`Ana Costa: ${said.join(' ')}`, { format: 'speaker-lines' }), speakerPeople: { 'Ana Costa': 'ana' } }, ctx);
+  const segment = source.versions[0].content.segments[0];
+  const sentences: EvidenceCandidate[] = said.map((text, index) => {
+    const from = segment.text.indexOf(text, index ? segment.text.indexOf(said[index - 1]) + said[index - 1].length : 0);
+    return { key: String(index), text, speaker: 'Ana Costa', ref: { kind: 'source', sourceId: source.id, sourceVersion: 1, locator: { type: 'segment', segmentId: segment.id, from, to: from + text.length } } };
+  });
+  assert.deepEqual(curatedEvidence([saved(source, said[1])], [source], sentences).lines.map(line => line.keys), [['1']], '"É isso." is not the curated line');
+  assert.deepEqual(curatedEvidence([saved(source, 'peixe fresco todos os dias. A empresa abriu')], [source], sentences).lines.map(line => line.keys), [['2', '3']],
+    'a citation across two sentences marks both');
+});
+
 test('a citation is curated only when a person saved, confirmed and linked it to an unchanged authorized source', () => {
   const source = material(), all = candidates(source), citation = saved(source, MARKET);
   assert.equal(isCuratedCitation(citation, [source]), true);

@@ -1,9 +1,9 @@
 import type { Citation } from './citation-library.ts';
-import { literalQuoteText, quotedWords } from './article-policy.ts';
+import { literalQuoteText } from './article-policy.ts';
 import type { PipelineDefinition, PipelineStepKey } from './pipeline.ts';
 import type { SourceRef } from './refs.ts';
 import { sourceVersion } from './source.ts';
-import type { Source } from './source.ts';
+import type { Source, TranscriptSegment } from './source.ts';
 import { countWords } from './text/stats.ts';
 
 /**
@@ -32,18 +32,36 @@ export const SHORTLIST_CHARS = 6000, CURATED_CHARS = 4000;
 const RELEVANCE_CHARS = 200;
 const FIRST_PERSON = /(?<![\p{L}\p{N}])(?:eu|nós|a gente|nosso|nossa)(?![\p{L}\p{N}])/iu;
 
-/** Saved by a person, author confirmed and linked, still literal in the authorized version it names. */
-export function isCuratedCitation(c: Citation, sources: readonly Source[]): boolean {
-  if (c.revision < 1 || !c.authorConfirmed || !c.personId || c.ref.locator.type !== 'segment') return false;
+/** The segment of an unchanged authorized source version a citation names. */
+function citedSegment(c: Citation, sources: readonly Source[]): TranscriptSegment | undefined {
+  if (c.ref.locator.type !== 'segment') return undefined;
   const source = sources.find(candidate => candidate.id === c.ref.sourceId);
   const version = source?.rights.authorized ? sourceVersion(source, c.ref.sourceVersion) : undefined;
-  if (!version || version.hash !== c.sourceHash) return false;
+  if (!version || version.hash !== c.sourceHash) return undefined;
   const segmentId = c.ref.locator.segmentId;
-  const segment = version.content.segments.find(entry => entry.id === segmentId);
+  return version.content.segments.find(entry => entry.id === segmentId);
+}
+
+/** Saved by a person, author confirmed and linked, still literal in the authorized version it names. */
+export function isCuratedCitation(c: Citation, sources: readonly Source[]): boolean {
+  if (c.revision < 1 || !c.authorConfirmed || !c.personId) return false;
+  const segment = citedSegment(c, sources);
   return Boolean(segment && literalQuoteText(segment.text).includes(c.text));
 }
 
-const words = (text: string) => quotedWords(literalQuoteText(text));
+type Range = { from: number; to: number };
+/** Every place of the segment's own text that holds the citation, whatever its spacing. */
+function citationRanges(text: string, segment: TranscriptSegment): Range[] {
+  const pattern = new RegExp(literalQuoteText(text).split(' ').map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'gu');
+  return [...segment.text.matchAll(pattern)].map(match => ({ from: match.index, to: match.index + match[0].length }));
+}
+/** The characters of the segment a candidate sentence covers (its locator; the whole segment without one). */
+function candidateRange(candidate: EvidenceCandidate, segment: TranscriptSegment): Range {
+  const locator = candidate.ref.locator;
+  return locator.type === 'segment' ? { from: locator.from ?? 0, to: locator.to ?? segment.text.length } : { from: 0, to: segment.text.length };
+}
+const overlaps = (a: Range, b: Range) => a.from < b.to && b.from < a.to;
+
 const segmentKey = (ref: SourceRef) => ref.locator.type === 'segment' ? `${ref.sourceId}\u0000${ref.sourceVersion}\u0000${ref.locator.segmentId}` : undefined;
 
 function curatedLineText(line: CuratedLine): string {
@@ -53,18 +71,21 @@ function candidateLineText(candidate: EvidenceCandidate): string {
   return `[${candidate.key}] ${candidate.speaker ? `${candidate.speaker}: ` : ''}${candidate.text}`;
 }
 
-/** The curated citations of this material mapped to the sentences that carry them, newest first. */
+/**
+ * The curated citations of this material mapped to the sentences that carry them, newest first: by
+ * position in the segment, so a short sentence repeated inside a citation is not marked, and a
+ * citation from the middle of one sentence to the middle of the next marks both.
+ */
 export function curatedEvidence(citations: readonly Citation[], sources: readonly Source[], candidates: readonly EvidenceCandidate[]): CuratedEvidence {
   const byKey = new Map<string, CuratedMark>();
   const lines: CuratedLine[] = [];
   let used = 0;
   const curated = citations.filter(citation => isCuratedCitation(citation, sources)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   for (const citation of curated) {
-    const where = segmentKey(citation.ref), quoted = words(citation.text);
-    const matched = candidates.filter(candidate => {
-      const said = words(candidate.text);
-      return Boolean(said) && segmentKey(candidate.ref) === where && (quoted.includes(said) || said.includes(quoted));
-    });
+    const where = segmentKey(citation.ref), segment = citedSegment(citation, sources);
+    const ranges = segment ? citationRanges(citation.text, segment) : [];
+    const matched = candidates.filter(candidate => segment && segmentKey(candidate.ref) === where
+      && ranges.some(range => overlaps(range, candidateRange(candidate, segment))));
     if (!matched.length) continue;
     const relevance = citation.relevance.trim().slice(0, RELEVANCE_CHARS).trim();
     const line: CuratedLine = { keys: matched.map(candidate => candidate.key), text: citation.text,
