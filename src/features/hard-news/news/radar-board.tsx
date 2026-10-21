@@ -2,34 +2,22 @@
 
 import Link from 'next/link';
 import {
-  Badge,
-  BrandMark,
   Button,
   EmptyState,
   Grid,
   List,
-  ListGroup,
-  ListItem,
   ListItemSkeleton,
   MetricStrip,
-  MetaList,
   PageStack,
   Section,
-  Spinner,
 } from '@content-ventures/design-system/v3';
 import type { MetricProps } from '@content-ventures/design-system/v3';
 import { Telescope } from '@content-ventures/design-system/v3/icons';
-import { newsLogoUrl } from '@/domain/news-branding';
 import { sourceForNews } from '@/domain/news-source-match';
-import type { SourceRating } from '@/domain/news-source-rating';
-import { SourceRatingBadge } from '../source-rating';
-import { priorityOf } from '@/domain/hard-news';
 import type { NewsFeed, NewsItem } from '@/domain/hard-news';
 import { NEWS_SOURCES_HREF } from '../routes';
-import { arrivalLabel } from './news-ficha';
-import { NewsCard } from './news-card';
-import { PriorityBadge } from './priority-badge';
-import { arrivedAt, intakePulse, returnLabel, sinceLabel, spread, waitLabel } from './radar-model';
+import { HeadlineCard } from './headline-card';
+import { arrivedAt, intakePulse, sinceLabel, waitLabel } from './radar-model';
 import type { Pulse, WireGroup } from './radar-model';
 import { RadarSide } from './radar-side';
 
@@ -50,33 +38,39 @@ export type RadarBoardProps = {
   query: string;
   selectedId?: string;
   onSelect: (id: string) => void;
+  visibleCount: number;
+  onLoadMore: () => void;
   onEditGoal: () => void;
   onClearFilters: () => void;
 };
 
-/**
- * The inbox keeps the news list uninterrupted; collection metrics live in the activity drawer.
- */
+/** The first view is a full-width edition of headlines, never an automatically opened story. */
 export function RadarBoard(props: RadarBoardProps) {
-  const { triage, tab, now, feeds, hero, overflow, groups, decided, query, selectedId, onSelect, onClearFilters } = props;
-  return (
-    <PageStack>
-      {triage && tab === 'open' ? (
-        <Section title="Cobrir agora" meta={overflow > 0 ? `Prioridade alta · +${overflow} na fila` : 'Prioridade alta'}>
-          {hero.length === 0 ? (
-            <EmptyState size="inline" icon={Telescope} title={query ? 'Nada com prioridade alta na busca' : 'Nada para cobrir agora'} />
-          ) : (
-            <Grid as="ul" label="Cobrir agora" columns={hero.length >= 3 ? '1:1:1' : '1:1'} collapseBelow={640}>
-              {hero.map((item) => <NewsCard key={item.id} item={item} rating={sourceForNews(item, feeds)?.rating} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
-            </Grid>
-          )}
-        </Section>
-      ) : null}
-      {tab === 'open'
-          ? <Wire triage={triage} feeds={feeds} groups={groups} query={query} now={now} selectedId={selectedId} onSelect={onSelect} onClearFilters={onClearFilters} />
-          : <Decided feeds={feeds} items={decided} query={query} now={now} selectedId={selectedId} onSelect={onSelect} onClearFilters={onClearFilters} />}
-    </PageStack>
-  );
+  const { tab, now, feeds, hero, groups, decided, query, onSelect, onClearFilters } = props;
+  const items = tab === 'open' ? [...hero, ...groups.flatMap(group => group.items)] : decided;
+  return <Headlines visibleCount={props.visibleCount} onLoadMore={props.onLoadMore}
+    items={items} feeds={feeds} now={now} tab={tab} query={query} onSelect={onSelect} onClearFilters={onClearFilters} />;
+}
+
+function Headlines({ items, feeds, now, tab, query, onSelect, onClearFilters, visibleCount: limit, onLoadMore }: Pick<RadarBoardProps, 'feeds' | 'now' | 'tab' | 'query' | 'onSelect' | 'onClearFilters' | 'visibleCount' | 'onLoadMore'> & { items: NewsItem[] }) {
+  if (!items.length) return <EmptyQueue query={query} onClearFilters={onClearFilters} decided={tab === 'decided'} />;
+  const [lead, ...rest] = items.slice(0, limit);
+  const card = (item: NewsItem, featured = false) => <HeadlineCard key={item.id} item={item}
+    rating={sourceForNews(item, feeds)?.rating} now={now} featured={featured} onSelect={onSelect} />;
+  return <PageStack data-testid="news-headlines">
+    <Section title={tab === 'open' ? 'Últimas manchetes' : 'Notícias decididas'} meta={`${items.length} ${items.length === 1 ? 'notícia' : 'notícias'}`}>
+      <PageStack>
+        {tab === 'open' && !query ? <Grid columns="2:1" collapseBelow={960}>
+          {card(lead, true)}
+          {rest.length ? <PageStack>{rest.slice(0, 2).map(item => card(item))}</PageStack> : null}
+        </Grid> : null}
+        <Grid as="ul" label="Manchetes" columns="auto" min={300} gap="md">
+          {(tab === 'open' && !query ? rest.slice(2) : items.slice(0, limit)).map(item => card(item))}
+        </Grid>
+        {items.length > limit ? <Button variant="secondary" onClick={onLoadMore}>Carregar mais manchetes</Button> : null}
+      </PageStack>
+    </Section>
+  </PageStack>;
 }
 
 /** Collection health stays available without competing with editorial decisions. */
@@ -159,85 +153,9 @@ function IntakeStrip({ now, news, pulse, seenSince, onSelect }: RadarBoardProps)
   return <MetricStrip label="Sinais do radar" items={items} />;
 }
 
-type ListProps = { onClearFilters: () => void; feeds: readonly NewsFeed[]; query: string; now: number; selectedId?: string; onSelect: (id: string) => void };
-
-/** "Na fila": everything else waiting, by arrival, with the AI's priority as a dot + word. */
-function Wire({ triage, feeds, groups, query, now, selectedId, onSelect, onClearFilters }: ListProps & { triage: boolean; groups: WireGroup[] }) {
-  const total = groups.reduce((sum, group) => sum + group.items.length, 0);
-  if (!total) return <EmptyQueue query={query} onClearFilters={onClearFilters} />;
-  return (
-    <List label="Na fila" framed={false}>
-      {groups.map((group) => (
-        <ListGroup key={group.id} label={group.label} meta={group.items.length}>
-          {group.items.map((item) => <WireRow key={item.id} triage={triage} item={item} rating={sourceForNews(item, feeds)?.rating} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
-        </ListGroup>
-      ))}
-    </List>
-  );
-}
-
 function EmptyQueue({ query, onClearFilters, decided = false }: { query: string; onClearFilters: () => void; decided?: boolean }) {
   return <EmptyState size="panel" icon={Telescope} title={query ? 'Nenhuma notícia encontrada' : decided ? 'Nada decidido ainda' : 'Fila em dia'}
     actions={query ? <Button variant="secondary" size="sm" onClick={onClearFilters}>Limpar busca e filtros</Button> : undefined} />;
-}
-
-function WireRow({ triage, item, rating, now, selected, onSelect }: { triage: boolean; item: NewsItem; rating?: SourceRating; now: number; selected: boolean; onSelect: (id: string) => void }) {
-  const priority = priorityOf(item);
-  const facts = [item.source, arrivalLabel(item, now)];
-  if (item.classification) facts.push(item.classification.topic);
-  const outlets = spread(item, now).outlets;
-  return (
-    <ListItem
-      leading={<BrandMark name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />}
-      title={item.title}
-      titleLines={2}
-      description={facts.join(' · ')}
-      meta={<MetaList size="sm" items={[
-        <SourceRatingBadge key="source" rating={rating} compact />,
-        !triage ? (outlets > 1 ? <Badge key="spread" variant="text" tone="gray">{`${outlets} veículos`}</Badge> : null)
-          : priority ? <PriorityBadge key="priority" priority={priority} size="sm" /> : <Spinner key="reading" size={14} tone="muted" label="A IA está lendo" />,
-      ]} />}
-      selected={selected}
-      onClick={() => onSelect(item.id)}
-      data-testid={`news-row-${item.id}`}
-    />
-  );
-}
-
-const DECIDED_BADGE = {
-  selected: { label: 'Selecionada', tone: 'blue' },
-  covered: { label: 'Coberta', tone: 'green' },
-  later: { label: 'Adiada', tone: 'amber' },
-  discarded: { label: 'Descartada', tone: 'gray' },
-} as const;
-
-/** "Decididas": what the desk covered, postponed or discarded, the latest decision first. */
-function Decided({ items, feeds, query, now, selectedId, onSelect, onClearFilters }: ListProps & { items: NewsItem[] }) {
-  if (!items.length) return <EmptyQueue query={query} onClearFilters={onClearFilters} decided />;
-  return (
-        <List label="Decididas" framed={false}>
-          {items.map((item) => {
-            const badge = item.status === 'new' ? undefined : DECIDED_BADGE[item.status];
-            const detail = item.status === 'later' && item.laterUntil
-              ? returnLabel(item.laterUntil, now)
-              : item.status === 'discarded' ? item.discardReason : undefined;
-            const who = item.decidedBy ? `${item.decidedBy} · ${item.decidedAt ? waitLabel(item.decidedAt, now) : ''}`.trim() : undefined;
-            return (
-              <ListItem
-                key={item.id}
-                leading={<BrandMark name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />}
-                title={item.title}
-                titleLines={2}
-                description={[item.source, who, detail].filter(Boolean).join(' · ')}
-                meta={<MetaList size="sm" items={[<SourceRatingBadge key="source" rating={sourceForNews(item, feeds)?.rating} compact />, badge ? <Badge key="decision" variant="text" tone={badge.tone} dot>{badge.label}</Badge> : null]} />}
-                selected={item.id === selectedId}
-                onClick={() => onSelect(item.id)}
-                data-testid={`news-row-${item.id}`}
-              />
-            );
-          })}
-        </List>
-  );
 }
 
 /** Rows occupy the same inbox space while the first snapshot loads. */
