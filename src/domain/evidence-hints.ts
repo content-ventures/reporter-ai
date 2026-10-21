@@ -23,7 +23,8 @@ export function explainedHints(definition: PipelineDefinition): { planning: bool
 
 /** One sentence of the material as the editorial steps see it: `[key] speaker: text`. */
 export type EvidenceCandidate = { key: string; text: string; speaker?: string; ref: SourceRef };
-export type CuratedMark = { citationId: string; relevance?: string };
+/** A sentence a curated citation covers. The newsroom's note stays out: the writing steps never read it. */
+export type CuratedMark = { citationId: string };
 export type CuratedLine = { keys: string[]; speaker?: string; text: string; relevance?: string };
 export type CuratedEvidence = { byKey: ReadonlyMap<string, CuratedMark>; lines: readonly CuratedLine[] };
 
@@ -46,7 +47,7 @@ const words = (text: string) => quotedWords(literalQuoteText(text));
 const segmentKey = (ref: SourceRef) => ref.locator.type === 'segment' ? `${ref.sourceId}\u0000${ref.sourceVersion}\u0000${ref.locator.segmentId}` : undefined;
 
 function curatedLineText(line: CuratedLine): string {
-  return `${line.keys.map(key => `[${key}]`).join(' ')} ${line.speaker ? `${line.speaker}: ` : ''}${line.text}${line.relevance ? ` — por que importa: ${line.relevance}` : ''}`;
+  return `${line.keys.map(key => `[${key}]`).join(' ')} ${line.speaker ? `${line.speaker}: ` : ''}${line.text}${line.relevance ? ` — nota da redação (não é fonte): ${line.relevance}` : ''}`;
 }
 function candidateLineText(candidate: EvidenceCandidate): string {
   return `[${candidate.key}] ${candidate.speaker ? `${candidate.speaker}: ` : ''}${candidate.text}`;
@@ -72,7 +73,7 @@ export function curatedEvidence(citations: readonly Citation[], sources: readonl
     if (used + size > CURATED_CHARS) break;
     used += size;
     lines.push(line);
-    for (const key of line.keys) if (!byKey.has(key)) byKey.set(key, { citationId: citation.id, ...(relevance ? { relevance } : {}) });
+    for (const key of line.keys) if (!byKey.has(key)) byKey.set(key, { citationId: citation.id });
   }
   return { byKey, lines };
 }
@@ -110,21 +111,24 @@ export function quotableShortlist(candidates: readonly EvidenceCandidate[], iden
   return picked.sort((a, b) => a.index - b.index).map(item => item.candidate);
 }
 
-/** The source of the planning steps: the context plus the curated lines and the quotable shortlist. */
+/**
+ * The source of the planning steps: the context plus the curated lines and the quotable shortlist. A
+ * curated line's note (why it matters, typed by a person) is labelled as the newsroom's, not a source:
+ * no fact of it may reach the title or the text.
+ */
 export function planningSource(context: string, curated: CuratedEvidence, shortlist: readonly EvidenceCandidate[]): string {
   let source = context;
-  if (curated.lines.length) source += '\n\nFALAS CURADAS (conferidas pela redação no banco de citações; os ids são os da fonte):\n'
+  if (curated.lines.length) source += '\n\nFALAS CURADAS (conferidas pela redação no banco de citações; os ids são os da fonte; a nota da redação diz por que a fala importa e não é fonte: nenhum fato dela entra no título, na linha fina, nos intertítulos nem no texto):\n'
     + curated.lines.map(curatedLineText).join('\n');
   if (shortlist.length) source += '\n\nFALAS LITERAIS CITÁVEIS (frases exatas da transcrição original, com seus ids):\n'
     + shortlist.map(candidateLineText).join('\n');
   return source;
 }
 
-/** The source of the writing steps: the context and the exact selected sentences, curated ones marked. */
+/** The source of the writing steps: the context and the exact selected sentences, curated ones marked (without their note). */
 export function writingSource(context: string, candidates: readonly EvidenceCandidate[], selected: ReadonlySet<string>, curated: ReadonlyMap<string, CuratedMark>): string {
   return JSON.stringify({ context, literalEvidence: candidates.filter(candidate => selected.has(candidate.key)).map(candidate => {
     const mark = curated.get(candidate.key);
-    return { id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}),
-      ...(mark ? { curated: true, ...(mark.relevance ? { relevance: mark.relevance } : {}) } : {}) };
+    return { id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}), ...(mark ? { curated: true } : {}) };
   }) });
 }
