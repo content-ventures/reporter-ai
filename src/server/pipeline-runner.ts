@@ -108,6 +108,13 @@ export async function writeCompleteArticle(outline: Outline, variables: Pipeline
   }
 }
 
+/** At most `max` characters of a spoken line, cut at a word: an excerpt copied from it is still literal. */
+function excerpt(text:string,max=400){
+  if(text.length<=max)return text;
+  const cut=text.slice(0,max+1).replace(/\s+\S*$/u,'');
+  return cut.length<=max?cut:text.slice(0,max);
+}
+
 /** Every section receives the actual preceding output, never a guessed continuation. */
 export async function writeSequentialArticle(outline: Outline,variables: PipelineVariables,
   sizing: WritingSize,
@@ -142,12 +149,14 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   const minimums=(floor?:PartFloor)=>floor?{minChars:floor.chars,minWords:floor.words}:{};
   // Each part's quotable lines (identified speaker, 4+ words, no question) and the quotations already written.
   const quotable=soft?[outline.introIds??[],...outline.sections.map(section=>section.evidenceIds)].map(ids=>soft.quotable(ids)):[];
+  // A line the text already quotes, in any part, is no longer one a part can quote.
+  const unquoted=(list:readonly QuotableCandidate[],written:string)=>list.filter(candidate=>!hasQuote(written,quotedWords(literalQuoteText(candidate.text))));
   const quotedIn=(text:string)=>new Set(directQuotes(text).filter(quote=>countWords(quote)>=QUOTABLE_MIN_WORDS).map(quoteKey)).size;
   const quotePlan=(index:number,history:string):QuotePlan|undefined=>{
     if(!soft)return undefined;
-    const quoted=quotedIn(history);
-    return {required:quoteRequirement({rule:soft.rule,quoted,available:quotable.map(list=>list.length),index}),
-      quotesStillNeeded:Math.max(0,soft.rule.minQuotes-quoted),availableQuoteIds:quotable[index].map(candidate=>candidate.key)};
+    const quoted=quotedIn(history),written=literalQuoteText(history),open=quotable.map(list=>unquoted(list,written));
+    return {required:quoteRequirement({rule:soft.rule,quoted,available:open.map(list=>list.length),index}),
+      quotesStillNeeded:Math.max(0,soft.rule.minQuotes-quoted),availableQuoteIds:open[index].map(candidate=>candidate.key)};
   };
   const planned=(plan?:QuotePlan)=>plan?{quotePlan:plan}:{};
   const part=async(key:'intro'|'section',schema:object,values:PipelineVariables,budget?:number,index?:number,floor?:PartFloor,plan?:QuotePlan)=>{
@@ -180,9 +189,8 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
     const meets=(value:unknown)=>required===0||partQuotes(value)>=required;
     const better=(value:unknown,than:unknown)=>meets(value)!==meets(than)?meets(value)
       :measured(paragraphsOf(value)).words>measured(paragraphsOf(than)).words;
-    const availableQuotes=()=>(quotable[key==='intro'?0:(index??0)+1]??[])
-      .filter(candidate=>!hasQuote(written,quotedWords(literalQuoteText(candidate.text)))).slice(0,6)
-      .map(candidate=>({id:candidate.key,text:candidate.text.slice(0,400),...(candidate.speaker?{speaker:candidate.speaker}:{})}));
+    const availableQuotes=()=>unquoted(quotable[key==='intro'?0:(index??0)+1]??[],written).slice(0,6)
+      .map(candidate=>({id:candidate.key,text:excerpt(candidate.text),...(candidate.speaker?{speaker:candidate.speaker}:{})}));
     const repair=(draft:unknown)=>{
       let paragraphs=paragraphsOf(draft).map(p=>({...p}));
       if(evidence)paragraphs=unquoteUnsupported(paragraphs,evidence,evidencePassages);
@@ -238,7 +246,7 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
       // One development per part: a part that stays short passes its shortfall to the next one.
       // The quotation is asked once, after the hard and size checks; a part that stays without it is kept.
       const violation:string|undefined=hard(value)??(!developed&&short(value)?'ARTICLE_PART_TOO_SHORT':undefined)
-        ??(!askedQuote&&!meets(value)?'SECTION_QUOTE_REQUIRED':undefined);
+        ??(!askedQuote&&!meets(value)&&availableQuotes().length?'SECTION_QUOTE_REQUIRED':undefined);
       if(!violation)break;
       developed||=violation==='ARTICLE_PART_TOO_SHORT';
       askedQuote||=violation==='SECTION_QUOTE_REQUIRED';

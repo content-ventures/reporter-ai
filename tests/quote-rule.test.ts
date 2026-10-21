@@ -7,6 +7,7 @@ import { EDITORIAL_FORMATS, quoteRuleFor } from '../src/domain/formats.ts';
 import { quotableIds, quotableSpeaker, quoteRequirement } from '../src/domain/quote-plan.ts';
 import type { QuotableCandidate, QuoteRule } from '../src/domain/quote-plan.ts';
 import { writeSequentialArticle } from '../src/server/pipeline-runner.ts';
+import { quotedIn, quotedWords } from '../src/domain/article-policy.ts';
 
 process.env.REPORTER_LOCAL_MODE = 'true';
 process.env.GROQ_API_KEY = 'test-placeholder-not-a-real-key';
@@ -121,6 +122,36 @@ test('a part asked for a quotation after another revision still gets at most thr
   }, evidence, undefined, grounding, ['Giaceli Scorsin'], soft({ minQuotes: 1, openingQuote: false, sectionQuotes: true }));
   assert.deepEqual(violations, ['first', 'UNGROUNDED_FACT', 'SECTION_QUOTE_REQUIRED']);
   assert.equal(result.sections[0].paragraphs[0].text, quoted);
+});
+
+test('a line an earlier part already quoted is not asked for again', async () => {
+  const sizings: { quotePlan: unknown; revisionFeedback?: { violation: string } }[] = [];
+  const outline = { title: 'Hecke na APAS', introIds: ['e1'], sections: [{ title: 'Embalagem', evidenceIds: ['e2'] }] };
+  await writeSequentialArticle(outline, variables, { introChars: 400, sections: [{ budgetChars: 400 }] }, async (key, _schema, values) => {
+    // The opening may quote any selected line, here the one the outline gave the section.
+    if (key === 'intro') return { paragraphs: [paragraph(`A Hecke Alimentos apresentou a merluza empanada na APAS Show 2026. ${quoted}`, ['e1', 'e2'])] };
+    sizings.push(JSON.parse(values.sizing));
+    return { title: 'Embalagem', paragraphs: [paragraph('A embalagem destaca os nutrientes do produto, segundo Scorsin.')] };
+  }, evidence, undefined, undefined, [], soft({ minQuotes: 1, openingQuote: false, sectionQuotes: true }));
+  assert.deepEqual(sizings.map(sizing => sizing.quotePlan), [{ required: 0, quotesStillNeeded: 0, availableQuoteIds: [] }]);
+});
+
+test('a long line is offered cut at a word, so the excerpt copied from it stays literal', async () => {
+  const long = `Nós começamos a vender a merluza empanada nas redes do Sul, ${'depois levamos o produto para as lojas do Sudeste e do Centro-Oeste, '.repeat(6)}e agora estamos negociando com redes do Nordeste.`;
+  const lines = new Map<string, QuotableCandidate>([['e1', candidates.get('e1')!], ['l1', { key: 'l1', speaker: 'Scorsin', text: long }]]);
+  const offered: { text: string }[] = [];
+  const outline = { title: 'Hecke na APAS', introIds: ['e1'], sections: [{ title: 'Expansão', evidenceIds: ['l1'] }] };
+  await writeSequentialArticle(outline, variables, { introChars: 300, sections: [{ budgetChars: 600 }] }, async (key, _schema, values) => {
+    if (key === 'intro') return intro;
+    offered.push(...(JSON.parse(values.sizing).revisionFeedback?.availableQuotes ?? []));
+    return { title: 'Expansão', paragraphs: [paragraph('A empresa ampliou a venda da merluza para outras regiões, segundo Scorsin.', ['l1'])] };
+  }, new Map([...lines].map(([key, line]) => [key, line.text])), undefined, undefined, [],
+  { rule: { minQuotes: 1, openingQuote: false, sectionQuotes: true }, quotable: ids => quotableIds(ids, lines, identified).map(id => lines.get(id)!) });
+  assert.ok(long.length > 400);
+  assert.equal(offered.length, 1);
+  const text = offered[0].text;
+  assert.ok(text.length <= 400 && long.startsWith(text) && /^\s/.test(long.slice(text.length)), text);
+  assert.ok(quotedIn(long, quotedWords(text)), 'pasting the whole entry passes the literal check');
 });
 
 test('an opening left without its quotation raises what the next part is asked for', async () => {
