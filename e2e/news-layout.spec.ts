@@ -88,8 +88,11 @@ async function expectPortalHeadlines(page: Page) {
   }
   const viewport = page.viewportSize()!;
   if (viewport.width >= 1280) {
+    const leadHeading = (await page.getByRole('heading', { name: 'Em destaque', exact: true }).boundingBox())!;
+    const latestHeading = (await page.getByRole('heading', { name: 'Últimas notícias', exact: true }).boundingBox())!;
+    expect(Math.abs(leadHeading.y - latestHeading.y), 'as duas colunas começam na mesma linha').toBeLessThanOrEqual(4);
     const leadBox = (await lead.boundingBox())!;
-    const latestBox = (await compact.first().boundingBox())!;
+    const latestBox = (await page.getByRole('region', { name: 'Últimas notícias', exact: true }).locator('[data-news-layout="compact"]').first().boundingBox())!;
     expect(latestBox.x, 'últimas notícias ficam ao lado da manchete').toBeGreaterThan(leadBox.x + leadBox.width);
     const headings = await page.getByTestId(/^news-card-/).getByRole('heading').evaluateAll(elements => elements.map(el => {
       const { y, height } = el.getBoundingClientRect();

@@ -30,23 +30,23 @@ export function NewsEdition({ items, feeds, now, triage, topics, onTopic, onSele
       </Tooltip>}>
         <Grid columns="1:1" gap="md">
           <GridItem span="full">{lead ? card(lead, 'feature') : null}</GridItem>
-          {secondary.length ? <GridItem span="full"><Grid columns="auto" min={180} gap="sm">
+          {secondary.length ? <GridItem span="full"><Grid columns="1:1:1" collapseBelow={480} gap="sm">
             {secondary.map(item => card(item, 'tile'))}
           </Grid></GridItem> : null}
         </Grid>
       </Section>
-      <Grid columns="1:1" gap="md">
-        {latest.length ? <GridItem span="full"><Section title="Últimas notícias">
-          <Grid columns="1:1" gap="sm">{latest.map(item => <GridItem key={item.id} span="full">{card(item)}</GridItem>)}</Grid>
-        </Section></GridItem> : null}
-        <GridItem span="full"><TopicRadar topics={topics} onSelect={onTopic} onClear={() => undefined} layout="list" /></GridItem>
-      </Grid>
+      {latest.length ? <GridItem><Section title="Últimas notícias">
+        <Grid columns="1:1" gap="sm">{latest.map(item => <GridItem key={item.id} span="full">{card(item)}</GridItem>)}</Grid>
+      </Section></GridItem> : null}
     </Grid>
-    {visible.length > 8 ? <Section title="Mais notícias" meta={`${items.length} na fila`}>
-      <Grid as="section" label="Manchetes" columns="auto" min={HEADLINE_MIN_WIDTH} gap="sm">
-        {visible.slice(8).map(item => card(item))}
-      </Grid>
-    </Section> : null}
+    {visible.length > 8 ? <Grid columns="2:1" collapseBelow={760} align="start">
+      <Section title="Mais notícias" meta={`${items.length} na fila`}>
+        <Grid as="section" label="Manchetes" columns="auto" min={HEADLINE_MIN_WIDTH} gap="sm">
+          {visible.slice(8).map(item => card(item))}
+        </Grid>
+      </Section>
+      <TopicRadar topics={topics} onSelect={onTopic} onClear={() => undefined} layout="list" />
+    </Grid> : <TopicRadar topics={topics} onSelect={onTopic} onClear={() => undefined} />}
     {items.length > limit ? <Button variant="secondary" onClick={onLoadMore}>Carregar mais manchetes</Button> : null}
   </PageStack>;
 }
