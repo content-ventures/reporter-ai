@@ -2,9 +2,9 @@
 
 The writing workstream turns **Conteúdo** into an article ready for a journalist's approval: title, dek, structured body, source references, and separate reporting issues. Content may arrive as recordings, transcripts, text, documents, URLs, or mixed material without a mandatory user briefing format. Internal organization is the application's responsibility; support for individual file formats remains an intake capability, not a promise to parse every file.
 
-The first deliverable is the filled [Seafood editorial map and writing guide](SEAFOOD_EDITORIAL_STANDARD.md). This plan consolidates the scope and execution decisions agreed on October 21, 2026. Its status is **editorial specification, editable settings and managed orchestration implemented locally; newsroom evaluation pending**. Proposed Seafood values and pilot targets still need newsroom validation. The implementation is local and has not changed deployed settings or model configuration. See [managed writing orchestration](WRITING_ORCHESTRATION.md) for the implemented controls, run inspection and operational limits.
+The first deliverable is the filled [Seafood editorial map and writing guide](SEAFOOD_EDITORIAL_STANDARD.md). This plan consolidates the scope and execution decisions agreed on October 21, 2026. Its status is **implemented locally, with a six-case development batch completed; human newsroom acceptance pending**. Proposed Seafood values and pilot targets still need newsroom validation. The implementation is local and has not changed deployed settings or model configuration. See [managed writing orchestration](WRITING_ORCHESTRATION.md) for the implemented controls, run inspection and operational limits.
 
-The [closeout action plan](#closeout-action-plan) defines the remaining work for this delivery. The later sections preserve the architecture, editorial rationale and broader evaluation protocol; they do not add prerequisites to closeout unless identified below.
+The [closeout action plan](#closeout-action-plan) defines this delivery's acceptance criteria. The [closeout record](WRITING_CLOSEOUT.md) reports the actual technical validation, six-case outcomes, configuration activation and unresolved human acceptance. The later sections preserve the architecture, editorial rationale and broader evaluation protocol; they do not add prerequisites to closeout unless identified below.
 
 ## Scope and dependencies
 
@@ -30,8 +30,8 @@ Direct writing remains available. Human authors do not need a news record or a f
 | 2 | Versioned settings contract and deterministic prompt composition | Editable frontend, durable workspace settings, version snapshots and stable prompt composition | Implemented locally, with actual composed requests and immutable snapshots in the execution inspector; per-rule composition manifest remains pending |
 | 3 | Content preparation, editorial decision, and whole-article generation | Original evidence survives preparation; sparse or conflicting material has an explicit outcome | Implemented locally as an opt-in flow; every stage receives original content |
 | 4 | Independent review and bounded correction | Findings identify article spans, evidence, severity, and required action; substantive changes are rechecked | Implemented locally; configurable models and instructions, zero/one correction, complete run inspection |
-| 5 | Consistent article presentation and handoff | Dek and semantic blocks survive editing, review, approval, export, and the supported destination | Semantic article conversion and dek display implemented locally; complete connected acceptance remains in C3 |
-| 6 | Controlled comparison and fresh-case pilot | Blind newsroom evaluation, repeatability, and editing effort meet the agreed release criteria | Same-model MSD comparison recorded; six-case development evaluation remains in C4; reserved-case parity evaluation follows separately |
+| 5 | Consistent article presentation and handoff | Dek and semantic blocks survive editing, review, approval, export, and the supported destination | Real connected MSD edit/review/approval/export passed, including exact source-version and manifest provenance; CMS remains separate |
+| 6 | Controlled comparison and fresh-case pilot | Blind newsroom evaluation, repeatability, and editing effort meet the agreed release criteria | Same-model MSD comparison and six development executions recorded: five articles and one reporting stop; C4 human judgments and editing times remain pending |
 
 The existing roadmap allocates 4 hours to the guide, 12 to generation, and 8 to evidence and attribution. These are inherited estimates, not confirmation that expanded composition, calibration, and review work fits them. Re-estimate implementation after the contracts are detailed. Do not assign new dates or expand the news workstream's scope by implication.
 
@@ -39,7 +39,7 @@ The existing roadmap allocates 4 hours to the guide, 12 to generation, and 8 to 
 
 **Finish line:** a journalist can supply content, generate an article, inspect its sources and review findings, edit it, approve it and export it through the frontend. Administrators can change the map, guide, stage models and instructions there. The chosen configuration must also pass the six-content newsroom check below. Release is finished only when the validated version and configuration are available in the intended environment.
 
-The core implementation and local tests already pass. The remaining work is the five steps below, in this order. Engineering owns execution and fixes. João supplies the final editorial judgment, directly or through a designated journalist, and authorizes the repository's remote delivery actions. No calendar commitment is made before confirming the acceptance environment and reviewers.
+The five steps below retain the agreed acceptance criteria. Engineering owns implementation, execution and fixes. João supplies the final editorial judgment, directly or through a designated journalist, and authorizes the repository's remote delivery actions. Technical deployment readiness does not complete the human newsroom criterion in C4.
 
 ### C1 Fix the known remaining problems
 
@@ -97,7 +97,7 @@ Engineering prepares the environment, fixes, tests and six-article comparison. J
 
 This delivery includes the five steps above. RSS/news queues, CMS integration, RAG, new providers and model competitions remain separate workstreams. The later twelve-case reserved evaluation is for a broader quality claim and is not an extra hidden requirement for this delivery. Detailed per-rule prompt provenance and legacy-flow cleanup remain follow-ups unless a concrete acceptance failure makes them necessary.
 
-**Current status:** closeout implementation and validation are in progress. Tavily was explicitly added to the writing workstream. Shared configuration activation, independent holdout expansion and the human editorial verdict remain distinct from technical deployment readiness. The final validation record below will report actual outcomes, including failures.
+**Current status:** C1–C3 and the C5 local technical handoff are complete. The [closeout record](WRITING_CLOSEOUT.md) includes actual Tavily calls, connected frontend/export evidence, required checks, activation/recovery instructions and failures retained from earlier attempts. C4 is not complete: five generated articles and one reporting stop do not meet the six-article human acceptance criterion. Shared activation and remote release have not occurred.
 
 ## Editorial improvement round — implemented locally, evaluation in progress
 
@@ -330,7 +330,7 @@ Proposed pilot targets: no critical factual errors or invented quotations in eit
 
 ## Implementation acceptance checklist
 
-Checked items represent implemented and locally verified behavior. C2/C3 still require connected acceptance; these checks are not a release or editorial-quality verdict.
+Checked items represent implemented and locally verified behavior, including real connected C2/C3 acceptance. They are not a deployed release or an editorial-quality verdict.
 
 - [x] Map and guide have editable frontend controls, acknowledged save contracts, recent history and concurrency protection.
 - [x] Article calls consume an immutable policy snapshot included in the request cache identity.
@@ -341,11 +341,12 @@ Checked items represent implemented and locally verified behavior. C2/C3 still r
 - [x] The managed path combines task contracts with the saved map and guide; existing custom configurations are not replaced on load.
 - [x] Correction is bounded and independently reviewed; unresolved original major/critical findings and incomplete essential-fact audits prevent readiness.
 - [x] Recorded provider comparisons keep exact local configurations and outputs without activating shared settings or exposing credentials.
-- [ ] C1: close the known editorial refinements and supported-abbreviation false positive, preserving the baseline and essential meanings.
-- [ ] C2: verify the saved configuration, real generation and persistent execution history together through the connected frontend.
-- [ ] C3: verify title, dek, body, applicable media and quotation integrity across editing, review, approval and supported delivery paths.
-- [ ] C4: complete six distinct development cases with newsroom judgments and active editing records.
-- [ ] C5: deliver the exact validated version through the approved repository workflow and verify the active configuration and release.
+- [x] C1: close the known editorial refinements and supported-abbreviation false positive, preserving the baseline and essential meanings. The six-case batch retained the eight MSD meanings; remaining prose preferences are recorded separately.
+- [x] C2: verify the saved configuration, real generation and persistent execution history together through the connected frontend. Final MSD execution includes actual Tavily results and a restored configuration with the historical run snapshot preserved.
+- [x] C3: verify title, dek, body and quotation integrity across editing, review, technical approval and supported delivery paths. Actual HTML, Markdown, clipboard and manifest exports match the approved version; the MSD source has no media to validate.
+- [ ] C4: obtain human newsroom judgments and active editing records. Six development executions are complete, with five articles and one reporting stop; Apex needs a structural edit, the podcast needs a name checked, and a suitable sixth article is still required for this criterion.
+- [x] C5 local handoff: prepare cohesive commits, exact acceptance evidence, known limits and configuration activation/recovery instructions in `WRITING_CLOSEOUT.md`.
+- [ ] C5 release: remote delivery, shared configuration activation and deployed acceptance remain separate approved actions.
 
 Tracked outside this closeout:
 
