@@ -132,6 +132,38 @@ for (const viewport of VIEWPORTS) {
       }
     });
 
+    test('duas partes viram um material só, na ordem da lista', async ({ page }) => {
+      test.skip(viewport.width < 768, 'the reorder grip is checked on desktop');
+      const bodies: { text: string; fileName?: string }[] = [];
+      await page.route('**/api/reporter/material/analysis', async route => {
+        bodies.push(route.request().postDataJSON());
+        await route.fulfill({ json: insights });
+      });
+      // Two cues of 5 s per file: the material lasts 00:20 once part 2 starts where part 1 ends.
+      const cues = (speaker: string, words: string) =>
+        `1\n00:00:00,000 --> 00:00:05,000\n${speaker}: ${words}, fala 1.\n\n2\n00:00:05,000 --> 00:00:10,000\n${speaker}: ${words}, fala 2.`;
+      await page.goto('/productions/new');
+      await page.getByRole('radio', { name: 'Arquivo',exact: true }).click();
+      await page.locator('input[type="file"]').setInputFiles([
+        { name: 'parte-2.srt',mimeType: 'text/plain',buffer: Buffer.from(cues('Bia','parte dois')) },
+        { name: 'parte-1.srt',mimeType: 'text/plain',buffer: Buffer.from(cues('Ana','parte um')) },
+      ]);
+      const parts = page.getByRole('list', { name: 'Partes do material' }).getByRole('listitem');
+      await expect(parts).toHaveCount(2);
+      await expect(parts.first()).toContainText('parte-1.srt');
+      await expect(page.getByRole('dialog', { name: 'Material pronto' })).toBeVisible();
+      await expect(page.getByRole('dialog')).toBeHidden();
+      expect(bodies.at(-1)?.text.startsWith('\u001c\n')).toBe(true);
+      expect(bodies.at(-1)?.fileName).toBe('parte-1.srt');
+      await expect(page.getByText(/· 00:20$/)).toBeVisible();
+      await expect(page.locator('input[type="file"]')).toHaveCount(1);
+      const sent = bodies.length;
+      await page.getByRole('button', { name: 'Reordenar parte-2.srt' }).press('Alt+ArrowUp');
+      await expect(parts.first()).toContainText('parte-2.srt');
+      await expect.poll(() => bodies.length > sent && bodies.at(-1)!.text.indexOf('parte dois') < bodies.at(-1)!.text.indexOf('parte um')).toBe(true);
+      await expectNoHorizontalOverflow(page);
+    });
+
     test('upload mostra bytes reais e passa à espera da transcrição', async ({ page }) => {
       const secondPart = deferred(),analysis = deferred();
       await page.route('**/api/reporter/uploads', route => route.fulfill({ json: {
