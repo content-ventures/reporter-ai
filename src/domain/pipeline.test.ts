@@ -208,6 +208,21 @@ test('a section keeps one quote as the floor and adds a second when it brings ne
   assert.match(definition.funnels.awards.section.prompt, /Nesta premiação as seções não levam citação: só a lista/);
 });
 
+test('a panel quotes every speaker with a quotable line and develops each thesis without padding', () => {
+  const panel = withFormatFunnels(defaultPipelineDefinition()).funnels.panel;
+  for (const key of ['outline', 'quotes'] as const) {
+    assert.match(panel[key].prompt, /cada palestrante com uma frase citável na fonte tem ao menos uma passagem citável selecionada/, key);
+    assert.match(panel[key].prompt, /os argumentos, dados e exemplos concretos que o palestrante deu sobre ela/, key);
+  }
+  const section = panel.section.prompt;
+  assert.match(section, /Cada palestrante com uma frase citável tem ao menos uma fala no texto: se as evidências desta seção têm uma frase citável de um palestrante ainda não citado no texto escrito até agora, cite-o nesta seção/);
+  assert.match(section, /Desenvolva cada seção com os argumentos, dados e exemplos concretos do palestrante que estão nas evidências dela/);
+  assert.match(section, /quando as evidências acabarem, pare: nunca preencha com repetição, generalidade ou fato de outra seção/);
+  assert.doesNotMatch(section, /Uma segunda fala só se trouxer informação nova/);
+  // The style reference quotes both speakers of its panel.
+  assert.match(section, /“O Chile paga em dólar e compra o ano inteiro”, afirmou Dias/);
+});
+
 test('the newsroom\'s note on a curated quote is never a source', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
   for (const prompt of [definition.steps.outline.prompt, ...EDITORIAL_FORMATS.map(format => definition.funnels[format].outline.prompt)])
