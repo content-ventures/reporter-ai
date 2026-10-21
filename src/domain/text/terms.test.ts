@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { correctTerm, replaceTerm, termOccurrences } from './terms.ts';
+import { joinTranscriptParts, parseTranscript, splitTranscriptParts } from './transcript-parse.ts';
 
 const SRT = `1
 00:00:00,000 --> 00:00:09,000
@@ -149,4 +150,19 @@ test('lengthening a name leaves the longer name where it already is, in any case
   assert.equal(fixed.refused, undefined);
   assert.equal(fixed.count, 1);
   assert.match(!fixed.refused ? fixed.text : '', /Bem-vindos à Brasil Seafood show,[\s\S]*A Brasil Seafood Show deste ano cresceu\./u);
+});
+
+test('a correction across a material sent in parts keeps every part, its times and its speakers', () => {
+  const one = '1\n00:00:00,000 --> 00:00:04,000\nA Q Show abre amanhã com 300 expositores.\n';
+  const two = '1\n00:00:00,000 --> 00:00:05,000\nNa Q Show deste ano a tilápia ganha um pavilhão.\n';
+  const joined = joinTranscriptParts([{ text: one, fileName: 'parte-1.srt' }, { text: two, fileName: 'parte-2.srt' }]);
+  const result = correctTerm(joined, 'Q Show', 'Aquishow');
+  assert.equal(result.refused, undefined);
+  assert.equal(result.count, 2);
+  const parts = splitTranscriptParts(result.refused ? '' : result.text);
+  assert.equal(parts?.length, 2);
+  const before = parseTranscript(joined), after = parseTranscript(result.refused ? '' : result.text);
+  assert.deepEqual(after.segments.map(({ id, part, startMs, endMs, speaker }) => ({ id, part, startMs, endMs, speaker })),
+    before.segments.map(({ id, part, startMs, endMs, speaker }) => ({ id, part, startMs, endMs, speaker })));
+  assert.match(after.segments[1].text, /Aquishow deste ano/);
 });

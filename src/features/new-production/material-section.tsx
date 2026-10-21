@@ -318,7 +318,7 @@ export function MaterialSection({
         )}
       </FormRow>
       {/* Stays on screen while the corrected material is analyzed again: the last analysis is kept meanwhile. */}
-      {!blank && analysis?.segments.length ? (
+      {!blank && !draftMaterial(draft).pending && analysis?.segments.length ? (
         <FormRow label="Corrigir termo" optional>
           <TermFix text={draftMaterial(draft).text} onReplace={onReplaceTerm} />
         </FormRow>
