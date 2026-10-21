@@ -53,24 +53,28 @@ export function factCheckProviders(model: string) {
   };
 }
 
-/** Checks of this instance in flight: a second request for the same citation joins the first. */
+/**
+ * Checks of this instance in flight, by citation id (a hash of a portal's own source, so never
+ * shared across portals): a second request joins the first, after passing its own permission and
+ * access checks.
+ */
 const inflight = new Map<string, Promise<CitationView>>();
 
 /** Checks one citation now; a citation already checked is returned as is unless `force`. */
-export function checkCitation(id: string, force: boolean): Promise<CitationView> {
-  const running = inflight.get(id);
-  if (running) return running;
-  const task = runCheck(id, force).finally(() => inflight.delete(id));
-  inflight.set(id, task);
-  return task;
-}
-
-async function runCheck(id: string, force: boolean): Promise<CitationView> {
+export async function checkCitation(id: string, force: boolean): Promise<CitationView> {
   const read = (await editorialTransaction('runtime', async checkpoint => {
     const citation = editable(checkpoint, id);
     return { citation, model: activePipeline(checkpoint).definition.steps.quotes.model };
   }, false, 'reporter.edit', CHECK_READ_SCOPE)).value;
   if (read.citation.factCheck && !force) return read.citation;
+  const running = inflight.get(id);
+  if (running) return running;
+  const task = runCheck(id, read).finally(() => inflight.delete(id));
+  inflight.set(id, task);
+  return task;
+}
+
+async function runCheck(id: string, read: { citation: CitationView; model: string }): Promise<CitationView> {
   const seen = read.citation.factCheck?.checkedAt;
   const started = Date.now();
   let result: Awaited<ReturnType<typeof runFactCheck>>;

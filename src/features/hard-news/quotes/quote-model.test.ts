@@ -94,3 +94,11 @@ test('connected attribution reads the real programme and day, and unauthorized q
   assert.equal(scored.score?.attribution, 13, 'the confirmed author and the episode link count; the placeholders do not');
   assert.deepEqual(pendingBatch([rankQuote(unnamed)]), []);
 });
+
+test('an undated citation saves no recording day unless the editor set one, even the creation day', () => {
+  const undated = citation({ recordedOn: undefined });
+  const shown = quoteOf(undated);
+  assert.equal(citationInputOf(undated, shown).recordedOn, undefined, 'the card fallback is never saved');
+  const set = { ...shown, attribution: { sourceNamed: true, dated: true } };
+  assert.equal(citationInputOf(undated, set).recordedOn, '2026-09-18', 'a day the editor picked is saved, even the creation day');
+});
