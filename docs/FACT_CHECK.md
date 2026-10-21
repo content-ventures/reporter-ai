@@ -68,6 +68,6 @@ A disputed claim caps the score at 30, so a popular but disputed quote never ran
 
 ## Configuration and cost
 
-`TAVILY_API_KEY` stays on the server: in `.env.local`, in the Vercel app (Francal workspace), and in the GitHub `staging` and `production` environments, from which the release injects it into the Neon worker. The release authenticates the key through Tavily's `/usage` endpoint, which runs no search.
+`TAVILY_API_KEY` stays on the server: in `.env.local`, in the Vercel app (Francal workspace), and in the GitHub `staging` and `production` environments, from which the release injects it into the Neon worker. The key is optional: without it the deployment still succeeds, the worker queues no check, "Checar" says the key is missing, and the app health reports `optional.tavily: false`. With it, the release authenticates the key through Tavily's `/usage` endpoint, which runs no search. A key added later reaches the app at its next Vercel deployment and the worker at its next release.
 
 A check costs at most 3 Tavily credits and 2 model calls. The free plan's 1,000 credits a month cover about 330 quotes.

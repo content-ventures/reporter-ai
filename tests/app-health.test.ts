@@ -53,6 +53,9 @@ test('the read-only release check agrees with the probe and names what is missin
   assert.deepEqual(healthProblems(health, { workerFingerprint: '0123456789abcdef' }), ['the app wakes a different worker']);
   const unready = withMode('cloud', () => appHealth({ ...CLOUD, PIXABAY_API_KEY: undefined }));
   assert.deepEqual(healthProblems(unready), ['missing settings: pixabay']);
+  // The fact check's key is optional: reported, never a reason the deployment is unready.
+  const withoutSearch = withMode('cloud', () => appHealth({ ...CLOUD, TAVILY_API_KEY: undefined }));
+  assert.deepEqual([withoutSearch.ready, withoutSearch.optional.tavily], [true, false]);
   let calls = 0;
   const answers = [new Response('down', { status: 502 }), Response.json({ ...health, version: '0.0.1' }), Response.json(health)];
   const reached = await waitForAppHealth('https://app.example.test', { version: packageJson.version },

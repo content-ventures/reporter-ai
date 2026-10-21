@@ -76,7 +76,8 @@ const functions = {
       OPENAI_API_KEY: requiredAny('OPENAI_API_KEY','OPEN_AI_API_KEY'),
       ANTHROPIC_API_KEY: requiredAny('ANTHROPIC_API_KEY','CLAUDE_API_KEY'),
       PIXABAY_API_KEY: required('PIXABAY_API_KEY'),
-      TAVILY_API_KEY: required('TAVILY_API_KEY'),
+      // Optional: without it the worker queues no fact check (docs/FACT_CHECK.md).
+      ...(process.env.TAVILY_API_KEY?.trim() ? { TAVILY_API_KEY: process.env.TAVILY_API_KEY.trim() } : {}),
     },
     bundler: bundleWorker,
   },

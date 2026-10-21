@@ -7,7 +7,7 @@ export function releaseEnvironment(environment) {
     ANTHROPIC_API_KEY: environment.ANTHROPIC_API_KEY?.trim() || environment.CLAUDE_API_KEY?.trim(),
   };
   const required = ['NEON_API_KEY', 'NEON_PROJECT_ID', 'NEON_BRANCH_ID', 'REPORTER_WORKER_PASSWORD',
-    'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY', 'TAVILY_API_KEY'];
+    'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY'];
   const missing = required.filter(name => !values[name]?.trim());
   if (missing.length) throw new Error(`Missing production release configuration: ${missing.join(', ')}.`);
   return values;
@@ -21,8 +21,8 @@ export async function checkProviders(environment, request = fetch) {
       'x-api-key': environment.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01',
     }],
     ['Pixabay', `https://pixabay.com/api/?key=${encodeURIComponent(environment.PIXABAY_API_KEY)}&q=seafood&per_page=3`, {}],
-    // The usage endpoint authenticates the key without running a search.
-    ['Tavily', 'https://api.tavily.com/usage', { Authorization: `Bearer ${environment.TAVILY_API_KEY}` }],
+    // Optional (fact check). The usage endpoint authenticates the key without running a search.
+    ...(environment.TAVILY_API_KEY?.trim() ? [['Tavily', 'https://api.tavily.com/usage', { Authorization: `Bearer ${environment.TAVILY_API_KEY}` }]] : []),
   ];
   await Promise.all(checks.map(async ([name, url, headers]) => {
     let response;

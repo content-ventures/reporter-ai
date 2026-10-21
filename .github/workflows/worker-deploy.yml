@@ -100,7 +100,7 @@ jobs:
       - name: Require every setting and authenticate to the providers
         run: |
           set -euo pipefail
-          for name in NEON_API_KEY NEON_PROJECT_ID NEON_BRANCH_ID REPORTER_APP_ORIGINS REPORTER_WORKER_PASSWORD GROQ_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY PIXABAY_API_KEY TAVILY_API_KEY; do
+          for name in NEON_API_KEY NEON_PROJECT_ID NEON_BRANCH_ID REPORTER_APP_ORIGINS REPORTER_WORKER_PASSWORD GROQ_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY PIXABAY_API_KEY; do
             if [[ -z "${!name:-}" ]]; then
               echo "::error::Missing $name in the ${{ inputs.environment }} GitHub environment."
               exit 1
@@ -144,7 +144,9 @@ jobs:
             node scripts/lib/mask-env.mjs "$env_file"
             node --input-type=module - "$env_file" <<'NODE'
           import { appendFile } from 'node:fs/promises';
-          const names = ['DATABASE_URL', 'REPORTER_APP_ORIGINS', 'REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY', 'TAVILY_API_KEY'];
+          const names = ['DATABASE_URL', 'REPORTER_APP_ORIGINS', 'REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY',
+            // Optional: the fact check stays off without it.
+            ...(process.env.TAVILY_API_KEY ? ['TAVILY_API_KEY'] : [])];
           await appendFile(process.argv[2], `\n${names.map(name => `${name}=${JSON.stringify(process.env[name])}`).join('\n')}\n`, { mode: 0o600 });
           NODE
           }
