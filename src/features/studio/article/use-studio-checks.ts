@@ -74,10 +74,11 @@ export function useStudioChecks({
       assets: assetLookup,
       ...(production.charsAvailable !== undefined ? { materialChars: production.charsAvailable } : {}),
     });
-    const merged = [...mergeChecks(local, piece.checks, { body: factsBody, sources, limits: articleGateFor(production.brief) }), ...(veracity ? [veracity] : [])];
+    const limits = { ...articleGateFor(production.brief), ...(piece.articlePolicy ? { minQuotes: piece.articlePolicy.minimumQuotes } : {}) };
+    const merged = [...mergeChecks(local, piece.checks, { body: factsBody, sources, limits }), ...(veracity ? [veracity] : [])];
     if (!deskChecks) return merged;
     return [...merged.filter((check) => !deskReplaces?.includes(check.id)), ...deskChecks];
-  }, [factsBody, production.brief, production.charsAvailable, sources, generating, piece.checks, assetLookup, deskChecks, deskReplaces, veracity]);
+  }, [factsBody, production.brief, production.charsAvailable, sources, generating, piece.checks, piece.articlePolicy, assetLookup, deskChecks, deskReplaces, veracity]);
   /** Images without credit, authorisation or file ("Imagens com crédito"), in reading order. */
   const imageIssues: ImageToCheck[] = useMemo(() => imagesToCheck(factsBody, assetLookup), [factsBody, assetLookup]);
   /**

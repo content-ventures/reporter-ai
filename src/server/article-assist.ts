@@ -4,6 +4,7 @@ import { articleStats, blockText, findBlock, sliceText } from '../domain/article
 import type { ArticleBody, ArticleBlock } from '../domain/article.ts';
 import { articleQuotationIssue, directQuotes, hasQuote, literalQuoteText, r1ArticleIssue } from '../domain/article-policy.ts';
 import { articleContractFor } from '../domain/formats.ts';
+import { articleContractForPiece } from '../domain/article-generation-policy.ts';
 import { applySuggestion } from '../domain/suggestion.ts';
 import type { Suggestion, SuggestionProposal } from '../domain/suggestion.ts';
 import { dedupeRefs, refKey, segmentRef } from '../domain/refs.ts';
@@ -99,7 +100,8 @@ export function articleAssistSuggestions(value: unknown, context: AssistContext,
   const titles = new Set<string>();
   const literalEvidence = new Map(context.evidence.map(item => [item.id,item.text]));
   let combined = context.body;
-  const limits = articleContractFor(record.production.brief);
+  const piece = record.pieces.find(piece => piece.kind === 'article');
+  const limits = piece ? articleContractForPiece(record, piece, context.body) : articleContractFor(record.production.brief);
   const checkSize = (afterBody: ArticleBody) => {
     const before = articleStats(context.body), after = articleStats(afterBody);
     if (!r1ArticleIssue(context.body,record.sources,limits) && r1ArticleIssue(afterBody,record.sources,limits)
@@ -188,7 +190,7 @@ export async function runArticleAssist(job: EditorialJob, record: ProductionReco
     variables: { source: JSON.stringify(context.evidence.map(({ id,text,speaker }) => ({ id,text,...(speaker ? { speaker } : {}) }))),
       brief: JSON.stringify(record.production.brief), history: JSON.stringify({ title: context.body.title, blocks: context.body.blocks
         .filter(block => ['paragraph','heading','quote','list'].includes(block.type)).map(block => ({ id: block.id,type: block.type,text: blockText(block) })) }),
-      sizing: JSON.stringify({ ...articleContractFor(record.production.brief), current: articleStats(context.body), targetCharacters: context.targetCharacters,
+      sizing: JSON.stringify({ ...articleContractForPiece(record, record.pieces.find(piece => piece.id === job.meta.pieceId)!, context.body), current: articleStats(context.body), targetCharacters: context.targetCharacters,
         sourceCoverage: 'selected-literal-excerpts' }), section: JSON.stringify({ action: context.kind,prompt: context.prompt,tone: context.tone,
         targets: context.targets.map((range,index) => ({ index, ...range,text: sliceText(context.body,range),blockType: findBlock(context.body,range.blockId)?.type })) }),
       outline: '', futureSections: '', layouts: '', approvedArticle: '', event: '', people: '' },

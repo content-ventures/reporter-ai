@@ -42,7 +42,7 @@ import type { FlowDefinition, StageView } from './stage.ts';
 import { shortHash } from './text/hash.ts';
 import { countCharacters } from './text/stats.ts';
 import { enforceR1ArticleChecks } from './article-policy.ts';
-import { articleGateFor } from './formats.ts';
+import { articleGateForPiece, articleMinimumQuotesFor } from './article-generation-policy.ts';
 import { analyzeTranscript } from './text/transcript-parse.ts';
 
 /**
@@ -93,6 +93,8 @@ export type RunView = GenerationRun & {
 };
 
 export type PieceView = {
+  /** Quote policy resolved from this draft's originating generation, never current settings. */
+  articlePolicy?: { minimumQuotes: number };
   id: PieceId;
   kind: PieceKind;
   slug: string;
@@ -247,7 +249,7 @@ export function evaluatePieceChecks(
     // Real provider-backed productions obey R1. Historical UI simulation keeps
     // its demonstration checks, without pretending it passed the actual motor.
     if (record.runs.some(run => run.model.engine === 'provider') && !generation.running && !generation.interrupted && articleCharacters(body)) {
-      return enforceR1ArticleChecks(checks, body, record.sources, articleGateFor(record.production.brief));
+      return enforceR1ArticleChecks(checks, body, record.sources, articleGateForPiece(record, piece, body));
     }
     return checks;
   }
@@ -302,6 +304,10 @@ export function buildPieceView(record: ProductionRecord, kind: PieceKind, option
     readiness: readiness(checks),
   };
   if (piece.draft.basedOn) view.draft.basedOn = piece.draft.basedOn;
+  if (piece.draft.body.type === 'article') {
+    const minimumQuotes = articleMinimumQuotesFor(record, piece, piece.draft.body);
+    if (minimumQuotes !== undefined) view.articlePolicy = { minimumQuotes };
+  }
   const staleMessage = freshnessMessage(freshness, kind === 'carousel' ? 'artigo' : 'conteúdo de origem');
   if (staleMessage) view.staleMessage = staleMessage;
   if (latest) view.latestVersion = versions[versions.length - 1];

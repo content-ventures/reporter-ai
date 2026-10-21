@@ -79,6 +79,8 @@ export type GenerationRun = {
   retryOfRunId?: RunId;
   prompt: PromptRef;
   model: ModelInfo;
+  /** Server-owned editorial requirements captured from this generation's saved configuration. */
+  articlePolicy?: { minimumQuotes: number };
   /** Context of the run: source version, brief snapshot, parent version, segments used. */
   inputs: Ref[];
   output?: VersionRef;

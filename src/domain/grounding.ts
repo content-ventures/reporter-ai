@@ -78,6 +78,28 @@ function numberGrounded(token: string, numbers: { digits: Set<string>; words: st
 /** Capitalised words that are not names in the outlet's prose ("País", "Estado"). */
 const GENERIC = new Set(['brasil', 'pais', 'estado', 'governo', 'uniao', 'nacional']);
 
+/** Standard Brazilian UF spellings are lexical aliases, not proof of a city's location. */
+const STATE_ALIASES: readonly [string, string][] = [
+  ['AC', 'Acre'], ['AL', 'Alagoas'], ['AP', 'Amapá'], ['AM', 'Amazonas'], ['BA', 'Bahia'], ['CE', 'Ceará'],
+  ['DF', 'Distrito Federal'], ['ES', 'Espírito Santo'], ['GO', 'Goiás'], ['MA', 'Maranhão'], ['MT', 'Mato Grosso'],
+  ['MS', 'Mato Grosso do Sul'], ['MG', 'Minas Gerais'], ['PA', 'Pará'], ['PB', 'Paraíba'], ['PR', 'Paraná'],
+  ['PE', 'Pernambuco'], ['PI', 'Piauí'], ['RJ', 'Rio de Janeiro'], ['RN', 'Rio Grande do Norte'], ['RS', 'Rio Grande do Sul'],
+  ['RO', 'Rondônia'], ['RR', 'Roraima'], ['SC', 'Santa Catarina'], ['SP', 'São Paulo'], ['SE', 'Sergipe'], ['TO', 'Tocantins'],
+];
+
+function geographicalAliases(corpus: string): string {
+  let remaining = ` ${fold(corpus).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ')} `;
+  const aliases: string[] = [];
+  // Consume longer names first: Mato Grosso do Sul does not establish Mato Grosso.
+  for (const [abbreviation, name] of [...STATE_ALIASES].sort((a, b) => b[1].length - a[1].length)) {
+    const phrase = ` ${fold(name)} `;
+    if (remaining.includes(phrase)) { aliases.push(abbreviation); remaining = remaining.replaceAll(phrase, ' '); }
+    // Lowercase prose such as "se" or "para" is not a supplied UF abbreviation.
+    if (new RegExp(`(?<![\\p{L}\\p{N}])${abbreviation}(?![\\p{L}\\p{N}])`, 'u').test(corpus)) aliases.push(name);
+  }
+  return aliases.join(' ');
+}
+
 /**
  * Names in a text: capitalised words and acronyms that do not open a sentence, plus
  * sentence-initial acronyms ("ASMI"). Words inside quotation marks are the speaker's literal
@@ -105,7 +127,7 @@ function nameTokens(text: string): string[] {
  */
 export function ungroundedTerms(text: string, corpus: string): string[] {
   const numbers = corpusNumbers(corpus);
-  const known = ` ${fold(corpus).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ')} `;
+  const known = ` ${fold(corpus + ' ' + geographicalAliases(corpus)).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ')} `;
   const missing: string[] = [];
   const add = (term: string) => { if (!missing.includes(term)) missing.push(term); };
   const unquoted = text.replace(/[“"«][^”"»]*[”"»]/g, ' ');
