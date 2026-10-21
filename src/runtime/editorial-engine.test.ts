@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createEditorialEngine, editorialLocalRoleProfiles, selectEditorialLocalRole, emptyEditorialCheckpoint, adoptEditorialIdentity, LOCAL_OPERATOR, LOCAL_WORKSPACE, editorialCandidates, appendEditorialEvent, editorialContextHash, editorialCarouselLayouts, editorialTemplates } from './editorial-engine.ts';
-import { refKey } from '../domain/refs.ts';
+import { createEditorialEngine, editorialLocalRoleProfiles, selectEditorialLocalRole, emptyEditorialCheckpoint, adoptEditorialIdentity, LOCAL_OPERATOR, LOCAL_WORKSPACE, editorialCandidates, appendEditorialEvent, editorialContextHash, editorialCarouselLayouts, editorialTemplates, validateEditorialOutline } from './editorial-engine.ts';
+import { refKey, segmentRef } from '../domain/refs.ts';
+import { resolveSourceRef } from '../domain/source.ts';
+import { writingResearchEvidence } from '../domain/writing-research-evidence.ts';
 import { plannedLayouts } from '../domain/carousel.ts';
 import { contentHash } from '../domain/text/hash.ts';
 import { toVersionRef } from '../domain/piece.ts';
@@ -143,6 +145,30 @@ test('generation context detects changes to the brief and source authorization',
   assert.notEqual(hash,editorialContextHash({ ...before,production: { ...before.production,brief: { ...before.production.brief,sections: 3 } } },pieceId,[]));
   assert.notEqual(hash,editorialContextHash({ ...before,sources: before.sources.map(source => ({ ...source,rights: { ...source.rights,authorized: false } })) },pieceId,[]));
   engine.store.dispose();
+});
+
+test('legacy planning excludes retained web research while historical article references still resolve', async () => {
+  const engine = createEditorialEngine(emptyEditorialCheckpoint(), ids);
+  try {
+    const created = await engine.commands.createFromSource(input); assert.ok(created.ok);
+    const original = engine.records.record(created.value.productionId)!;
+    const web = writingResearchEvidence([{ id: 'web-previous', kind: 'external', provider: 'tavily', query: 'library program',
+      title: 'Web context', url: 'https://example.org/library', site: 'example.org', excerpt: 'A biblioteca receberá nove palestrantes internacionais.',
+      publishedOn: null, retrievedAt: '2026-10-21T12:00:00Z' }],
+    { runId: 'previous-run', workspaceId: original.production.workspaceId, actorId: original.production.createdBy });
+    const record = { ...original, sources: [...original.sources, ...web.sources] };
+    const candidates = editorialCandidates(original);
+    assert.deepEqual(editorialCandidates(record), candidates, 'web excerpts cannot enter the legacy prompt or shift original evidence IDs');
+    const section = { blockId: 'original', title: 'Oficinas', quotes: [candidates[1].ref] };
+    assert.equal(validateEditorialOutline(record, { title: 'Oficinas', sections: [section] }).ok, true);
+    const webSource = web.sources[0];
+    const webRef = segmentRef(webSource.id, 1, webSource.versions[0].content.segments[0].id);
+    const rejected = validateEditorialOutline(record, { title: 'Oficinas', sections: [{ ...section, quotes: [webRef] }] });
+    assert.equal(rejected.ok, false, 'previous web research cannot be selected as an interview quotation');
+    if (!rejected.ok) assert.equal(rejected.refusal.message, 'Esta citação não está na entrevista.');
+    assert.equal(resolveSourceRef(record.sources, web.references.get('web-previous')!)?.excerpt, webSource.versions[0].content.segments[0].text,
+      'the original historical URL reference stays available for already generated articles');
+  } finally { engine.store.dispose(); }
 });
 
 test('without a literal quote, the carousel uses an existing prose layout instead of fabricating a quotation', () => {

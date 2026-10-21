@@ -78,7 +78,8 @@ export function editorialContextHash(record: ProductionRecord, pieceId: string, 
     templateId: body?.type === 'carousel' ? body.templateId : undefined });
 }
 export function editorialCandidates(record: ProductionRecord) {
-  const material = readMaterial(record.sources);
+  // Switching pipelines must not turn retained web context into an original interview.
+  const material = readMaterial(record.sources.filter(source => !source.research));
   return material.lines.filter(line => (!material.interviewer || line.speaker !== material.interviewer) && !line.question)
     .flatMap(line => line.sentences.filter(sentence => !isPleasantry(sentence)).map(sentence => ({
       text: sentence.text, speaker: line.speaker,
@@ -89,7 +90,7 @@ export function validateEditorialOutline(record: ProductionRecord, outline: Outl
   const { format,formatSize } = record.production.brief;
   // An event format plans its own number of parts (a note has one, an awards text one per category).
   const rule = format ? { label: FORMAT_SPECS[format].label,headings: FORMAT_SPECS[format].headings,sections: formatSizeOf(format,formatSize).sections } : undefined;
-  return normalizeOutline(outline,{ size: record.production.brief.size,...(rule ? { rule } : {}),material: readMaterial(record.sources),defaultTitle: () => record.production.title });
+  return normalizeOutline(outline,{ size: record.production.brief.size,...(rule ? { rule } : {}),material: readMaterial(record.sources.filter(source => !source.research)),defaultTitle: () => record.production.title });
 }
 export type EditorialIdentity = { workspaceId: string;workspaceName: string;workspaceSlug: string;personId: string;name: string;title?: string | null;email?: string;avatarUrl?: string;roles: Role[];localOperator?: boolean };
 const LOCAL_IDENTITY: EditorialIdentity = { workspaceId: LOCAL_WORKSPACE,workspaceName: 'Reporter IA',workspaceSlug: 'reporter-ai-local',personId: LOCAL_OPERATOR,
