@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.18.0",
+  "currentVersion": "0.19.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,180 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.19.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-21",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 41 validated changes: keep extracted article text focused on the story; reject indexed documents and unrelated search results; refresh collection status and bound settings responses.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Take Drive files up to 20 GB"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe 20 GB Drive files and resumed copies"
+        },
+        {
+          "type": "Added",
+          "description": "Normalize and deduplicate imported news"
+        },
+        {
+          "type": "Added",
+          "description": "Store news sources and items with dedupe"
+        },
+        {
+          "type": "Added",
+          "description": "Fetch and parse feeds and news pages safely"
+        },
+        {
+          "type": "Added",
+          "description": "Import from feeds, RSS.app and pasted links"
+        },
+        {
+          "type": "Added",
+          "description": "Manage real sources in Fontes"
+        },
+        {
+          "type": "Added",
+          "description": "Show the server's news on the radar"
+        },
+        {
+          "type": "Added",
+          "description": "Connect Google Alertas and RSS.app to the news desk"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe news intake, limits and the RSS.app account"
+        },
+        {
+          "type": "Added",
+          "description": "Discover verified sources from portal and sector"
+        },
+        {
+          "type": "Added",
+          "description": "Persist editorial selections and complete radar polling"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve source changes and await complete radar refreshes"
+        },
+        {
+          "type": "Added",
+          "description": "Onboard sources and select collected material for writing"
+        },
+        {
+          "type": "Fixed",
+          "description": "Discover external publishers and show their logos"
+        },
+        {
+          "type": "Added",
+          "description": "Translate imported material with a durable worker"
+        },
+        {
+          "type": "Added",
+          "description": "Show Portuguese reading copies with original links"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify translation retries after the next poll"
+        },
+        {
+          "type": "Added",
+          "description": "Persist editorial source ratings"
+        },
+        {
+          "type": "Added",
+          "description": "Show source strength and relevance in the radar"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Align source rating checks with accessible labels"
+        },
+        {
+          "type": "Added",
+          "description": "Simplify the inbox and reading workspace"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve feed filters and align inbox controls"
+        },
+        {
+          "type": "Added",
+          "description": "Open headlines before the full reading view"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep keyboard focus when loading more headlines"
+        },
+        {
+          "type": "Fixed",
+          "description": "Align headline metadata and remove repeated leads"
+        },
+        {
+          "type": "Added",
+          "description": "Show source images on headline cards"
+        },
+        {
+          "type": "Fixed",
+          "description": "Compact headline cards and preserve image slots"
+        },
+        {
+          "type": "Fixed",
+          "description": "Tighten spacing inside headline cards"
+        },
+        {
+          "type": "Added",
+          "description": "Surface recurring topics in the editorial radar"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep topic radar compact and focused"
+        },
+        {
+          "type": "Added",
+          "description": "Organize the radar as an editorial portal"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep the portal cover and controls compact"
+        },
+        {
+          "type": "Fixed",
+          "description": "Bound cover images for headline visibility"
+        },
+        {
+          "type": "Fixed",
+          "description": "Fill the portal columns with continuous headlines"
+        },
+        {
+          "type": "Added",
+          "description": "Persist bounded web search collection and exclusions"
+        },
+        {
+          "type": "Added",
+          "description": "Collect and enrich external news through Tavily"
+        },
+        {
+          "type": "Added",
+          "description": "Configure complementary searches from the radar"
+        },
+        {
+          "type": "Fixed",
+          "description": "Refresh collection status and bound settings responses"
+        },
+        {
+          "type": "Fixed",
+          "description": "Reject indexed documents and unrelated search results"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep extracted article text focused on the story"
+        }
+      ]
+    },
     {
       "version": "0.18.0",
       "roadmapRelease": "R0",

@@ -4,6 +4,61 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-21
+
+### Added
+
+- Take Drive files up to 20 GB.
+- Normalize and deduplicate imported news.
+- Store news sources and items with dedupe.
+- Fetch and parse feeds and news pages safely.
+- Import from feeds, RSS.app and pasted links.
+- Manage real sources in Fontes.
+- Show the server's news on the radar.
+- Connect Google Alertas and RSS.app to the news desk.
+- Discover verified sources from portal and sector.
+- Persist editorial selections and complete radar polling.
+- Onboard sources and select collected material for writing.
+- Translate imported material with a durable worker.
+- Show Portuguese reading copies with original links.
+- Persist editorial source ratings.
+- Show source strength and relevance in the radar.
+- Simplify the inbox and reading workspace.
+- Open headlines before the full reading view.
+- Show source images on headline cards.
+- Surface recurring topics in the editorial radar.
+- Organize the radar as an editorial portal.
+- Persist bounded web search collection and exclusions.
+- Collect and enrich external news through Tavily.
+- Configure complementary searches from the radar.
+
+### Documentation
+
+- Describe 20 GB Drive files and resumed copies.
+- Describe news intake, limits and the RSS.app account.
+
+### Fixed
+
+- Preserve source changes and await complete radar refreshes.
+- Discover external publishers and show their logos.
+- Preserve feed filters and align inbox controls.
+- Keep keyboard focus when loading more headlines.
+- Align headline metadata and remove repeated leads.
+- Compact headline cards and preserve image slots.
+- Tighten spacing inside headline cards.
+- Keep topic radar compact and focused.
+- Keep the portal cover and controls compact.
+- Bound cover images for headline visibility.
+- Fill the portal columns with continuous headlines.
+- Refresh collection status and bound settings responses.
+- Reject indexed documents and unrelated search results.
+- Keep extracted article text focused on the story.
+
+### Maintenance
+
+- Verify translation retries after the next poll.
+- Align source rating checks with accessible labels.
+
 ## [0.18.0] - 2026-10-21
 
 ### Fixed
