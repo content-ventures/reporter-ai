@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import {
   ActionBar,
+  Alert,
   Badge,
   BrandMark,
   Button,
@@ -10,6 +11,8 @@ import {
   Card,
   CardHeader,
   Delta,
+  DescriptionList,
+  ErrorState,
   Field,
   Grid,
   IconButton,
@@ -23,7 +26,6 @@ import {
   PageStack,
   Panel,
   Section,
-  Select,
   TagInput,
   Textarea,
   toast,
@@ -39,9 +41,10 @@ import { PriorityBadge } from '../news/priority-badge';
 import { NEWS_HREF } from '../routes';
 import { useHardNews } from '../state/hard-news-provider';
 import { useEditGuard } from './edit-guard';
-import { changed, exclusionRows, mapChanges, mapCounts, mapRows, ruleEffect, sourceRows, topicRows } from './map-effect';
+import { changed, exclusionRows, mapChanges, mapCounts, mapRows, ruleEffect, topicRows } from './map-effect';
 import type { MapCounts, MapRow } from './map-effect';
 import { VersionsDrawer } from './versions-drawer';
+import { useEditorialSettings, type EditorialSettings } from './use-editorial-settings';
 
 const WEIGHT_ICON: Record<TopicWeight, LucideIcon> = { core: Target, regular: Tags, occasional: CircleDashed };
 const WEIGHT_TONE: Record<TopicWeight, Tone> = { core: 'blue', regular: 'teal', occasional: 'gray' };
@@ -65,58 +68,67 @@ const SAVE_DETAIL_ID = 'map-save-detail';
  * shows what moves in the radar and brings the bar that saves a new version.
  */
 export function EditorialMapScreen() {
-  const { state, ready, actions } = useHardNews();
-  const canEdit = useCan('pipeline.edit');
-  const saved = state.map;
+  const settings = useEditorialSettings();
+  if (!settings.ready) return settings.error
+    ? <ErrorState heading="h1" title="Não foi possível abrir o mapa" description={settings.error} onRetry={() => void settings.reload()} size="page" />
+    : <PageStack><PageHeader title="Mapa editorial" /><Panel><Section title="Carregando mapa"><DescriptionList items={[]} loading /></Section></Panel></PageStack>;
+  return <EditorialMapForm key={settings.editorKey} settings={settings} />;
+}
+
+function EditorialMapForm({ settings }: { settings: EditorialSettings }) {
+  const { state } = useHardNews();
+  const { map: saved, demo, saving, conflict } = settings;
+  const permission = useCan('pipeline.edit');
+  const canEdit = permission && !saving;
   const [draft, setDraft] = useState<EditorialMap>(saved);
+  const [baseVersion, setBaseVersion] = useState(saved);
   const [newTopic, setNewTopic] = useState('');
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const changes = useMemo(() => mapChanges(saved, draft), [draft, saved]);
+  const changes = useMemo(() => mapChanges(baseVersion, draft), [draft, baseVersion]);
   const dirty = changes.length > 0;
-  // A version saved elsewhere (another tab) replaces the draft only when nothing is being changed.
-  const [seenVersion, setSeenVersion] = useState(saved.version);
-  if (seenVersion !== saved.version) {
-    setSeenVersion(saved.version);
-    if (!dirty) setDraft(saved);
+  if (baseVersion.version !== saved.version && !dirty) {
+    setBaseVersion(saved);
+    setDraft(saved);
   }
-  const guard = useEditGuard(dirty);
+  const guard = useEditGuard(dirty || saving);
   const patch = (next: Partial<EditorialMap>) => setDraft((current) => ({ ...current, ...next }));
   const onlyAudience = dirty && changes.every((change) => change === 'Público revisto' || change === 'Regiões revistas');
 
-  const rows = useMemo(() => mapRows(state.news, saved, draft), [draft, saved, state.news]);
+  const rows = useMemo(() => demo ? mapRows(state.news, saved, draft) : [], [demo, draft, saved, state.news]);
   const moved = useMemo(() => rows.filter(changed), [rows]);
   const exclusionHits = draft.exclusions.flatMap((term) => exclusionRows(rows, draft, term).map((row) => ({ row, rule: term })));
   const before = mapCounts(rows, 'before');
   const after = mapCounts(rows, 'after');
-  const feeds = state.feeds.map((feed) => feed.name).filter((name) => ![...draft.trusted, ...draft.blocked].some((taken) => fold(taken) === fold(name)));
+  const feeds = demo ? state.feeds.map((feed) => feed.name).filter((name) => ![...draft.trusted, ...draft.blocked].some((taken) => fold(taken) === fold(name))) : [];
 
   function addTopic() {
     const label = newTopic.trim();
     if (!label || draft.topics.some((topic) => fold(topic.label) === fold(label))) return;
-    patch({ topics: [...draft.topics, { id: `t-${fold(label).replace(/\s+/g, '-')}`, label, weight: NEW_TOPIC_WEIGHT }] });
+    patch({ topics: [...draft.topics, { id: `t-${crypto.randomUUID()}`, label, weight: NEW_TOPIC_WEIGHT }] });
     setNewTopic('');
   }
 
-  function save() {
-    if (!dirty) return;
-    actions.saveMap(draft, changes);
-    toast(`Mapa editorial v${saved.version + 1} salvo`, { description: 'O radar já usa esta versão.' });
+  async function save() {
+    if (!dirty || !canEdit) return;
+    const version = await settings.saveMap(draft, changes);
+    if (version !== undefined) toast(`Mapa editorial v${version} salvo`, { description: demo ? 'Salvo neste navegador · simulação local' : 'Vale para as próximas gerações.' });
   }
 
   return (
     <PageStack>
       <PageHeader
         title="Mapa editorial"
-        meta={ready ? [`Versão ${saved.version}`, `${saved.updatedBy} · ${formatRelative(new Date(saved.updatedAt))}`] : undefined}
+        meta={[demo ? 'Simulação local' : saved.version ? `Versão ${saved.version}` : 'Ainda não configurado', ...(saved.version ? [`${saved.updatedBy} · ${formatRelative(new Date(saved.updatedAt))}`] : [])]}
         actions={(
           <>
-            <ButtonLink href={NEWS_HREF} variant="ghost" icon={Newspaper}>Ver no radar</ButtonLink>
-            <Button variant="secondary" icon={History} disabled={!ready} onClick={() => setVersionsOpen(true)}>Versões</Button>
+            {demo && <ButtonLink href={NEWS_HREF} variant="ghost" icon={Newspaper}>Ver no radar</ButtonLink>}
+            <Button variant="secondary" icon={History} onClick={() => setVersionsOpen(true)}>Versões</Button>
           </>
         )}
       />
       {guard}
-      <MetricStrip label="O radar com este mapa" items={strip(before, after, dirty, ready)} />
+      {settings.error && <Alert tone="danger" title={settings.error} action={conflict ? <Button variant="ghost" disabled={saving} onClick={() => void settings.reload()}>Descartar e carregar versão atual</Button> : undefined} />}
+      {demo && <MetricStrip label="O radar com este mapa" items={strip(before, after, dirty, true)} />}
       <Panel label="Temas">
         <Section id="mapa-temas" title="Sobre o que o portal escreve?" meta={plural(draft.topics.length, 'tema', 'temas')}>
           <PageStack>
@@ -127,6 +139,7 @@ export function EditorialMapScreen() {
                   weight={weight}
                   topics={draft.topics.filter((topic) => topic.weight === weight)}
                   rows={rows}
+                  demo={demo}
                   canEdit={canEdit}
                   onMove={(topic, next) => patch({ topics: draft.topics.map((item) => (item.id === topic.id ? { ...item, weight: next } : item)) })}
                   onRemove={(topic) => patch({ topics: draft.topics.filter((item) => item.id !== topic.id) })}
@@ -140,6 +153,7 @@ export function EditorialMapScreen() {
                     id={id}
                     aria-describedby={describedBy}
                     value={newTopic}
+                    maxLength={300}
                     placeholder="Ex.: Logística"
                     onChange={(event) => setNewTopic(event.target.value)}
                     onKeyDown={(event) => { if (event.key === 'Enter') addTopic(); }}
@@ -152,7 +166,7 @@ export function EditorialMapScreen() {
         </Section>
       </Panel>
       <Panel label="Fora do mapa">
-        <Section title="O que fica de fora?" meta={TO_THE_END}>
+        <Section title="O que fica de fora?" meta={demo ? TO_THE_END : undefined}>
           <PageStack>
             <Field label="Assuntos">
               {({ id, describedBy }) => (
@@ -169,39 +183,17 @@ export function EditorialMapScreen() {
         </Section>
       </Panel>
       <Panel label="Fontes confiáveis">
-        <Section title="Em quais fontes confiar?" meta="Sobem na fila">
-          <PageStack>
-            <List label="Fontes confiáveis" framed={false} bleed empty="Nenhuma fonte confiável.">
-              {draft.trusted.map((name) => {
-                const queued = sourceRows(rows, name).length;
-                return (
-                  <ListItem
-                    key={name}
-                    leading={<BrandMark name={name} size="sm" decorative />}
-                    title={name}
-                    description={queued ? plural(queued, 'notícia na fila', 'notícias na fila') : 'Nada na fila'}
-                    actions={canEdit ? <IconButton label={`Deixar de confiar em ${name}`} icon={Trash2} variant="ghost" size="sm" onClick={() => patch({ trusted: draft.trusted.filter((item) => item !== name) })} /> : undefined}
-                  />
-                );
-              })}
-            </List>
-            {canEdit && feeds.length > 0 ? (
-              <Select
-                label="Adicionar fonte confiável"
-                placeholder="Adicionar fonte confiável"
-                value=""
-                options={feeds.map((name) => ({ value: name, label: name }))}
-                onChange={(name) => patch({ trusted: [...draft.trusted, name] })}
-              />
-            ) : null}
-          </PageStack>
+        <Section title="Em quais fontes confiar?">
+          <Field label="Fontes de referência" hint="A preferência não substitui a verificação dos fatos.">
+            {({ id, describedBy }) => <TagInput id={id} describedBy={describedBy} disabled={!canEdit} values={draft.trusted} suggestions={feeds} onChange={trusted => patch({ trusted })} />}
+          </Field>
         </Section>
       </Panel>
       <Panel label="Público">
-        <Section title="Para quem o portal escreve?" meta={NEXT_STORIES}>
+        <Section title="Para quem o portal escreve?">
           <Field label="Público">
             {({ id, describedBy }) => (
-              <Textarea id={id} aria-describedby={describedBy} rows={2} autoSize disabled={!canEdit} value={draft.audience} onChange={(event) => patch({ audience: event.target.value })} />
+              <Textarea id={id} aria-describedby={describedBy} rows={2} autoSize maxLength={4000} disabled={!canEdit} value={draft.audience} onChange={(event) => patch({ audience: event.target.value })} />
             )}
           </Field>
           <Field label="Regiões">
@@ -216,24 +208,25 @@ export function EditorialMapScreen() {
         <ActionBar
           position="sticky"
           status="unsaved"
-          statusLabel="Alterações não salvas"
-          detail={moved.length ? plural(moved.length, 'notícia muda no radar', 'notícias mudam no radar') : onlyAudience ? NEXT_STORIES : 'Nada muda no radar'}
+          statusLabel={saving ? 'Salvando…' : 'Alterações não salvas'}
+          detail={demo ? moved.length ? plural(moved.length, 'notícia muda no radar', 'notícias mudam no radar') : onlyAudience ? NEXT_STORIES : 'Nada muda no radar' : 'Vale para as próximas gerações'}
           detailId={SAVE_DETAIL_ID}
         >
-          <Button variant="ghost" onClick={() => setDraft(saved)}>Descartar</Button>
-          <Button variant="primary" onClick={save}>{`Salvar versão ${saved.version + 1}`}</Button>
+          <Button variant="ghost" disabled={saving} onClick={() => { setBaseVersion(saved); setDraft(saved); }}>Descartar</Button>
+          <Button variant="primary" disabled={!canEdit || conflict} onClick={() => void save()}>{saving ? 'Salvando…' : `Salvar versão ${saved.version + 1}`}</Button>
         </ActionBar>
       ) : null}
-      <VersionsDrawer open={versionsOpen} onClose={() => setVersionsOpen(false)} title="Versões do mapa editorial" entries={state.mapHistory ?? []} />
+      <VersionsDrawer open={versionsOpen} onClose={() => setVersionsOpen(false)} title="Versões do mapa editorial" entries={settings.mapHistory} />
     </PageStack>
   );
 }
 
 /** One weight of the map: its topics, each with the stories it holds in the radar and a menu. */
-function WeightCard({ weight, topics, rows, canEdit, onMove, onRemove }: {
+function WeightCard({ weight, topics, rows, demo, canEdit, onMove, onRemove }: {
   weight: TopicWeight;
   topics: readonly EditorialTopic[];
   rows: readonly MapRow[];
+  demo: boolean;
   canEdit: boolean;
   onMove: (topic: EditorialTopic, weight: TopicWeight) => void;
   onRemove: (topic: EditorialTopic) => void;
@@ -246,7 +239,7 @@ function WeightCard({ weight, topics, rows, canEdit, onMove, onRemove }: {
           titleAs="h3"
           leading={<IconTile icon={WEIGHT_ICON[weight]} tone={WEIGHT_TONE[weight]} variant={weight === 'occasional' ? 'dashed' : 'soft'} size="sm" />}
           title={label}
-          description={WEIGHT_EFFECT[weight]}
+          description={demo ? WEIGHT_EFFECT[weight] : undefined}
           meta={String(topics.length)}
         />
         <List label={`Temas: ${label}`} framed={false} bleed empty="Nenhum tema">
@@ -255,7 +248,7 @@ function WeightCard({ weight, topics, rows, canEdit, onMove, onRemove }: {
               key={topic.id}
               density="sm"
               title={topic.label}
-              description={ruleEffect(topicRows(rows, topic.label)).line}
+              description={demo ? ruleEffect(topicRows(rows, topic.label)).line : undefined}
               actions={canEdit ? (
                 <Menu
                   label={`Mudar ${topic.label}`}

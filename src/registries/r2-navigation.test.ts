@@ -35,6 +35,27 @@ test('the demo screens carry "Demo"; Modelos and the R1 stages do not', () => {
     assert.equal(isR2DemoPath(path, true, true), false, path);
   }
   for (const path of ['/admin/integrations', '/admin/integrations/slack', '/archive']) assert.equal(isR2DemoPath(path, true, true), true, path);
+  for (const path of ['/settings/editorial-map', '/settings/writing-guide']) {
+    assert.equal(isR2DemoPath(path, true, false, true), false, path);
+    assert.equal(isR2DemoPath(path, true, false, false), true, path);
+  }
+});
+
+test('news and editorial settings capabilities independently remove their demo badges', () => {
+  for (const news of [false, true]) for (const editorialSettings of [false, true]) {
+    const capabilities = `news=${news}, editorialSettings=${editorialSettings}`;
+    for (const path of ['/news', '/news/sources', '/admin/integrations/google-alerts', '/admin/integrations/rss-app']) {
+      assert.equal(isR2DemoPath(path, true, news, editorialSettings), !news, `${path}: ${capabilities}`);
+    }
+    for (const path of ['/settings/editorial-map', '/settings/writing-guide']) {
+      assert.equal(isR2DemoPath(path, true, news, editorialSettings), !editorialSettings, `${path}: ${capabilities}`);
+    }
+    for (const path of ['/admin/integrations', '/admin/integrations/cms', '/archive']) {
+      assert.equal(isR2DemoPath(path, true, news, editorialSettings), true, `${path}: ${capabilities}`);
+    }
+    assert.equal(isR2DemoPath('/images', false, news, editorialSettings), true, capabilities);
+    assert.equal(isR2DemoPath('/images', true, news, editorialSettings), false, capabilities);
+  }
 });
 
 test('R2 sidebar and command palette preserve role restrictions and hidden banners', () => {

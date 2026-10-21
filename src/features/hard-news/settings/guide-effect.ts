@@ -155,17 +155,27 @@ const addedOf = (before: readonly string[], after: readonly string[]) => after.f
 /** What a new version of the guide changes, in words, for the history. */
 export function guideChanges(saved: WritingGuide, draft: WritingGuide): string[] {
   const changes: string[] = [];
-  const principles: { key: 'voice' | 'headline' | 'lead' | 'attribution'; label: string }[] = [
-    { key: 'voice', label: 'Voz' }, { key: 'headline', label: 'Título' }, { key: 'lead', label: 'Lead' }, { key: 'attribution', label: 'Atribuição' },
+  const principles: { key: 'voice' | 'headline' | 'dek' | 'lead' | 'attribution'; label: string }[] = [
+    { key: 'voice', label: 'Voz' }, { key: 'headline', label: 'Título' }, { key: 'dek', label: 'Linha fina' }, { key: 'lead', label: 'Lead' }, { key: 'attribution', label: 'Atribuição' },
   ];
   for (const principle of principles) {
-    if (saved[principle.key].trim() !== draft[principle.key].trim()) changes.push(`${principle.label} revisto`);
+    if ((saved[principle.key] ?? '').trim() !== (draft[principle.key] ?? '').trim()) changes.push(`${principle.label} revisto`);
   }
-  const terms = (guide: WritingGuide) => guide.terms.map((term) => `${term.avoid} → ${termWord(term.use)}`);
+  const composition = { paragraphs: 'Parágrafos', headings: 'Intertítulos', emphasis: 'Negrito e destaques', lists: 'Listas', closing: 'Encerramento', length: 'Extensão', links: 'Links', figures: 'Imagens e legendas' };
+  for (const key of Object.keys(composition) as (keyof typeof composition)[]) {
+    if ((saved.composition?.[key] ?? '').trim() !== (draft.composition?.[key] ?? '').trim()) changes.push(`${composition[key]} revisto`);
+  }
+  const terms = (guide: WritingGuide) => guide.terms.map((term) => `${term.avoid} → ${term.use}`);
   for (const term of addedOf(terms(saved), terms(draft))) changes.push(`Novo termo: ${term}`);
   for (const term of addedOf(terms(draft), terms(saved))) changes.push(`Termo removido: ${term}`);
   const rules = (guide: WritingGuide) => guide.rules.map((rule) => rule.text.trim());
   for (const rule of addedOf(rules(saved), rules(draft))) changes.push(`Nova regra: ${rule}`);
   for (const rule of addedOf(rules(draft), rules(saved))) changes.push(`Regra removida: ${rule}`);
+  for (const example of draft.examples) {
+    const previous = saved.examples.find(item => item.id === example.id);
+    if (!previous) changes.push(`Nova referência: ${example.title || 'Sem título'}`);
+    else if (previous.title !== example.title || previous.url !== example.url || previous.note !== example.note) changes.push(`Referência revista: ${example.title || 'Sem título'}`);
+  }
+  for (const example of saved.examples) if (!draft.examples.some(item => item.id === example.id)) changes.push(`Referência removida: ${example.title}`);
   return changes;
 }

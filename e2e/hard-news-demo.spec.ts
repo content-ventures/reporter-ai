@@ -12,8 +12,6 @@ import { GREETING, VIEWPORTS, expectHeadingOutline, expectNoHorizontalOverflow, 
  */
 const DEMO_SCREENS = [
   ['/archive', 'Acervo'],
-  ['/settings/editorial-map', 'Mapa editorial'],
-  ['/settings/writing-guide', 'Guia de escrita'],
   ['/admin/integrations', 'Integrações'],
   ['/admin/integrations/slack', 'Slack'],
   ['/admin/integrations/cms', 'WordPress'],
