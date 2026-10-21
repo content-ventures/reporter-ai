@@ -7,7 +7,8 @@ import type { PoolClient } from 'pg';
 import { createEditorialEngine, emptyEditorialCheckpoint, adoptEditorialIdentity, appendEditorialEvent, validateEditorialOutline, editorialContextHash, selectEditorialLocalRole,
   assembleCheckpoint, diffRows, hasChanges, splitCheckpoint } from '../runtime/editorial-engine.ts';
 import { contentHash } from '../domain/text/hash.ts';
-import { compactFunnels, formatPipelineDefinition, pipelineRevision, pipelineRunSteps, pipelineJobKeys, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
+import { reviseEditorialPolicy } from '../domain/editorial-policy.ts';
+import { compactFunnels, formatPipelineDefinition, pipelineRevision, pipelineRunSteps, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
 import { isRunActive } from '../domain/run.ts';
 import { pendingReview, latestApproved } from '../domain/record.ts';
 import { sameVersionRef } from '../domain/refs.ts';
@@ -17,14 +18,17 @@ import { GENERATION_LABELS, RUN_KIND_OF, GENERATION_KINDS } from '../ports/gener
 import type { GenerationKind, GenerationRequest, RunMeta } from '../ports/generation.ts';
 import type { OutlineInput } from '../ports/generation.ts';
 import type { EditorialCheckpoint, ConnectedWorkspace, EditorialJob, WorkspaceRefresh } from '../ports/connected-workspace.ts';
+import type { WritingRunDetails } from '../ports/pipeline-settings.ts';
 import { transaction } from './database';
 import { workerAvailable } from './storage';
 import { IDLE_QUEUE, queueStatus } from './queue-status.ts';
 import { FlowError, forbiddenError } from './errors';
-import { activePipeline, pipelineView, parsePipelineDefinition } from './pipeline';
+import { activePipeline, pipelineView, parsePipelineDefinition, requiredGenerationModels } from './pipeline';
 import { assertLocalMode, providerConfigured } from './config';
 import { r1ArticleIssue, articlePolicyMessage } from '../domain/article-policy.ts';
 import { articleGateFor, EDITORIAL_FORMATS, EVENT_FIELDS, EVENT_FIELD_MAX } from '../domain/formats.ts';
+import { articleGateForPiece } from '../domain/article-generation-policy.ts';
+import { effectiveWritingMinimumQuotes } from '../domain/writing-orchestration.ts';
 import { ARTICLE_ASSIST_KINDS, validateArticleAssistInput } from './article-assist';
 import { citationDay, podcastLink } from '../domain/citation-library.ts';
 import { currentReporterContext } from './request-context.ts';
@@ -34,6 +38,7 @@ import { compactRunPreviews } from '../domain/run-events.ts';
 import { FULL_SCOPE, commitEditorialChanges, loadEditorialRows, loadedScope, type EditorialScope, type StoredReceipt } from './editorial-store.ts';
 import { scopeForRpc } from './editorial-scope.ts';
 import { materialPartsSchema, materialTranscriptIds } from './material-parts.ts';
+import { writingRunModel, writingTraceUsage } from '../domain/writing-execution.ts';
 
 const ids = { next: () => randomUUID() };
 const identifier = z.string().min(1).max(128);
@@ -46,12 +51,12 @@ const supportedKinds = new Set(['article.outline', 'article.draft', 'carousel.co
  */
 const COMMAND_CAPABILITY: Readonly<Record<string, Capability>> = {
   createFromSource: 'production.create', createBlank: 'production.create', rename: 'production.edit', updateBrief: 'production.edit',
-  updateSpeakers: 'production.edit', setMaterialAuthorization: 'production.edit', archive: 'production.archive',
+  updateSpeakers: 'production.edit', updateSourceRecordedOn: 'production.edit', setMaterialAuthorization: 'production.edit', archive: 'production.archive',
   saveDraft: 'piece.edit', createVersion: 'piece.edit', restoreVersion: 'piece.edit', derive: 'piece.edit', decideSuggestion: 'piece.edit',
   requestReview: 'piece.send', recordDelivery: 'delivery.record', recordFeedback: 'feedback.record', 'feedback.vote': 'feedback.record',
   'pipeline.save': 'pipeline.edit', 'generation.start': 'piece.edit', 'generation.retry': 'piece.edit', 'generation.cancel': 'piece.edit',
 };
-const writes = new Set(['createFromSource', 'createBlank', 'rename', 'updateBrief', 'updateSpeakers', 'updatePerson', 'setMaterialAuthorization',
+const writes = new Set(['createFromSource', 'createBlank', 'rename', 'updateBrief', 'updateSpeakers', 'updateSourceRecordedOn', 'updatePerson', 'setMaterialAuthorization',
   'saveDraft', 'createVersion', 'restoreVersion', 'requestReview', 'withdrawReview', 'decide', 'derive', 'decideSuggestion', 'recordDelivery', 'archive', 'recordFeedback']);
 
 /** A settings acknowledgment must not duplicate the entire prompt history in every receipt. */
@@ -171,6 +176,18 @@ export async function editorialPipeline() {
   return (await editorialTransaction('runtime',async checkpoint => pipelineView(checkpoint),false,'reporter.edit',{ history: true,recentRuns: 20 })).value;
 }
 
+/** Full editorial traces are an admin-only, tenant-scoped read of one immutable run. */
+export async function editorialWritingRun(runId: string): Promise<WritingRunDetails> {
+  const id = identifier.parse(runId);
+  return (await editorialTransaction('runtime', async checkpoint => {
+    assertCapability(checkpoint, 'pipeline.edit');
+    const job = checkpoint.jobs[id], fold = checkpoint.state.runFolds[id];
+    if (!job?.pipeline || !fold) throw new FlowError('WRITING_RUN_NOT_FOUND', 404);
+    return { runId: id, productionId: job.meta.productionId, status: fold.run.status,
+      pipeline: job.pipeline, traces: job.writingTraces ?? [], ...(fold.run.error ? { error: fold.run.error.message } : {}) };
+  }, false, 'reporter.edit', { runs: [id], sources: 'none', parts: [], jobs: true })).value;
+}
+
 function validateDraft(value: unknown) {
   const body = z.object({ type: z.enum(['article', 'carousel']) }).passthrough().parse(value);
   if (body.type === 'article') {
@@ -192,6 +209,7 @@ export function validateEditorialCommandInput(method: string, args: unknown[]) {
   if (method === 'archive') z.array(identifier).min(1).max(1000).parse(args[0]);
   else if (!objectInputs.has(method)) identifier.parse(args[0]);
   if (method === 'saveDraft') { validateDraft(args[1]); z.number().int().nonnegative().parse(args[2]); }
+  if (method === 'updateSourceRecordedOn') z.tuple([identifier, z.string().max(10).nullable(), z.string().max(10).nullable()]).parse(args);
   if (method === 'recordDelivery') {
     const version = z.object({ kind: z.literal('version'),pieceId: identifier,versionId: identifier,
       number: z.number().int().positive(),hash: identifier }).strict();
@@ -253,15 +271,16 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   if (ARTICLE_ASSIST_KINDS.has(kind) && !pipeline.definition.steps.assist)
     return refuse('provider_unavailable', 'Ative a etapa Assistente em Prompts antes de pedir ajustes.');
   const automaticOutline = kind === 'article.draft' && !input.outline;
-  const keys = pipelineJobKeys(pipeline.definition,kind,automaticOutline);
-  const missing = keys.find(key => !providerConfigured(pipelineModelProvider(pipeline.definition.steps[key].model)));
-  if (missing) return refuse('provider_unavailable', 'Configure a chave de ' + pipelineModelLabel(pipeline.definition.steps[missing].model) + ' no servidor antes de gerar.');
+  const missing = requiredGenerationModels(pipeline.definition,kind,automaticOutline).find(model => !providerConfigured(pipelineModelProvider(model)));
+  if (missing) return refuse('provider_unavailable', 'Configure a chave de ' + pipelineModelLabel(missing) + ' no servidor antes de gerar.');
   checkpoint.pipeline ??= active;
   const prompt = { key: 'reporter.pipeline.' + kind, version: String(pipeline.revision), hash: pipeline.hash };
-  const model = pipeline.definition.steps[ARTICLE_ASSIST_KINDS.has(kind) ? 'assist' : kind === 'carousel.copy' ? 'carousel' : kind === 'article.outline' ? 'outline' : pipeline.definition.articleMode === 'single' ? 'article' : 'intro'].model;
+  const model = kind === 'article.draft' && pipeline.definition.writing?.enabled ? pipeline.definition.writing.stages.write.model
+    : pipeline.definition.steps[ARTICLE_ASSIST_KINDS.has(kind) ? 'assist' : kind === 'carousel.copy' ? 'carousel' : kind === 'article.outline' ? 'outline' : pipeline.definition.articleMode === 'single' ? 'article' : 'intro'].model;
   const started = engine.runs.begin({ productionId, kind: RUN_KIND_OF[kind], prompt,
     ...(retryOfRunId ? { retryOfRunId } : {}),
-    model: { alias: model, label: pipelineModelLabel(model) + ' · pipeline v' + pipeline.revision, engine: 'provider' },
+    model: kind === 'article.draft' && pipeline.definition.writing?.enabled ? writingRunModel(pipeline.definition.writing, pipeline.revision)
+      : { alias: model, label: pipelineModelLabel(model) + ' · pipeline v' + pipeline.revision, engine: 'provider' },
     steps: pipelineRunSteps(pipeline.definition,kind,record.production.brief.sections,automaticOutline),
   });
   if (!started.ok) return started;
@@ -273,6 +292,8 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
     job.cacheSourceRunId = previous.meta.runId;
   checkpoint.jobs[run.id] = job;
   appendEditorialEvent(engine,job,{ type: 'run.started', kind: run.kind, productionId,pieceId,prompt,model: run.model,
+    ...(kind === 'article.draft' && pipeline.definition.writing?.enabled
+      ? { articlePolicy: { minimumQuotes: effectiveWritingMinimumQuotes(pipeline.definition.writing, articleGateFor(record.production.brief).minQuotes) } } : {}),
     inputs: run.inputs,steps: run.steps.map(s => ({ id: s.id,label: s.label })),createdBy: engine.store.state.sessionPersonId,
     ...(retryOfRunId ? { retryOfRunId } : {}) });
   return ok({ runId: run.id });
@@ -306,8 +327,23 @@ export async function editorialRpc(payload: unknown) {
       if (active.revision !== baseRevision) return refuse('conflict','A configuração foi alterada em outra aba. Recarregue antes de salvar.');
       const parsed = parsePipelineDefinition(args[0]);
       if (!parsed.definition) return refuse('invalid_config',parsed.error!);
+      // Clients opened before orchestration existed may save unrelated settings without it.
+      if (!parsed.definition.writing && active.definition.writing)
+        parsed.definition.writing = structuredClone(active.definition.writing);
+      else if (parsed.definition.writing && !parsed.definition.writing.reviewCriteria && active.definition.writing?.reviewCriteria)
+        parsed.definition.writing.reviewCriteria = structuredClone(active.definition.writing.reviewCriteria);
+      if (parsed.definition.writing && parsed.definition.writing.minimumQuotes === undefined && active.definition.writing?.minimumQuotes !== undefined)
+        parsed.definition.writing.minimumQuotes = active.definition.writing.minimumQuotes;
+      if (parsed.definition.writing && !parsed.definition.writing.research && active.definition.writing?.research)
+        parsed.definition.writing.research = structuredClone(active.definition.writing.research);
+      const savedAt = new Date().toISOString();
+      const actor = checkpoint.state.people.find(person => person.id === checkpoint.state.sessionPersonId);
+      const editorial = reviseEditorialPolicy(active.definition.editorial, parsed.definition.editorial,
+        { at: savedAt, by: actor?.name ?? checkpoint.state.sessionPersonId });
+      if (editorial) parsed.definition.editorial = editorial;
+      else delete parsed.definition.editorial;
       // Funnel prompts equal to the defaults are not stored; they are filled in at run time.
-      const next = pipelineRevision(compactFunnels(parsed.definition),active.revision+1,new Date().toISOString());
+      const next = pipelineRevision(compactFunnels(parsed.definition),active.revision+1,savedAt);
       if (next.hash === active.hash) return ok(pipelineView(checkpoint));
       checkpoint.pipelineHistory = [...(checkpoint.pipelineHistory ?? []),active].slice(-20);
       checkpoint.pipeline = next;
@@ -319,7 +355,12 @@ export async function editorialRpc(payload: unknown) {
       if (!job || !fold) return refuse('unknown_run','Geração não encontrada.');
       if (!isRunActive(fold.run)) return refuse('not_running','Esta geração já terminou.');
       delete job.lease;
-      return ok(appendEditorialEvent(engine,job,{ type: 'run.cancelled',reason: 'Cancelada pelo operador local.' }));
+      const completedAt = new Date().toISOString();
+      job.writingTraces = job.writingTraces?.map(trace => trace.status === 'running'
+        ? { ...trace, status: 'failed', error: 'JOB_INTERRUPTED', completedAt } : trace);
+      const usage = writingTraceUsage(job.writingTraces ?? []);
+      if (usage) appendEditorialEvent(engine, job, { type: 'usage', usage });
+      return ok(appendEditorialEvent(engine,job,{ type: 'run.cancelled',reason: 'Cancelada pelo usuário.' }));
     }
     if (method === 'generation.retry') {
       const id = identifier.parse(args[0]), job = checkpoint.jobs[id], fold = engine.store.state.runFolds[id];
@@ -334,10 +375,11 @@ export async function editorialRpc(payload: unknown) {
     if (method === 'requestReview') {
       const production = checkpoint.state.productions.find(entry => entry.pieces.some(piece => piece.id === args[0]));
       const record = production ? engine.records.record(production.production.id) : undefined;
-      const body = record?.pieces.find(piece => piece.id === args[0])?.draft.body;
-      if (body?.type === 'article') {
-        const limits = articleGateFor(record?.production.brief ?? { });
-        const issue = r1ArticleIssue(body, record?.sources ?? [], limits);
+      const piece = record?.pieces.find(piece => piece.id === args[0]);
+      const body = piece?.draft.body;
+      if (body?.type === 'article' && record && piece) {
+        const limits = articleGateForPiece(record, piece, body);
+        const issue = r1ArticleIssue(body, record.sources, limits);
         if (issue) return refuse('send_blocked', articlePolicyMessage(issue, limits));
       }
     }

@@ -26,6 +26,7 @@ import type { ProductionCommands } from '../ports/production-commands.ts';
 import type { ProductionQueries } from '../ports/production-queries.ts';
 import type { Runtime } from './runtime.ts';
 import type { PipelineView } from '../domain/pipeline.ts';
+import type { WritingRunDetails } from '../ports/pipeline-settings.ts';
 import { isRunActive } from '../domain/run.ts';
 
 /** Approved screens, server-owned state, real Groq jobs. Demo snapshots remain untouched. */
@@ -130,7 +131,8 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     imageGeneration: createHttpImageGenerator(),
     citations: createHttpCitationLibrary(),
     news: createHttpNewsIntake(),
-    pipeline: { get: () => reporterRequest<PipelineView>('/pipeline'),save: (definition,baseRevision) => rpc('pipeline.save',[definition,baseRevision]) },
+    pipeline: { get: () => reporterRequest<PipelineView>('/pipeline'), save: (definition,baseRevision) => rpc('pipeline.save',[definition,baseRevision]),
+      getWritingRun: runId => reporterRequest<WritingRunDetails>(`/pipeline/runs/${encodeURIComponent(runId)}`) },
     session: {
       mode: 'remote',
       workspace: async () => { await ready; return ports.session.workspace(); },
