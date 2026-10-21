@@ -116,8 +116,9 @@ export function QuoteBankScreen() {
   const reset = () => { setPage(1); setSelected(new Set()); };
 
   async function run(ids: readonly string[], force: boolean) {
-    const done = await check(ids, force);
-    if (ids.length > 1 && done === ids.length) toast(`${done} ${done === 1 ? 'fala checada' : 'falas checadas'}`);
+    const { done, skipped } = await check(ids, force);
+    if (ids.length > 1 && done + skipped === ids.length) toast(`${done} ${done === 1 ? 'fala checada' : 'falas checadas'}`,
+      skipped ? { description: `${skipped} ${skipped === 1 ? 'ignorada' : 'ignoradas'}: fonte sem autorização ou fala removida.` } : undefined);
   }
   const copy = (entry: RankedQuote) => {
     void navigator.clipboard.writeText(attributed(entry.quote)).then(() => toast('Fala copiada com atribuição'));
@@ -356,7 +357,8 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave
                 {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} disabled={!editable} placeholder="Ex.: 14:32" value={draft.locator ?? ''} onChange={(event) => patch({ locator: event.target.value || undefined })} />}
               </Field>
               <Field label="Data">
-                {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="date" disabled={!(editable || (connected && canEdit))} value={draft.recordedOn} onChange={(event) => patch({ recordedOn: event.target.value })} />}
+                {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="date" disabled={!(editable || (connected && canEdit))} value={draft.recordedOn}
+                  onChange={(event) => patch({ recordedOn: event.target.value, ...(draft.attribution ? { attribution: { ...draft.attribution, dated: Boolean(event.target.value) } } : {}) })} />}
               </Field>
             {draft.sourceUrl ? <TextLink href={draft.sourceUrl} external>Abrir fonte</TextLink> : null}
           </Section>

@@ -21,8 +21,11 @@ export type QuoteBank = {
   connected: boolean;
   /** Saves a quote; resolves `false` when it failed, after saying why. */
   save: (quote: BankQuote) => Promise<boolean>;
-  /** Fact-checks the quotes one after the other; stops at the first refusal. Resolves how many were checked. */
-  check: (ids: readonly string[], force?: boolean) => Promise<number>;
+  /**
+   * Fact-checks the quotes one after the other; a quote the server no longer allows is skipped,
+   * any other refusal stops the batch. Resolves how many were checked and skipped.
+   */
+  check: (ids: readonly string[], force?: boolean) => Promise<{ done: number; skipped: number }>;
   /** The editor's verdict on one claim of the last check. */
   decide: (id: string, decision: ClaimDecision) => Promise<boolean>;
   /** Quotes being checked now. */
@@ -105,9 +108,9 @@ export function useQuoteBank(): QuoteBank {
   }, [port, view, actions, replace]);
 
   const check = useCallback(async (ids: readonly string[], force = false) => {
-    if (running.current) return 0;
+    if (running.current) return { done: 0, skipped: 0 };
     running.current = true;
-    let done = 0;
+    let done = 0, skipped = 0;
     if (ids.length > 1) setProgress({ done: 0, total: ids.length });
     try {
       for (const id of ids) {
@@ -124,15 +127,20 @@ export function useQuoteBank(): QuoteBank {
         } catch (error) {
           // A source withdrawn or a quote removed since the page loaded: skip it, the rest can still be checked.
           const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-          if (ids.length > 1 && (code === 'SOURCE_NOT_AUTHORIZED' || code === 'NOT_FOUND')) continue;
+          if (ids.length > 1 && (code === 'SOURCE_NOT_AUTHORIZED' || code === 'NOT_FOUND')) {
+            skipped += 1;
+            // Not offered again by "Checar pendentes" until the library is read again.
+            setView((current) => current && { ...current, items: current.items.map((item) => (item.id === id ? { ...item, authorized: false } : item)) });
+            continue;
+          }
           notifyRefusal(done ? `Checagem parada depois de ${done} ${done === 1 ? 'fala' : 'falas'}` : 'Não foi possível checar a fala',
             refusalOf(error, 'Tente de novo em instantes.'));
-          return done;
+          return { done, skipped };
         }
         done += 1;
         if (ids.length > 1) setProgress({ done, total: ids.length });
       }
-      return done;
+      return { done, skipped };
     } finally {
       running.current = false;
       if (live.current) {

@@ -47,7 +47,7 @@ export function quoteOf(citation: CitationView): BankQuote {
 }
 
 /** What saving a quote sends: the citation's words, source and speaker, the desk's context, date and check. */
-export function citationInputOf(citation: CitationView, quote: Pick<BankQuote, 'context' | 'recordedOn' | 'verified'>): CitationInput {
+export function citationInputOf(citation: CitationView, quote: Pick<BankQuote, 'context' | 'recordedOn' | 'verified' | 'attribution'>): CitationInput {
   return {
     sourceId: citation.ref.sourceId,
     sourceVersion: citation.ref.sourceVersion,
@@ -58,8 +58,11 @@ export function citationInputOf(citation: CitationView, quote: Pick<BankQuote, '
     relevance: quote.context.trim(),
     ...(citation.podcastName ? { podcastName: citation.podcastName } : {}),
     ...(citation.podcastUrl ? { podcastUrl: citation.podcastUrl } : {}),
-    // The creation day only fills the card: it is sent as the recording day only when the editor set it.
-    ...(quote.recordedOn && (citation.recordedOn || quote.recordedOn !== citation.createdAt.slice(0, 10)) ? { recordedOn: quote.recordedOn } : {}),
+    // The creation day only fills the card: it is sent as the recording day only when the citation had
+    // one or the editor set it (the drawer marks a day it sets as `dated`; without that mark, a day
+    // other than the creation day was set by someone).
+    ...(quote.recordedOn && (citation.recordedOn || (quote.attribution ? quote.attribution.dated : quote.recordedOn !== citation.createdAt.slice(0, 10)))
+      ? { recordedOn: quote.recordedOn } : {}),
     ...(citation.location ? { location: citation.location } : {}),
   };
 }
