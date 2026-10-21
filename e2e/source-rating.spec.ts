@@ -11,7 +11,8 @@ const source = (id: string, name: string): NewsFeed => ({ id, name, url: `https:
 
 async function choose(page: Page, name: string, value: string) {
   await page.getByRole('combobox', { name, exact: true }).click();
-  await page.getByRole('option', { name: value, exact: true }).click();
+  const label = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page.getByRole('option', { name: new RegExp(`^${label}(?:\\s|$)`) }).click();
 }
 
 for (const viewport of VIEWPORTS) {
@@ -45,8 +46,8 @@ for (const viewport of VIEWPORTS) {
       const errors = watchErrors(page, [/503.*\/api\/reporter\/news\/sources\//, /404.*google\.com\/s2\/favicons/]);
       await page.clock.install();
       await page.goto('/news/sources');
-      const card = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: 'Fonte especializada', exact: true }) });
-      const aggregator = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: 'Alerta pescado', exact: true }) });
+      const card = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^Fonte especializada\s*Ativa$/ }) });
+      const aggregator = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^Alerta pescado\s*Ativa$/ }) });
       await expect(card.getByText('Não avaliada', { exact: true })).toBeVisible();
       await expect(aggregator.getByText('Agregador', { exact: true })).toBeVisible();
       await expect(aggregator.getByRole('button', { name: 'Avaliar fonte', exact: true })).toHaveCount(0);
@@ -85,10 +86,10 @@ for (const viewport of VIEWPORTS) {
       await dialog.getByRole('button', { name: 'Salvar avaliação' }).click();
       await expect(dialog).toHaveCount(0);
       await choose(page, 'Ordenar fontes', 'Força editorial');
-      await expect(page.getByRole('heading', { level: 2 })).toHaveText(['Fonte especializada', 'Fonte complementar', 'Alerta pescado']);
+      await expect(page.getByRole('heading', { level: 2 })).toHaveText([/^Fonte especializada\s*Ativa$/, /^Fonte complementar\s*Ativa$/, /^Alerta pescado\s*Ativa$/]);
       await page.getByRole('button', { name: 'Filtros', exact: true }).click();
       await choose(page, 'Força editorial', 'A2 · Especializada');
-      await expect(page.getByRole('heading', { level: 2 })).toHaveText(['Fonte especializada']);
+      await expect(page.getByRole('heading', { level: 2 })).toHaveText([/^Fonte especializada\s*Ativa$/]);
       await expectNoHorizontalOverflow(page);
       await page.getByRole('button', { name: 'Limpar', exact: true }).click();
       await card.getByRole('button', { name: 'Ver avaliação', exact: true }).click();
