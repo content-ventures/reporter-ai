@@ -7,27 +7,22 @@ import {
   Button,
   ButtonLink,
   EmptyState,
-  FilterBar,
+  Drawer,
   IconButton,
   List,
   ListItemSkeleton,
   Menu,
   PageHeader,
-  SearchField,
-  Select,
-  Tabs,
   toast,
   WorkspaceLayout,
 } from '@content-ventures/design-system/v3';
 import type { WorkspaceView } from '@content-ventures/design-system/v3';
-import { AlertTriangle, CheckCheck, Ellipsis, Link2, Newspaper, Plus, Rss, Target } from '@content-ventures/design-system/v3/icons';
+import { Activity, AlertTriangle, CheckCheck, Ellipsis, Link2, Newspaper, Plus, Rss, Target } from '@content-ventures/design-system/v3/icons';
 import type { NewsItem } from '@/domain/hard-news';
-import { matchesSourceTier } from '@/domain/news-source-match';
+import { matchesSourceTier, sourceForNews } from '@/domain/news-source-match';
 import type { SourceTierFilter } from '@/domain/news-source-match';
-import { SOURCE_TIER_LABELS } from '@/domain/news-source-rating';
 import { useCan } from '@/state';
 import { useDocumentTitle } from '@/ui/use-document-title';
-import { useMediaQuery } from '@/ui/use-media-query';
 import { usePhone } from '@/ui/use-phone';
 import { useNow } from '@/ui/time';
 import { NEWS_SOURCES_HREF, researchHref } from '../routes';
@@ -37,10 +32,11 @@ import { coveredToday } from '../state/hard-news-state';
 import { DeskGoalDialog } from './desk-goal-dialog';
 import { ImportLinkDialog } from './import-link-dialog';
 import { DecisionBar, NewsFicha } from './news-ficha';
-import { DESK_TABS, matchesQuery, nextAfter } from './news-model';
+import { matchesQuery, nextAfter } from './news-model';
 import type { DeskTab } from './news-model';
 import { decidedOf, heroOf, lastRead, pulse, queueOf, waitLabel, wireGroups } from './radar-model';
-import { RadarBoard, RadarSkeleton } from './radar-board';
+import { RadarActivity, RadarBoard, RadarSkeleton, type RadarBoardProps } from './radar-board';
+import { NewsFilters } from './news-filters';
 import { useRadar } from './use-radar';
 
 /** On a first visit with no record of the last look, the last 90 minutes are "Novas". */
@@ -53,12 +49,7 @@ export function NewsDeskFromUrl() {
   return <NewsDesk key={item ?? 'radar'} initialItem={item} />;
 }
 
-/**
- * Notícias (F2.1, F2.2, F2.4) as a radar: the desk keeps it open to follow what arrives and opens
- * a story the moment it matters. The board (signals, "Cobrir agora", the wire, arrivals per hour,
- * sources) fills the frame; the open story sits beside it with its one decision (Cobrir starts the
- * research right there). At 1024 px or less the board and the story are two tabs.
- */
+/** The inbox and reader share one frame; collection health lives in a secondary drawer. */
 export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const { state, ready, actions, demo, live: onServer, newsFailed } = useHardNews();
   useNewsWatch();
@@ -66,9 +57,6 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const triage = !onServer;
   const router = useRouter();
   const phone = usePhone();
-  /** The frame turns into tabs (Radar | Notícia) at 1024 px; "Cobrir agora" fits three cards from 1600. */
-  const narrow = useMediaQuery('(max-width: 1024px)');
-  const wide = useMediaQuery('(min-width: 1600px)');
   const clock = useNow();
   // The demonstration opens no production in the real workspace: "Cobrir" says why it waits.
   const canCreate = useCan('production.create');
@@ -77,8 +65,11 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const [chosenTab, setTab] = useState<DeskTab>();
   const [query, setQuery] = useState('');
   const [sourceTier, setSourceTier] = useState<SourceTierFilter>('all');
+  const [sourceId, setSourceId] = useState('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | undefined>(initialItem);
-  const [view, setView] = useState<WorkspaceView>(initialItem ? 'end' : 'main');
+  const [view, setView] = useState<WorkspaceView>(initialItem ? 'main' : 'start');
   const [importing, setImporting] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [failedItem, setFailedItem] = useState<string>();
@@ -101,20 +92,21 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const seenSince = state.radar?.seenSince ?? new Date(now - FIRST_LOOK_MS).toISOString();
 
   const board = useMemo(() => {
-    const filtered = state.news.filter(item => matchesSourceTier(item, state.feeds, sourceTier));
+    const filtered = state.news.filter(item => matchesSourceTier(item, state.feeds, sourceTier)
+      && (sourceId === 'all' || sourceForNews(item, state.feeds)?.id === sourceId));
     const queue = queueOf(filtered, query);
-    const { hero, overflow } = heroOf(queue, phone ? 1 : wide ? 3 : 2);
+    const { hero, overflow } = triage ? heroOf(queue, 1) : { hero: [], overflow: 0 };
     const rest = queue.filter((item) => !hero.includes(item));
     const groups = wireGroups(rest, seenSince, now);
     const decided = decidedOf(filtered, query);
     const ordered = tab === 'open' ? [...hero, ...groups.flatMap((group) => group.items)] : decided;
     return { hero, overflow, groups, decided, ordered, open: queue.length };
-  }, [now, phone, query, seenSince, sourceTier, state.feeds, state.news, tab, wide]);
+  }, [now, query, seenSince, sourceId, sourceTier, state.feeds, state.news, tab, triage]);
 
   const signals = useMemo(() => pulse(state.news, state.feeds, seenSince, now), [now, seenSince, state.feeds, state.news]);
   // The open story is explicit: on a wide frame the first story opens once, and nothing that
   // arrives or re-sorts later replaces it (the decision bar always acts on what the person sees).
-  if (live && !narrow && selectedId === undefined && board.ordered[0]) setSelectedId(board.ordered[0].id);
+  if (live && selectedId === undefined && board.ordered[0]) setSelectedId(board.ordered[0].id);
   const selected = state.news.find((item) => item.id === selectedId);
   const shown = selectedId ? selected : board.ordered[0];
   useEffect(() => {
@@ -139,13 +131,15 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       setTab(item.status === 'new' ? 'open' : 'decided');
       if (!matchesQuery(item, query)) setQuery('');
       if (!matchesSourceTier(item, state.feeds, sourceTier)) setSourceTier('all');
+      if (sourceId !== 'all' && sourceForNews(item, state.feeds)?.id !== sourceId) setSourceId('all');
     }
     setSelectedId(id);
-    setView('end');
+    setView('main');
+    setActivityOpen(false);
     requestAnimationFrame(() => {
       document.querySelector(`[data-testid="news-card-${id}"], [data-testid="news-row-${id}"]`)?.scrollIntoView({ block: 'nearest' });
       // In tabs (tablet, phone) the story replaces the board: focus follows it.
-      if (narrow) document.querySelector<HTMLElement>('[data-ws-stop="end"]')?.focus();
+      document.querySelector<HTMLElement>('[data-ws-stop="main"]')?.focus();
     });
   }
 
@@ -225,11 +219,11 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   });
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       // Holding C or A must not decide one story after another.
       if (event.repeat && (event.key.toLowerCase() === 'c' || event.key.toLowerCase() === 'a')) return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="menuitem"]')) return;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="menuitem"], [role="combobox"], [role="listbox"], [role="option"]')) return;
       const { ordered, shown: current, tab: currentTab, canCover: allowed } = latest.current;
       const key = event.key.toLowerCase();
       if (key === 'j' || key === 'k') {
@@ -258,6 +252,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       sections={[
         {
           items: [
+            ...(phone ? [{ label: 'Ver atividade', icon: Activity, onSelect: () => setActivityOpen(true) }] : []),
             { label: 'Marcar como vistas', icon: CheckCheck, onSelect: () => actions.markSeen() },
             ...(triage ? [{ label: 'Ajustar meta do dia', icon: Target, onSelect: () => setGoalOpen(true) }] : []),
             ...(onServer && canEdit ? [{ label: 'Descobrir fontes', icon: Rss, onSelect: () => setDiscovering(true) }] : []),
@@ -280,6 +275,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       meta={live && read ? [`Lido ${waitLabel(read, now)}`] : undefined}
       actions={phone ? undefined : (
         <>
+          <Button variant="ghost" icon={Activity} onClick={() => setActivityOpen(true)}>Ver atividade</Button>
           {canEdit ? <Button variant="secondary" icon={Link2} onClick={() => setImporting(true)}>Colar link</Button> : null}
           <ButtonLink href={NEWS_SOURCES_HREF} variant="secondary" icon={Rss}>Fontes</ButtonLink>
         </>
@@ -288,89 +284,56 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     />
   );
 
-  const filters = (
-    <FilterBar
-      filters={false}
-      tabs={<Tabs<DeskTab> label="Situação" size="sm" value={tab} onChange={(value) => { setTab(value); setSelectedId(undefined); }} items={DESK_TABS.map((entry) => ({ value: entry.value, label: entry.label, count: live ? (entry.value === 'open' ? board.open : board.decided.length) : undefined }))} />}
-      search={<SearchField label="Buscar notícias" value={query} onValueChange={setQuery} placeholder="Título, fonte ou tema" />}
-      actions={<Select size="sm" label="Força editorial da fonte" value={sourceTier}
-        options={[{ value: 'all', label: 'Todas as fontes' }, ...Object.entries(SOURCE_TIER_LABELS).map(([value, label]) => ({ value, label: `${value} · ${label}` })), { value: 'unrated', label: 'Não avaliadas' }]}
-        onChange={value => { setSourceTier(value as SourceTierFilter); setSelectedId(undefined); }} />}
-    />
-  );
+  const clearFilters = () => { setQuery(''); setSourceTier('all'); setSourceId('all'); setSelectedId(undefined); };
+  const filters = <NewsFilters tab={tab} onTab={value => { setTab(value); setSelectedId(undefined); }}
+    counts={live ? { open: board.open, decided: board.decided.length } : undefined}
+    query={query} onQuery={value => { setQuery(value); setSelectedId(undefined); }}
+    open={filtersOpen} onOpen={setFiltersOpen}
+    tier={sourceTier} onTier={value => { setSourceTier(value); setSelectedId(undefined); }}
+    source={sourceId} onSource={value => { setSourceId(value); setSelectedId(undefined); }} feeds={state.feeds} />;
+  const radarProps: RadarBoardProps = {
+    triage, tab, now, news: state.news, feeds: state.feeds, pulse: signals, seenSince,
+    goal: { covered: coveredToday(state.news, now), perDay: state.goal.perDay },
+    hero: board.hero, overflow: board.overflow, groups: board.groups, decided: board.decided,
+    query: query || (sourceTier !== 'all' || sourceId !== 'all' ? 'fonte' : ''),
+    selectedId: shown?.id, onSelect: select,
+    onEditGoal: () => { setActivityOpen(false); setGoalOpen(true); }, onClearFilters: clearFilters,
+  };
+  const inbox = onServer && newsFailed ? (
+    <EmptyState icon={AlertTriangle} title="Não foi possível carregar as notícias" description="Tente novamente para atualizar o radar."
+      actions={<Button variant="primary" loading={refreshing} onClick={() => void refresh()}>Tentar novamente</Button>} />
+  ) : live && !triage && state.feeds.length === 0 && state.news.length === 0 ? (
+    <EmptyState icon={Rss} title="Nenhuma fonte cadastrada"
+      description={canEdit ? 'Encontre fontes para o seu veículo ou setor e receba as primeiras notícias.' : undefined}
+      actions={canEdit ? <>
+        <Button variant="primary" icon={Rss} onClick={() => setDiscovering(true)}>Descobrir fontes</Button>
+        <ButtonLink href={NEWS_SOURCES_HREF} variant="secondary" icon={Plus}>Adicionar fonte</ButtonLink>
+      </> : undefined} />
+  ) : live ? <RadarBoard {...radarProps} /> : <RadarSkeleton />;
+  const reader = live && shown ? <NewsFicha key={shown.id} item={shown} now={now} /> : live && selectedId && failedItem === selectedId ? (
+    <EmptyState icon={AlertTriangle} title="Não foi possível abrir esta notícia" size="panel"
+      actions={<Button variant="secondary" onClick={() => { setFailedItem(undefined); setBodyAttempt(value => value + 1); }}>Tentar novamente</Button>} />
+  ) : live && !selectedId ? (
+    <EmptyState icon={Newspaper} title="Nenhuma notícia aberta" description="Selecione uma notícia no radar para ler e decidir." size="panel" />
+  ) : <List label="Notícia" framed={false} dividers={false}>
+    <ListItemSkeleton /><ListItemSkeleton /><ListItemSkeleton />
+  </List>;
 
   return (
     <>
-      <WorkspaceLayout
-        docked
-        // Toasts rise above the story's decision bar instead of covering it (DS toast contract).
-        data-fixed-footer=""
-        storageKey="reporter.news-radar"
-        header={header}
-        mainHeader={filters}
-        mainLabel="Radar"
-        viewsLabel="Mesa de notícias"
-        view={view}
-        onViewChange={setView}
-        defaultView="main"
-        end={{
-          label: 'Notícia',
-          defaultSize: 400,
-          min: 340,
-          max: 560,
-          collapsible: false,
-          content: live && shown ? <NewsFicha key={shown.id} item={shown} now={now} /> : live && selectedId && failedItem === selectedId ? (
-            <EmptyState icon={AlertTriangle} title="Não foi possível abrir esta notícia" size="panel"
-              actions={<Button variant="secondary" onClick={() => { setFailedItem(undefined); setBodyAttempt(value => value + 1); }}>Tentar novamente</Button>} />
-          ) : live && !selectedId ? (
-            <EmptyState icon={Newspaper} title="Nenhuma notícia aberta" size="panel" />
-          ) : (
-            <List label="Notícia" framed={false} dividers={false}>
-              <ListItemSkeleton />
-              <ListItemSkeleton />
-              <ListItemSkeleton />
-            </List>
-          ),
-          footer: live && shown
-            ? <DecisionBar item={shown} covering={covering} canCover={canCover} demo={demo} onCover={(item) => void cover(item)} onPostpone={postpone} onDiscard={discard} />
-            : undefined,
-        }}
+      <WorkspaceLayout docked data-fixed-footer="" storageKey="reporter.news-inbox"
+        header={header} mainLabel="Notícia" mainMin={480} narrowBelow={900}
+        viewsLabel="Mesa de notícias" view={view} onViewChange={setView} defaultView="start"
+        start={{ label: 'Radar', defaultSize: 440, min: 360, max: 520, collapsible: false, flush: true,
+          header: filters, content: inbox }}
+        footer={narrow => live && shown && (!narrow || view === 'main') ? <DecisionBar item={shown} covering={covering} canCover={canCover} demo={demo}
+          onCover={item => void cover(item)} onPostpone={postpone} onDiscard={discard} /> : undefined}
       >
-        {onServer && newsFailed ? (
-          <EmptyState icon={AlertTriangle} title="Não foi possível carregar as notícias" description="Tente novamente para atualizar o radar."
-            actions={<Button variant="primary" loading={refreshing} onClick={() => void refresh()}>Tentar novamente</Button>} />
-        ) : live && !triage && state.feeds.length === 0 && state.news.length === 0 ? (
-          <EmptyState
-            icon={Rss}
-            title="Nenhuma fonte cadastrada"
-            description={canEdit ? 'Encontre fontes para o seu veículo ou setor e receba as primeiras notícias.' : undefined}
-            actions={canEdit ? <>
-              <Button variant="primary" icon={Rss} onClick={() => setDiscovering(true)}>Descobrir fontes</Button>
-              <ButtonLink href={NEWS_SOURCES_HREF} variant="secondary" icon={Plus}>Adicionar fonte</ButtonLink>
-            </> : undefined}
-          />
-        ) : live ? (
-          <RadarBoard
-            triage={triage}
-            tab={tab}
-            now={now}
-            news={state.news}
-            feeds={state.feeds}
-            pulse={signals}
-            seenSince={seenSince}
-            goal={{ covered: coveredToday(state.news, now), perDay: state.goal.perDay }}
-            hero={board.hero}
-            overflow={board.overflow}
-            groups={board.groups}
-            decided={board.decided}
-            query={query || (sourceTier !== 'all' ? 'fonte' : '')}
-            selectedId={narrow ? selectedId : shown?.id}
-            onSelect={select}
-            onEditGoal={() => setGoalOpen(true)}
-            onMarkSeen={() => actions.markSeen()}
-          />
-        ) : <RadarSkeleton triage={triage} />}
+        {reader}
       </WorkspaceLayout>
+      <Drawer open={activityOpen} onClose={() => setActivityOpen(false)} title="Atividade do radar" size="lg">
+        <RadarActivity {...radarProps} />
+      </Drawer>
       {region}
       <ImportLinkDialog open={importing} onClose={() => setImporting(false)} onImported={(id) => { setTab('open'); setQuery(''); select(id); }} />
       {discovering ? <DiscoverSourcesDialog open onClose={() => setDiscovering(false)} /> : null}

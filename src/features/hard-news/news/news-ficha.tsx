@@ -2,6 +2,7 @@
 
 import { newsLogoUrl } from '@/domain/news-branding';
 import { sourceForNews } from '@/domain/news-source-match';
+import { SOURCE_RELEVANCE_LABELS } from '@/domain/news-source-rating';
 import { SourceRatingBadge } from '../source-rating';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -16,11 +17,14 @@ import {
   CardHeader,
   Disclosure,
   DonutMeter,
+  EditableTitle,
+  IconButton,
   IconTile,
   List,
   ListItem,
   Menu,
-  PageStack,
+  MetaList,
+  ReadingColumn,
   Panel,
   Prose,
   Section,
@@ -34,7 +38,7 @@ import {
   formatRelative,
 } from '@content-ventures/design-system/v3';
 import type { AgentTraceStep } from '@content-ventures/design-system/v3';
-import { ArrowDown, ArrowUp, ArrowUpRight, ChevronDown, Clock, Telescope } from '@content-ventures/design-system/v3/icons';
+import { ArrowDown, ArrowUp, ArrowUpRight, ChevronDown, Clock, Ellipsis, Telescope } from '@content-ventures/design-system/v3/icons';
 import { paragraphBlock } from '@/domain';
 import type { ArticleBody } from '@/domain';
 import { DISCARD_REASONS, priorityOf, PRIORITY_LABELS } from '@/domain/hard-news';
@@ -97,35 +101,36 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
   }
 
   return (
-    <PageStack>
-      <CardHeader
-        titleAs="h2"
-        leading={<BrandMark name={item.source} src={newsLogoUrl(item.url)} size="md" />}
-        title={item.title}
-        description={`${item.source} · ${facts.join(' · ')}`}
-        actions={(
-          <ButtonLink href={item.url} target="_blank" rel="noopener noreferrer" variant="ghost" size="sm" trailingIcon={ArrowUpRight}>
+    <ReadingColumn label="Leitura da notícia">
+      <MetaList size="sm" label="Publicação original" items={[
+        <BrandMark key="logo" name={item.source} src={newsLogoUrl(item.url)} size="xs" />,
+        item.source,
+        ...facts,
+        <ButtonLink key="original" href={item.url} target="_blank" rel="noopener noreferrer" variant="ghost" size="sm" trailingIcon={ArrowUpRight}>
             Ver original<VisuallyHidden> (abre em nova aba)</VisuallyHidden>
-          </ButtonLink>
-        )}
-      />
-      <SourceRatingBadge rating={source?.rating} relevance />
-      {item.translation?.status === 'translated' ? <Badge variant="text" tone="gray" size="sm">Tradução automática · pt-BR</Badge> : null}
-      {item.translation?.status === 'pending' ? <Prose variant="compact" measure="wide">Preparando tradução · exibindo original</Prose> : null}
+        </ButtonLink>,
+      ]} />
+      <EditableTitle value={item.title} label="Título da notícia" readOnly as="h2" size="document" onCommit={() => undefined} />
+      <MetaList size="sm" label="Avaliação e tradução" items={[
+        <SourceRatingBadge key="rating" rating={source?.rating} />,
+        source?.rating ? `Relevância ${SOURCE_RELEVANCE_LABELS[source.rating.relevance].toLowerCase()}` : null,
+        item.translation?.status === 'translated' ? <Badge key="translation" variant="text" tone="gray" size="sm">Tradução automática · pt-BR</Badge> : null,
+        item.translation?.status === 'pending' ? 'Preparando tradução · exibindo original' : null,
+      ]} />
       {item.translation?.status === 'failed' ? (
         <Alert tone="warning" title="Tradução indisponível" action={canEdit
           ? <Button variant="secondary" size="sm" loading={translating} onClick={() => void retryTranslation()}>Tentar tradução novamente</Button>
           : undefined}>Exibindo o texto original.</Alert>
       ) : null}
       {item.status === 'covered' && dossier ? <ResearchTrace dossier={dossier} /> : null}
-      <Prose variant="compact" measure="wide">{item.excerpt}</Prose>
+      <Prose variant="read" size="sm" measure="wide">{item.excerpt}</Prose>
       {live ? null : <AiReading item={item} />}
       {item.duplicates.length > 0 ? <WhoPublished item={item} now={now} /> : null}
       {pending ? failedId === item.id
         ? <Alert tone="danger" title="Não foi possível carregar o texto" action={<Button variant="secondary" size="sm" onClick={() => { setFailedId(undefined); setAttempt((value) => value + 1); }}>Tentar de novo</Button>} />
         : <Spinner label="Carregando texto da notícia" />
         : item.body.length ? <NewsText item={item} /> : null}
-    </PageStack>
+    </ReadingColumn>
   );
 }
 
@@ -246,7 +251,7 @@ function NewsText({ item }: { item: NewsItem }) {
     : item.contentKind === 'feed' ? 'Texto recebido do feed' : item.contentKind === 'article' ? 'Texto extraído da página' : 'Texto original';
   return (
     <Disclosure summary={summary} meta={`${item.body.length} ${item.body.length === 1 ? 'parágrafo' : 'parágrafos'}`} headingLevel="h3">
-      <Prose variant="compact" measure="wide" label={translated ? 'Texto traduzido' : 'Texto original'}>
+      <Prose variant="read" size="sm" measure="wide" label={translated ? 'Texto traduzido' : 'Texto original'}>
         <EditorContent editor={editor} />
       </Prose>
     </Disclosure>
@@ -353,12 +358,12 @@ function LiveDecisionBar({ item, covering, canCover, onCover, onPostpone, onDisc
   );
   return (
     <ActionBar position="static" detail={!canCover ? 'Só editor ou admin pode selecionar notícias.' : undefined}>
-      <Menu label="Descartar" align="end" side="top"
-        sections={[{ label: 'Motivo', items: DISCARD_REASONS.map(reason => ({ label: reason, onSelect: () => { if (canCover && !busy) onDiscard(item, reason); } })) }]}
-        trigger={props => <Button {...props} variant="ghost" disabled={!canCover || busy} trailingIcon={ChevronDown}>Descartar</Button>} />
-      <Menu label="Adiar" align="end" side="top"
-        sections={[{ items: POSTPONE_OPTIONS.map(option => ({ label: option.label, icon: Clock, onSelect: () => { if (canCover && !busy) onPostpone(item, option.hours, option.label); } })) }]}
-        trigger={props => <Button {...props} variant="secondary" disabled={!canCover || busy} trailingIcon={ChevronDown}>Adiar</Button>} />
+      <Menu label="Outras ações da notícia" align="end" side="top"
+        sections={[
+          { label: 'Adiar', items: POSTPONE_OPTIONS.map(option => ({ label: option.label, icon: Clock, onSelect: () => { if (canCover && !busy) onPostpone(item, option.hours, option.label); } })) },
+          { label: 'Descartar', items: DISCARD_REASONS.map(reason => ({ label: reason, onSelect: () => { if (canCover && !busy) onDiscard(item, reason); } })) },
+        ]}
+        trigger={props => <IconButton {...props} label="Outras ações da notícia" icon={Ellipsis} variant="secondary" disabled={!canCover || busy} />} />
       <Button variant="primary" loading={covering} disabled={!canCover || busy} onClick={() => onCover(item)}>Selecionar para redação</Button>
     </ActionBar>
   );

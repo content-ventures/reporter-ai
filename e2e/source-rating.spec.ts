@@ -135,6 +135,7 @@ test('o radar exibe e filtra a força da fonte sem transformar a avaliação em 
   const other = page.getByTestId('news-row-rating-story-1');
   await expect(reference.getByText('A1', { exact: true })).toBeVisible();
   await expect(other.getByText('Não avaliada', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Filtros', exact: true }).click();
   await choose(page, 'Força editorial da fonte', 'A1 · Referência');
   await expect(reference).toBeVisible();
   await expect(other).toHaveCount(0);
