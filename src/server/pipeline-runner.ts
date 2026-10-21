@@ -8,6 +8,7 @@ import { generateStructured } from './groq';
 import { FlowError, safeCode } from './errors';
 import { restoreLiteralQuoteCase, validPipelineOutput, exceedsParagraphBudget, exceedsArticleBudget, writingContractIssue, writtenArticleText } from './pipeline-output';
 import type { WritingContract } from './pipeline-output';
+import { withoutOpeningRepeats } from './editorial-validation';
 import { countCharacters, countWords, textStats } from '../domain/text/stats.ts';
 import { reintroducedPeople, repeatedSentences } from '../domain/grounding.ts';
 import { articleLengthIssue, articleQuotationIssue, directQuotes, hasQuote, literalQuoteText, quoteKey, quotedWords, unquoteUnsupported } from '../domain/article-policy.ts';
@@ -411,6 +412,8 @@ export async function executePipelineStep(input: {
   if (!result) {
     result = await generateStructured('', '',input.schema,input.signal,{ ...step,systemPrompt,userPrompt,...(input.onText ? { onText: input.onText } : {}) });
     if(input.writingContract)result.value=restoreLiteralQuoteCase(input.key,result.value,input.writingContract.evidence,input.writingContract.evidencePassages);
+    // The plan that is validated, cached and shown in Estrutura is the one without the opening's ids in a section.
+    result.value = withoutOpeningRepeats(input.key,result.value);
     if (!valid(result.value)) {
       const literalIssue=writingContractIssue(input.key,result.value,input.writingContract ? {...input.writingContract,limits:{}}:undefined,sizing.headings);
       const repairableQuote=['intro','section'].includes(input.key)&&literalIssue==='UNSUPPORTED_ARTICLE_QUOTE';
