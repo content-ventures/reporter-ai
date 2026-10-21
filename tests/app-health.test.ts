@@ -56,6 +56,8 @@ test('the read-only release check agrees with the probe and names what is missin
   // The fact check's key is optional: reported, never a reason the deployment is unready.
   const withoutSearch = withMode('cloud', () => appHealth({ ...CLOUD, TAVILY_API_KEY: undefined }));
   assert.deepEqual([withoutSearch.ready, withoutSearch.optional.tavily], [true, false]);
+  assert.deepEqual([withoutSearch.ready, withoutSearch.optional.gemini], [true, false]);
+  assert.equal(withMode('cloud', () => appHealth({ ...CLOUD, GOOGLE_API_KEY: 'synthetic-google-key' })).optional.gemini, true);
   let calls = 0;
   const answers = [new Response('down', { status: 502 }), Response.json({ ...health, version: '0.0.1' }), Response.json(health)];
   const reached = await waitForAppHealth('https://app.example.test', { version: packageJson.version },

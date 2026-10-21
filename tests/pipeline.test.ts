@@ -18,6 +18,41 @@ process.env.REPORTER_LOCAL_MODE = 'true';
 process.env.GROQ_API_KEY = 'test-placeholder-not-a-real-key';
 const variables: PipelineVariables = { source: '[e1] Fonte sintética {{brief}}',brief: 'Pauta de teste',sizing: '{}',outline: '{}',section: '',history: '',futureSections: '',layouts: '',approvedArticle: '', event: '', people: '' };
 
+test('changing Claude effort regenerates a legacy stage while explicit and implicit defaults share its checkpoint', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reporter-effort-cache-'));
+  const original = globalThis.fetch, key = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'synthetic-claude-key';
+  const requests: string[] = [], traces: PipelineCall[] = [];
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(String(init?.body)).output_config.effort);
+    return Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{"facts":["[e1] Fato sintético."]}' }],
+      usage: { input_tokens: 10, output_tokens: 50 } });
+  };
+  try {
+    const definition = defaultPipelineDefinition('anthropic/claude-opus-5-5');
+    const execute = () => executePipelineStep({ pipeline: pipelineRevision(definition), key: 'facts', variables,
+      schema: PIPELINE_SCHEMAS.facts, directory, signal: new AbortController().signal,
+      trace: async call => { traces.push(call); } });
+    await execute();
+    const defaultHash = traces.at(-1)!.hash;
+    definition.steps.facts.effort = 'medium';
+    await execute();
+    assert.equal(traces.at(-1)?.cached, true);
+    assert.equal(traces.at(-1)?.hash, defaultHash);
+    definition.steps.facts.effort = 'high';
+    await execute();
+    assert.equal(traces.at(-1)?.cached, false);
+    assert.notEqual(traces.at(-1)?.hash, defaultHash);
+    await execute();
+    assert.equal(traces.at(-1)?.cached, true);
+    assert.deepEqual(requests, ['medium', 'high']);
+  } finally {
+    globalThis.fetch = original;
+    if (key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = key;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('sequential oversize parts receive bounded measured revisions through the saved template',async()=>{
   const outline={title:'Article',sections:[{title:'Section',evidenceIds:['e1']}]};
   const oversized={title:'Section',paragraphs:[{text:'A complete but oversized sentence.',evidenceIds:['e1']}]};

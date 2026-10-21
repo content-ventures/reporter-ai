@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { anthropicSchema, generateStructured } from '../src/server/text-generation.ts';
 import { providerConfigured, providerKey } from '../src/server/config.ts';
 import { FlowError } from '../src/server/errors.ts';
-import { PIPELINE_SCHEMAS, defaultPipelineDefinition, pipelineModelProvider, pipelineModelLabel } from '../src/domain/pipeline.ts';
+import { PIPELINE_MODELS, PIPELINE_REASONING_EFFORTS, PIPELINE_SCHEMAS, defaultPipelineDefinition, pipelineDefaultEffort, pipelineModelEffortOptions, pipelineModelProvider, pipelineModelLabel, pipelineModelReasons, pipelineTokenLimit } from '../src/domain/pipeline.ts';
 import { parsePipelineDefinition } from '../src/server/pipeline.ts';
 
 const schema = { type: 'object', properties: { title: { type: 'string', maxLength: 120 } }, required: ['title'], additionalProperties: false };
@@ -68,6 +68,77 @@ test('Claude uses Messages, exact saved prompts and a compatible schema while re
     const prose = anthropicSchema({ type: 'string', pattern: '[.!?]$' }) as Record<string, unknown>;
     assert.equal(prose.pattern, undefined);
     assert.match(String(prose.description), /pattern=/);
+  } finally { globalThis.fetch = original; if (key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = key; }
+});
+
+test('current Claude models expose verified effort controls without changing saved Sonnet settings', () => {
+  const original = defaultPipelineDefinition('anthropic/claude-sonnet-4-6');
+  for (const model of ['anthropic/claude-opus-5-5', 'anthropic/claude-fable-5-1'] as const) {
+    assert.ok(PIPELINE_MODELS.includes(model));
+    assert.equal(pipelineModelProvider(model), 'anthropic');
+    assert.equal(pipelineModelReasons(model), true);
+    assert.deepEqual(pipelineModelEffortOptions(model), PIPELINE_REASONING_EFFORTS);
+    assert.equal(pipelineTokenLimit(model), 32768);
+  }
+  assert.equal(pipelineDefaultEffort('anthropic/claude-opus-5-5'), 'medium');
+  assert.equal(pipelineDefaultEffort('anthropic/claude-fable-5-1'), 'high');
+  assert.equal(pipelineModelReasons('anthropic/claude-sonnet-4-6'), false);
+  assert.deepEqual(pipelineModelEffortOptions('anthropic/claude-sonnet-4-6'), []);
+  assert.equal(pipelineDefaultEffort('anthropic/claude-sonnet-4-6'), undefined);
+  assert.equal(pipelineTokenLimit('anthropic/claude-sonnet-4-6'), 8192);
+  assert.equal(original.steps.article.model, 'anthropic/claude-sonnet-4-6');
+});
+
+test('adaptive Claude sends configured effort, omits sampling controls and ignores thinking blocks in the article', async () => {
+  const original = globalThis.fetch, key = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'synthetic-claude-key';
+  const cases = [
+    { model: 'anthropic/claude-opus-5-5', selected: undefined, expected: 'medium' },
+    { model: 'anthropic/claude-fable-5-1', selected: undefined, expected: 'high' },
+    ...PIPELINE_REASONING_EFFORTS.map(effort => ({ model: 'anthropic/claude-opus-5-5', selected: effort, expected: effort })),
+  ];
+  try {
+    for (const scenario of cases) {
+      globalThis.fetch = async (url, init) => {
+        assert.equal(url, 'https://api.anthropic.com/v1/messages');
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.model, scenario.model.replace('anthropic/', ''));
+        assert.equal(body.system, options.systemPrompt);
+        assert.deepEqual(body.messages, [{ role: 'user', content: options.userPrompt }]);
+        assert.equal(body.max_tokens, 16384);
+        for (const parameter of ['temperature', 'top_p', 'top_k']) assert.equal(parameter in body, false);
+        assert.deepEqual(body.thinking, { type: 'adaptive' });
+        assert.equal(body.output_config.effort, scenario.expected);
+        assert.equal(body.output_config.format.type, 'json_schema');
+        assert.match(body.output_config.format.schema.properties.title.description, /maxLength=120/);
+        return Response.json({ id: 'msg-adaptive', stop_reason: 'end_turn', content: [
+          { type: 'thinking', thinking: 'synthetic-private-reasoning' },
+          { type: 'text', text: '{"title":"Fixture"}' },
+        ], usage: { input_tokens: 10, output_tokens: 1000, cache_creation_input_tokens: 3, cache_read_input_tokens: 2 } });
+      };
+      const result = await generateStructured('', '', schema, new AbortController().signal, {
+        ...options, model: scenario.model, maxTokens: 16384, effort: scenario.selected,
+      });
+      assert.deepEqual(result.value, { title: 'Fixture' });
+      assert.equal(result.input_units, 15); assert.equal(result.output_units, 1000);
+      assert.equal(result.provider_request_id, 'msg-adaptive');
+      assert.doesNotMatch(JSON.stringify(result), /synthetic-private-reasoning|synthetic-claude-key/);
+    }
+  } finally { globalThis.fetch = original; if (key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = key; }
+});
+
+test('adaptive Claude refuses truncated output even when its text happens to be valid JSON', async () => {
+  const original = globalThis.fetch, key = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'synthetic-claude-key';
+  try {
+    for (const stopReason of ['max_tokens', 'pause_turn']) {
+      globalThis.fetch = async () => Response.json({ stop_reason: stopReason, content: [
+        { type: 'thinking' }, { type: 'text', text: '{"title":"Incomplete"}' },
+      ], usage: { input_tokens: 10, output_tokens: 16384 } });
+      await assert.rejects(generateStructured('', '', schema, new AbortController().signal, {
+        ...options, model: 'anthropic/claude-opus-5-5', effort: 'high', maxTokens: 16384,
+      }), error => error instanceof FlowError && error.code === 'GENERATION_INCOMPLETE' && error.retryable);
+    }
   } finally { globalThis.fetch = original; if (key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = key; }
 });
 
