@@ -2,6 +2,8 @@
 
 The R2 experience (F2.1–F2.13) runs on top of the R1 product, behind the release gate. In an R1 build (production) the R2 screens are a demonstration on their own routes; the R1 stages do not change.
 
+The writing workstream is specified in [R2 writing action plan](R2_WRITING_PLAN.md), with the proposed outlet configuration in [Seafood editorial map and writing guide](SEAFOOD_EDITORIAL_STANDARD.md). It starts from **Conteúdo**, including recordings, transcripts and written material. The local implementation now connects map and guide editing to workspace persistence and existing article prompts; news classification remains a separate workstream. This document describes that working tree, not a deployed release.
+
 ## Preview
 
 ```sh
@@ -10,7 +12,7 @@ NEXT_PUBLIC_REPORTER_E2E_FIXTURES=true NEXT_PUBLIC_REPORTER_PREVIEW_RELEASE=R2 p
 
 `CURRENT_RELEASE` becomes `R2` only when both variables are set (simulated fixtures workspace). The connected build always shows R1. `/?reset=1` restarts both the workspace and the desk.
 
-The R2 screens with no backend yet carry an amber "Demo" Badge in the top bar, in both builds: Apuração (R2 build only; an R1 build answers 404 there, without it), Acervo, Mapa editorial, Guia de escrita and Integrações (catalog, each app, WordPress). Imagens (bank and photo page) and Citações carry it only without the R1 visual and citation libraries (the fixtures builds): the connected build reads and saves real data there. Notícias, Fontes and the Google Alertas and RSS.app pages carry it only without the server's news (F2.1, `docs/NEWS_INTAKE.md`). Screens on real data do not carry it: Modelos and the R1 stages. The list is `isR2DemoPath` in `ui/r2-preview.ts`. In an R2 build, inside the R1 screens, each simulated R2 block carries the same word in its header (`DemoBadge`, `hard-news/demo-badge.tsx`): Início's "Pauta do dia", the Apuração lane in Produções, the studio's Fontes, Evidências and Do acervo, and the Entrega's Portal.
+The R2 screens with no backend yet carry an amber "Demo" Badge in the top bar, in both builds: Apuração (R2 build only; an R1 build answers 404 there, without it), Acervo and Integrações (catalog, unconnected apps, WordPress). Imagens and Citações carry it only without the R1 visual and citation libraries. Notícias, Fontes and the Google Alertas and RSS.app pages carry it only without the server's news (F2.1, `docs/NEWS_INTAKE.md`). Mapa editorial and Guia de escrita carry it only without the connected pipeline settings port. These capabilities are independent: connected screens read and save real data without a Demo badge. The list is `isR2DemoPath` in `ui/r2-preview.ts`. In an R2 build, each simulated R2 block inside the R1 screens carries the same word in its header (`DemoBadge`, `hard-news/demo-badge.tsx`).
 
 ## In an R1 build (demonstration)
 
@@ -23,7 +25,7 @@ Production is an R1 build. `HARD_NEWS_DEMO` (`ui/r2-preview.ts`) is true there, 
 - Imagens and Citações read the R1 libraries in the connected build, and "Usar em artigo" places a photo in a real article, as in R2;
 - Modelos is the gallery below, on the workspace's own models.
 
-`e2e/hard-news-demo.spec.ts` (connected smoke) opens Acervo, Mapa editorial, Guia de escrita, Integrações, one app and WordPress at 1440 and 390 px, with "Demo" in the top bar, and checks that no API request writes. It also checks the connected radar, source discovery and collection at both widths, partial failures and retries, direct item links, and durable selection for writing through mocked server contracts. The story's text is read on demand. The database suite checks real persistence, permissions, conflicts and postponement expiry.
+`e2e/hard-news-demo.spec.ts` (connected smoke) opens Acervo, Integrações, an unconnected app and WordPress at 1440 and 390 px, with "Demo" in the top bar, and checks that no API request writes. It also checks the connected radar, source discovery and collection at both widths, partial failures and retries, direct item links, and durable selection for writing through mocked server contracts. The story's text is read on demand. The database suite checks real persistence, permissions, conflicts and postponement expiry. `e2e/editorial-settings.spec.ts` separately checks connected map/guide saves, reloads, permissions, failures and conflicts using mocked API responses.
 
 The connected news workflow is described in `NEWS_INTAKE.md`: portal/sector → verified sources →
 first collection → news → selection for writing. The entered portal is the client publication;
@@ -80,8 +82,9 @@ Library and settings:
   - Each part is a single-column section titled with the question the desk would ask.
   - The header carries the version and who saved it, plus "Versões", a drawer with the Timeline of versions.
   - Any change brings the sticky bar ("Alterações não salvas", Descartar, Salvar versão N) and the leave guard. People without edit permission see the same page with the controls disabled.
-  - Saving the map rereads the radar's waiting stories with the new version, so the radar shows what the page promised. The topic weights are Principal / Cobre / Às vezes ("Prioridade" stays for the queue's bands).
-  - Mapa:
+  - Connected saves use the workspace pipeline revision lock, server-owned metadata and acknowledged persistence. Saved settings enter subsequent article calls; existing jobs retain their snapshot. Recent version history uses the last 20 pipeline revisions.
+  - The map's topic weights are Principal / Cobre / Às vezes. Audience, regions, topics, exclusions, trusted and blocked sources are editable. Connected mode hides simulated radar effects and does not claim to reclassify news.
+  - Mapa in the fixtures simulation only:
     - the strip: the radar's queue under the map on screen, with deltas while changing;
     - "Sobre o que o portal escreve?": three cards, Principal (sobem na fila), Cobre (entram na fila) and Às vezes (descem na fila). Each topic shows the stories it holds in the radar, and its menu moves or removes it. A new topic enters as Cobre;
     - "O que fica de fora?": subjects and blocked sources, with the stories they leave out now;
@@ -89,11 +92,11 @@ Library and settings:
     - "Para quem o portal escreve?": the audience and the regions.
     - While changing, "O que muda no radar" lists the stories that change priority or leave the map. It sits at the end, by the bar, so nothing above the rule being changed moves (`settings/map-effect.ts`, with tests).
   - Guia:
-    - "O guia em ação" rewrites a paragraph live (DiffView: sem o guia | com o guia), with preferred terms swapped and the phrases a banning rule quotes removed;
-    - "Como a IA escreve?": voz, título, lead and atribuição, side by side. A limit the example opening breaks shows as the field's error;
-    - "Que palavras a IA troca?" and "Que regras a IA segue?": each one says when it changes the example;
-    - "Quais matérias servem de modelo?";
-    - the versions drawer counts the articles each version wrote (`settings/guide-effect.ts`, with tests).
+    - "Como a IA escreve?": voice, title, dek, lead and attribution;
+    - "Estrutura e formatação": paragraphs, headings, emphasis, lists, ending, length, links, images and captions;
+    - terminology and house rules can be added and removed;
+    - references support editable title, HTTP(S) URL and editorial observation; links do not automatically import article text;
+    - only fixtures mode shows the simulated paragraph diff and example-specific checks. Connected mode never presents this as generated model output.
 - Integrações (`/admin/integrations`, F2.10, admin: the app catalog, each app's connection and the webhooks)
 
 ### Imagens (image bank)
