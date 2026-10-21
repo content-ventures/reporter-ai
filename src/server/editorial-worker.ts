@@ -104,6 +104,10 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         if (additions.queueImages) {
           const record = engine.records.record(job.meta.productionId);
           current.images = record ? articleImageTarget(record,job.meta.pieceId) : undefined;
+        }
+        // Background work is claimable at once: the text's lease would otherwise hide it for a
+        // minute, past the drain that just finished the text, and nothing wakes a cloud worker.
+        if (additions.queueImages || current.factCheck) {
           current.availableAt = Date.now();
           if (additions.provider) current.provider = additions.provider;
           delete current.lease;

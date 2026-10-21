@@ -39,7 +39,7 @@ export const drainServices: DrainServices = {
   pending: () => transaction('worker', async client =>
     (await client.query('SELECT public.reporter_worker_pending() AS pending')).rows[0]?.pending === true),
   run: async (owner, signal, deadline) => await runRemoteIngest(owner, signal)
-    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal) || await runArticleImageJob(owner, signal) || await runFactCheckJob(owner, signal),
+    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal) || await runArticleImageJob(owner, signal) || await runFactCheckJob(owner, signal, deadline),
   now: Date.now,
   compact: () => compactEditorialRows(),
 };

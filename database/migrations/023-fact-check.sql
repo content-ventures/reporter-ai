@@ -36,7 +36,8 @@ BEGIN
       lease_fence=gen_random_uuid()::text,
       job=jsonb_set(job,'{factCheck,attempts}',to_jsonb(coalesce((job->'factCheck'->>'attempts')::integer,0)+1))
     WHERE portal_id=portal AND run_id=claimed.run_id RETURNING * INTO claimed;
-  RETURN jsonb_build_object('runId',claimed.run_id,'productionId',claimed.production_id,'fence',claimed.lease_fence);
+  RETURN jsonb_build_object('runId',claimed.run_id,'productionId',claimed.production_id,'fence',claimed.lease_fence,
+    'citationIds',coalesce(claimed.job->'factCheck'->'citationIds','[]'::jsonb));
 END $$;
 
 CREATE OR REPLACE FUNCTION public.reporter_ed_fact_check_renew(p_run text,p_owner text,p_fence text,p_lease_ms integer) RETURNS boolean
