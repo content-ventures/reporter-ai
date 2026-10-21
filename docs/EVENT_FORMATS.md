@@ -37,7 +37,7 @@ The specs live in `src/domain/formats.ts`. A brief without `format` is the R1 ar
    - a quotation used twice (`REPEATED_QUOTE`);
    - a sentence restating an earlier one (`REPEATED_FACT`);
    - a person introduced twice (`REINTRODUCED_PERSON`).
-4. **Style references.** Each funnel prompt embeds one cleaned published text as a style reference. It is marked as "not a source", and grounding removes any of its names or numbers that leak into the text.
+4. **Style references are invented.** The opening and part prompts of each funnel embed one invented hard-news text of the format (Pescados Litoral, Feira Modelo 2026 and other made-up names), written to show the pattern. No published text or real company is used. The reference is marked as a fictitious example and "not a source", and grounding removes any of its names or numbers that leak into the text.
 
 ## What the text carries
 
@@ -45,13 +45,27 @@ The specs live in `src/domain/formats.ts`. A brief without `format` is the R1 ar
 - **No AI images.** An event coverage goes out with the newsroom's photos: the worker queues no image planning or generation for a format, and the worker flow on the Prompts page shows no image block.
 - **Quotation openings** (`tidyQuoteOpenings`). A spoken opener ("Então,", "Bom,", "Ou seja,", "E") is dropped at the start of a quotation when four words or more remain. A quotation that opens a sentence starts with a capital. The literal check allows that first capital and nothing else (`quoteInSource`), and the citation library keeps the source's spelling.
 - **One speaker, no labels (stand only).** A stand recording transcribed without speaker labels, with a single confirmed person in the Material, is that person's interview: the stand funnel attributes the answers to them, and the interviewer's questions are never quoted. Panels, openings and awards have several voices, so an unlabeled line there keeps no name.
-- **Stand news first.** The stand funnel puts the novelty and the porta-voz's strongest line about it (exclusivity, first, "carro-chefe") in the title and the opening. Every funnel names the event as `event.name` writes it, because transcriptions misspell proper names.
+- **Stand news, as the source says it.** The stand funnel puts the company's novelty (a product, launch, service, partnership, investment, market or number) in the title and the lead. It writes "lança" or "estreia" only when the source calls it a launch, a debut or a novelty; otherwise it writes "apresenta".
+- **Self-claims only attributed.** What a company or person says of itself ("único", "pioneiro", "primeiro", "líder", "referência", "carro-chefe") appears only inside quotes or attributed ("que a empresa diz ser o único do mercado"). It never appears in the newsroom's voice or in the title, and it never replaces the fact.
+- **The event's name.** Every funnel names the event as `event.name` writes it, because transcriptions misspell proper names.
 
 ## Prompts
 
-Each format has a funnel with three prompts in `PipelineDefinition.funnels`: structure (title, linha fina, intertítulos), opening and parts. The defaults are in `src/domain/format-prompts.ts`.
+Each format has a funnel with four prompts in `PipelineDefinition.funnels`: structure (title, linha fina, intertítulos), evidence curation ("Evidências"), opening and parts. The defaults are in `src/domain/format-prompts.ts`.
 
-The Prompts page lists them under "Funil · …" and versions them with the rest. Workspaces saved before the funnels get the defaults through `withFormatFunnels`. Their article prompts are never changed. The funnels use the model of the workspace's writing step.
+Every format is written as hard news (notícia). The shared `HARD_NEWS` block is in every structure, opening and part prompt:
+
+- **Lead.** The first sentence is the news: who, what, when and where, in 40 words or fewer, with no quote. It never opens with the event, the ceremony, the programme, the theme, someone's presence or a scene. How or why comes in the second sentence.
+- **Inverted pyramid.** Parts go from the most to the least important. The last part ends on its last relevant fact, with no recap, moral or forced closing quote.
+- **Headline.** The fact, with a concrete verb in the present tense, a number when there is one, and 90 characters at most. It never uses destaca, aposta em, reforça, discute, debate, marca, leva, traz or foca em.
+- **Attribution and tone.** Disse, afirmou, informou, segundo or de acordo com, never ressalta, avalia, pontua or destaca. No promotional adjective outside quotes, and never "Confira".
+- **Quotes.** Short: one idea in one or two sentences. A section carries one literal quote whenever its evidence holds a quotable line: an identified speaker, never the interviewer, four words or more. Awards sections are lists of winners with no quotes.
+
+The opening selects up to four evidence ids, so the lead's fact can come with every sentence of the quote that supports it. The limit is the same in the outline and curation schemas (`pipeline.ts`, `editorial-outline.ts`, `pipeline-output.ts`).
+
+A format job curates its evidence with the funnel's own Evidências prompt, which keeps the format's quote minimum (`sizing.minQuotes`), its opening ids and its rule on quotes. The workspace's shared quotes step is now the article's only. Curation still runs only when "Selecionar evidências antes da redação" (`curateQuotes`) is on.
+
+The Prompts page lists them under "Funil · …" and versions them with the rest. Workspaces saved before the funnels, or before the curation prompt, get the defaults through `withFormatFunnels`. Only the funnel steps someone edited are stored, so untouched funnels follow the code defaults. Their article prompts are never changed. The funnels use the model of the workspace's writing step.
 
 A format job writes part by part (`formatPipelineDefinition`). It reuses the measured budget, literal-quote and revision mechanics of the article.
 
