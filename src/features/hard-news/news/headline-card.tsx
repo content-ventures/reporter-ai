@@ -3,6 +3,7 @@
 import { Badge, BrandMark, Card, CardLink, EditableTitle, MetaList, PageStack, Prose, formatRelative } from '@content-ventures/design-system/v3';
 import type { NewsItem } from '@/domain/hard-news';
 import type { SourceRating } from '@/domain/news-source-rating';
+import { SOURCE_RELEVANCE_LABELS } from '@/domain/news-source-rating';
 import { newsLogoUrl } from '@/domain/news-branding';
 import { SourceRatingBadge } from '../source-rating';
 import { returnLabel } from './radar-model';
@@ -31,7 +32,8 @@ export function HeadlineCard({ item, rating, now, featured = false, onSelect }: 
       <EditableTitle value={item.title} label="Manchete" readOnly as="h3" size={featured ? 'document' : 'card'} onCommit={() => undefined} />
       {excerpt ? <Prose variant="compact" measure="wide">{excerpt}</Prose> : null}
       <MetaList size="sm" items={[
-        <SourceRatingBadge key="rating" rating={rating} relevance={featured} />,
+        <SourceRatingBadge key="rating" rating={rating} />,
+        featured && rating ? `Relevância ${SOURCE_RELEVANCE_LABELS[rating.relevance].toLowerCase()}` : null,
         decision ? <Badge key="decision" variant="text" tone={decision.tone} dot>{decision.label}</Badge> : null,
         item.status === 'later' && item.laterUntil ? returnLabel(item.laterUntil, now) : null,
         item.translation?.status === 'translated' ? 'Traduzida · pt-BR' : null,

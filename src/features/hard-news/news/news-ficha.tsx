@@ -70,7 +70,8 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
   const canEdit = useCan('production.edit');
   // News on the server come without their text: the open story reads it once.
   const pending = live && item.paragraphs !== undefined;
-  const excerpt = item.excerpt.replace(/\s+/g, ' ').trim();
+  // Feeds often truncate the same opening with an ellipsis; don't repeat it above the body.
+  const excerpt = item.excerpt.replace(/\s+/g, ' ').trim().replace(/(?:…|\.{3})$/, '').trim();
   const excerptInBody = !pending && excerpt !== '' && item.body.join(' ').replace(/\s+/g, ' ').includes(excerpt);
   const [failedId, setFailedId] = useState<string>();
   const [attempt, setAttempt] = useState(0);

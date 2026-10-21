@@ -79,13 +79,14 @@ const STORY = {
 test('Notícias e Fontes leem o servidor: manchetes primeiro e texto ao abrir; o Início da R1 não muda', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const checkpoint = emptyEditorialCheckpoint();
+  const feedStory = { ...STORY, excerpt: 'O relatório preliminar valida o sistema…' };
   await page.route('**/api/reporter/workspace', (route) => route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } }));
-  await page.route('**/api/reporter/news?**', (route) => route.fulfill({ json: { at: AT, sources: [SOURCE], items: [STORY], rssApp: false } }));
-  await page.route('**/api/reporter/news', (route) => route.fulfill({ json: { at: AT, sources: [SOURCE], items: [STORY], rssApp: false } }));
+  await page.route('**/api/reporter/news?**', (route) => route.fulfill({ json: { at: AT, sources: [SOURCE], items: [feedStory], rssApp: false } }));
+  await page.route('**/api/reporter/news', (route) => route.fulfill({ json: { at: AT, sources: [SOURCE], items: [feedStory], rssApp: false } }));
   let detailReads = 0;
   await page.route(`**/api/reporter/news/items/${STORY.id}`, (route) => {
     detailReads += 1;
-    return route.fulfill({ json: { item: { ...STORY, paragraphs: undefined, body: [...STORY.body, 'Nenhuma recomendação foi apontada.', 'A decisão final sai em novembro.'] } } });
+    return route.fulfill({ json: { item: { ...feedStory, paragraphs: undefined, body: [...STORY.body, 'Nenhuma recomendação foi apontada.', 'A decisão final sai em novembro.'] } } });
   });
   const errors = watchErrors(page);
   const writes = watchWrites(page);
@@ -107,6 +108,8 @@ test('Notícias e Fontes leem o servidor: manchetes primeiro e texto ao abrir; o
   await expect(page.getByRole('button', { name: 'Cobrir', exact: true })).toHaveCount(0);
   await expect(page.getByText('2 veículos').first()).toBeVisible();
   await expect(page.getByText('A decisão final sai em novembro.')).toBeVisible();
+  await expect(page.getByText(feedStory.excerpt, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(STORY.body[0], { exact: true })).toHaveCount(1);
   expect(detailReads).toBeGreaterThan(0);
   await expectHeadingOutline(page);
 
