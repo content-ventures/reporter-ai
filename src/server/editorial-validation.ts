@@ -19,6 +19,33 @@ export function outlineResponseSchema(sections: number,ids: readonly string[],de
   }
   return schema;
 }
+/**
+ * A model that opens with a fact tends to pick its id again for the section on the same subject. The
+ * opening keeps that id and each section drops the opening's ids, as long as one of its own remains.
+ * A section that would be left empty, and any other repeat (inside a part or between sections), stay
+ * as they came for `editorialResponseValid` to reject. An answer without that overlap is returned as is.
+ */
+export function withoutOpeningRepeats(key: PipelineStepKey,value: unknown): unknown {
+  if (key !== 'outline' && key !== 'quotes' || !value || typeof value !== 'object') return value;
+  const output = value as { introIds?: unknown; sections?: unknown; sectionIds?: unknown };
+  if (!Array.isArray(output.introIds) || !output.introIds.length) return value;
+  const opening = new Set<unknown>(output.introIds);
+  const own = (ids: unknown) => {
+    if (!Array.isArray(ids)) return ids;
+    const kept = ids.filter(id => !opening.has(id));
+    return kept.length && kept.length < ids.length ? kept : ids;
+  };
+  const parts: unknown = key === 'quotes' ? output.sectionIds : output.sections;
+  if (!Array.isArray(parts)) return value;
+  const trimmed = parts.map(part => {
+    if (key === 'quotes') return own(part);
+    if (!part || typeof part !== 'object') return part;
+    const ids = (part as { evidenceIds?: unknown }).evidenceIds, kept = own(ids);
+    return kept === ids ? part : { ...part,evidenceIds: kept };
+  });
+  if (trimmed.every((part,index) => part === parts[index])) return value;
+  return key === 'quotes' ? { ...output,sectionIds: trimmed } : { ...output,sections: trimmed };
+}
 /** Unknown/duplicate references and wrong section counts never become reusable checkpoints. */
 export function editorialResponseValid(key: PipelineStepKey,value: unknown,known: ReadonlySet<string>,sections: number,expected?: { title: string; sections?: { title: string }[] }) {
   if (!['outline','quotes','intro','section','article'].includes(key)) return true;
