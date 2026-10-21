@@ -214,12 +214,35 @@ test('an article section quotes an unnamed voice while the text still lacks its 
   // A recording without speaker labels and with two people has no identified line: the quote plan
   // still says how many quotations the text lacks, and the section brings them as unnamed voices.
   assert.ok(section.includes('enquanto sizing.quotePlan.quotesStillNeeded for maior que zero, esta seção traz ao menos uma fala literal curta de suas evidências'));
-  assert.match(section, /nunca de quem entrevista, pergunta ou agradece; sem falante identificado, contextualize-a como fala do episódio, sem nome\. Na última seção, traga todas as que ainda faltarem\./);
+  assert.ok(section.includes('nunca de quem entrevista, pergunta ou agradece; sem falante identificado, atribua-a de forma neutra, como parte do episódio ("segundo um dos participantes do episódio", "disse um dos entrevistados"), nunca com um nome.'));
+  assert.match(section, /Na última seção, traga todas as que ainda faltarem\./);
   // The floor per section and the rule against naming an unidentified voice stay.
   assert.match(section, /Traga uma fala literal curta — uma ideia, uma ou duas frases — sempre que as evidências desta seção tiverem uma frase citável de um falante identificado/);
   assert.match(section, /Identifique a pessoa só quando a evidência associar essa fala ao falante/);
   // Formats keep their own part prompts.
   for (const format of EDITORIAL_FORMATS) assert.doesNotMatch(definition.funnels[format].section.prompt, /quotesStillNeeded/, format);
+});
+
+test('an unlabeled voice is attributed neutrally, never as a comment on the transcript', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  const { steps } = definition;
+  const neutral = '("segundo um dos participantes do episódio", "disse um dos entrevistados")';
+  // The rehearsal's R1 texts wrote "afirma uma voz não identificada na transcrição" and "Segundo a fala sem autoria identificada".
+  assert.ok(HARD_NEWS.includes(`Todo número, previsão e opinião tem fonte: a pessoa pelo nome quando o material identifica quem disse; quando não identifica, a atribuição neutra a quem participa da gravação ${neutral}, nunca um nome inventado. Nunca comente a transcrição nem a autoria de uma fala ("voz não identificada", "fala sem autoria").`));
+  // The shared rules no longer ask every quote for an identified speaker or every opinion for a named source.
+  assert.ok(HARD_NEWS.includes('de um falante identificado quando o material identifica quem fala (senão, com a atribuição neutra acima), nunca de quem entrevista'));
+  assert.doesNotMatch(HARD_NEWS, /tem fonte nomeada|frase citável: de um falante identificado, nunca/);
+  assert.ok(definition.systemPrompt.includes(`Quando a fonte não identificar quem falou, atribua a fala de forma neutra, como parte do episódio ${neutral}`));
+  assert.ok(steps.article.prompt.includes(`Uma fala sem falante identificado entra com atribuição neutra, como parte do episódio ${neutral}, sem comentar a transcrição nem a autoria`));
+  assert.match(steps.section.prompt, /caso contrário, use a atribuição neutra ao episódio, sem nome e sem comentar a transcrição nem a autoria/);
+  assert.match(steps.intro.prompt, /Se não houver falante identificado, não invente atribuição: atribua a fala de forma neutra, como parte do episódio/);
+  // Selection agrees with writing: an answer of a recording without speaker labels is quotable, its question never.
+  assert.ok(steps.quotes.prompt.includes('Uma passagem citável é uma frase de quem fala no material — de um falante identificado quando a fonte o identifica; numa gravação sem rótulos de falante, uma resposta, nunca a pergunta —, nunca de quem entrevista, pergunta, apresenta ou agradece'));
+  assert.ok(steps.outline.prompt.includes('inclua uma passagem citável — de um falante identificado quando a fonte o identifica; numa gravação sem rótulos de falante, uma resposta, nunca a pergunta —'));
+  // "fala do episódio" leaked into the copy as meta wording; no prompt asks for it any more.
+  for (const prompt of [definition.systemPrompt, ...Object.values(steps).map(step => step.prompt),
+    ...EDITORIAL_FORMATS.flatMap(format => FUNNEL_STEP_KEYS.map(key => definition.funnels[format][key].prompt))])
+    assert.doesNotMatch(prompt, /fala do episódio|voz não identificada pode/);
 });
 
 test('a panel quotes every speaker with a quotable line and develops each thesis without padding', () => {
