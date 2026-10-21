@@ -58,6 +58,19 @@ test('the closing box is built from the typed event only', () => {
   ]);
 });
 
+test('an event name or custom heading alone does not create an empty closing box', () => {
+  assert.deepEqual(eventBoxLines({ name: 'Aquishow Brasil 2026' }), []);
+  assert.deepEqual(eventBoxLines({ name: 'Aquishow Brasil 2026', boxTitle: 'Nossa cobertura', about: '  ', dates: '\n', cta: '\t' }), []);
+  assert.deepEqual(eventBoxLines({ name: 'Aquishow Brasil 2026', boxTitle: 'Nossa cobertura', about: 'O evento reuniu a cadeia da aquicultura.' }), [
+    { kind: 'heading', text: 'Nossa cobertura' },
+    { kind: 'paragraph', text: 'O evento reuniu a cadeia da aquicultura.' },
+  ]);
+  assert.deepEqual(eventBoxLines({ name: 'Aquishow Brasil 2026', cta: 'Acompanhe a cobertura.' }), [
+    { kind: 'heading', text: 'Seafood Brasil na Aquishow Brasil 2026' },
+    { kind: 'paragraph', text: 'Acompanhe a cobertura.' },
+  ]);
+});
+
 test('a format blocks on its ceiling and quotes, never on its minimum; the article keeps R1', () => {
   assert.deepEqual(articleGateFor({ format: 'opening' }), { maxChars: 5000, targetChars: 4500, minQuotes: 2 });
   assert.deepEqual(articleGateFor({}), { ...R1_ARTICLE_LIMITS });

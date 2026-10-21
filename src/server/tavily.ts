@@ -67,7 +67,9 @@ export async function searchWebEvidence(query: string, signal: AbortSignal, opti
     const url = new URL(result.url);
     if (url.username || url.password || excludeDomains.some(domain => site === domain || site.endsWith('.' + domain))) return [];
     const publishedOn = dayOf(result.published_date);
-    return [{ url: result.url, title: clip(result.title || site, 200), site, excerpt, ...(publishedOn ? { publishedOn } : {}) }];
+    // Search highlights are presentation markup, not part of the retained source title.
+    const title = (result.title ?? '').replace(/<\/?[a-z][^>]*>/gi, '').trim();
+    return [{ url: result.url, title: clip(title || site, 200), site, excerpt, ...(publishedOn ? { publishedOn } : {}) }];
   });
   return { sources, requestId: parsed.data.request_id ?? null, credits: parsed.data.usage?.credits ?? null };
 }

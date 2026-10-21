@@ -2,7 +2,7 @@ import type { ActorId, PieceId, ProductionId, RunId, StepId, SuggestionId } from
 import { sliceText } from '../../../domain/article.ts';
 import { bodyHash, toVersionRef } from '../../../domain/piece.ts';
 import type { Piece, PieceBody, PieceKind, Version } from '../../../domain/piece.ts';
-import { pieceOfKind } from '../../../domain/record.ts';
+import { outputSourceRefs, pieceOfKind } from '../../../domain/record.ts';
 import { dedupeRefs } from '../../../domain/refs.ts';
 import type { Ref, SourceVersionRef, TextRange, VersionRef } from '../../../domain/refs.ts';
 import { ok, refuse } from '../../../domain/result.ts';
@@ -144,7 +144,8 @@ function settleIn(state: StoreState, runId: RunId, outcome: SettleOutcome, ctx: 
           runStartedAt: run.startedAt ?? run.createdAt,
           interrupted: outcome.status !== 'completed',
           inputs: run.inputs.filter((ref): ref is VersionRef => ref.kind === 'version'),
-          sources: run.inputs.filter((ref): ref is SourceVersionRef => ref.kind === 'source-version'),
+          sources: outputSourceRefs(assembleRecord(state, production), body,
+            run.inputs.filter((ref): ref is SourceVersionRef => ref.kind === 'source-version'), fold?.sourcesUsed),
         },
         ctx,
       );

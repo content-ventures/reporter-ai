@@ -12,7 +12,7 @@ test('direct Tavily requests are bounded and retain snippets, dates and actual u
     assert.equal((options!.headers as Record<string, string>).Authorization, 'Bearer test-key');
     body = JSON.parse(options!.body as string);
     return new Response(JSON.stringify({ request_id: 'search-request', usage: { credits: 1 }, answer: 'Never use the provider answer.', results: [
-      { url: 'https://primary.test/one', title: 'Technical source', content: 'A specific external explanation.', published_date: '2026-05-20' },
+      { url: 'https://primary.test/one', title: 'Technical <em>source</em> & <strong>context</strong>: 2 < 3', content: 'A specific external explanation.', published_date: '2026-05-20' },
       { url: 'https://blocked.test/two', content: 'An excluded domain.' },
       { url: 'https://name:password@primary.test/three', content: 'Credentials are not a public source URL.' },
       { url: 'http://primary.test/four', content: 'Unsupported protocol.' },
@@ -23,7 +23,7 @@ test('direct Tavily requests are bounded and retain snippets, dates and actual u
     assert.equal((body!.query as string).length, 380);
     assert.deepEqual([body!.search_depth, body!.max_results, body!.auto_parameters, body!.include_answer, body!.include_usage], ['basic', 4, false, false, true]);
     assert.deepEqual(body!.exclude_domains, ['blocked.test']);
-    assert.deepEqual(result, { sources: [{ url: 'https://primary.test/one', title: 'Technical source', site: 'primary.test', excerpt: 'A specific external explanation.', publishedOn: '2026-05-20' }], requestId: 'search-request', credits: 1 });
+    assert.deepEqual(result, { sources: [{ url: 'https://primary.test/one', title: 'Technical source & context: 2 < 3', site: 'primary.test', excerpt: 'A specific external explanation.', publishedOn: '2026-05-20' }], requestId: 'search-request', credits: 1 });
     const legacy = await searchEvidence('Technical topic', new AbortController().signal);
     assert.ok(Array.isArray(legacy));
     assert.ok((body!.exclude_domains as string[]).includes('instagram.com'), 'the existing citation adapter keeps its previous default exclusions');
