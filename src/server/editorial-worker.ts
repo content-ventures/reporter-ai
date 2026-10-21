@@ -34,6 +34,7 @@ import { citationsFromArticle, emphasizeArticleQuotes } from '../domain/citation
 import type { Citation } from '../domain/citation-library.ts';
 import { AUTO_FACT_CHECKS } from './fact-check-pipeline.ts';
 import { tavilyConfigured } from './tavily';
+import { curatedEvidence, explainedHints, planningSource, quotableShortlist, writingSource } from '../domain/evidence-hints.ts';
 import type { EditorialJob, ServerImageAsset } from '../ports/connected-workspace.ts';
 import { articleImageTarget } from './article-image-task.ts';
 import { editorialResponseValid } from './editorial-validation';
@@ -134,10 +135,11 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     if (job.kind === 'article.draft' && requestedOutline) await guarded([{ type: 'outline',title: requestedOutline.title,
       sections: requestedOutline.sections.map(section => ({ blockId: section.blockId,title: section.title })) }]);
     await guarded([{ type: 'step.started',stepId: 'source',meta: 'Preparando a fonte autorizada' }]);
-    const input = (await editorialTransaction('worker',async (_checkpoint,engine) => {
+    const input = (await editorialTransaction('worker',async (checkpoint,engine) => {
       const record = engine.records.record(job.meta.productionId);
       if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
-      return { record,templates: editorialTemplates(),people: engine.store.state.people };
+      return { record,templates: editorialTemplates(),people: engine.store.state.people,
+        citations: (checkpoint.citations ?? []).filter(citation => citation.productionId === job.meta.productionId) };
     },false,'reporter.edit',scope)).value;
     if (ARTICLE_ASSIST_KINDS.has(job.kind)) {
       lastStepId = 'assist';
@@ -150,6 +152,9 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       return true;
     }
     const candidates = editorialCandidates(input.record);
+    // Curated citations and quotable lines reach a step only when its prompt explains them.
+    const curated = curatedEvidence(input.citations,input.record.sources,candidates);
+    const hints = explainedHints(pipeline.definition);
     const byKey = new Map(candidates.map(c => [c.key,c]));
     const knownIds = new Set(byKey.keys());
     const evidencePassages=(ids:readonly string[])=>contiguousSourcePassages(input.record.sources,ids.flatMap(id=>byKey.get(id)?[byKey.get(id)!.ref]:[]));
@@ -213,8 +218,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       return response.value;
     };
     // Whole-episode map/reduce uses the same editable prompt and model as the config page.
+    let context = source;
     if (job.kind !== 'carousel.copy') {
-      let context = source;
       for (let round = 0; context.length > 24000; round++) {
         if (round >= 4) throw new FlowError('GENERATION_INPUT_TOO_LARGE',422);
         // Small passages leave room for qualifiers while staying below the
@@ -231,7 +236,10 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         });
         context = summaries.join('\n\n');
       }
-      variables.source = context;
+      // Summaries lose the exact words: the planning steps also get the quotable lines of linked speakers.
+      const linked = new Set(input.record.sources.flatMap(s => s.speakers.filter(speaker => speaker.personId && !speaker.unattributed).map(speaker => speaker.label)));
+      variables.source = hints.planning ? planningSource(context,curated,context !== source
+        ? quotableShortlist(candidates,c => c.speaker ? linked.has(c.speaker) : people.length === 1,new Set(curated.byKey.keys())) : []) : context;
     }
     await guarded([{ type: 'step.completed',stepId: 'source' },{ type: 'step.skipped',stepId: 'generate' }]);
     let value: unknown;
@@ -258,8 +266,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       // Map/reduce summaries are not literal transcripts. Keep the exact selected
       // passages alongside them so quotation text can be copied, not reconstructed.
       const selected = new Set([...outline.introIds, ...outline.sections.flatMap(section => section.evidenceIds)]);
-      variables.source = JSON.stringify({ context: variables.source, literalEvidence: candidates.filter(candidate => selected.has(candidate.key))
-        .map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}) })) });
+      // The planning hints stay out: the writing steps read curated lines as marks on literalEvidence.
+      variables.source = writingSource(context,candidates,selected,hints.writing ? curated.byKey : new Map());
       variables.outline = JSON.stringify(outline);
       if (pipeline.definition.articleMode === 'single') value = await writeCompleteArticle(outline, variables, sizing, call);
       else value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages,grounding,people.map(person => person.name));
