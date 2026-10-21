@@ -10,11 +10,13 @@ The implementation is technically ready for the remote delivery decision. It has
 - The connected frontend passed real generation, reopen/inspection, a persisted manual edit and undo, review, technical approval, clipboard copy and actual HTML, Markdown and manifest downloads. Desktop and 390 px inspection had no page/console errors or horizontal overflow. A separate real failure/retry/cancel path also passed without further generation calls.
 - Acceptance defects were corrected: HTML markup in retrieved source titles, an empty event-box footer, missing external references in generated/edited version snapshots, absent web URLs/dates in the manifest, and lexical false positives for supported state abbreviations and hyphenated compounds such as Ômega-3.
 
-No database migration is needed. News intake, RSS, CMS publishing and archive RAG remain outside this delivery.
+The writing changes add no database migration. The integrated upstream base includes the news migrations already owned by that workstream; only migrations 024–029 were added to the isolated acceptance database, with all eleven existing editorial tables preserved by before/after row counts and hashes. News intake, RSS, CMS publishing and archive RAG remain outside this delivery's implementation scope.
 
 ## Exact validation evidence
 
-Live provider and connected export acceptance ran on production build commit `4db6960d8ca67179d4b4bfaa24c0eb4063c7e623`. The closing documentation commit changes no application code. Its exact hash and final verification logs are recorded in the private evidence package, under `verification/`.
+The first successful full live-provider and connected export acceptance ran on production build commit `4db6960d8ca67179d4b4bfaa24c0eb4063c7e623`. That accepted state is preserved on local branch `writing-acceptance-baseline`, including its subsequent documentation-only commit. Final comparison with `main` found 91 upstream commits since the original branch point. The delivery was therefore rebased onto `0ae1c1cf31f9e5feeeace16d9248a519ae87fe87` before handoff. Historical acceptance remains attributed to its original build; it is not silently relabeled as testing the integrated application. The exact final integrated commit, validation results and any additional frontend evidence are recorded under `verification/` and `integration-main/` in the private evidence package.
+
+Integration preserves the main branch's four-stage format funnels, curated/attributed citation handling, guarded optional quote attempts, explicit preset upgrades, connected news capabilities and all existing smoke scenarios. New writing settings and news settings remain independent. The preset preservation regression checks that upgrading legacy prompts cannot replace the saved editorial map, writing guide, stage models or research settings.
 
 | Check | Result on the application acceptance commit |
 | --- | --- |
@@ -66,4 +68,4 @@ To recover the prior prompt configuration, use **Prompts → Histórico → Carr
 
 ## Remote delivery boundary
 
-The branch contains cohesive local commits under the authenticated GitHub identity. No push, PR, merge, Preview, deployment, version bump or shared configuration write was performed. After the exact remote actions are approved, follow `DEVELOPMENT_HARNESS.md` and `RELEASE_RUNBOOK.md`: review/merge by rebase, controlled staging acceptance, then the deliberate production workflow. The workflow prepares the product version; do not fabricate a release version for this local candidate.
+The branch contains cohesive local commits under the authenticated GitHub identity, integrated on the upstream base identified above. No push, PR, merge, Preview, deployment, version bump or shared configuration write was performed. The existing product version follows `main`; the local integration does not create a release. After the exact remote actions are approved, follow `DEVELOPMENT_HARNESS.md` and `RELEASE_RUNBOOK.md`: review/merge by rebase, controlled staging acceptance, then the deliberate production workflow. The workflow prepares the product version; do not fabricate a release version for this local candidate.
