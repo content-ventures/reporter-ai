@@ -5,7 +5,7 @@ import { DataTable, RowActions, type Column, type SortState } from '@content-ven
 import { BadgeCheck, Copy, Eye } from '@content-ventures/design-system/v3/icons';
 import { claimTally, primarySource, tallyLabel } from '@/domain/fact-check';
 import type { QuoteSort, QuoteSortKey, RankedQuote } from './quote-model';
-import { FactSourceChip, ScoreMeter, VerdictBadge } from './verdict-view';
+import { FactSourceChip, QuoteSeal, ScoreMeter } from './verdict-view';
 
 export type QuoteTableProps = {
   rows: RankedQuote[];
@@ -39,7 +39,7 @@ export function QuoteTable({ rows, sort, onSort, selected, onSelectedChange, che
     { key: 'text', header: 'Fala', pinned: true, render: ({ quote }) => `${quote.author}: “${clip(quote.text)}”` },
     { key: 'score', header: 'Score', sortable: true, width: 108, hint: 'Veracidade 40, força 20, autoria e fonte 20, uso 20. Contestada: até 30.',
       render: ({ score }) => (score ? <ScoreMeter score={score} /> : undefined), fallback: '—' },
-    { key: 'verdict', header: 'Veredito', width: 120, render: ({ verdict }) => <VerdictBadge verdict={verdict} /> },
+    { key: 'verdict', header: 'Veredito', width: 120, render: (entry) => <QuoteSeal entry={entry} /> },
     { key: 'source', header: 'Fonte', width: 176, render: ({ quote }) => {
       const source = primarySource(quote.factCheck);
       return source ? <FactSourceChip source={source} compact /> : undefined;

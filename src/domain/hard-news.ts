@@ -388,6 +388,8 @@ export type BankQuote = {
   recordedOn: string;
   /** The author was confirmed with the source ("Autoria conferida"). */
   verified: boolean;
+  /** An outline passage the text did not quote, kept for a person to check ("Sugerida"); never verified. */
+  suggested?: boolean;
   uses: number;
   /** The productions that used it, newest first; the connected build only. */
   usedIn?: { productionId: string; title: string; at: string }[];
