@@ -12,7 +12,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { z } from 'zod';
-import { MAX_UPLOAD_BYTES } from '../domain/reporter.ts';
+import { MAX_DRIVE_BYTES } from '../domain/reporter.ts';
 import { transaction } from './database.ts';
 import { FlowError } from './errors.ts';
 import { appOrigins } from './worker-config.ts';
@@ -21,13 +21,14 @@ export const SOURCE_BUCKET = 'reporter-source-media';
 export const MULTIPART_PART_BYTES = 16 * 1024 ** 2;
 const UPLOAD_URL_TTL_SECONDS = 6 * 60 * 60;
 const SOURCE_URL_TTL_SECONDS = 60 * 60;
-const MAX_PARTS = Math.ceil(MAX_UPLOAD_BYTES / MULTIPART_PART_BYTES);
+// Storage takes the largest source, a Drive file; the browser's 2 GB is checked where its upload is prepared.
+const MAX_PARTS = Math.ceil(MAX_DRIVE_BYTES / MULTIPART_PART_BYTES);
 
 const uploadInputSchema = z.object({
   source_id: z.string().uuid(),
   bucket: z.literal(SOURCE_BUCKET),
   key: z.string().regex(/^incoming\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:mp3|mp4|m4a|wav|ogg|flac|webm)$/i),
-  size: z.union([z.string(),z.number()]).transform(Number).pipe(z.number().int().min(1).max(MAX_UPLOAD_BYTES)),
+  size: z.union([z.string(),z.number()]).transform(Number).pipe(z.number().int().min(1).max(MAX_DRIVE_BYTES)),
   content_type: z.enum(['audio/mpeg','audio/mp4','audio/wav','audio/ogg','audio/flac','audio/webm','video/mp4','video/webm']),
   file_name: z.string().min(1).max(255),
   upload_id: z.string().min(8).max(1024).nullable().optional(),
@@ -104,29 +105,37 @@ export async function startCloudUpload(sourceId: string,token: string) {
       Bucket: input.bucket,Key: input.key,UploadId: uploadId,PartNumber: index+1,
     }),{ expiresIn: UPLOAD_URL_TTL_SECONDS }),
   })));
-  return { sourceId: input.source_id,partSize: MULTIPART_PART_BYTES,size: input.size,parts };
+  // A resumed upload names the parts already stored whole, so a copy continues where it stopped.
+  const uploaded = input.upload_id
+    ? (await storedParts(input.bucket,input.key,input.upload_id)).filter(part => part.PartNumber && part.Size===partBytes(input.size,part.PartNumber)).map(part => part.PartNumber!)
+    : [];
+  return { sourceId: input.source_id,partSize: MULTIPART_PART_BYTES,size: input.size,parts,uploaded };
+}
+
+const partBytes = (size: number,number: number) => Math.min(MULTIPART_PART_BYTES,size-(number-1)*MULTIPART_PART_BYTES);
+
+async function storedParts(bucket: string,key: string,uploadId: string) {
+  const parts: { ETag?: string; PartNumber?: number; Size?: number }[] = [];
+  let marker: string | undefined;
+  do {
+    const page = await s3().send(new ListPartsCommand({ Bucket: bucket,Key: key,UploadId: uploadId,PartNumberMarker: marker }));
+    parts.push(...page.Parts ?? []);
+    marker = page.IsTruncated ? page.NextPartNumberMarker : undefined;
+  } while (marker);
+  return parts;
 }
 
 export async function completeCloudUpload(sourceId: string,token: string) {
   const input = await authorizedUpload(sourceId,token);
   if (!input.upload_id) throw new FlowError('UPLOAD_SESSION_MISSING',409);
-  const parts: { ETag: string; PartNumber: number; Size: number }[] = [];
-  let marker: string | undefined;
-  do {
-    const page = await s3().send(new ListPartsCommand({
-      Bucket: input.bucket,Key: input.key,UploadId: input.upload_id,PartNumberMarker: marker,
-    }));
-    for (const part of page.Parts ?? []) {
-      if (!part.ETag || !part.PartNumber || !part.Size) throw new FlowError('UPLOAD_INCOMPLETE',409);
-      parts.push({ ETag: part.ETag,PartNumber: part.PartNumber,Size: part.Size });
-    }
-    marker = page.IsTruncated ? page.NextPartNumberMarker : undefined;
-  } while (marker);
+  const parts = (await storedParts(input.bucket,input.key,input.upload_id)).map(part => {
+    if (!part.ETag || !part.PartNumber || !part.Size) throw new FlowError('UPLOAD_INCOMPLETE',409);
+    return { ETag: part.ETag,PartNumber: part.PartNumber,Size: part.Size };
+  });
   const expected = Math.ceil(input.size/MULTIPART_PART_BYTES);
   const uploadedBytes = parts.reduce((total,part,index) => {
     if (part.PartNumber!==index+1) throw new FlowError('UPLOAD_INCOMPLETE',409);
-    const expectedSize = Math.min(MULTIPART_PART_BYTES,input.size-index*MULTIPART_PART_BYTES);
-    if (part.Size!==expectedSize) throw new FlowError('UPLOAD_INCOMPLETE',409);
+    if (part.Size!==partBytes(input.size,part.PartNumber)) throw new FlowError('UPLOAD_INCOMPLETE',409);
     return total + part.Size;
   },0);
   if (parts.length!==expected || uploadedBytes!==input.size) throw new FlowError('UPLOAD_INCOMPLETE',409);

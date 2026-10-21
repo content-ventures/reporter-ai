@@ -2,7 +2,7 @@ import 'server-only';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { citationDay } from '../domain/citation-library.ts';
-import { MAX_UPLOAD_BYTES } from '../domain/reporter.ts';
+import { MAX_DRIVE_BYTES } from '../domain/reporter.ts';
 import { resolveServiceContext, transaction } from './database.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { FlowError, logEvent, safeCode } from './errors.ts';
@@ -21,15 +21,22 @@ import { driveIds, driveMedia, folderFormat, partRange } from './drive-intake-pl
  */
 
 const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files/';
-const PART_CONCURRENCY = 4;
+const PART_CONCURRENCY = 6;
 const PART_ATTEMPTS = 3;
-// Ask again once the copy has most likely finished: an early sync would start a second copy.
-const uploadWait = (size: number) => Math.min(300, 90 + Math.ceil(size / (16 * 1024 ** 2)) * 4);
+// One sync copies for this long, inside the function's default 300 s. The next sync continues from
+// the parts already stored, so a file of several gigabytes takes a few syncs.
+const COPY_BUDGET_MS = 230_000;
+// A sync holds the file this long: no second copy starts meanwhile, and a copy cut short frees it.
+const COPY_LEASE_SECONDS = 300;
+const PROGRESS_EVERY_MS = 15_000;
+// Ask again about when this sync's copy ends.
+const uploadWait = (size: number) => Math.min(COPY_LEASE_SECONDS, 90 + Math.ceil(size / (16 * 1024 ** 2)) * 4);
 
 const syncBody = z.object({
   fileId: z.string().regex(/^[A-Za-z0-9_-]{10,100}$/),
   name: z.string().trim().min(1).max(255).refine(name => !/[\x00-\x1f\x7f-\x9f\\/]/.test(name)),
-  size: z.number().int().min(1).max(MAX_UPLOAD_BYTES),
+  // Drive's own size wins (driveSize): the script's is the fallback.
+  size: z.number().int().safe(),
   folder: z.string().trim().max(120).optional(),
   recordedOn: z.string().refine(value => /^\d{4}-\d{2}-\d{2}$/.test(value) && citationDay(value)).optional(),
   accessToken: z.string().min(20).max(4096),
@@ -66,8 +73,23 @@ export async function handleDrive(request: Request, path: string[], deps: { read
   if (!email) throw new FlowError('DRIVE_OWNER_MISSING', 503);
   const context = await resolveServiceContext(email);
   if (!context) throw new FlowError('DRIVE_OWNER_UNKNOWN', 503);
+  const size = await driveSize(input.fileId, input.accessToken, input.size);
+  if (size > MAX_DRIVE_BYTES) throw new FlowError('FILE_TOO_LARGE', 413);
+  if (size < 1) throw new FlowError('INVALID_INPUT', 422);
   const app = new URL(request.url).origin;
-  return runWithReporterContext(context, () => syncFile(input, secret, { app, worker: appOrigins()[0] ?? app }, context, deps.defer));
+  return runWithReporterContext(context, () => syncFile({ ...input, size }, secret, { app, worker: appOrigins()[0] ?? app }, context, deps.defer));
+}
+
+/** The file's size as Drive reports it; the script's value only when Drive does not answer. */
+async function driveSize(fileId: string, accessToken: string, fallback: number) {
+  try {
+    const response = await fetch(`${DRIVE_FILES}${encodeURIComponent(fileId)}?fields=size&supportsAllDrives=true`, {
+      headers: { authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15_000) });
+    const size = Number((await response.json() as { size?: unknown }).size);
+    return response.ok && Number.isSafeInteger(size) && size > 0 ? size : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 /** The address that opens a received file in the new-production steps. */
@@ -132,9 +154,17 @@ async function syncFile(input: SyncInput, secret: string, origins: { app: string
     if (!transcript.job) {
       const endpoint = workerUrl() ?? prepared.upload_endpoint;
       if (!endpoint) throw new FlowError('UPLOAD_CONFIGURATION', 503);
-      defer(() => copyFromDrive({ endpoint, origin: origins.worker, sourceId: ids.sourceId, token: ids.token, fileId: input.fileId,
-        accessToken: input.accessToken, size: input.size }).catch(error => { logEvent('api', 'drive_upload_failed', { error_code: safeCode(error) }); }));
-      return reply({ ...base, stage: 'uploading', retryAfter: uploadWait(input.size) }, 202);
+      const copy = await transaction('runtime', async client => (await client.query('SELECT public.reporter_drive_copy_claim($1,$2) AS value',
+        [transcript.id, COPY_LEASE_SECONDS])).rows[0].value as { claimed: boolean; copied: number; stalled: boolean });
+      if (copy.stalled) return reply({ ...base, stage: 'failed', error: 'UPLOAD_FAILED' });
+      const copied = Number(copy.copied);
+      if (copy.claimed) defer(() => runWithReporterContext(context, () => copyFromDrive({ endpoint, origin: origins.worker, sourceId: ids.sourceId,
+        token: ids.token, fileId: input.fileId, accessToken: input.accessToken, size: input.size, transcriptId: transcript.id }))
+        .catch(error => { logEvent('api', 'drive_upload_failed', { error_code: safeCode(error) }); }));
+      // While a copy runs or once part of the file is stored, the folder script reads "copying" as
+      // progress, not as one of its few upload tries.
+      return reply({ ...base, stage: copy.claimed && !copied ? 'uploading' : 'copying', retryAfter: copy.claimed ? uploadWait(input.size) : 60,
+        ...(copied ? { progress: Math.min(99, Math.floor(copied / input.size * 100)) } : {}) }, 202);
     }
     if (stalled && shouldHealStall()) defer(() => kickWorker());
     const progress = transcript.job.progress;
@@ -145,10 +175,14 @@ async function syncFile(input: SyncInput, secret: string, origins: { app: string
   return reply({ ...base, stage: 'ready', url: `${origins.app}${receivedHref(transcript.id)}` });
 }
 
-type UploadSession = { partSize: number; parts: { number: number; url: string }[] };
+type UploadSession = { partSize: number; parts: { number: number; url: string }[]; uploaded?: number[] };
 
-/** The browser's multipart upload, server to server: each part is read from Drive by byte range. */
-async function copyFromDrive(job: { endpoint: string; origin: string; sourceId: string; token: string; fileId: string; accessToken: string; size: number }) {
+/**
+ * The browser's multipart upload, server to server: each part is read from Drive by byte range.
+ * One sync copies for COPY_BUDGET_MS at most, skipping the parts already stored, and records how
+ * much is stored; the sync that copies the last part completes the upload.
+ */
+async function copyFromDrive(job: { endpoint: string; origin: string; sourceId: string; token: string; fileId: string; accessToken: string; size: number; transcriptId: string }) {
   const call = async (path: string) => {
     const response = await fetch(new URL(path, job.endpoint.endsWith('/') ? job.endpoint : job.endpoint + '/'), { method: 'POST',
       headers: { 'content-type': 'application/json', origin: job.origin }, body: JSON.stringify({ sourceId: job.sourceId, token: job.token }),
@@ -157,13 +191,36 @@ async function copyFromDrive(job: { endpoint: string; origin: string; sourceId: 
     if (!response.ok) throw new FlowError(typeof value.error === 'string' ? value.error : 'UPLOAD_FAILED', 503);
     return value;
   };
-  const session = await call('uploads/start') as UploadSession;
-  const pending = [...session.parts];
-  const copy = async () => {
-    for (let part = pending.shift(); part; part = pending.shift()) await copyPart(job, part, partRange(part.number, session.partSize, job.size));
-  };
-  await Promise.all(Array.from({ length: Math.min(PART_CONCURRENCY, pending.length) }, copy));
-  await call('uploads/complete');
+  const deadline = Date.now() + COPY_BUDGET_MS;
+  let copied = 0, reported = 0;
+  const report = (release: boolean) => transaction('runtime', async client => {
+    await client.query('SELECT public.reporter_drive_copy_progress($1,$2,$3)', [job.transcriptId, copied, release]);
+  });
+  try {
+    const session = await call('uploads/start') as UploadSession;
+    const stored = new Set(session.uploaded ?? []);
+    const pending = session.parts.filter(part => !stored.has(part.number));
+    const range = (part: { number: number }) => partRange(part.number, session.partSize, job.size);
+    copied = job.size - pending.reduce((total, part) => total + range(part).length, 0);
+    let failed = false;
+    const copy = async () => {
+      while (!failed && pending.length && Date.now() < deadline) {
+        const part = pending.shift()!, bytes = range(part);
+        try { await copyPart(job, part, bytes); }
+        catch (error) { failed = true; throw error; }
+        copied += bytes.length;
+        if (Date.now() - reported >= PROGRESS_EVERY_MS) { reported = Date.now(); await report(false).catch(() => {}); }
+      }
+    };
+    const results = await Promise.allSettled(Array.from({ length: Math.min(PART_CONCURRENCY, pending.length) }, copy));
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    // Out of time: the next sync continues from the parts stored so far.
+    if (pending.length) return;
+    await call('uploads/complete');
+  } finally {
+    await report(true).catch(() => {});
+  }
 }
 
 async function copyPart(job: { fileId: string; accessToken: string; size: number }, part: { url: string }, range: { start: number; end: number; length: number }) {
