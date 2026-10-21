@@ -776,7 +776,7 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
     rssApp: live ? liveNews.rssApp : true,
     search: liveNews.search,
     watch,
-  }), [actions, demo, live, liveNews.failed, liveNews.ready, liveNews.rssApp, ready, shown, watch, writing]);
+  }), [actions, demo, live, liveNews.failed, liveNews.ready, liveNews.rssApp, liveNews.search, ready, shown, watch, writing]);
   return <HardNewsContext value={value}>{children}</HardNewsContext>;
 }
 

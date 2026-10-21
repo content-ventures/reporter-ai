@@ -28,9 +28,12 @@ export async function newsSearchSql<T>(role: 'runtime' | 'worker', query: string
   }
 }
 type StoredView = Omit<NewsSearchView, 'configured'> & { domains?: string[] };
+function publicView(stored: StoredView, configured: boolean): NewsSearchView {
+  const { revision, config, state, usedToday, lastRunAt, nextRunAt, lastAdded, lastError } = stored;
+  return { configured, revision, config, state, usedToday, lastRunAt, nextRunAt, lastAdded, lastError };
+}
 export async function readNewsSearch(): Promise<NewsSearchView> {
-  const { domains: _domains, ...view } = await newsSearchSql<StoredView>('runtime', 'SELECT public.reporter_news_search_view() AS value');
-  return { ...view, configured: tavilyConfigured() };
+  return publicView(await newsSearchSql<StoredView>('runtime', 'SELECT public.reporter_news_search_view() AS value'), tavilyConfigured());
 }
 export async function newsExcludedDomains(): Promise<string[]> {
   return (await newsSearchSql<StoredView>('runtime', 'SELECT public.reporter_news_search_view() AS value')).domains ?? [];
@@ -76,13 +79,11 @@ export async function saveNewsSearch(input: unknown, deps: SearchSettingsService
   config.topics = [...new Set(config.topics)];
   config.languages = [...new Set(config.languages)];
   const excluded = [...new Set([...domains, ...config.excludedDomains])];
-  const { domains: _domains, ...saved } = await deps.save(revision, config, excluded);
-  return { ...saved, configured: deps.configured() };
+  return publicView(await deps.save(revision, config, excluded), deps.configured());
 }
 
 export async function requestNewsSearch(): Promise<NewsSearchView> {
   await services.requireEdit();
   if (!tavilyConfigured()) throw new FlowError('TAVILY_KEY_MISSING', 503);
-  const { domains: _domains, ...view } = await newsSearchSql<StoredView>('runtime', 'SELECT public.reporter_news_search_request() AS value');
-  return { ...view, configured: true };
+  return publicView(await newsSearchSql<StoredView>('runtime', 'SELECT public.reporter_news_search_request() AS value'), true);
 }
