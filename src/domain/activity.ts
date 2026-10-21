@@ -11,6 +11,7 @@ export type ActivityType =
   | 'source.added'
   | 'source.revised'
   | 'source.authorized'
+  | 'source.date_updated'
   | 'run.started'
   | 'run.completed'
   | 'run.failed'

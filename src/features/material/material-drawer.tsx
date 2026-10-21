@@ -6,6 +6,7 @@ import {
   Avatar,
   Button,
   ConfirmDialog,
+  DatePicker,
   Drawer,
   Field,
   FieldGroup,
@@ -25,6 +26,8 @@ import { EMPTY_PERSON, NEW_PERSON, NO_PERSON, UNSET, type PersonFields } from '.
 
 type Draft = {
   authorized: boolean;
+  recordedOn: string;
+  baseRecordedOn: string | null;
   mapping: Record<string, string>;
   /** New people, by speaker label. */
   created: Record<string, PersonFields>;
@@ -35,6 +38,8 @@ type Draft = {
 function draftOf(detail: SourceDetail): Draft {
   return {
     authorized: detail.source.rights.authorized,
+    recordedOn: detail.source.recordedOn ?? '',
+    baseRecordedOn: detail.source.recordedOn || null,
     mapping: Object.fromEntries(detail.source.speakers.map((speaker) => [speaker.label, speaker.personId ?? (speaker.unattributed ? NO_PERSON : UNSET)])),
     created: {},
     edits: {},
@@ -89,6 +94,7 @@ export function MaterialDrawer({ open, onClose, detail }: { open: boolean; onClo
   const people = usePeople();
   const [draft, setDraft] = useState<Draft>(() => draftOf(detail));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [dateError, setDateError] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
   const [lastOpen, setLastOpen] = useState(open);
@@ -97,6 +103,7 @@ export function MaterialDrawer({ open, onClose, detail }: { open: boolean; onClo
     if (open) {
       setDraft(draftOf(detail));
       setErrors({});
+      setDateError(null);
       setFailure(undefined);
     }
   }
@@ -107,7 +114,8 @@ export function MaterialDrawer({ open, onClose, detail }: { open: boolean; onClo
   const participants = new Map(detail.speakers.map((participant) => [participant.label, participant]));
   const mappingChanged = labels.some((label) => draft.mapping[label] !== initial.mapping[label]);
   const editedPeople = Object.entries(draft.edits).filter(([personId, fields]) => !sameFields(fields, fieldsOf(byId.get(personId))));
-  const dirty = mappingChanged || draft.authorized !== initial.authorized || editedPeople.length > 0;
+  const dateChanged = (draft.recordedOn || null) !== draft.baseRecordedOn;
+  const dirty = dateChanged || mappingChanged || draft.authorized !== initial.authorized || editedPeople.length > 0;
   const undecided = labels.filter((label) => (draft.mapping[label] ?? UNSET) === UNSET).length;
 
   const options = useMemo<SelectOption[]>(
@@ -125,6 +133,7 @@ export function MaterialDrawer({ open, onClose, detail }: { open: boolean; onClo
   );
 
   async function save() {
+    if (dateError) return;
     const missing: Record<string, string> = {};
     for (const label of labels) {
       if (draft.mapping[label] === NEW_PERSON && !draft.created[label]?.name.trim()) missing[label] = 'Informe o nome.';
@@ -141,6 +150,11 @@ export function MaterialDrawer({ open, onClose, detail }: { open: boolean; onClo
       onClose();
       notifyRefusal(undefined, refusal);
     };
+    if (dateChanged) {
+      const result = await commands.production.updateSourceRecordedOn(detail.source.id, draft.recordedOn || null, draft.baseRecordedOn);
+      if (!result.ok) return stop(result.refusal);
+      setDraft((current) => ({ ...current, baseRecordedOn: result.value.recordedOn }));
+    }
     for (const [personId, fields] of editedPeople) {
       const result = await commands.production.updatePerson(personId, { title: fields.title.trim() || null, organization: fields.organization.trim() || null });
       if (!result.ok) return stop(result.refusal);
@@ -182,13 +196,19 @@ export function MaterialDrawer({ open, onClose, detail }: { open: boolean; onClo
         footer={
           <>
             <Button onClick={cancel}>Cancelar</Button>
-            <Button variant="primary" loading={saving} disabled={!dirty} onClick={() => void save()}>
+            <Button variant="primary" loading={saving} disabled={!dirty || Boolean(dateError)} onClick={() => void save()}>
               Salvar alterações
             </Button>
           </>
         }
       >
         <PageStack>
+          <Field label="Data do material" optional hint="Data da gravação ou coleta, não do envio. Deixe em branco se não souber." error={dateError ?? undefined}>
+            {({ id, describedBy, invalid }) => (
+              <DatePicker id={id} describedBy={describedBy} invalid={invalid} value={draft.recordedOn} editable disabled={saving}
+                onInputError={setDateError} onChange={(recordedOn) => setDraft((current) => ({ ...current, recordedOn }))} />
+            )}
+          </Field>
           <SwitchRow
             label="Material autorizado"
             description="Sem autorização, a geração fica bloqueada."

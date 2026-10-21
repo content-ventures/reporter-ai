@@ -1,8 +1,9 @@
 import { emptyArticle } from '../../../domain/article.ts';
+import { citationDay } from '../../../domain/citation-library.ts';
 import type { PersonId } from '../../../domain/ids.ts';
 import type { Piece } from '../../../domain/piece.ts';
 import type { Brief, Production } from '../../../domain/production.ts';
-import { validateBrief, validatePlan } from '../../../domain/production.ts';
+import { canOpenProduction, validateBrief, validatePlan } from '../../../domain/production.ts';
 import { ok, refuse } from '../../../domain/result.ts';
 import { isRunActive } from '../../../domain/run.ts';
 import type { CommandContext, Result } from '../../../domain/result.ts';
@@ -26,6 +27,7 @@ import type {
   ProductionCommands,
   SpeakerAssignment,
   SpeakersRefusal,
+  SourceDateRefusal,
 } from '../../../ports/production-commands.ts';
 import type { ActivityDraft, LocalStore, Tx } from './local-store.ts';
 import { currentMember, isKnownPerson, toPersonSummary } from './people.ts';
@@ -38,7 +40,7 @@ import { sourceDetail } from './views-piece.ts';
 
 type ProductionLevelCommands = Pick<
   ProductionCommands,
-  'createFromSource' | 'createBlank' | 'rename' | 'updateBrief' | 'updateSpeakers' | 'updatePerson' | 'setMaterialAuthorization' | 'archive'
+  'createFromSource' | 'createBlank' | 'rename' | 'updateBrief' | 'updateSpeakers' | 'updateSourceRecordedOn' | 'updatePerson' | 'setMaterialAuthorization' | 'archive'
 >;
 
 const PRODUCTION_NOT_FOUND = refuse('not_found', 'Não encontramos esta produção.');
@@ -294,6 +296,32 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
       if (!result.ok) return result;
       const detail = sourceDetail(read(), sourceId);
       return detail.ok ? ok(structuredClone(detail.value)) : SOURCE_NOT_FOUND;
+    },
+
+    async updateSourceRecordedOn(sourceId, recordedOn, baseRecordedOn) {
+      return store.transact((state, ctx): Tx<{ recordedOn: string | null }, SourceDateRefusal> => {
+        if (!can(currentMember(state), 'production.edit')) return forbidden('production.edit');
+        const source = state.sources.find((candidate) => candidate.id === sourceId);
+        if (!source) return SOURCE_NOT_FOUND;
+        const users = productionsUsingSource(state, sourceId);
+        if (users.some(({ production }) => !canOpenProduction(production, currentMember(state))))
+          return refuse('forbidden', 'Você precisa de acesso a todas as produções que usam este material para alterar a data.');
+        const validDate = (value: unknown) => value === null || typeof value === 'string' && value.length === 10 && citationDay(value);
+        if (!validDate(recordedOn) || !validDate(baseRecordedOn)) return refuse('invalid_date', 'Informe uma data válida ou deixe o campo vazio.');
+        const previous = source.recordedOn || null;
+        if (previous !== baseRecordedOn) return refuse('conflict', 'A data do material mudou depois que você começou a editar. Reabra o contexto para conferir a data atual.');
+        if (previous === recordedOn) return ok({ state, value: { recordedOn }, persist: 'none', silent: true });
+        const next = { ...source };
+        if (recordedOn === null) delete next.recordedOn;
+        else next.recordedOn = recordedOn;
+        let updated = withSource(state, next);
+        for (const production of users) updated = withProduction(updated, touch(production, {}, ctx.now));
+        const activity: ActivityDraft[] = users.map(({ production }) => ({
+          type: 'source.date_updated', productionId: production.id, subject: toSourceVersionRef(next),
+          data: { title: source.title, before: previous ?? '', after: recordedOn ?? '' },
+        }));
+        return ok({ state: updated, value: { recordedOn }, productionIds: users.map(({ production }) => production.id), activity });
+      });
     },
 
     async updatePerson(personId, patch) {
