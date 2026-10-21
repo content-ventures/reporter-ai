@@ -54,8 +54,22 @@ test('soft verbs, but a brand called marca passes', () => {
   assert.deepEqual(soft('Painel discute o futuro da tilápia e aposta em exportação'), ['discute', 'aposta em']);
   assert.deepEqual(soft('A marca Rio lança tilápia em porções'), []);
   assert.deepEqual(soft('Empresa marca 30 anos com nova fábrica'), ['marca']);
+  assert.deepEqual(soft('Cerimônia marca a abertura da feira'), ['marca']);
   assert.deepEqual(codes(article('x'.repeat(91), ['A empresa lançou o produto.'])), ['HEADLINE_TOO_LONG']);
   assert.deepEqual(codes(article('x'.repeat(90), ['A empresa lançou o produto.'])), []);
+});
+
+test('marca as a noun is no soft verb', () => {
+  const soft = (title: string) => details(article(title, ['A empresa lançou o produto.']), 'HEADLINE_SOFT_VERB');
+  // The rehearsal's R1 headline: "marca própria" is the object of "prepara".
+  assert.deepEqual(soft('Varejo regional prepara marca própria de pescado congelado'), []);
+  assert.deepEqual(soft('Rede lança a marca Mar Azul de pescado'), []);
+  assert.deepEqual(soft('Cooperativa leva sua marca ao Chile'), ['leva']);
+  assert.deepEqual(soft('Indústria cria marca de tilápia para o varejo'), []);
+  assert.deepEqual(soft('Marca própria de pescado cresce 20% no varejo'), []);
+  assert.deepEqual(soft('Supermercados ampliam marcas próprias de pescado'), []);
+  // The verb still counts.
+  assert.deepEqual(soft('Feira marca presença do pescado no varejo'), ['marca']);
 });
 
 test('boundaries around accented letters', () => {
