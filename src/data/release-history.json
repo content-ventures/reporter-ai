@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.14.0",
+  "currentVersion": "0.15.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,72 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.15.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-21",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 14 validated changes: recognize a longer right name in any case; take the term out of the speech before the turn check; check who says every other word when correcting a term.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Fixed",
+          "description": "Transcribe again the stretches Whisper garbled"
+        },
+        {
+          "type": "Added",
+          "description": "Fix a misheard name before creating the production"
+        },
+        {
+          "type": "Fixed",
+          "description": "Align repairs with the garbled words"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep times and speaker choices when correcting a term"
+        },
+        {
+          "type": "Fixed",
+          "description": "Anchor repair edges and refuse speaker-moving fixes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Complete cut words and never rewrite the others"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep first-pass tokens and speaker turns intact"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep marks, skip ambiguous pairs and right names"
+        },
+        {
+          "type": "Fixed",
+          "description": "Use only pairings every alignment agrees on"
+        },
+        {
+          "type": "Fixed",
+          "description": "Complete plain words only and check every word"
+        },
+        {
+          "type": "Fixed",
+          "description": "Add accent words between plain words only"
+        },
+        {
+          "type": "Fixed",
+          "description": "Check who says every other word when correcting a term"
+        },
+        {
+          "type": "Fixed",
+          "description": "Take the term out of the speech before the turn check"
+        },
+        {
+          "type": "Fixed",
+          "description": "Recognize a longer right name in any case"
+        }
+      ]
+    },
     {
       "version": "0.14.0",
       "roadmapRelease": "R0",

@@ -4,6 +4,28 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-21
+
+### Fixed
+
+- Transcribe again the stretches Whisper garbled.
+- Align repairs with the garbled words.
+- Keep times and speaker choices when correcting a term.
+- Anchor repair edges and refuse speaker-moving fixes.
+- Complete cut words and never rewrite the others.
+- Keep first-pass tokens and speaker turns intact.
+- Keep marks, skip ambiguous pairs and right names.
+- Use only pairings every alignment agrees on.
+- Complete plain words only and check every word.
+- Add accent words between plain words only.
+- Check who says every other word when correcting a term.
+- Take the term out of the speech before the turn check.
+- Recognize a longer right name in any case.
+
+### Added
+
+- Fix a misheard name before creating the production.
+
 ## [0.14.0] - 2026-10-20
 
 ### Fixed
