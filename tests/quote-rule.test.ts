@@ -9,6 +9,7 @@ import type { QuotableCandidate, QuoteRule } from '../src/domain/quote-plan.ts';
 import { writeSequentialArticle } from '../src/server/pipeline-runner.ts';
 import { quotedIn, quotedWords } from '../src/domain/article-policy.ts';
 import { countCharacters } from '../src/domain/text/stats.ts';
+import { FlowError } from '../src/server/errors.ts';
 
 process.env.REPORTER_LOCAL_MODE = 'true';
 process.env.GROQ_API_KEY = 'test-placeholder-not-a-real-key';
@@ -109,6 +110,25 @@ test('a part that never quotes keeps its draft: the request never fails a text',
   }, evidence, undefined, undefined, [], soft({ minQuotes: 1, openingQuote: false, sectionQuotes: true }));
   assert.deepEqual(sections, ['first', 'SECTION_QUOTE_REQUIRED'], 'asked once, not twice');
   assert.match(result.sections[0].paragraphs[0].text, /nutrientes/);
+});
+
+test('a provider failure on the quotation request keeps the valid draft; a lost lease still stops the run', async () => {
+  const outline = { title: 'Hecke na APAS', introIds: ['e1'], sections: [{ title: 'Embalagem', evidenceIds: ['e2'] }] };
+  const draft = 'A embalagem comunica os benefícios do produto, segundo Scorsin.';
+  const write = (failure: FlowError) => {
+    let calls = 0;
+    return writeSequentialArticle(outline, variables, { introChars: 300, sections: [{ budgetChars: 400 }] }, async key => {
+      if (key === 'intro') return intro;
+      if (++calls > 1) throw failure;
+      return { title: 'Embalagem', paragraphs: [paragraph(draft)] };
+    }, evidence, undefined, undefined, [], soft({ minQuotes: 1, openingQuote: false, sectionQuotes: true }));
+  };
+  for (const code of ['OPENAI_RATE_LIMIT', 'INVALID_PROVIDER_OUTPUT', 'GENERATION_INCOMPLETE']) {
+    const result = await write(new FlowError(code, 429, true, 30));
+    assert.equal(result.sections[0].paragraphs[0].text, draft, code);
+  }
+  await assert.rejects(write(new FlowError('LEASE_LOST', 409, true)), (error: FlowError) => error.code === 'LEASE_LOST');
+  await assert.rejects(write(new FlowError('GENERATION_REFUSED', 422)), (error: FlowError) => error.code === 'GENERATION_REFUSED');
 });
 
 test('a part asked for a quotation after another revision still gets at most three calls', async () => {

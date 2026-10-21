@@ -83,6 +83,16 @@ export function completeArticleSchema(outline: Outline, sizing: WritingSize) {
   return schema;
 }
 
+/**
+ * An optional attempt that failed on its provider or its answer. A valid draft already in hand is
+ * kept; a lost lease, a cancel or a refusal still stops the run.
+ */
+function optionalAttemptFailed(error: unknown) {
+  return error instanceof FlowError && (/^ARTICLE_(?:PART_)?(?:SIZE|WORDS)_/.test(error.code)
+    || ['ARTICLE_QUOTES_REQUIRED','UNSUPPORTED_ARTICLE_QUOTE','UNKNOWN_EVIDENCE','INVALID_PROVIDER_OUTPUT','GENERATION_INCOMPLETE','GENERATION_INVALID_JSON','PROVIDER_EMPTY_RESPONSE'].includes(error.code)
+    || /^(?:OPENAI|GROQ|ANTHROPIC)_(?:RATE_LIMIT|QUOTA_EXHAUSTED|UNAVAILABLE|REQUEST_FAILED|OUTPUT_RETRY|INVALID_RESPONSE)$/.test(error.code));
+}
+
 /** One bounded refinement toward the upper target, using measured data in the SAVED template. */
 export async function writeCompleteArticle(outline: Outline, variables: PipelineVariables, sizing: WritingSize,
   call: (key: PipelineStepKey, schema: object, variables: PipelineVariables, index?: number) => Promise<unknown>) {
@@ -102,10 +112,7 @@ export async function writeCompleteArticle(outline: Outline, variables: Pipeline
   catch (error) {
     // An optional attempt toward the upper target cannot destroy an already valid draft.
     // A first draft below/above a hard limit is NEVER a fallback. Lease/cancel/refusal errors propagate.
-    const recoverable = error instanceof FlowError && (/^ARTICLE_(?:SIZE|WORDS)_/.test(error.code)
-      || ['ARTICLE_QUOTES_REQUIRED','UNSUPPORTED_ARTICLE_QUOTE','UNKNOWN_EVIDENCE','INVALID_PROVIDER_OUTPUT'].includes(error.code)
-      || /^(?:OPENAI|GROQ|ANTHROPIC)_(?:RATE_LIMIT|QUOTA_EXHAUSTED|UNAVAILABLE|REQUEST_FAILED|OUTPUT_RETRY|INVALID_RESPONSE)$/.test(error.code));
-    if (!issue && recoverable) return first;
+    if (!issue && optionalAttemptFailed(error)) return first;
     throw error;
   }
 }
@@ -293,7 +300,12 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
           ...(violation==='SECTION_QUOTE_REQUIRED'?{availableQuotes:availableQuotes()}:{}),
           ...(floor?{minTotalChars:floor.chars,minTotalWords:floor.words}:{}),maxTotalChars:budget,targetTotalChars,previousDraft:value},
       })};
-      value=await call(key,schema,requested,index);
+      try{value=await call(key,schema,requested,index);}
+      catch(error){
+        // The quotation is optional: a failed request for it keeps the valid draft already in hand.
+        if(violation==='SECTION_QUOTE_REQUIRED'&&kept!==undefined&&optionalAttemptFailed(error))break;
+        throw error;
+      }
       if(!hard(value)&&(!kept||better(value,kept)))kept=value;
     }
     const unresolved=hard(value);
