@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { createEditorialEngine, emptyEditorialCheckpoint, editorialCandidates, validateEditorialOutline } from '../src/runtime/editorial-engine.ts';
 import { planEditorialOutline as plan } from '../src/server/editorial-outline.ts';
 import { articlePreview } from '../src/server/article-preview.ts';
+import { validPipelineOutput } from '../src/server/pipeline-output.ts';
 import type { PipelineVariables } from '../src/domain/pipeline.ts';
 
 const variables: PipelineVariables = { source: '', brief: '{}', sizing: '{}', outline: '', section: '', history: '', futureSections: '', layouts: '', approvedArticle: '', event: '', people: '' };
@@ -16,11 +17,13 @@ function planEditorialOutline(record: Parameters<typeof validateEditorialOutline
     } });
 }
 
-async function fixture() {
+const MATERIAL = 'Fonte sintética para teste. A cooperativa organiza os pedidos. A equipe verifica o pescado. O laboratório mantém os registros. O varejo recebe os lotes.';
+
+async function fixture(text = MATERIAL) {
   let sequence = 0;
   const engine = createEditorialEngine(emptyEditorialCheckpoint(), { next: prefix => prefix + '-' + ++sequence });
   const created = await engine.commands.createFromSource({ title: 'Planejamento sintético',
-    material: { text: 'Fonte sintética para teste. A cooperativa organiza os pedidos. A equipe verifica o pescado. O laboratório mantém os registros. O varejo recebe os lotes.', origin: 'podcast', authorized: true },
+    material: { text, origin: 'podcast', authorized: true },
     brief: { size: 'standard', sections: 2 }, plan: ['article'] });
   assert.ok(created.ok);
   const record = engine.records.record(created.value.productionId)!;
@@ -70,5 +73,25 @@ test('automatic planning rejects invented, repeated and incomplete evidence befo
     let calls = 0;
     await planEditorialOutline(f.record, variables, false, async key => { assert.equal(key, 'outline'); calls++; return f.proposal; });
     assert.equal(calls, 1, 'curation remains optional in the configured pipeline');
+  } finally { f.engine.store.dispose(); }
+});
+
+test('automatic planning accepts four opening passages, not five', async () => {
+  const f = await fixture(`${MATERIAL} O porto embarca as caixas. A fábrica congela o filé. O mercado compra a tilápia.`);
+  try {
+    assert.ok(f.ids.length >= 7);
+    const sectionIds = [[f.ids[5]], [f.ids[6]]];
+    const proposal = (introIds: string[]) => ({ ...f.proposal, introIds,
+      sections: f.proposal.sections.map((section, index) => ({ ...section, evidenceIds: sectionIds[index] })) });
+    const four = await planEditorialOutline(f.record, variables, false, async () => proposal(f.ids.slice(0, 4)));
+    assert.equal(four.intro?.quotes.length, 4);
+    await assert.rejects(planEditorialOutline(f.record, variables, false, async () => proposal(f.ids.slice(0, 5))), { name: 'ZodError' });
+    const curated = await planEditorialOutline(f.record, variables, true, async key => key === 'outline' ? f.proposal : { introIds: f.ids.slice(0, 4), sectionIds });
+    assert.equal(curated.intro?.quotes.length, 4);
+    await assert.rejects(planEditorialOutline(f.record, variables, true, async key => key === 'outline' ? f.proposal : { introIds: f.ids.slice(0, 5), sectionIds }), { name: 'ZodError' });
+    assert.equal(validPipelineOutput('quotes', { introIds: f.ids.slice(0, 4), sectionIds }), true);
+    assert.equal(validPipelineOutput('quotes', { introIds: f.ids.slice(0, 5), sectionIds }), false);
+    assert.equal(validPipelineOutput('outline', proposal(f.ids.slice(0, 4))), true);
+    assert.equal(validPipelineOutput('outline', proposal(f.ids.slice(0, 5))), false);
   } finally { f.engine.store.dispose(); }
 });

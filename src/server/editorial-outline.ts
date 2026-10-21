@@ -6,7 +6,7 @@ import type { OutlineInput } from '../ports/generation.ts';
 import { FlowError } from './errors';
 import { editorialResponseValid, outlineResponseSchema } from './editorial-validation';
 
-const proposalSchema = z.object({ title: z.string().min(1).max(500), dek: z.string().max(240).optional(), introIds: z.array(z.string()).max(2),
+const proposalSchema = z.object({ title: z.string().min(1).max(500), dek: z.string().max(240).optional(), introIds: z.array(z.string()).max(4),
   sections: z.array(z.object({ title: z.string().min(1).max(120), evidenceIds: z.array(z.string()).min(1).max(20) }).strict()).min(1).max(8) }).strict();
 
 /** Automatic planning uses the same prompts and literal-evidence guards as a reviewed outline. */
@@ -25,7 +25,7 @@ export async function planEditorialOutline({ sections: count, candidates, variab
   let proposal = proposalSchema.parse(await call('outline', outlineResponseSchema(count, [...known], dek), variables));
   if (!editorialResponseValid('outline', proposal, known, count)) throw new FlowError('INVALID_OUTLINE', 502);
   if (curateQuotes) {
-    const selected = z.object({ introIds: z.array(z.string()).max(2), sectionIds: z.array(z.array(z.string()).min(1).max(20)) }).strict()
+    const selected = z.object({ introIds: z.array(z.string()).max(4), sectionIds: z.array(z.array(z.string()).min(1).max(20)) }).strict()
       .parse(await call('quotes', PIPELINE_SCHEMAS.quotes, { ...variables, outline: JSON.stringify(proposal) }));
     if (!editorialResponseValid('quotes', selected, known, count)) throw new FlowError('INVALID_QUOTE_SELECTION', 502);
     proposal = { ...proposal, introIds: selected.introIds,
