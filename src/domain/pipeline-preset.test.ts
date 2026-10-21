@@ -4,6 +4,9 @@ import { test } from 'node:test';
 import { PIPELINE_STEP_KEYS, defaultPipelineDefinition, pipelineRevision, type PipelineDefinition } from './pipeline.ts';
 import { defaultFunnelPrompt } from './format-prompts.ts';
 import { KNOWN_DEFAULT_PROMPTS, PRESET_PROMPT_KEYS, currentDefaultPrompt, promptDefaultState, promptHash, upgradePreset } from './pipeline-preset.ts';
+import { defaultEditorialPolicy } from './editorial-policy.ts';
+import { defaultWritingOrchestration, defaultWritingReviewCriteria, WRITING_STAGES } from './writing-orchestration.ts';
+import { defaultWritingResearch } from './writing-research.ts';
 
 /** Production's active revision 1: the defaults of v0.4.0, never saved again on the Prompts page. */
 const revisionOne = (): PipelineDefinition => JSON.parse(readFileSync(new URL('../../tests/fixtures/pipeline-revision-1.json', import.meta.url), 'utf8'));
@@ -74,6 +77,39 @@ test('a second upgrade changes nothing', () => {
   const second = upgradePreset(first);
   assert.deepEqual([second.updated, second.added, second.kept], [[], [], []]);
   assert.deepEqual(second.next, first);
+});
+
+test('upgrading legacy prompts preserves saved editorial policies and custom writing research and stage settings', () => {
+  const definition = revisionOne();
+  definition.editorial = defaultEditorialPolicy();
+  definition.editorial.map = { ...definition.editorial.map, version: 4, audience: 'Seafood trade reporters', regions: ['Brasil'], blocked: ['benchmark.example'] };
+  definition.editorial.guide = { ...definition.editorial.guide, version: 7, voice: 'Direct reporting with explicit attribution.',
+    composition: { paragraphs: 'One development per paragraph.', closing: 'End with supported information.' } };
+  definition.writing = { ...defaultWritingOrchestration(), enabled: true, maxCorrections: 0, minimumQuotes: 1, maxSourceCharacters: 32000,
+    systemPrompt: 'The newsroom shared writing instructions.', research: { ...defaultWritingResearch(), enabled: true,
+      instructions: 'Search primary technical documents only.', maxQueries: 1, maxResults: 2, maxSources: 4, timeoutMs: 12000,
+      failureMode: 'continue_original', excludeDomains: ['benchmark.example'], excludeUrls: ['https://reference.example/article'] } };
+  const models = { plan: 'openai/gpt-6-astra', write: 'anthropic/claude-opus-5-5', review: 'openai/gpt-6-astra', correct: 'anthropic/claude-opus-5-5' } as const;
+  for (const [index, stage] of WRITING_STAGES.entries()) {
+    definition.writing.stages[stage] = { ...definition.writing.stages[stage], model: models[stage], prompt: `Custom ${stage} instructions.`,
+      temperature: 0.1 + index / 10, maxTokens: 4096 + index * 1024, effort: 'high' };
+  }
+  definition.writing.reviewCriteria = { ...defaultWritingReviewCriteria(), editorial: 'Preserve essential facts before optional polish.' };
+  definition.steps.material = { ...definition.steps.material, model: 'openai/gpt-4.1', temperature: 0.3, maxTokens: 3072 };
+  definition.steps.quotes.prompt += '\nKeep the newsroom quotation rule.';
+  const before = structuredClone(definition);
+  const { next, updated, kept } = upgradePreset(definition);
+
+  assert.ok(updated.includes('system') && updated.includes('material'), 'the test must perform a real legacy prompt upgrade');
+  assert.deepEqual(kept, ['quotes']);
+  assert.deepEqual(next.editorial, before.editorial);
+  assert.deepEqual(next.writing, before.writing);
+  for (const stage of PIPELINE_STEP_KEYS) {
+    assert.deepEqual({ ...next.steps[stage], prompt: '' }, { ...before.steps[stage], prompt: '' }, stage);
+  }
+  assert.equal(next.steps.quotes.prompt, before.steps.quotes.prompt);
+  assert.deepEqual(definition, before, 'the saved revision remains immutable');
+  assert.deepEqual(upgradePreset(next).next, next, 'a repeated upgrade cannot reset the newsroom settings');
 });
 
 test('a customised step is kept', () => {
