@@ -148,6 +148,8 @@ BEGIN
 END $$;
 
 -- The worker wakes for a due source, reads the most overdue one and backs off after a failure.
+-- Translation is tested separately; this gate assertion isolates the source queue.
+UPDATE public.reporter_news_items SET translation_status='original' WHERE portal_id='00000000-0000-0000-0000-000000000101';
 UPDATE public.reporter_news_sources SET next_read_at=clock_timestamp()-interval '1 minute' WHERE portal_id='00000000-0000-0000-0000-000000000101';
 SET SESSION AUTHORIZATION reporter_worker;
 SELECT set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),

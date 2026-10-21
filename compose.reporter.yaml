@@ -34,6 +34,7 @@ services:
       - ./database/migrations/023-fact-check.sql:/docker-entrypoint-initdb.d/97-fact-check.sql:ro
       - ./database/migrations/024-news-intake.sql:/docker-entrypoint-initdb.d/98-news-intake.sql:ro
       - ./database/migrations/025-news-decisions.sql:/docker-entrypoint-initdb.d/99-news-decisions.sql:ro
+      - ./database/migrations/026-news-translations.sql:/docker-entrypoint-initdb.d/99a-news-translations.sql:ro
     networks:
       - reporter
     healthcheck:

@@ -92,6 +92,31 @@ the exact timestamp/id cursor before advancing its checkpoint. Failed pages retr
 window, so larger initial collections and older selections are not skipped.
 Tests: `database/tests/news-intake.integration.sql`.
 
+`026-news-translations.sql` keeps translations separate from the immutable source title, lead
+and paragraphs. New imports and existing material in the active radar window enter the same
+translation queue. Opening an older pending item prepares its Portuguese copy under the reader's
+portal access, without calling a provider or resetting attempts or leases in the GET request.
+Opened pending items and explicit retries stay in the radar's polling window for seven days so
+their translation completion can reach the reader. A worker claims one item under a two-minute fenced lease and detects its
+language while translating the received content to Brazilian Portuguese. Portuguese text already
+in pt-BR (or with an undetermined Portuguese variety) stays byte-for-byte unchanged; pt-PT is
+adapted to pt-BR. The public publication URL and publisher name never change.
+
+The translator reuses the configured text provider. By default it chooses `openai/gpt-4.1` when
+OpenAI is configured, otherwise the existing generation model. `REPORTER_NEWS_TRANSLATION_MODEL`
+can select another supported pipeline model. The worker needs that provider's existing API key;
+no additional translation service is required. Each call has a 90-second budget, strict JSON
+validation and a 13,000-token output ceiling. The prompt preserves facts, numbers, attributions,
+uncertainty and paragraph order, treats the source as untrusted text and cannot call tools.
+
+Translated title/lead/text become the default reading projection only after a complete validated
+result. The original remains in storage and **Ver original** opens its publication. Translation
+failure never breaks RSS collection: the original stays available with an explicit state. Transient
+failures retry up to three attempts; editors can retry a failed translation. Database permissions,
+tenant scope, lease fencing and retry behavior are covered by `news-translations.integration.sql`.
+The minute poll receives completion through `updated_at`; a cached original body is invalidated
+when the translated version arrives, including when a delayed detail response overlaps that poll.
+
 `025-news-decisions.sql` adds durable select, postpone, discard and restore actions. Every action
 checks `reporter.edit`, the portal and the decision revision before writing its actor, time and audit
 entry. Conflicting decisions return HTTP 409. Due postponements return once during a server read,

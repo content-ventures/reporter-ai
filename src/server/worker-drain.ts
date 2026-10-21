@@ -6,6 +6,7 @@ import { runArticleImageJob } from './article-image-worker.ts';
 import { runFactCheckJob } from './fact-check-worker.ts';
 import { logEvent, safeCode } from './errors.ts';
 import { runNewsSource } from './news-reader.ts';
+import { runNewsTranslationJob } from './news-translation-worker.ts';
 import { runRemoteIngest } from './remote-ingest.ts';
 import { runReporterJob } from './reporter-worker-jobs.ts';
 import { workerUrl } from './worker-config.ts';
@@ -40,7 +41,7 @@ export const drainServices: DrainServices = {
   pending: () => transaction('worker', async client =>
     (await client.query('SELECT public.reporter_worker_pending() AS pending')).rows[0]?.pending === true),
   run: async (owner, signal, deadline) => await runRemoteIngest(owner, signal)
-    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal) || await runArticleImageJob(owner, signal) || await runFactCheckJob(owner, signal, deadline) || await runNewsSource(owner, signal),
+    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal) || await runArticleImageJob(owner, signal) || await runFactCheckJob(owner, signal, deadline) || await runNewsSource(owner, signal) || await runNewsTranslationJob(owner, signal, deadline),
   now: Date.now,
   compact: () => compactEditorialRows(),
 };
