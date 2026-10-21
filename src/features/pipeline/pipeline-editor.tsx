@@ -2,8 +2,8 @@
 
 import { useCallback } from 'react';
 import { Accordion, Alert, Badge, Button, CopyButton, DescriptionList, Drawer, Field, FieldGroup, List, ListItem, NumberField, PageStack, Prose, ResponsiveDialog, Select, Textarea } from '@content-ventures/design-system/v3';
-import { PIPELINE_MODELS, PIPELINE_SCHEMAS, PIPELINE_VARIABLES, pipelineModelLabel, pipelineModelProvider, pipelineModelReasons, pipelineTokenLimit } from '@/domain/pipeline';
-import type { PipelineDefinition, PipelineStep, PipelineView } from '@/domain/pipeline';
+import { PIPELINE_MODELS, PIPELINE_SCHEMAS, PIPELINE_VARIABLES, pipelineDefaultEffort, pipelineModelEffortOptions, pipelineModelLabel, pipelineModelProvider, pipelineModelReasons, pipelineTokenLimit } from '@/domain/pipeline';
+import type { PipelineDefinition, PipelineReasoningEffort, PipelineStep, PipelineView } from '@/domain/pipeline';
 import { useMediaQuery } from '@/ui/use-media-query';
 import { PROMPTS, funnelOf, promptInactive, promptStep, promptUsage, type PromptKey } from './pipeline-catalog';
 
@@ -13,6 +13,7 @@ const VARIABLE_LABELS: Record<typeof PIPELINE_VARIABLES[number], string> = {
   futureSections: 'Seções ainda não redigidas', layouts: 'Espaços e limites do modelo visual', approvedArticle: 'Versão aprovada do artigo',
   event: 'Evento digitado na pauta e data de hoje', people: 'Pessoas confirmadas: nome, cargo e empresa',
 };
+const EFFORT_LABELS: Record<PipelineReasoningEffort, string> = { low: 'Baixo', medium: 'Médio', high: 'Alto', xhigh: 'Muito alto', max: 'Máximo' };
 
 export function PipelineEditor({ promptKey, draft, view, saving, dirty, invalid, error, onClose, onUpdate, onUpdateStep, onSave }: {
   promptKey: PromptKey; draft: PipelineDefinition; view: PipelineView; saving: boolean; dirty: boolean; invalid: boolean; error?: string;
@@ -21,6 +22,8 @@ export function PipelineEditor({ promptKey, draft, view, saving, dirty, invalid,
 }) {
   const startAtTop = useCallback((element: HTMLTextAreaElement | null) => { element?.setSelectionRange(0, 0); }, []);
   const selected = promptStep(promptKey, draft);
+  const effortOptions = selected ? pipelineModelEffortOptions(selected.model) : [];
+  const effort = selected ? selected.effort ?? pipelineDefaultEffort(selected.model) : undefined;
   const schemaKey = funnelOf(promptKey)?.step ?? promptKey;
   const prompt = selected?.prompt ?? draft.systemPrompt;
   const used = new Set([...prompt.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map(match => match[1]));
@@ -45,14 +48,21 @@ export function PipelineEditor({ promptKey, draft, view, saving, dirty, invalid,
       </Field>
       {selected && <Field label="Modelo de IA" error={view.providers?.[pipelineModelProvider(selected.model)] === false ? 'Este provedor está sem chave configurada no servidor.' : undefined}>
         {props => <Select {...props} value={selected.model} disabled={saving} options={PIPELINE_MODELS.map(value => ({ value, label: pipelineModelLabel(value) }))}
-          onChange={model => onUpdateStep({ model: model as PipelineStep['model'], temperature: Math.min(selected.temperature, pipelineModelProvider(model) === 'anthropic' ? 1 : 2) })} />}
+          onChange={model => onUpdateStep({ model: model as PipelineStep['model'],
+            maxTokens: Math.min(selected.maxTokens, pipelineTokenLimit(model)),
+            effort: pipelineModelEffortOptions(model).length ? pipelineDefaultEffort(model) : undefined,
+            temperature: Math.min(selected.temperature, pipelineModelProvider(model) === 'anthropic' ? 1 : 2) })} />}
       </Field>}
       <Accordion items={[
         ...(selected ? [{ id: 'variables', title: 'Dados disponíveis para este prompt', content: <List label="Variáveis do prompt" framed={false}>
           {PIPELINE_VARIABLES.map(key => <ListItem key={key} title={`{{${key}}}`} titleLines={2} description={`${used.has(key) ? 'Em uso · ' : ''}${VARIABLE_LABELS[key]}`} trailing={<CopyButton text={`{{${key}}}`} label={`{{${key}}}`} />} />)}
         </List> }] : []),
         ...(selected ? [{ id: 'settings', title: 'Ajustes avançados do modelo', content: <FieldGroup label="Geração" columns={1}>
-          {pipelineModelReasons(selected.model) ? <DescriptionList items={[{ label: 'Raciocínio', value: 'Baixo · sem temperatura' }]} />
+          {effortOptions.length > 0
+            ? <Field label="Esforço de raciocínio">{props => <Select {...props} value={effort ?? effortOptions[0]} disabled={saving}
+              options={effortOptions.map(value => ({ value, label: EFFORT_LABELS[value] }))}
+              onChange={value => onUpdateStep({ effort: value as PipelineReasoningEffort })} />}</Field>
+            : pipelineModelReasons(selected.model) ? <DescriptionList items={[{ label: 'Raciocínio', value: `${effort ? EFFORT_LABELS[effort] : 'Padrão do modelo'} · sem temperatura` }]} />
             : <Field label="Temperatura" hint="Valores menores tornam a resposta mais previsível.">{props => <NumberField id={props.id} aria-describedby={props.describedBy}
               value={selected.temperature} decimals={1} min={0} max={pipelineModelProvider(selected.model) === 'anthropic' ? 1 : 2} step={0.1} disabled={saving}
               onChange={value => { if (value !== null) onUpdateStep({ temperature: value }); }} />}</Field>}
