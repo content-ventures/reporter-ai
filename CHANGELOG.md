@@ -4,6 +4,12 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-21
+
+### Fixed
+
+- Ground explicit source attribution in metadata.
+
 ## [0.20.0] - 2026-10-21
 
 ### Added
