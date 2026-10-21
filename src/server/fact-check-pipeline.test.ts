@@ -59,11 +59,13 @@ test('an output outside the contract is refused, never stored', async () => {
 });
 
 test('a generated text queues only the citations it quotes, up to the automatic limit', () => {
-  const quoted = Array.from({ length: AUTO_FACT_CHECKS + 1 }, (_, index) => ({ id: `q${index}`, origin: 'article' as const, authorConfirmed: true }));
-  const suggestion = { id: 's1', origin: 'outline' as const, authorConfirmed: false };
+  const quoted = Array.from({ length: AUTO_FACT_CHECKS + 1 }, (_, index) => ({ id: `q${index}`, origin: 'article' as const, authorConfirmed: true, personId: 'ana' }));
+  const suggestion = { id: 's1', origin: 'outline' as const, authorConfirmed: false, personId: 'ana' };
   assert.deepEqual(autoFactCheckIds([suggestion, ...quoted.slice(0, 2)]), ['q0', 'q1']);
   assert.deepEqual(autoFactCheckIds([suggestion]), []);
   assert.equal(autoFactCheckIds([...quoted, suggestion]).length, AUTO_FACT_CHECKS);
   // Once a person confirms its author, an outline passage is a citation like any other.
   assert.deepEqual(autoFactCheckIds([{ ...suggestion, authorConfirmed: true }]), ['s1']);
+  // A quote without the person who said it is not a citation yet: never checked.
+  assert.deepEqual(autoFactCheckIds([{ id: 'n1', origin: 'article', authorConfirmed: false }]), []);
 });

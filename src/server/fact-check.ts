@@ -34,6 +34,13 @@ function editable(checkpoint: EditorialCheckpoint, id: string): CitationView {
   return citation;
 }
 
+/** A quote is checked only with the person who said it: the check of a quote without one is refused. */
+function checkableCitation(checkpoint: EditorialCheckpoint, id: string): CitationView {
+  const citation = editable(checkpoint, id);
+  if (!citation.personId) throw new FlowError('CITATION_AUTHOR_REQUIRED', 422);
+  return citation;
+}
+
 function store(checkpoint: EditorialCheckpoint, check: FactCheck) {
   const saved = checkpoint.factChecks ??= [];
   if (!saved.some(item => item.id === check.id) && saved.length >= MAX_FACT_CHECKS) throw new FlowError('LIBRARY_FULL', 422);
@@ -63,7 +70,7 @@ const inflight = new Map<string, Promise<CitationView>>();
 /** Checks one citation now; a citation already checked is returned as is unless `force`. */
 export async function checkCitation(id: string, force: boolean): Promise<CitationView> {
   const read = (await editorialTransaction('runtime', async checkpoint => {
-    const citation = editable(checkpoint, id);
+    const citation = checkableCitation(checkpoint, id);
     return { citation, model: activePipeline(checkpoint).definition.steps.quotes.model };
   }, false, 'reporter.edit', CHECK_READ_SCOPE)).value;
   if (read.citation.factCheck && !force) return read.citation;
