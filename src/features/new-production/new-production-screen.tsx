@@ -326,8 +326,8 @@ function NewProductionForm({ received }: { received?: string }) {
     if (over.length > 0) toast('Limite de 10 partes', { tone: 'info', description: over.map((file) => file.name).join(', ') });
     const added = accepted.map((file) => ({ file, part: { id: `part-${++partSeq.current}`, name: file.name, size: file.size, lastModified: file.lastModified } satisfies MaterialPart }));
     if (added.length === 0) return;
-    // A part added to parts already analysed keeps their speakers on screen until it is read.
-    setHoldAnalysis(draft.parts.length > 0 && (holdAnalysis || analysisState.status === 'ready'));
+    // A part added beside an analysis on screen (ready or running again) keeps its speakers until the part is read.
+    setHoldAnalysis(draft.parts.length > 0 && (holdAnalysis || analysisState.analysis !== undefined));
     setDraft((current) => addParts(current, added.map(({ part }) => part)));
     showProgress();
     for (const { file, part } of added) fileReader.read(part.id, file);
