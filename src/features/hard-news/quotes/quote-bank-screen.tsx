@@ -199,7 +199,10 @@ export function QuoteBankScreen() {
           processing={busy ? 'Checar' : undefined}
           onClear={() => setSelected(new Set())}
           actions={[{ label: 'Checar', icon: BadgeCheck, disabled: busy, hint: 'Aguarde a checagem em andamento.',
-            onSelect: () => { const ids = [...selected]; setSelected(new Set()); void run(ids, true); } }]}
+            onSelect: () => {
+              const ids = quotes.filter((quote) => selected.has(quote.id) && quote.checkable !== false).map((quote) => quote.id);
+              setSelected(new Set()); void run(ids, true);
+            } }]}
         />
       ) : null}
       <QuoteDrawer
@@ -209,6 +212,7 @@ export function QuoteBankScreen() {
         canEdit={canEdit}
         connected={connected}
         checking={opened !== null && opened !== 'new' && checking.has(opened.id)}
+        busy={busy}
         onSave={save}
         onCheck={(quote) => void run([quote.id], Boolean(quote.factCheck))}
         onCorrect={() => setCorrecting(true)}
@@ -222,7 +226,7 @@ export function QuoteBankScreen() {
           claims={opened.factCheck.claims.flatMap((claim, index) => (checkable(claim.kind) ? [{ index, text: claim.text }] : []))}
           onClose={() => setCorrecting(false)}
           onSave={async (claim, verdict, reason) => {
-            const saved = await decide(opened.id, { claim, verdict, reason });
+            const saved = await decide(opened.id, { claim, verdict, reason, checkedAt: opened.factCheck!.checkedAt });
             if (saved) toast('Veredito salvo');
             return saved;
           }}
@@ -269,13 +273,14 @@ const EMPTY: Omit<BankQuote, 'id'> = {
   recordedOn: new Date().toISOString().slice(0, 10), verified: false, uses: 0,
 };
 
-function QuoteDrawer({ quote, topics, canEdit, connected, checking, onSave, onCheck, onCorrect, onClose }: {
+function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave, onCheck, onCorrect, onClose }: {
   quote: BankQuote | 'new' | null;
   topics: string[];
   canEdit: boolean;
   /** R1 citations: the words, source and speaker are fixed; context, date and the check change. */
   connected: boolean;
   checking: boolean;
+  busy: boolean;
   onSave: (quote: BankQuote) => Promise<boolean>;
   onCheck: (quote: BankQuote) => void;
   onCorrect: () => void;
@@ -314,7 +319,7 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, onSave, onCh
     >
       <PageStack>
         {live ? (
-          <FactCheckPanel quote={live} canEdit={canEdit} checking={checking} onCheck={() => onCheck(live)} onCorrect={onCorrect} />
+          <FactCheckPanel quote={live} canEdit={canEdit} checking={checking} busy={busy} onCheck={() => onCheck(live)} onCorrect={onCorrect} />
         ) : null}
         <Panel label="Fala">
           <Section title="Fala">

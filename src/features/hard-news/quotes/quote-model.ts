@@ -1,4 +1,4 @@
-import { podcastLink } from '../../../domain/citation-library.ts';
+import { podcastLink, UNNAMED_PODCAST } from '../../../domain/citation-library.ts';
 import type { CitationInput, CitationView } from '../../../domain/citation-library.ts';
 import { CITATION_VERDICTS, CLAIM_KINDS, citationScore, citationVerdict, effectiveClaims } from '../../../domain/fact-check.ts';
 import type { CitationScore, CitationVerdict, ClaimKind } from '../../../domain/fact-check.ts';
@@ -41,6 +41,8 @@ export function quoteOf(citation: CitationView): BankQuote {
     uses: citation.uses.length,
     usedIn: citation.uses,
     ...(citation.factCheck ? { factCheck: citation.factCheck } : {}),
+    attribution: { sourceNamed: citation.podcast !== UNNAMED_PODCAST, dated: Boolean(citation.recordedOn) },
+    checkable: citation.authorized,
   };
 }
 
@@ -56,7 +58,8 @@ export function citationInputOf(citation: CitationView, quote: Pick<BankQuote, '
     relevance: quote.context.trim(),
     ...(citation.podcastName ? { podcastName: citation.podcastName } : {}),
     ...(citation.podcastUrl ? { podcastUrl: citation.podcastUrl } : {}),
-    ...(quote.recordedOn ? { recordedOn: quote.recordedOn } : {}),
+    // The creation day only fills the card: it is sent as the recording day only when the editor set it.
+    ...(quote.recordedOn && (citation.recordedOn || quote.recordedOn !== citation.createdAt.slice(0, 10)) ? { recordedOn: quote.recordedOn } : {}),
     ...(citation.location ? { location: citation.location } : {}),
   };
 }
@@ -64,8 +67,9 @@ export function citationInputOf(citation: CitationView, quote: Pick<BankQuote, '
 // ── Gestão: veracity, score and the ranking ─────────────────────────────────────────────────
 
 export function quoteScore(quote: BankQuote): CitationScore | undefined {
-  return citationScore({ check: quote.factCheck, authorConfirmed: quote.verified, sourceNamed: Boolean(quote.sourceTitle.trim()),
-    dated: Boolean(quote.recordedOn), linked: Boolean(quote.sourceUrl), uses: quote.uses });
+  return citationScore({ check: quote.factCheck, authorConfirmed: quote.verified,
+    sourceNamed: quote.attribution?.sourceNamed ?? Boolean(quote.sourceTitle.trim()),
+    dated: quote.attribution?.dated ?? Boolean(quote.recordedOn), linked: Boolean(quote.sourceUrl), uses: quote.uses });
 }
 
 export const quoteVerdict = (quote: BankQuote): CitationVerdict => citationVerdict(quote.factCheck);
@@ -146,4 +150,5 @@ export function verdictDistribution(entries: readonly RankedQuote[]): Record<Cit
 
 /** "Checar pendentes" checks at most this many per click: each one spends up to three searches. */
 export const CHECK_BATCH = 20;
-export const pendingBatch = (entries: readonly RankedQuote[]) => entries.filter(entry => entry.verdict === 'pending').slice(0, CHECK_BATCH).map(entry => entry.quote.id);
+export const pendingBatch = (entries: readonly RankedQuote[]) => entries
+  .filter(entry => entry.verdict === 'pending' && entry.quote.checkable !== false).slice(0, CHECK_BATCH).map(entry => entry.quote.id);

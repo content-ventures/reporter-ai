@@ -103,6 +103,8 @@ export function citationUses(appearances: readonly (CitationUse & { citationId: 
   }
   return new Map([...grouped].map(([id, uses]) => [id, [...uses.values()].sort((a, b) => b.at.localeCompare(a.at))]));
 }
+/** What a citation without a programme name shows; never a sign that the programme is known. */
+export const UNNAMED_PODCAST = 'Podcast não informado';
 export function citationView(citation: Citation, source: Source, people: readonly Person[],
   extra: { uses?: CitationUse[]; factCheck?: FactCheck } = {}): CitationView {
   const version = sourceVersion(source, citation.ref.sourceVersion);
@@ -112,7 +114,7 @@ export function citationView(citation: Citation, source: Source, people: readonl
   const person = citation.authorConfirmed ? people.find(person => person.id === citation.personId) : undefined;
   const authorized = source.rights.authorized && version?.hash === citation.sourceHash
     && Boolean(segment && literalQuoteText(segment.text).includes(citation.text));
-  return { ...citation, speaker: person?.name ?? 'Autoria a confirmar', podcast: citation.podcastName || source.programName || 'Podcast não informado',
+  return { ...citation, speaker: person?.name ?? 'Autoria a confirmar', podcast: citation.podcastName || source.programName || UNNAMED_PODCAST,
     sourceTitle: source.title, evidence: segment?.text ?? '', authorized,
     ready: Boolean(authorized && person && citation.relevance.trim()),
     ...(segment?.startMs === undefined ? {} : { startMs: segment.startMs }),

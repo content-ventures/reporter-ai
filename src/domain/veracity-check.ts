@@ -16,7 +16,11 @@ export const VERACITY_CHECK_ID = 'article.veracity';
 export function veracityCheck(quotes: readonly { range: TextRange; text: string }[],
   citations: readonly { text: string; factCheck?: FactCheck }[]): CheckResult | undefined {
   const found = quotes.flatMap((quote) => {
-    const citation = citations.find((candidate) => quoteMatches(quote.text, foldForMatch(candidate.text)));
+    // The citation of these very words; else the shortest one containing them (never a longer passage first).
+    const folded = foldForMatch(quote.text);
+    const citation = citations.find((candidate) => foldForMatch(candidate.text) === folded)
+      ?? citations.filter((candidate) => quoteMatches(quote.text, foldForMatch(candidate.text)))
+        .sort((a, b) => a.text.length - b.text.length)[0];
     return citation ? [{ range: quote.range, verdict: citationVerdict(citation.factCheck), check: citation.factCheck }] : [];
   });
   if (!found.length) return undefined;

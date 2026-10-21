@@ -393,6 +393,14 @@ export type BankQuote = {
   usedIn?: { productionId: string; title: string; at: string }[];
   /** Veracity of what was said (`fact-check.ts`); absent until checked. */
   factCheck?: FactCheck;
+  /**
+   * What the score's attribution reads when the shown fields fall back to placeholders (a
+   * connected citation shows its material title and creation day when the programme and the
+   * recording day are unknown). Absent: the shown fields are the real ones.
+   */
+  attribution?: { sourceNamed: boolean; dated: boolean };
+  /** False when the source is no longer authorized: it can be read, not checked. */
+  checkable?: boolean;
 };
 
 // ── F2.12 · Acervo ───────────────────────────────────────────────────────────────────────────

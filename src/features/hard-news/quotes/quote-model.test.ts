@@ -85,3 +85,12 @@ test('filters, summary and distributions read the effective claims', () => {
   assert.equal(verdictDistribution(entries).pending, 1);
   assert.deepEqual(pendingBatch(entries), ['b']);
 });
+
+test('connected attribution reads the real programme and day, and unauthorized quotes are never queued', () => {
+  const unnamed = quoteOf(citation({ podcastName: undefined, podcast: 'Podcast não informado', recordedOn: undefined, authorized: false }));
+  assert.deepEqual(unnamed.attribution, { sourceNamed: false, dated: false });
+  assert.equal(unnamed.recordedOn, '2026-09-18', 'the card still shows a day');
+  const scored = rankQuote({ ...unnamed, verified: true, factCheck: quote('u', ['opinion']).factCheck, uses: 0 });
+  assert.equal(scored.score?.attribution, 13, 'the confirmed author and the episode link count; the placeholders do not');
+  assert.deepEqual(pendingBatch([rankQuote(unnamed)]), []);
+});

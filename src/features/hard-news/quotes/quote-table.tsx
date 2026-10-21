@@ -51,9 +51,10 @@ export function QuoteTable({ rows, sort, onSort, selected, onSelectedChange, che
         label={`Ações da fala de ${entry.quote.author}`}
         actions={[
           { id: 'open', label: 'Abrir', icon: Eye, onSelect: () => onOpen(entry) },
-          { id: 'check', label: entry.verdict === 'pending' ? 'Checar' : 'Checar de novo', icon: BadgeCheck, hidden: !onCheck,
+          { id: 'check', label: entry.verdict === 'pending' ? 'Checar' : 'Checar de novo', icon: BadgeCheck, hidden: !onCheck || entry.quote.checkable === false,
             disabled: checking.size > 0, hint: 'Aguarde a checagem em andamento.', onSelect: () => onCheck?.(entry) },
-          { id: 'copy', label: 'Copiar com atribuição', icon: Copy, onSelect: () => onCopy(entry) },
+          // As in the cards: a quote is copied with its attribution only once the author is confirmed.
+          { id: 'copy', label: 'Copiar com atribuição', icon: Copy, hidden: !entry.quote.verified, onSelect: () => onCopy(entry) },
         ]}
       />
     ) },
