@@ -25,6 +25,15 @@ test('the citation registry retains literal words, transcript version and known 
   assert.equal(view.authorized,true);assert.equal(view.speaker,'Ana Costa');assert.equal(view.ready,false,'market relevance still needs editorial confirmation');
   assert.equal(citationView({ ...items[0],relevance: 'Relevância técnica confirmada.' },s,[{ id: 'ana',name: 'Ana Costa' }]).ready,true);
 });
+test('article entries say where they came from; a suggestion shows its linked speaker but is never ready', () => {
+  const s = source(),[item] = citationsFromArticle(article(),[s],'production',ctx.now),people = [{ id: 'ana',name: 'Ana Costa' }];
+  assert.equal(item.origin,'article');
+  const suggestion = { ...item,origin: 'outline' as const,authorConfirmed: false,relevance: 'Relevância técnica confirmada.' };
+  assert.equal(citationView(suggestion,s,people).speaker,'Ana Costa');
+  assert.equal(citationView(suggestion,s,people).ready,false);
+  assert.equal(citationView({ ...suggestion,origin: 'article' },s,people).speaker,'Autoria a confirmar','an unconfirmed article entry still waits for its author');
+  assert.equal(citationView({ ...suggestion,authorConfirmed: true },s,people).ready,true);
+});
 test('introduced participants never identify an unlabeled voice; invented/changed quotes are rejected', () => {
   const s = source(false);s.speakers = [{ label: 'Ana Costa',personId: 'ana',presentation: { segmentId: s.versions[0].content.segments[0].id,excerpt: phrase } }];
   assert.equal(locateCitation(s,1,phrase)?.personId,undefined);

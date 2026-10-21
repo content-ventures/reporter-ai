@@ -10,12 +10,15 @@ import type { SourceRef } from './refs.ts';
 import type { Person } from './workspace.ts';
 import type { FactCheck } from './fact-check.ts';
 
+/** Where the pipeline found an entry: a quotation of the text, or an outline passage the text did not quote. */
+export type CitationOrigin = 'article' | 'outline';
 /** Literal words and their immutable transcript version; editorial metadata never rewrites them. */
 export type Citation = {
   id: string; revision: number; text: string; ref: SourceRef; sourceHash: string;
   productionId: string; createdAt: string; updatedAt: string;
   personId?: string; authorConfirmed: boolean; relevance: string;
   podcastName?: string; podcastUrl?: string; recordedOn?: string; location?: string;
+  origin?: CitationOrigin;
 };
 export type CitationInput = {
   sourceId: string; sourceVersion: number; text: string; productionId: string;
@@ -80,7 +83,7 @@ export function citationsFromArticle(body: ArticleBody, sources: readonly Source
       const located = locateCitation(source,ref.sourceVersion,quote.text,segmentId);
       if (!located) continue;
       const id = citationId(located.ref, located.text);
-      found.set(id, { id, revision: 0, text: located.text, ref: located.ref, sourceHash: located.hash,
+      found.set(id, { id, revision: 0, origin: 'article', text: located.text, ref: located.ref, sourceHash: located.hash,
         productionId, createdAt: now, updatedAt: now, authorConfirmed: Boolean(located.personId),
         ...(located.personId ? { personId: located.personId } : {}), relevance: '',
         ...(source.programName ? { podcastName: source.programName } : {}),
@@ -111,12 +114,13 @@ export function citationView(citation: Citation, source: Source, people: readonl
   const segmentId = citation.ref.locator.type === 'segment' ? citation.ref.locator.segmentId : undefined;
   const segment = version?.content.segments.find(segment => segment.id === segmentId);
   const place = segment && segmentPlace(source, segment);
-  const person = citation.authorConfirmed ? people.find(person => person.id === citation.personId) : undefined;
+  // A suggestion shows the linked speaker of its segment, but only a confirmed author makes an entry ready.
+  const person = (citation.authorConfirmed || citation.origin === 'outline') ? people.find(person => person.id === citation.personId) : undefined;
   const authorized = source.rights.authorized && version?.hash === citation.sourceHash
     && Boolean(segment && literalQuoteText(segment.text).includes(citation.text));
   return { ...citation, speaker: person?.name ?? 'Autoria a confirmar', podcast: citation.podcastName || source.programName || UNNAMED_PODCAST,
     sourceTitle: source.title, evidence: segment?.text ?? '', authorized,
-    ready: Boolean(authorized && person && citation.relevance.trim()),
+    ready: Boolean(authorized && citation.authorConfirmed && person && citation.relevance.trim()),
     ...(segment?.startMs === undefined ? {} : { startMs: segment.startMs }),
     ...(place ? { place } : {}),
     uses: extra.uses ?? [], ...(extra.factCheck ? { factCheck: extra.factCheck } : {}),

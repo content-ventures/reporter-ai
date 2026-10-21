@@ -34,6 +34,7 @@ import { citationsFromArticle, emphasizeArticleQuotes } from '../domain/citation
 import type { Citation } from '../domain/citation-library.ts';
 import { AUTO_FACT_CHECKS } from './fact-check-pipeline.ts';
 import { tavilyConfigured } from './tavily';
+import { isSuggestedCitation, mergeCitationAdditions, suggestedCitations } from '../domain/citation-suggestions.ts';
 import { curatedEvidence, explainedHints, planningSource, quotableShortlist, writingSource } from '../domain/evidence-hints.ts';
 import type { EditorialJob, ServerImageAsset } from '../ports/connected-workspace.ts';
 import { articleImageTarget } from './article-image-task.ts';
@@ -95,12 +96,11 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       }
       for (const event of events) appendEditorialEvent(engine,current,event);
       if (additions) {
-        const existing = new Map((checkpoint.citations ?? []).map(citation => [citation.id,citation]));
-        for (const citation of additions.citations) if (!existing.has(citation.id) && existing.size < 5000) existing.set(citation.id,citation);
-        checkpoint.citations = [...existing.values()];
+        checkpoint.citations = mergeCitationAdditions(checkpoint.citations ?? [],additions.citations,job.meta.productionId);
         checkpoint.imageAssets = [...(checkpoint.imageAssets ?? []),...additions.assets];
         // The article's citations are fact-checked in the background on this run, like the images.
-        const checks = additions.citations.map(citation => citation.id).slice(0,AUTO_FACT_CHECKS);
+        // Suggested passages the text did not quote wait for a person instead.
+        const checks = additions.citations.filter(citation => !isSuggestedCitation(citation)).map(citation => citation.id).slice(0,AUTO_FACT_CHECKS);
         if (checks.length && tavilyConfigured()) current.factCheck = { status: 'queued',citationIds: checks,done: 0,attempts: 0 };
         if (additions.queueImages) {
           const record = engine.records.record(job.meta.productionId);
@@ -255,6 +255,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         sections: requestedOutline.sections.map(section => ({ blockId: section.blockId,title: section.title })) }]);
     }
     const reviewed = requestedOutline;
+    // The passages the outline chose for the text; the ones it does not quote become suggested citations.
+    let selectedKeys: string[] = [];
     if (job.kind === 'article.draft') {
       if (!reviewed) throw new FlowError('INVALID_OUTLINE',422);
       const candidateKey = (ref: Parameters<typeof refKey>[0]) => {
@@ -265,7 +267,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       const outline = { title: reviewed.title,introIds: reviewed.intro?.quotes.map(candidateKey) ?? [],sections: reviewed.sections.map(s => ({ title: s.title,evidenceIds: s.quotes.map(candidateKey) })) };
       // Map/reduce summaries are not literal transcripts. Keep the exact selected
       // passages alongside them so quotation text can be copied, not reconstructed.
-      const selected = new Set([...outline.introIds, ...outline.sections.flatMap(section => section.evidenceIds)]);
+      selectedKeys = [...outline.introIds, ...outline.sections.flatMap(section => section.evidenceIds)];
+      const selected = new Set(selectedKeys);
       // The planning hints stay out: the writing steps read curated lines as marks on literalEvidence.
       variables.source = writingSource(context,candidates,selected,hints.writing ? curated.byKey : new Map());
       variables.outline = JSON.stringify(outline);
@@ -322,7 +325,9 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       if (!articlePlainText(body).trim()) throw new FlowError('EMPTY_ARTICLE',502);
       // Persist the validated text and enqueue optional images in the SAME transaction.
       // The completed text run stays editable while the image worker uses its own lease.
-      additions = { assets: [],citations: citationsFromArticle(body,input.record.sources,job.meta.productionId,new Date().toISOString()),
+      const now = new Date().toISOString();
+      additions = { assets: [],citations: [...citationsFromArticle(body,input.record.sources,job.meta.productionId,now),
+        ...suggestedCitations({ body,selected: selectedKeys,candidates,sources: input.record.sources,productionId: job.meta.productionId,now })],
         // An event coverage goes out with the newsroom's photos: no AI images are planned or generated.
         queueImages: Boolean(pipeline.definition.steps.images) && !format,
         ...(result ? { provider: { name: result.provider,model: result.model,requestId: result.provider_request_id } } : {}) };

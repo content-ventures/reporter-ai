@@ -2,6 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import { citationDay, citationId, citationsFromArticle, citationUses, citationView, locateCitation, podcastLink } from '../domain/citation-library.ts';
 import type { Citation, CitationLibraryView, CitationUse } from '../domain/citation-library.ts';
+import { LIBRARY_CAP, isSuggestedCitation } from '../domain/citation-suggestions.ts';
 import type { EditorialCheckpoint } from '../ports/connected-workspace.ts';
 import { canOpenProduction } from '../domain/production.ts';
 import { can } from '../domain/permissions.ts';
@@ -30,7 +31,12 @@ export function citationRegistry(checkpoint: EditorialCheckpoint): CitationLibra
     }
   }
   const uses = citationUses(appearances), checks = new Map((checkpoint.factChecks ?? []).map(check => [check.id,check]));
-  for (const citation of checkpoint.citations ?? []) if (accessibleSources.has(citation.ref.sourceId) && accessibleProductions.has(citation.productionId)) citations.set(citation.id,citation);
+  for (const citation of checkpoint.citations ?? []) {
+    if (!accessibleSources.has(citation.ref.sourceId) || !accessibleProductions.has(citation.productionId)) continue;
+    // A suggestion nobody touched gives way to the same words quoted in a text.
+    if (isSuggestedCitation(citation) && citation.revision === 0 && citations.has(citation.id)) continue;
+    citations.set(citation.id,citation);
+  }
   return { items: [...citations.values()].flatMap(citation => {
     const source = state.sources.find(source => source.id === citation.ref.sourceId);
     return source ? [citationView(citation,source,state.people,{ uses: uses.get(citation.id) ?? [],factCheck: checks.get(citation.id) })] : [];
@@ -93,14 +99,15 @@ export async function handleCitationLibrary(request: Request, path: string[], re
       productionId: input.productionId,createdAt: previous?.createdAt ?? now,updatedAt: now,authorConfirmed: input.authorConfirmed,
       relevance: input.relevance,...(input.personId ? { personId: input.personId } : {}),
       ...(input.podcastName ? { podcastName: input.podcastName } : {}),...(input.podcastUrl ? { podcastUrl: podcastLink(input.podcastUrl) } : {}),
-      ...(input.recordedOn ? { recordedOn: input.recordedOn } : {}),...(input.location ? { location: input.location } : {}) };
+      ...(input.recordedOn ? { recordedOn: input.recordedOn } : {}),...(input.location ? { location: input.location } : {}),
+      ...(previous?.origin ? { origin: previous.origin } : {}) };
     // Exact retry after ambiguous response is idempotent; concurrent different edits are not.
     const same = previous && ['personId','authorConfirmed','relevance','podcastName','podcastUrl','recordedOn','location'].every(key =>
       previous[key as keyof Citation] === next[key as keyof Citation]);
     if (previous?.revision === payload.baseRevision+1 && same) return previous;
     if ((previous?.revision ?? 0) !== payload.baseRevision) throw new FlowError('CITATION_CONFLICT',409);
     const saved = checkpoint.citations ??= [];
-    if (!saved.some(item => item.id === id) && saved.length >= 5000) throw new FlowError('LIBRARY_FULL',422);
+    if (!saved.some(item => item.id === id) && saved.filter(item => !isSuggestedCitation(item)).length >= LIBRARY_CAP) throw new FlowError('LIBRARY_FULL',422);
     checkpoint.citations = [...saved.filter(item => item.id !== id),next];
     return citationView(next,source,checkpoint.state.people,{ uses: previous?.uses ?? [],factCheck: previous?.factCheck });
   },true,'reporter.edit',CITATION_SCOPE)).value;
