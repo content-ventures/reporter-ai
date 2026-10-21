@@ -103,12 +103,13 @@ A empresa estuda vender o produto ao Chile a partir de 2027, de acordo com Lemos
     structure: `Formato: notícia de uma palestra ou painel do evento: a principal conclusão, previsão ou dado apresentado, e quem o apresentou.
 - title: [Palestrante, cargo ou instituição] + verbo concreto no presente (defende, prevê, alerta, afirma, aponta, propõe, estima) + a tese ou o dado principal, de 60 a 90 caracteres, sem ponto final, com número quando houver. Nunca "Painel discute…" nem "Painel debate…".
 - dek (linha fina): de 120 a 180 caracteres, sem ponto final: um segundo dado ou posição do painel, com quem o apresentou; o nome do painel só se couber. Sem repetir a cidade do título.
-- sections: um intertítulo por tese ou dado, em ordem decrescente de importância (não na ordem em que falaram); intertítulo de 4 a 9 palavras, sintagma nominal informativo.
+- sections: um intertítulo por tese ou dado, em ordem decrescente de importância (não na ordem em que falaram); intertítulo de 4 a 9 palavras, sintagma nominal informativo. Cada seção recebe, além da tese, os argumentos, dados e exemplos concretos que o palestrante deu sobre ela, para ser desenvolvida até perto da meta do formato.
+- Falas: cada palestrante com uma frase citável na fonte tem ao menos uma passagem citável selecionada, na seção do assunto dela.
 - introIds: a frase com a principal conclusão ou dado e a fala que a sustenta, com os ids de todas as frases seguidas dela.`,
     opening: `A abertura tem 2 parágrafos.
 1º, o lide, sem citação: a principal conclusão, previsão ou dado do painel, atribuído a quem disse, com cargo e organização, e onde ("O gerente de [Organização], [Nome], afirmou no [evento] que…"), em até 40 palavras. Não abra pelo tema do painel, pelo dia do evento, pela programação nem pela lista de participantes.
 2º: o como ou o porquê dessa conclusão, com uma fala curta de quem a apresentou; o nome do painel entre aspas e o mediador, com cargo, só se a fonte ou a pauta trouxerem e couber.`,
-    parts: `Dentro de cada seção, do mais importante para o menos importante: a tese em discurso indireto, atribuída ao palestrante (cargo e empresa na primeira menção) → o dado que a sustenta, atribuído ("segundo [Nome]", "de acordo com os dados apresentados pela [instituição]") → uma fala curta e literal que acrescente razão ou número. Uma segunda fala só se trouxer informação nova. Quando a fonte listar de 2 a 4 ferramentas, ações ou números paralelos, use um parágrafo ">> Rótulo: explicação." para cada item, depois de uma frase com dois-pontos; nunca use ">>" para um item só. A última seção (section.last = true) guarda o que menos importa e termina no último fato pertinente, sem recapitular o painel. Os verbos finalizou e concluiu só podem aparecer na última fala do texto e nunca são obrigatórios.`,
+    parts: `Dentro de cada seção, do mais importante para o menos importante: a tese em discurso indireto, atribuída ao palestrante (cargo e empresa na primeira menção) → o dado que a sustenta, atribuído ("segundo [Nome]", "de acordo com os dados apresentados pela [instituição]") → uma fala curta e literal que acrescente razão ou número. Uma segunda fala curta entra sempre que trouxer um número, uma razão, uma posição ou uma previsão que o texto ainda não traz. Cada palestrante com uma frase citável tem ao menos uma fala no texto: se as evidências desta seção têm uma frase citável de um palestrante ainda não citado no texto escrito até agora, cite-o nesta seção. Desenvolva cada seção com os argumentos, dados e exemplos concretos do palestrante que estão nas evidências dela (o caso, o número, a comparação, a ferramenta que ele citou) até perto de targetChars; quando as evidências acabarem, pare: nunca preencha com repetição, generalidade ou fato de outra seção. Quando a fonte listar de 2 a 4 ferramentas, ações ou números paralelos, use um parágrafo ">> Rótulo: explicação." para cada item, depois de uma frase com dois-pontos; nunca use ">>" para um item só. A última seção (section.last = true) guarda o que menos importa e termina no último fato pertinente, sem recapitular o painel. Os verbos finalizou e concluiu só podem aparecer na última fala do texto e nunca são obrigatórios.`,
     reference: `Título: Economista da AEA prevê alta de 8% no consumo de tilápia em 2027
 Linha fina: Segundo Marta Lima, a queda no preço do filé explica a projeção; no mesmo painel, ela disse que a ração responde por 70% do custo
 
@@ -120,7 +121,11 @@ A economista-chefe da Associação Exemplo de Aquicultura (AEA), Marta Lima, afi
 
 De acordo com Lima, a ração responde por 70% do custo de produção, e a alta do milho reduziu a margem dos piscicultores em 2026.
 
-“Quem não renegociou o contrato de ração no primeiro semestre perdeu dinheiro”, afirmou Lima.`,
+“Quem não renegociou o contrato de ração no primeiro semestre perdeu dinheiro”, afirmou Lima.
+
+[Intertítulo] Vendas ao Chile
+
+O presidente da Cooperativa Lago Azul, Renato Dias, que dividiu o painel com Lima, disse que a cooperativa embarcou 300 toneladas de filé ao Chile em 2026. “O Chile paga em dólar e compra o ano inteiro”, afirmou Dias.`,
   },
   awards: {
     label: 'PREMIAÇÃO',
