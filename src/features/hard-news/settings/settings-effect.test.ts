@@ -3,6 +3,9 @@ import { test } from 'node:test';
 import type { EditorialMap, NewsItem, WritingGuide } from '../../../domain/hard-news.ts';
 import { applyGuide, bannedPhrases, guideChanges, limitIn, openingChecks, SAMPLE_DRAFT, termWord, wordDiff } from './guide-effect.ts';
 import { changed, exclusionRows, mapChanges, mapCounts, mapRows, ruleEffect, topicRows } from './map-effect.ts';
+import { defaultEditorialPolicy } from '../../../domain/editorial-policy.ts';
+import { defaultPipelineDefinition, pipelineRevision } from '../../../domain/pipeline.ts';
+import { editorialHistory, validReferenceUrl } from './editorial-settings.ts';
 
 const MAP: EditorialMap = {
   version: 4, updatedAt: '', updatedBy: 'Pedro', audience: 'Cadeia do pescado', regions: ['Brasil'],
@@ -95,4 +98,34 @@ test('helpers: term word, banned phrases, limits, diff, checks, history', () => 
   assert.equal(openingChecks({ headline: 'Até 20 caracteres.', lead: '', attribution: '' })[0].ok, false);
   const saved = { version: 3, updatedAt: '', updatedBy: '', voice: 'Direto', headline: '', lead: '', attribution: '', examples: [], ...GUIDE } as WritingGuide;
   assert.deepEqual(guideChanges(saved, { ...saved, voice: 'Direto e curto', terms: [...saved.terms, { avoid: 'impactar', use: 'afetar' }] }), ['Voz revisto', 'Novo termo: impactar → afetar']);
+});
+
+test('formatting and reference edits make a guide dirty, including a changed term qualification', () => {
+  const guide = defaultEditorialPolicy().guide;
+  const reference = { id: 'ex1', title: 'Matéria', url: 'https://example.com/article', note: 'Observe o lead.' };
+  const saved = { ...guide, terms: [{ avoid: 'pescados', use: 'pescado (coletivo)' }], examples: [reference] };
+  const changed = { ...saved, dek: 'Complemente o título.', composition: { headings: 'Somente quando ajudar a leitura.' },
+    terms: [{ avoid: 'pescados', use: 'pescado (não alterar citações)' }], examples: [{ ...reference, note: 'Observe a atribuição.' }] };
+  assert.deepEqual(guideChanges(saved, changed), ['Linha fina revisto', 'Intertítulos revisto',
+    'Novo termo: pescados → pescado (não alterar citações)', 'Termo removido: pescados → pescado (coletivo)', 'Referência revista: Matéria']);
+  assert.deepEqual(guideChanges(guide, { ...guide, dek: '', composition: { headings: '' } }), []);
+  assert.equal(validReferenceUrl('https://example.com/article'), true);
+  assert.equal(validReferenceUrl('javascript:alert(1)'), false);
+  assert.equal(validReferenceUrl('example.com/article'), false);
+});
+
+test('editorial history excludes prompt-only duplicates and reports available versions honestly', () => {
+  const policy = defaultEditorialPolicy();
+  const first = { ...policy, guide: { ...policy.guide, version: 1, voice: 'Direta', updatedAt: '2026-10-21T10:00:00.000Z', updatedBy: 'Editor' } };
+  const second = { ...first, guide: { ...first.guide, version: 2, voice: 'Direta e precisa', updatedAt: '2026-10-21T11:00:00.000Z' } };
+  const definition = defaultPipelineDefinition();
+  const view = { active: pipelineRevision({ ...definition, editorial: second }, 4), history: [
+    pipelineRevision({ ...definition, editorial: first }, 3),
+    pipelineRevision({ ...definition, editorial: first }, 2),
+    pipelineRevision(definition, 1),
+  ], runs: [] };
+  assert.deepEqual(editorialHistory(view, 'guide').map(entry => [entry.version, entry.changes]), [
+    [2, ['Voz revisto']], [1, ['Primeira versão disponível neste histórico']],
+  ]);
+  assert.deepEqual(editorialHistory(view, 'map'), []);
 });

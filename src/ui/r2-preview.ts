@@ -13,21 +13,19 @@ export const R2_NAVIGATION = { previewR2: HARD_NEWS_DEMO };
 
 /**
  * Hard News screens that still run on simulated data, with no backend yet: Apuração (an R2 build
- * only: an R1 build answers 404 there), the Acervo, the editorial map, the writing guide and the
- * integrations. They carry "Demo" in the top bar, in both builds. The image and quote banks read
- * the R1 visual and citation libraries when the build has them (the connected build), and the
- * radar, its sources and the news-source apps read the server's news (F2.1), so they carry it only
- * without.
+ * only: an R1 build answers 404 there), the Acervo and the remaining integrations. Connected
+ * libraries, news intake and editorial settings each remove "Demo" only from their own screens.
  */
 const R2_DEMO_PATHS: readonly RegExp[] = [
   ...(HARD_NEWS_DEMO ? [] : [/^\/productions\/[^/]+\/research$/]),
   /^\/archive$/,
-  /^\/settings\/(editorial-map|writing-guide)$/,
   /^\/admin\/integrations(\/(?!(?:google-alerts|rss-app)$)[^/]+)?$/,
 ];
 const R1_LIBRARY_PATHS: readonly RegExp[] = [/^\/images(\/[^/]+)?$/, /^\/quotes$/];
 const NEWS_PATHS: readonly RegExp[] = [/^\/news(\/sources)?$/, /^\/admin\/integrations\/(google-alerts|rss-app)$/];
-export const isR2DemoPath = (pathname: string, libraries = false, news = false) =>
+const EDITORIAL_SETTINGS_PATH = /^\/settings\/(editorial-map|writing-guide)$/;
+export const isR2DemoPath = (pathname: string, libraries = false, news = false, editorialSettings = false) =>
   R2_DEMO_PATHS.some(pattern => pattern.test(pathname))
   || (!libraries && R1_LIBRARY_PATHS.some(pattern => pattern.test(pathname)))
-  || (!news && NEWS_PATHS.some(pattern => pattern.test(pathname)));
+  || (!news && NEWS_PATHS.some(pattern => pattern.test(pathname)))
+  || (!editorialSettings && EDITORIAL_SETTINGS_PATH.test(pathname));
