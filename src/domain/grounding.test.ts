@@ -32,6 +32,15 @@ test('a style reference leaking into the text is caught', () => {
   assert.deepEqual(ungroundedTerms('A empresa celebrou a Quaresma de 2026 na APAS Show.', material), ['Quaresma', 'APAS']);
 });
 
+test('hyphenated terms use the same lexical normalization as evidence without accepting partial support', () => {
+  const evidence = 'A embalagem comunica Ômega-3 e outros nutrientes. São 6 porções.';
+  assert.deepEqual(ungroundedTerms('O produto contém Ômega-3.', evidence), []);
+  assert.deepEqual(ungroundedTerms('O produto contém Ômega-3.', 'A embalagem comunica omega‑3 e outros nutrientes.'), []);
+  assert.deepEqual(ungroundedTerms('O produto contém Ômega-6.', evidence), ['Ômega-6'], 'an unrelated 6 does not establish the compound');
+  assert.deepEqual(ungroundedTerms('O produto contém Ômega-3.', 'A embalagem comunica Ômega e contém 3 porções.'), ['Ômega-3']);
+  assert.deepEqual(ungroundedTerms('O produto contém Ômega-3.', 'A embalagem comunica Ômega-30.'), ['3', 'Ômega-3']);
+});
+
 test('sentence-initial words and words inside quotes are not taken as invented names', () => {
   const text = 'Segundo o diretor, a feira foi boa. “Nós trouxemos o bacalhau com sal rosa para a feira”, explicou Sousa.';
   assert.deepEqual(ungroundedTerms(text, material), []);
