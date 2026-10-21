@@ -122,7 +122,8 @@ export function QuoteBankScreen() {
   const reset = () => { setPage(1); setSelected(new Set()); };
 
   async function run(ids: readonly string[], force: boolean) {
-    const { done, skipped } = await check(ids, force);
+    const { done, skipped, queued } = await check(ids, force);
+    if (queued) toast('Checagem na fila', { description: 'Começa quando a checagem em andamento terminar.' });
     if (ids.length > 1 && done + skipped === ids.length) toast(`${done} ${done === 1 ? 'fala checada' : 'falas checadas'}`,
       skipped ? { description: `${skipped} ${skipped === 1 ? 'ignorada' : 'ignoradas'}: fonte sem autorização ou fala removida.` } : undefined);
   }
@@ -224,8 +225,9 @@ export function QuoteBankScreen() {
         onSave={async (next) => {
           const before = quotes.find((quote) => quote.id === next.id);
           if (!(await save(next))) return false;
-          // A quote that just got its author enters the bank: check it at once.
-          if (connected && before && !identified(before) && next.personId && !next.factCheck) void run([next.id], false);
+          // A quote that just got its author enters the bank: check it at once, again if it had a check
+          // made without its author (before checks needed one).
+          if (connected && before && !identified(before) && next.personId) void run([next.id], Boolean(before.factCheck));
           return true;
         }}
         onCheck={(quote) => void run([quote.id], Boolean(quote.factCheck))}
