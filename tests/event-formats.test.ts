@@ -94,4 +94,6 @@ test('a saved definition with edited funnels passes the server contract', () => 
   assert.deepEqual(parsePipelineDefinition(definition).definition?.funnels?.stand?.intro?.prompt, definition.funnels.stand.intro.prompt);
   assert.ok(parsePipelineDefinition(compactFunnels(definition)).definition);
   assert.ok(parsePipelineDefinition(defaultPipelineDefinition()).definition);
+  definition.funnels.stand.quotes.prompt += '\nPrefira a fala do diretor.';
+  assert.equal(parsePipelineDefinition(compactFunnels(definition)).definition?.funnels?.stand?.quotes?.prompt, definition.funnels.stand.quotes.prompt);
 });

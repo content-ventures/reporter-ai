@@ -1,10 +1,10 @@
 /**
  * Default prompts of the event-coverage funnels (formats.ts). Every text the newsroom produces is
  * hard news (notícia): the shared HARD_NEWS block sets the genre for every funnel step and for the
- * preset 3.0 system message (pipeline.ts). Each funnel has its own structure (outline), opening
- * (intro) and part (section) prompt, editable on the Prompts page. The writing mechanics (budget,
- * literal quotes, measured revisions) are the same as the article's, so the engine treats every
- * format alike; only the journalism changes.
+ * preset 3.0 system message (pipeline.ts). Each funnel has its own structure (outline), evidence
+ * curation (quotes), opening (intro) and part (section) prompt, editable on the Prompts page. The
+ * writing mechanics (budget, literal quotes, measured revisions) are the same as the article's, so
+ * the engine treats every format alike; only the journalism changes.
  *
  * The style references are invented hard-news examples written to show the pattern, not published
  * texts. They are marked as style only: the grounding check removes any of their names or numbers
@@ -12,7 +12,7 @@
  */
 import type { EditorialFormat } from './formats.ts';
 
-export const FUNNEL_STEP_KEYS = ['outline', 'intro', 'section'] as const;
+export const FUNNEL_STEP_KEYS = ['outline', 'quotes', 'intro', 'section'] as const;
 export type FunnelStepKey = typeof FUNNEL_STEP_KEYS[number];
 
 /** The genre of every text of the newsroom: shared by the funnels and the preset 3.0 system message. */
@@ -53,7 +53,7 @@ Se sizing.revisionFeedback estiver presente, revise APENAS esta parte, usando pr
 
 type FunnelCopy = {
   label: string;
-  /** Title, linha fina and parts: the outline's rules. */
+  /** Title, linha fina and parts: the outline's and the curation's rules. */
   structure: string;
   /** How the opening is written. */
   opening: string;
@@ -217,6 +217,28 @@ Fonte com evidências [id]:
 {{source}}`;
 }
 
+function quotesPrompt(copy: FunnelCopy): string {
+  return `CURADORIA DE EVIDÊNCIAS — ${copy.label} — PADRÃO SEAFOOD BRASIL
+Revise a distribuição das evidências do outline sem mudar título, linha fina, intertítulos, quantidade ou ordem das seções. Retorne introIds e sectionIds, um array por seção. Use de 1 a 4 ids na abertura e de 1 a 20 em cada seção, somente ids reais da fonte e sem repetir ids entre partes.
+${FIDELITY}
+
+${copy.structure}
+
+A abertura recebe o fato da notícia e, quando o formato pede, a fala que o sustenta, com os ids de todas as frases seguidas dela; não mova para ela os detalhes reservados às seções. Cada seção recebe evidências que sustentem o assunto do seu intertítulo e acrescentem informação distinta das demais; prefira evidências específicas a trechos genéricos e mantenha as condições que impedem apresentar uma previsão como fato confirmado.
+Falas: o texto precisa de ao menos sizing.minQuotes citações literais distintas (com 0, use falas só quando a fonte as tiver e o formato pedir). Inclua em cada seção uma passagem citável sempre que a fonte tiver uma para aquele assunto e o formato pedir falas: uma frase de um falante identificado em people ou rotulado na fonte — nunca de quem entrevista, pergunta ou agradece —, com quatro palavras ou mais, que traga uma posição, um número, uma razão ou uma previsão. Para uma fala de duas frases, selecione os ids seguidos das duas, na mesma parte. Quando a fonte trouxer FALAS CURADAS (conferidas pela redação no banco de citações), prefira-as se sustentarem a parte. Numa gravação sem rótulos de falante com uma única pessoa em people, as respostas são dela. Um nome entre aspas não conta como citação. Não invente aspas, autoria, trechos ou informações ausentes, nem use uma evidência apenas por parecer interessante sem sustentar o intertítulo. A pessoa revisará as seleções antes da redação.
+
+${DATA_BLOCK}
+
+Orçamento e mínimo de citações:
+{{sizing}}
+
+Outline:
+{{outline}}
+
+Fonte com evidências [id]:
+{{source}}`;
+}
+
 function introPrompt(copy: FunnelCopy): string {
   return `ABERTURA — ${copy.label} — PADRÃO SEAFOOD BRASIL
 Escreva apenas a abertura (os parágrafos antes do primeiro intertítulo) da estrutura aprovada. Use introIds como foco; o outline inteiro serve para não antecipar o que vem depois.
@@ -290,5 +312,5 @@ Retorne apenas os parágrafos desta seção, do fato mais importante para o meno
 /** The default prompt of a funnel step. */
 export function defaultFunnelPrompt(format: EditorialFormat, step: FunnelStepKey): string {
   const copy = COPY[format];
-  return step === 'outline' ? outlinePrompt(copy) : step === 'intro' ? introPrompt(copy) : sectionPrompt(copy);
+  return step === 'outline' ? outlinePrompt(copy) : step === 'quotes' ? quotesPrompt(copy) : step === 'intro' ? introPrompt(copy) : sectionPrompt(copy);
 }
