@@ -5,7 +5,7 @@ import { Badge, Button, EmptyState, FilterBar, Grid, MetaList, PageStack, Panel,
 import type { FunnelStepKey, PipelineDefinition, PipelineStep, PipelineStepKey } from '@/domain/pipeline';
 import { FUNNEL_STEP_KEYS, FUNNEL_STEP_LABELS, pipelineModelLabel } from '@/domain/pipeline';
 import { EDITORIAL_FORMATS, FORMAT_SPECS, type EditorialFormat } from '@/domain/formats';
-import { funnelPromptKey, type FunnelPromptKey, type WorkerPromptKey } from '@/domain/pipeline-workers';
+import { funnelPromptKey, promptRuns, type FunnelPromptKey, type WorkerPromptKey } from '@/domain/pipeline-workers';
 import { promptDefaultState } from '@/domain/pipeline-preset';
 
 export { funnelPromptKey, type FunnelPromptKey };
@@ -68,9 +68,7 @@ const GROUPS: { title: string; keys: PromptKey[] }[] = [
 ];
 
 export function promptInactive(key: PromptKey, definition: PipelineDefinition) {
-  if (funnelOf(key)) return false;
-  return key === 'quotes' && !definition.curateQuotes || key === 'article' && definition.articleMode === 'sequential'
-    || (key === 'intro' || key === 'section') && definition.articleMode === 'single';
+  return key !== 'system' && !promptRuns(key, definition);
 }
 export function promptChanged(key: PromptKey, draft: PipelineDefinition, active: PipelineDefinition) {
   return key === 'system' ? draft.systemPrompt !== active.systemPrompt : JSON.stringify(promptStep(key, draft)) !== JSON.stringify(promptStep(key, active));

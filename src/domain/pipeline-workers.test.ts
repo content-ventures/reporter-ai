@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { defaultPipelineDefinition } from './pipeline.ts';
-import { PIPELINE_WORKERS, pipelineWorkerFlow } from './pipeline-workers.ts';
+import { EDITORIAL_FORMATS } from './formats.ts';
+import { PIPELINE_WORKERS, funnelPromptKey, pipelineWorkerFlow, promptRuns } from './pipeline-workers.ts';
 
 test('article diagram follows the complete writer and optional quote selection', () => {
   const definition = { ...defaultPipelineDefinition(), articleMode: 'single' as const, curateQuotes: true };
@@ -34,4 +35,17 @@ test('each event format has its own worker: its funnel prompts plus the shared l
   assert.deepEqual(nodes.filter(node => !node.prompt).map(node => node.id), ['source', 'grounding', 'validate', 'veracity', 'save']);
   assert.equal(pipelineWorkerFlow('note', defaultPipelineDefinition()).find(node => node.id === 'section')?.title, 'Contexto');
   assert.ok(pipelineWorkerFlow('article', defaultPipelineDefinition()).every(node => node.scope === undefined));
+});
+
+test('curation, shared or of a format, runs only when the flow curates quotes', () => {
+  const definition = { ...defaultPipelineDefinition(), curateQuotes: false };
+  assert.equal(promptRuns('quotes', definition), false);
+  for (const format of EDITORIAL_FORMATS) {
+    assert.equal(promptRuns(funnelPromptKey(format, 'quotes'), definition), false, format);
+    assert.equal(promptRuns(funnelPromptKey(format, 'quotes'), { ...definition, curateQuotes: true }), true, format);
+    assert.equal(promptRuns(funnelPromptKey(format, 'intro'), definition), true, format);
+    assert.ok(!pipelineWorkerFlow(format, definition).some(node => node.id === 'quotes'), format);
+  }
+  assert.equal(promptRuns('article', definition), false);
+  assert.equal(promptRuns('intro', { ...definition, articleMode: 'single' }), false);
 });
