@@ -174,6 +174,7 @@ describe('a material sent in parts', () => {
       { text: '00:01.000 --> 00:03.000\nAna: Bom dia.\n\n00:03.500 --> 00:05.000\nBia: Bom dia, Ana.\n', fileName: 'a.vtt' },
       { text: '00:00:01,000 --> 00:00:02,000\nPrimeira fala.\n\n00:00:02,500 --> 00:00:04,000\nSegunda fala.\n', fileName: 'b.srt' },
       { text: 'Ana: Texto livre.\r\nBia: Outra linha.\r\n', fileName: 'c.txt' },
+      { text: 'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n<v Ana>Bom dia a todos.\n\n00:00:03.500 --> 00:00:05.000\n<v Beto>Bom dia.\n', fileName: 'd.srt' },
     ];
     assert.deepEqual(materialPartHashes(joinTranscriptParts(files)), files.map(({ text, fileName }) => singleHash(text, fileName)));
     assert.equal(materialPartHashes(PART_ONE), undefined);
