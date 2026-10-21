@@ -117,7 +117,7 @@ function briefFacts(brief: Brief): DescriptionItem[] {
   ];
 }
 
-/** One recording of a material sent in parts: where it starts; a click shows its first line. */
+/** One recording of a material sent in parts: where it starts (after the opening); a click shows its first line. */
 function PartItem({ part, number, first, onShowPart }: { part: SourcePart; number: number; first?: string; onShowPart?: (segmentId: string) => void }) {
   return (
     <ListItem
@@ -125,7 +125,7 @@ function PartItem({ part, number, first, onShowPart }: { part: SourcePart; numbe
       leading={<FileGlyph name={part.fileName} />}
       title={part.fileName}
       titleLines={2}
-      description={part.startMs !== undefined ? `Parte ${number} · começa em ${formatTimestamp(part.startMs)}` : `Parte ${number}`}
+      description={part.startMs ? `Parte ${number} · começa em ${formatTimestamp(part.startMs)}` : `Parte ${number}`}
       meta={part.durationMs !== undefined ? formatTimestamp(part.durationMs) : undefined}
       onClick={first && onShowPart ? () => onShowPart(first) : undefined}
     />
@@ -157,7 +157,7 @@ function MaterialAside({
         <DescriptionList items={materialFacts(detail)} labelWidth={ASIDE_LABEL_WIDTH} label="Dados do material" />
       </Section>
       {parts ? (
-        <Section title="Partes" meta={String(parts.length)}>
+        <Section title="Partes">
           <List label="Partes do material" framed={false}>
             {parts.map((part, index) => (
               <PartItem
