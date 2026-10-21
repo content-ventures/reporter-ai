@@ -56,7 +56,9 @@ function editSpeech(text: string, edit: (speech: string) => string): string {
  * "Rafael Dias" leaves an existing "Rafael Dias" as it is.
  */
 function occurrences(speech: string, pattern: RegExp, to: string, crossLines: boolean): number[] {
-  const right = termPattern(to, crossLines, true), kept: [number, number][] = [];
+  // A longer right name already in the text counts in any case ("Brasil Seafood show"); one written
+  // exactly as typed counts only in that case, so "msd" to "MSD" still applies.
+  const right = termPattern(to, crossLines), kept: [number, number][] = [];
   if (right) for (const match of speech.matchAll(right)) kept.push([match.index, match.index + match[0].length]);
   // Skipped when already written as the right name, or inside a longer right name: shortening
   // "Lucas Ferraz" to "Lucas" still applies.
