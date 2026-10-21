@@ -4,7 +4,7 @@ import type { CarouselBody } from '../../../domain/carousel.ts';
 import type { PieceId, RunId, TemplateId } from '../../../domain/ids.ts';
 import { toVersionRef } from '../../../domain/piece.ts';
 import type { Piece, PieceBody } from '../../../domain/piece.ts';
-import { latestVersion } from '../../../domain/record.ts';
+import { latestVersion, outputSourceRefs } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
 import type { SourceVersionRef, VersionRef } from '../../../domain/refs.ts';
 import type { CommandContext } from '../../../domain/result.ts';
@@ -102,7 +102,7 @@ export function settleRun(record: ProductionRecord, fold: RunFold, ctx: CommandC
       runStartedAt: run.startedAt ?? run.createdAt,
       interrupted: run.status !== 'completed',
       inputs,
-      sources,
+      sources: outputSourceRefs(record, output, sources, fold.sourcesUsed),
     },
     ctx,
   );

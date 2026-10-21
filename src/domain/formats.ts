@@ -137,7 +137,7 @@ export type EventBoxLine = { kind: 'heading' | 'paragraph' | 'divider' | 'servic
  * event, the service lines and the call to follow the coverage. Built only from the event data.
  */
 export function eventBoxLines(event: EventContext | undefined): EventBoxLine[] {
-  if (!event) return [];
+  if (!event || ![event.about, event.dates, event.hours, event.venue, event.address, event.cta].some(value => value?.trim())) return [];
   const lines: EventBoxLine[] = [{ kind: 'heading', text: event.boxTitle ?? `Seafood Brasil na ${event.name}` }];
   if (event.about) lines.push({ kind: 'paragraph', text: event.about });
   const service = ([['Data', event.dates], ['Horário', event.hours], ['Local', event.venue], ['Endereço', event.address]] as const)

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createEditorialEngine, editorialLocalRoleProfiles, selectEditorialLocalRole, emptyEditorialCheckpoint, adoptEditorialIdentity, LOCAL_OPERATOR, LOCAL_WORKSPACE, editorialCandidates, appendEditorialEvent, editorialContextHash, editorialCarouselLayouts, editorialTemplates, validateEditorialOutline } from './editorial-engine.ts';
 import { refKey, segmentRef } from '../domain/refs.ts';
-import { resolveSourceRef } from '../domain/source.ts';
+import { resolveSourceRef, toSourceVersionRef } from '../domain/source.ts';
+import { buildManifest } from '../domain/manifest.ts';
 import { writingResearchEvidence } from '../domain/writing-research-evidence.ts';
 import { plannedLayouts } from '../domain/carousel.ts';
 import { contentHash } from '../domain/text/hash.ts';
@@ -235,13 +236,37 @@ test('real generation events settle one immutable version, require review, and r
   appendEditorialEvent(engine,job,{ type: 'run.started',kind: run.kind,productionId: run.productionId,pieceId,model: run.model,prompt: run.prompt,inputs: run.inputs,steps: [{ id: 'generate',label: 'Gerar artigo' }],createdBy: LOCAL_OPERATOR });
   appendEditorialEvent(engine,job,{ type: 'outline',title: 'Oficinas fictícias previstas',sections: [] });
   const candidate = editorialCandidates(engine.records.record(run.productionId)!)[1];
+  const web = writingResearchEvidence([{ id: 'web-current', kind: 'external', provider: 'tavily', query: 'library program',
+    title: 'Web context', url: 'https://example.org/library', site: 'example.org', excerpt: 'A biblioteca receberá nove palestrantes internacionais.',
+    publishedOn: null, retrievedAt: '2026-10-21T12:00:00Z' },
+    { id: 'web-header', kind: 'external', provider: 'tavily', query: 'library opening', title: 'Header context',
+      url: 'https://example.org/opening', site: 'example.org', excerpt: 'A programação começa em novembro.',
+      publishedOn: null, retrievedAt: '2026-10-21T12:00:00Z' }],
+  { runId: run.id, workspaceId: engine.store.state.workspace.id, actorId: LOCAL_OPERATOR });
+  engine.store.state.sources.push(...web.sources);
+  engine.store.state.productions.find(entry => entry.production.id === run.productionId)!.production.sourceIds.push(...web.sources.map(source => source.id));
   appendEditorialEvent(engine,job,{ type: 'block.started',block: { id: 'block-real',type: 'paragraph' } });
   appendEditorialEvent(engine,job,{ type: 'block.completed',block: { id: 'block-real',type: 'paragraph',inlines: [{ text: 'Em uma simulação, a biblioteca prevê oficinas gratuitas em novembro.' }],sourceRefs: [candidate.ref],ai: 'unreviewed' } });
+  appendEditorialEvent(engine,job,{ type: 'block.completed',block: { id: 'web-block',type: 'paragraph',inlines: [{ text: 'Segundo a programação, a biblioteca receberá nove palestrantes internacionais.' }],sourceRefs: [web.references.get('web-current')!],ai: 'unreviewed' } });
+  appendEditorialEvent(engine,job,{ type: 'source.used',ref: web.references.get('web-header')! });
   appendEditorialEvent(engine,job,{ type: 'run.completed' });
   const record = engine.records.record(run.productionId)!;
   assert.equal(record.versions.length,1); assert.equal(record.versions[0].origin,'generation');
   assert.equal(record.runs[0].model.engine,'provider'); assert.equal(record.decisions.length,0);
+  const expectedSources = [...run.inputs.filter(ref => ref.kind === 'source-version'), ...web.sources.map(source => toSourceVersionRef(source))];
+  assert.deepEqual(record.versions[0].sources, expectedSources, 'research discovered after planning belongs to the generated version');
+  assert.deepEqual(record.pieces.find(piece => piece.id === pieceId)!.draft.sources, expectedSources);
+  assert.deepEqual(record.runs[0].inputs, run.inputs, 'the original planning input snapshot remains immutable');
   assert.equal((await engine.commands.derive({ productionId: run.productionId,kind: 'carousel',from: toVersionRef(record.versions[0]) })).ok,false);
+  const draft = record.pieces.find(piece => piece.id === pieceId)!.draft;
+  assert.ok(draft.body.type === 'article');
+  assert.ok((await engine.commands.saveDraft(pieceId, { ...draft.body, title: 'Oficinas e programação: edição' }, draft.revision)).ok);
+  assert.ok((await engine.commands.createVersion(pieceId)).ok);
+  const editedRecord = engine.records.record(run.productionId)!;
+  const edited = editedRecord.versions.at(-1)!;
+  assert.deepEqual(edited.sources, expectedSources, 'manual edits retain the complete source snapshot');
+  const manifest = buildManifest(editedRecord, [{ kind: 'article', version: toVersionRef(edited), decisionId: 'test-decision' }], [], '2026-10-21T12:01:00Z');
+  assert.deepEqual(manifest.items[0].sourceVersions, expectedSources.map(ref => ({ sourceId: ref.sourceId, version: ref.sourceVersion, hash: ref.hash })));
   engine.store.dispose();
 });
 

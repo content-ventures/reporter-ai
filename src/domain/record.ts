@@ -3,11 +3,11 @@ import type { ImageRef, ImageRightsRecord } from './asset.ts';
 import type { Decision, ReviewRequest } from './decision.ts';
 import type { Delivery } from './delivery.ts';
 import type { AssetId, PieceId, VersionId } from './ids.ts';
-import type { Piece, PieceKind, Version } from './piece.ts';
+import type { Piece, PieceBody, PieceKind, Version } from './piece.ts';
 import { toVersionRef } from './piece.ts';
 import type { Production } from './production.ts';
-import { sameVersionRef } from './refs.ts';
-import type { SourceVersionRef, VersionRef } from './refs.ts';
+import { dedupeRefs, sameVersionRef } from './refs.ts';
+import type { SourceRef, SourceVersionRef, VersionRef } from './refs.ts';
 import { isPlanningRun, isRunActive } from './run.ts';
 import type { GenerationRun } from './run.ts';
 import { currentSourceVersion, toSourceVersionRef } from './source.ts';
@@ -188,6 +188,17 @@ export function pendingSuggestions(record: Pick<ProductionRecord, 'suggestions'>
 
 export function currentSourceRefs(record: Pick<ProductionRecord, 'sources'>): SourceVersionRef[] {
   return record.sources.map((source) => toSourceVersionRef(source, currentSourceVersion(source)));
+}
+
+/** Retain frozen inputs plus exact source versions cited by output, including later web research. */
+export function outputSourceRefs(record: Pick<ProductionRecord, 'sources'>, body: PieceBody, inputs: readonly SourceVersionRef[], declared: readonly SourceRef[] = []): SourceVersionRef[] {
+  if (body.type !== 'article') return [...inputs];
+  const cited = [...declared, ...body.blocks.flatMap(block => block.sourceRefs ?? [])].flatMap(ref => {
+    const source = record.sources.find(source => source.id === ref.sourceId);
+    const version = source?.versions.find(version => version.number === ref.sourceVersion);
+    return source && version ? [toSourceVersionRef(source, version)] : [];
+  });
+  return dedupeRefs([...inputs, ...cited]);
 }
 
 export function latestDelivery(record: Pick<ProductionRecord, 'deliveries'>): Delivery | undefined {

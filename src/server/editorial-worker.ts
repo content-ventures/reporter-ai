@@ -258,7 +258,10 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       const body = writingArticleBody(written.article, job.meta.runId, resolve);
       const issue = r1ArticleIssue(body, finalSources, writingArticleLimits(input.record.production.brief, minimumQuotes));
       if (issue) throw new FlowError(issue, 422);
-      const events: RunEventPayload[] = [{ type: 'outline', title: body.title, ...(body.dek ? { dek: body.dek } : {}), sections: [] }];
+      // Header evidence has no paragraph block; keep it explicit in the run's provenance.
+      const events: RunEventPayload[] = resolve([...written.article.titleEvidenceIds, ...written.article.dekEvidenceIds])
+        .map(ref => ({ type: 'source.used', ref }));
+      events.push({ type: 'outline', title: body.title, ...(body.dek ? { dek: body.dek } : {}), sections: [] });
       for (const block of body.blocks) events.push({ type: 'block.started', block: { id: block.id, type: block.type } }, { type: 'block.completed', block });
       if (pipeline.definition.writing.maxCorrections) for (const stepId of ['writing-correct-1', 'writing-review-2']) {
         if (!completed.has(stepId)) events.push({ type: 'step.skipped', stepId });
