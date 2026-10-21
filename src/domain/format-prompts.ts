@@ -1,12 +1,13 @@
 /**
- * Default prompts of the event-coverage funnels (formats.ts), written from 36 texts Seafood
- * Brasil's reporters published in 2026 (APAS Show, Aquishow Brasil, IFC Brasil, SENA). Each funnel
- * has its own structure (outline), opening (intro) and part (section) prompt, editable on the
- * Prompts page. The writing mechanics (budget, literal quotes, measured revisions) are the same
- * as the article's, so the engine treats every format alike; only the journalism changes.
+ * Default prompts of the event-coverage funnels (formats.ts). Every text the newsroom produces is
+ * hard news (notícia): the shared HARD_NEWS block sets the genre for every funnel step and for the
+ * preset 3.0 system message (pipeline.ts). Each funnel has its own structure (outline), opening
+ * (intro) and part (section) prompt, editable on the Prompts page. The writing mechanics (budget,
+ * literal quotes, measured revisions) are the same as the article's, so the engine treats every
+ * format alike; only the journalism changes.
  *
- * The style references are real published texts, cleaned of the SEO crutches and typos found in
- * them. They are marked as style only: the grounding check removes any of their names or numbers
+ * The style references are invented hard-news examples written to show the pattern, not published
+ * texts. They are marked as style only: the grounding check removes any of their names or numbers
  * that leaks into a new text.
  */
 import type { EditorialFormat } from './formats.ts';
@@ -14,23 +15,34 @@ import type { EditorialFormat } from './formats.ts';
 export const FUNNEL_STEP_KEYS = ['outline', 'intro', 'section'] as const;
 export type FunnelStepKey = typeof FUNNEL_STEP_KEYS[number];
 
+/** The genre of every text of the newsroom: shared by the funnels and the preset 3.0 system message. */
+export const HARD_NEWS = `NOTÍCIA — O PADRÃO DE TODO TEXTO DA REDAÇÃO
+Todo texto desta redação é notícia (hard news): informa o fato mais novo e mais importante do material, com fonte, sem opinião e sem promover ninguém. Quando a etapa ou o formato tiver regras mais específicas (carrossel, premiação, nota curta), elas prevalecem.
+- Lide: a primeira frase traz a notícia — quem, o quê, quando e onde — em até 40 palavras, sem citação. Nunca abra pelo evento, pela cerimônia, pela programação, pelo tema, pelo programa, pelo episódio, pela presença de alguém ou por uma cena: o evento entra como lugar e momento do fato ("na [evento]"), não como sujeito da frase. A segunda frase traz o como ou o porquê.
+- Pirâmide invertida: parágrafos e seções em ordem decrescente de importância; a última parte guarda os fatos menos importantes e termina no último fato pertinente. Sem recapitulação, moral, chamada ao leitor ou fala de encerramento forçada: termine com uma fala só se ela trouxer informação nova.
+- Título: o fato, não o tema. Verbo concreto na voz ativa e no presente (lança, anuncia, apresenta, prevê, amplia, investe, exporta, defende, alerta, vence), número quando houver, até 90 caracteres, sem ponto final. Nunca use no título: destaca, aposta em, reforça, discute, debate, marca, leva, traz, foca em.
+- Atribuição: disse, afirmou, informou, ou "segundo" e "de acordo com". Nunca ressalta, avalia, pontua, destaca, enfatiza ou comemora. Todo número, previsão e opinião tem fonte nomeada.
+- Autoelogio só atribuído: o que uma empresa ou pessoa diz de si ("único", "pioneiro", "primeiro", "líder", "referência") aparece entre aspas ou atribuído ("que a empresa diz ser o único do mercado"), nunca na voz da redação e nunca no título.
+- Tom: nenhum adjetivo de elogio ou promocional fora das aspas (inovador, revolucionário, incrível, de ponta, de alta qualidade, sofisticado, imperdível, grande destaque, sucesso, excelência) e nunca "confira".
+- Falas: curtas, uma ideia em uma ou duas frases. Cada seção traz uma fala literal sempre que suas evidências tiverem uma frase citável: de um falante identificado, nunca de quem entrevista, com quatro palavras ou mais, que traga uma posição, um número, uma razão ou uma previsão. Prefira as falas conferidas pela redação (FALAS CURADAS na fonte; curated: true em literalEvidence). Nunca use uma fala que só repete a paráfrase anterior.`;
+
 const FIDELITY = `JORNALISMO, NUNCA INVENÇÃO
 Este texto será publicado pela redação da Seafood Brasil. Use somente fatos da fonte (source), das pessoas confirmadas (people) e dos dados do evento (event). Não invente nomes, cargos, empresas, produtos, números, preços, datas, locais, edições, temas, falas, resultados, causas ou comparações. Não use conhecimento externo, nem para completar o nome de uma empresa ou o cargo de alguém. O que a fonte não diz fica fora do texto: não presuma, não generalize, não transforme intenção em fato. Não qualifique o evento, a empresa ou o mercado ("principais players", "maior feira", "empresa brasileira", "líder") sem que a fonte diga exatamente isso; caracterize uma empresa só com as palavras da fonte. A REFERÊNCIA DE ESTILO não é fonte: nenhum nome, número ou fato dela pode aparecer no texto. Um sistema confere cada número e cada nome próprio contra a fonte, as pessoas e o evento; o que não estiver lá será removido.`;
 
 const STYLE = `PADRÃO DE ESCRITA DA SEAFOOD BRASIL
 - Português do Brasil, terceira pessoa, tom informativo do jornalismo setorial do pescado. Nenhuma opinião da redação; adjetivo de elogio só dentro de fala atribuída.
-- Parágrafos de 1 a 3 frases, voz ativa, frases diretas.
-- Pessoas: na primeira menção, cargo e empresa com o nome completo exatamente como em people ("O diretor da [Empresa], [Nome Sobrenome], explicou que…" ou "De acordo com a gerente de marketing da [Empresa], [Nome Sobrenome], …"). Quem já aparece no texto escrito até agora é retomado só pelo sobrenome ou por "o executivo", "a gestora", "o diretor", nunca apresentado de novo. Sem cargo ou empresa em people, use o cargo com que a própria fonte apresenta a pessoa ("o ministro da Pesca e Aquicultura, [Nome]", "o chef [Nome]"); sem cargo em lugar nenhum, use só o nome. Nunca deduza um cargo.
-- Falas: citações longas e literais entre aspas curvas “ ”, copiadas de literalEvidence com o id correspondente em evidenceIds; prefira trechos de duas ou três frases seguidas da mesma fala a frases soltas. Cada fala aparece uma única vez no texto: nunca repita uma citação nem a paráfrase de uma citação já usada. Toda citação é atribuída a quem falou, antes ou logo depois das aspas. Alterne paráfrase e citação. Dentro das aspas, preserve as palavras do entrevistado, inclusive o registro oral. Verbos de atribuição variados: explica, ressalta, detalha, destaca, aponta, pontua, comenta, conta, avalia, observa, afirma. Pontuação da casa: “fala”, explicou. (vírgula depois das aspas) ou Segundo ele, “fala completa.”
-- Datas: dia da semana com o dia entre parênteses ("nesta terça-feira (20)") só quando event.today ou os dados do evento trouxerem essa data. Nunca calcule nem suponha uma data.
+- Parágrafos de 1 a 3 frases, voz ativa, frases diretas, do fato mais importante para o menos importante.
+- Pessoas: na primeira menção, cargo e empresa com o nome completo exatamente como em people ("O diretor da [Empresa], [Nome Sobrenome], disse que…" ou "De acordo com a gerente de marketing da [Empresa], [Nome Sobrenome], …"). Quem já aparece no texto escrito até agora é retomado só pelo sobrenome ou por "o executivo", "a gestora", "o diretor", nunca apresentado de novo. Sem cargo ou empresa em people, use o cargo com que a própria fonte apresenta a pessoa ("o ministro da Pesca e Aquicultura, [Nome]", "o chef [Nome]"); sem cargo em lugar nenhum, use só o nome. Nunca deduza um cargo.
+- Falas: literais entre aspas curvas “ ”, copiadas de literalEvidence com o id correspondente em evidenceIds. Curtas: uma ideia, uma ou duas frases seguidas da mesma fala; corte antes de a fala mudar de assunto. Para citar duas frases seguidas, liste os ids das duas no mesmo parágrafo. A paráfrase traz o fato; a fala traz a razão, o número ou a posição de quem fala. Alterne paráfrase e citação. Cada fala aparece uma única vez no texto: nunca repita uma citação nem a paráfrase de uma citação já usada. Toda citação é atribuída a quem falou, antes ou logo depois das aspas. Dentro das aspas, preserve as palavras do entrevistado, inclusive o registro oral. Verbos de atribuição: disse, afirmou, informou; ou "segundo [Nome]" e "de acordo com [Nome]". Pontuação da casa: “fala”, disse [Sobrenome]. (vírgula depois das aspas) ou Segundo ele, “fala completa.”
+- Datas: dia da semana com o dia entre parênteses ("nesta terça-feira (20)") só quando event.today ou os dados do evento trouxerem essa data. Nunca calcule nem suponha uma data, e nunca escreva "hoje", "amanhã" ou "ontem" sem a data que a fonte ou o evento trazem.
 - Evento: cite-o pelo nome de event.name, mesmo que a fonte o escreva de outro jeito (transcrições erram nomes próprios); só sem event.name use o nome como a fonte traz. Datas, horário e endereço ficam no box de serviço que o sistema monta no fim; no texto, no máximo o local e a cidade.
-- Toda frase traz um fato, uma fala ou um dado novo: nada de frases que só anunciam o que outra diz ("Fulano destacou a velocidade dessa reação") nem comentários sobre a natureza da informação ("os números são projeções, não resultados"); use o verbo certo (projeta, estima, prevê) e siga.
+- Toda frase traz um fato, uma fala ou um dado novo: nada de frases que só anunciam o que outra diz ("Fulano falou sobre a velocidade dessa reação") nem comentários sobre a natureza da informação ("os números são projeções, não resultados"); use o verbo certo (projeta, estima, prevê) e siga.
 - Quando o cargo já nomeia a organização ("ministro da Pesca e Aquicultura"), não repita a organização por extenso; use no máximo a sigla: "o ministro da Pesca e Aquicultura (MPA), [Nome]".
 - Grafia da casa: País e Estado com maiúscula; valores como "R$ 99 mil"; milhar com ponto ("7.000"); local como "Foz do Iguaçu (PR)" quando a fonte ou o evento trouxerem a cidade.
-- Proibido: "Em resumo", "Em síntese", "Sendo assim", "Neste sentido", "Vale ressaltar", "Vale destacar", "Diante disso" e outras muletas; conclusão moral, recapitulação, chamada para ação, pergunta retórica, promessa, link ou instrução ao leitor; repetir a mesma palavra-chave para SEO.`;
+- Proibido: "Em resumo", "Em síntese", "Sendo assim", "Neste sentido", "Vale ressaltar", "Vale destacar", "Vale lembrar", "É importante destacar", "Diante disso", "Confira" e outras muletas; conclusão moral, recapitulação, chamada para ação, pergunta retórica, promessa, link ou instrução ao leitor; repetir a mesma palavra-chave para SEO.`;
 
 const PART_MECHANICS = `CONTRATO DE CADA PARÁGRAFO
-Cada parágrafo retorna text e evidenceIds que realmente o sustentam. Aspas só podem copiar um trecho contínuo de literalEvidence, com o id correspondente em evidenceIds desse mesmo parágrafo; não mude palavras nem pontuação dentro delas. O campo context traz sínteses, que não servem como citação literal. Uma fala sem falante identificado na fonte não recebe nome. O texto inteiro deve ter ao menos articleLimits.minQuotes citações literais distintas de quatro ou mais palavras (com 0, use falas apenas quando a fonte as tiver).
+Cada parágrafo retorna text e evidenceIds que realmente o sustentam. Aspas só podem copiar um trecho contínuo de literalEvidence, com o id correspondente em evidenceIds desse mesmo parágrafo; para citar frases seguidas, liste os ids de todas elas no mesmo parágrafo. Não mude palavras nem pontuação dentro das aspas. Uma entrada de literalEvidence com curated: true foi conferida pela redação no banco de citações (relevance diz por que importa): prefira-a quando sustentar a parte. O campo context traz a fonte inteira ou suas sínteses e serve para conferir o contexto, nunca como citação literal. Uma fala sem falante identificado na fonte não recebe nome. O texto inteiro deve ter ao menos articleLimits.minQuotes citações literais distintas de quatro ou mais palavras (com 0, use falas apenas quando a fonte as tiver).
 Todo parágrafo termina com ponto, exclamação ou interrogação. Nunca entregue palavra cortada, oração inacabada ou parágrafo encerrado com vírgula para caber no orçamento.
 
 ORÇAMENTO
@@ -47,133 +59,133 @@ type FunnelCopy = {
   opening: string;
   /** How each part after the opening is written. */
   parts: string;
-  /** A real published text of the format, cleaned; style only. */
+  /** An invented hard-news text of the format; style only. */
   reference: string;
 };
 
 const COPY: Record<EditorialFormat, FunnelCopy> = {
   stand: {
     label: 'COBERTURA DE ESTANDE',
-    structure: `Formato: cobertura de uma empresa expositora no evento: o que ela levou, o que o porta-voz disse e o que isso diz sobre o mercado.
-- Prioridade da notícia: a novidade que a empresa levou ao evento (produto, lançamento, vacina, serviço, parceria) é o foco do título e do lide. Uma fala de exclusividade ou pioneirismo sobre ela ("o único", "pioneiro", "primeiro", "carro-chefe", "lançamento") é a notícia do texto: o trecho dela vai em introIds, nunca fica de fora nem vai para o fim.
-- title: [Empresa] + verbo no presente + foco + "na/durante a [evento]", de 50 a 75 caracteres, sem ponto final. Verbos da casa: destaca, aposta em, apresenta, lança, leva, reforça, estreia, foca em, traz. Ex. de molde: "[Empresa] aposta em [produto] durante a [Evento]".
-- dek (linha fina): de 100 a 160 caracteres, sem ponto final. Caracteriza a empresa (segmento, origem, trajetória, só se a fonte ou people disserem) e acrescenta um segundo fato do material que o título não trouxe. Não repete o verbo do título.
-- sections: intertítulos de 3 a 7 palavras, sintagma nominal sem verbo, muitas vezes "X e Y" ("Desafios logísticos e planos de expansão"). Arco típico: novidade no estande → mercado e desafios → expansão e perspectivas. Cada seção com evidências próprias.
-- introIds: a novidade da empresa no evento e a fala mais forte do porta-voz sobre ela, de preferência a de exclusividade ou pioneirismo.`,
-    opening: `A abertura tem 2 ou 3 parágrafos e usa um destes moldes:
-(a) empresa primeiro: "A [descrição] [Empresa], [aposto com trajetória ou sede, se a fonte disser], [participa da / utilizou a vitrine da] [evento] para [objetivo ou novidade]";
-(b) evento primeiro: uma frase sobre o evento com os dados de event e "É o caso da [Empresa], que…";
-(c) cena: "Quem anda pelos corredores da [evento]…", só quando a fonte sustentar a cena.
-Numa gravação sem rótulos de falante com uma única pessoa em people, as respostas são dela; as perguntas de quem entrevista nunca viram citação.
-A abertura tem exatamente 2 parágrafos: o primeiro é o lide, sem citação, com a novidade que a empresa levou e o evento; o segundo apresenta o porta-voz com cargo, empresa e nome (people) e traz a fala mais forte sobre a novidade, de preferência a de exclusividade ou pioneirismo ("o único", "pioneiro", "primeiro"). Não use na abertura as falas e os detalhes reservados às seções do outline.`,
+    structure: `Formato: notícia de uma empresa expositora no evento: o que ela lançou, apresentou ou anunciou, com os dados e a fala do porta-voz.
+- A notícia é a novidade da empresa no evento (produto, lançamento, vacina, serviço, parceria, investimento, novo mercado, número). Escreva lança ou estreia só quando a fonte disser que é lançamento, estreia ou novidade; senão, apresenta. Uma frase de exclusividade ou pioneirismo ("o único", "pioneiro", "primeiro", "carro-chefe") é alegação da empresa: entra só atribuída ou entre aspas, nunca no título, e não substitui o fato.
+- title: [Empresa] + verbo concreto no presente (lança, apresenta, estreia, anuncia, amplia, investe, prevê, exporta) + o fato + "na [evento]" quando couber, de 50 a 90 caracteres, sem ponto final. Molde: "[Empresa] lança [produto] para [uso] na [Evento]".
+- dek (linha fina): de 100 a 160 caracteres, sem ponto final: um segundo fato do material (número, mercado, prazo, preço, motivo) que o título não traz, sem repetir o verbo do título. Caracterize a empresa só com as palavras da fonte.
+- sections: intertítulos de 3 a 7 palavras, informativos, sintagma nominal sem verbo, em ordem decrescente de importância (por exemplo: detalhes da novidade → mercado e preços → planos, na ordem que o material justificar). Cada seção com evidências próprias, entre elas uma fala citável do porta-voz quando a fonte tiver.
+- introIds: o fato da novidade e a fala do porta-voz que melhor a explica, com os ids de todas as frases seguidas dela.`,
+    opening: `A abertura tem exatamente 2 parágrafos.
+1º, o lide, sem citação: a primeira frase diz o que a empresa lançou, apresentou ou anunciou e onde ("A [Empresa] lançou [produto] na [evento]…"), em até 40 palavras; a frase seguinte traz o como ou o porquê (para que serve, a quem se destina, quando chega, o dado principal). Não abra pelo evento, pelos corredores, pela participação da empresa, pela trajetória dela nem por uma cena.
+2º: apresenta o porta-voz com cargo, empresa e nome (people) e traz uma fala curta dele com a informação que o lide não deu, atribuída com disse ou afirmou. Uma alegação de exclusividade ou pioneirismo só entra entre aspas ou atribuída ("que a empresa diz ser a única do mercado").
+Numa gravação sem rótulos de falante com uma única pessoa em people, as respostas são dela; as perguntas de quem entrevista nunca viram citação. Não use na abertura as falas e os detalhes reservados às seções do outline.`,
     parts: `Gravação de estande sem rótulos de falante: quando people tem uma única pessoa, a gravação é a entrevista dela no estande, e as respostas são atribuídas a ela pelo nome de people. As perguntas de quem entrevista (a fala que pergunta, que chama a pessoa pelo nome ou agradece) nunca viram citação nem são atribuídas a ninguém. Com mais de uma pessoa em people, vale a regra geral: fala sem falante identificado não recebe nome.
-Cada seção desenvolve o assunto do seu intertítulo com as falas do porta-voz: contexto em uma frase, paráfrase, citação longa. Quando a fonte trouxer de 2 a 4 itens paralelos (especificações, modelos, fatores de um resultado), apresente cada item como um parágrafo próprio no molde ">> Rótulo: explicação." depois de uma frase que termine com dois-pontos; nunca use ">>" para um item só. Preço, capacidade e número só como a fonte disser. Só a última seção (section.last = true) termina com uma fala literal do porta-voz no molde “fala”, finalizou [Sobrenome]. — o verbo vem logo depois das aspas e nada vem depois dele; nunca use "finalizou" depois de uma frase sem aspas. Nas outras seções, "finalizou" e "concluiu" são proibidos.`,
-    reference: `Título: BomPORTO aposta em bacalhau com sal rosa durante a APAS Show 2026
-Linha fina: Indústria destacou ainda desafios atuais em trabalhar com o bacalhau, mas reforçou confiança no mercado brasileiro
+Cada seção desenvolve o assunto do seu intertítulo, do mais importante para o menos importante: o fato em discurso indireto, com o dado da fonte, e uma fala curta e literal do porta-voz que acrescente razão, número ou posição. Quando a fonte trouxer de 2 a 4 itens paralelos (especificações, modelos, fatores de um resultado), apresente cada item como um parágrafo próprio no molde ">> Rótulo: explicação." depois de uma frase que termine com dois-pontos; nunca use ">>" para um item só. Preço, capacidade e número só como a fonte disser, sempre atribuídos. A última seção (section.last = true) traz os fatos menos importantes e termina no último fato pertinente; termine com uma fala só se ela acrescentar informação, atribuída com disse ou afirmou. Os verbos finalizou e concluiu só podem aparecer na última fala do texto e nunca são obrigatórios. Nada de recapitulação, despedida ou frase de efeito.`,
+    reference: `Título: Pescados Litoral lança tilápia defumada em porções de 200 gramas na Feira Modelo 2026
+Linha fina: Produto chega ao varejo do Sudeste em julho e deve responder por 15% das vendas de congelados da empresa, segundo o diretor comercial
 
-A BomPORTO apresentou uma de suas principais novidades para o mercado de pescados de alto valor agregado: o lançamento do legítimo bacalhau preparado com sal rosa, grande destaque da marca na APAS Show 2026.
+A Pescados Litoral lançou na Feira Modelo 2026 uma tilápia defumada em porções de 200 gramas, voltada ao varejo. O produto chega às gôndolas do Sudeste em julho, com preço sugerido de R$ 24,90.
 
-O diretor da empresa, Sérgio Sousa, explicou que o insumo foi escolhido por suas propriedades de alta qualidade e pureza, agregando valor comercial e refinamento gastronômico à proteína. “Nós trouxemos o bacalhau com sal rosa, ingrediente que é referência pela qualidade e pelo grau de salinidade que tem”, justificou.
+O diretor comercial da empresa, Ricardo Lemos, disse que a porção menor atende a um pedido dos supermercados. “O cliente quer levar uma refeição para duas pessoas, não um quilo de peixe”, afirmou.
 
-[Intertítulo] Desafios operacionais e cenário de cotas
+[Intertítulo] Meta de vendas e capacidade da fábrica
 
-Sérgio Sousa comentou que a redução global das cotas de pesca do bacalhau e os impasses burocráticos nos portos impactaram diretamente o fluxo de abastecimento e os custos logísticos da empresa.
+Segundo Lemos, a linha deve responder por 15% das vendas de congelados no primeiro ano. A fábrica passou a operar em dois turnos para atender os pedidos.
 
-“De fato, a redução de cotas para nós tem sido um desafio e tem sido algo que se tem refletido pelo aumento do preço. O produto, no último ano, teve uma subida cerca de 30%”, explicou. “Por isso, a Páscoa não foi tão boa como a gente esperava.”
+“Dobramos a capacidade de defumação em março”, disse o diretor.
 
-[Intertítulo] Identidade cultural e expansão do consumo
+[Intertítulo] Exportação em estudo
 
-Para Sousa, apesar das dificuldades atuais, a aposta no mercado interno se baseia no potencial da culinária nacional para expandir o consumo do bacalhau para além das datas sazonais. “Eu acredito no mercado brasileiro, porque já estamos aqui há 23 anos. O bacalhau, pela praticidade que tem, hoje já faz parte de um grande número de brasileiros”, finalizou.`,
+A empresa estuda vender o produto ao Chile a partir de 2027, de acordo com Lemos. “O pedido de habilitação sanitária sai ainda este ano”, afirmou. A Pescados Litoral diz ser a única indústria do Sudeste a defumar tilápia em porções individuais.`,
   },
   panel: {
     label: 'COBERTURA DE PAINEL',
-    structure: `Formato: cobertura datada de uma palestra ou painel do evento: quem disse o quê, com dados atribuídos.
-- title: [Instituição, palestrante ou "Painel"] + verbo (destaca, discute, debate, defende, aponta) + a tese principal, de 60 a 90 caracteres, sem ponto final.
-- dek (linha fina): de 120 a 180 caracteres, sem ponto final: "Em painel sobre [tema], [Nome] apresentou…" ou "Painel [do evento] reuniu [quem] para debater [temas]". Sem repetir a cidade do título.
-- sections: um intertítulo por tema ou por palestrante, na ordem em que falaram; intertítulo de 4 a 9 palavras, sintagma nominal ("Competitividade de preços e o papel da informação").
-- introIds: o tema central e quem participou.`,
-    opening: `A abertura tem 2 ou 3 parágrafos: o tema que pautou o dia do evento e onde (dados de event e da fonte); o nome do painel entre aspas quando a fonte ou a pauta o trouxerem; quem participou e, se houver, o mediador com cargo. Não antecipe as falas das seções.`,
-    parts: `Dentro de cada seção: contexto em uma frase → palestrante com cargo e empresa (primeira menção) e paráfrase da ideia → citação longa → ponte → segunda citação. Dados sempre atribuídos ("Segundo o palestrante", "de acordo com os dados apresentados pela [instituição]"). Quando a fonte listar de 2 a 4 ferramentas, ações ou números paralelos, use um parágrafo ">> Rótulo: explicação." para cada item, depois de uma frase com dois-pontos; nunca use ">>" para um item só. Só a última seção (section.last = true) termina com uma fala e "concluiu"; nas outras, esse verbo é proibido.`,
-    reference: `Título: Painel discute desafios de consumo e estratégias para o mercado de pescado
-Linha fina: Painel reuniu representantes da indústria e do varejo para debater o comportamento do consumidor, a competitividade das proteínas e a estruturação da cadeia produtiva
+    structure: `Formato: notícia de uma palestra ou painel do evento: a principal conclusão, previsão ou dado apresentado, e quem o apresentou.
+- title: [Palestrante, cargo ou instituição] + verbo concreto no presente (defende, prevê, alerta, afirma, aponta, propõe, estima) + a tese ou o dado principal, de 60 a 90 caracteres, sem ponto final, com número quando houver. Nunca "Painel discute…" nem "Painel debate…".
+- dek (linha fina): de 120 a 180 caracteres, sem ponto final: um segundo dado ou posição do painel, com quem o apresentou; o nome do painel só se couber. Sem repetir a cidade do título.
+- sections: um intertítulo por tese ou dado, em ordem decrescente de importância (não na ordem em que falaram); intertítulo de 4 a 9 palavras, sintagma nominal informativo.
+- introIds: a frase com a principal conclusão ou dado e a fala que a sustenta, com os ids de todas as frases seguidas dela.`,
+    opening: `A abertura tem 2 parágrafos.
+1º, o lide, sem citação: a principal conclusão, previsão ou dado do painel, atribuído a quem disse, com cargo e organização, e onde ("O gerente de [Organização], [Nome], afirmou no [evento] que…"), em até 40 palavras. Não abra pelo tema do painel, pelo dia do evento, pela programação nem pela lista de participantes.
+2º: o como ou o porquê dessa conclusão, com uma fala curta de quem a apresentou; o nome do painel entre aspas e o mediador, com cargo, só se a fonte ou a pauta trouxerem e couber.`,
+    parts: `Dentro de cada seção, do mais importante para o menos importante: a tese em discurso indireto, atribuída ao palestrante (cargo e empresa na primeira menção) → o dado que a sustenta, atribuído ("segundo [Nome]", "de acordo com os dados apresentados pela [instituição]") → uma fala curta e literal que acrescente razão ou número. Uma segunda fala só se trouxer informação nova. Quando a fonte listar de 2 a 4 ferramentas, ações ou números paralelos, use um parágrafo ">> Rótulo: explicação." para cada item, depois de uma frase com dois-pontos; nunca use ">>" para um item só. A última seção (section.last = true) guarda o que menos importa e termina no último fato pertinente, sem recapitular o painel. Os verbos finalizou e concluiu só podem aparecer na última fala do texto e nunca são obrigatórios.`,
+    reference: `Título: Economista da AEA prevê alta de 8% no consumo de tilápia em 2027
+Linha fina: Segundo Marta Lima, a queda no preço do filé explica a projeção; no mesmo painel, ela disse que a ração responde por 70% do custo
 
-Neste primeiro dia, o “Painel de Líderes – Desafios, perspectivas e estratégias para o mercado de pescado” reuniu executivos da indústria e do varejo nacional. O debate abordou desde o impacto da perda do poder de compra na escolha das proteínas até a reestruturação do atendimento ao consumidor no ponto de venda.
+A economista-chefe da Associação Exemplo de Aquicultura (AEA), Marta Lima, afirmou na Feira Modelo 2026 que o consumo de tilápia no Brasil deve crescer 8% em 2027. A projeção considera a queda de 5% no preço do filé no varejo neste ano.
 
-[Intertítulo] Competitividade de preços e o papel da informação
+“O preço chegou a um ponto em que a tilápia disputa espaço com o frango”, disse a economista no painel “Mercado de pescado em 2027”, mediado pelo jornalista Paulo Nunes.
 
-O poder de aquisição do consumidor brasileiro segue pressionado, alterando a dinâmica de escolha nos supermercados. Danilo Souza Alves, diretor da Friocenter Pescados, destacou que o fator financeiro determina diretamente a composição da cesta de compras no País.
+[Intertítulo] Custo da ração e margem do produtor
 
-“A gente percebe que o poder de compra do brasileiro tem caído cada vez mais. O brasileiro realmente não escolhe o que ele gosta, o que ele quer. Ele escolhe o que cabe dentro do seu bolso”, observou Alves.
+De acordo com Lima, a ração responde por 70% do custo de produção, e a alta do milho reduziu a margem dos piscicultores em 2026.
 
-[Intertítulo] Mudança no comportamento do consumidor e decisões no varejo
-
-Meg Felippe, diretora de varejo da Frescatto Company, explicou que a compra de peixe no supermercado é predominantemente emocional e intuitiva, sendo o preço o fator de maior atrito racional.
-
-“Antes era muito comum a dona de casa chegar e dizer ‘eu vim comprar uma tilápia’. Hoje as pessoas têm mais um comportamento de ocasião”, afirmou a diretora da Frescatto Company.`,
+“Quem não renegociou o contrato de ração no primeiro semestre perdeu dinheiro”, afirmou Lima.`,
   },
   awards: {
     label: 'PREMIAÇÃO',
-    structure: `Formato: os vencedores de um prêmio entregue no evento, exatamente como constam no material oficial.
-- title: "[Prêmio] revela vencedores na [evento]" ou "[Evento] entrega [Prêmio]", de 55 a 75 caracteres, sem ponto final.
-- dek (linha fina): de 100 a 140 caracteres, sem ponto final: quando foi a cerimônia, o que o prêmio reconheceu e as categorias, se a fonte disser.
-- sections: uma seção por categoria, intertítulo "Categoria [Nome]" exatamente com o nome da categoria na fonte. Se a fonte tiver mais categorias do que seções, agrupe categorias vizinhas sem omitir nenhum vencedor.
-- introIds: o nome do prêmio, a finalidade e a condução da cerimônia, se a fonte trouxer.`,
-    opening: `A abertura tem 1 a 3 parágrafos: "A [cerimônia/noite] da [evento] foi marcada pela entrega do [Prêmio]", com a finalidade do prêmio só se a fonte disser; depois, quem conduziu, o formato das colocações e quem entregou os troféus, se a fonte trouxer; uma fala da organização apenas se existir na fonte. Termine a abertura com exatamente esta frase, sem acrescentar nada a ela: "Confira a seguir os vencedores de cada categoria:".`,
-    parts: `Cada vencedor é um parágrafo no molde ">> [Colocação]: [Nome], da [Instituição ou empresa] | Projeto: [Título]." com exatamente os dados da fonte. A colocação é a da fonte (Ouro, Prata, Bronze, 1º lugar, Vencedor, Vencedora), sem repetir o nome da categoria; omita "| Projeto:" quando a fonte não trouxer projeto. Não complete instituição, estado, projeto ou colocação ausentes, não corrija grafias e não invente categorias. Se a fonte listar indicados ou finalistas e houver uma seção para eles, use um único parágrafo: "Os indicados foram: [Nome], da [Instituição]; [Nome], da [Instituição]…". Sem comentários entre os vencedores e sem fecho depois da lista.`,
-    reference: `Título: Prêmio Inovação Aquícola revela vencedores na Aquishow Brasil 2026
-Linha fina: Cerimônia no primeiro dia da feira reconheceu os melhores projetos nas categorias Academia, Produção e Sustentabilidade
+    structure: `Formato: notícia dos vencedores de um prêmio entregue no evento, exatamente como constam no material oficial.
+- title: o resultado, de 55 a 90 caracteres, sem ponto final: "[Vencedor] vence [categoria] do [Prêmio]" quando a fonte destacar um vencedor; senão, "[Prêmio] premia [número] [projetos, empresas ou pessoas] na [evento]" quando a fonte trouxer esse número escrito; senão, "[Prêmio] anuncia vencedores na [evento]". Nunca conte vencedores para criar um número.
+- dek (linha fina): de 100 a 140 caracteres, sem ponto final: o que o prêmio reconheceu e as categorias, se a fonte disser.
+- sections: uma seção por categoria, intertítulo "Categoria [Nome]" exatamente com o nome da categoria na fonte. Se a fonte tiver mais categorias do que seções, agrupe categorias vizinhas sem omitir nenhum vencedor. As seções trazem só os vencedores, sem falas.
+- introIds: o nome do prêmio, o vencedor de maior destaque na fonte (o primeiro colocado, o prêmio principal ou o mais citado) e quando e onde foi a entrega, se a fonte trouxer.`,
+    opening: `A abertura tem de 1 a 3 parágrafos.
+1º, o lide, sem citação: o resultado do prêmio — o [Prêmio] e o vencedor de maior destaque na fonte (o primeiro colocado, o prêmio principal ou o mais citado), ou as categorias premiadas — e quando e onde foi a entrega, em até 40 palavras. Não abra pela cerimônia, pela noite nem pelo evento ("A noite foi marcada por…").
+Depois, o que o prêmio reconhece, quem conduziu e o formato das colocações, só se a fonte trouxer; uma fala da organização apenas se existir na fonte e acrescentar informação. Não anuncie a lista nem use "Confira": os vencedores vêm nas seções.`,
+    parts: `Cada vencedor é um parágrafo no molde ">> [Colocação]: [Nome], da [Instituição ou empresa] | Projeto: [Título]." com exatamente os dados da fonte. A colocação é a da fonte (Ouro, Prata, Bronze, 1º lugar, Vencedor, Vencedora), sem repetir o nome da categoria; omita "| Projeto:" quando a fonte não trouxer projeto. Não complete instituição, estado, projeto ou colocação ausentes, não corrija grafias e não invente categorias. Se a fonte listar indicados ou finalistas e houver uma seção para eles, use um único parágrafo: "Os indicados foram: [Nome], da [Instituição]; [Nome], da [Instituição]…". Sem comentários entre os vencedores e sem fecho depois da lista. Nesta premiação as seções não levam citação: só a lista.`,
+    reference: `Título: Cooperativa Rio Claro vence categoria Produção do Prêmio Modelo de Inovação
+Linha fina: Prêmio entregue na Feira Modelo 2026 reconheceu projetos nas categorias Academia, Produção e Sustentabilidade
 
-A noite de abertura da Aquishow Brasil 2026 foi marcada pela celebração do desenvolvimento tecnológico e científico do setor. Ao final do primeiro dia de feira, foi realizada a cerimônia de entrega do Prêmio Inovação Aquícola Aquishow Brasil 2026.
+A Cooperativa Rio Claro venceu a categoria Produção do Prêmio Modelo de Inovação, entregue na terça-feira (20) na Feira Modelo 2026, com um projeto que reduz em 30% o uso de água na engorda de camarão.
 
-Conduzida por Marilsa Fernandes, coordenadora geral da Aquishow, a premiação distribuiu reconhecimentos em formato de Ouro, Prata e Bronze.
+Conduzida pela coordenadora da feira, Helena Costa, a premiação distribuiu colocações de Ouro, Prata e Bronze.
 
-Confira a seguir os vencedores de cada categoria:
+[Intertítulo] Categoria Produção
 
-[Intertítulo] Categoria Academia
+>> Ouro: Ana Souza, da Cooperativa Rio Claro | Projeto: Recirculação de água na engorda de camarão.
 
->> Ouro: Guilherme Wolff Bueno, da UNESP Registro (SP) | Projeto: Documentário Entre Redes e Desafios da Piscicultura Familiar.
-
->> Prata: Elizângela de França Carneiro Carvalho, da Embrapa Pesca e Aquicultura.`,
+>> Prata: João Pires, da Fazenda Modelo.`,
   },
   opening: {
     label: 'ABERTURA',
-    structure: `Formato: a cerimônia de abertura do evento, discurso por discurso, com os anúncios em primeiro plano.
-- title: o anúncio mais forte antes do rito, de 60 a 90 caracteres, sem ponto final ("Cerimônia de abertura traz anúncio de [medida] e [segundo fato]").
-- dek (linha fina): de 100 a 170 caracteres, sem ponto final: um segundo anúncio e os nomes de quem discursou.
-- sections: uma seção por anúncio ou discurso, na ordem do palco; o intertítulo nomeia o anúncio, não o orador ("Marco no licenciamento ambiental").
-- introIds: quando, onde e qual edição, e quem compôs a mesa.`,
-    opening: `A abertura tem 1 ou 2 parágrafos: "A abertura oficial da [edição] da [evento], realizada [dia] em [cidade], marcou o início…", com edição, dia e cidade somente se estiverem na fonte ou no evento. Não antecipe os anúncios das seções.`,
-    parts: `Cada seção segue o discurso: quem fala na primeira menção (autoridade com cargo antes do nome e sigla do órgão quando a fonte trouxer: "o ministro da Pesca e Aquicultura (MPA), [Nome]"; organizador com nome primeiro: "[Nome], presidente do [evento]") → paráfrase do anúncio → citação → detalhe técnico ou número atribuído → citação. Retomadas: "o titular da pasta", "o dirigente". Na última seção, encerre com o último anúncio pertinente, sem recapitular.`,
-    reference: `Título: Cerimônia oficial de abertura traz anúncio de nova regra ambiental e metas para a tilápia
-Linha fina: Candidatura para sediar o LACQUA 2027 e revisão da Conama 413 marcaram os discursos de Altemir Gregolin e do ministro da Pesca e Aquicultura
+    structure: `Formato: notícia da cerimônia de abertura do evento: os anúncios feitos no palco e quem os fez.
+- title: o anúncio mais forte, com quem o fez, verbo concreto no presente e número quando houver, de 60 a 90 caracteres, sem ponto final ("[Autoridade] anuncia [medida] na abertura da [evento]"). Nunca "Cerimônia marca…" nem "Abertura traz…".
+- dek (linha fina): de 100 a 170 caracteres, sem ponto final: o segundo anúncio e quem o fez.
+- sections: uma seção por anúncio, em ordem decrescente de importância (a ordem do palco só desempata); o intertítulo nomeia o anúncio, não o orador ("Licenciamento pelo volume de produção").
+- introIds: o anúncio mais forte, quem o fez e a fala que o sustenta, com os ids de todas as frases seguidas dela; quando e onde, se a fonte ou o evento trouxerem.`,
+    opening: `A abertura tem 1 ou 2 parágrafos.
+1º, o lide, sem citação: o anúncio mais forte, quem o fez (autoridade com cargo antes do nome e sigla do órgão quando a fonte trouxer) e onde ("O ministro da Pesca e Aquicultura (MPA), [Nome], anunciou na abertura da [evento] que…"), em até 40 palavras; a frase seguinte traz o como ou o porquê. Edição, dia e cidade só se estiverem na fonte ou no evento. Nunca abra pelo rito ("A abertura oficial… marcou o início…") nem pela composição da mesa.
+2º, se houver: uma fala curta de quem anunciou, com informação que o lide não deu.`,
+    parts: `Cada seção desenvolve um anúncio, do mais importante para o menos importante: quem o fez na primeira menção (autoridade com cargo antes do nome e sigla do órgão quando a fonte trouxer: "o ministro da Pesca e Aquicultura (MPA), [Nome]"; organizador com nome primeiro: "[Nome], presidente do [evento]") → o anúncio em discurso indireto → o detalhe técnico ou número atribuído → uma fala curta e literal que acrescente razão ou prazo. Retomadas: "o titular da pasta", "o dirigente". Agradecimentos e histórico do evento ficam fora ou, se trouxerem fato, vão em uma frase na última seção. Na última seção, encerre com o último fato pertinente, sem recapitular.`,
+    reference: `Título: Secretário anuncia crédito de R$ 500 milhões para aquicultores na abertura da Feira Modelo
+Linha fina: Presidente da feira, Luiz Andrade, informou que a organização vai disputar a sede de um congresso internacional em 2028
 
-A abertura oficial da 8ª edição do International Fish Congress & Fish Expo Brasil (IFC Brasil 2026), realizada nesta quarta-feira (2) em Foz do Iguaçu (PR), marcou o início das atividades do evento, com autoridades e lideranças cooperativas da cadeia.
+O secretário de Pesca do Estado, Rui Matos, anunciou na abertura da Feira Modelo 2026 uma linha de crédito de R$ 500 milhões para pequenos aquicultores. O dinheiro estará disponível a partir de janeiro, com juros de 6% ao ano.
 
-[Intertítulo] Propósito do evento e candidatura internacional
+“É o maior volume já destinado à aquicultura familiar no Estado”, disse o secretário.
 
-Em seu discurso de abertura, Altemir Gregolin, presidente do IFC Brasil, relembrou a trajetória do congresso desde a sua criação em 2019. “O IFC Brasil nasceu com um propósito: oportunizar melhores condições para o desenvolvimento do setor no País”, declarou.
+[Intertítulo] Crédito para tanques e ração
 
-[Intertítulo] Marco no licenciamento ambiental
+Segundo Matos, cada produtor poderá financiar até R$ 200 mil, com três anos de carência. Os recursos cobrem tanques, aeradores e ração.
 
-Convidado para discursar na cerimônia, o ministro da Pesca e Aquicultura (MPA), Édipo Araújo, classificou o dia como histórico para a atividade, com a aprovação da revisão da Resolução nº 413/2009 pelo Conselho Nacional do Meio Ambiente (Conama).
+“O produtor só paga a primeira parcela depois da primeira despesca”, afirmou Matos.
 
-“Tivemos dez anos de discussões e agora a aquicultura será licenciada pelo volume de produção. Isso desburocratiza o processo, principalmente para a aquicultura familiar”, anunciou Araújo.`,
+[Intertítulo] Candidatura para 2028
+
+O presidente da feira, Luiz Andrade, informou que a organização vai disputar a sede de um congresso internacional de aquicultura em 2028. “A candidatura será entregue em março”, disse Andrade.`,
   },
   note: {
     label: 'NOTA CURTA',
     structure: `Formato: nota curta, um fato só, sem intertítulo.
-- title: o fato com verbo no presente, de 50 a 80 caracteres, sem ponto final.
+- title: o fato, com verbo concreto no presente e número quando houver, de 50 a 80 caracteres, sem ponto final.
 - dek (linha fina): de 80 a 140 caracteres, sem ponto final, com um detalhe que o título não traz.
-- sections: use o número de seções da pauta apenas para organizar o contexto; os títulos das seções não serão publicados.
+- sections: use o número de seções da pauta apenas para organizar o contexto, do mais para o menos importante; os títulos das seções não serão publicados.
 - introIds: o fato central.`,
-    opening: `A abertura é o lide em 1 parágrafo: quem, o quê, quando e onde, em uma ou duas frases, sem citação na primeira frase.`,
-    parts: `Desenvolva o contexto em 1 ou 2 parágrafos curtos: um detalhe do fato, uma fala literal se existir na fonte, e o dado que completa a informação. Sem conclusão, sem chamada e sem intertítulo.`,
-    reference: `Título: Trident Seafoods conquista premiação para Food Service na SENA 2026
-Linha fina: Os novos nuggets de polaca do Alasca foram eleitos o melhor lançamento do segmento
+    opening: `A abertura é o lide em 1 parágrafo: a primeira frase diz quem, o quê, quando e onde, em até 40 palavras e sem citação; a segunda, se houver, acrescenta um detalhe novo do fato (o como, o porquê ou um número), nunca uma frase genérica sobre o evento ou a empresa. Datas exatamente como event e event.today as trazem; nunca "hoje", "amanhã" ou "ontem" sem a data.`,
+    parts: `Desenvolva o contexto em 1 ou 2 parágrafos curtos, do mais importante para o menos importante: um detalhe do fato, uma fala literal curta se existir na fonte e acrescentar informação, e o dado que completa a informação. Sem conclusão, sem chamada e sem intertítulo.`,
+    reference: `Título: Frigorífico Baía Azul recebe certificação para exportar tilápia ao Japão
+Linha fina: Empresa prevê o primeiro embarque ao Japão em março, com 40 toneladas de filé congelado
 
-A norte-americana Trident Seafoods venceu a categoria "Melhor Novo Produto para Food Service" no Seafood Excellence Awards 2026. O resultado foi revelado na Seafood Expo North America (SENA).
+O Frigorífico Baía Azul recebeu na segunda-feira (19) a certificação sanitária que permite exportar filé de tilápia ao Japão, informou a empresa na Feira Modelo 2026. O primeiro embarque, de 40 toneladas, está previsto para março.
 
-Feitos com polaca do Alasca, os nuggets têm cobertura empanada neutra e crocante, projetada para absorver diferentes molhos sem perder a textura. Segundo a empresa, o produto mantém a crocância por até uma hora após o preparo.`,
+Segundo o diretor comercial, Paulo Freitas, a certificação exigiu dois anos de auditorias. “O Japão pede rastreabilidade de cada lote, do alevino à embalagem”, disse.`,
   },
 };
 
@@ -186,14 +198,18 @@ Evento e data de hoje (dados digitados pela redação):
 Pessoas confirmadas (nome, cargo e empresa como devem aparecer):
 {{people}}`;
 
+const REFERENCE_HEADER = 'REFERÊNCIA DE ESTILO (exemplo fictício escrito para mostrar o padrão; não é fonte: nenhum nome, número ou fato dele pode aparecer no texto)';
+
 function outlinePrompt(copy: FunnelCopy): string {
   return `ESTRUTURA — ${copy.label} — PADRÃO SEAFOOD BRASIL
 Planeje o texto sem redigi-lo. Retorne title, dek, introIds e sections com title e evidenceIds.
 ${FIDELITY}
 
+${HARD_NEWS}
+
 ${copy.structure}
 
-Use exatamente o número de seções da pauta (brief.sections), na ordem mais clara. Selecione até 2 ids para a abertura e de 1 a 20 por seção, somente ids presentes na fonte e sem repetir ids entre partes. Distribua as passagens com falas literais entre as seções, para que o texto alcance o mínimo de citações do formato. O título, a linha fina e os intertítulos só podem conter fatos sustentados pela fonte, pelas pessoas ou pelo evento; um nome ou número de fora será removido.
+Primeiro decida qual é a notícia: o fato mais novo e mais importante do material. Ela é o título e o lide. Use exatamente o número de seções da pauta (brief.sections), em ordem decrescente de importância: a primeira desenvolve o que mais importa depois do lide; a última guarda o que menos importa. Selecione de 1 a 4 ids para a abertura — o fato do lide e, quando o formato pede, a fala que o sustenta, com os ids de todas as frases seguidas dela — e de 1 a 20 por seção, somente ids presentes na fonte e sem repetir ids entre partes. Em cada seção, inclua ao menos uma passagem citável (frase de um falante identificado, nunca de quem entrevista, com quatro palavras ou mais) sempre que a fonte tiver uma para aquele assunto e o formato pedir falas; para uma fala de duas frases, selecione os ids das duas. Quando a fonte trouxer FALAS CURADAS, prefira-as; quando trouxer FALAS LITERAIS CITÁVEIS (fonte em sínteses), escolha as falas por elas. Distribua as passagens com falas literais entre as seções, para que o texto alcance o mínimo de citações do formato. O título, a linha fina e os intertítulos só podem conter fatos sustentados pela fonte, pelas pessoas ou pelo evento; um nome ou número de fora será removido.
 
 ${DATA_BLOCK}
 
@@ -206,6 +222,8 @@ function introPrompt(copy: FunnelCopy): string {
 Escreva apenas a abertura (os parágrafos antes do primeiro intertítulo) da estrutura aprovada. Use introIds como foco; o outline inteiro serve para não antecipar o que vem depois.
 ${FIDELITY}
 
+${HARD_NEWS}
+
 ${STYLE}
 
 COMO ABRIR ESTE FORMATO
@@ -213,7 +231,7 @@ ${copy.opening}
 
 ${PART_MECHANICS}
 
-REFERÊNCIA DE ESTILO (não é fonte; nenhum fato dela pode ser usado)
+${REFERENCE_HEADER}
 ${copy.reference}
 
 ${DATA_BLOCK}
@@ -228,13 +246,15 @@ Fonte com evidências [id]:
 {{source}}
 
 CONFERÊNCIA FINAL DESTA PARTE
-Retorne apenas os parágrafos da abertura, próximos de targetChars caracteres NO TOTAL, sem passar de maxChars, no padrão da Seafood Brasil e só com fatos da fonte, das pessoas e do evento.`;
+Retorne apenas os parágrafos da abertura, com a notícia na primeira frase, próximos de targetChars caracteres NO TOTAL, sem passar de maxChars, no padrão da Seafood Brasil e só com fatos da fonte, das pessoas e do evento.`;
 }
 
 function sectionPrompt(copy: FunnelCopy): string {
   return `SEÇÃO — ${copy.label} — PADRÃO SEAFOOD BRASIL
 Escreva somente a seção atual. Retorne title exatamente igual ao título recebido e paragraphs, cada um com text e evidenceIds. Use as evidências de section.evidenceIds; a fonte completa serve para conferir o contexto, não para importar detalhes de outras seções. Leia o texto já escrito para não repetir fatos e falas, e as seções futuras para não antecipá-las.
 ${FIDELITY}
+
+${HARD_NEWS}
 
 ${STYLE}
 
@@ -243,7 +263,7 @@ ${copy.parts}
 
 ${PART_MECHANICS}
 
-REFERÊNCIA DE ESTILO (não é fonte; nenhum fato dela pode ser usado)
+${REFERENCE_HEADER}
 ${copy.reference}
 
 ${DATA_BLOCK}
@@ -264,7 +284,7 @@ Fonte com evidências [id]:
 {{source}}
 
 CONFERÊNCIA FINAL DESTA PARTE
-Retorne apenas os parágrafos desta seção, próximos de targetChars caracteres NO TOTAL, sem passar de maxChars, no padrão da Seafood Brasil e só com fatos da fonte, das pessoas e do evento.`;
+Retorne apenas os parágrafos desta seção, do fato mais importante para o menos importante, próximos de targetChars caracteres NO TOTAL, sem passar de maxChars, no padrão da Seafood Brasil e só com fatos da fonte, das pessoas e do evento.`;
 }
 
 /** The default prompt of a funnel step. */
