@@ -14,6 +14,9 @@ test('release preflight accepts the existing OpenAI and Claude credential aliase
     'REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'PIXABAY_API_KEY', 'OPEN_AI_API_KEY', 'CLAUDE_API_KEY'].map(name => [name, 'present']));
   const values = releaseEnvironment(environment);
   assert.equal(values.OPENAI_API_KEY, 'present'); assert.equal(values.ANTHROPIC_API_KEY, 'present');
+  assert.equal(values.GEMINI_API_KEY, undefined, 'Gemini is never required by an existing deployment');
+  assert.equal(releaseEnvironment({ ...environment, GOOGLE_API_KEY: ' alias-key ' }).GEMINI_API_KEY, 'alias-key');
+  assert.equal(releaseEnvironment({ ...environment, GEMINI_API_KEY: 'direct-key', GOOGLE_API_KEY: 'alias-key' }).GEMINI_API_KEY, 'direct-key');
 });
 
 test('release rejects expired API keys and sanitizes network errors before any deployment', async () => {
@@ -35,4 +38,19 @@ test('provider preflight checks all five APIs with server credentials', async ()
     without.push(new URL(url).hostname); return new Response('{}');
   });
   assert.ok(!without.includes('api.tavily.com'), 'without the optional fact-check key nothing is sent to Tavily');
+  assert.ok(!without.includes('generativelanguage.googleapis.com'), 'without an optional Gemini key no Gemini request is made');
+});
+
+test('Gemini preflight uses a header and model metadata, supports its alias and sanitizes errors', async () => {
+  const requests = [];
+  await checkProviders({ GOOGLE_API_KEY: 'gemini-secret-placeholder' }, async (url, options) => {
+    requests.push({ url, options }); return new Response('{}');
+  });
+  const gemini = requests.find(entry => new URL(entry.url).hostname === 'generativelanguage.googleapis.com');
+  assert.ok(gemini); assert.equal(gemini.options.headers['x-goog-api-key'], 'gemini-secret-placeholder');
+  assert.equal(new URL(gemini.url).pathname, '/v1beta/models');
+  assert.ok(!gemini.url.includes('gemini-secret-placeholder')); assert.equal(gemini.options.body, undefined);
+  await assert.rejects(checkProviders({ GEMINI_API_KEY: 'private-placeholder' }, async url =>
+    new Response('sensitive provider response', { status: new URL(url).hostname === 'generativelanguage.googleapis.com' ? 401 : 200 })),
+  error => /Gemini credential check failed \(HTTP 401\)/.test(error.message) && !/private-placeholder|sensitive/.test(error.message));
 });

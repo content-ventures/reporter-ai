@@ -8,8 +8,8 @@ import { assertStagingTarget } from './lib/staging-target.mjs';
 const PORTAL = '10000000-0000-0000-0000-000000000101';
 const SECRETS = ['REPORTER_WORKER_PASSWORD', 'REPORTER_RUNTIME_PASSWORD', 'REPORTER_APP_ORIGINS', 'GROQ_API_KEY', 'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY'];
-/** Passed on when present: the fact check stays off without it. */
-const OPTIONAL = ['TAVILY_API_KEY'];
+/** Optional providers are available only when their keys are present. */
+const OPTIONAL = ['TAVILY_API_KEY', 'GEMINI_API_KEY'];
 
 /**
  * Writes a mode-0600 env file that runs the server code against staging: owner, runtime and
@@ -19,7 +19,8 @@ const OPTIONAL = ['TAVILY_API_KEY'];
 export async function writeStagingEnvironment(file, environment = process.env, { run = spawnSync, request = fetch } = {}) {
   await assertStagingTarget(environment, request);
   const values = { ...environment, OPENAI_API_KEY: environment.OPENAI_API_KEY || environment.OPEN_AI_API_KEY,
-    ANTHROPIC_API_KEY: environment.ANTHROPIC_API_KEY || environment.CLAUDE_API_KEY };
+    ANTHROPIC_API_KEY: environment.ANTHROPIC_API_KEY || environment.CLAUDE_API_KEY,
+    GEMINI_API_KEY: environment.GEMINI_API_KEY?.trim() || environment.GOOGLE_API_KEY?.trim() };
   const missing = SECRETS.filter(name => !values[name]?.trim());
   if (missing.length) throw new Error(`Missing staging configuration: ${missing.join(', ')}.`);
   const neon = (args, extra = {}) => {

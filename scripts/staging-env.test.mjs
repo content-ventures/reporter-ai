@@ -37,3 +37,21 @@ test('the staging env pull gets the owner connection neon.ts needs, and a failur
     assert.ok(!error.message.includes('owner-secret'), 'a public log never shows the owner password');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('staging passes Gemini only when configured and normalizes its optional alias', async () => {
+  const { writeStagingEnvironment } = await import('./staging-env.mjs');
+  const directory = await mkdtemp(join(tmpdir(), 'reporter-staging-gemini-')), file = join(directory, 'staging.env');
+  const run = (_command, args) => {
+    if (args[0] === 'connection-string') return { status: 0, stdout: owner };
+    writeFileSync(file, 'NEON_FUNCTION_REPORTERWORKER_BASE_URL=https://br-stage-reporterworker.example.test/\n');
+    return { status: 0, stdout: '' };
+  };
+  try {
+    for (const [extra, expected] of [[{}, undefined], [{ GOOGLE_API_KEY: ' alias-placeholder ' }, 'alias-placeholder'],
+      [{ GEMINI_API_KEY: 'direct-placeholder', GOOGLE_API_KEY: 'alias-placeholder' }, 'direct-placeholder']]) {
+      await writeStagingEnvironment(file, { ...staging, ...extra }, { run, request });
+      const settings = parseEnv(await readFile(file, 'utf8'));
+      assert.equal(settings.GEMINI_API_KEY, expected); assert.equal(settings.GOOGLE_API_KEY, undefined);
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
