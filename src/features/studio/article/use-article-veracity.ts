@@ -28,8 +28,9 @@ export function useArticleVeracity(productionId: string, quotes: readonly { rang
     if (!port || generating) return undefined;
     let live = true;
     void port.forProduction(productionId).then((view) => {
-      // Quotes without their person are never checked: they would wait forever.
-      if (live) setCitations(view.items.filter((item) => item.personId));
+      // Quotes without their person are never checked now: one already checked still counts, one
+      // never checked would wait forever.
+      if (live) setCitations(view.items.filter((item) => item.personId || item.factCheck));
     }).catch(() => undefined);
     return () => {
       live = false;

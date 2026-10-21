@@ -25,7 +25,7 @@ export type QuoteBank = {
    * Fact-checks the quotes one after the other; a quote the server no longer allows is skipped,
    * any other refusal stops the batch. Resolves how many were checked and skipped.
    */
-  check: (ids: readonly string[], force?: boolean) => Promise<{ done: number; skipped: number }>;
+  check: (ids: readonly string[], force?: boolean) => Promise<{ done: number; skipped: number; queued?: boolean }>;
   /** The editor's verdict on one claim of the last check. */
   decide: (id: string, decision: ClaimDecision) => Promise<boolean>;
   /** Quotes being checked now. */
@@ -58,6 +58,8 @@ export function useQuoteBank(): QuoteBank {
   const quotesRef = useRef<BankQuote[]>([]);
   // One batch at a time, and none after the page is gone: each check spends search credits.
   const running = useRef(false);
+  // Checks asked for while a batch runs (a quote that just got its author) wait for it, not dropped.
+  const queued = useRef<{ id: string; force: boolean }[]>([]);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -108,16 +110,21 @@ export function useQuoteBank(): QuoteBank {
   }, [port, view, actions, replace]);
 
   const check = useCallback(async (ids: readonly string[], force = false) => {
-    if (running.current) return { done: 0, skipped: 0 };
+    if (running.current) {
+      queued.current.push(...ids.map((id) => ({ id, force })));
+      return { done: 0, skipped: 0, queued: true };
+    }
     running.current = true;
     let done = 0, skipped = 0;
     if (ids.length > 1) setProgress({ done: 0, total: ids.length });
+    const work = ids.map((id) => ({ id, force }));
     try {
-      for (const id of ids) {
+      while (work.length || queued.current.length) {
+        const { id, force: again } = work.shift() ?? queued.current.shift()!;
         if (!live.current) break;
         setChecking(new Set([id]));
         try {
-          if (port) replace(await port.check(id, force));
+          if (port) replace(await port.check(id, again));
           else {
             const quote = quotesRef.current.find((item) => item.id === id);
             if (!quote) continue;
@@ -138,11 +145,12 @@ export function useQuoteBank(): QuoteBank {
           return { done, skipped };
         }
         done += 1;
-        if (ids.length > 1) setProgress({ done, total: ids.length });
+        if (ids.length > 1) setProgress({ done: Math.min(done, ids.length), total: ids.length });
       }
       return { done, skipped };
     } finally {
       running.current = false;
+      queued.current = [];
       if (live.current) {
         setChecking(new Set());
         setProgress(undefined);
