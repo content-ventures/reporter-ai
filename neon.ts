@@ -16,6 +16,7 @@ const requiredAny = (...names: string[]) => {
 };
 // Known once the function exists on the branch: `neon env pull` exposes it for later deploys.
 const workerBaseUrl = () => process.env.REPORTER_WORKER_URL?.trim() || process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL?.trim();
+const geminiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
 const workerDatabaseUrl = () => {
   const url = new URL(required('DATABASE_URL'));
   url.username = 'reporter_worker';
@@ -75,6 +76,7 @@ const functions = {
       GROQ_API_KEY: required('GROQ_API_KEY'),
       OPENAI_API_KEY: requiredAny('OPENAI_API_KEY','OPEN_AI_API_KEY'),
       ANTHROPIC_API_KEY: requiredAny('ANTHROPIC_API_KEY','CLAUDE_API_KEY'),
+      ...(geminiKey ? { GEMINI_API_KEY: geminiKey } : {}),
       PIXABAY_API_KEY: required('PIXABAY_API_KEY'),
       // Optional: without it the worker queues no fact check (docs/FACT_CHECK.md).
       ...(process.env.TAVILY_API_KEY?.trim() ? { TAVILY_API_KEY: process.env.TAVILY_API_KEY.trim() } : {}),

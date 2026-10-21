@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from 'node:fs/promises';
 
 // Evaluating the config needs placeholder deployment values; nothing connects anywhere.
 for (const name of ["REPORTER_WORKER_PASSWORD", "GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "PIXABAY_API_KEY", "TAVILY_API_KEY"]) process.env[name] ??= "config-test-only";
 process.env.DATABASE_URL ??= "postgresql://owner:placeholder@localhost/test";
 process.env.REPORTER_APP_ORIGINS ??= "https://reporter.invalid";
+process.env.GEMINI_API_KEY = "gemini-config-test-only";
+process.env.GOOGLE_API_KEY = "google-config-test-only";
 const { default: config } = await import("../neon.ts");
 
 test("no schedule wakes the database more often than hourly", () => {
@@ -20,4 +23,23 @@ test("the worker reads its allowed origins from the deployment, never a hard-cod
   const env = config.functions.reporterworker.env;
   assert.equal(env.REPORTER_APP_ORIGINS, process.env.REPORTER_APP_ORIGINS);
   assert.equal("REPORTER_APP_ORIGIN" in env, false);
+});
+
+test("Gemini is optional and its Google alias is normalized into the worker environment", async () => {
+  assert.equal(config.functions.reporterworker.env.GEMINI_API_KEY, 'gemini-config-test-only');
+  delete process.env.GEMINI_API_KEY;
+  const aliased = await import('../neon.ts?gemini-alias');
+  assert.equal(aliased.default.functions.reporterworker.env.GEMINI_API_KEY, 'google-config-test-only');
+  delete process.env.GOOGLE_API_KEY;
+  const without = await import('../neon.ts?gemini-absent');
+  assert.equal('GEMINI_API_KEY' in without.default.functions.reporterworker.env, false);
+});
+
+test('release workflows pass the optional Gemini alias through deployment and acceptance', async () => {
+  const worker = await readFile(new URL('../.github/workflows/worker-deploy.yml', import.meta.url), 'utf8');
+  const release = await readFile(new URL('../.github/workflows/controlled-release.yml', import.meta.url), 'utf8');
+  for (const workflow of [worker, release]) assert.match(workflow, /GEMINI_API_KEY: \$\{\{ secrets\.GEMINI_API_KEY \|\| secrets\.GOOGLE_API_KEY \}\}/);
+  assert.match(worker, /\['TAVILY_API_KEY', 'GEMINI_API_KEY'\]\.filter/);
+  const required = worker.match(/for name in ([^;]+);/)[1];
+  assert.doesNotMatch(required, /GEMINI_API_KEY|GOOGLE_API_KEY/);
 });

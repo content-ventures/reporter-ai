@@ -50,6 +50,12 @@ The `staging` and `production` environments, their variables and secrets are lis
 any infrastructure change and authenticate with metadata or search endpoints; they do not prove
 quota for every generation model.
 
+Gemini is optional. When `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is present in the selected GitHub
+environment, the workflow passes it to the Neon worker and staging acceptance as `GEMINI_API_KEY`.
+Its preflight reads [Gemini model metadata](https://ai.google.dev/api/models) with the key in a
+request header; it generates no content and does not establish model-specific access or quota.
+Existing deployments without this key keep their current provider requirements.
+
 ## Verification
 
 Acceptance runs on the persistent staging project, never on production and without creating a

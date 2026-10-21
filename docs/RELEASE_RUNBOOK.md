@@ -50,8 +50,8 @@ passwords from the written file into the staging secrets, then delete the file.
 
 | Environment | Variables | Secrets |
 | --- | --- | --- |
-| `staging` | `NEON_PROJECT_ID`, `NEON_BRANCH_ID`, `REPORTER_APP_ORIGINS`, `REPORTER_ACCEPTANCE_TARGET=staging`, optional `NEON_TRANSFER_QUOTA_BYTES` | `NEON_API_KEY`, `REPORTER_WORKER_PASSWORD`, `REPORTER_RUNTIME_PASSWORD`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PIXABAY_API_KEY`, optional `TAVILY_API_KEY` |
-| `production` | `NEON_PROJECT_ID`, `NEON_BRANCH_ID`, `REPORTER_APP_ORIGINS`, `REPORTER_APP_URL`, `NEON_TRANSFER_QUOTA_BYTES` | `NEON_API_KEY`, `REPORTER_WORKER_PASSWORD`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PIXABAY_API_KEY`, optional `TAVILY_API_KEY` |
+| `staging` | `NEON_PROJECT_ID`, `NEON_BRANCH_ID`, `REPORTER_APP_ORIGINS`, `REPORTER_ACCEPTANCE_TARGET=staging`, optional `NEON_TRANSFER_QUOTA_BYTES` | `NEON_API_KEY`, `REPORTER_WORKER_PASSWORD`, `REPORTER_RUNTIME_PASSWORD`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PIXABAY_API_KEY`, optional `TAVILY_API_KEY` and `GEMINI_API_KEY` (alias `GOOGLE_API_KEY`) |
+| `production` | `NEON_PROJECT_ID`, `NEON_BRANCH_ID`, `REPORTER_APP_ORIGINS`, `REPORTER_APP_URL`, `NEON_TRANSFER_QUOTA_BYTES` | `NEON_API_KEY`, `REPORTER_WORKER_PASSWORD`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PIXABAY_API_KEY`, optional `TAVILY_API_KEY` and `GEMINI_API_KEY` (alias `GOOGLE_API_KEY`) |
 
 - `REPORTER_APP_ORIGINS` lists the exact browser origins allowed to upload, comma-separated, such
   as the production domain. On staging, use the stable Vercel preview origin of the branch you test.
@@ -71,7 +71,7 @@ Settings stay in the Francal workspace dashboard; never use the Vercel CLI or a 
 | `REPORTER_WORKER_URL` | production worker URL | staging worker URL |
 | `REPORTER_WORKER_PASSWORD` | production worker password | staging worker password |
 | `NEON_AUTH_BASE_URL`, `NEON_AUTH_COOKIE_SECRET` | production Auth | staging Auth |
-| `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PIXABAY_API_KEY`, optional `TAVILY_API_KEY` | provider keys | provider keys |
+| `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PIXABAY_API_KEY`, optional `TAVILY_API_KEY` and `GEMINI_API_KEY` (alias `GOOGLE_API_KEY`) | provider keys | provider keys |
 | `RSS_APP_API_KEY`, `RSS_APP_API_SECRET` (optional) | RSS.app account | RSS.app account |
 
 The worker URL appears as `NEON_FUNCTION_REPORTERWORKER_BASE_URL` in `neon env pull` once the
