@@ -340,11 +340,15 @@ test('headlines and texts carry the date as the event gives it, never hoje, aman
 
 test('a relative time never becomes a date or year the source does not give', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
-  const rule = 'Nunca converta uma expressão relativa de tempo ("no ano que vem", "amanhã", "mês passado") em data, mês ou ano sem que a fonte ou os dados do evento (event.today) tragam explicitamente a data de referência: sem ela, escreva o prazo como a fonte o disse, atribuído a quem o disse (entre aspas, se for "hoje", "amanhã" ou "ontem"), ou deixe-o fora.';
+  const rule = 'Nunca converta uma expressão relativa de tempo da fonte ("no ano que vem", "amanhã", "mês passado") em data, mês ou ano sem que a própria fonte traga explicitamente a data de referência: event.today é o dia em que o texto é escrito, não o da gravação, e nunca serve de referência para essa conversão. Sem a data de referência da fonte, escreva o prazo como a fonte o disse, atribuído a quem o disse (entre aspas, se for "hoje", "amanhã" ou "ontem"), ou deixe-o fora.';
   assert.ok(HARD_NEWS.includes(rule));
   assert.ok(definition.systemPrompt.includes(rule));
   for (const format of EDITORIAL_FORMATS) for (const key of ['outline', 'intro', 'section'] as const)
     assert.ok(definition.funnels[format][key].prompt.includes(rule), `${format} ${key}`);
+  // Every event job sends event.today, the day of generation: as a reference it would date "mês passado" from the wrong month.
+  assert.doesNotMatch(HARD_NEWS, /sem que a fonte ou os dados do evento \(event\.today\)/);
+  for (const format of EDITORIAL_FORMATS) for (const key of ['intro', 'section'] as const)
+    assert.ok(definition.funnels[format][key].prompt.includes('Nunca calcule nem suponha uma data.'), `${format} ${key}`);
   // The staging acceptance's facts turned "no ano que vem" into "em 2024", and the year reached the headlines.
   assert.ok(definition.steps.facts.prompt.includes('Expressões relativas de tempo ("no ano que vem", "amanhã", "mês passado") ficam com as palavras do trecho: nunca as converta em data, mês ou ano.'));
 });
