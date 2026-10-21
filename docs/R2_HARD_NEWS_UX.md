@@ -56,7 +56,7 @@ Production is an R1 build. `HARD_NEWS_DEMO` (`ui/r2-preview.ts`) is true there, 
 
 Library and settings:
 - Citações (`/quotes`, F2.11, cards in pages of 12, 24 or 48). The connected build reads the R1 citations (`CitationLibrary` port, `quotes/quote-model.ts` with tests).
-  - Each citation is an interview passage with speaker, program, minute and date, "Conferida" when the author is confirmed.
+  - Each citation is an interview passage with speaker, program, minute and, when the source has one, the recording date. It reads "Conferida" when the author is confirmed, and "Sugerida", with its own tab, when the outline picked it and the text did not quote it.
   - Its words, source and speaker are fixed; the context, the date and the check change.
   - "Adicionar fala" waits, with the reason ("As falas saem da transcrição de cada produção."), and the strip counts sources instead of uses.
   - Quotes from events or articles, with topic and role, have no R1 backend yet.

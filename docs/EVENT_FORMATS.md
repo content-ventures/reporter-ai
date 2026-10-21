@@ -65,20 +65,76 @@ The opening selects up to four evidence ids, so the lead's fact can come with ev
 
 A format job curates its evidence with the funnel's own Evidências prompt, which keeps the format's quote minimum (`sizing.minQuotes`), its opening ids and its rule on quotes. The workspace's shared quotes step is now the article's only. Curation still runs only when "Selecionar evidências antes da redação" (`curateQuotes`) is on.
 
-The Prompts page lists them under "Funil · …" and versions them with the rest. Workspaces saved before the funnels, or before the curation prompt, get the defaults through `withFormatFunnels`. Only the funnel steps someone edited are stored, so untouched funnels follow the code defaults. Their article prompts are never changed. The funnels use the model of the workspace's writing step.
+The Prompts page lists them under "Funil · …" and versions them with the rest. Workspaces saved before the funnels, or before the curation prompt, get the defaults through `withFormatFunnels`. Only the funnel steps someone edited are stored, so untouched funnels follow the code defaults. Adding the funnels never changes a workspace's article prompts: those change only when an admin applies a preset (below). The funnels use the model of the workspace's writing step.
 
 A format job writes part by part (`formatPipelineDefinition`). It reuses the measured budget, literal-quote and revision mechanics of the article.
+
+## Preset 3.0: the article as hard news
+
+The article prompts ship as **editorial prompts 3.0** (`defaultPipelineDefinition`). Models, temperatures and token limits are the same as in 2.0.
+
+- **System message.** It carries the same `HARD_NEWS` block as the funnels, so the R1 article follows the same lead, order, headline, attribution, self-claim and quote rules.
+- **Planning.** The outline decides the news first and makes it the title, with a concrete verb and none of the banned ones. The outline and the curation select up to four opening ids. Curation asks for `sizing.minQuotes` distinct quotes, with one quotable line per section when the source has one.
+- **Writing.** The opening starts with a lead of 40 words or fewer, with no quote. The sections go from the most to the least important and prefer `curated: true` entries. Outline, curation, opening, sections and the single-call article read `{{people}}` for names and roles.
+- **Long materials.** When a passage holds a quotable line of an identified speaker, the facts step copies it word for word, with the speaker and its id, in at most five records. An interviewer's question is never copied.
+- **Assistant.** It keeps its three tones, and all three write hard news. It reads neither `{{people}}` nor `{{event}}`, because it does not receive them.
+- **Unchanged.** The R1 article gets no linha fina, no grounding and no change to house punctuation.
+
+A saved revision is never upgraded silently. A queued job runs the revision it snapshotted, and `activePipeline` never rewrites prompts. Production keeps revision 1 until an admin applies 3.0 on the Prompts page:
+
+1. The page shows "Prompts padrão 3.0" when a prompt still holds a default that an earlier release shipped. The banner counts those prompts, and the customised ones that stay as they are. The catalog marks each such prompt "Padrão anterior".
+2. "Ver mudanças" shows one diff per prompt, from the current text to 3.0. "Atualizar para 3.0" saves the result as a new revision, and the previous one stays in Histórico. The button waits while the page has unsaved edits.
+3. A prompt counts as untouched when its text hashes to a shipped default (`KNOWN_DEFAULT_PROMPTS` in `src/domain/pipeline-preset.ts`). An untouched prompt moves to 3.0 and keeps its model, temperature and token limit. A customised prompt is kept, and a missing step is added. Stored funnel steps follow the same rule.
+4. A changed default adds its hash to `KNOWN_DEFAULT_PROMPTS` and never removes one; tests enforce both. An older build counts hashes it does not know as customised, so it cannot downgrade a prompt.
+5. To roll back, open Histórico, load the previous revision for editing and save it again.
+
+## Curated quotes
+
+A quote in Citações is **curated** when all of these hold:
+
+- a person saved it (revision 1 or later);
+- its author is confirmed and linked to a person;
+- its words are still literal in the authorized source version it names;
+- it belongs to this production.
+
+`src/domain/evidence-hints.ts` maps each curated quote to the sentences of the material that carry it.
+
+- **Planning.** The outline and curation source ends with "FALAS CURADAS": the curated lines with their ids and, when filled, why they matter (the relevância), newest first, up to 4,000 characters. A material that reaches the prompts as summaries loses its exact words. Its source also ends with "FALAS LITERAIS CITÁVEIS": exact sentences of 8 to 60 words, up to 6,000 characters, from the beginning, middle and end of the material. They come from linked speakers, or from the only confirmed person of a recording without labels.
+- **Writing.** Curated entries of `literalEvidence` carry `curated: true` and their relevance. The writing steps never see the planning lists, so a quote still comes only from the passages the outline selected.
+- **Only when the prompt explains them.** The planning lists are added only when the outline prompt names "FALAS CURADAS". The writing marks are added only when the opening prompt (or the single-call article prompt) names "curated: true". The funnels and the 3.0 prompts name both. Revision 1 names neither, so its prompts, source and cache stay the same until 3.0 is applied.
+
+A curated quote passes the same literal check as any other quote.
+
+## Suggested citations
+
+After a text is written, the outline passages it did not quote go to the citation bank as suggestions (`src/domain/citation-suggestions.ts`).
+
+- **Which passages.** Only the words of a linked speaker in an authorized source qualify, never an unattributed voice or the interviewer. Sentences that touch are joined into one passage of up to 1,200 characters. A passage that overlaps a quote of the text is left out.
+- **Limits.** A suggestion is stored with `origin: 'outline'`, revision 0 and the author not confirmed. A run adds at most 10, and a production keeps at most 40. Suggestions do not count toward the 5,000 entries that people and texts keep.
+- **A later quote wins.** When a text quotes the same words, that quote replaces an untouched suggestion, in the bank and in the list.
+- **On Citações.** A suggestion has a violet "Sugerida" badge and its own "Sugeridas" tab. It is never "Conferida", never counted under "A conferir", and it cannot be copied with attribution. The drawer says the structure suggested it and that it must be checked with the source. Once a person confirms it, it is a checked quote like any other, and it can become curated.
+- **Recording date.** A card shows the recording date only when the source has one. It never shows the day the text was written, and saving a quote without a date stores none.
+
+A recording without speaker labels gives no curated quotes and no suggestions, because its lines have no linked speaker (`locateCitation`).
 
 ## Validation
 
 - **Unit tests:**
   - `src/domain/formats.test.ts`;
   - `src/domain/grounding.test.ts`;
-  - the funnel tests in `src/domain/pipeline.test.ts`;
+  - the funnel and preset 3.0 tests in `src/domain/pipeline.test.ts`;
+  - `src/domain/pipeline-preset.test.ts` and `src/features/pipeline/preset-upgrade-model.test.ts` (the upgrade and its diff);
+  - `src/domain/evidence-hints.test.ts`, `src/domain/citation-suggestions.test.ts` and `src/features/hard-news/quotes/quote-model.test.ts`;
+  - `src/domain/hard-news-lint.test.ts`, the hard-news rules measured in a written text. The lint is a rehearsal metric, not a studio check;
   - `src/registries/sizing-formats.test.ts`;
   - the format cases in `src/features/new-production/form.test.ts`.
-- **Backend:** `tests/event-formats.test.ts` covers revision on invented terms, the last resort, repeated quotes and facts, the unchanged article flow, the linha fina contract and saved funnels.
-- **Smoke:** `e2e/new-production-editor.spec.ts` chooses Cobertura de estande and checks that format, size and event reach generation.
+- **Backend:**
+  - `tests/event-formats.test.ts` covers revision on invented terms, the last resort, repeated quotes and facts, the unchanged article flow, the linha fina contract and saved funnels;
+  - `tests/citation-registry.test.ts` checks that a quote of a text replaces an untouched suggestion in the list.
+- **Smoke:**
+  - `e2e/new-production-editor.spec.ts` chooses Cobertura de estande and checks that format, size and event reach generation;
+  - `e2e/pipeline-management.spec.ts` applies 3.0 over an untouched revision 1;
+  - `e2e/quote-bank.spec.ts` checks a suggestion on Citações and the recording date.
 - **Live rehearsal** on 2026-10-19, with the production text model (OpenAI gpt-6-astra) on real event material. It ran the worker's draft path in memory: outline with linha fina, quote curation, part-by-part writing, grounding and the format gate. The table shows the second round, after the fixes found in the first.
 
 | Case | Material | Body | Literal quotes | Terms without source | Time |

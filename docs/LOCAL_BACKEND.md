@@ -180,7 +180,10 @@ budget before writing. Sequential stages receive `sizing.outputParagraphs.maxCou
 respect those limits. Outputs exceeding them are rejected before caching or saving; text is never
 silently cut to fit. A settings revision is activated through the regular command, not a seed reset.
 
-The seed is **editorial prompts 2.0** (identified inside every stage and the shared system message).
+The seed is **editorial prompts 3.0** (identified inside every stage and the shared system message).
+Every text is hard news: the shared system message carries the same `HARD_NEWS` block as the
+event-format funnels (the news in a lead of 40 words or fewer, inverted pyramid, factual headline,
+neutral attribution, self-claims only attributed, short literal quotes, curated quotes first).
 It keeps the sequential Make approach, with distinct evidence-driven scopes for the opening and
 each section, actual preceding prose as continuity rather than a factual source, no repetition to
 reach the character budget, and explicit preservation of uncertainties and simulations. Evidence
@@ -189,8 +192,11 @@ tokens by default, except Material (temperature 0.1 and 2,048 tokens). These are
 editorial version is separate from the database's monotonically increasing settings revision.
 Carousel drafting targets 70% of each slot's character ceiling to leave room for model counting
 errors; the original template ceilings are still enforced and never silently widened or truncated.
-Changing the code seed never overwrites an existing active definition: activate it through the
-same revision-checked `pipeline.save` command used by the page, preserving history.
+Changing the code seed never overwrites an existing active definition. An admin applies 3.0 from
+the "Prompts padrão 3.0" banner on the Prompts page: only prompts that still hold a default an
+earlier release shipped move to 3.0, customised prompts stay, and the result is saved as a new
+revision through the same revision-checked `pipeline.save` command, preserving history. Curated
+quotes and suggested citations are described in `docs/EVENT_FORMATS.md`.
 
 Templates replace only the documented `{{variables}}`, once. Source text cannot recursively expand
 variables, read environment credentials or execute code. The worker sends exactly the saved system
