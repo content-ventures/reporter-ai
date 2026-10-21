@@ -170,11 +170,17 @@ test('every funnel writes hard news', () => {
 
 test('the quote request lets a part decline and never reaches the interviewer', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
-  const writing = [definition.steps.intro.prompt, definition.steps.section.prompt,
-    ...EDITORIAL_FORMATS.flatMap(format => [definition.funnels[format].intro.prompt, definition.funnels[format].section.prompt])];
-  for (const prompt of writing) {
-    assert.match(prompt, /copie exatamente um trecho contínuo e curto de uma das falas de revisionFeedback\.availableQuotes/);
-    assert.match(prompt, /nunca de quem entrevista, pergunta, apresenta ou agradece; se nenhuma servir, devolva a parte sem citação/);
+  // A format may count the answers of an unlabeled stand interview: the request leaves out the interviewer's lines and may come back without a quote.
+  for (const format of EDITORIAL_FORMATS) for (const key of ['intro', 'section'] as const) {
+    const prompt = definition.funnels[format][key].prompt;
+    assert.match(prompt, /copie exatamente um trecho contínuo e curto de uma das falas de revisionFeedback\.availableQuotes que não seja de quem entrevista, pergunta, apresenta ou agradece/, `${format} ${key}`);
+    assert.match(prompt, /se nenhuma dessas falas servir, devolva a parte sem citação/, `${format} ${key}`);
+  }
+  // An R1 article is asked only for lines of linked speakers, each with its speaker. A permission to return a part
+  // without a quote made the rehearsal's R1 articles drop the quotes of unidentified voices and fail their minimum.
+  for (const key of ['intro', 'section'] as const) {
+    assert.match(definition.steps[key].prompt, /copie exatamente um trecho contínuo e curto de uma das falas de revisionFeedback\.availableQuotes, com o id em evidenceIds e atribuído ao speaker dessa fala/, key);
+    assert.doesNotMatch(definition.steps[key].prompt, /devolva a parte sem citação/, key);
   }
   // Only a stand interview gives the answers of a recording without speaker labels to its one person.
   for (const format of EDITORIAL_FORMATS) assert.equal(/uma única pessoa em people, as respostas são dela/.test(definition.funnels[format].quotes.prompt), format === 'stand', format);
