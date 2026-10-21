@@ -75,6 +75,8 @@ export type NewsItem = {
   id: string;
   title: string;
   url: string;
+  /** Original image supplied by the feed or publication, when available. */
+  imageUrl?: string;
   source: string;
   feedId?: string;
   via: 'rss' | 'url';

@@ -88,8 +88,27 @@ describe('source first read and news text', () => {
     assert.deepEqual(article.body, [paragraph]);
   });
 
+  test('projects original images in summaries and details, omitting absent or unsafe addresses', () => {
+    const stored = { id: source.id, title: 'Fish harvest', url: 'https://news.example/fish', via: 'rss' as const,
+      outlet: 'News', excerpt: 'The harvest rose.', publishedAt: new Date(NOW).toISOString(),
+      importedAt: new Date(NOW).toISOString(), duplicates: [], paragraphs: 1 };
+    for (const imageUrl of ['https://images.example/fish.jpg?width=900', 'http://images.example/fish.jpg']) {
+      assert.equal(itemView({ ...stored, imageUrl }).imageUrl, imageUrl);
+      assert.equal(itemView({ ...stored, imageUrl, body: ['The harvest rose.'] }).imageUrl, imageUrl);
+    }
+    for (const imageUrl of [undefined, '', '   ', '/fish.jpg', '//images.example/fish.jpg', 'not a URL',
+      'javascript:alert(1)', 'data:image/png;base64,AA==', 'file:///fish.jpg', 'ftp://images.example/fish.jpg',
+      'https://user:secret@images.example/fish.jpg', 'http://localhost/fish.jpg', 'http://LOCALHOST./fish.jpg',
+      'http://photos.localhost/fish.jpg', 'http://photos.local/fish.jpg', 'http://127.0.0.1/fish.jpg',
+      'http://2130706433/fish.jpg', 'http://10.1.2.3/fish.jpg', 'http://169.254.169.254/fish.jpg',
+      'http://192.168.1.1/fish.jpg', 'http://[::1]/fish.jpg', 'http://[fd00::1]/fish.jpg']) {
+      assert.equal(Object.hasOwn(itemView({ ...stored, imageUrl }), 'imageUrl'), false, `image: ${imageUrl}`);
+    }
+  });
+
   test('projects translated titles, leads and text without overwriting the stored publication', () => {
     const stored = { id: source.id, title: 'Fish exports rise', url: 'https://foreign.example/news', via: 'rss' as const,
+      imageUrl: 'https://foreign.example/images/original.jpg',
       outlet: 'Foreign publisher', excerpt: 'Exports rose 10%.', body: ['Exports rose 10%.'],
       publishedAt: new Date(NOW).toISOString(), importedAt: new Date(NOW).toISOString(), duplicates: [], paragraphs: 1,
       translation: { status: 'translated' as const, targetLanguage: 'pt-BR' as const, sourceLanguage: 'en',
@@ -99,16 +118,19 @@ describe('source first read and news text', () => {
     assert.equal(projected.excerpt, stored.translation.excerpt);
     assert.deepEqual(projected.body, stored.translation.body);
     assert.equal(projected.url, stored.url);
+    assert.equal(projected.imageUrl, stored.imageUrl);
     assert.equal(projected.source, stored.outlet);
     assert.equal(projected.paragraphs, undefined);
     assert.equal(stored.title, 'Fish exports rise');
     assert.deepEqual(projected.translation, { status: 'translated', targetLanguage: 'pt-BR', sourceLanguage: 'en' });
     const summary = itemView({ ...stored, body: undefined, translation: { ...stored.translation, body: undefined } });
     assert.equal(summary.paragraphs, 1);
+    assert.equal(summary.imageUrl, stored.imageUrl);
     assert.deepEqual(summary.body, [stored.translation.excerpt]);
     for (const status of ['pending', 'failed', 'original'] as const) {
       const untranslated = itemView({ ...stored, translation: { status, targetLanguage: 'pt-BR' } });
       assert.equal(untranslated.title, stored.title);
+      assert.equal(untranslated.imageUrl, stored.imageUrl);
       assert.deepEqual(untranslated.body, stored.body);
     }
   });

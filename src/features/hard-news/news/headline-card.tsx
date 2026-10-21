@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge, BrandMark, Card, CardLink, EditableTitle, MetaList, PageStack, Prose, formatRelative } from '@content-ventures/design-system/v3';
+import { Badge, BrandMark, Card, CardLink, EditableTitle, MediaFrame, MetaList, PageStack, Prose, formatRelative } from '@content-ventures/design-system/v3';
 import type { NewsItem } from '@/domain/hard-news';
 import type { SourceRating } from '@/domain/news-source-rating';
 import { SOURCE_RELEVANCE_LABELS } from '@/domain/news-source-rating';
@@ -24,6 +24,7 @@ export function HeadlineCard({ item, rating, now, featured = false, onSelect }: 
   const decision = item.status === 'new' ? undefined : DECISIONS[item.status];
   return <Card as="article" padding={featured ? 'lg' : 'md'} interactive data-testid={`news-card-${item.id}`}>
     <PageStack>
+      {item.imageUrl ? <MediaFrame src={item.imageUrl} alt={`Imagem da notícia: ${item.title}`} ratio="16/9" fit="cover" /> : null}
       <MetaList size="sm" items={[
         <BrandMark key="logo" name={item.source} src={newsLogoUrl(item.url)} size={featured ? 'md' : 'sm'} decorative />,
         item.source,
