@@ -14,6 +14,7 @@ import {
   Menu,
   PageHeader,
   SearchField,
+  Select,
   Tabs,
   toast,
   WorkspaceLayout,
@@ -21,6 +22,9 @@ import {
 import type { WorkspaceView } from '@content-ventures/design-system/v3';
 import { AlertTriangle, CheckCheck, Ellipsis, Link2, Newspaper, Plus, Rss, Target } from '@content-ventures/design-system/v3/icons';
 import type { NewsItem } from '@/domain/hard-news';
+import { matchesSourceTier } from '@/domain/news-source-match';
+import type { SourceTierFilter } from '@/domain/news-source-match';
+import { SOURCE_TIER_LABELS } from '@/domain/news-source-rating';
 import { useCan } from '@/state';
 import { useDocumentTitle } from '@/ui/use-document-title';
 import { useMediaQuery } from '@/ui/use-media-query';
@@ -72,6 +76,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const canCover = onServer ? canEdit : canCreate && !demo;
   const [chosenTab, setTab] = useState<DeskTab>();
   const [query, setQuery] = useState('');
+  const [sourceTier, setSourceTier] = useState<SourceTierFilter>('all');
   const [selectedId, setSelectedId] = useState<string | undefined>(initialItem);
   const [view, setView] = useState<WorkspaceView>(initialItem ? 'end' : 'main');
   const [importing, setImporting] = useState(false);
@@ -96,14 +101,15 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const seenSince = state.radar?.seenSince ?? new Date(now - FIRST_LOOK_MS).toISOString();
 
   const board = useMemo(() => {
-    const queue = queueOf(state.news, query);
+    const filtered = state.news.filter(item => matchesSourceTier(item, state.feeds, sourceTier));
+    const queue = queueOf(filtered, query);
     const { hero, overflow } = heroOf(queue, phone ? 1 : wide ? 3 : 2);
     const rest = queue.filter((item) => !hero.includes(item));
     const groups = wireGroups(rest, seenSince, now);
-    const decided = decidedOf(state.news, query);
+    const decided = decidedOf(filtered, query);
     const ordered = tab === 'open' ? [...hero, ...groups.flatMap((group) => group.items)] : decided;
     return { hero, overflow, groups, decided, ordered, open: queue.length };
-  }, [now, phone, query, seenSince, state.news, tab, wide]);
+  }, [now, phone, query, seenSince, sourceTier, state.feeds, state.news, tab, wide]);
 
   const signals = useMemo(() => pulse(state.news, state.feeds, seenSince, now), [now, seenSince, state.feeds, state.news]);
   // The open story is explicit: on a wide frame the first story opens once, and nothing that
@@ -132,6 +138,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     if (item) {
       setTab(item.status === 'new' ? 'open' : 'decided');
       if (!matchesQuery(item, query)) setQuery('');
+      if (!matchesSourceTier(item, state.feeds, sourceTier)) setSourceTier('all');
     }
     setSelectedId(id);
     setView('end');
@@ -286,6 +293,9 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       filters={false}
       tabs={<Tabs<DeskTab> label="Situação" size="sm" value={tab} onChange={(value) => { setTab(value); setSelectedId(undefined); }} items={DESK_TABS.map((entry) => ({ value: entry.value, label: entry.label, count: live ? (entry.value === 'open' ? board.open : board.decided.length) : undefined }))} />}
       search={<SearchField label="Buscar notícias" value={query} onValueChange={setQuery} placeholder="Título, fonte ou tema" />}
+      actions={<Select size="sm" label="Força editorial da fonte" value={sourceTier}
+        options={[{ value: 'all', label: 'Todas as fontes' }, ...Object.entries(SOURCE_TIER_LABELS).map(([value, label]) => ({ value, label: `${value} · ${label}` })), { value: 'unrated', label: 'Não avaliadas' }]}
+        onChange={value => { setSourceTier(value as SourceTierFilter); setSelectedId(undefined); }} />}
     />
   );
 
@@ -353,7 +363,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
             overflow={board.overflow}
             groups={board.groups}
             decided={board.decided}
-            query={query}
+            query={query || (sourceTier !== 'all' ? 'fonte' : '')}
             selectedId={narrow ? selectedId : shown?.id}
             onSelect={select}
             onEditGoal={() => setGoalOpen(true)}

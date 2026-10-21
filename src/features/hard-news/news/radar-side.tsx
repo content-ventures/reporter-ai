@@ -1,6 +1,8 @@
 'use client';
 
 import { newsLogoUrl } from '@/domain/news-branding';
+import { isRateableNewsSource } from '@/domain/news-source-rating';
+import { SourceRatingBadge } from '../source-rating';
 
 import {
   Badge,
@@ -14,7 +16,6 @@ import {
   PageStack,
   Panel,
   Section,
-  Sparkline,
 } from '@content-ventures/design-system/v3';
 import { RefreshCw } from '@content-ventures/design-system/v3/icons';
 import { PRIORITY_LABELS } from '@/domain/hard-news';
@@ -74,9 +75,7 @@ function FeedRow({ feed, now }: { feed: NewsFeed; now: number }) {
         ? <Badge variant="text" tone="red" dot>Falha</Badge>
         : feed.state === 'paused'
           ? <Badge variant="text" tone="gray" dot="hollow">Pausada</Badge>
-          : feed.lastWeek && feed.lastWeek.length > 1
-            ? <Sparkline points={feed.lastWeek} tone="gray" width={64} height={24} />
-            : undefined}
+          : isRateableNewsSource(feed) ? <SourceRatingBadge rating={feed.rating} compact /> : <Badge variant="text" tone="gray">Agregador</Badge>}
       actions={feed.state === 'failing'
         ? <IconButton variant="ghost" size="sm" icon={RefreshCw} label={`Tentar ler ${feed.name} de novo`} onClick={() => void actions.retryFeed(feed.id)} />
         : undefined}

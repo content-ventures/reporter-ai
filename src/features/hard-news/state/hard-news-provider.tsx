@@ -468,9 +468,10 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
           return failure(error);
         }
       }
-      const { paused, ...rest } = patch;
+      const { paused, rating, ...rest } = patch;
       update((current) => ({ ...current, feeds: current.feeds.map((feed) => (feed.id === id
-        ? { ...feed, ...rest, ...(paused === undefined ? {} : { state: paused ? 'paused' : 'active' }) }
+        ? { ...feed, ...rest, ...(paused === undefined ? {} : { state: paused ? 'paused' : 'active' }),
+          ...(rating === undefined ? {} : { rating: rating === null ? undefined : { ...rating, updatedAt: new Date().toISOString() } }) }
         : feed)) }));
       return { ok: true };
     },

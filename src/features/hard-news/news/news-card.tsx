@@ -15,6 +15,8 @@ import {
 } from '@content-ventures/design-system/v3';
 import { priorityOf } from '@/domain/hard-news';
 import type { NewsItem } from '@/domain/hard-news';
+import type { SourceRating } from '@/domain/news-source-rating';
+import { SourceRatingBadge } from '../source-rating';
 import { PriorityBadge } from './priority-badge';
 import { spread } from './radar-model';
 
@@ -23,8 +25,9 @@ import { spread } from './radar-model';
  * headline, the AI's one-line why, the score, the topic and how far it spread. On the radar a
  * click selects it (the ficha opens beside); on Início it links to the desk.
  */
-export function NewsCard({ item, now, selected = false, onSelect, href, showPriority = false }: {
+export function NewsCard({ item, rating, now, selected = false, onSelect, href, showPriority = false }: {
   item: NewsItem;
+  rating?: SourceRating;
   now: number;
   selected?: boolean;
   onSelect?: (id: string) => void;
@@ -49,6 +52,7 @@ export function NewsCard({ item, now, selected = false, onSelect, href, showPrio
         <MetaList
           size="sm"
           items={[
+            rating ? <SourceRatingBadge key="source" rating={rating} compact /> : null,
             showPriority && priority ? <PriorityBadge key="priority" priority={priority} size="sm" /> : null,
             item.classification ? { value: `Nota ${item.classification.score}`, numeric: true } : null,
             item.classification?.topic ?? null,
