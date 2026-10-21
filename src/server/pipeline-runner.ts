@@ -10,13 +10,19 @@ import { restoreLiteralQuoteCase, validPipelineOutput, exceedsParagraphBudget, e
 import type { WritingContract } from './pipeline-output';
 import { countCharacters, countWords, textStats } from '../domain/text/stats.ts';
 import { reintroducedPeople, repeatedSentences } from '../domain/grounding.ts';
-import { articleLengthIssue, articleQuotationIssue, directQuotes, hasQuote, literalQuoteText, quoteKey, unquoteUnsupported } from '../domain/article-policy.ts';
+import { articleLengthIssue, articleQuotationIssue, directQuotes, hasQuote, literalQuoteText, quoteKey, quotedWords, unquoteUnsupported } from '../domain/article-policy.ts';
 import { articleSentences } from '../domain/text/sentences.ts';
+import { QUOTABLE_MIN_WORDS, quoteRequirement } from '../domain/quote-plan.ts';
+import type { QuotableCandidate, QuoteRule } from '../domain/quote-plan.ts';
 
 export { articleSentences } from '../domain/text/sentences.ts';
 
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceIds: z.array(z.string()).min(1).max(30) }).strict();
-type Outline = { title: string; sections: { title: string; evidenceIds: string[] }[] };
+type Outline = { title: string; introIds?: string[]; sections: { title: string; evidenceIds: string[] }[] };
+/** The quotations a part should carry (quote-plan.ts), sent in its sizing as `quotePlan`. */
+type QuotePlan = { required: number; quotesStillNeeded: number; availableQuoteIds: string[] };
+/** Soft revisions the active prompts explain: today, asking a part for the quote its evidence allows. */
+export type SoftRevisions = { rule: QuoteRule; quotable: (ids: readonly string[]) => readonly QuotableCandidate[] };
 type WritingSize = { sections: readonly { budgetChars?: number }[]; introChars?: number; targetChars?: number; minChars?: number; maxChars?: number; minWords?: number; maxWords?: number; targetWords?: number; headings?: boolean };
 
 /** Allocate the actual pauta budget; headings consume body characters too. */
@@ -110,7 +116,9 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   /** Event formats: the numbers and names of a text that the material, speakers and event lack. */
   grounding?:(text:string)=>string[],
   /** Event formats: the confirmed speakers' names, introduced once and then named by the surname. */
-  people:readonly string[]=[]) {
+  people:readonly string[]=[],
+  /** Given only when both writing prompts explain SECTION_QUOTE_REQUIRED; asked once per part, never fatal. */
+  soft?:SoftRevisions) {
   const budgets = articleWritingBudgets(outline, sizing);
   const floors = articlePartFloors(outline, sizing, budgets);
   const introSchema = articlePartSchema('intro', budgets.intro);
@@ -132,7 +140,17 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   const measured=(paragraphs:readonly {text:string}[])=>({chars:paragraphs.reduce((sum,p)=>sum+countCharacters(p.text),0),
     words:paragraphs.reduce((sum,p)=>sum+countWords(p.text),0)});
   const minimums=(floor?:PartFloor)=>floor?{minChars:floor.chars,minWords:floor.words}:{};
-  const part=async(key:'intro'|'section',schema:object,values:PipelineVariables,budget?:number,index?:number,floor?:PartFloor)=>{
+  // Each part's quotable lines (identified speaker, 4+ words, no question) and the quotations already written.
+  const quotable=soft?[outline.introIds??[],...outline.sections.map(section=>section.evidenceIds)].map(ids=>soft.quotable(ids)):[];
+  const quotedIn=(text:string)=>new Set(directQuotes(text).filter(quote=>countWords(quote)>=QUOTABLE_MIN_WORDS).map(quoteKey)).size;
+  const quotePlan=(index:number,history:string):QuotePlan|undefined=>{
+    if(!soft)return undefined;
+    const quoted=quotedIn(history);
+    return {required:quoteRequirement({rule:soft.rule,quoted,available:quotable.map(list=>list.length),index}),
+      quotesStillNeeded:Math.max(0,soft.rule.minQuotes-quoted),availableQuoteIds:quotable[index].map(candidate=>candidate.key)};
+  };
+  const planned=(plan?:QuotePlan)=>plan?{quotePlan:plan}:{};
+  const part=async(key:'intro'|'section',schema:object,values:PipelineVariables,budget?:number,index?:number,floor?:PartFloor,plan?:QuotePlan)=>{
     const paragraphsOf=(value:unknown)=>(value as {paragraphs:{text:string;evidenceIds:string[]}[]}).paragraphs;
     const ungrounded=(value:unknown)=>grounding?[...new Set(paragraphsOf(value).flatMap(p=>grounding(p.text)))]:[];
     // Event formats: a quotation is used once in the whole text (outlet style), never twice.
@@ -155,6 +173,16 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
         ??(ungrounded(value).length?'UNGROUNDED_FACT':repeated(value).length?'REPEATED_QUOTE'
           :restated(value).length?'REPEATED_FACT':reintroduced(value).length?'REINTRODUCED_PERSON':undefined);
     const short=(value:unknown)=>{if(!floor)return false;const size=measured(paragraphsOf(value));return size.chars<floor.chars||size.words<floor.words;};
+    // A part asked for a quotation meets it with that many new quotations of four words or more.
+    const required=plan?.required??0;
+    const partQuotes=(value:unknown)=>new Set(paragraphsOf(value).flatMap(p=>directQuotes(p.text))
+      .filter(quote=>countWords(quote)>=QUOTABLE_MIN_WORDS&&!hasQuote(written,quote)).map(quoteKey)).size;
+    const meets=(value:unknown)=>required===0||partQuotes(value)>=required;
+    const better=(value:unknown,than:unknown)=>meets(value)!==meets(than)?meets(value)
+      :measured(paragraphsOf(value)).words>measured(paragraphsOf(than)).words;
+    const availableQuotes=()=>(quotable[key==='intro'?0:(index??0)+1]??[])
+      .filter(candidate=>!hasQuote(written,quotedWords(literalQuoteText(candidate.text)))).slice(0,6)
+      .map(candidate=>({id:candidate.key,text:candidate.text.slice(0,400),...(candidate.speaker?{speaker:candidate.speaker}:{})}));
     const repair=(draft:unknown)=>{
       let paragraphs=paragraphsOf(draft).map(p=>({...p}));
       if(evidence)paragraphs=unquoteUnsupported(paragraphs,evidence,evidencePassages);
@@ -177,7 +205,22 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
         });
       }
       if(!paragraphs.length)throw new FlowError('UNGROUNDED_FACT',502);
-      if(budget!==undefined){
+      if(budget!==undefined&&soft){
+        // Sentences without a quotation go first, from the end; the part's last quotation stays while one is required.
+        const units=paragraphs.flatMap((p,at)=>articleSentences(p.text).map(sentence=>({at,sentence,dropped:false,
+          quoted:directQuotes(sentence).some(quote=>countWords(quote)>=QUOTABLE_MIN_WORDS)})));
+        const rebuilt=()=>paragraphs.flatMap((p,at)=>{
+          const text=units.filter(unit=>unit.at===at&&!unit.dropped).map(unit=>unit.sentence).join(' ');
+          return text?[{...p,text}]:[];
+        });
+        while(measured(rebuilt()).chars>budget){
+          const alive=units.filter(unit=>!unit.dropped),quotes=alive.filter(unit=>unit.quoted);
+          const victim=[...alive].reverse().find(unit=>!unit.quoted)??(required>0&&quotes.length<=1?undefined:quotes.at(-1));
+          if(alive.length<=1||!victim)break;
+          victim.dropped=true;
+        }
+        paragraphs=rebuilt();
+      }else if(budget!==undefined){
         while(paragraphs.length>1&&measured(paragraphs).chars>budget)paragraphs=paragraphs.slice(0,-1);
         if(measured(paragraphs).chars>budget){
           const sentences=articleSentences(paragraphs[0].text);
@@ -188,14 +231,17 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
       return {...(draft as object),paragraphs};
     };
     let value=await call(key,schema,values,index);
-    let requested=values,developed=false;
+    let requested=values,developed=false,askedQuote=false;
     // A development that breaks the hard contract never replaces a valid, merely short draft.
     let kept=hard(value)?undefined:value;
     for(let revision=1;revision<=2;revision++){
       // One development per part: a part that stays short passes its shortfall to the next one.
-      const violation:string|undefined=hard(value)??(!developed&&short(value)?'ARTICLE_PART_TOO_SHORT':undefined);
+      // The quotation is asked once, after the hard and size checks; a part that stays without it is kept.
+      const violation:string|undefined=hard(value)??(!developed&&short(value)?'ARTICLE_PART_TOO_SHORT':undefined)
+        ??(!askedQuote&&!meets(value)?'SECTION_QUOTE_REQUIRED':undefined);
       if(!violation)break;
       developed||=violation==='ARTICLE_PART_TOO_SHORT';
+      askedQuote||=violation==='SECTION_QUOTE_REQUIRED';
       const paragraphs=paragraphsOf(value);
       const actual=textStats(paragraphs.map(p=>p.text).join(' '));
       const ratio=Math.max(1,actual.characters/Math.max(1,actual.words));
@@ -223,10 +269,11 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
           ...(violation==='REPEATED_QUOTE'?{repeatedQuotes:repeated(value)}:{}),
           ...(violation==='REPEATED_FACT'?{repeatedSentences:restated(value)}:{}),
           ...(violation==='REINTRODUCED_PERSON'?{reintroducedPeople:reintroduced(value)}:{}),
+          ...(violation==='SECTION_QUOTE_REQUIRED'?{availableQuotes:availableQuotes()}:{}),
           ...(floor?{minTotalChars:floor.chars,minTotalWords:floor.words}:{}),maxTotalChars:budget,targetTotalChars,previousDraft:value},
       })};
       value=await call(key,schema,requested,index);
-      if(!hard(value)&&(!kept||measured(paragraphsOf(value)).words>measured(paragraphsOf(kept)).words))kept=value;
+      if(!hard(value)&&(!kept||better(value,kept)))kept=value;
     }
     const unresolved=hard(value);
     if(unresolved&&!kept){
@@ -237,7 +284,7 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
       if(!hard(repaired))return repaired;
       throw new FlowError(unresolved,502);
     }
-    return unresolved||short(value)?kept:value;
+    return unresolved||short(value)||(!meets(value)&&kept!==undefined&&meets(kept))?kept:value;
   };
   // The article's ceiling bounds each part, not its share of the target: what is left of it after the
   // text already written and the minimums the later parts still need. A part's share was too tight.
@@ -246,9 +293,10 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   const reserve=(from:number)=>[budgets.intro,...budgets.sections].slice(from).reduce<number>((sum,budget,offset)=>sum+(floors?floors[from+offset].chars:budget??0),0);
   const ceiling=(written:number,from:number,fallback?:number)=>room===undefined?fallback:Math.max(1,room-written-reserve(from));
   const introMaximum=ceiling(0,1,budgets.intro);
+  const introPlan=quotePlan(0,'');
   const intro = z.object({ paragraphs: z.array(paragraph).min(1).max(3) }).strict().parse(await part('intro',introSchema,
-    { ...variables,sizing: JSON.stringify(partSizing(budgets.intro,{introChars:budgets.intro,outputParagraphs:outputParagraphs(introSchema,budgets.intro,introMaximum),...minimums(floors?.[0])},introMaximum)) },
-    introMaximum,undefined,floors?.[0]));
+    { ...variables,sizing: JSON.stringify(partSizing(budgets.intro,{introChars:budgets.intro,outputParagraphs:outputParagraphs(introSchema,budgets.intro,introMaximum),...minimums(floors?.[0]),...planned(introPlan)},introMaximum)) },
+    introMaximum,undefined,floors?.[0],introPlan));
   const sections: { title: string; paragraphs: z.infer<typeof paragraph>[] }[] = [];
   const opening=measured(intro.paragraphs);
   let carry=Math.max(0,(introMaximum??0)-opening.chars),writtenChars=opening.chars;
@@ -262,10 +310,11 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
     const goal=target===undefined?undefined:Math.min(maximum!,target+Math.max(0,-balance.chars,Math.ceil(-balance.words*6.5)));
     const schema = articlePartSchema('section', maximum);
     Object.assign(schema.properties.title as object,{ enum: [section.title] });
+    const plan=quotePlan(index+1,history);
     const drafted = z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict().parse(
       await part('section',schema,{ ...variables,history,section: JSON.stringify({ ...section,index,last: index === outline.sections.length-1 }),
         futureSections: JSON.stringify(outline.sections.slice(index+1)),sizing: JSON.stringify(partSizing(goal,{currentSection: { ...sizing.sections[index],budgetChars:goal,maxChars:maximum },
-          outputParagraphs: outputParagraphs(schema,goal,maximum),charactersAlreadyWritten: countCharacters(history),...minimums(floor) },maximum)) },maximum,index,floor));
+          outputParagraphs: outputParagraphs(schema,goal,maximum),charactersAlreadyWritten: countCharacters(history),...minimums(floor),...planned(plan) },maximum)) },maximum,index,floor,plan));
     if (drafted.title !== section.title) throw new FlowError('OUTLINE_NOT_FOLLOWED',502);
     const written=measured(drafted.paragraphs);
     carry=Math.max(0,(maximum??0)-written.chars);writtenChars+=written.chars;

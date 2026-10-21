@@ -12,6 +12,7 @@ import { R1_ARTICLE_LIMITS } from './article-policy.ts';
 import { countWords } from './text/stats.ts';
 import { charactersAbove, formatLaudasOf, groupDigits, sizeLabel, sizeOf } from './sizing.ts';
 import type { ArticleSize } from './sizing.ts';
+import type { QuoteRule } from './quote-plan.ts';
 
 export const EDITORIAL_FORMATS = ['stand', 'panel', 'awards', 'opening', 'note'] as const;
 export type EditorialFormat = typeof EDITORIAL_FORMATS[number];
@@ -41,6 +42,10 @@ export type EditorialFormatSpec = {
   headings: boolean;
   /** Distinct literal quotes of four words or more the body needs. */
   minQuotes: number;
+  /** The opening carries a quotation when its evidence has a quotable line (the stand's spokesperson). */
+  openingQuote: boolean;
+  /** Each part after the opening carries a quotation when its evidence has a quotable line. */
+  sectionQuotes: boolean;
   /** Share of the target the opening takes. */
   introShare: number;
 };
@@ -52,27 +57,27 @@ export const FORMAT_SPECS: Readonly<Record<EditorialFormat, EditorialFormatSpec>
   stand: {
     id: 'stand', label: 'Cobertura de estande', summary: 'Empresa no evento: novidade, porta-voz e mercado.',
     sizes: [size('compact', 'Enxuto', 1200, 2300, { min: 1, max: 2, default: 1 }), size('full', 'Completo', 2300, 3600, { min: 2, max: 3, default: 2 })],
-    defaultSize: 'full', headings: true, minQuotes: 2, introShare: 0.22,
+    defaultSize: 'full', headings: true, minQuotes: 2, openingQuote: true, sectionQuotes: true, introShare: 0.22,
   },
   panel: {
     id: 'panel', label: 'Cobertura de painel', summary: 'Quem disse o quê numa palestra ou painel.',
     sizes: [size('standard', 'Padrão', 2800, 4500, { min: 2, max: 4, default: 3 }), size('full', 'Completo', 4500, 7500, { min: 3, max: 6, default: 4 })],
-    defaultSize: 'standard', headings: true, minQuotes: 3, introShare: 0.15,
+    defaultSize: 'standard', headings: true, minQuotes: 3, openingQuote: false, sectionQuotes: true, introShare: 0.15,
   },
   awards: {
     id: 'awards', label: 'Premiação', summary: 'Vencedores por categoria, do material oficial.',
     sizes: [size('standard', 'Padrão', 900, 2800, { min: 1, max: 6, default: 3 })],
-    defaultSize: 'standard', headings: true, minQuotes: 0, introShare: 0.3,
+    defaultSize: 'standard', headings: true, minQuotes: 0, openingQuote: false, sectionQuotes: false, introShare: 0.3,
   },
   opening: {
     id: 'opening', label: 'Abertura', summary: 'Cerimônia de abertura: anúncios e autoridades.',
     sizes: [size('standard', 'Padrão', 2800, 5000, { min: 2, max: 5, default: 3 })],
-    defaultSize: 'standard', headings: true, minQuotes: 2, introShare: 0.18,
+    defaultSize: 'standard', headings: true, minQuotes: 2, openingQuote: false, sectionQuotes: true, introShare: 0.18,
   },
   note: {
     id: 'note', label: 'Nota curta', summary: 'Um fato, sem intertítulo.',
     sizes: [size('standard', 'Padrão', 600, 1500, { min: 1, max: 2, default: 1 })],
-    defaultSize: 'standard', headings: false, minQuotes: 0, introShare: 0.5,
+    defaultSize: 'standard', headings: false, minQuotes: 0, openingQuote: false, sectionQuotes: true, introShare: 0.5,
   },
 };
 
@@ -164,6 +169,13 @@ export function articleContractFor(brief: FormatBrief): ArticleContract {
   if (!brief.format) return { ...R1_ARTICLE_LIMITS };
   const spec = FORMAT_SPECS[brief.format], option = formatSizeOf(brief.format, brief.formatSize);
   return { minChars: option.minChars, maxChars: option.maxChars, targetChars: option.targetChars, minQuotes: spec.minQuotes };
+}
+
+/** Where a text wants quotations: R1's article in its sections, a format as its spec says. */
+export function quoteRuleFor(brief: FormatBrief): QuoteRule {
+  if (!brief.format) return { minQuotes: R1_ARTICLE_LIMITS.minQuotes, openingQuote: false, sectionQuotes: true };
+  const spec = FORMAT_SPECS[brief.format];
+  return { minQuotes: spec.minQuotes, openingQuote: spec.openingQuote, sectionQuotes: spec.sectionQuotes };
 }
 
 /**

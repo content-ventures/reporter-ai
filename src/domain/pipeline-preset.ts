@@ -47,7 +47,7 @@ export function currentDefaultPrompt(key: PresetPromptKey, model: PipelineModel)
 
 /**
  * Every default text ever shipped, per prompt, as `promptHash`. A changed default appends its hash;
- * never delete one (tests enforce both). The last hash of each list is preset 3.0.
+ * never delete one (tests enforce both). The last hash of each list is this build's default (preset 3.0).
  */
 export const KNOWN_DEFAULT_PROMPTS: Readonly<Record<PresetPromptKey, readonly string[]>> = {
   // Production revision 1 (up to v0.4.0), then v0.5.0–v0.14.0.
@@ -56,32 +56,32 @@ export const KNOWN_DEFAULT_PROMPTS: Readonly<Record<PresetPromptKey, readonly st
   facts: ['6558b17d9d797766', '295928a1918a0e49'],
   outline: ['e5203e280fee131e', '9e4c72ad919acb04'],
   quotes: ['80d9eaf28f5ffad7', 'dc4da6b485fd6dbe'],
-  intro: ['2369abf2e11a5efd', 'b221e8c51a52d9a3', '65999fd2cbcf956e', '4a6e9e8d94462a57'],
-  section: ['dee060967f886971', '65d0d5d891a6f1fc', 'a1c067a739fcb2ee', '341985903195a0c7'],
+  intro: ['2369abf2e11a5efd', 'b221e8c51a52d9a3', '65999fd2cbcf956e', '4a6e9e8d94462a57', '773cc328ca7a29a7'],
+  section: ['dee060967f886971', '65d0d5d891a6f1fc', 'a1c067a739fcb2ee', '341985903195a0c7', 'bded3e9b7b26149f'],
   article: ['daaa232019f19657', '522cea1f71f21043'],
   assist: ['38867eb4b4bba83d', 'e32c54e92f3a7801'],
   images: ['6068d8ef38d2cf73', 'c988ebb8cc482094'],
   carousel: ['9cedc2c5c9e818f6', '6172c117be9e19af', 'c443c16324b95cf8'],
   'funnel:stand:outline': ['ea8f2d1adadeed6f', '1421e239c15ffc51', '2bc03d67f6ddb5a2', 'c44bafc495211542'],
   'funnel:stand:quotes': ['635ddafb9444bd1e'],
-  'funnel:stand:intro': ['c11ca073650066cb', 'b0f6a6b6eeb52f69', '3cf22b4b80f421f5', 'c7d7b912bad7cb88', '701284b367713b5b', '3bdae37ab603cbfb', 'ac72b797bc4a4587'],
-  'funnel:stand:section': ['87d1c11b9480ec22', '365106dc822e3fcf', '3bfa1b6c22e5f49f', 'f4c08defc3e8fbc3', '17aec6140f0115da', 'e7699dd88d1dda8e', '66444d728f5f8421'],
+  'funnel:stand:intro': ['c11ca073650066cb', 'b0f6a6b6eeb52f69', '3cf22b4b80f421f5', 'c7d7b912bad7cb88', '701284b367713b5b', '3bdae37ab603cbfb', 'ac72b797bc4a4587', 'c74bbb4fb28abc3b'],
+  'funnel:stand:section': ['87d1c11b9480ec22', '365106dc822e3fcf', '3bfa1b6c22e5f49f', 'f4c08defc3e8fbc3', '17aec6140f0115da', 'e7699dd88d1dda8e', '66444d728f5f8421', '3241c3ecdf0e66b9'],
   'funnel:panel:outline': ['d828f87a79d633af', 'c30ab4db12a8881b', '966cf6a8f9f7a452'],
   'funnel:panel:quotes': ['62a5c03431441946'],
-  'funnel:panel:intro': ['6071a81289a79132', 'ed16a6f2c26d6d38', 'ec9568449e2ef2c4', 'cd37fe7db62ecba0', '2e208fd5937bdb1f', '28d03a84473c6228'],
-  'funnel:panel:section': ['bd12c5794fe33393', 'b02c1064467bdd7a', 'abca3790861e33be', '0d9ee053d23ec532', 'd8e8a6a28979142d', 'ab63ae1d18b3fb30'],
+  'funnel:panel:intro': ['6071a81289a79132', 'ed16a6f2c26d6d38', 'ec9568449e2ef2c4', 'cd37fe7db62ecba0', '2e208fd5937bdb1f', '28d03a84473c6228', 'f932a066f628ff20'],
+  'funnel:panel:section': ['bd12c5794fe33393', 'b02c1064467bdd7a', 'abca3790861e33be', '0d9ee053d23ec532', 'd8e8a6a28979142d', 'ab63ae1d18b3fb30', '710647bbc0606f34'],
   'funnel:awards:outline': ['55d3d425c4af7d53', 'de87258dd8fd31fb', 'a891aa95d084ed38'],
   'funnel:awards:quotes': ['b0841e1cb73b73c6'],
-  'funnel:awards:intro': ['6fed0c03b78658a3', 'bc7a8de70330a133', '1a20e24978a4cf9a', 'da94acceb387f386', '66ce80fe4691413d', '769f8bde6f542783'],
-  'funnel:awards:section': ['1a2ab116ed338e9c', 'e63fdf0418de8686', '760b0fefb22a92e2', '6e2a9440099f4ece', 'e382695afd08bd91', 'fbb71574b55a18b2'],
+  'funnel:awards:intro': ['6fed0c03b78658a3', 'bc7a8de70330a133', '1a20e24978a4cf9a', 'da94acceb387f386', '66ce80fe4691413d', '769f8bde6f542783', '53c2359f53a9e22b'],
+  'funnel:awards:section': ['1a2ab116ed338e9c', 'e63fdf0418de8686', '760b0fefb22a92e2', '6e2a9440099f4ece', 'e382695afd08bd91', 'fbb71574b55a18b2', 'b9cbb0cc2fd94086'],
   'funnel:opening:outline': ['1d53aa130fd31ebd', '7c3104fd592edc8b', 'ee48fdec6988871c'],
   'funnel:opening:quotes': ['e721132e396d1530'],
-  'funnel:opening:intro': ['f568d9151a2e3582', '606486ea3208ec86', 'ec3f944d570564d6', '369ce9592153078a', 'e179945691de1c53', '299aa77240237256'],
-  'funnel:opening:section': ['26399580938638f3', '22b67b16893ed0cf', '2089193edbdd0fc3', '2773b2a6010684e7', 'e31afa2b1f7e9270', '52030e5536924d2c'],
+  'funnel:opening:intro': ['f568d9151a2e3582', '606486ea3208ec86', 'ec3f944d570564d6', '369ce9592153078a', 'e179945691de1c53', '299aa77240237256', '61ddcf3f081e997a'],
+  'funnel:opening:section': ['26399580938638f3', '22b67b16893ed0cf', '2089193edbdd0fc3', '2773b2a6010684e7', 'e31afa2b1f7e9270', '52030e5536924d2c', 'd774df215757c7ac'],
   'funnel:note:outline': ['00ba6f19612bd6ba', '6bebea721fc4eea6', 'a14dba42b28efc3d'],
   'funnel:note:quotes': ['c0d55eaf73918b2f'],
-  'funnel:note:intro': ['165f868cd4a7ad48', 'f6527293d797119c', '980cac900d4eeedc', '948dcf5ef035a7d8', 'fadca7268fbd729b', '53b217c180d273a0'],
-  'funnel:note:section': ['06dccc7c8623d84d', 'e07faf7aa9c702e9', '0c1428e5a65c6ffd', '2f6a5abbdbd18031', '1c7745174a64e568', '42b8ad50a0170b94'],
+  'funnel:note:intro': ['165f868cd4a7ad48', 'f6527293d797119c', '980cac900d4eeedc', '948dcf5ef035a7d8', 'fadca7268fbd729b', '53b217c180d273a0', 'b9e17418c6d835b8'],
+  'funnel:note:section': ['06dccc7c8623d84d', 'e07faf7aa9c702e9', '0c1428e5a65c6ffd', '2f6a5abbdbd18031', '1c7745174a64e568', '42b8ad50a0170b94', '67aea8a59c44d814'],
 };
 
 /** current: this build's default; previous: a default an earlier release shipped; custom: edited by someone. */
