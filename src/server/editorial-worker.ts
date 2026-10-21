@@ -8,7 +8,7 @@ import { articlePlainText, blockText } from '../domain/article.ts';
 import type { ArticleBlock } from '../domain/article.ts';
 import { latestApproved } from '../domain/record.ts';
 import { refKey } from '../domain/refs.ts';
-import { PIPELINE_SCHEMAS, PIPELINE_SENTENCE_PATTERN, pipelineModelLabel } from '../domain/pipeline.ts';
+import { PIPELINE_SCHEMAS, PIPELINE_SENTENCE_PATTERN, explainedRevisionCodes, pipelineModelLabel } from '../domain/pipeline.ts';
 import type { PipelineVariables, PipelineStepKey, PipelineCall } from '../domain/pipeline.ts';
 import { splitSource } from '../domain/reporter.ts';
 import { isRunActive } from '../domain/run.ts';
@@ -23,7 +23,8 @@ import { mapEditorialPassages } from './editorial-passages';
 import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
 import { contiguousSourcePassages, r1ArticleIssue, unquoteUnsupported, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
-import { articleContractFor, articleGateFor, outletPunctuation, tidyQuoteOpenings } from '../domain/formats.ts';
+import { articleContractFor, articleGateFor, outletPunctuation, quoteRuleFor, tidyQuoteOpenings } from '../domain/formats.ts';
+import { quotableIds } from '../domain/quote-plan.ts';
 import { ungroundedTerms } from '../domain/grounding.ts';
 import { currentSourceVersion } from '../domain/source.ts';
 import type { Person } from '../domain/workspace.ts';
@@ -171,6 +172,9 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     const brief = JSON.stringify(input.record.production.brief);
     const format = input.record.production.brief.format;
     const people = confirmedPeople(input.record,input.people);
+    // A line is quotable when a linked speaker said it, or, in an unlabeled recording, when one person is confirmed.
+    const linked = new Set(input.record.sources.flatMap(s => s.speakers.filter(speaker => speaker.personId && !speaker.unattributed).map(speaker => speaker.label)));
+    const identified = (candidate: { speaker?: string }) => candidate.speaker ? linked.has(candidate.speaker) : people.length === 1;
     const today = new Intl.DateTimeFormat('pt-BR',{ timeZone: 'America/Sao_Paulo',weekday: 'long',day: 'numeric',month: 'long',year: 'numeric' }).format(new Date());
     // Event formats: every number and name must exist in the material, the speakers or the event typed by a person.
     // Speaker labels are part of what the material says ("Categoria Personalidade Feminina: …" parses as one).
@@ -237,9 +241,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         context = summaries.join('\n\n');
       }
       // Summaries lose the exact words: the planning steps also get the quotable lines of linked speakers.
-      const linked = new Set(input.record.sources.flatMap(s => s.speakers.filter(speaker => speaker.personId && !speaker.unattributed).map(speaker => speaker.label)));
       variables.source = hints.planning ? planningSource(context,curated,context !== source
-        ? quotableShortlist(candidates,c => c.speaker ? linked.has(c.speaker) : people.length === 1,new Set(curated.byKey.keys())) : []) : context;
+        ? quotableShortlist(candidates,identified,new Set(curated.byKey.keys())) : []) : context;
     }
     await guarded([{ type: 'step.completed',stepId: 'source' },{ type: 'step.skipped',stepId: 'generate' }]);
     let value: unknown;
@@ -273,7 +276,12 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       variables.source = writingSource(context,candidates,selected,hints.writing ? curated.byKey : new Map());
       variables.outline = JSON.stringify(outline);
       if (pipeline.definition.articleMode === 'single') value = await writeCompleteArticle(outline, variables, sizing, call);
-      else value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages,grounding,people.map(person => person.name));
+      else {
+        // A part asked for the quotation its evidence allows, only when both writing prompts explain it.
+        const soft = explainedRevisionCodes(pipeline.definition).includes('SECTION_QUOTE_REQUIRED') ? { rule: quoteRuleFor(input.record.production.brief),
+          quotable: (ids: readonly string[]) => quotableIds(ids,byKey,identified).map(id => byKey.get(id)!) } : undefined;
+        value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages,grounding,people.map(person => person.name),soft);
+      }
     }
     if (job.kind === 'carousel.copy') {
       const piece = input.record.pieces.find(p => p.id === job.meta.pieceId);
