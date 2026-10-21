@@ -9,7 +9,7 @@ const SECOND = '10000000-0000-4000-8000-000000000002';
 const FIRST_TITLE = 'Tilápia brasileira amplia presença no mercado externo e produtores discutem os próximos investimentos';
 const SECOND_TITLE = 'Tilápia ganha novo estudo sobre alimentação e qualidade da água';
 
-async function mockDesk(page: Page) {
+async function mockDesk(page: Page, count = 18) {
   const checkpoint = emptyEditorialCheckpoint();
   const at = new Date().toISOString();
   const feeds: NewsFeed[] = ['Instituto do Pescado', 'Revista Aquicultura', 'Alerta pescado'].map((name, index) => ({
@@ -20,7 +20,7 @@ async function mockDesk(page: Page) {
     ...(index < 2 ? { rating: { tier: index === 0 ? 'A1' as const : 'A2' as const, relevance: 'high' as const,
       rationale: 'Publica informações especializadas sobre a cadeia do pescado.', updatedAt: at } } : {}),
   }));
-  const items: NewsItem[] = Array.from({ length: 18 }, (_, index) => {
+  const items: NewsItem[] = Array.from({ length: count }, (_, index) => {
     const feed = feeds[index % feeds.length];
     const publishedAt = new Date(Date.now() - index * 60_000).toISOString();
     return {
@@ -42,6 +42,38 @@ async function mockDesk(page: Page) {
     return route.fulfill({ json: { at: new Date().toISOString(), sources: feeds, items, rssApp: false } });
   });
 }
+
+test('carrega mais manchetes com foco útil e preserva a página e a busca ao voltar da leitura', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockDesk(page, 30);
+  const errors = watchErrors(page);
+  await page.goto('/news');
+  const search = page.getByRole('searchbox', { name: 'Buscar notícias', exact: true });
+  // All thirty headlines contain this term; a non-empty search also exercises return state.
+  await search.fill('a');
+  await expect(page.getByTestId(/^news-card-/)).toHaveCount(24);
+  const more = page.getByRole('button', { name: 'Carregar mais manchetes', exact: true });
+  await more.click();
+  await expect(page.getByTestId(/^news-card-/)).toHaveCount(30);
+  await expect(more).toHaveCount(0);
+  const card = page.getByTestId('news-card-10000000-0000-4000-8000-000000000025');
+  const open = card.getByRole('button', { name: 'Ler notícia: Cadeia do pescado acompanha pesquisa e mercado 25', exact: true });
+  await expect(open).toBeFocused();
+  await expect(card).toBeInViewport();
+  const before = (await card.boundingBox())!.y;
+  await open.click();
+  await expect(page.getByRole('heading', { level: 2, name: 'Cadeia do pescado acompanha pesquisa e mercado 25', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/news$/);
+  await expect(search).toHaveValue('a');
+  await expect(page.getByTestId(/^news-card-/)).toHaveCount(30);
+  await expect(open).toBeFocused();
+  await expect(card).toBeInViewport();
+  await expect.poll(async () => Math.abs((await card.boundingBox())!.y - before), { message: 'a volta mantém a posição entre as manchetes carregadas' }).toBeLessThan(3);
+  await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+  expect(errors).toEqual([]);
+});
 
 async function choose(page: Page, name: string, option: string) {
   await page.getByRole('combobox', { name, exact: true }).click();
