@@ -14,12 +14,12 @@ test('the Make adaptation contains all runtime inputs without speculative extern
   assert.equal(definition.curateQuotes,true);
   assert.ok(definition.systemPrompt.includes('Não presuma pesquisas'));
 });
-test('preset 2.0 grounds each editorial part without recap, invented negatives or mandatory padding',() => {
+test('preset 3.0 grounds each editorial part without recap, invented negatives or mandatory padding',() => {
   const definition = defaultPipelineDefinition();
-  assert.match(definition.systemPrompt,/prompts editoriais 2\.0/);
+  assert.match(definition.systemPrompt,/prompts editoriais 3\.0/);
   assert.match(definition.systemPrompt,/Uma lacuna não comprova uma negativa/);
   for (const [key, step] of Object.entries(definition.steps)) {
-    assert.match(step.prompt,/PROMPTS 2\.0/);
+    assert.match(step.prompt,/PROMPTS 3\.0/);
     assert.equal(step.model,'openai/gpt-oss-120b');
     assert.equal(step.maxTokens,key === 'material' ? 2048 : 4096);
   }
@@ -44,6 +44,22 @@ test('preset 2.0 grounds each editorial part without recap, invented negatives o
   assert.match(definition.steps.facts.prompt,/não apenas reescreva/);
   assert.ok(definition.steps.facts.prompt.includes('{{brief}}'));
   assert.equal(defaultPipelineDefinition('openai/gpt-oss-20b').steps.section.model,'openai/gpt-oss-20b');
+});
+test('preset 3.0 carries hard news into the article prompts', () => {
+  const definition = defaultPipelineDefinition();
+  const { steps } = definition;
+  assert.ok(definition.systemPrompt.includes(HARD_NEWS));
+  assert.doesNotMatch(steps.quotes.prompt, /ao menos duas/);
+  for (const variable of ['{{sizing}}', '{{people}}']) assert.ok(steps.quotes.prompt.includes(variable), variable);
+  for (const key of ['outline', 'intro', 'section', 'article'] as const) assert.ok(steps[key].prompt.includes('{{people}}'), key);
+  // The assistant receives no people or event data (article-assist.ts), so its prompt cannot name them.
+  assert.doesNotMatch(steps.assist.prompt, /\{\{(people|event)\}\}|as duas citações obrigatórias/);
+  assert.match(steps.intro.prompt, /em até 40 palavras/);
+  assert.match(steps.facts.prompt, /no máximo 5 registros/);
+  for (const key of ['outline', 'quotes'] as const) assert.match(steps[key].prompt, /de 1 a 4 ids/, key);
+  assert.ok(definition.systemPrompt.length <= 12000, `system: ${definition.systemPrompt.length}`);
+  for (const [key, step] of Object.entries(steps)) assert.ok(step.prompt.length <= 20000, `${key}: ${step.prompt.length}`);
+  assert.equal(validatePipelineTemplates(definition), undefined);
 });
 test('the carousel prompt writes for the Instagram feed: a hook on the cover, one idea per slide, a call without a link',() => {
   const prompt = defaultPipelineDefinition().steps.carousel.prompt;
