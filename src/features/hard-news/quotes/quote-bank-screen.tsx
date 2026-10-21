@@ -265,7 +265,7 @@ function QuoteCard({ entry, onOpen }: { entry: RankedQuote; onOpen: () => void }
             quote.topic,
             `${QUOTE_ORIGIN_LABELS[quote.origin]} · ${quote.sourceTitle}`,
             quote.locator ?? null,
-            dateOf(quote.recordedOn),
+            quote.recordedOn ? dateOf(quote.recordedOn) : null,
             quote.uses ? `${quote.uses} ${quote.uses === 1 ? 'uso' : 'usos'}` : null,
           ]}
         />

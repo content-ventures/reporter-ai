@@ -23,7 +23,7 @@ const SUGGESTION = 'O cliente quer levar uma refeição para duas pessoas, não 
 function library(): CitationLibraryView {
   return {
     items: [
-      citation('c-checked', 'Dobramos a capacidade de defumação em março.', { relevance: 'Capacidade da fábrica.', ready: true }),
+      citation('c-checked', 'Dobramos a capacidade de defumação em março.', { relevance: 'Capacidade da fábrica.', ready: true, recordedOn: '2026-10-20' }),
       citation('c-pending', 'O pedido de habilitação sanitária sai ainda este ano.', { authorConfirmed: false, speaker: 'Autoria a confirmar' }),
       citation('c-suggested', SUGGESTION, { origin: 'outline', revision: 0, authorConfirmed: false }),
     ],
@@ -63,6 +63,9 @@ for (const viewport of VIEWPORTS) {
       await expect(suggestion.getByText('Autoria a conferir', { exact: true })).toHaveCount(0);
       await expect(suggestion.getByRole('button', { name: 'Copiar fala com atribuição' })).toHaveCount(0);
       await expect(cards.filter({ hasText: 'Dobramos' }).getByRole('button', { name: 'Copiar fala com atribuição' })).toBeVisible();
+      // The recording date shows only when the source has one, never the day the text was written.
+      await expect(cards.filter({ hasText: 'Dobramos' }).getByText('20/10/2026')).toBeVisible();
+      await expect(page.getByText('19/10/2026')).toHaveCount(0);
       // A suggestion is neither confirmed nor waiting for a fact check: it has its own tab.
       await expect(page.getByRole('tab', { name: /^Pendentes/ })).toContainText('2');
       await expect(page.getByRole('tab', { name: /^Sugeridas/ })).toContainText('1');
