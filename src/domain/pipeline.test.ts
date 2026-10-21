@@ -338,6 +338,26 @@ test('headlines and texts carry the date as the event gives it, never hoje, aman
   assert.doesNotMatch(note.intro.prompt, /"ontem" sem a data/);
 });
 
+test('a relative time never becomes a date or year the source does not give', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  const rule = 'Nunca converta uma expressão relativa de tempo ("no ano que vem", "amanhã", "mês passado") em data, mês ou ano sem que a fonte ou os dados do evento (event.today) tragam explicitamente a data de referência: sem ela, escreva o prazo como a fonte o disse, atribuído a quem o disse (entre aspas, se for "hoje", "amanhã" ou "ontem"), ou deixe-o fora.';
+  assert.ok(HARD_NEWS.includes(rule));
+  assert.ok(definition.systemPrompt.includes(rule));
+  for (const format of EDITORIAL_FORMATS) for (const key of ['outline', 'intro', 'section'] as const)
+    assert.ok(definition.funnels[format][key].prompt.includes(rule), `${format} ${key}`);
+  // The staging acceptance's facts turned "no ano que vem" into "em 2024", and the year reached the headlines.
+  assert.ok(definition.steps.facts.prompt.includes('Expressões relativas de tempo ("no ano que vem", "amanhã", "mês passado") ficam com as palavras do trecho: nunca as converta em data, mês ou ano.'));
+});
+
+test('an opening id never returns in a section', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  const article = 'Um id usado na introdução nunca volta numa seção: a seção que aprofunda o assunto da introdução usa outras evidências.';
+  for (const key of ['outline', 'quotes'] as const) assert.ok(definition.steps[key].prompt.includes(article), key);
+  const funnel = 'Um id usado na abertura nunca volta numa seção: a seção que aprofunda o assunto da abertura usa outras evidências.';
+  for (const format of EDITORIAL_FORMATS) for (const key of ['outline', 'quotes'] as const)
+    assert.ok(definition.funnels[format][key].prompt.includes(funnel), `${format} ${key}`);
+});
+
 test('a note leads with what happens, never the event\'s generic sentence, and headlines name the event as event.name writes it', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
   const note = definition.funnels.note;
