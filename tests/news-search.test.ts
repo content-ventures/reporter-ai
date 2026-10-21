@@ -76,6 +76,17 @@ test('dated irrelevant results are rejected before spending extraction credits',
   assert.equal(calls, 1);
 });
 
+test('page text starts at its headline and stops before related-news navigation', async () => {
+  const title = 'Thai Union upgrades monitoring of tuna fleet';
+  const paragraphs = ['October 19, 2026', 'Image courtesy Zunibal.', 'Thai Union selected a new monitoring supplier.',
+    'The agreement covers onboard equipment installation.', 'AI will accelerate reviews of fishing activity.'];
+  const result = await collectSearchNews(claim, new AbortController().signal, { now: () => now, key: () => 'fixture', request: async () =>
+    Response.json({ results: [{ ...article('https://publisher.example/news/123'), title: `${title} - Marine Link`,
+      images: ['https://publisher.example/fleet.jpg'], raw_content: ['Home', 'Magazines', 'Advertising', 'Equipment', title,
+        ...paragraphs, 'Related News', 'Unrelated shipping headlines and navigation.'].join('\n\n') }] }) });
+  assert.deepEqual(result.items[0].body, paragraphs);
+});
+
 test('settings check permission and revision before reads, save redirect exclusions and preserve optional removals', async () => {
   let reads = 0;
   const deps: SearchSettingsServices = {
