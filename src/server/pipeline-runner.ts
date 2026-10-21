@@ -11,6 +11,9 @@ import type { WritingContract } from './pipeline-output';
 import { countCharacters, countWords, textStats } from '../domain/text/stats.ts';
 import { reintroducedPeople, repeatedSentences } from '../domain/grounding.ts';
 import { articleLengthIssue, articleQuotationIssue, directQuotes, hasQuote, literalQuoteText, quoteKey, unquoteUnsupported } from '../domain/article-policy.ts';
+import { articleSentences } from '../domain/text/sentences.ts';
+
+export { articleSentences } from '../domain/text/sentences.ts';
 
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000),evidenceIds: z.array(z.string()).min(1).max(30) }).strict();
 type Outline = { title: string; sections: { title: string; evidenceIds: string[] }[] };
@@ -28,20 +31,6 @@ export function articleWritingBudgets(outline: Outline, sizing: WritingSize) {
 type PartFloor = { chars: number; words: number };
 /** Measured on staging with gpt-oss-120b: a paragraph runs 300 to 400 characters whatever its target. */
 const PARAGRAPH_CHARS = 300, LONG_PARAGRAPH_CHARS = 400;
-/** Complete sentences: a stop followed by a space and a capital. "2.500", "R$ 1.200.000", URLs and common
- * abbreviations ("Dr.", "Sra.") never end one. */
-const ABBREVIATION = /(?:^|\s)(?:Sr|Sra|Srta|Dr|Dra|Prof|Profa|Eng|Exmo|Exma|Me|Ma|etc|vs|nº|n\.º|art|pág|cap)\.[”"'’»)]*$/iu;
-export function articleSentences(text: string): string[] {
-  return text.trim().split(/(?<=[.!?…][”"'’»)]*)\s+(?=[\p{Lu}“"«(])/u).reduce<string[]>((sentences, piece) => {
-    // Never end a sentence inside an abbreviation or an open quotation.
-    const previous = sentences[sentences.length - 1] ?? '';
-    const open = (previous.match(/“/gu)?.length ?? 0) > (previous.match(/”/gu)?.length ?? 0)
-      || (previous.match(/«/gu)?.length ?? 0) > (previous.match(/»/gu)?.length ?? 0) || (previous.match(/"/gu)?.length ?? 0) % 2 === 1;
-    if (sentences.length && (ABBREVIATION.test(previous) || open)) sentences[sentences.length - 1] += ` ${piece}`;
-    else sentences.push(piece);
-    return sentences;
-  }, []);
-}
 /** As many paragraphs as the target asks for and the ceiling holds, from one to the contract's limit. */
 function paragraphCount(target: number, maximum: number, limit: number) {
   return Math.max(1, Math.min(limit, Math.round(target / PARAGRAPH_CHARS), Math.floor(maximum / LONG_PARAGRAPH_CHARS)));
