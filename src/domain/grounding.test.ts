@@ -64,3 +64,14 @@ test('a word in another script that the material lacks is reported (provider gli
   assert.deepEqual(ungroundedTerms('Confira a seguir os vencedores de cada categoria: معلمFIELDERROR?', material), ['معلمFIELDERROR']);
   assert.deepEqual(ungroundedTerms('O diretor da BomPORTO, Sérgio Sousa, falou sobre o bacalhau.', material), []);
 });
+
+test('state names and uppercase UF aliases are equivalent without inventing locations', () => {
+  const original = 'A feira ocorre em Uberlândia, Minas Gerais.';
+  assert.deepEqual(ungroundedTerms('A empresa participou da feira em Uberlândia (MG).', original), []);
+  assert.deepEqual(ungroundedTerms('A empresa participou em Minas Gerais.', 'A feira acontece em Uberlândia (MG).'), []);
+  assert.deepEqual(ungroundedTerms('A empresa participou em Uberlândia (SC).', original), ['SC']);
+  assert.deepEqual(ungroundedTerms('A empresa participou em Belo Horizonte (MG).', original), ['Belo', 'Horizonte']);
+  assert.deepEqual(ungroundedTerms('A empresa participou em MT.', 'A feira ocorre em Mato Grosso do Sul.'), ['MT']);
+  assert.deepEqual(ungroundedTerms('A empresa participou em MS.', 'A feira ocorre em Mato Grosso do Sul.'), []);
+  assert.deepEqual(ungroundedTerms('A empresa participou em Sergipe.', 'Se houver condições, a empresa irá.'), ['Sergipe']);
+});

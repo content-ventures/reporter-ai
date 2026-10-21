@@ -5,6 +5,10 @@ import { applyWorkspaceDelta, assembleCheckpoint, diffRows, hasChanges, PART_KIN
 import type { EditorialRows, LoadedScope, WorkspaceDelta } from './editorial-sync.ts';
 import type { ConnectedWorkspace, EditorialCheckpoint, EditorialJob } from '../ports/connected-workspace.ts';
 import { stableStringify } from '../domain/text/hash.ts';
+import { defaultPipelineDefinition, pipelineRevision } from '../domain/pipeline.ts';
+import { defaultWritingOrchestration } from '../domain/writing-orchestration.ts';
+import { writingArticleBody } from '../domain/writing-article.ts';
+import type { WritingArticle } from '../domain/writing-orchestration.ts';
 
 let sequence = 0;
 const ids = { next: (prefix: string) => prefix + '-' + (++sequence) };
@@ -45,6 +49,34 @@ test('splitting a checkpoint into rows and assembling it again loses nothing the
   const assembled = assembleCheckpoint(rows, checkpoint.state.workspace, everything);
   const comparable = (value: EditorialCheckpoint) => stableStringify({ ...value, state: { ...value.state, sessionPersonId: '' } });
   assert.equal(comparable(assembled), comparable({ ...checkpoint, imageAssets: [] }));
+  engine.store.dispose();
+});
+
+test('writing traces and the immutable settings survive row persistence and the article event handoff', async () => {
+  const { checkpoint, engine, runId } = await workspaceWithRun();
+  const job = checkpoint.jobs[runId];
+  const writing = { ...defaultWritingOrchestration(), enabled: true };
+  job.pipeline = pipelineRevision({ ...defaultPipelineDefinition(), writing }, 7);
+  job.writingTraces = [{ id: 'write-1', stage: 'write', attempt: 1, status: 'completed', model: writing.stages.write.model,
+    hash: 'exact-request', startedAt: '2026-10-21T12:00:00.000Z', prompt: { system: 'Snapshot instructions', user: 'Original content' },
+    output: { title: 'Captured article' }, inputTokens: 120, outputTokens: 80 }];
+  const article: WritingArticle = { title: 'Final title', dek: 'Final dek', titleEvidenceIds: ['e1'], dekEvidenceIds: ['e1'],
+    blocks: [{ id: 'lead', type: 'paragraph', level: 2, text: material, items: [], evidenceIds: ['e1'] }] };
+  const body = writingArticleBody(article, runId, () => []);
+  appendEditorialEvent(engine, job, { type: 'outline', title: body.title, dek: body.dek, sections: [] });
+  for (const block of body.blocks) {
+    appendEditorialEvent(engine, job, { type: 'block.started', block: { id: block.id, type: block.type } });
+    appendEditorialEvent(engine, job, { type: 'block.completed', block });
+  }
+  appendEditorialEvent(engine, job, { type: 'run.completed' });
+  checkpoint.state = engine.store.state;
+  const rows = stored(splitCheckpoint(checkpoint, empty, everything));
+  const restored = assembleCheckpoint(rows, checkpoint.state.workspace, everything);
+  assert.deepEqual(restored.jobs[runId].writingTraces, job.writingTraces);
+  assert.deepEqual(restored.jobs[runId].pipeline, job.pipeline);
+  const production = restored.state.productions.find(value => value.production.id === job.meta.productionId)!;
+  const draft = production.pieces.find(piece => piece.id === job.meta.pieceId)?.draft?.body;
+  assert.deepEqual(draft, body);
   engine.store.dispose();
 });
 

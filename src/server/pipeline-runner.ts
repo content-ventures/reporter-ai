@@ -1,7 +1,8 @@
 import 'server-only';
 import { z } from 'zod';
 import { contentHash } from '../domain/text/hash.ts';
-import { PIPELINE_SCHEMAS, renderPipelinePrompt } from '../domain/pipeline.ts';
+import { editorialSystemPrompt } from '../domain/editorial-policy.ts';
+import { PIPELINE_SCHEMAS, pipelineDefaultEffort, pipelineModelEffortOptions, renderPipelinePrompt } from '../domain/pipeline.ts';
 import type { PipelineRevision, PipelineStepKey, PipelineVariables, PipelineCall } from '../domain/pipeline.ts';
 import { cacheRead, cacheWrite } from './storage';
 import { generateStructured } from './groq';
@@ -91,7 +92,7 @@ export function completeArticleSchema(outline: Outline, sizing: WritingSize) {
 function optionalAttemptFailed(error: unknown) {
   return error instanceof FlowError && (/^ARTICLE_(?:PART_)?(?:SIZE|WORDS)_/.test(error.code)
     || ['ARTICLE_QUOTES_REQUIRED','UNSUPPORTED_ARTICLE_QUOTE','UNKNOWN_EVIDENCE','INVALID_PROVIDER_OUTPUT','GENERATION_INCOMPLETE','GENERATION_INVALID_JSON','PROVIDER_EMPTY_RESPONSE'].includes(error.code)
-    || /^(?:OPENAI|GROQ|ANTHROPIC)_(?:RATE_LIMIT|QUOTA_EXHAUSTED|UNAVAILABLE|REQUEST_FAILED|OUTPUT_RETRY|INVALID_RESPONSE)$/.test(error.code));
+    || /^(?:OPENAI|GROQ|ANTHROPIC|GEMINI)_(?:RATE_LIMIT|QUOTA_EXHAUSTED|UNAVAILABLE|REQUEST_FAILED|OUTPUT_RETRY|INVALID_RESPONSE)$/.test(error.code));
 }
 
 /** One bounded refinement toward the upper target, using measured data in the SAVED template. */
@@ -371,12 +372,13 @@ export async function executePipelineStep(input: {
 }) {
   const step = input.pipeline.definition.steps[input.key];
   if (!step) throw new FlowError('PIPELINE_STAGE_MISSING',503);
-  const systemPrompt = input.pipeline.definition.systemPrompt;
+  const systemPrompt = editorialSystemPrompt(input.pipeline.definition.systemPrompt, input.pipeline.definition.editorial, input.key);
   const userPrompt = renderPipelinePrompt(step.prompt,input.variables);
   // Unrelated prompt edits must not force the same podcast facts through the
   // provider again. Identity is the exact request, not the whole revision.
   const hash = contentHash({ key: input.key,index: input.index,systemPrompt,userPrompt,
     schema: input.schema,model: step.model,temperature: step.temperature,maxTokens: step.maxTokens,
+    ...(pipelineModelEffortOptions(step.model).length ? { effort: step.effort ?? pipelineDefaultEffort(step.model) } : {}),
     ...(['article', 'intro', 'section'].includes(input.key) ? { validation: 'r1-length-and-literal-quotes-v1' }
       : input.key === 'assist' ? { validation: 'article-assist-scope-quotes-and-size-v1' } : {}) });
   const cacheKey = 'pipeline-'+hash;

@@ -25,3 +25,21 @@ test('a format without a quote minimum asks for no quotes', () => {
   assert.doesNotMatch(note.instruction, /citaç/);
   assert.match(panel.instruction, /com ao menos 3 citações literais/);
 });
+
+test('an explicit orchestration quote minimum changes both the numeric budget and the instruction', () => {
+  for (const brief of [{ size: 'standard' as const, sections: 3 },
+    { size: 'standard' as const, sections: 3, format: 'stand' as const },
+    { size: 'standard' as const, sections: 1, format: 'note' as const }]) {
+    const noQuota = draftSizeInstructions(brief, { minimumQuotes: 0 });
+    assert.equal(noQuota.minQuotes, 0);
+    assert.match(noQuota.instruction, /não há quantidade mínima/);
+    assert.doesNotMatch(noQuota.instruction, /ao menos (duas|2)/);
+    const required = draftSizeInstructions(brief, { minimumQuotes: 2 });
+    assert.equal(required.minQuotes, 2);
+    assert.match(required.instruction, /ao menos duas citações literais distintas/);
+    assert.equal(noQuota.maxChars, required.maxChars);
+    assert.equal(noQuota.minWords, required.minWords);
+  }
+  assert.equal(draftSizeInstructions({ size: 'standard', sections: 1, format: 'note' }).minQuotes, 0);
+  assert.equal(draftSizeInstructions({ size: 'standard', sections: 3, format: 'stand' }).minQuotes, 2);
+});

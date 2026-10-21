@@ -43,6 +43,15 @@ export type IntentSizingPolicy = {
 
 export type SizingPolicy = LaudaSizingPolicy | IntentSizingPolicy;
 
+function quotationInstruction(minimum: number) {
+  return minimum === 0
+    ? 'Use citações quando acrescentarem informação, sempre copiadas literalmente da evidência referenciada; não há quantidade mínima.'
+    : `Inclua ao menos ${minimum === 2 ? 'duas' : minimum} ${minimum === 1 ? 'citação literal' : 'citações literais distintas'}, copiadas da evidência referenciada.`;
+}
+function hardNewsInstruction(minimum: number) {
+  return `O corpo deve cumprir simultaneamente 2.500–4.000 caracteres com espaços e 500–800 palavras. Busque 3.900 caracteres e cerca de 700 palavras, sem ultrapassar nenhum teto. ${quotationInstruction(minimum)} Se faltar material, sinalize a insuficiência; nunca preencha com repetição ou invenção.`;
+}
+
 export const HARD_NEWS_SIZING: LaudaSizingPolicy = {
   id: 'hard-news',
   kind: 'laudas',
@@ -52,7 +61,7 @@ export const HARD_NEWS_SIZING: LaudaSizingPolicy = {
   sizes: [DEFAULT_ARTICLE_SIZE],
   defaultSize: DEFAULT_ARTICLE_SIZE,
   neverPad: true,
-  instruction: 'O corpo deve cumprir simultaneamente 2.500–4.000 caracteres com espaços e 500–800 palavras. Busque 3.900 caracteres e cerca de 700 palavras, sem ultrapassar nenhum teto. Inclua ao menos duas citações literais distintas, copiadas da evidência referenciada. Se faltar material, sinalize a insuficiência; nunca preencha com repetição ou invenção.',
+  instruction: hardNewsInstruction(R1_ARTICLE_LIMITS.minQuotes),
 };
 
 export const EVERGREEN_SIZING: IntentSizingPolicy = {
@@ -75,8 +84,9 @@ export function sizingPolicyFor(flowId: FlowId): SizingPolicy {
 }
 
 /** The size contract of a brief (Hard News): numbers, budgets per section and the model's sentence. */
-export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'format' | 'formatSize'>): DraftSizeInstructions {
-  if (brief.format) return formatSizeInstructions(brief as Pick<Brief, 'size' | 'sections' | 'formatSize'> & { format: NonNullable<Brief['format']> });
+export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'format' | 'formatSize'>,
+  options?: { minimumQuotes: number }): DraftSizeInstructions {
+  if (brief.format) return formatSizeInstructions(brief as Pick<Brief, 'size' | 'sections' | 'formatSize'> & { format: NonNullable<Brief['format']> }, options);
   const spec = sizeOf(brief.size);
   const budget = sectionBudget(spec.id, brief.sections);
   return {
@@ -88,13 +98,14 @@ export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | '
     targetChars: spec.targetChars,
     ...(spec.id === 'standard' ? { minWords: R1_ARTICLE_LIMITS.minWords, maxWords: R1_ARTICLE_LIMITS.maxWords,
       targetWords: R1_ARTICLE_LIMITS.targetWords, minQuotes: R1_ARTICLE_LIMITS.minQuotes } : {}),
+    ...(options ? { minQuotes: options.minimumQuotes } : {}),
     tolerance: SIZE_TOLERANCE,
     headings: spec.headings,
     neverPad: true,
     introChars: budget.introChars,
     sections: Array.from({ length: Math.max(0, brief.sections) }, (_, index) => ({ stepId: sectionStepId(index + 1), budgetChars: budget.sectionChars })),
-    instruction: spec.id === 'standard' ? HARD_NEWS_SIZING.instruction
-      : `Escreva até ${groupDigits(spec.maxChars)} caracteres; se o material não sustentar, escreva menos e não complete.`,
+    instruction: spec.id === 'standard' ? options ? hardNewsInstruction(options.minimumQuotes) : HARD_NEWS_SIZING.instruction
+      : `Escreva até ${groupDigits(spec.maxChars)} caracteres; se o material não sustentar, escreva menos e não complete.${options ? ' ' + quotationInstruction(options.minimumQuotes) : ''}`,
   };
 }
 
@@ -103,7 +114,7 @@ export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | '
  * minimum of literal quotes and its intertítulos rule. Characters only: the outlet sizes these
  * texts by characters, and the words of a short note say nothing a character count does not.
  */
-function formatSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'formatSize'> & { format: NonNullable<Brief['format']> }): DraftSizeInstructions {
+function formatSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'formatSize'> & { format: NonNullable<Brief['format']> }, options?: { minimumQuotes: number }): DraftSizeInstructions {
   const spec = FORMAT_SPECS[brief.format], option = formatSizeOf(brief.format, brief.formatSize);
   const count = Math.max(1, Math.round(brief.sections));
   const introChars = Math.round(option.targetChars * spec.introShare);
@@ -115,12 +126,12 @@ function formatSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'format
     minChars: option.minChars,
     maxChars: option.maxChars,
     targetChars: option.targetChars,
-    minQuotes: spec.minQuotes,
+    minQuotes: options?.minimumQuotes ?? spec.minQuotes,
     tolerance: SIZE_TOLERANCE,
     headings: spec.headings,
     neverPad: true,
     introChars,
     sections: Array.from({ length: count }, (_, index) => ({ stepId: sectionStepId(index + 1), budgetChars })),
-    instruction: `${spec.label}: escreva entre ${groupDigits(option.minChars)} e ${groupDigits(option.maxChars)} caracteres, perto de ${groupDigits(option.targetChars)}${spec.minQuotes ? `, com ao menos ${spec.minQuotes} citações literais` : ''}. Se o material não sustentar, escreva menos e não complete.`,
+    instruction: `${spec.label}: escreva entre ${groupDigits(option.minChars)} e ${groupDigits(option.maxChars)} caracteres, perto de ${groupDigits(option.targetChars)}${options ? '. ' + quotationInstruction(options.minimumQuotes) : spec.minQuotes ? `, com ao menos ${spec.minQuotes} citações literais.` : '.'} Se o material não sustentar, escreva menos e não complete.`,
   };
 }

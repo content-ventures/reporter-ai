@@ -27,6 +27,7 @@ export type RunStartedEvent = EventBase & {
   retryOfRunId?: RunId;
   prompt: PromptRef;
   model: ModelInfo;
+  articlePolicy?: GenerationRun['articlePolicy'];
   inputs: Ref[];
   steps: { id: StepId; label: string }[];
   createdBy: ActorId;
@@ -185,6 +186,7 @@ function initialFold(event: RunStartedEvent): RunFold {
   if (event.pieceId) run.pieceId = event.pieceId;
   if (event.parentRunId) run.parentRunId = event.parentRunId;
   if (event.retryOfRunId) run.retryOfRunId = event.retryOfRunId;
+  if (event.articlePolicy) run.articlePolicy = { ...event.articlePolicy };
   return { run, seq: event.seq, outline: [], blocks: [], slides: [], sourcesUsed: [], suggestions: [] };
 }
 
