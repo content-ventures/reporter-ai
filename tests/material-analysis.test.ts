@@ -39,6 +39,12 @@ test('materialSample takes the opening of every part', () => {
   const sampled = (segments: typeof untagged) => materialSample(segments).map(segment => segment.id);
   assert.ok(!sampled(untagged).includes('seg-40') && !sampled(untagged).includes('seg-80'), 'a single file keeps its sample');
   for (const id of ['seg-0', 'seg-40', 'seg-80', 'seg-119']) assert.ok(sampled(tagged).includes(id), id);
+  for (const [parts, chars] of [[6, 1180], [10, 300]]) {
+    const many = Array.from({ length: parts * 20 }, (_, index) => ({ id: 'seg-' + index, text: 'x'.repeat(chars), part: Math.floor(index / 20) + 1 }));
+    const sample = materialSample(many);
+    for (let part = 0; part < parts; part++) assert.ok(sample.some(segment => segment.id === 'seg-' + part * 20), `${parts} partes: parte ${part + 1}`);
+    assert.ok(sample.reduce((total, segment) => total + segment.text.length + segment.id.length + 16, 0) <= 10000);
+  }
 });
 test('material uses the exact saved prompts; concurrent reads share one request and edited prompts invalidate cache', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'reporter-material-test-'));
