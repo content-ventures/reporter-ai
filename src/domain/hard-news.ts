@@ -60,6 +60,14 @@ export type NewsClassification = {
 /** The same story from another outlet (REQ-2.1: duplicates never erase their origin). */
 export type NewsDuplicate = { source: string; url: string; publishedAt: string };
 
+/** Display language only; the server retains the source text and its publication URL. */
+export type NewsTranslation = {
+  status: 'pending' | 'translated' | 'original' | 'failed';
+  targetLanguage: 'pt-BR';
+  sourceLanguage?: string;
+  error?: string;
+};
+
 export type NewsItem = {
   id: string;
   title: string;
@@ -73,10 +81,11 @@ export type NewsItem = {
   importedAt: string;
   /** Server revision timestamp used to ignore delayed responses. */
   updatedAt?: string;
-  /** The outlet's lead, as published. */
+  /** The received lead, translated to pt-BR when translation is ready. */
   excerpt: string;
-  /** Paragraphs of the original text, for reading without leaving the queue. */
+  /** Received paragraphs, in the same display language as the title and lead. */
   body: string[];
+  translation?: NewsTranslation;
   /** Paragraphs the server keeps when `body` was not sent with the queue (read on demand). */
   paragraphs?: number;
   duplicates: NewsDuplicate[];

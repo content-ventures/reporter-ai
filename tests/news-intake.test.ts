@@ -87,6 +87,31 @@ describe('source first read and news text', () => {
     assert.equal(article.paragraphs, undefined);
     assert.deepEqual(article.body, [paragraph]);
   });
+
+  test('projects translated titles, leads and text without overwriting the stored publication', () => {
+    const stored = { id: source.id, title: 'Fish exports rise', url: 'https://foreign.example/news', via: 'rss' as const,
+      outlet: 'Foreign publisher', excerpt: 'Exports rose 10%.', body: ['Exports rose 10%.'],
+      publishedAt: new Date(NOW).toISOString(), importedAt: new Date(NOW).toISOString(), duplicates: [], paragraphs: 1,
+      translation: { status: 'translated' as const, targetLanguage: 'pt-BR' as const, sourceLanguage: 'en',
+        title: 'Exportações de peixe crescem', excerpt: 'As exportações cresceram 10%.', body: ['As exportações cresceram 10%.'] } };
+    const projected = itemView(stored);
+    assert.equal(projected.title, stored.translation.title);
+    assert.equal(projected.excerpt, stored.translation.excerpt);
+    assert.deepEqual(projected.body, stored.translation.body);
+    assert.equal(projected.url, stored.url);
+    assert.equal(projected.source, stored.outlet);
+    assert.equal(projected.paragraphs, undefined);
+    assert.equal(stored.title, 'Fish exports rise');
+    assert.deepEqual(projected.translation, { status: 'translated', targetLanguage: 'pt-BR', sourceLanguage: 'en' });
+    const summary = itemView({ ...stored, body: undefined, translation: { ...stored.translation, body: undefined } });
+    assert.equal(summary.paragraphs, 1);
+    assert.deepEqual(summary.body, [stored.translation.excerpt]);
+    for (const status of ['pending', 'failed', 'original'] as const) {
+      const untranslated = itemView({ ...stored, translation: { status, targetLanguage: 'pt-BR' } });
+      assert.equal(untranslated.title, stored.title);
+      assert.deepEqual(untranslated.body, stored.body);
+    }
+  });
 });
 
 const WORDPRESS = `<?xml version="1.0" encoding="UTF-8"?>

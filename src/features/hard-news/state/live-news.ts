@@ -46,7 +46,12 @@ export function mergeItems(current: readonly NewsItem[], incoming: readonly News
     const stale = known && ((known.decisionRevision ?? 0) > (item.decisionRevision ?? 0)
       || (known.updatedAt && item.updatedAt && known.updatedAt > item.updatedAt));
     const latest = stale ? known : item;
-    const full = item.paragraphs === undefined ? item : known?.paragraphs === undefined ? known : undefined;
+    // A cached original cannot be attached to a newly translated headline, nor can a delayed
+    // detail response restore the old language. Within one language, keep the loaded text.
+    const sameLanguage = (candidate: NewsItem) => candidate.translation?.status === latest.translation?.status
+      && candidate.translation?.sourceLanguage === latest.translation?.sourceLanguage;
+    const full = item.paragraphs === undefined && sameLanguage(item) ? item
+      : known && known.paragraphs === undefined && sameLanguage(known) ? known : undefined;
     byId.set(item.id, full ? { ...latest, body: full.body, paragraphs: undefined } : latest);
   }
   return [...byId.values()];
@@ -142,9 +147,15 @@ export function createLiveNewsStore(port: NewsIntake, now: () => number = Date.n
       const pending = loading.get(id);
       if (pending) return pending;
       const request = (async () => {
-        const item = await port.item(id);
-        if (!item) throw new Error('Esta notícia não está mais disponível.');
-        set({ ...snapshot, news: mergeItems(snapshot.news, [{ ...item, paragraphs: undefined }]) });
+        // A translation may finish while the original detail is in flight. That stale answer
+        // cannot satisfy this load: fetch the current language before resolving its callers.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const item = await port.item(id);
+          if (!item) throw new Error('Esta notícia não está mais disponível.');
+          set({ ...snapshot, news: mergeItems(snapshot.news, [{ ...item, paragraphs: undefined }]) });
+          if (snapshot.news.find(entry => entry.id === id)?.paragraphs === undefined) return;
+        }
+        throw new Error('O texto mudou durante a leitura. Tente novamente.');
       })().finally(() => {
         loading.delete(id);
       });

@@ -118,6 +118,86 @@ test('Notícias e Fontes leem o servidor: sem Demo, sem triagem, texto sob deman
 });
 
 for (const viewport of VIEWPORTS) {
+  test.describe(`tradução das notícias em ${viewport.name}`, () => {
+    test.use(viewport.width < 768
+      ? { viewport: { width: viewport.width, height: viewport.height }, hasTouch: true, isMobile: true }
+      : { viewport: { width: viewport.width, height: viewport.height } });
+
+    test('mostra a tradução, mantém o original acessível e identifica estados incompletos', async ({ page }) => {
+      const checkpoint = emptyEditorialCheckpoint();
+      const errors = watchErrors(page);
+      const translated: NewsItem = {
+        ...STORY, status: 'new', via: 'rss', paragraphs: undefined, duplicates: [], source: 'The Fish Site',
+        title: 'Pesquisa amplia a produção sustentável de peixes', excerpt: 'Pesquisadores desenvolveram um novo método de cultivo.',
+        body: ['O estudo reduziu o consumo de água nas fazendas de peixes.'], contentKind: 'feed',
+        url: 'https://thefishsite.com/articles/sustainable-fish-production',
+        translation: { status: 'translated', sourceLanguage: 'en', targetLanguage: 'pt-BR' },
+      };
+      const native: NewsItem = {
+        ...STORY, id: '0c2b3d4e-5f60-4718-8a9b-0c1d2e3f4a61', status: 'new', via: 'rss', paragraphs: undefined, duplicates: [],
+        translation: { status: 'original', sourceLanguage: 'pt-BR', targetLanguage: 'pt-BR' },
+      };
+      const pending: NewsItem = {
+        ...translated, id: '0c2b3d4e-5f60-4718-8a9b-0c1d2e3f4a62', title: 'Fish farms reduce water usage',
+        excerpt: 'Researchers tested a new system.', body: ['The study followed fish farms for twelve months.'],
+        translation: { status: 'pending', sourceLanguage: 'en', targetLanguage: 'pt-BR' },
+      };
+      const failed: NewsItem = { ...pending, id: '0c2b3d4e-5f60-4718-8a9b-0c1d2e3f4a63', translation: { status: 'failed', sourceLanguage: 'en', targetLanguage: 'pt-BR', error: 'Provider temporarily unavailable' } };
+      const items = [translated, native, pending, failed];
+      let retries = 0;
+      await page.route('**/api/reporter/workspace', route => route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } }));
+      await page.route('**/api/reporter/news**', route => {
+        const path = new URL(route.request().url()).pathname;
+        if (path.endsWith(`/${failed.id}/translation/retry`)) {
+          expect(route.request().method()).toBe('POST');
+          retries += 1;
+          items[3] = { ...translated, id: failed.id, url: failed.url };
+          return route.fulfill({ json: { ...failed, translation: { status: 'pending', targetLanguage: 'pt-BR' } } });
+        }
+        if (path.includes('/items/')) return route.fulfill({ json: { item: items.find(item => path.endsWith(`/${item.id}`)) } });
+        return route.fulfill({ json: { at: AT, sources: [SOURCE], items: items.map(item => ({ ...item, body: [], paragraphs: item.body.length })), rssApp: false } });
+      });
+
+      await page.goto(`/news?item=${translated.id}`);
+      await expect(page.getByRole('heading', { level: 2, name: translated.title, exact: true })).toBeVisible();
+      await expect(page.getByText(translated.excerpt, { exact: true })).toBeVisible();
+      await expect(page.getByText('Tradução automática · pt-BR', { exact: true })).toBeVisible();
+      const original = page.getByRole('link', { name: 'Ver original (abre em nova aba)', exact: true });
+      await expect(original).toHaveAttribute('href', translated.url);
+      await expect(original).toHaveAttribute('target', '_blank');
+      await expect(original).toHaveAttribute('rel', /noopener/);
+      await page.getByText('Texto traduzido (feed)', { exact: true }).click();
+      await expect(page.getByText(translated.body[0], { exact: true })).toBeVisible();
+      await expectHeadingOutline(page);
+      await expectNoHorizontalOverflow(page);
+
+      await page.goto(`/news?item=${native.id}`);
+      await expect(page.getByRole('heading', { level: 2, name: native.title, exact: true })).toBeVisible();
+      await expect(page.getByText('Tradução automática · pt-BR', { exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Tentar tradução novamente', exact: true })).toHaveCount(0);
+
+      await page.goto(`/news?item=${pending.id}`);
+      await expect(page.getByText('Preparando tradução · exibindo original', { exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Ver original (abre em nova aba)', exact: true })).toHaveAttribute('href', pending.url);
+
+      await page.goto(`/news?item=${failed.id}`);
+      await expect(page.getByText('Tradução indisponível', { exact: true })).toBeVisible();
+      await expect(page.getByText('Exibindo o texto original.', { exact: true })).toBeVisible();
+      await expect(page.getByText('Provider temporarily unavailable', { exact: true })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Tentar tradução novamente', exact: true }).click();
+      await expect(page.getByText('Tradução automática · pt-BR', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 2, name: translated.title, exact: true })).toBeVisible();
+      await page.getByText('Texto traduzido (feed)', { exact: true }).click();
+      await expect(page.getByText(translated.body[0], { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Tentar tradução novamente', exact: true })).toHaveCount(0);
+      expect(retries).toBe(1);
+      await expectNoHorizontalOverflow(page);
+      expect(errors).toEqual([]);
+    });
+  });
+}
+
+for (const viewport of VIEWPORTS) {
   test.describe(`descoberta de fontes em ${viewport.name}`, () => {
     test.use(viewport.width < 768
       ? { viewport: { width: viewport.width, height: viewport.height }, hasTouch: true, isMobile: true }

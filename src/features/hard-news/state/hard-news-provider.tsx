@@ -57,6 +57,7 @@ export type HardNewsActions = {
   discoverSources(input: NewsDiscoveryInput): Promise<NewsDiscoveryResult>;
   refreshNews(): Promise<void>;
   decideNews(id: string, input: NewsDecisionInput): Promise<{ ok: true } | { ok: false; message: string }>;
+  retryTranslation(id: string): Promise<{ ok: true } | { ok: false; message: string }>;
   cover(newsId: string): Promise<string | undefined>;
   postpone(newsId: string, hours: number): void;
   discard(newsId: string, reason: string): void;
@@ -337,6 +338,13 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
       return newsPort.discover(input);
     },
     async refreshNews() { await liveStore?.refresh(); },
+    async retryTranslation(id) {
+      if (!newsPort || !liveStore) return { ok: false, message: 'A tradução está disponível no ambiente conectado.' };
+      try {
+        liveStore.putItem(await newsPort.retryTranslation(id));
+        return { ok: true };
+      } catch (error) { return failure(error); }
+    },
     async decideNews(id, input) {
       if (!newsPort || !liveStore) return { ok: false, message: 'As decisões estão disponíveis no ambiente conectado.' };
       try {

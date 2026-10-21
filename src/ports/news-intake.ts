@@ -41,6 +41,7 @@ export interface NewsIntake {
   /** Discover and verify candidate feeds without subscribing to any source. */
   discover(input: NewsDiscoveryInput): Promise<NewsDiscoveryResult>;
   decide(id: string, input: NewsDecisionInput): Promise<NewsItem>;
+  retryTranslation(id: string): Promise<NewsItem>;
   read(since?: string, page?: NewsPageCursor): Promise<NewsSnapshot>;
   /** One item with its text. */
   item(id: string): Promise<NewsItem | undefined>;

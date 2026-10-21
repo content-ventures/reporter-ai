@@ -8,6 +8,7 @@ export function createHttpNewsIntake(): NewsIntake {
   return {
     discover: (input) => reporterRequest('/news/discover', input, AbortSignal.timeout(45_000)),
     decide: (itemId, input) => reporterRequest(`/news/items/${id(itemId)}/decision`, input),
+    retryTranslation: (itemId) => reporterRequest(`/news/items/${id(itemId)}/translation/retry`, {}),
     read: (since, page) => {
       const query = new URLSearchParams();
       if (since) query.set('since', since);
