@@ -3,15 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  AccessState, Accordion, Alert, Badge, Button, ButtonGroup, ConfirmDialog, DescriptionList, EmptyState, ErrorState, Field, FieldGroup,
-  MetaList, PageHeader, PageStack, Panel, Section, Select, Tabs, Timeline, focusField, toast,
+  AccessState, Accordion, Alert, Badge, Button, ButtonGroup, ButtonLink, ConfirmDialog, DescriptionList, Drawer, EmptyState, ErrorState, Field, FieldGroup,
+  MetaList, PageHeader, PageStack, Panel, Prose, ResponsiveDialog, Section, Select, Tabs, Timeline, focusField, toast,
 } from '@content-ventures/design-system/v3';
 import { RotateCw, Save } from '@content-ventures/design-system/v3/icons';
 import { PIPELINE_STEP_LABELS, compactFunnels, pipelineRevision, validatePipelineTemplates, pipelineModelLabel, withArticleAssist, withFormatFunnels } from '@/domain/pipeline';
 import type { PipelineDefinition, PipelineStepKey, PipelineView } from '@/domain/pipeline';
+import type { WritingRunDetails as RunDetails } from '@/ports/pipeline-settings';
 import { useCan, useRuntime, useSession } from '@/state';
 import { useBreadcrumb, useLeaveGuard } from '@/ui/shell';
+import { NEW_PRODUCTION_HREF, pieceHref } from '@/ui/routes';
+import { useMediaQuery } from '@/ui/use-media-query';
 import { PipelineCatalog, PROMPTS, promptChanged, withPromptStep, type PromptKey } from './pipeline-catalog';
+import { WritingOrchestrationEditor } from './writing-orchestration-editor';
+import { WritingRunDetails } from './writing-run-details';
 
 /** What the page edits: the saved definition with the stages and funnels added after it was saved. */
 const editable = (definition: PipelineDefinition) => withFormatFunnels(withArticleAssist(definition));
@@ -23,7 +28,7 @@ import { upgradePreset } from '@/domain/pipeline-preset';
 
 const RUN_STATUS: Record<string, string> = { completed: 'Concluída', failed: 'Falhou', cancelled: 'Cancelada', running: 'Em andamento', queued: 'Na fila' };
 const savedDate = (date: string | null) => date ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(date)) : 'Configuração inicial';
-const PAGE_TABS = { workers: 'Workers', prompts: 'Todos os prompts', history: 'Histórico', runs: 'Execuções' };
+const PAGE_TABS = { workers: 'Workers', writing: 'Redação', prompts: 'Todos os prompts', history: 'Histórico', runs: 'Execuções' };
 type PageTab = keyof typeof PAGE_TABS;
 /** The panel of a page tab; its tab is `${panelId}-tab` (Design System Tabs). */
 const panelId = (tab: PageTab) => `pipeline-${tab}`;
@@ -61,6 +66,7 @@ function PipelineConfig() {
     ? [{ label: 'Prompts', href: '/config' }, { label: currentWorker.title }]
     : pageTab !== 'workers' ? [{ label: 'Prompts', href: '/config' }, { label: PAGE_TABS[pageTab] }] : [{ label: 'Prompts' }]);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [selectedRun, setSelectedRun] = useState<string>();
   const [resetTarget, setResetTarget] = useState<'active' | string>();
   const [failure,setFailure] = useState<string>();
   const [loading,setLoading] = useState(false);
@@ -150,6 +156,11 @@ function PipelineConfig() {
     if (tab === 'system') return;
     setDraft(previous => previous ? withPromptStep(previous,tab,patch) : previous);
   };
+  const refreshRuns = async () => {
+    if (!port) return;
+    const next = await port.get();
+    setView(previous => previous ? { ...previous, runs: next.runs } : previous);
+  };
   if (runtimeError || (failure && !view)) return <ErrorState heading="h1" title="Não foi possível abrir os prompts" description={failure ?? runtimeError?.message} onRetry={() => void load()} size="page" />;
   if (runtime && !port) return <ErrorState heading="h1" title="Prompts disponíveis no motor conectado" description="Esta sessão usa a antiga simulação do front-end." size="page" />;
   if (!view || !draft) return <PageStack><PageHeader title="Prompts" /><Panel><Section title="Carregando prompts"><DescriptionList items={[]} loading /></Section></Panel></PageStack>;
@@ -158,11 +169,14 @@ function PipelineConfig() {
   const active = editable(view.active.definition);
   const changed = (Object.keys(PROMPTS) as PromptKey[]).filter(key => promptChanged(key, draft, active));
   const flowChanged = draft.articleMode !== view.active.definition.articleMode || draft.curateQuotes !== view.active.definition.curateQuotes;
+  const writingChanged = JSON.stringify(draft.writing) !== JSON.stringify(active.writing);
   function reset(target: string) {
     if (!view) return;
     const definition = target === 'active' ? view.active.definition : view.history.find(revision => String(revision.revision) === target)?.definition;
     if (definition) {
-      setDraft(editable(structuredClone({ ...definition, steps: { ...view.active.definition.steps, ...definition.steps } })));
+      // This screen restores task prompts; editorial policies are owned by their settings pages.
+      setDraft(editable(structuredClone({ ...definition, editorial: view.active.definition.editorial,
+        steps: { ...view.active.definition.steps, ...definition.steps } })));
       setFailure(undefined);
       if (target !== 'active') toast(`Revisão ${target} carregada para edição`, { description: 'Salve e ative para usá-la nas próximas gerações.' });
     }
@@ -170,28 +184,43 @@ function PipelineConfig() {
   }
   return <>
     <PageStack>
-      <PageHeader title={currentWorker?.title ?? 'Prompts'}
-        description={currentWorker?.description ?? 'Gerencie os workers, edite seus prompts e acompanhe as execuções.'}
+      <PageHeader title={pageTab === 'writing' ? 'Redação' : currentWorker?.title ?? 'Prompts'}
+        description={pageTab === 'writing' ? 'Defina as etapas, os modelos e as instruções que usam o mapa editorial e o guia de escrita.' : currentWorker?.description ?? 'Gerencie a redação, edite os prompts e acompanhe as execuções.'}
         status={<Badge tone={dirty ? 'amber' : 'gray'}>{dirty ? 'Alterações não ativadas' : `Revisão ${view.active.revision} ativa`}</Badge>}
-        actions={currentWorker ? <ButtonGroup label="Configuração">
-          {dirty && <Button disabled={saving} onClick={() => setResetTarget('active')}>Descartar alterações</Button>}
-          <Button icon={RotateCw} disabled={saving || loading || dirty} onClick={() => void load()}>Recarregar</Button>
+        actions={currentWorker || pageTab === 'writing' ? <>
           <Button variant="primary" icon={Save} loading={saving} disabled={!dirty || Boolean(templateError)} onClick={() => void save()}>Salvar e ativar</Button>
-        </ButtonGroup> : undefined} />
+          <Button icon={RotateCw} disabled={saving || loading || dirty} onClick={() => void load()}>Recarregar</Button>
+          {dirty && <Button disabled={saving} onClick={() => setResetTarget('active')}>Descartar alterações</Button>}
+        </> : undefined} />
       {failure && <Alert tone="danger" title="Não foi possível salvar">{failure}</Alert>}
-      {templateError && <Alert tone="danger" title="Revise as variáveis do prompt">{templateError}</Alert>}
+      {templateError && <Alert tone="danger" title="Revise a configuração">{templateError}</Alert>}
       <PresetUpgrade active={view.active.definition} blocked={dirty || saving} saving={saving} error={failure} onApply={applyPreset} />
       <Tabs label="Gerenciar prompts" value={pageTab} onChange={value => navigate(value)} items={[
         { value: 'workers', label: 'Workers', count: PIPELINE_WORKERS.length, panelId: panelId('workers') },
+        { value: 'writing', label: 'Redação', panelId: panelId('writing') },
         { value: 'prompts', label: 'Todos os prompts', count: Object.keys(PROMPTS).length, panelId: panelId('prompts') },
         { value: 'history', label: 'Histórico', count: view.history.length, panelId: panelId('history') },
         { value: 'runs', label: 'Execuções', count: view.runs.length, panelId: panelId('runs') },
       ]} />
-      {dirty && <MetaList items={[`${changed.length} ${changed.length === 1 ? 'prompt alterado' : 'prompts alterados'}`, ...(flowChanged ? ['Fluxo alterado'] : [])]} />}
+      {dirty && <MetaList items={[...(changed.length ? [`${changed.length} ${changed.length === 1 ? 'prompt alterado' : 'prompts alterados'}`] : []), ...(flowChanged ? ['Fluxo alterado'] : []), ...(writingChanged ? ['Orquestração da redação alterada'] : [])]} />}
       <PageStack role="tabpanel" id={panelId(pageTab)} aria-labelledby={`${panelId(pageTab)}-tab`}>
+        {pageTab === 'writing' && <>
+          <WritingOrchestrationEditor definition={draft} providers={view.providers} researchProviders={view.researchProviders} saving={saving} onChange={writing => update({ writing })} />
+          <Panel><Section title="Usar e acompanhar">
+            <PageStack>
+              <Prose variant="compact" measure="wide">Salve e ative a configuração, depois gere um artigo a partir do conteúdo de uma produção. A aba Execuções mostra os prompts enviados, as respostas, o consumo de tokens e as falhas de cada etapa.</Prose>
+              <ButtonGroup label="Usar a redação"><ButtonLink href={NEW_PRODUCTION_HREF} variant="primary">Criar produção</ButtonLink><Button onClick={() => navigate('runs')}>Ver execuções</Button></ButtonGroup>
+            </PageStack>
+          </Section></Panel>
+        </>}
         {pageTab === 'prompts' && <PipelineCatalog draft={draft} active={active} onEdit={key => { setTab(key); setEditorOpen(true); }} />}
-        {pageTab === 'workers' && <PipelineWorkers worker={worker} onSelect={value => navigate('workers', value)} draft={draft} active={active}
-          saving={saving} onUpdate={update} onEdit={key => { setTab(key); setEditorOpen(true); }} />}
+        {pageTab === 'workers' && <>
+          {active.writing?.enabled && <Alert tone="info" title="A orquestração da redação está ativa">
+            <PageStack><Prose variant="compact" measure="wide">As novas gerações de artigos usam planejamento, redação e revisão. Os modelos e as instruções desse fluxo estão na aba Redação.</Prose><Button onClick={() => navigate('writing')}>Gerenciar redação</Button></PageStack>
+          </Alert>}
+          <PipelineWorkers worker={worker} onSelect={value => navigate('workers', value)} draft={draft} active={active}
+            saving={saving} onUpdate={update} onEdit={key => { setTab(key); setEditorOpen(true); }} />
+        </>}
         {pageTab === 'history' && <Panel><Section title="Histórico de configurações" meta={`Revisão ${view.active.revision} ativa`}>
           <PageStack>
             <DescriptionList items={[{ label: 'Ativada em', value: savedDate(view.active.savedAt) }]} />
@@ -206,24 +235,98 @@ function PipelineConfig() {
         {pageTab === 'runs' && <Panel><Section title="Execuções da IA">
           {view.runs.length ? <Accordion items={view.runs.map(run => ({ id: run.runId, title: run.label,
             meta: `Revisão ${run.pipelineRevision} · ${RUN_STATUS[run.status] ?? run.status}`, content: <PageStack>
-              <Timeline variant="dots" label="Etapas executadas" items={run.calls.map((call, index) => ({ id: `${call.hash}-${index}`,
+              {run.writing ? <PageStack>
+                <DescriptionList items={[{ label: 'Etapas registradas', value: String(run.writing.stages) }]} />
+                <Button onClick={() => setSelectedRun(run.runId)}>Ver execução</Button>
+              </PageStack> : <Timeline variant="dots" label="Etapas executadas" items={run.calls.map((call, index) => ({ id: `${call.hash}-${index}`,
                 title: PIPELINE_STEP_LABELS[call.key] + (call.index === undefined ? '' : ` · ${call.index + 1}`),
                 description: `${pipelineModelLabel(call.model)}${call.cached ? ' · resultado reutilizado' : ''}${call.errorCode ? ' · ' + call.errorCode : ''}`,
                 state: call.status === 'completed' ? 'done' : call.status === 'failed' ? 'blocked' : 'current',
                 date: call.status === 'completed' ? 'Respondida' : call.status === 'failed' ? 'Falhou' : 'Aguardando resposta',
-              }))} />
-              <Accordion items={[{ id: 'technical', title: 'Identificadores técnicos', content: <DescriptionList items={[
+              }))} />}
+              <DescriptionList items={[
                 { label: 'Execução', value: run.runId }, { label: 'Configuração', value: run.pipelineHash },
-              ]} /> }]} />
+              ]} />
             </PageStack> }))} /> : <EmptyState size="inline" title="Nenhuma execução registrada" />}
         </Section></Panel>}
       </PageStack>
     </PageStack>
     {editorOpen && <PipelineEditor promptKey={tab} draft={draft} view={view} saving={saving} dirty={dirty} invalid={Boolean(templateError)} error={templateError ?? failure}
       onClose={() => setEditorOpen(false)} onUpdate={update} onUpdateStep={updateStep} onSave={() => void save()} />}
+    {selectedRun && <WritingRunInspector key={selectedRun} runId={selectedRun} onClose={() => setSelectedRun(undefined)} onSelect={setSelectedRun} onRefresh={refreshRuns} />}
     <ConfirmDialog open={Boolean(resetTarget)} onClose={() => setResetTarget(undefined)} title={resetTarget === 'active' ? 'Descartar as alterações?' : 'Substituir as alterações pela revisão selecionada?'}
       description="As alterações ainda não ativadas serão descartadas. A configuração ativa permanece a mesma." confirmLabel={resetTarget === 'active' ? 'Descartar alterações' : 'Carregar revisão'} cancelLabel="Continuar editando" tone="danger"
       onConfirm={() => { if (resetTarget) reset(resetTarget); }} />
     <ConfirmDialog open={Boolean(exitTo)} onClose={() => setExitTo(undefined)} title="Sair sem ativar os prompts?" description="As alterações desta página ainda não foram salvas. A configuração ativa continua a mesma." confirmLabel="Descartar e sair" cancelLabel="Continuar editando" tone="danger" onConfirm={() => { departing.current = true; const href = exitTo; setExitTo(undefined); if (href) router.push(href); }} />
   </>;
+}
+
+/** Detail polling never reloads the editable definition or its optimistic revision. */
+function WritingRunInspector({ runId, onClose, onSelect, onRefresh }: {
+  runId: string; onClose: () => void; onSelect: (runId: string) => void; onRefresh: () => Promise<void>;
+}) {
+  const { runtime } = useRuntime();
+  const port = runtime?.pipeline;
+  const narrow = useMediaQuery('(max-width: 640px)');
+  const [run, setRun] = useState<RunDetails>();
+  const [failure, setFailure] = useState<string>();
+  const [actionFailure, setActionFailure] = useState<string>();
+  const [action, setAction] = useState<'cancel' | 'retry'>();
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    if (!port?.getWritingRun) return;
+    let live = true, reading = false, active = true;
+    const read = async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        const next = await port.getWritingRun!(runId);
+        if (live) { setRun(next); setFailure(undefined); active = ['running', 'queued'].includes(next.status); }
+      } catch (error) { if (live) setFailure(error instanceof Error ? error.message : 'Não foi possível carregar a execução.'); }
+      finally { reading = false; }
+    };
+    void read();
+    const timer = window.setInterval(() => { if (active) void read(); }, 3000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [port, runId, refresh]);
+
+  async function manage(kind: 'cancel' | 'retry') {
+    if (!runtime || action) return;
+    setAction(kind); setActionFailure(undefined);
+    try {
+      if (kind === 'cancel') {
+        const result = await runtime.generation.cancel(runId);
+        if (!result.ok) { setActionFailure(result.refusal.message); return; }
+        setRefresh(value => value + 1);
+        toast('Execução cancelada');
+      } else {
+        const result = await runtime.generation.retry(runId);
+        if (!result.ok) { setActionFailure(result.refusal.message); return; }
+        toast('Nova tentativa iniciada com a configuração atual');
+        onSelect(result.value.runId);
+      }
+      await onRefresh();
+    } catch (error) { setActionFailure(error instanceof Error ? error.message : 'Não foi possível concluir a ação.'); }
+    finally { setAction(undefined); }
+  }
+  const running = run && ['running', 'queued'].includes(run.status);
+  const retryable = run && ['failed', 'cancelled'].includes(run.status);
+  const content = <PageStack>
+      {failure && <Alert tone="danger" title="Não foi possível atualizar a execução"><PageStack>{failure}<Button onClick={() => setRefresh(value => value + 1)}>Tentar carregar novamente</Button></PageStack></Alert>}
+      {actionFailure && <Alert tone="danger" title="A ação não foi concluída">{actionFailure}</Alert>}
+      {!port?.getWritingRun && <EmptyState size="inline" title="Detalhes indisponíveis nesta conexão" />}
+      {port?.getWritingRun && !run && !failure && <DescriptionList items={[]} loading />}
+      {run && <>
+        <ButtonGroup label="Gerenciar execução">
+          <ButtonLink href={pieceHref(run.productionId, 'article')}>Abrir artigo</ButtonLink>
+          {running && <Button disabled={Boolean(action)} loading={action === 'cancel'} onClick={() => void manage('cancel')}>Cancelar execução</Button>}
+          {retryable && <Button disabled={Boolean(action)} loading={action === 'retry'} onClick={() => void manage('retry')}>Nova tentativa</Button>}
+        </ButtonGroup>
+        {retryable && <Prose variant="compact" measure="wide">A nova tentativa usa a configuração atualmente ativa. Esta execução preserva os prompts e as respostas originais.</Prose>}
+        <WritingRunDetails run={run} />
+      </>}
+    </PageStack>;
+  const common = { open: true, onClose, title: 'Detalhes da redação', footer: <Button onClick={onClose}>Fechar execução</Button> };
+  return narrow ? <ResponsiveDialog {...common} snap="full">{content}</ResponsiveDialog>
+    : <Drawer {...common} size="lg">{content}</Drawer>;
 }

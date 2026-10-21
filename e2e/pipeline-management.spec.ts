@@ -2,7 +2,87 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { defaultPipelineDefinition, pipelineRevision, type PipelineDefinition, type PipelineView } from '../src/domain/pipeline.ts';
 import { emptyEditorialCheckpoint } from '../src/runtime/editorial-engine.ts';
+import { defaultEditorialPolicy } from '../src/domain/editorial-policy.ts';
 import { VIEWPORTS, expectHeadingOutline, expectNoHorizontalOverflow, watchErrors } from './support';
+
+test('legacy model controls save Claude effort and clear it when switching to a sampling model', async ({ page }) => {
+  let view: PipelineView = { active: pipelineRevision(defaultPipelineDefinition(), 2), history: [], runs: [], providers: { groq: true, anthropic: true } };
+  const checkpoint = emptyEditorialCheckpoint(), saved: PipelineDefinition[] = [];
+  await page.route('**/api/reporter/pipeline', route => route.fulfill({ json: view }));
+  await page.route('**/api/reporter/workspace', async route => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON();
+      expect(payload.method).toBe('pipeline.save');
+      saved.push(payload.args[0]);
+      view = { ...view, active: pipelineRevision(payload.args[0], view.active.revision + 1) };
+      return route.fulfill({ json: { ok: true, value: view } });
+    }
+    return route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } });
+  });
+  await page.goto('/config?worker=article');
+  await page.getByRole('button', { name: 'Editar Estrutura do artigo', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Estrutura do artigo', exact: true });
+  await editor.getByRole('button', { name: 'Ajustes avançados do modelo' }).click();
+  await expect(editor.getByLabel('Temperatura', { exact: true })).toBeVisible();
+  await editor.getByRole('combobox', { name: 'Modelo de IA', exact: true }).click();
+  await page.getByRole('option', { name: 'Claude · claude-opus-5-5', exact: true }).click();
+  const effort = editor.getByRole('combobox', { name: 'Esforço de raciocínio', exact: true });
+  await expect(effort).toContainText('Médio');
+  await expect(editor.getByLabel('Temperatura', { exact: true })).toHaveCount(0);
+  await effort.click();
+  await page.getByRole('option', { name: 'Alto', exact: true }).click();
+  const tokenLimit = editor.getByLabel('Limite de tokens', { exact: true });
+  await tokenLimit.click();
+  await tokenLimit.fill('16384');
+  await expect(tokenLimit).toHaveAttribute('aria-valuenow', '16384');
+  await tokenLimit.press('Tab');
+  await editor.getByRole('button', { name: 'Salvar e ativar tudo', exact: true }).click();
+  await expect(editor.getByText('Revisão 3 ativa', { exact: true })).toBeVisible();
+  expect(saved[0].steps.outline).toMatchObject({ model: 'anthropic/claude-opus-5-5', effort: 'high', maxTokens: 16384 });
+  await editor.getByRole('combobox', { name: 'Modelo de IA', exact: true }).click();
+  await page.getByRole('option', { name: 'Claude · claude-sonnet-4-6', exact: true }).click();
+  await expect(effort).toHaveCount(0);
+  await expect(editor.getByLabel('Temperatura', { exact: true })).toBeVisible();
+  await expect(editor.getByLabel('Limite de tokens', { exact: true })).toHaveAttribute('aria-valuenow', '8192');
+  await editor.getByRole('button', { name: 'Salvar e ativar tudo', exact: true }).click();
+  await expect(editor.getByText('Revisão 4 ativa', { exact: true })).toBeVisible();
+  expect(saved[1].steps.outline.model).toBe('anthropic/claude-sonnet-4-6');
+  expect(saved[1].steps.outline).not.toHaveProperty('effort');
+});
+
+test('restoring task prompts preserves the current editorial settings', async ({ page }) => {
+  const definition = defaultPipelineDefinition();
+  definition.editorial = defaultEditorialPolicy();
+  definition.editorial.guide.voice = 'Use a voz editorial atual.';
+  const previous = structuredClone(definition);
+  previous.systemPrompt += '\nPrompt anterior.';
+  previous.editorial!.guide.voice = 'Voz antiga que não deve voltar.';
+  let view: PipelineView = { active: pipelineRevision(definition, 2), history: [pipelineRevision(previous, 1)], runs: [] };
+  const checkpoint = emptyEditorialCheckpoint();
+  let saved: PipelineDefinition | undefined;
+  await page.route('**/api/reporter/pipeline', route => route.fulfill({ json: view }));
+  await page.route('**/api/reporter/workspace', async route => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON();
+      expect(payload.method).toBe('pipeline.save');
+      expect(payload.args[1]).toBe(2);
+      saved = payload.args[0];
+      view = { ...view, active: pipelineRevision(saved!, 3) };
+      return route.fulfill({ json: { ok: true, value: view } });
+    }
+    return route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } });
+  });
+  await page.goto('/config?tab=history');
+  await page.getByRole('combobox', { name: 'Revisão anterior' }).click();
+  await page.getByRole('option', { name: /^Revisão 1/ }).click();
+  await page.getByRole('button', { name: 'Carregar para edição' }).click();
+  await page.getByRole('tab', { name: /^Workers/ }).click();
+  await page.getByRole('button', { name: 'Abrir worker Gerar artigo' }).click();
+  await page.getByRole('button', { name: 'Salvar e ativar', exact: true }).click();
+  await expect(page.getByText('Revisão 3 ativa', { exact: true })).toBeVisible();
+  expect(saved?.systemPrompt).toBe(previous.systemPrompt);
+  expect(saved?.editorial).toEqual(definition.editorial);
+});
 
 for (const viewport of VIEWPORTS) {
   test.describe(`prompt management at ${viewport.name}`, () => {
