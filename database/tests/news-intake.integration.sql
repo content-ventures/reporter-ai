@@ -22,6 +22,7 @@ DECLARE source jsonb; claim jsonb; result jsonb; view jsonb; first_id uuid;
     "body":["O Brasil embarcou 4,1 mil toneladas.","Paraná lidera."],"storyKey":"41 cresce exportacao terceiro tilapia trimestre",
     "publishedAt":"2026-10-19T12:00:00Z"}';
 BEGIN
+  PERFORM public.reporter_news_require_edit();
   source := public.reporter_news_source_add('rss','Agência Litoral','https://litoral.exemplo/feed','https://litoral.exemplo/feed',60,NULL,NULL,NULL);
   IF source->>'name'<>'Agência Litoral' OR (source->>'everyMinutes')::int<>60 OR jsonb_array_length(source->'lastWeek')<>7 THEN
     RAISE EXCEPTION 'Source view is wrong: %',source;
@@ -87,8 +88,8 @@ BEGIN
     RAISE EXCEPTION 'Radar view is wrong: %',view;
   END IF;
   view := public.reporter_news_view(clock_timestamp()+interval '1 second',NULL);
-  IF view ? 'sources' AND view->'sources'<>'null'::jsonb OR jsonb_array_length(view->'items')<>0 THEN
-    RAISE EXCEPTION 'An idle poll read more than the clock: %',view;
+  IF jsonb_array_length(view->'sources')<>2 OR jsonb_array_length(view->'items')<>0 THEN
+    RAISE EXCEPTION 'An idle poll lost its source snapshot or resent news: %',view;
   END IF;
   IF jsonb_array_length(public.reporter_news_item(first_id)->'body')<>2 THEN RAISE EXCEPTION 'Item body missing'; END IF;
 
@@ -99,10 +100,21 @@ BEGIN
   IF source->>'name'<>'Alerta tilápia' OR (source->>'everyMinutes')::int<>120 OR (source->>'nextReadAt')::timestamptz>clock_timestamp() THEN
     RAISE EXCEPTION 'Resume or frequency lost: %',source;
   END IF;
-  result := public.reporter_news_source_remove((SELECT (x->>'id')::uuid FROM jsonb_array_elements(public.reporter_news_view(NULL,NULL)->'sources') x WHERE x->>'kind'='rss'));
+  view := public.reporter_news_view(NULL,NULL);
+  result := public.reporter_news_source_remove((SELECT (x->>'id')::uuid FROM jsonb_array_elements(view->'sources') x WHERE x->>'kind'='rss'));
   IF result->>'kind'<>'rss' OR public.reporter_news_item(first_id) ? 'sourceId' THEN
     RAISE EXCEPTION 'Removing a source removed or kept a link to its news';
   END IF;
+  view := public.reporter_news_view((view->>'at')::timestamptz,NULL);
+  IF jsonb_array_length(view->'sources')<>1
+    OR NOT EXISTS(SELECT FROM jsonb_array_elements(view->'items') i WHERE i->>'id'=first_id::text AND NOT i ? 'sourceId') THEN
+    RAISE EXCEPTION 'Another desk did not see the source removal and detached news: %',view;
+  END IF;
+  -- The final deletion has no surviving source whose updated_at could invalidate a cached list.
+  PERFORM public.reporter_news_source_remove((source->>'id')::uuid);
+  view := public.reporter_news_view((view->>'at')::timestamptz,NULL);
+  IF view->'sources'<>'[]'::jsonb THEN RAISE EXCEPTION 'The last deleted source remained in another desk: %',view; END IF;
+  PERFORM public.reporter_news_source_add('rss','Worker source','https://worker.exemplo/feed','https://worker.exemplo/feed',15,NULL,NULL,NULL);
 END $$;
 
 -- A reviewer reads but never writes; another portal sees nothing.
@@ -110,6 +122,10 @@ SELECT set_config('app.user_id','00000000-0000-0000-0000-000000000012',true);
 DO $$
 BEGIN
   IF jsonb_array_length(public.reporter_news_view(NULL,NULL)->'items')<>3 THEN RAISE EXCEPTION 'Reviewer cannot read the radar'; END IF;
+  BEGIN
+    PERFORM public.reporter_news_require_edit();
+    RAISE EXCEPTION 'Reviewer passed the preflight write permission check';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
   BEGIN
     PERFORM public.reporter_news_source_add('rss','X','https://x.exemplo/feed','https://x.exemplo/feed',60,NULL,NULL,NULL);
     RAISE EXCEPTION 'Reviewer added a source';

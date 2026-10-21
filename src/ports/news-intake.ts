@@ -1,10 +1,15 @@
 import type { NewsFeed, NewsItem } from '../domain/hard-news.ts';
+import type { NewsDiscoveryInput, NewsDiscoveryResult } from '../domain/news-discovery.ts';
+import type { NewsDecisionInput } from '../domain/news-decisions.ts';
 
 /**
  * F2.1 · Entrada de notícias: the desk's sources and the news they bring, on the server. The radar
  * polls `read(since)`; everything else is one call per person action. Refusals reject with the
  * desk's message (a source that does not answer, a duplicate, RSS.app's plan).
  */
+
+/** Stable keyset within one poll; later mutations are caught by the next overlapping poll. */
+export type NewsPageCursor = { updatedAt: string; id: string; until: string };
 
 /** The radar's read. `sources` is absent when nothing about them changed since `since`. */
 export type NewsSnapshot = {
@@ -14,6 +19,7 @@ export type NewsSnapshot = {
   items: NewsItem[];
   /** RSS.app can create feeds here (the platform's account is configured). */
   rssApp: boolean;
+  next?: NewsPageCursor;
 };
 
 export type NewSource =
@@ -32,7 +38,10 @@ export type SourceRead = { source: NewsFeed; inserted: number; grouped: number }
 export type LinkImport = { id: string; outcome: 'inserted' | 'grouped' | 'repeat' };
 
 export interface NewsIntake {
-  read(since?: string): Promise<NewsSnapshot>;
+  /** Discover and verify candidate feeds without subscribing to any source. */
+  discover(input: NewsDiscoveryInput): Promise<NewsDiscoveryResult>;
+  decide(id: string, input: NewsDecisionInput): Promise<NewsItem>;
+  read(since?: string, page?: NewsPageCursor): Promise<NewsSnapshot>;
   /** One item with its text. */
   item(id: string): Promise<NewsItem | undefined>;
   addSource(input: NewSource): Promise<SourceRead>;

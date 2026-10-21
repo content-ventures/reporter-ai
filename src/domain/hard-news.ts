@@ -38,7 +38,7 @@ export const FEED_INTERVALS = [15, 30, 60, 120, 360] as const;
 // ── F2.2 / F2.4 · Fila e triagem ─────────────────────────────────────────────────────────────
 
 /** Where a news item is in the desk's queue. `covered` became a production. */
-export type NewsStatus = 'new' | 'covered' | 'later' | 'discarded';
+export type NewsStatus = 'new' | 'selected' | 'covered' | 'later' | 'discarded';
 
 export type NewsPriority = 'high' | 'medium' | 'low';
 
@@ -67,8 +67,12 @@ export type NewsItem = {
   source: string;
   feedId?: string;
   via: 'rss' | 'url';
+  /** What was retrieved; neither a feed nor page extraction guarantees the full publication. */
+  contentKind?: 'feed' | 'article';
   publishedAt: string;
   importedAt: string;
+  /** Server revision timestamp used to ignore delayed responses. */
+  updatedAt?: string;
   /** The outlet's lead, as published. */
   excerpt: string;
   /** Paragraphs of the original text, for reading without leaving the queue. */
@@ -79,6 +83,8 @@ export type NewsItem = {
   /** Absent while the AI is still reading it. */
   classification?: NewsClassification;
   status: NewsStatus;
+  /** Version of the editorial decision, checked to refuse stale writes from another session. */
+  decisionRevision?: number;
   decidedBy?: string;
   decidedAt?: string;
   /** "Adiar" until this moment. */
