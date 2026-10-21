@@ -225,7 +225,9 @@ test('an article section quotes an unnamed voice while the text still lacks its 
   // still says how many quotations the text lacks, and the section brings them as unnamed voices.
   assert.ok(section.includes('enquanto sizing.quotePlan.quotesStillNeeded for maior que zero, esta seção traz ao menos uma fala literal curta de suas evidências'));
   assert.ok(section.includes('nunca de quem entrevista, pergunta ou agradece; sem falante identificado, atribua-a de forma neutra, como parte do episódio ("segundo um dos participantes do episódio", "disse um dos entrevistados"), nunca com um nome.'));
-  assert.match(section, /Na última seção, traga todas as que ainda faltarem\./);
+  // Missing quotes go where their evidence is; the last section keeps the inverted pyramid and never ends on a list quote.
+  assert.ok(section.includes('Uma fala que ainda falta entra na seção cujas evidências ela sustenta, junto do fato que ela explica; nunca acumule falas no fim do texto. A última seção termina no fato menos importante e só termina com uma fala se ela trouxer informação nova, nunca com uma fala que só enumera itens.'));
+  assert.doesNotMatch(section, /traga todas as que ainda faltarem/);
   // The floor per section and the rule against naming an unidentified voice stay.
   assert.match(section, /Traga uma fala literal curta — uma ideia, uma ou duas frases — sempre que as evidências desta seção tiverem uma frase citável de um falante identificado/);
   assert.match(section, /Identifique a pessoa só quando a evidência associar essa fala ao falante/);
@@ -261,8 +263,14 @@ test('a panel quotes every speaker with a quotable line and develops each thesis
     assert.match(panel[key].prompt, /cada palestrante com uma frase citável na fonte tem ao menos uma passagem citável selecionada/, key);
     assert.match(panel[key].prompt, /os argumentos, dados e exemplos concretos que o palestrante deu sobre ela/, key);
   }
+  // The speaker rule prevails over the cap of two quotable passages (or two quotes) per section, and never reaches the mediator.
+  for (const key of ['outline', 'quotes'] as const)
+    assert.ok(panel[key].prompt.includes('na seção do assunto dela, mesmo que a seção passe de 2 passagens citáveis: esta regra prevalece sobre esse limite. Mediador, apresentador e mestre de cerimônias não são palestrantes: suas falas nunca são selecionadas como citação.'), key);
+  assert.match(panel.quotes.prompt, /até 2 passagens citáveis por seção/);
   const section = panel.section.prompt;
-  assert.match(section, /Cada palestrante com uma frase citável tem ao menos uma fala no texto: se as evidências desta seção têm uma frase citável de um palestrante ainda não citado no texto escrito até agora, cite-o nesta seção/);
+  assert.ok(section.includes('Cada palestrante com uma frase citável tem ao menos uma fala no texto, mesmo que a seção passe de duas falas (esta regra prevalece sobre esse limite)'));
+  assert.ok(section.includes('Mediador, apresentador e mestre de cerimônias não são palestrantes e nunca viram citação.'));
+  assert.match(section, /se as evidências desta seção têm uma frase citável de um palestrante ainda não citado no texto escrito até agora, cite-o nesta seção/);
   assert.match(section, /Desenvolva cada seção com os argumentos, dados e exemplos concretos do palestrante que estão nas evidências dela/);
   assert.match(section, /quando as evidências acabarem, pare: nunca preencha com repetição, generalidade ou fato de outra seção/);
   assert.doesNotMatch(section, /Uma segunda fala só se trouxer informação nova/);
@@ -307,12 +315,16 @@ test('an awards nominee list the source does not split by category never sits un
 
 test('headlines and texts carry the date as the event gives it, never hoje, amanhã or ontem', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
-  assert.ok(HARD_NEWS.includes('- Datas: no título e no texto, a data ou o dia da semana como o evento ou a fonte os trazem ("nesta terça-feira", "em 20 de outubro"); fora das aspas, nunca "hoje", "amanhã" ou "ontem", mesmo que a pauta ou a fonte os usem.'));
+  // The fact's own day may reach the headline and the text; the event's period and hours stay in the service box.
+  assert.ok(HARD_NEWS.includes('- Datas: o dia do próprio fato (quando ele aconteceu ou vai acontecer) pode entrar no título e no texto, como o evento ou a fonte o trazem ("nesta terça-feira (20)", "em 20 de outubro"); o período e o horário do evento ficam no box de serviço. Fora das aspas, nunca "hoje", "amanhã" ou "ontem", mesmo que a pauta ou a fonte os usem.'));
   // The shared block reaches every headline: the structure prompts of the funnels and the 3.0 system message.
   for (const format of EDITORIAL_FORMATS) {
     assert.ok(definition.funnels[format].outline.prompt.includes(HARD_NEWS), format);
-    for (const key of ['intro', 'section'] as const)
+    for (const key of ['intro', 'section'] as const) {
       assert.match(definition.funnels[format][key].prompt, /Fora das aspas, nunca escreva "hoje", "amanhã" ou "ontem", nem ao lado da data/, `${format} ${key}`);
+      assert.ok(definition.funnels[format][key].prompt.includes('O período, o horário e o endereço do evento ficam no box de serviço que o sistema monta no fim; no texto, no máximo o local, a cidade e o dia do próprio fato (ver Datas).'), `${format} ${key}`);
+      assert.doesNotMatch(definition.funnels[format][key].prompt, /Datas, horário e endereço ficam no box/, `${format} ${key}`);
+    }
   }
   assert.ok(definition.systemPrompt.includes(HARD_NEWS));
   const note = definition.funnels.note;
