@@ -84,7 +84,7 @@ Cada seção desenvolve o assunto do seu intertítulo, do mais importante para o
     reference: `Título: Pescados Litoral lança tilápia defumada em porções de 200 gramas na Feira Modelo 2026
 Linha fina: Produto chega ao varejo do Sudeste em julho e deve responder por 15% das vendas de congelados da empresa, segundo o diretor comercial
 
-A Pescados Litoral lançou na Feira Modelo 2026 uma tilápia defumada em porções de 200 gramas, voltada ao varejo. O produto chega às gôndolas do Sudeste em julho, com preço sugerido de R$ 24,90.
+A Pescados Litoral lançou na Feira Modelo 2026 uma tilápia defumada em porções de 200 gramas, voltada ao varejo. O produto chega às gôndolas do Sudeste em julho, com preço sugerido de R$ 24,90, segundo a empresa.
 
 O diretor comercial da empresa, Ricardo Lemos, disse que a porção menor atende a um pedido dos supermercados. “O cliente quer levar uma refeição para duas pessoas, não um quilo de peixe”, afirmou.
 
@@ -112,7 +112,7 @@ A empresa estuda vender o produto ao Chile a partir de 2027, de acordo com Lemos
     reference: `Título: Economista da AEA prevê alta de 8% no consumo de tilápia em 2027
 Linha fina: Segundo Marta Lima, a queda no preço do filé explica a projeção; no mesmo painel, ela disse que a ração responde por 70% do custo
 
-A economista-chefe da Associação Exemplo de Aquicultura (AEA), Marta Lima, afirmou na Feira Modelo 2026 que o consumo de tilápia no Brasil deve crescer 8% em 2027. A projeção considera a queda de 5% no preço do filé no varejo neste ano.
+A economista-chefe da Associação Exemplo de Aquicultura (AEA), Marta Lima, afirmou na Feira Modelo 2026 que o consumo de tilápia no Brasil deve crescer 8% em 2027. Segundo ela, a projeção considera a queda de 5% no preço do filé no varejo neste ano.
 
 “O preço chegou a um ponto em que a tilápia disputa espaço com o frango”, disse a economista no painel “Mercado de pescado em 2027”, mediado pelo jornalista Paulo Nunes.
 
@@ -133,10 +133,10 @@ De acordo com Lima, a ração responde por 70% do custo de produção, e a alta 
 1º, o lide, sem citação: o resultado do prêmio — o [Prêmio] e o vencedor de maior destaque na fonte (o primeiro colocado, o prêmio principal ou o mais citado), ou as categorias premiadas — e quando e onde foi a entrega, em até 40 palavras. Não abra pela cerimônia, pela noite nem pelo evento ("A noite foi marcada por…").
 Depois, o que o prêmio reconhece, quem conduziu e o formato das colocações, só se a fonte trouxer; uma fala da organização apenas se existir na fonte e acrescentar informação. Não anuncie a lista nem use "Confira": os vencedores vêm nas seções.`,
     parts: `Cada vencedor é um parágrafo no molde ">> [Colocação]: [Nome], da [Instituição ou empresa] | Projeto: [Título]." com exatamente os dados da fonte. A colocação é a da fonte (Ouro, Prata, Bronze, 1º lugar, Vencedor, Vencedora), sem repetir o nome da categoria; omita "| Projeto:" quando a fonte não trouxer projeto. Não complete instituição, estado, projeto ou colocação ausentes, não corrija grafias e não invente categorias. Se a fonte listar indicados ou finalistas e houver uma seção para eles, use um único parágrafo: "Os indicados foram: [Nome], da [Instituição]; [Nome], da [Instituição]…". Sem comentários entre os vencedores e sem fecho depois da lista. Nesta premiação as seções não levam citação: só a lista.`,
-    reference: `Título: Cooperativa Rio Claro vence categoria Produção do Prêmio Modelo de Inovação
+    reference: `Título: Ana Souza, da Cooperativa Rio Claro, vence categoria Produção do Prêmio Modelo de Inovação
 Linha fina: Prêmio entregue na Feira Modelo 2026 reconheceu projetos nas categorias Academia, Produção e Sustentabilidade
 
-A Cooperativa Rio Claro venceu a categoria Produção do Prêmio Modelo de Inovação, entregue na terça-feira (20) na Feira Modelo 2026, com um projeto que reduz em 30% o uso de água na engorda de camarão.
+Ana Souza, da Cooperativa Rio Claro, venceu a categoria Produção do Prêmio Modelo de Inovação, entregue na terça-feira (20) na Feira Modelo 2026, com o projeto Recirculação de água na engorda de camarão.
 
 Conduzida pela coordenadora da feira, Helena Costa, a premiação distribuiu colocações de Ouro, Prata e Bronze.
 
@@ -160,7 +160,7 @@ Conduzida pela coordenadora da feira, Helena Costa, a premiação distribuiu col
     reference: `Título: Secretário anuncia crédito de R$ 500 milhões para aquicultores na abertura da Feira Modelo
 Linha fina: Presidente da feira, Luiz Andrade, informou que a organização vai disputar a sede de um congresso internacional em 2028
 
-O secretário de Pesca do Estado, Rui Matos, anunciou na abertura da Feira Modelo 2026 uma linha de crédito de R$ 500 milhões para pequenos aquicultores. O dinheiro estará disponível a partir de janeiro, com juros de 6% ao ano.
+O secretário de Pesca do Estado, Rui Matos, anunciou na abertura da Feira Modelo 2026 uma linha de crédito de R$ 500 milhões para pequenos aquicultores. O dinheiro estará disponível a partir de janeiro, com juros de 6% ao ano, segundo o secretário.
 
 “É o maior volume já destinado à aquicultura familiar no Estado”, disse o secretário.
 
@@ -186,7 +186,7 @@ O presidente da feira, Luiz Andrade, informou que a organização vai disputar a
     reference: `Título: Frigorífico Baía Azul recebe certificação para exportar tilápia ao Japão
 Linha fina: Empresa prevê o primeiro embarque ao Japão em março, com 40 toneladas de filé congelado
 
-O Frigorífico Baía Azul recebeu na segunda-feira (19) a certificação sanitária que permite exportar filé de tilápia ao Japão, informou a empresa na Feira Modelo 2026. O primeiro embarque, de 40 toneladas, está previsto para março.
+O Frigorífico Baía Azul recebeu na segunda-feira (19) a certificação sanitária que permite exportar filé de tilápia ao Japão, informou a empresa na Feira Modelo 2026. Segundo a empresa, o primeiro embarque, de 40 toneladas, está previsto para março.
 
 Segundo o diretor comercial, Paulo Freitas, a certificação exigiu dois anos de auditorias. “O Japão pede rastreabilidade de cada lote, do alevino à embalagem”, disse.`,
   },
