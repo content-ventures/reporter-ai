@@ -26,7 +26,9 @@ Production is an R1 build. `HARD_NEWS_DEMO` (`ui/r2-preview.ts`) is true there, 
 `e2e/hard-news-demo.spec.ts` (connected smoke) opens Acervo, Mapa editorial, Guia de escrita, Integrações, one app and WordPress at 1440 and 390 px, with "Demo" in the top bar, and checks that no API request writes. It also checks the connected radar, source discovery and collection at both widths, partial failures and retries, direct item links, and durable selection for writing through mocked server contracts. The story's text is read on demand. The database suite checks real persistence, permissions, conflicts and postponement expiry.
 
 The connected news workflow is described in `NEWS_INTAKE.md`: portal/sector → verified sources →
-first collection → news → selection for writing. Its decision is **Selecionar para redação**;
+first collection → news → selection for writing. The entered portal is the client publication;
+suggested sources and their article samples come from other publishers. Publisher logos identify
+sources throughout discovery and the radar. Its decision is **Selecionar para redação**;
 it preserves imported source material without starting the simulated research flow described below.
 
 ## Journey

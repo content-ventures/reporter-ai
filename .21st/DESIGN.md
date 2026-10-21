@@ -39,6 +39,8 @@
 
 ## Current decisions
 
+- Source discovery uses the client publication only as coverage context. Seafood Brasil is a client, not a source to ingest for its own newsroom. Exclude the client's domain and subdomains from discovery and show real publisher favicons with public DS BrandMark throughout source suggestions and the news radar.
+
 - The sidebar shows the whole R1–R7 product map. Items of a later release use the DS `NavItem.soon` ("Em breve", no link, the reason in the tip: what the screen will do and which release brings it); ⌘K, the active item and the trail use released items only. Role filtering comes first: Administração items show only to admins, even as "Em breve".
 - Studios use the full width with one line of chrome above the text.
 - Navigation is always by breadcrumbs (João, October 16, 2026). Every production stage shows "Produções › <título da produção> › <etapa>" (Material, Artigo, Aprovação do artigo, Carrossel, Aprovação do carrossel, Entrega); the title opens the stage the production is on, and deciders start at Produções too. Overlays and drawers add no level. `scripts/check-content-density.mjs` rejects `PageHeader back`. Recovery actions inside error and access states ("Ver produções") and in-flow steps ("Voltar às aprovações") stay. On phones the DS TopBar will show the first and the current level (DS change pending; until it is pinned, phones show only the current level); Reporter adds no in-page breadcrumb.

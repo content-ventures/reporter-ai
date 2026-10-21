@@ -1,5 +1,7 @@
 'use client';
 
+import { newsLogoUrl } from '@/domain/news-branding';
+
 import {
   Badge,
   BarChart,
@@ -65,7 +67,7 @@ function FeedRow({ feed, now }: { feed: NewsFeed; now: number }) {
   return (
     <ListItem
       density="sm"
-      leading={<BrandMark name={feed.name} size="sm" decorative />}
+      leading={<BrandMark name={feed.name} src={newsLogoUrl(feed.site ?? feed.url)} size="sm" decorative />}
       title={feed.name}
       description={description}
       meta={feed.state === 'failing'

@@ -1,5 +1,7 @@
 'use client';
 
+import { newsLogoUrl } from '@/domain/news-branding';
+
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActionBar,
@@ -77,7 +79,7 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
     <PageStack>
       <CardHeader
         titleAs="h2"
-        leading={<BrandMark name={item.source} size="md" />}
+        leading={<BrandMark name={item.source} src={newsLogoUrl(item.url)} size="md" />}
         title={item.title}
         description={`${item.source} · ${facts.join(' · ')}`}
         actions={(
@@ -192,7 +194,7 @@ function WhoPublished({ item, now }: { item: NewsItem; now: number }) {
           label="Quem publicou"
           items={outlets.map((outlet) => ({
             id: outlet.url,
-            marker: <BrandMark name={outlet.source} size="xs" variant="soft" decorative />,
+            marker: <BrandMark name={outlet.source} src={newsLogoUrl(outlet.url)} size="xs" variant="soft" decorative />,
             title: <TextLink href={outlet.url} external tone="text">{outlet.source}</TextLink>,
             date: at(outlet.publishedAt, now),
             dateTime: outlet.publishedAt,

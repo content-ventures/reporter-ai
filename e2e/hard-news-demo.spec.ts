@@ -19,6 +19,13 @@ const DEMO_SCREENS = [
   ['/admin/integrations/cms', 'WordPress'],
 ] as const;
 
+// Keep third-party favicon delivery deterministic; the UI must still render an actual image.
+test.beforeEach(async ({ page }) => {
+  await page.route('https://www.google.com/s2/favicons?**', route => route.fulfill({
+    contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'),
+  }));
+});
+
 /** Every API request that is not a read. */
 function watchWrites(page: Page): string[] {
   const writes: string[] = [];
@@ -61,10 +68,10 @@ for (const viewport of VIEWPORTS) {
 }
 
 const AT = new Date().toISOString();
-const SOURCE = { id: '6b1f8a8e-2f7c-4d55-9a51-6f0f3f8d7a10', name: 'Seafood Brasil', url: 'https://www.seafoodbrasil.com.br/feed/', everyMinutes: 60, state: 'active', lastReadAt: AT, lastDay: 2, lastWeek: [0, 0, 0, 0, 0, 1, 2], kind: 'rss' };
+const SOURCE = { id: '6b1f8a8e-2f7c-4d55-9a51-6f0f3f8d7a10', name: 'Peixe BR', url: 'https://www.peixebr.com.br/feed/', everyMinutes: 60, state: 'active', lastReadAt: AT, lastDay: 2, lastWeek: [0, 0, 0, 0, 0, 1, 2], kind: 'rss' };
 const STORY = {
   id: '0c2b3d4e-5f60-4718-8a9b-0c1d2e3f4a5b', title: 'Auditoria europeia aproxima Brasil da reabertura das exportações de pescado',
-  url: 'https://www.seafoodbrasil.com.br/comercializacao/auditoria', source: 'Seafood Brasil', feedId: SOURCE.id, via: 'rss',
+  url: 'https://www.peixebr.com.br/comercializacao/auditoria', source: 'Peixe BR', feedId: SOURCE.id, via: 'rss',
   publishedAt: AT, importedAt: AT, excerpt: 'O relatório preliminar valida o sistema sanitário nacional.', body: ['O relatório preliminar valida o sistema sanitário nacional.'],
   paragraphs: 3, duplicates: [{ source: 'g1.globo.com', url: 'https://g1.globo.com/agro/auditoria', publishedAt: AT }], status: 'new',
 };
@@ -82,6 +89,8 @@ test('Notícias e Fontes leem o servidor: sem Demo, sem triagem, texto sob deman
   await expect(page.getByRole('heading', { level: 1, name: 'Notícias', exact: true })).toBeVisible();
   await expect(page.getByText('Demo', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 2, name: STORY.title })).toBeVisible();
+  await expect(page.getByRole('img', { name: SOURCE.name, exact: true }).locator('img')).toHaveAttribute('src', /peixebr\.com\.br/);
+  await expect.poll(() => page.getByRole('img', { name: SOURCE.name, exact: true }).locator('img').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   // No AI triage yet: the connected desk offers selection without starting research or drafting.
   await expect(page.getByRole('heading', { name: 'Cobrir agora' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cobrir', exact: true })).toHaveCount(0);
@@ -92,7 +101,8 @@ test('Notícias e Fontes leem o servidor: sem Demo, sem triagem, texto sob deman
 
   await page.goto('/news/sources');
   await expect(page.getByRole('heading', { level: 1, name: 'Fontes', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: 'Seafood Brasil' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Peixe BR' })).toBeVisible();
+  await expect(page.getByRole('img', { name: SOURCE.name, exact: true }).locator('img')).toHaveAttribute('src', /peixebr\.com\.br/);
   await expect(page.getByText('Demo', { exact: true })).toHaveCount(0);
 
   await page.goto('/admin/integrations/rss-app');
@@ -120,16 +130,16 @@ for (const viewport of VIEWPORTS) {
       const items: NewsItem[] = [];
       const created: string[] = [], retried: string[] = [];
       const secondId = '6b1f8a8e-2f7c-4d55-9a51-6f0f3f8d7a11';
-      const secondStory: NewsItem = { ...STORY, status: 'new', via: 'rss', id: '0c2b3d4e-5f60-4718-8a9b-0c1d2e3f4a5c', title: 'Nova pesquisa amplia a produção de pescado', source: 'Pesquisa do Pescado', feedId: secondId };
+      const secondStory: NewsItem = { ...STORY, status: 'new', via: 'rss', id: '0c2b3d4e-5f60-4718-8a9b-0c1d2e3f4a5c', title: 'Nova pesquisa amplia a produção de pescado', source: 'Agência Brasil', feedId: secondId, url: 'https://agenciabrasil.ebc.com.br/pesquisa' };
       const discovery: NewsDiscoveryResult = {
-        context: { sector: 'pesca e aquicultura', region: 'Brasil' }, queries: ['pesca e aquicultura Brasil notícias'], checkedAt: AT,
+        context: { portal: { url: 'https://www.seafoodbrasil.com.br', title: 'Seafood Brasil' }, sector: 'pesca e aquicultura', region: 'Brasil' }, queries: ['pesca e aquicultura Brasil notícias'], checkedAt: AT,
         suggestions: [
-          { id: 'seafood', name: SOURCE.name, site: 'https://www.seafoodbrasil.com.br', status: 'verified', feedUrl: SOURCE.url,
+          { id: 'peixebr', name: SOURCE.name, site: 'https://www.peixebr.com.br', status: 'verified', feedUrl: SOURCE.url,
             reason: 'Publica notícias do setor de pescado.', evidence: { url: STORY.url, title: STORY.title, excerpt: STORY.excerpt },
             sample: [{ title: STORY.title, url: STORY.url, publishedAt: AT }], recentItems: 2 },
-          { id: 'research', name: secondStory.source, site: 'https://pesquisa.example', status: 'verified', feedUrl: 'https://pesquisa.example/feed',
-            reason: 'Acompanha pesquisas sobre aquicultura.', evidence: { url: 'https://pesquisa.example/noticias', title: 'Pesquisa do Pescado', excerpt: 'Pesquisas recentes.' },
-            sample: [{ title: secondStory.title, url: 'https://pesquisa.example/pesquisa' }], recentItems: 1 },
+          { id: 'research', name: secondStory.source, site: 'https://agenciabrasil.ebc.com.br', status: 'verified', feedUrl: 'https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml',
+            reason: 'Acompanha pesquisas sobre aquicultura.', evidence: { url: 'https://agenciabrasil.ebc.com.br/noticias', title: 'Agência Brasil', excerpt: 'Pesquisas recentes.' },
+            sample: [{ title: secondStory.title, url: 'https://agenciabrasil.ebc.com.br/pesquisa' }], recentItems: 1 },
           { id: 'unverified', name: 'Portal sem feed', site: 'https://sem-feed.example', status: 'no-feed',
             reason: 'Foi encontrado na busca do setor.', evidence: { url: 'https://sem-feed.example', title: 'Portal sem feed', excerpt: 'Notícias.' },
             sample: [], recentItems: 0, issue: 'Não foi possível confirmar um feed público.' },
@@ -139,7 +149,7 @@ for (const viewport of VIEWPORTS) {
       await page.route('**/api/reporter/news**', async route => {
         const path = new URL(route.request().url()).pathname;
         if (path.endsWith('/discover')) {
-          expect(route.request().postDataJSON()).toEqual({ sector: 'pesca e aquicultura', region: 'Brasil' });
+          expect(route.request().postDataJSON()).toEqual({ portalUrl: 'https://www.seafoodbrasil.com.br', sector: 'pesca e aquicultura', region: 'Brasil' });
           return route.fulfill({ json: discovery });
         }
         if (path.endsWith('/sources')) {
@@ -165,9 +175,14 @@ for (const viewport of VIEWPORTS) {
       await page.goto('/news');
       await page.getByRole('button', { name: 'Descobrir fontes', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Descobrir fontes', exact: true });
+      await dialog.getByLabel('Site do seu veículo (contexto)').fill('https://www.seafoodbrasil.com.br');
       await dialog.getByLabel('Setor ou tema').fill('pesca e aquicultura');
       await dialog.getByRole('button', { name: 'Buscar fontes', exact: true }).click();
       await expect(dialog.getByRole('checkbox', { name: `Selecionar ${SOURCE.name}`, exact: true })).not.toBeChecked();
+      await expect(dialog.getByRole('checkbox', { name: 'Selecionar Seafood Brasil', exact: true })).toHaveCount(0);
+      const sourceLogo = dialog.locator('img[src*="peixebr.com.br"]');
+      await expect(sourceLogo).toBeVisible();
+      await expect.poll(() => sourceLogo.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
       await expect(dialog.getByRole('button', { name: 'Adicionar fontes', exact: true })).toBeDisabled();
       await dialog.getByRole('checkbox', { name: `Selecionar ${SOURCE.name}`, exact: true }).check();
       await dialog.getByRole('checkbox', { name: `Selecionar ${secondStory.source}`, exact: true }).check();
@@ -180,7 +195,7 @@ for (const viewport of VIEWPORTS) {
       await expect(dialog.getByText('O site demorou para responder.', { exact: true })).toBeVisible();
       await dialog.getByRole('button', { name: 'Tentar fontes com falha', exact: true }).click();
       await expect(dialog.getByText('2 de 2 fontes prontas', { exact: true })).toBeVisible();
-      expect(created).toEqual([SOURCE.url, 'https://pesquisa.example/feed']);
+      expect(created).toEqual([SOURCE.url, 'https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml']);
       expect(retried).toEqual([`/api/reporter/news/sources/${secondId}/read`]);
       await dialog.getByRole('button', { name: 'Ir para notícias', exact: true }).click();
       await expect(dialog).toHaveCount(0);

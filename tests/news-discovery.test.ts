@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { FactSource } from '../src/domain/fact-check.ts';
-import { discoveryAddress, discoveryCandidates, discoveryQueries, NEWS_DISCOVERY_LIMITS } from '../src/domain/news-discovery.ts';
+import { discoveryAddress, discoveryCandidates, discoveryQueries, isPortalAddress, NEWS_DISCOVERY_LIMITS } from '../src/domain/news-discovery.ts';
 import { FlowError } from '../src/server/errors.ts';
 import { discoverNewsSources } from '../src/server/news-discovery.ts';
 import type { NewsDiscoveryServices } from '../src/server/news-discovery.ts';
@@ -41,9 +41,8 @@ test('portal-only discovery uses its actual public metadata and never claims to 
   assert.deepEqual(output.context, { region: 'Brasil', portal: { url: 'https://portal.example', title: 'Portal Mar', description: 'Aquicultura & mercado de pescado' } });
   assert.equal(queries.length, 2);
   assert.ok(queries.every(query => query.includes('Aquicultura & mercado de pescado') && query.includes('Brasil')));
-  assert.equal(output.suggestions.length, 1, 'the supplied portal is also checked as a real source');
-  assert.equal(output.suggestions[0].site, 'https://portal.example');
-  assert.match(output.suggestions[0].reason, /^Portal informado:/);
+  assert.ok(queries.every(query => query.includes('-site:portal.example')));
+  assert.equal(output.suggestions.length, 0, 'the client portal is context, never a suggested source');
   assert.equal(output.checkedAt, new Date(NOW).toISOString());
 });
 
@@ -133,9 +132,9 @@ test('verified sources with recent items come first; stale feeds disclose the em
   assert.match(suggestions[1].issue!, /não informou notícias dos últimos 7 dias/);
 });
 
-test('a supplied portal comes first, then search relevance is preserved regardless of feed volume', async () => {
+test('external search relevance is preserved regardless of feed volume and the client is excluded', async () => {
   const { suggestions } = await discoverNewsSources({ portalUrl: 'https://portal.example', sector: 'Aquicultura' }, dependencies({
-    search: async () => [result('https://especializado.example'), result('https://prefeitura.example')],
+    search: async () => [result('https://portal.example/feed.json'), result('https://especializado.example'), result('https://prefeitura.example')],
     fetch: async url => {
       if (url === 'https://portal.example') return response(url, '<title>Portal do Pescado</title><link rel="alternate" type="application/feed+json" href="/feed.json">');
       const site = new URL(url).origin;
@@ -143,8 +142,66 @@ test('a supplied portal comes first, then search relevance is preserved regardle
     },
   }));
   assert.deepEqual(suggestions.map(item => item.site),
-    ['https://portal.example', 'https://especializado.example', 'https://prefeitura.example']);
-  assert.deepEqual(suggestions.map(item => item.recentItems), [1, 1, 50]);
+    ['https://especializado.example', 'https://prefeitura.example']);
+  assert.deepEqual(suggestions.map(item => item.recentItems), [1, 50]);
+});
+
+test('both entered and redirected client domains and their subdomains are excluded before verification', async () => {
+  const read: string[] = [], queries: string[] = [];
+  const own = ['https://client.example/feed', 'https://news.client.example/rss',
+    'https://publisher.example/feed', 'https://news.publisher.example/rss'];
+  const { suggestions } = await discoverNewsSources({ portalUrl: 'https://www.client.example', sector: 'Aquicultura' }, dependencies({
+    search: async query => { queries.push(query); return [...own, 'https://external.example/rss'].map(url => result(url)); },
+    fetch: async url => {
+      read.push(url);
+      return url === 'https://www.client.example'
+        ? response('https://www.publisher.example', '<title>Client brand</title><meta name="description" content="Client description">')
+        : response(url, feed('https://external.example'));
+    },
+  }));
+  assert.deepEqual(read, ['https://www.client.example', 'https://external.example/rss']);
+  assert.deepEqual(suggestions.map(item => item.site), ['https://external.example']);
+  assert.ok(queries.every(query => query.startsWith('Aquicultura') && !query.includes('Client')
+    && query.includes('-site:client.example') && query.includes('-site:publisher.example')));
+  assert.equal(isPortalAddress('https://news.publisher.example/feed', ['https://www.publisher.example']), true);
+  assert.equal(isPortalAddress('https://publisher.example.external.test/feed', ['https://publisher.example']), false);
+});
+
+test('client page redirects, feed redirects and declared client feed sites never become suggestions', async () => {
+  for (const mode of ['page-redirect', 'feed-redirect', 'feed-site', 'own-entries']) {
+    const { suggestions } = await discoverNewsSources({ portalUrl: 'https://client.example', sector: 'Aquicultura' }, dependencies({
+      search: async () => [result('https://external.example/rss')],
+      fetch: async url => {
+        if (url === 'https://client.example') return response(url, '<title>Client</title>');
+        if (mode === 'page-redirect') return response('https://news.client.example', '<title>Client</title>');
+        if (mode === 'feed-redirect') return response('https://client.example/feed', feed('https://external.example'));
+        const data = JSON.parse(feed('https://client.example'));
+        if (mode === 'own-entries') delete data.home_page_url;
+        return response(url, JSON.stringify(data));
+      },
+    }));
+    assert.deepEqual(suggestions, [], mode);
+  }
+});
+
+test('declared client feed links are not read and mixed feeds never sample client article URLs', async () => {
+  const read: string[] = [];
+  const { suggestions: [suggestion] } = await discoverNewsSources({ portalUrl: 'https://client.example', sector: 'Aquicultura' }, dependencies({
+    search: async () => [result('https://external.example/news')],
+    fetch: async url => {
+      read.push(url);
+      if (url === 'https://client.example') return response(url, '<title>Client</title>');
+      if (url === 'https://external.example/news') return response(url,
+        '<link rel="alternate" type="application/rss+xml" href="https://news.client.example/rss"><link rel="alternate" type="application/feed+json" href="/feed.json">');
+      const data = JSON.parse(feed('https://external.example'));
+      data.items.unshift({ ...data.items[0], id: 'self', url: 'https://news.client.example/story' });
+      return response(url, JSON.stringify(data));
+    },
+  }));
+  assert.equal(suggestion.status, 'verified');
+  assert.equal(suggestion.recentItems, 1);
+  assert.deepEqual(suggestion.sample.map(item => item.url), ['https://external.example/noticia-0']);
+  assert.ok(!read.includes('https://news.client.example/rss'));
 });
 
 test('a failed declared feed does not hide a working second feed, and attempts are capped', async () => {
@@ -196,11 +253,11 @@ test('candidate count and concurrent verifications stay bounded; duplicates are 
   assert.equal(peak, NEWS_DISCOVERY_LIMITS.concurrency);
 });
 
-test('queries separately seek specialized publishers and current news; candidate rules exclude academic catalogues and PDFs', () => {
+test('queries seek specialized publishers and RSS; candidate rules exclude academic catalogues and PDFs', () => {
   const queries = discoveryQueries({ sector: 'pescados, aquicultura e pesca', region: 'Brasil' });
   assert.deepEqual(queries, [
     'pescados, aquicultura e pesca Brasil portal revista especializada notícias',
-    'pescados, aquicultura e pesca Brasil últimas notícias',
+    'pescados, aquicultura e pesca Brasil notícias RSS',
   ]);
   const portalQueries = discoveryQueries({ portal: { url: 'https://portal.example', title: 'Marca do portal', description: 'Pescados e aquicultura' } });
   assert.ok(portalQueries.every(query => query.startsWith('Pescados e aquicultura') && !query.includes('Marca do portal')));

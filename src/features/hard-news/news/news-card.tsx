@@ -1,5 +1,7 @@
 'use client';
 
+import { newsLogoUrl } from '@/domain/news-branding';
+
 import {
   BrandMark,
   Card,
@@ -37,7 +39,7 @@ export function NewsCard({ item, now, selected = false, onSelect, href, showPrio
       <PageStack>
         <CardHeader
           titleAs="h3"
-          leading={<BrandMark name={item.source} size="sm" decorative />}
+          leading={<BrandMark name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />}
           title={href
             ? <CardLink href={href}>{item.title}</CardLink>
             : <CardLink onClick={() => onSelect?.(item.id)} aria-current={selected ? 'true' : undefined}>{item.title}</CardLink>}

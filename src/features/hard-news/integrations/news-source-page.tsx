@@ -1,5 +1,7 @@
 'use client';
 
+import { newsLogoUrl } from '@/domain/news-branding';
+
 import { useState } from 'react';
 import {
   Badge,
@@ -109,7 +111,7 @@ function SourceList({ kind, feeds }: { kind: Kind; feeds: NewsFeed[] }) {
               return (
                 <ListItem
                   key={feed.id}
-                  leading={<BrandMark name={feed.name} size="sm" decorative />}
+                  leading={<BrandMark name={feed.name} src={newsLogoUrl(feed.site ?? feed.url)} size="sm" decorative />}
                   title={feed.name}
                   description={`${feedOrigin(feed)} · ${read} · ${feed.lastDay} em 24 h`}
                   meta={feed.state === 'active' ? undefined : <Badge variant="text" tone={state.tone} dot={feed.state === 'paused' ? 'hollow' : true}>{state.label}</Badge>}

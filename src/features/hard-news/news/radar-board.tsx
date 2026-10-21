@@ -20,6 +20,7 @@ import {
 } from '@content-ventures/design-system/v3';
 import type { MetricProps } from '@content-ventures/design-system/v3';
 import { Telescope } from '@content-ventures/design-system/v3/icons';
+import { newsLogoUrl } from '@/domain/news-branding';
 import { priorityOf } from '@/domain/hard-news';
 import type { NewsFeed, NewsItem } from '@/domain/hard-news';
 import { NEWS_SOURCES_HREF } from '../routes';
@@ -186,7 +187,7 @@ function WireRow({ triage, item, now, selected, onSelect }: { triage: boolean; i
   const outlets = spread(item, now).outlets;
   return (
     <ListItem
-      leading={<BrandMark name={item.source} size="sm" decorative />}
+      leading={<BrandMark name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />}
       title={item.title}
       titleLines={2}
       description={facts.join(' · ')}
@@ -222,7 +223,7 @@ function Decided({ items, query, now, selectedId, onSelect }: ListProps & { item
             return (
               <ListItem
                 key={item.id}
-                leading={<BrandMark name={item.source} size="sm" decorative />}
+                leading={<BrandMark name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />}
                 title={item.title}
                 titleLines={2}
                 description={[who, detail].filter(Boolean).join(' · ')}

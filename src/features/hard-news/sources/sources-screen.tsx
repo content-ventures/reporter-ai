@@ -1,5 +1,7 @@
 'use client';
 
+import { newsLogoUrl } from '@/domain/news-branding';
+
 import { useState } from 'react';
 import {
   AttachedNote,
@@ -162,7 +164,7 @@ function FeedCard({ feed, canEdit, onRetry, onPause, onRemove, onInterval }: {
       <PageStack>
         <CardHeader
           titleAs="h2"
-          leading={<BrandMark name={feed.name} size="md" />}
+          leading={<BrandMark name={feed.name} src={newsLogoUrl(feed.site ?? feed.url)} size="md" />}
           title={feed.name}
           badge={<Badge variant="soft" size="sm" tone={state.tone} dot={feed.state === 'paused' ? 'hollow' : true}>{state.label}</Badge>}
           description={feedOrigin(feed)}
