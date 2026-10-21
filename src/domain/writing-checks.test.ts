@@ -5,6 +5,7 @@ import { segmentRef } from './refs.ts';
 import { currentSourceVersion } from './source.ts';
 import { createKit, sampleSource } from './testing/scenario.ts';
 import { writingArticleChecks } from './writing-checks.ts';
+import { writingResearchEvidence } from './writing-research-evidence.ts';
 
 const body = (text: string): ArticleBody => ({ type: 'article', title: 'Título', blocks: [{ id: 'p1', type: 'paragraph', inlines: [{ text }] }] });
 
@@ -60,4 +61,34 @@ test('zero quote minimum relaxes quantity alone and a configured minimum has a c
   const fake = body('A empresa afirma: “Uma fala inventada que não aparece na fonte.”');
   fake.blocks[0].sourceRefs = [segmentRef(source.id, 1, currentSourceVersion(source).content.segments[0].id)];
   assert.ok(writingArticleChecks(fake, [source], { format: 'note' }, [], { minimumQuotes: 0 }).some(issue => issue.code === 'UNSUPPORTED_ARTICLE_QUOTE'));
+});
+
+test('external attribution metadata stays with its referenced block or explicitly referenced header', () => {
+  const evidence = writingResearchEvidence([{ id: 'web-post', kind: 'external', provider: 'tavily', query: 'produto',
+    title: 'Publicação sobre o produto', url: 'https://www.instagram.com/reel/example', site: 'instagram.com',
+    excerpt: 'O produto foi descrito como inativado.', publishedOn: '2022-11-22', retrievedAt: '2026-10-21T12:00:00Z' }],
+  { runId: 'run-test', workspaceId: 'workspace-test', actorId: 'editor-test' });
+  const refs = [...evidence.references.values()];
+  const article = body('Em publicação no Instagram, o produto foi descrito como inativado.');
+  article.blocks[0].sourceRefs = refs;
+  const before = structuredClone(article);
+  assert.deepEqual(writingArticleChecks(article, evidence.sources, { format: 'note' }), []);
+  assert.deepEqual(article, before, 'checking metadata must not rewrite the article or its evidence');
+  const inventedQuote = structuredClone(article);
+  inventedQuote.blocks[0] = { id: 'quote', type: 'paragraph', sourceRefs: refs,
+    inlines: [{ text: '“Em publicação no Instagram, o produto foi descrito como inativado.”' }] };
+  assert.ok(writingArticleChecks(inventedQuote, evidence.sources, { format: 'note' }, [], { minimumQuotes: 0 })
+    .some(issue => issue.code === 'UNSUPPORTED_ARTICLE_QUOTE'), 'attribution metadata cannot supply a verbatim quotation');
+  article.blocks.push({ id: 'other', type: 'paragraph', inlines: [{ text: article.blocks[0].type === 'paragraph' ? article.blocks[0].inlines[0].text : '' }] });
+  assert.match(writingArticleChecks(article, evidence.sources, { format: 'note' })[0].message, /Instagram/);
+  article.blocks.pop();
+  article.title = 'Publicação no Instagram descreve produto';
+  article.dek = 'Em 2022, o site Instagram descreveu o produto';
+  assert.match(writingArticleChecks(article, evidence.sources, { format: 'note' })[0].message, /Instagram/);
+  assert.deepEqual(writingArticleChecks(article, evidence.sources, { format: 'note' }, [],
+    { minimumQuotes: 0, titleSourceRefs: refs, dekSourceRefs: refs }), []);
+  article.blocks[0] = { id: 'p1', type: 'paragraph', sourceRefs: refs, inlines: [{ text: 'Em publicação no Instagram, o produto eliminou BacteriumX em 99% dos casos.' }] };
+  const failures = writingArticleChecks(article, evidence.sources, { format: 'note' }, [],
+    { minimumQuotes: 0, titleSourceRefs: refs, dekSourceRefs: refs });
+  assert.match(failures[0].message, /99.*BacteriumX/);
 });

@@ -232,7 +232,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
           const external = writingResearchEvidence(externalSources, evidenceContext);
           const resolve = (keys: string[]) => keys.flatMap(key => external.references.has(key) ? [external.references.get(key)!] : refs([key]));
           return writingArticleChecks(writingArticleBody(article, job.meta.runId, resolve), [...originalSources, ...external.sources],
-            input.record.production.brief, people.flatMap(person => [person.name, person.title ?? '', person.organization ?? '']), { minimumQuotes: minimumQuotes! });
+            input.record.production.brief, people.flatMap(person => [person.name, person.title ?? '', person.organization ?? '']),
+            { minimumQuotes: minimumQuotes!, titleSourceRefs: resolve(article.titleEvidenceIds), dekSourceRefs: resolve(article.dekEvidenceIds) });
         },
         trace: async trace => {
           lastStepId = `writing-${trace.stage}-${trace.attempt}`;
