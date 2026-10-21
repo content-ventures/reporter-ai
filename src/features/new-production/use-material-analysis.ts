@@ -8,7 +8,8 @@ import { useCommands } from '@/state';
  * Live reading of the material (SourceIngest.analyze): words, speakers, segments, duplicate
  * hash, and the outlook ("Como o artigo nasce") for the brief's angle and the speakers' names.
  * Pasted text is analysed after a short pause; a file right away. While a new answer is on its
- * way the previous one stays on screen (`analysis`), so the preview never flashes.
+ * way the previous one stays on screen (`analysis`), so the preview never flashes. `hold` keeps it
+ * there while a part added to a material in parts is still being read.
  */
 
 export type MaterialAnalysis = {
@@ -30,7 +31,7 @@ export type OutlookInput = { angle: string; speakerNames: Readonly<Record<string
 /** Typing in "Orientação editorial" re-reads the outlook after a pause, even for a file. */
 const OPTIONS_PAUSE_MS = 400;
 
-export function useMaterialAnalysis(text: string, fileName: string | undefined, delayMs: number, outlook?: OutlookInput): MaterialAnalysis {
+export function useMaterialAnalysis(text: string, fileName: string | undefined, delayMs: number, outlook?: OutlookInput, hold = false): MaterialAnalysis {
   const commands = useCommands();
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [revision, setRevision] = useState(0);
@@ -61,7 +62,7 @@ export function useMaterialAnalysis(text: string, fileName: string | undefined, 
     };
   }, [angle, answeredKey, blank, commands, delay, fileName, key, names, text, textKey]);
 
-  if (blank) return IDLE;
+  if (blank) return hold && answer?.analysis ? { status: 'analyzing', analysis: answer.analysis, message: undefined } : IDLE;
   if (answer?.key === key) {
     return answer.analysis
       ? { status: 'ready', analysis: answer.analysis, message: undefined }

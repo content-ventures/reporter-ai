@@ -45,7 +45,9 @@ import {
   EMPTY_DRAFT,
   RECEIVED_PART,
   addParts,
+  choosePartFiles,
   dropPart,
+  emptyPartMessage,
   eventDraft,
   type EventDraft,
   NEW_PRODUCTION_STEPS,
@@ -58,6 +60,8 @@ import {
   isDraftDirty,
   landPart,
   materialBlocker,
+  materialTooLong,
+  movePart,
   toCreateInput,
   validateMaterial,
   withFormat,
@@ -71,7 +75,8 @@ import {
   type SpeakerChoice,
 } from './form';
 import { MaterialSection, materialState } from './material-section';
-import { CANCELLABLE, materialProgress } from './material-progress';
+import { CANCELLABLE } from './material-parts';
+import { materialProgress } from './material-progress';
 import { MaterialProgressDialog } from './material-progress-dialog';
 import { usePreviewSpeakers } from './preview-speakers';
 import {
@@ -162,7 +167,10 @@ function NewProductionForm({ received }: { received?: string }) {
 
   // ── Material ──
   const material = draftMaterial(draft);
-  const analysisState = useMaterialAnalysis(material.text, material.fileName, draft.mode === 'paste' ? PASTE_PAUSE_MS : 0);
+  // Speakers of the parts already read stay on screen while a part added to them is read.
+  const [holdAnalysis, setHoldAnalysis] = useState(false);
+  const analysisState = useMaterialAnalysis(materialTooLong(draft) ? '' : material.text, material.fileName, draft.mode === 'paste' ? PASTE_PAUSE_MS : 0,
+    undefined, Boolean(material.pending) && holdAnalysis);
   const analysis = analysisState.analysis;
   const readyAnalysis = analysisState.status === 'ready' ? analysis : undefined;
 
@@ -263,8 +271,9 @@ function NewProductionForm({ received }: { received?: string }) {
   const materialIssue = issueOf('material');
   const speakersState: SectionState = Object.keys(speakerErrors).length > 0 ? 'error' : previewSpeakers.length > 0 ? 'done' : 'empty';
 
+  const failedParts = draft.mode === 'file' ? draft.parts.filter((part) => fileReader.reads[part.id]?.status === 'error').length : 0;
   const blocker = step === 'material'
-    ? materialBlocker(draft) ?? (analysisState.status === 'analyzing' ? 'Aguarde a análise do material.' :
+    ? materialBlocker(draft, failedParts) ?? emptyPartMessage(readyAnalysis) ?? (analysisState.status === 'analyzing' ? 'Aguarde a análise do material.' :
       analysisState.status === 'error' ? 'Tente analisar o material novamente.' : undefined)
     : briefBlocker(draft);
 
@@ -293,6 +302,7 @@ function NewProductionForm({ received }: { received?: string }) {
     if (mode!=='file') {
       fileReader.cancelAll();
       setDraft(withReadParts);
+      setHoldAnalysis(false);
     }
     if (mode!=='link') linkReader.reset();
     update({ mode,speakers: {} });
@@ -311,18 +321,25 @@ function NewProductionForm({ received }: { received?: string }) {
   const partSeq = useRef(0);
   const importFiles = (files: File[], rejected: RejectedFile[]) => {
     for (const refused of rejected) toast('Arquivo não aceito', { tone: 'error', description: rejectionMessage(refused.reason, intake) });
-    const added = files.map((file) => ({ file, part: { id: `part-${++partSeq.current}`, name: file.name, size: file.size, lastModified: file.lastModified } satisfies MaterialPart }));
+    const { accepted, repeated, over } = choosePartFiles(draft.parts, files);
+    if (repeated.length > 0) toast('Arquivo já adicionado', { tone: 'info', description: repeated.map((file) => file.name).join(', ') });
+    if (over.length > 0) toast('Limite de 10 partes', { tone: 'info', description: over.map((file) => file.name).join(', ') });
+    const added = accepted.map((file) => ({ file, part: { id: `part-${++partSeq.current}`, name: file.name, size: file.size, lastModified: file.lastModified } satisfies MaterialPart }));
     if (added.length === 0) return;
+    // A part added to parts already analysed keeps their speakers on screen until it is read.
+    setHoldAnalysis(draft.parts.length > 0 && (holdAnalysis || analysisState.status === 'ready'));
     setDraft((current) => addParts(current, added.map(({ part }) => part)));
     showProgress();
     for (const { file, part } of added) fileReader.read(part.id, file);
   };
   const removePart = (id: string) => {
+    if (draft.parts.find((part) => part.id === id)?.text !== undefined) setHoldAnalysis(false);
     fileReader.cancel(id);
     setDraft((current) => dropPart(current, id));
     // The drop area comes back on the next frame when the last part goes.
     window.requestAnimationFrame(() => focusField(`${dropzoneId}-dropzone`));
   };
+  const reorderParts = (from: number, to: number) => setDraft((current) => movePart(current, from, to));
   const retryPart = (id: string) => {
     const read = fileReader.reads[id];
     if (read?.status === 'error' && read.retry === 'pick') { removePart(id); return; }
@@ -353,7 +370,7 @@ function NewProductionForm({ received }: { received?: string }) {
   const retryPreparation = () => {
     if (progress?.retry === 'pick') { retryFailedParts(true);closeProgress();return; }
     showProgress();
-    if (progress?.retry === 'file') retryFailedParts(false);
+    if (progress?.retry === 'file' || progress?.retry === 'parts') retryFailedParts(false);
     else if (progress?.retry === 'link') linkReader.retry();
     else analysisState.retry?.();
   };
@@ -362,6 +379,7 @@ function NewProductionForm({ received }: { received?: string }) {
   const fillSample = useCallback(() => {
     fileReader.cancelAll();
     linkReader.reset();
+    setHoldAnalysis(false);
     showProgress();
     setDraft((current) => ({
       ...withReadParts(current),
@@ -402,8 +420,8 @@ function NewProductionForm({ received }: { received?: string }) {
   /** Step 1 → 2: the material is there, authorised, and every speaker has an answer. */
   const continueFromMaterial = async () => {
     if (busy) return;
-    if (analysisState.status !== 'ready') return;
-    if (materialBlocker(draft)) {
+    if (analysisState.status !== 'ready' || emptyPartMessage(readyAnalysis)) return;
+    if (materialBlocker(draft, failedParts)) {
       focusField(hasMaterial(draft) ? authorizationId : draft.mode === 'paste' ? (textareaRef.current?.id ?? '') :
         draft.mode === 'link' ? (linkRef.current?.id ?? '') : `${dropzoneId}-dropzone`);
       return;
@@ -568,6 +586,8 @@ function NewProductionForm({ received }: { received?: string }) {
               onFiles={importFiles}
               onRemovePart={removePart}
               onRetryPart={retryPart}
+              onCancelPart={removePart}
+              onMovePart={reorderParts}
               onCancelLink={cancelPreparation}
               onRetryLink={retryPreparation}
               onRemoveLink={() => { linkReader.reset();update({ linkFile: null,sourceUrl: '',speakers: {} }); }}

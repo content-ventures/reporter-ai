@@ -7,9 +7,13 @@ import {
   EMPTY_EVENT,
   NEW_PRODUCTION_STEPS,
   RECEIVED_PART,
+  MATERIAL_TOO_LONG,
+  MAX_MATERIAL_PARTS,
   addParts,
+  choosePartFiles,
   draftMaterial,
   dropPart,
+  emptyPartMessage,
   landPart,
   materialTooLong,
   movePart,
@@ -340,5 +344,40 @@ describe('Nova produção · a material sent in parts', () => {
   test('a draft with a part still uploading is dirty', () => {
     assert.equal(isDraftDirty(filed()), false);
     assert.equal(isDraftDirty(filed(part('a'))), true);
+  });
+
+  test('choosePartFiles sorts by recording name, skips repeated files and stops at 10', () => {
+    const file = (name: string, size = 10, lastModified?: number) => ({ name, size, ...(lastModified !== undefined ? { lastModified } : {}) });
+    const picked = choosePartFiles([], [file('REC_0013.srt'), file('rec_0012.txt'), file('REC_0002.srt')]);
+    assert.deepEqual(picked.accepted.map((each) => each.name), ['REC_0002.srt', 'rec_0012.txt', 'REC_0013.srt']);
+    const parts = [part('a', srt('um'), { name: 'REC_0012.txt', size: 10, lastModified: 1 })];
+    const again = choosePartFiles(parts, [file('REC_0012.txt', 10, 1), file('REC_0012.txt', 11), file('REC_0012.txt', 10, 2), file('REC_0014.srt'), file('REC_0014.srt')]);
+    assert.deepEqual(again.repeated.map((each) => each.name), ['REC_0012.txt', 'REC_0014.srt']);
+    assert.deepEqual(again.accepted.map((each) => [each.name, each.size]), [['REC_0012.txt', 11], ['REC_0012.txt', 10], ['REC_0014.srt', 10]]);
+    const many = Array.from({ length: 12 }, (_, index) => file(`parte-${index + 1}.srt`));
+    const capped = choosePartFiles(parts, many);
+    assert.equal(capped.accepted.length, MAX_MATERIAL_PARTS - 1);
+    assert.deepEqual(capped.over.map((each) => each.name), ['parte-10.srt', 'parte-11.srt', 'parte-12.srt']);
+  });
+
+  test("materialBlocker explains pending, failed and too long parts; one part keeps today's messages", () => {
+    const authorized = (draft: NewProductionDraft) => ({ ...draft, authorized: true });
+    assert.equal(materialBlocker(authorized(filed(part('a')))), 'Envie o arquivo da transcrição para continuar.');
+    assert.equal(materialBlocker(authorized(filed(part('a'))), 1), 'Envie o arquivo da transcrição para continuar.');
+    assert.equal(materialBlocker(filed(part('a', srt('um')))), 'Marque a autorização dos falantes para continuar.');
+    const pending = authorized(filed(part('a', srt('um')), part('b')));
+    assert.equal(materialBlocker(pending), 'Aguarde o envio das partes.');
+    assert.equal(materialBlocker(pending, 1), 'Tente de novo ou remova a parte que falhou.');
+    const long = 'x'.repeat(MAX_MATERIAL_CHARS / 2);
+    assert.equal(materialBlocker(authorized(filed(part('a', long), part('b', long)))), MATERIAL_TOO_LONG);
+    assert.equal(materialBlocker(filed(part('a', srt('um')), part('b', srt('dois')))), 'Marque a autorização dos falantes para continuar.');
+    assert.equal(materialBlocker(authorized(filed(part('a', srt('um')), part('b', srt('dois'))))), undefined);
+  });
+
+  test('emptyPartMessage names the part without speech', () => {
+    assert.equal(emptyPartMessage(undefined), undefined);
+    assert.equal(emptyPartMessage({}), undefined);
+    assert.equal(emptyPartMessage({ parts: [{ format: 'srt', segments: 2 }, { format: 'vtt', segments: 3 }] }), undefined);
+    assert.equal(emptyPartMessage({ parts: [{ format: 'srt', segments: 2 }, { format: 'vtt', segments: 0 }] }), 'A parte 2 não tem falas. Remova ou troque o arquivo.');
   });
 });

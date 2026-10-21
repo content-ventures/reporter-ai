@@ -6,21 +6,26 @@ import {
   AgentTrace,
   ControlButton,
   Dropzone,
+  FileGlyph,
   FileRow,
   FormRow,
   FormSection,
   Input,
   LinkButton,
+  List,
+  ListItem,
+  RowActions,
   Segmented,
   TextLink,
   Textarea,
   formatTimestamp,
   formatBytes,
   type RejectedFile,
+  type RowAction,
   type SectionState,
   type SegmentOption,
 } from '@content-ventures/design-system/v3';
-import { ArrowDownToLine, ClipboardList, FileUp, Link2 } from '@content-ventures/design-system/v3/icons';
+import { ArrowDown, ArrowDownToLine, ArrowUp, ClipboardList, FileUp, Link2, RotateCcw, Trash2, X } from '@content-ventures/design-system/v3/icons';
 import { parseSourceLink } from '@/domain/source-link';
 import type { SourceAnalysis } from '@/ports';
 import type { SourceIntake } from '@/registries';
@@ -33,6 +38,8 @@ import type { FileReadState } from './use-file-reader';
 import type { LinkReadState } from './use-link-reader';
 import type { MaterialAnalysis } from './use-material-analysis';
 import type { PartReads } from './use-file-reader';
+import { plural } from '@/ui/format';
+import { partSlots, partViews, type PartView } from './material-parts';
 
 /**
  * "Material" (step 1, CONTRACT §3.9): paste or send the transcript, see what was understood
@@ -54,6 +61,17 @@ const PLACEHOLDER = 'Cole aqui a transcrição da entrevista';
 function readLine(analysis: SourceAnalysis): string {
   const { durationMs } = analysis.stats;
   return analysisLine(analysis, durationMs !== undefined ? formatTimestamp(durationMs) : undefined);
+}
+
+/** What one part of the material is doing: "5,0 MB de 6,0 MB · 83%", "Transcrevendo áudio · 2 de 6 trechos", "12 falas". */
+export function partLine({ status }: Pick<PartView, 'status'>): string {
+  if (status.kind === 'error') return status.message;
+  if (status.kind === 'reading') {
+    if (status.upload) return `${formatBytes(status.upload.sent)} de ${formatBytes(status.upload.total)} · ${status.upload.percent}%`;
+    return status.chunks ? `Transcrevendo áudio · ${status.chunks.done} de ${status.chunks.total} trechos` : status.message;
+  }
+  if (status.empty) return 'Sem falas';
+  return status.segments !== undefined ? plural(status.segments, 'fala', 'falas') : 'Pronta';
 }
 
 function specOf(intake: SourceIntake): string {
@@ -93,6 +111,8 @@ export type MaterialSectionProps = {
   onFiles: (files: File[], rejected: RejectedFile[]) => void;
   onRemovePart: (id: string) => void;
   onRetryPart: (id: string) => void;
+  onCancelPart: (id: string) => void;
+  onMovePart: (from: number, to: number) => void;
   onCancelLink: () => void;
   onRetryLink: () => void;
   onRemoveLink: () => void;
@@ -121,6 +141,8 @@ export function MaterialSection({
   onFiles,
   onRemovePart,
   onRetryPart,
+  onCancelPart,
+  onMovePart,
   onCancelLink,
   onRetryLink,
   onRemoveLink,
@@ -134,16 +156,37 @@ export function MaterialSection({
   const only = draft.parts.length === 1 ? draft.parts[0] : undefined;
   const fileRead: FileReadState | undefined = only ? fileReads[only.id] : undefined;
   const blank = draft.mode === 'paste' ? draft.pasted.trim() === '' : draft.mode === 'file' ? draft.parts.length === 0 : !draft.linkFile && !linkRead && !draft.sourceUrl?.trim();
+  // Several parts are a list, each part with its own read; one part keeps its single row.
+  const views = draft.mode === 'file' && draft.parts.length > 1 ? partViews(draft, fileReads, ready) : [];
+  const slots = partSlots(draft);
+  const failedParts = views.flatMap((view) => (view.status.kind === 'error' ? [`Parte ${view.number}: ${view.status.message}`] : []));
   const hint = draft.mode === 'link' && blank ? 'YouTube com legendas ou Spotify com feed público' : blank ? (
     <LinkButton onClick={onUseSample}>Usar exemplo</LinkButton>
+  ) : views.some((view) => view.status.kind !== 'ready') ? (
+    <LinkButton onClick={onShowProgress}>Acompanhar envio</LinkButton>
   ) : material.status === 'analyzing' ? (
     <LinkButton onClick={onShowProgress}>Acompanhar análise</LinkButton>
   ) : material.status === 'error' && material.retry ? (
     <LinkButton onClick={material.retry}>Tentar analisar novamente</LinkButton>
   ) : draft.mode === 'paste' && analysis && material.status !== 'error' ? (
     readLine(analysis)
-  ) : undefined;
-  const rowError = error ?? (material.status === 'error' ? material.message : linkRead?.status === 'error' ? linkRead.message : undefined);
+  ) : views.length > 0 && ready ? readLine(ready) : undefined;
+  const partsError = failedParts.length > 1 ? `${failedParts.length} partes não concluídas.` : failedParts[0];
+  const rowError = error ?? partsError ?? (material.status === 'error' ? material.message : linkRead?.status === 'error' ? linkRead.message : undefined);
+  const partActions = (view: PartView, index: number): RowAction[] => {
+    const moves: RowAction[] = [
+      { id: 'up', label: 'Mover para cima', icon: ArrowUp, hidden: index === 0, onSelect: () => onMovePart(index, index - 1) },
+      { id: 'down', label: 'Mover para baixo', icon: ArrowDown, hidden: index === views.length - 1, onSelect: () => onMovePart(index, index + 1) },
+    ];
+    const remove: RowAction = { id: 'remove', label: `Remover ${view.name}`, icon: Trash2, danger: true, onSelect: () => onRemovePart(view.id) };
+    const { status } = view;
+    if (status.kind === 'error') {
+      const reread = status.retry === 'reread';
+      return [{ id: 'retry', label: reread ? 'Tentar de novo' : 'Escolher outro', icon: reread ? RotateCcw : FileUp, onSelect: () => onRetryPart(view.id) }, ...moves, remove];
+    }
+    if (status.kind === 'reading' && status.cancellable) return [{ id: 'cancel', label: `Cancelar envio de ${view.name}`, icon: X, onSelect: () => onCancelPart(view.id) }, ...moves];
+    return [remove, ...moves];
+  };
   const linkProvider = parseSourceLink(draft.sourceUrl ?? '')?.provider;
 
   return (
@@ -196,6 +239,21 @@ export function MaterialSection({
                   <FileRow name={draft.linkFile.name} size={draft.linkFile.size} status="done" message={ready ? readLine(ready) : undefined} onRemove={onRemoveLink} />
                 ) : null}
               </>
+            ) : views.length > 0 ? (
+              <List label="Partes do material" onReorder={onMovePart}>
+                {views.map((view, index) => (
+                  <ListItem
+                    key={view.id}
+                    draggable
+                    leading={<FileGlyph name={view.name} />}
+                    title={view.name}
+                    titleLines={2}
+                    description={`Parte ${view.number} · ${partLine(view)}`}
+                    meta={view.status.kind === 'ready' && view.status.durationMs !== undefined ? formatTimestamp(view.status.durationMs) : view.size ? formatBytes(view.size) : undefined}
+                    actions={<RowActions max={2} label={`Ações de ${view.name}`} overflowLabel={`Mais ações de ${view.name}`} actions={partActions(view, index)} />}
+                  />
+                ))}
+              </List>
             ) : fileRead?.status === 'reading' ? (
               <AgentTrace label={fileRead.name} steps={[{ id: 'read',label: fileRead.message,state: 'current',meta: formatBytes(fileRead.size) }]}
                 variant="compact" announce={false} action={<LinkButton onClick={onShowProgress}>Acompanhar</LinkButton>} />
@@ -217,19 +275,23 @@ export function MaterialSection({
                 message={ready ? readLine(ready) : undefined}
                 onRemove={() => onRemovePart(only.id)}
               />
-            ) : draft.parts.length > 0 ? null : (
+            ) : null}
+            {slots !== 'closed' ? (
               <Dropzone
                 id={dropzoneId}
                 describedBy={describedBy}
                 accept={intake.extensions.join(',')}
                 maxSize={intake.maxBytes}
-                title="Solte o arquivo aqui ou escolha"
+                multiple
+                title={draft.parts.length > 0 ? 'Adicionar parte' : 'Solte o arquivo aqui ou escolha'}
                 spec={specOf(intake)}
-                invalid={invalid}
-                error={rowError}
-                onFiles={(files, rejected) => onFiles(files.slice(0, 1), rejected)}
+                disabled={slots === 'full'}
+                disabledText="Limite de 10 partes"
+                invalid={draft.parts.length === 0 && invalid}
+                error={draft.parts.length === 0 ? rowError : undefined}
+                onFiles={onFiles}
               />
-            )}
+            ) : null}
             {duplicate && firstUse ? (
               <Alert
                 tone="warning"
@@ -240,7 +302,7 @@ export function MaterialSection({
                   </TextLink>
                 }
               >
-                {duplicate.productions.length > 1 ? `${firstUse.title} e mais ${duplicate.productions.length - 1}` : firstUse.title}
+                {(duplicate.part ? `Parte ${duplicate.part} · ` : '') + (duplicate.productions.length > 1 ? `${firstUse.title} e mais ${duplicate.productions.length - 1}` : firstUse.title)}
               </Alert>
             ) : null}
             {ready?.short ? (
