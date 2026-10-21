@@ -82,6 +82,9 @@ const SPEAKER_HEADER = new RegExp(
 const TIMING_LINE = new RegExp(String.raw`^\s*(${TIMESTAMP})\s*-->\s*(${TIMESTAMP})(?:\s+.*)?$`);
 
 const MAX_LABEL_LENGTH = 40;
+/** "<v Ana>": a .vtt voice; an .srt reading strips the tag without making it a speaker. */
+const VOICE_TAG = /<v(?:\.[^\s>]+)*\s+([^>]+)>/;
+const VOICE_TAGS = new RegExp(VOICE_TAG.source, 'g');
 
 export function parseTimestamp(value: string): number | undefined {
   const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:[.,](\d{1,3}))?$/.exec(value.trim());
@@ -287,7 +290,7 @@ function cueText(lines: string[], format: 'srt' | 'vtt'): { speaker?: string; te
   for (const rawLine of lines) {
     let line = rawLine;
     if (format === 'vtt') {
-      const voice = /<v(?:\.[^\s>]+)*\s+([^>]+)>/.exec(line);
+      const voice = VOICE_TAG.exec(line);
       if (voice && !speaker) speaker = cleanLabel(voice[1]);
     }
     line = decodeEntities(line.replace(/<[^>]*>/g, '').replace(/\{\\[^}]*\}/g, '')).trim();
@@ -376,7 +379,11 @@ function cleanPart({ text, fileName }: TranscriptPartText): string {
   const wanted = detectTranscriptFormat(body, fileName);
   const seen = detectTranscriptFormat(body);
   // Inside a joined text only the content decides the format: keep what the file name decided.
-  return (wanted === 'vtt' && seen !== 'vtt') || (wanted === 'srt' && seen === 'plain') ? `WEBVTT\n\n${body}` : body;
+  if (wanted === 'vtt' && seen !== 'vtt') return `WEBVTT\n\n${body}`;
+  if (wanted !== 'srt' || seen === 'srt') return body;
+  // An .srt read as .vtt cues: without its voice tags it gives the speakers an .srt reading gives.
+  const cues = body.replace(VOICE_TAGS, '');
+  return seen === 'plain' ? `WEBVTT\n\n${cues}` : cues;
 }
 
 /** One text for a material sent in several files; a single recording stays byte for byte. */

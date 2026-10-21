@@ -10,7 +10,7 @@ import {
   parseTranscript,
   splitTranscriptParts,
 } from './transcript-parse.ts';
-import type { TranscriptPartText } from './transcript-parse.ts';
+import type { ParsedSegment, TranscriptPartText } from './transcript-parse.ts';
 
 describe('timestamps', () => {
   test('parse mm:ss, h:mm:ss and fractions with comma or dot', () => {
@@ -294,6 +294,19 @@ describe('a material sent in parts', () => {
     });
     const again = splitTranscriptParts(joined)?.map((text, index) => ({ text, fileName: parts[index].fileName })) ?? [];
     assert.equal(joinTranscriptParts(again), joined);
+  });
+
+  test('a .srt holding .vtt cues reads in a material as it reads alone', () => {
+    const cues = '00:00:01.000 --> 00:00:03.000\n<v Ana>Bom dia a todos.\n\n00:00:03.500 --> 00:00:05.000\n<v Beto>Bom dia, Ana.\n';
+    const fields = (segments: ParsedSegment[]) => segments.map((segment) => [segment.id, segment.speaker, segment.text, segment.startMs, segment.endMs]);
+    for (const text of [`WEBVTT\n\n${cues}`, cues]) {
+      const parts = [{ text, fileName: 'REC_0012.srt' }, { text: notes, fileName: 'notas.txt' }];
+      const joined = parse(parts);
+      assert.deepEqual(fields(joined.segments.filter((segment) => segment.part === 1)), fields(parseTranscript(text, { fileName: 'REC_0012.srt' }).segments));
+      assert.deepEqual(joined.speakers, []);
+      const again = splitTranscriptParts(joinTranscriptParts(parts))?.map((cleaned, index) => ({ text: cleaned, fileName: parts[index].fileName })) ?? [];
+      assert.equal(joinTranscriptParts(again), joinTranscriptParts(parts));
+    }
   });
 
   test('an untimed part adds no time', () => {
