@@ -95,6 +95,7 @@ const messages: Record<string, string> = {
   ARTICLE_LOCKED: 'Aguarde a geração terminar ou retire o artigo da aprovação antes de preencher imagens.',
   FACT_CHECK_INVALID: 'A checagem não retornou um resultado válido. Tente de novo.',
   FACT_DECISION_INVALID: 'Escolha uma afirmação checável da última checagem.',
+  CITATION_AUTHOR_REQUIRED: 'Escolha quem disse a fala antes de checá-la.',
   FACT_DECISION_STALE: 'A fala foi checada de novo. Abra a checagem atual antes de corrigir o veredito.',
   TAVILY_KEY_MISSING: 'Adicione TAVILY_API_KEY no servidor para checar fatos. A chave fica somente no backend.',
   TAVILY_AUTH_INVALID: 'O Tavily recusou a chave. Confira TAVILY_API_KEY no servidor.',

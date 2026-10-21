@@ -68,7 +68,8 @@ export async function runFactCheckJob(owner: string, signal: AbortSignal, deadli
           const id = task.citationIds[task.done];
           const citation = checkpoint.citations?.find(item => item.id === id);
           const source = citation && checkpoint.state.sources.find(item => item.id === citation.ref.sourceId);
-          if (citation && source?.rights.authorized && !checkpoint.factChecks?.some(item => item.id === id)) {
+          // A quote is checked only with the person who said it (docs/FACT_CHECK.md).
+          if (citation?.personId && source?.rights.authorized && !checkpoint.factChecks?.some(item => item.id === id)) {
             const view = citationView(citation, source, checkpoint.state.people);
             return { id, model: job.pipeline?.definition.steps.quotes.model, subject: { id, text: citation.text, speaker: view.speaker,
               ...(citation.recordedOn ? { recordedOn: citation.recordedOn } : {}), ...(citation.relevance.trim() ? { context: citation.relevance.trim() } : {}) } };

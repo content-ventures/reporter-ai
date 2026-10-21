@@ -17,8 +17,9 @@ import { FlowError } from './errors.ts';
 export const AUTO_FACT_CHECKS = 8;
 
 /** What a generated text queues for that check: the citations it quotes, never a suggested passage it did not quote. */
-export function autoFactCheckIds(citations: readonly Pick<Citation, 'id' | 'origin' | 'authorConfirmed'>[]): string[] {
-  return citations.filter(citation => !isSuggestedCitation(citation)).map(citation => citation.id).slice(0, AUTO_FACT_CHECKS);
+export function autoFactCheckIds(citations: readonly Pick<Citation, 'id' | 'origin' | 'authorConfirmed' | 'personId'>[]): string[] {
+  // A quote is checked only with the person who said it (docs/FACT_CHECK.md); a suggestion waits for a person too.
+  return citations.filter(citation => citation.personId && !isSuggestedCitation(citation)).map(citation => citation.id).slice(0, AUTO_FACT_CHECKS);
 }
 
 export type FactCheckSubject = { id: string; text: string; speaker: string; recordedOn?: string; context?: string };
