@@ -124,6 +124,7 @@ for (const viewport of VIEWPORTS) {
       : { viewport: { width: viewport.width, height: viewport.height } });
 
     test('mostra a tradução, mantém o original acessível e identifica estados incompletos', async ({ page }) => {
+      await page.clock.install();
       const checkpoint = emptyEditorialCheckpoint();
       const errors = watchErrors(page);
       const translated: NewsItem = {
@@ -185,6 +186,9 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByText('Exibindo o texto original.', { exact: true })).toBeVisible();
       await expect(page.getByText('Provider temporarily unavailable', { exact: true })).toHaveCount(0);
       await page.getByRole('button', { name: 'Tentar tradução novamente', exact: true }).click();
+      await expect(page.getByText('Preparando tradução · exibindo original', { exact: true })).toBeVisible();
+      // Retry only queues the job. The next regular polling cycle brings the translated article.
+      await page.clock.fastForward(60_000);
       await expect(page.getByText('Tradução automática · pt-BR', { exact: true })).toBeVisible();
       await expect(page.getByRole('heading', { level: 2, name: translated.title, exact: true })).toBeVisible();
       await page.getByText('Texto traduzido (feed)', { exact: true }).click();
