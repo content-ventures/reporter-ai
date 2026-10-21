@@ -223,6 +223,22 @@ test('a panel quotes every speaker with a quotable line and develops each thesis
   assert.match(section, /“O Chile paga em dólar e compra o ano inteiro”, afirmou Dias/);
 });
 
+test('awards list every winner and every nominee the material names, with a number only from the source', () => {
+  const awards = withFormatFunnels(defaultPipelineDefinition()).funnels.awards;
+  // Planning and curation put the nominees' list in their category's section or, without categories, in the last one.
+  for (const key of ['outline', 'quotes'] as const) {
+    assert.match(awards[key].prompt, /As seções trazem só listas, sem falas: os vencedores e os indicados ou finalistas que a fonte nomear/, key);
+    assert.match(awards[key].prompt, /quando a fonte não os separar por categoria, na última seção: inclua os ids da lista deles nas evidências dessa seção/, key);
+  }
+  const section = awards.section.prompt;
+  assert.match(section, /Liste todos os vencedores e todos os indicados ou finalistas que o material nomear, mesmo sem uma seção só para eles/);
+  assert.match(section, /em um único parágrafo no molde "Os indicados foram: \[Nome\], da \[Instituição\]; \[Nome\], da \[Instituição\]\."/);
+  assert.match(section, /Um número de vencedores, indicados ou finalistas só entra quando a fonte o escreve; nunca conte nomes para criar um número/);
+  assert.doesNotMatch(section, /houver uma seção para eles/);
+  assert.match(section, /Os indicados foram: Ana Souza, da Cooperativa Rio Claro; João Pires/);
+  assert.match(awards.intro.prompt, /os vencedores e os indicados vêm nas seções/);
+});
+
 test('the newsroom\'s note on a curated quote is never a source', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
   for (const prompt of [definition.steps.outline.prompt, ...EDITORIAL_FORMATS.map(format => definition.funnels[format].outline.prompt)])
