@@ -14,6 +14,7 @@ import type { ModelInfo, PromptRef, RunKind } from './run.ts';
 import { laudas } from './sizing.ts';
 import type { ArticleSize } from './sizing.ts';
 import { currentSourceVersion } from './source.ts';
+import type { Source } from './source.ts';
 import { slugify } from './text/normalize.ts';
 
 /**
@@ -171,7 +172,11 @@ export type DeliveryManifest = {
   generatedAt: IsoDateTime;
   /** `size`: the brief's "Tamanho do artigo" (Curto · 1 lauda, Padrão · 2 laudas). */
   production: { id: ProductionId; title: string; size: ArticleSize };
-  sources: { id: SourceId; title: string; version: number; hash: string; authorized: boolean }[];
+  sources: {
+    id: SourceId; title: string; version: number; hash: string; authorized: boolean;
+    sourceUrl?: string;
+    research?: Source['research'];
+  }[];
   items: {
     kind: PieceKind;
     pieceId: PieceId;
@@ -328,7 +333,13 @@ export function buildManifest(
     production: { id: record.production.id, title: record.production.title, size: record.production.brief.size },
     sources: record.sources.map((source) => {
       const version = currentSourceVersion(source);
-      return { id: source.id, title: source.title, version: version.number, hash: version.hash, authorized: source.rights.authorized };
+      const entry: DeliveryManifest['sources'][number] = { id: source.id, title: source.title, version: version.number, hash: version.hash, authorized: source.rights.authorized };
+      if (source.sourceUrl) entry.sourceUrl = source.sourceUrl;
+      if (source.research) {
+        const { provider, runId, query, retrievedAt, publishedOn } = source.research;
+        entry.research = { provider, runId, query, retrievedAt, publishedOn };
+      }
+      return entry;
     }),
     items: manifestItems,
     runs: record.runs
