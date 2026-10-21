@@ -18,6 +18,8 @@ const editable = (definition: PipelineDefinition) => withFormatFunnels(withArtic
 import { PipelineWorkers } from './pipeline-workers';
 import { PIPELINE_WORKERS, type PipelineWorkerKey } from '@/domain/pipeline-workers';
 import { PipelineEditor } from './pipeline-editor';
+import { PresetUpgrade } from './preset-upgrade';
+import { upgradePreset } from '@/domain/pipeline-preset';
 
 const RUN_STATUS: Record<string, string> = { completed: 'Concluída', failed: 'Falhou', cancelled: 'Cancelada', running: 'Em andamento', queued: 'Na fila' };
 const savedDate = (date: string | null) => date ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(date)) : 'Configuração inicial';
@@ -114,6 +116,25 @@ function PipelineConfig() {
     } catch { setFailure('Não foi possível ativar a configuração. Seus prompts continuam nesta página.'); }
     finally { setSaving(false); }
   }
+  /** Saves the active revision with every untouched prompt on preset 3.0, as a new revision. */
+  async function applyPreset(): Promise<boolean> {
+    if (!port || saving) return false;
+    setSaving(true); setFailure(undefined);
+    try {
+      // Upgrade what is active now, not what this page loaded: another tab may have saved since.
+      const fresh = await port.get();
+      const { next, updated, added } = upgradePreset(fresh.active.definition);
+      if (!updated.length && !added.length) { setView(fresh); setDraft(editable(fresh.active.definition)); return true; }
+      const result = await port.save(next, fresh.active.revision);
+      if (!result.ok) { setFailure(result.refusal.message); return false; }
+      setView(result.value); setDraft(editable(result.value.active.definition));
+      toast(`Prompts 3.0 ativados · revisão ${result.value.active.revision}`, { description: 'A revisão anterior está no Histórico.' });
+      return true;
+    } catch {
+      setFailure('Não foi possível ativar os prompts 3.0. A configuração ativa continua a mesma.');
+      return false;
+    } finally { setSaving(false); }
+  }
   const update = (patch: Partial<PipelineDefinition>) => setDraft(previous => previous ? { ...previous,...patch } : previous);
   const updateStep = (patch: Partial<PipelineDefinition['steps'][PipelineStepKey]>) => {
     if (tab === 'system') return;
@@ -149,6 +170,7 @@ function PipelineConfig() {
         </ButtonGroup> : undefined} />
       {failure && <Alert tone="danger" title="Não foi possível salvar">{failure}</Alert>}
       {templateError && <Alert tone="danger" title="Revise as variáveis do prompt">{templateError}</Alert>}
+      <PresetUpgrade active={view.active.definition} blocked={dirty || saving} saving={saving} error={failure} onApply={applyPreset} />
       <Tabs label="Gerenciar prompts" value={pageTab} onChange={value => navigate(value)} items={[
         { value: 'workers', label: 'Workers', count: PIPELINE_WORKERS.length }, { value: 'prompts', label: 'Todos os prompts', count: Object.keys(PROMPTS).length },
         { value: 'history', label: 'Histórico', count: view.history.length }, { value: 'runs', label: 'Execuções', count: view.runs.length },

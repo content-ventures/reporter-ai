@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { defaultPipelineDefinition, pipelineRevision, type PipelineDefinition, type PipelineView } from '../src/domain/pipeline.ts';
 import { emptyEditorialCheckpoint } from '../src/runtime/editorial-engine.ts';
@@ -31,6 +32,8 @@ for (const viewport of VIEWPORTS) {
       });
       await page.goto('/config');
       await expect(page.getByRole('button', { name: 'Recarregar', exact: true })).toHaveCount(0);
+      // The active revision already runs this build's defaults: nothing to upgrade.
+      await expect(page.getByText('Prompts padrão 3.0')).toHaveCount(0);
       await page.screenshot({ path: test.info().outputPath('workers.png'), fullPage: true });
       await page.getByRole('button', { name: 'Abrir worker Gerar artigo' }).click();
       await expect(page.getByRole('heading', { name: 'Gerar artigo', level: 1 })).toBeVisible();
@@ -125,6 +128,50 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole('button', { name: 'Descartar alterações', exact: true }).click();
       await confirm.getByRole('button', { name: 'Descartar alterações', exact: true }).click();
       await expect(page.getByText('Revisão 3 ativa', { exact: true }).first()).toBeVisible();
+      expect(errors).toEqual([]);
+    });
+
+    test('offers the 3.0 prompts over an untouched revision 1 and activates them as revision 2', async ({ page }) => {
+      const errors = watchErrors(page);
+      const revisionOne = JSON.parse(readFileSync('tests/fixtures/pipeline-revision-1.json', 'utf8')) as PipelineDefinition;
+      let view: PipelineView = { active: pipelineRevision(revisionOne, 1), history: [], runs: [], providers: { openai: true, groq: true, anthropic: true } };
+      let saves = 0;
+      const checkpoint = emptyEditorialCheckpoint();
+      await page.route('**/api/reporter/pipeline', route => route.fulfill({ json: view }));
+      await page.route('**/api/reporter/workspace', async route => {
+        if (route.request().method() === 'POST') {
+          const payload = route.request().postDataJSON();
+          expect(payload.method).toBe('pipeline.save');
+          expect(payload.args[1]).toBe(1);
+          const saved = payload.args[0] as PipelineDefinition;
+          expect(saved.systemPrompt.startsWith('Reporter IA — prompts editoriais 3.0')).toBe(true);
+          expect(saved.steps.intro.model).toBe('openai/gpt-6-astra');
+          expect(saved.steps.material.maxTokens).toBe(2048);
+          saves++;
+          view = { ...view, active: pipelineRevision(saved, 2, new Date().toISOString()), history: [view.active] };
+          return route.fulfill({ json: { ok: true, value: view } });
+        }
+        return route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } });
+      });
+      await page.goto('/config');
+      await expect(page.getByText('11 prompts no padrão anterior passam para o 3.0.', { exact: true })).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      await page.getByRole('tab', { name: /^Todos os prompts/ }).click();
+      await expect(page.getByText('Padrão anterior', { exact: true })).toHaveCount(11);
+      await page.getByRole('button', { name: 'Ver mudanças', exact: true }).click();
+      const drawer = page.getByRole('dialog', { name: 'Prompts padrão 3.0', exact: true });
+      await expect(drawer.getByRole('button', { name: /Diretrizes gerais/ })).toBeVisible();
+      await drawer.getByRole('button', { name: /Diretrizes gerais/ }).click();
+      await expect(drawer.getByText('NOTÍCIA — O PADRÃO DE TODO TEXTO DA REDAÇÃO')).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      await page.screenshot({ path: test.info().outputPath('preset-upgrade.png'), fullPage: true });
+      await drawer.getByRole('button', { name: 'Atualizar para 3.0', exact: true }).click();
+      await expect(page.getByText('Prompts 3.0 ativados · revisão 2', { exact: true })).toBeVisible();
+      await expect(page.getByText('Prompts padrão 3.0')).toHaveCount(0);
+      await expect(page.getByText('Revisão 2 ativa', { exact: true })).toBeVisible();
+      await expect(page.getByText('Padrão anterior', { exact: true })).toHaveCount(0);
+      expect(saves).toBe(1);
+      await expectNoHorizontalOverflow(page);
       expect(errors).toEqual([]);
     });
   });
