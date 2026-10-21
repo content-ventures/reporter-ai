@@ -37,7 +37,8 @@ export function quoteOf(citation: CitationView): BankQuote {
     ...(sourceUrl ? { sourceUrl } : {}),
     ...(locator ? { locator } : {}),
     context: citation.relevance,
-    recordedOn: citation.recordedOn ?? citation.createdAt.slice(0, 10),
+    // The recording date only when the source has one: the day the text was written is not it.
+    recordedOn: citation.recordedOn ?? '',
     verified: citation.authorConfirmed,
     suggested: isSuggestedCitation(citation),
     uses: citation.uses.length,
@@ -60,11 +61,9 @@ export function citationInputOf(citation: CitationView, quote: Pick<BankQuote, '
     relevance: quote.context.trim(),
     ...(citation.podcastName ? { podcastName: citation.podcastName } : {}),
     ...(citation.podcastUrl ? { podcastUrl: citation.podcastUrl } : {}),
-    // The creation day only fills the card: it is sent as the recording day only when the citation had
-    // one or the editor set it (the drawer marks a day it sets as `dated`; without that mark, a day
-    // other than the creation day was set by someone).
-    ...(quote.recordedOn && (citation.recordedOn || (quote.attribution ? quote.attribution.dated : quote.recordedOn !== citation.createdAt.slice(0, 10)))
-      ? { recordedOn: quote.recordedOn } : {}),
+    // The recording day only when the citation had one or the editor set it (the drawer marks a day it
+    // sets as `dated`). The card no longer shows the creation day, so any other day was set by someone.
+    ...(quote.recordedOn && (citation.recordedOn || (quote.attribution?.dated ?? true)) ? { recordedOn: quote.recordedOn } : {}),
     ...(citation.location ? { location: citation.location } : {}),
   };
 }

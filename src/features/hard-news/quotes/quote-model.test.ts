@@ -30,7 +30,6 @@ test('an R1 citation reads as an interview quote with its source, minute and che
   assert.equal(quote.sourceUrl, 'https://podcast.exemplo/41');
   assert.equal(quote.locator, '14:32');
   assert.equal(quote.context, 'Explica o voo direto.');
-  assert.equal(quote.recordedOn, '2026-09-18');
   assert.equal(quote.verified, true);
   assert.equal(quote.suggested, false);
 });
@@ -44,6 +43,13 @@ test('an outline passage the text did not quote reads as a suggestion, never ver
   assert.equal(confirmed.suggested, false);
   assert.equal(confirmed.verified, true);
   assert.equal(quoteOf(citation({ origin: 'article', authorConfirmed: false })).suggested, false);
+});
+
+test('the recording date comes only from the source, never from the day the text was written', () => {
+  assert.equal(quoteOf(citation()).recordedOn, '');
+  assert.equal(quoteOf(citation({ recordedOn: '2026-09-01' })).recordedOn, '2026-09-01');
+  // Saving a quote with no date sends none, so the bank never stores the text's day as the recording's.
+  assert.equal(citationInputOf(citation(), quoteOf(citation())).recordedOn, undefined);
 });
 
 test('a quote of part 2 reads Parte 2 · 3:12', () => {
@@ -109,7 +115,7 @@ test('filters, summary and distributions read the effective claims', () => {
 test('connected attribution reads the real programme and day, and unauthorized quotes are never queued', () => {
   const unnamed = quoteOf(citation({ podcastName: undefined, podcast: 'Podcast não informado', recordedOn: undefined, authorized: false }));
   assert.deepEqual(unnamed.attribution, { sourceNamed: false, dated: false });
-  assert.equal(unnamed.recordedOn, '2026-09-18', 'the card still shows a day');
+  assert.equal(unnamed.recordedOn, '', 'the card shows no day the source does not give');
   const scored = rankQuote({ ...unnamed, verified: true, factCheck: quote('u', ['opinion']).factCheck, uses: 0 });
   assert.equal(scored.score?.attribution, 13, 'the confirmed author and the episode link count; the placeholders do not');
   assert.deepEqual(pendingBatch([rankQuote(unnamed)]), []);
@@ -118,7 +124,7 @@ test('connected attribution reads the real programme and day, and unauthorized q
 test('an undated citation saves no recording day unless the editor set one, even the creation day', () => {
   const undated = citation({ recordedOn: undefined });
   const shown = quoteOf(undated);
-  assert.equal(citationInputOf(undated, shown).recordedOn, undefined, 'the card fallback is never saved');
-  const set = { ...shown, attribution: { sourceNamed: true, dated: true } };
+  assert.equal(citationInputOf(undated, shown).recordedOn, undefined, 'an empty day is never saved');
+  const set = { ...shown, recordedOn: '2026-09-18', attribution: { sourceNamed: true, dated: true } };
   assert.equal(citationInputOf(undated, set).recordedOn, '2026-09-18', 'a day the editor picked is saved, even the creation day');
 });
