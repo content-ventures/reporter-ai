@@ -5,7 +5,6 @@ import {
   Badge,
   BrandMark,
   Button,
-  Card,
   EmptyState,
   Grid,
   List,
@@ -15,7 +14,6 @@ import {
   MetricStrip,
   MetaList,
   PageStack,
-  Panel,
   Section,
   Spinner,
 } from '@content-ventures/design-system/v3';
@@ -53,19 +51,16 @@ export type RadarBoardProps = {
   selectedId?: string;
   onSelect: (id: string) => void;
   onEditGoal: () => void;
-  onMarkSeen: () => void;
+  onClearFilters: () => void;
 };
 
 /**
- * The radar's board (F2.1, F2.2, F2.4), top to bottom: the strip (what is new, what is waiting,
- * the day's goal, the sources), "Cobrir agora" (the high-priority stories as cards), then the
- * wire by arrival beside the instruments (arrivals per hour, the sources' health).
+ * The inbox keeps the news list uninterrupted; collection metrics live in the activity drawer.
  */
 export function RadarBoard(props: RadarBoardProps) {
-  const { triage, tab, now, news, feeds, hero, overflow, groups, decided, query, selectedId, onSelect, onMarkSeen } = props;
+  const { triage, tab, now, feeds, hero, overflow, groups, decided, query, selectedId, onSelect, onClearFilters } = props;
   return (
     <PageStack>
-      {triage ? <RadarStrip {...props} /> : <IntakeStrip {...props} />}
       {triage && tab === 'open' ? (
         <Section title="Cobrir agora" meta={overflow > 0 ? `Prioridade alta · +${overflow} na fila` : 'Prioridade alta'}>
           {hero.length === 0 ? (
@@ -77,14 +72,19 @@ export function RadarBoard(props: RadarBoardProps) {
           )}
         </Section>
       ) : null}
-      <Grid columns="3:2" collapseBelow={640} align="start">
-        {tab === 'open'
-          ? <Wire triage={triage} feeds={feeds} groups={groups} query={query} now={now} selectedId={selectedId} onSelect={onSelect} onMarkSeen={onMarkSeen} />
-          : <Decided feeds={feeds} items={decided} query={query} now={now} selectedId={selectedId} onSelect={onSelect} />}
-        <RadarSide triage={triage} news={news} feeds={feeds} now={now} />
-      </Grid>
+      {tab === 'open'
+          ? <Wire triage={triage} feeds={feeds} groups={groups} query={query} now={now} selectedId={selectedId} onSelect={onSelect} onClearFilters={onClearFilters} />
+          : <Decided feeds={feeds} items={decided} query={query} now={now} selectedId={selectedId} onSelect={onSelect} onClearFilters={onClearFilters} />}
     </PageStack>
   );
+}
+
+/** Collection health stays available without competing with editorial decisions. */
+export function RadarActivity(props: RadarBoardProps) {
+  return <PageStack>
+    {props.triage ? <RadarStrip {...props} /> : <IntakeStrip {...props} />}
+    <RadarSide triage={props.triage} news={props.news} feeds={props.feeds} now={props.now} />
+  </PageStack>;
 }
 
 function RadarStrip({ now, hero, pulse, seenSince, goal, onSelect, onEditGoal }: RadarBoardProps) {
@@ -159,29 +159,26 @@ function IntakeStrip({ now, news, pulse, seenSince, onSelect }: RadarBoardProps)
   return <MetricStrip label="Sinais do radar" items={items} />;
 }
 
-type ListProps = { feeds: readonly NewsFeed[]; query: string; now: number; selectedId?: string; onSelect: (id: string) => void };
+type ListProps = { onClearFilters: () => void; feeds: readonly NewsFeed[]; query: string; now: number; selectedId?: string; onSelect: (id: string) => void };
 
 /** "Na fila": everything else waiting, by arrival, with the AI's priority as a dot + word. */
-function Wire({ triage, feeds, groups, query, now, selectedId, onSelect, onMarkSeen }: ListProps & { triage: boolean; groups: WireGroup[]; onMarkSeen: () => void }) {
+function Wire({ triage, feeds, groups, query, now, selectedId, onSelect, onClearFilters }: ListProps & { triage: boolean; groups: WireGroup[] }) {
   const total = groups.reduce((sum, group) => sum + group.items.length, 0);
-  const fresh = groups.some((group) => group.id === 'new');
+  if (!total) return <EmptyQueue query={query} onClearFilters={onClearFilters} />;
   return (
-    <Panel label="Na fila">
-      <Section title="Na fila" meta={total} action={fresh ? <Button variant="ghost" size="sm" onClick={onMarkSeen}>Marcar como vistas</Button> : undefined}>
-        {total === 0 ? (
-          <List label="Na fila" framed={false} bleed empty={query ? 'Nenhuma notícia encontrada' : 'Fila em dia'} />
-        ) : (
-          <List label="Na fila" framed={false} bleed>
-            {groups.map((group) => (
-              <ListGroup key={group.id} label={group.label} meta={group.items.length}>
-                {group.items.map((item) => <WireRow key={item.id} triage={triage} item={item} rating={sourceForNews(item, feeds)?.rating} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
-              </ListGroup>
-            ))}
-          </List>
-        )}
-      </Section>
-    </Panel>
+    <List label="Na fila" framed={false}>
+      {groups.map((group) => (
+        <ListGroup key={group.id} label={group.label} meta={group.items.length}>
+          {group.items.map((item) => <WireRow key={item.id} triage={triage} item={item} rating={sourceForNews(item, feeds)?.rating} now={now} selected={item.id === selectedId} onSelect={onSelect} />)}
+        </ListGroup>
+      ))}
+    </List>
   );
+}
+
+function EmptyQueue({ query, onClearFilters, decided = false }: { query: string; onClearFilters: () => void; decided?: boolean }) {
+  return <EmptyState size="panel" icon={Telescope} title={query ? 'Nenhuma notícia encontrada' : decided ? 'Nada decidido ainda' : 'Fila em dia'}
+    actions={query ? <Button variant="secondary" size="sm" onClick={onClearFilters}>Limpar busca e filtros</Button> : undefined} />;
 }
 
 function WireRow({ triage, item, rating, now, selected, onSelect }: { triage: boolean; item: NewsItem; rating?: SourceRating; now: number; selected: boolean; onSelect: (id: string) => void }) {
@@ -215,11 +212,10 @@ const DECIDED_BADGE = {
 } as const;
 
 /** "Decididas": what the desk covered, postponed or discarded, the latest decision first. */
-function Decided({ items, feeds, query, now, selectedId, onSelect }: ListProps & { items: NewsItem[] }) {
+function Decided({ items, feeds, query, now, selectedId, onSelect, onClearFilters }: ListProps & { items: NewsItem[] }) {
+  if (!items.length) return <EmptyQueue query={query} onClearFilters={onClearFilters} decided />;
   return (
-    <Panel label="Decididas">
-      <Section title="Decididas" meta={items.length}>
-        <List label="Decididas" framed={false} bleed empty={query ? 'Nenhuma notícia encontrada' : 'Nada decidido ainda'}>
+        <List label="Decididas" framed={false}>
           {items.map((item) => {
             const badge = item.status === 'new' ? undefined : DECIDED_BADGE[item.status];
             const detail = item.status === 'later' && item.laterUntil
@@ -241,45 +237,12 @@ function Decided({ items, feeds, query, now, selectedId, onSelect }: ListProps &
             );
           })}
         </List>
-      </Section>
-    </Panel>
   );
 }
 
-/** The board before this browser's desk loads: the same blocks, still. */
-export function RadarSkeleton({ triage = true }: { triage?: boolean }) {
-  const signals = triage ? ['Novas', 'Prioridade alta', 'Pautas de hoje', 'Fontes'] : ['Novas', 'Em 24 h', 'Em mais de um veículo', 'Fontes'];
-  return (
-    <PageStack>
-      <MetricStrip label="Sinais do radar" items={signals.map((label) => ({ label, loading: true }))} />
-      {triage ? (
-        <Section title="Cobrir agora">
-          <Grid columns="1:1:1" collapseBelow={640}>
-            <Card padding="md" loading>{null}</Card>
-            <Card padding="md" loading>{null}</Card>
-            <Card padding="md" loading>{null}</Card>
-          </Grid>
-        </Section>
-      ) : null}
-      <Grid columns="3:2" collapseBelow={640} align="start">
-        <Panel label="Na fila">
-          <Section title="Na fila">
-            <List label="Na fila" framed={false} bleed>
-              <ListItemSkeleton />
-              <ListItemSkeleton />
-              <ListItemSkeleton />
-            </List>
-          </Section>
-        </Panel>
-        <Panel label="Fontes">
-          <Section title="Fontes">
-            <List label="Fontes" framed={false} bleed>
-              <ListItemSkeleton />
-              <ListItemSkeleton />
-            </List>
-          </Section>
-        </Panel>
-      </Grid>
-    </PageStack>
-  );
+/** Rows occupy the same inbox space while the first snapshot loads. */
+export function RadarSkeleton() {
+  return <List label="Carregando notícias" framed={false}>
+    {Array.from({ length: 8 }, (_, index) => <ListItemSkeleton key={index} />)}
+  </List>;
 }

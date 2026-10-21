@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "node --test \"scripts/**/*.test.mjs\" \"src/**/*.test.ts\"",
-    "smoke": "playwright test e2e/connected-smoke.spec.ts e2e/material-progress.spec.ts e2e/new-production-editor.spec.ts e2e/local-profiles.spec.ts e2e/account.spec.ts e2e/overview-layout.spec.ts e2e/pipeline-management.spec.ts e2e/hard-news-demo.spec.ts e2e/quote-bank.spec.ts e2e/source-rating.spec.ts",
+    "smoke": "playwright test e2e/connected-smoke.spec.ts e2e/material-progress.spec.ts e2e/new-production-editor.spec.ts e2e/local-profiles.spec.ts e2e/account.spec.ts e2e/overview-layout.spec.ts e2e/pipeline-management.spec.ts e2e/hard-news-demo.spec.ts e2e/quote-bank.spec.ts e2e/source-rating.spec.ts e2e/news-layout.spec.ts",
     "smoke:fixtures": "playwright test e2e/article.spec.ts e2e/library.spec.ts e2e/main-path.spec.ts e2e/routes.spec.ts",
     "harness:setup": "node scripts/setup-git-hooks.mjs",
     "harness:branch": "node scripts/validate-branch-name.mjs",
