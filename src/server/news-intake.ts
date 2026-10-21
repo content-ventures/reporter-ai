@@ -5,7 +5,9 @@ import { FEED_INTERVALS } from '../domain/hard-news.ts';
 import type { NewsFeed, NewsItem, NewsTranslation } from '../domain/hard-news.ts';
 import { canonicalUrl, feedStateOf, isNewsAddress, NEWS_LIMITS, newsMessage, normalizeEntry, sourceKindOf } from '../domain/news-intake.ts';
 import type { NewsSourceKind, NormalizedNews } from '../domain/news-intake.ts';
-import type { LinkImport, NewsPageCursor, NewsSnapshot, SourceRead } from '../ports/news-intake.ts';
+import { isRateableNewsSource } from '../domain/news-source-rating.ts';
+import type { SourceRating } from '../domain/news-source-rating.ts';
+import type { LinkImport, NewsPageCursor, NewsSnapshot, SourcePatch, SourceRead } from '../ports/news-intake.ts';
 import { transaction } from './database.ts';
 import { FlowError, logEvent, safeCode } from './errors.ts';
 import { fetchText } from './news-fetch.ts';
@@ -21,6 +23,7 @@ import { newsTranslationConfigured } from './news-translation.ts';
 type StoredSource = {
   id: string; kind: NewsSourceKind; name: string; url: string; site?: string; keyword?: string; everyMinutes: number;
   paused: boolean; failures: number; lastError?: string; lastReadAt?: string; lastWeek?: number[];
+  rating?: SourceRating;
 };
 export type StoredItem = {
   id: string; sourceId?: string; via: 'rss' | 'url'; url: string; title: string; outlet: string; excerpt: string;
@@ -48,6 +51,7 @@ export function feedView(source: StoredSource): NewsFeed {
     kind: source.kind,
     ...(source.site ? { site: source.site } : {}),
     ...(source.keyword ? { keyword: source.keyword } : {}),
+    ...(source.rating ? { rating: { ...source.rating, updatedAt: iso(source.rating.updatedAt)! } } : {}),
   };
 }
 
@@ -109,7 +113,12 @@ const NewSource = z.union([
   z.object({ kind: z.literal('rss-app'), site: ADDRESS, name: NAME, everyMinutes: INTERVAL }).strict(),
   z.object({ kind: z.literal('rss-app'), keyword: z.string().trim().min(1).max(200), everyMinutes: INTERVAL }).strict(),
 ]);
-const Patch = z.object({ name: z.string().trim().min(1).max(120).optional(), everyMinutes: INTERVAL.optional(), paused: z.boolean().optional() }).strict();
+const Rating = z.object({
+  tier: z.enum(['A1', 'A2', 'B', 'C']), relevance: z.enum(['high', 'medium', 'low']),
+  rationale: z.string().trim().min(1).max(600),
+}).strict();
+const Patch = z.object({ name: z.string().trim().min(1).max(120).optional(), everyMinutes: INTERVAL.optional(),
+  paused: z.boolean().optional(), rating: Rating.nullable().optional() }).strict();
 const UUID = z.string().uuid();
 const TIMESTAMP = z.string().max(64).datetime({ offset: true });
 const PageCursor = z.object({ updatedAt: TIMESTAMP, id: UUID, until: TIMESTAMP }).strict()
@@ -251,11 +260,22 @@ export async function importLink(value: unknown, deps: NewsServices = services):
   return sql<LinkImport>('SELECT public.reporter_news_import($1) AS value', [JSON.stringify(item)]);
 }
 
-export async function updateSource(id: string, value: unknown, deps: Pick<NewsServices, 'requireEdit'> = services): Promise<NewsFeed> {
+async function updateSourceRow(id: string, patch: SourcePatch): Promise<StoredSource> {
+  return sql<StoredSource>('SELECT public.reporter_news_source_update($1,$2,$3,$4,$5::jsonb) AS value',
+    [id, patch.name ?? null, patch.everyMinutes ?? null, patch.paused ?? null,
+      patch.rating === undefined ? null : JSON.stringify(patch.rating)]);
+}
+
+export async function updateSource(id: string, value: unknown, deps: Pick<NewsServices, 'requireEdit'> & {
+  source?: typeof sourceById; write?: typeof updateSourceRow;
+} = services): Promise<NewsFeed> {
   await deps.requireEdit();
   const patch = parsed(Patch, value);
-  const source = await sql<StoredSource>('SELECT public.reporter_news_source_update($1,$2,$3,$4) AS value',
-    [id, patch.name ?? null, patch.everyMinutes ?? null, patch.paused ?? null]);
+  parsed(UUID, id);
+  if (patch.rating && !isRateableNewsSource(await (deps.source ?? sourceById)(id))) {
+    throw new FlowError('NEWS_SOURCE_RATING_UNSUPPORTED', 422);
+  }
+  const source = await (deps.write ?? updateSourceRow)(id, patch);
   return feedView(source);
 }
 

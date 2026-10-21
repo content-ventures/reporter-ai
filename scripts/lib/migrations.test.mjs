@@ -12,6 +12,7 @@ test("compose mounts exactly the shared local bootstrap list, in order", async (
   assert.deepEqual(mounts, LOCAL_INIT.map(([file, destination]) => [file, destination]));
   const names = LOCAL_INIT.map(([, destination]) => destination);
   assert.deepEqual(names, [...names].sort(), "the image runs init files in name order");
+  assert.deepEqual(names, [...names].sort(new Intl.Collator("en-US").compare), "bootstrap dependencies also keep their order under the image locale");
 });
 
 test("every listed migration exists", async () => {

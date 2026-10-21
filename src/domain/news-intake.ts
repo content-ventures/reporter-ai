@@ -256,6 +256,8 @@ export const NEWS_MESSAGES: Record<string, string> = {
   NEWS_SOURCE_DUPLICATE: 'Essa fonte já está cadastrada.',
   NEWS_SOURCE_LIMIT: `Limite de ${NEWS_LIMITS.sources} fontes. Remova uma antes de adicionar.`,
   NEWS_SOURCE_NOT_FOUND: 'Essa fonte não existe mais.',
+  NEWS_SOURCE_RATING_INVALID: 'Revise o grau, a relevância e a justificativa da fonte.',
+  NEWS_SOURCE_RATING_UNSUPPORTED: 'Avalie o veículo original. Este feed reúne notícias de várias fontes.',
   NEWS_FEED_INVALID: 'Esse endereço não é um feed RSS, Atom ou JSON Feed.',
   NEWS_FEED_EMPTY: 'O feed não tem notícias com link e título.',
   NEWS_UNREACHABLE: 'O endereço não respondeu.',

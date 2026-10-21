@@ -114,6 +114,26 @@ result. The original remains in storage and **Ver original** opens its publicati
 failure never breaks RSS collection: the original stays available with an explicit state. Transient
 failures retry up to three attempts; editors can retry a failed translation. Database permissions,
 tenant scope, lease fencing and retry behavior are covered by `news-translations.integration.sql`.
+
+## Editorial source ratings
+
+Sources can carry an explicit newsroom assessment: A1 (reference), A2 (specialized), B
+(complementary) or C (monitoring), alongside independent high/medium/low relevance to the
+publication. Each assessment requires a rationale and has a server timestamp. These are
+editorial judgments, not audience measurements, article verification or automatic score boosts.
+Unassessed sources remain unassessed; feed activity never assigns a tier.
+
+Editors save or clear assessments in Sources. Readers can inspect the rationale. The radar
+shows the publisher's tier and can filter stories by it without changing article priority or
+decision state. Pasted links and aggregator results match a separately rated publisher by its
+exact hostname (ignoring `www`), never by its displayed name. Google Alerts and keyword
+feeds cannot themselves receive a publisher rating.
+
+`027-news-source-ratings.sql` stores the assessment per portal and audits its previous and new
+values. The existing source PATCH accepts `rating: { tier, relevance, rationale }`; omitted
+`rating` preserves it and `rating: null` clears it. Incremental snapshots carry rating changes.
+`news-source-ratings.integration.sql` verifies persistence, clearing, strict input validation,
+aggregator exclusion, role restrictions, portal isolation and audit records.
 The minute poll receives completion through `updated_at`; a cached original body is invalidated
 when the translated version arrives, including when a delayed detail response overlaps that poll.
 
