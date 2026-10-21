@@ -61,6 +61,21 @@ test('provider refusals and malformed results do not become news', async () => {
     request: async () => Response.json({ answer: 'An AI response is not a publication.' }) }), { code: 'TAVILY_INVALID_RESPONSE' });
 });
 
+test('dated irrelevant results are rejected before spending extraction credits', async () => {
+  let calls = 0;
+  const result = await collectSearchNews(claim, new AbortController().signal, { now: () => now, key: () => 'fixture', request: async () => {
+    calls++;
+    return Response.json({ results: [
+      { ...article('https://publisher.example/annual-report.pdf'), title: 'Fish annual report' },
+      { ...article('https://publisher.example/'), title: 'Fish news homepage' },
+      { ...article('https://publisher.example/speech'), title: 'Presidential state of the nation speech', content: 'Fishing is mentioned in paragraph 40.' },
+      { ...article('https://publisher.example/low-score'), score: 0.1 },
+    ] });
+  } });
+  assert.deepEqual(result.items, []);
+  assert.equal(calls, 1);
+});
+
 test('settings check permission and revision before reads, save redirect exclusions and preserve optional removals', async () => {
   let reads = 0;
   const deps: SearchSettingsServices = {
