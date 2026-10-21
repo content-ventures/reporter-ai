@@ -1,5 +1,6 @@
 import { podcastLink, UNNAMED_PODCAST } from '../../../domain/citation-library.ts';
 import type { CitationInput, CitationView } from '../../../domain/citation-library.ts';
+import { isSuggestedCitation } from '../../../domain/citation-suggestions.ts';
 import { CITATION_VERDICTS, CLAIM_KINDS, citationScore, citationVerdict, effectiveClaims } from '../../../domain/fact-check.ts';
 import type { CitationScore, CitationVerdict, ClaimKind } from '../../../domain/fact-check.ts';
 import type { BankQuote } from '../../../domain/hard-news.ts';
@@ -38,6 +39,7 @@ export function quoteOf(citation: CitationView): BankQuote {
     context: citation.relevance,
     recordedOn: citation.recordedOn ?? citation.createdAt.slice(0, 10),
     verified: citation.authorConfirmed,
+    suggested: isSuggestedCitation(citation),
     uses: citation.uses.length,
     usedIn: citation.uses,
     ...(citation.factCheck ? { factCheck: citation.factCheck } : {}),
@@ -85,13 +87,17 @@ export const rankQuote = (quote: BankQuote): RankedQuote => ({ quote, verdict: q
 export const BEST_FROM = 70;
 export const REVIEW_BELOW = 50;
 
-export type QuoteTab = 'all' | 'best' | 'review' | 'pending';
+export type QuoteTab = 'all' | 'best' | 'review' | 'pending' | 'suggested';
+/** "Sugeridas" is listed only while the bank holds a suggestion (or the tab is open). */
 export const QUOTE_TABS: { value: QuoteTab; label: string }[] = [
   { value: 'all', label: 'Todas' }, { value: 'best', label: 'Melhores' }, { value: 'review', label: 'A revisar' }, { value: 'pending', label: 'Pendentes' },
+  { value: 'suggested', label: 'Sugeridas' },
 ];
 
+/** An outline passage nobody confirmed has its own tab: it is not waiting for a check, nor for its author. */
 export function inTab(entry: RankedQuote, tab: QuoteTab): boolean {
-  if (tab === 'pending') return entry.verdict === 'pending';
+  if (tab === 'suggested') return Boolean(entry.quote.suggested);
+  if (tab === 'pending') return entry.verdict === 'pending' && !entry.quote.suggested;
   if (tab === 'best') return Boolean(entry.score && entry.score.total >= BEST_FROM);
   if (tab === 'review') return entry.verdict === 'disputed' || entry.verdict === 'not_validated' || Boolean(entry.score && entry.score.total < REVIEW_BELOW);
   return true;
@@ -106,7 +112,7 @@ export function matchesFilters(entry: RankedQuote, filters: QuoteFilters): boole
     && (!filters.verdict || entry.verdict === filters.verdict)
     && (!filters.author || quote.author === filters.author)
     && (!filters.source || quote.sourceTitle === filters.source)
-    && (!filters.authorship || quote.verified === (filters.authorship === 'confirmed'));
+    && (!filters.authorship || (filters.authorship === 'confirmed' ? quote.verified : !quote.verified && !quote.suggested));
 }
 
 export type QuoteSortKey = 'score' | 'uses' | 'recordedOn' | 'author';
@@ -151,7 +157,7 @@ export function verdictDistribution(entries: readonly RankedQuote[]): Record<Cit
   return counts;
 }
 
-/** "Checar pendentes" checks at most this many per click: each one spends up to three searches. */
+/** "Checar pendentes" checks at most this many per click: each one spends up to three searches. Suggestions wait for a person. */
 export const CHECK_BATCH = 20;
 export const pendingBatch = (entries: readonly RankedQuote[]) => entries
-  .filter(entry => entry.verdict === 'pending' && entry.quote.checkable !== false).slice(0, CHECK_BATCH).map(entry => entry.quote.id);
+  .filter(entry => inTab(entry, 'pending') && entry.quote.checkable !== false).slice(0, CHECK_BATCH).map(entry => entry.quote.id);

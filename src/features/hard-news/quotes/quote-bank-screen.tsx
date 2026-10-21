@@ -46,7 +46,7 @@ import { filterCount, QUOTE_FILTER_BAND_ID, QuoteActiveFilters, QuoteFilterBand 
 import { QuoteOverview } from './quote-overview';
 import { QuoteTable } from './quote-table';
 import { useQuoteBank } from './use-quote-bank';
-import { VerdictBadge } from './verdict-view';
+import { QuoteSeal } from './verdict-view';
 
 type View = 'table' | 'cards';
 
@@ -73,6 +73,9 @@ export function attributed(quote: Pick<BankQuote, 'text' | 'author' | 'role'>): 
 /** Why "Adicionar fala" waits in the connected build. */
 const FROM_TRANSCRIPT = 'As falas saem da transcrição de cada produção.';
 
+/** What the authorship check says about a quote the outline suggested and nobody confirmed yet. */
+const SUGGESTED_NOTE = 'Sugerida pela estrutura. Confira com a fonte antes de usar.';
+
 function dateOf(day: string): string {
   return new Date(`${day}T12:00:00`).toLocaleDateString('pt-BR');
 }
@@ -82,7 +85,8 @@ function dateOf(day: string): string {
  * words, with author and source; whether it is true (fact check with web sources), what each
  * claim is (fact, declared figure, opinion, forecast), how many articles used it, and a 0–100
  * score that ranks the best and the worst. A person confirms the author ("Autoria conferida") and
- * may correct a verdict; the words never change.
+ * may correct a verdict; the words never change. An outline passage the text did not quote arrives
+ * as "Sugerida", in its own tab, and is never shown as confirmed.
  */
 export function QuoteBankScreen() {
   const { quotes, ready, connected, save, check, decide, checking, progress } = useQuoteBank();
@@ -157,7 +161,8 @@ export function QuoteBankScreen() {
       <QuoteOverview entries={ranked} ready={ready} />
       <FilterBar
         spacing="comfortable"
-        tabs={<Tabs label="Ranking" value={tab} onChange={(value) => { setTab(value); reset(); }} items={QUOTE_TABS.map((entry) => ({ ...entry, count: counts[entry.value] }))} />}
+        tabs={<Tabs label="Ranking" value={tab} onChange={(value) => { setTab(value); reset(); }}
+          items={QUOTE_TABS.filter((entry) => entry.value !== 'suggested' || counts.suggested > 0 || tab === 'suggested').map((entry) => ({ ...entry, count: counts[entry.value] }))} />}
         search={<SearchField label="Buscar citações" value={query} onValueChange={(value) => { setQuery(value); reset(); }} placeholder="Fala, pessoa ou fonte" />}
         filtersOpen={filtersOpen}
         onFiltersOpenChange={setFiltersOpen}
@@ -239,7 +244,7 @@ export function QuoteBankScreen() {
 
 /** A quote of the bank: who said it, the exact words, its seal, score and where it comes from. */
 function QuoteCard({ entry, onOpen }: { entry: RankedQuote; onOpen: () => void }) {
-  const { quote, verdict, score } = entry;
+  const { quote, score } = entry;
   return (
     <Card padding="md" interactive as="div">
       <PageStack>
@@ -248,7 +253,7 @@ function QuoteCard({ entry, onOpen }: { entry: RankedQuote; onOpen: () => void }
           leading={<Avatar name={quote.author} size="sm" decorative />}
           title={<CardLink onClick={onOpen} aria-label={`Abrir a fala de ${quote.author}`}>{quote.author}</CardLink>}
           description={quote.role}
-          badge={<VerdictBadge verdict={verdict} />}
+          badge={<QuoteSeal entry={entry} />}
           actions={quote.verified ? <CopyButton text={attributed(quote)} label="fala com atribuição" reveal="always" /> : undefined}
         />
         <Prose variant="compact" measure="wide">{`“${quote.text}”`}</Prose>
@@ -256,7 +261,7 @@ function QuoteCard({ entry, onOpen }: { entry: RankedQuote; onOpen: () => void }
           size="sm"
           items={[
             score ? `Score ${score.total}` : null,
-            quote.verified ? null : 'Autoria a conferir',
+            quote.verified || quote.suggested ? null : 'Autoria a conferir',
             quote.topic,
             `${QUOTE_ORIGIN_LABELS[quote.origin]} · ${quote.sourceTitle}`,
             quote.locator ?? null,
@@ -300,7 +305,7 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave
     setTried(true);
     if (missing.text || missing.author || missing.source) return;
     if (!(await onSave({ ...draft, ...(live?.factCheck ? { factCheck: live.factCheck } : {}) }))) return;
-    toast(creating ? 'Fala adicionada' : 'Citação salva', { description: draft.verified ? undefined : 'Fica a conferir até alguém confirmar com a fonte.' });
+    toast(creating ? 'Fala adicionada' : 'Citação salva', { description: draft.verified ? undefined : draft.suggested ? 'Fica sugerida até alguém conferir com a fonte.' : 'Fica a conferir até alguém confirmar com a fonte.' });
     onClose();
   }
 
@@ -373,7 +378,7 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave
         {canEdit ? (
           <SwitchRow
             label="Autoria conferida"
-            description={draft.verified ? 'Pode entrar nos artigos.' : 'Só entra nos artigos depois de conferida.'}
+            description={draft.verified ? 'Pode entrar nos artigos.' : draft.suggested ? SUGGESTED_NOTE : 'Só entra nos artigos depois de conferida.'}
             checked={draft.verified}
             onCheckedChange={(verified) => patch({ verified })}
           />

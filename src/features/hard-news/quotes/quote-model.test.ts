@@ -32,6 +32,18 @@ test('an R1 citation reads as an interview quote with its source, minute and che
   assert.equal(quote.context, 'Explica o voo direto.');
   assert.equal(quote.recordedOn, '2026-09-18');
   assert.equal(quote.verified, true);
+  assert.equal(quote.suggested, false);
+});
+
+test('an outline passage the text did not quote reads as a suggestion, never verified', () => {
+  const suggestion = quoteOf(citation({ origin: 'outline', authorConfirmed: false, revision: 0, relevance: '', ready: false }));
+  assert.equal(suggestion.suggested, true);
+  assert.equal(suggestion.verified, false);
+  // Once a person confirms it with the source, it is a checked quote like any other.
+  const confirmed = quoteOf(citation({ origin: 'outline', authorConfirmed: true }));
+  assert.equal(confirmed.suggested, false);
+  assert.equal(confirmed.verified, true);
+  assert.equal(quoteOf(citation({ origin: 'article', authorConfirmed: false })).suggested, false);
 });
 
 test('a quote of part 2 reads Parte 2 · 3:12', () => {
@@ -73,7 +85,15 @@ test('the ranking puts the best first, keeps unchecked quotes last and caps a di
   assert.deepEqual(sortQuotes(entries, { key: 'score', direction: 'asc' }).map(entry => entry.quote.id), ['c', 'd', 'a', 'b']);
   assert.equal(entries[2].score?.total, 30);
   assert.deepEqual(QUOTE_TABS.map(tab => entries.filter(entry => inTab(entry, tab.value)).map(entry => entry.quote.id)),
-    [['a', 'b', 'c', 'd'], ['a'], ['c', 'd'], ['b']]);
+    [['a', 'b', 'c', 'd'], ['a'], ['c', 'd'], ['b'], []]);
+});
+
+test('a suggestion has its own tab: never pending a check, never an author to confirm, never in a batch', () => {
+  const suggestion = rankQuote(quoteOf(citation({ id: 's', origin: 'outline', authorConfirmed: false, revision: 0, relevance: '', ready: false })));
+  const unconfirmed = rankQuote(quote('u', null, { verified: false }));
+  assert.deepEqual(QUOTE_TABS.filter(tab => inTab(suggestion, tab.value)).map(tab => tab.value), ['all', 'suggested']);
+  assert.deepEqual([suggestion, unconfirmed].filter(entry => matchesFilters(entry, { ...NO_FILTERS, authorship: 'pending' })).map(entry => entry.quote.id), ['u']);
+  assert.deepEqual(pendingBatch([suggestion, unconfirmed]), ['u']);
 });
 
 test('filters, summary and distributions read the effective claims', () => {
