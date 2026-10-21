@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { PipelineDefinition, PipelineVariables } from '../src/domain/pipeline.ts';
 import { defaultPipelineDefinition, explainedRevisionCodes, formatPipelineDefinition } from '../src/domain/pipeline.ts';
 import { EDITORIAL_FORMATS, quoteRuleFor } from '../src/domain/formats.ts';
-import { quotableIds, quoteRequirement } from '../src/domain/quote-plan.ts';
+import { quotableIds, quotableSpeaker, quoteRequirement } from '../src/domain/quote-plan.ts';
 import type { QuotableCandidate, QuoteRule } from '../src/domain/quote-plan.ts';
 import { writeSequentialArticle } from '../src/server/pipeline-runner.ts';
 
@@ -38,6 +38,39 @@ test('a part takes one quotation where its evidence allows, plus what the later 
   assert.deepEqual(quoteRuleFor({}), { minQuotes: 2, openingQuote: false, sectionQuotes: true });
   assert.deepEqual(quoteRuleFor({ format: 'stand' }), { minQuotes: 2, openingQuote: true, sectionQuotes: true });
   assert.deepEqual(quoteRuleFor({ format: 'awards' }), { minQuotes: 0, openingQuote: false, sectionQuotes: false });
+});
+
+test('a line without a speaker label is quoted with a name only in a stand interview, never the interviewer\'s', () => {
+  const line = (text: string, speaker?: string): QuotableCandidate => ({ key: 'x', text, ...(speaker ? { speaker } : {}) });
+  const stand = quotableSpeaker({ linked: new Set(['Scorsin']), people: [{ name: 'Ricardo Lemos' }], unlabeledAnswers: true });
+  assert.equal(stand(line('A porção menor atende a um pedido dos supermercados.')), true, 'one of her answers');
+  for (const text of ['Estamos aqui no estande da Pescados Litoral com o Ricardo.', 'Muito obrigado pela entrevista, Ricardo, sucesso na feira.',
+    'Agradecemos a presença de todos aqui na feira.', 'Fale um pouco sobre o produto.', 'Conta pra gente como foi o ano.'])
+    assert.equal(stand(line(text)), false, text);
+  assert.equal(stand(line('O pedido de habilitação sai este ano.', 'Scorsin')), true, 'a linked speaker');
+  assert.equal(stand(line('O pedido de habilitação sai este ano.', 'Repórter')), false, 'an unlinked label');
+  // A panel, an opening, a note or an R1 recording: the mediator, the host or the MC may have said it.
+  const panel = quotableSpeaker({ linked: new Set(), people: [{ name: 'Marta Lima' }], unlabeledAnswers: false });
+  assert.equal(panel(line('A ração responde por 70% do custo de produção.')), false);
+  const two = quotableSpeaker({ linked: new Set(), people: [{ name: 'Ana Souza' }, { name: 'Rui Matos' }], unlabeledAnswers: true });
+  assert.equal(two(line('A ração responde por 70% do custo de produção.')), false);
+  const thanks = new Map([['t', { key: 't', speaker: 'Scorsin', text: 'Obrigada pelo convite para falar da nossa marca.' }]]);
+  assert.deepEqual(quotableIds(['t'], thanks, () => true), [], 'a thank-you is never a quotation');
+});
+
+test('a part whose only line is the interviewer\'s is not asked for a quotation', async () => {
+  const unlabeled = new Map<string, QuotableCandidate>([['u1', { key: 'u1', text: 'O produto chega às gôndolas do Sudeste em julho.' }],
+    ['u2', { key: 'u2', text: 'Muito obrigado pela entrevista, Ricardo, sucesso na feira.' }]]);
+  const identified = quotableSpeaker({ linked: new Set(), people: [{ name: 'Ricardo Lemos' }], unlabeledAnswers: true });
+  const plans: unknown[] = [];
+  const outline = { title: 'Pescados na feira', introIds: ['u1'], sections: [{ title: 'Despedida', evidenceIds: ['u2'] }] };
+  await writeSequentialArticle(outline, variables, { introChars: 300, sections: [{ budgetChars: 400 }] }, async (key, _schema, values) => {
+    if (key === 'intro') return { paragraphs: [paragraph('A Pescados Litoral apresentou um produto na feira.', ['u1'])] };
+    plans.push(JSON.parse(values.sizing).quotePlan);
+    return { title: 'Despedida', paragraphs: [paragraph('A empresa encerrou a conversa no estande.', ['u2'])] };
+  }, new Map([...unlabeled].map(([key, candidate]) => [key, candidate.text])), undefined, undefined, [],
+  { rule: { minQuotes: 2, openingQuote: true, sectionQuotes: true }, quotable: ids => quotableIds(ids, unlabeled, identified).map(id => unlabeled.get(id)!) });
+  assert.deepEqual(plans, [{ required: 0, quotesStillNeeded: 2, availableQuoteIds: [] }], 'one call, nothing to quote');
 });
 
 test('the quotation is asked only by prompts that explain it', () => {
