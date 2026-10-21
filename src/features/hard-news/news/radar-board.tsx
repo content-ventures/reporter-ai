@@ -16,7 +16,7 @@ import { Telescope } from '@content-ventures/design-system/v3/icons';
 import { sourceForNews } from '@/domain/news-source-match';
 import type { NewsFeed, NewsItem } from '@/domain/hard-news';
 import { NEWS_SOURCES_HREF } from '../routes';
-import { HeadlineCard } from './headline-card';
+import { HEADLINE_MIN_WIDTH, HeadlineCard } from './headline-card';
 import { arrivedAt, intakePulse, sinceLabel, waitLabel } from './radar-model';
 import type { Pulse, WireGroup } from './radar-model';
 import { RadarSide } from './radar-side';
@@ -59,7 +59,7 @@ function Headlines({ items, feeds, now, tab, query, onSelect, onClearFilters, vi
   return <PageStack data-testid="news-headlines">
     <Section title={tab === 'open' ? 'Últimas manchetes' : 'Notícias decididas'} meta={`${items.length} ${items.length === 1 ? 'notícia' : 'notícias'}`}>
       <PageStack>
-        <Grid as="section" label="Manchetes" columns="auto" min={280} gap="sm">
+        <Grid as="section" label="Manchetes" columns="auto" min={HEADLINE_MIN_WIDTH} gap="sm">
           {items.slice(0, limit).map(item => card(item))}
         </Grid>
         {items.length > limit ? <Button variant="secondary" onClick={onLoadMore}>Carregar mais manchetes</Button> : null}

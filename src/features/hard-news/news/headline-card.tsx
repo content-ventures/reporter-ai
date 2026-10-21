@@ -1,11 +1,14 @@
 'use client';
 
-import { Badge, BrandMark, Card, CardHeader, CardLink, MediaFrame, MetaList, PageStack, formatRelative } from '@content-ventures/design-system/v3';
+import { Badge, BrandMark, Card, CardHeader, CardLink, Grid, MediaFrame, MetaList, formatRelative } from '@content-ventures/design-system/v3';
 import type { NewsItem } from '@/domain/hard-news';
 import type { SourceRating } from '@/domain/news-source-rating';
 import { newsLogoUrl } from '@/domain/news-branding';
 import { SourceRatingBadge } from '../source-rating';
 import { returnLabel } from './radar-model';
+
+/** Shared with the outer grid: content stays in one column within each card. */
+export const HEADLINE_MIN_WIDTH = 280;
 
 const DECISIONS = {
   selected: { label: 'Selecionada', tone: 'blue' },
@@ -20,7 +23,7 @@ export function HeadlineCard({ item, rating, now, onSelect }: {
 }) {
   const decision = item.status === 'new' ? undefined : DECISIONS[item.status];
   return <Card as="article" padding="sm" interactive data-testid={`news-card-${item.id}`}>
-    <PageStack>
+    <Grid columns="auto" min={HEADLINE_MIN_WIDTH} gap="sm">
       <MediaFrame src={item.imageUrl} alt={`Imagem da notícia: ${item.title}`} ratio="3/1" fit="cover" />
       <MetaList size="sm" items={[
         <BrandMark key="logo" name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />,
@@ -34,6 +37,6 @@ export function HeadlineCard({ item, rating, now, onSelect }: {
       <CardHeader size="md" titleAs="h3" title={
         <CardLink onClick={() => onSelect(item.id)} aria-label={`Ler notícia: ${item.title}`}>{item.title}</CardLink>
       } />
-    </PageStack>
+    </Grid>
   </Card>;
 }
