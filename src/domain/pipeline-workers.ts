@@ -11,6 +11,18 @@ export function funnelPromptKey(format: EditorialFormat, step: FunnelStepKey): F
   return `funnel:${format}:${step}`;
 }
 
+/**
+ * Whether a prompt runs in a definition's flow: curation, shared or of a format, only with
+ * `curateQuotes`; the article prompts of the writing mode in use; the other funnel steps always.
+ */
+export function promptRuns(key: WorkerPromptKey, definition: PipelineDefinition): boolean {
+  const step = key.startsWith('funnel:') ? key.split(':')[2] : key;
+  if (step === 'quotes') return definition.curateQuotes;
+  if (key === 'article') return definition.articleMode === 'single';
+  if (key === 'intro' || key === 'section') return definition.articleMode !== 'single';
+  return true;
+}
+
 export type PipelineWorkerKey = 'article' | 'carousel' | EditorialFormat;
 /**
  * A block of a worker's flow. `prompt` blocks are where AI writes, each with the prompt a person
@@ -45,9 +57,9 @@ const veracity: WorkerNode = { id: 'veracity', title: 'Checar veracidade das fal
   kind: 'automatic', condition: 'Em segundo plano; o texto não espera' };
 
 /** An event format's worker: its own structure, curation, opening and parts, the shared long-source step before them, no AI images. */
-function formatWorkerFlow(format: EditorialFormat): WorkerNode[] {
+function formatWorkerFlow(format: EditorialFormat, definition: PipelineDefinition): WorkerNode[] {
   const spec = FORMAT_SPECS[format];
-  return [
+  const nodes: WorkerNode[] = [
     { id: 'source', title: 'Material, pauta e evento', description: 'Recebe a transcrição, as pessoas confirmadas, o formato escolhido e os dados do evento.', kind: 'input' },
     { id: 'facts', title: 'Preparar fontes longas', description: 'Processa os trechos da fonte até caberem no contexto.', kind: 'prompt', prompt: 'facts', condition: 'Somente fontes com mais de 24 mil caracteres', scope: 'shared' },
     { id: 'outline', title: 'Estrutura do formato', description: 'Planeja título, linha fina e intertítulos no padrão da Seafood Brasil.', kind: 'prompt', prompt: funnelPromptKey(format, 'outline'), scope: 'format' },
@@ -59,11 +71,12 @@ function formatWorkerFlow(format: EditorialFormat): WorkerNode[] {
     veracity,
     { id: 'save', title: 'Texto pronto para revisão', description: 'Salva o rascunho com a linha fina, sem imagens de IA: a cobertura usa as fotos da redação. O box do evento sai na entrega. A aprovação é manual.', kind: 'output' },
   ];
+  return nodes.filter(node => !node.prompt || promptRuns(node.prompt, definition));
 }
 
 /** Mirrors editorial-worker.ts. Conditional planning is skipped when an outline is supplied. */
 export function pipelineWorkerFlow(worker: PipelineWorkerKey, definition: PipelineDefinition): WorkerNode[] {
-  if (worker !== 'article' && worker !== 'carousel') return formatWorkerFlow(worker);
+  if (worker !== 'article' && worker !== 'carousel') return formatWorkerFlow(worker, definition);
   if (worker === 'carousel') return [
     { id: 'approved', title: 'Artigo aprovado', description: 'Usa a versão aprovada do artigo e o modelo escolhido.', kind: 'input' },
     { id: 'layouts', title: 'Preparar os slides', description: 'Define os espaços, a quantidade de slides e os limites de cada campo.', kind: 'automatic' },
