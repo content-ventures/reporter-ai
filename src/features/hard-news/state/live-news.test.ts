@@ -218,3 +218,13 @@ test('drains every page before advancing the poll and retries a failed page with
   await store.refresh();
   assert.equal((calls[4] as unknown as { since: string }).since, '2026-10-19T11:59:00.654Z');
 });
+
+
+test('enriched content invalidates a loaded body even when the language has not changed', () => {
+  const old = item('one', { body: ['Old RSS summary'], paragraphs: undefined, contentRevision: 0, updatedAt: '2026-10-21T10:00:00Z' });
+  const enriched = item('one', { body: ['New lead'], paragraphs: 10, contentRevision: 1, updatedAt: '2026-10-21T10:01:00Z' });
+  const [current] = mergeItems([old], [enriched]);
+  assert.equal(current.paragraphs, 10);
+  assert.deepEqual(current.body, ['New lead']);
+  assert.deepEqual(mergeItems([current], [old])[0], current, 'a late old detail cannot restore the previous body');
+});

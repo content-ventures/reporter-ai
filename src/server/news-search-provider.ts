@@ -50,9 +50,9 @@ async function call(path: 'search' | 'extract', body: object, signal: AbortSigna
 
 /** Only dated recent URLs enter the radar. The provider's date is explicitly an estimate. */
 export async function collectSearchNews(claim: NewsSearchClaim, signal: AbortSignal, deps: Services = services): Promise<{ items: SearchNewsEntry[]; query: string }> {
-  const { query, language } = newsSearchQuery(claim.config, claim.queryIndex);
+  const { query, language, mode } = newsSearchQuery(claim.config, claim.queryIndex);
   const parsed = searchSchema.safeParse(await call('search', { query, language,
-    topic: Math.floor(claim.queryIndex / claim.config.languages.length) % 2 ? 'news' : 'general',
+    topic: mode,
     search_depth: 'basic', time_range: 'week', include_published_date: true, filter_by_published_date: true,
     include_answer: false, include_raw_content: 'text', include_images: true, max_results: 10,
     exclude_domains: [...new Set([...claim.domains, ...SOCIAL])], include_usage: true,

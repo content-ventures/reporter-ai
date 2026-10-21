@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { emptyEditorialCheckpoint } from '../src/runtime/editorial-engine.ts';
+import type { NewsSearchView, NewsSearchWrite } from '../src/domain/news-search.ts';
 import type { NewsFeed, NewsItem } from '../src/domain/hard-news.ts';
 import { expectHeadingOutline, expectNoHorizontalOverflow, watchErrors } from './support';
 
@@ -334,5 +335,48 @@ for (const viewport of VIEWPORTS) {
       await expectHeadingOutline(page);
       expect(errors).toEqual([]);
     });
+  });
+}
+
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`configura coleta web persistente e impede pedidos repetidos em ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await mockDesk(page);
+    let view: NewsSearchView = { configured: true, revision: 0, state: 'idle', usedToday: 0, lastAdded: 0 };
+    let manual = 0;
+    await page.route('**/api/reporter/news/search', async route => {
+      if (route.request().method() === 'POST') {
+        const input = route.request().postDataJSON() as NewsSearchWrite;
+        expect(input.revision).toBe(view.revision);
+        expect(input.config.portalUrl).toBe('https://seafoodbrasil.com.br');
+        expect(input.config.topics).toEqual(['Exportação de pescado', 'Sanidade']);
+        view = { ...view, revision: view.revision + 1, config: input.config, state: 'queued' };
+      }
+      await route.fulfill({ json: view });
+    });
+    await page.route('**/api/reporter/news/search/collect', route => {
+      manual++; view = { ...view, state: 'queued' }; return route.fulfill({ json: view });
+    });
+    const errors = watchErrors(page);
+    await page.goto('/news/sources');
+    await page.getByRole('button', { name: 'Busca complementar', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Busca complementar', exact: true });
+    await dialog.getByRole('textbox', { name: 'Portal cliente', exact: true }).fill('https://seafoodbrasil.com.br');
+    await dialog.getByRole('textbox', { name: 'Setor', exact: true }).fill('Pesca e aquicultura');
+    await dialog.getByRole('textbox', { name: 'Temas para acompanhar', exact: true }).fill('Exportação de pescado\nSanidade');
+    await dialog.getByRole('button', { name: 'Salvar e buscar', exact: true }).click();
+    await expect(dialog.getByText('Na fila', { exact: true })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Buscar agora', exact: true })).toBeDisabled();
+    await expectNoHorizontalOverflow(page);
+    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
+    view = { ...view, state: 'idle', usedToday: 2, lastAdded: 3, lastRunAt: new Date().toISOString() };
+    await page.getByRole('button', { name: 'Busca complementar', exact: true }).click();
+    await expect(dialog.getByRole('textbox', { name: 'Portal cliente', exact: true })).toHaveValue('https://seafoodbrasil.com.br');
+    await dialog.getByRole('button', { name: 'Buscar agora', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Buscar agora', exact: true })).toBeDisabled();
+    expect(manual).toBe(1);
+    await expectNoHorizontalOverflow(page);
+    expect(errors).toEqual([]);
   });
 }

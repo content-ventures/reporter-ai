@@ -1,5 +1,7 @@
 'use client';
 
+import { NewsSearchDialog } from './news-search-dialog';
+
 import { newsLogoUrl } from '@/domain/news-branding';
 
 import { useState } from 'react';
@@ -52,6 +54,7 @@ export function SourcesScreen() {
   const canEdit = useCan('production.edit');
   const [adding, setAdding] = useState(false);
   const [discovering, setDiscovering] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [removing, setRemoving] = useState<NewsFeed>();
   const [rating, setRating] = useState<{ id: string; mode: 'view' | 'edit' }>();
@@ -105,6 +108,7 @@ export function SourcesScreen() {
         <PageHeader
           title="Fontes"
           actions={canEdit ? <>
+            {live ? <Button variant="secondary" onClick={() => setSearching(true)}>Busca complementar</Button> : null}
             {live && feeds.length > 0 ? <Button variant="secondary" icon={Rss} onClick={() => setDiscovering(true)}>Descobrir fontes</Button> : null}
             <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Adicionar fonte</Button>
           </> : undefined}
@@ -118,6 +122,7 @@ export function SourcesScreen() {
             title="Nenhuma fonte cadastrada"
             description={canEdit && live ? 'Encontre fontes para o seu veículo ou setor e receba as primeiras notícias.' : undefined}
             actions={canEdit ? <>
+            {live ? <Button variant="secondary" onClick={() => setSearching(true)}>Busca complementar</Button> : null}
               {live ? <Button variant="primary" icon={Rss} onClick={() => setDiscovering(true)}>Descobrir fontes</Button> : null}
               <Button variant={live ? 'secondary' : 'primary'} icon={Plus} onClick={() => setAdding(true)}>Adicionar fonte</Button>
             </> : undefined}
@@ -170,6 +175,7 @@ export function SourcesScreen() {
         )}
       </PageStack>
       <AddFeedDialog open={adding} onClose={() => setAdding(false)} />
+      {searching ? <NewsSearchDialog onClose={() => setSearching(false)} /> : null}
       {discovering ? <DiscoverSourcesDialog open onClose={() => setDiscovering(false)} /> : null}
       {rating && ratingFeed ? <SourceRatingDialog key={`${rating.id}:${rating.mode}`} feed={ratingFeed} mode={rating.mode} onClose={() => setRating(undefined)} /> : null}
       <ConfirmDialog

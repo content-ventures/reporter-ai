@@ -74,7 +74,7 @@ BEGIN
     OR EXISTS(SELECT FROM jsonb_array_elements_text(p_config->'languages') l WHERE l NOT IN ('pt','en','es'))
     OR EXISTS(SELECT FROM unnest(p_domains) d WHERE d !~ '^[a-z0-9][a-z0-9.-]*\.[a-z0-9.-]+$')
     THEN RAISE EXCEPTION 'NEWS_SEARCH_INVALID' USING ERRCODE='22023'; END IF;
-  total := jsonb_array_length(p_config->'topics')*jsonb_array_length(p_config->'languages');
+  total := jsonb_array_length(p_config->'topics')*jsonb_array_length(p_config->'languages')*2;
   INSERT INTO public.reporter_news_search(portal_id,config,domains,remaining) VALUES(portal,p_config,p_domains,CASE WHEN (p_config->>'enabled')::boolean THEN total ELSE 0 END)
     ON CONFLICT(portal_id) DO UPDATE SET config=p_config,domains=p_domains,revision=reporter_news_search.revision+1,
       remaining=CASE WHEN (p_config->>'enabled')::boolean THEN total ELSE 0 END,cursor=0,next_at=clock_timestamp(),
@@ -94,7 +94,7 @@ BEGIN
     RAISE EXCEPTION 'NEWS_SEARCH_LIMIT' USING ERRCODE='22023'; END IF;
   -- Repeated clicks join existing work. They never reset a lease, cursor or retry wait.
   IF s.remaining=0 AND coalesce(s.lease_until,'-infinity')<clock_timestamp() THEN
-    UPDATE public.reporter_news_search SET remaining=jsonb_array_length(config->'topics')*jsonb_array_length(config->'languages'),
+    UPDATE public.reporter_news_search SET remaining=jsonb_array_length(config->'topics')*jsonb_array_length(config->'languages')*2,
       next_at=greatest(clock_timestamp(),coalesce(last_run_at,'-infinity')+interval '1 minute'),last_error=NULL,failures=0 WHERE portal_id=portal;
     PERFORM core.reporter_audit(portal,'reporter.news_search.requested','portal',portal,'{}');
   END IF;
@@ -119,7 +119,7 @@ BEGIN
   UPDATE public.reporter_news_search SET lease_owner=p_owner,lease_until=clock_timestamp()+interval '2 minutes',fence=gen_random_uuid(),
     used_today=CASE WHEN budget_day=(now() AT TIME ZONE 'UTC')::date THEN used_today+1 ELSE 1 END,
     budget_day=(now() AT TIME ZONE 'UTC')::date,
-    remaining=CASE WHEN remaining=0 THEN jsonb_array_length(config->'topics')*jsonb_array_length(config->'languages') ELSE remaining END
+    remaining=CASE WHEN remaining=0 THEN jsonb_array_length(config->'topics')*jsonb_array_length(config->'languages')*2 ELSE remaining END
     WHERE portal_id=portal RETURNING * INTO s;
   RETURN jsonb_build_object('fence',s.fence,'config',s.config,'domains',s.domains,'queryIndex',s.cursor);
 END $$;
@@ -229,7 +229,7 @@ BEGIN
   END LOOP;
   UPDATE public.reporter_news_search SET lease_owner=NULL,lease_until=NULL,fence=NULL,last_run_at=clock_timestamp(),last_error=p_error,
     last_added=added,failures=CASE WHEN p_error IS NULL THEN 0 ELSE failures+1 END,
-    cursor=CASE WHEN p_error IS NULL OR failures>=2 THEN (cursor+1)%(jsonb_array_length(config->'topics')*jsonb_array_length(config->'languages')) ELSE cursor END,
+    cursor=CASE WHEN p_error IS NULL OR failures>=2 THEN (cursor+1)%(jsonb_array_length(config->'topics')*jsonb_array_length(config->'languages')*2) ELSE cursor END,
     remaining=CASE WHEN p_error IS NOT NULL AND failures<2 THEN remaining ELSE greatest(0,remaining-1) END,
     next_at=clock_timestamp()+CASE WHEN p_error IS NOT NULL AND failures<2 THEN interval '5 minutes'
       WHEN remaining>1 THEN interval '0 seconds' ELSE make_interval(mins=>(config->>'everyMinutes')::int) END,

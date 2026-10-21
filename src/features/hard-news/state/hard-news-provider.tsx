@@ -25,6 +25,7 @@ import type {
   ResearchSource,
   WritingGuide,
 } from '@/domain/hard-news';
+import type { NewsSearchView, NewsSearchWrite } from '@/domain/news-search';
 import type { NewSource, SourcePatch } from '@/ports/news-intake';
 import type { NewsDiscoveryInput, NewsDiscoveryResult } from '@/domain/news-discovery';
 import type { NewsDecisionInput } from '@/domain/news-decisions';
@@ -54,6 +55,9 @@ export const WRITING_STEPS: readonly WritingStep[] = [
 export type WritingProgress = { productionId: string; step: number };
 
 export type HardNewsActions = {
+  readNewsSearch(): Promise<NewsSearchView>;
+  saveNewsSearch(input: NewsSearchWrite): Promise<NewsSearchView>;
+  collectNewsSearch(): Promise<NewsSearchView>;
   discoverSources(input: NewsDiscoveryInput): Promise<NewsDiscoveryResult>;
   refreshNews(): Promise<void>;
   decideNews(id: string, input: NewsDecisionInput): Promise<{ ok: true } | { ok: false; message: string }>;
@@ -120,6 +124,7 @@ type HardNewsContextValue = {
   newsFailed: boolean;
   /** RSS.app can create feeds: the platform's account in the connected build, simulated otherwise. */
   rssApp: boolean;
+  search?: NewsSearchView;
   /** A screen that shows the news keeps the server polling while mounted (a no-op in the simulation). */
   watch: () => () => void;
 };
@@ -333,6 +338,15 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
   }, [latest, patchDossier]);
 
   const actions = useMemo<HardNewsActions>(() => ({
+    async readNewsSearch() { if (!newsPort?.search) throw new Error('Busca indisponível.'); return newsPort.search.read(); },
+    async saveNewsSearch(input) {
+      if (!newsPort?.search) throw new Error('Busca indisponível.');
+      const saved = await newsPort.search.save(input); await liveStore?.refresh(); return saved;
+    },
+    async collectNewsSearch() {
+      if (!newsPort?.search) throw new Error('Busca indisponível.');
+      const saved = await newsPort.search.collect(); await liveStore?.refresh(); return saved;
+    },
     async discoverSources(input) {
       if (!newsPort) throw new Error('A descoberta de fontes está disponível no ambiente conectado.');
       return newsPort.discover(input);
@@ -760,6 +774,7 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
     live,
     newsFailed: live && liveNews.failed,
     rssApp: live ? liveNews.rssApp : true,
+    search: liveNews.search,
     watch,
   }), [actions, demo, live, liveNews.failed, liveNews.ready, liveNews.rssApp, ready, shown, watch, writing]);
   return <HardNewsContext value={value}>{children}</HardNewsContext>;

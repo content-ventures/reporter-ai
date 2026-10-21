@@ -1,3 +1,4 @@
+import type { NewsSearchView } from '../../../domain/news-search.ts';
 import type { NewsFeed, NewsItem } from '../../../domain/hard-news.ts';
 import type { NewsIntake, NewsPageCursor, NewsSnapshot } from '../../../ports/news-intake.ts';
 
@@ -14,6 +15,7 @@ export type LiveNews = {
   news: NewsItem[];
   /** RSS.app can create feeds (the platform's account is configured). */
   rssApp: boolean;
+  search?: NewsSearchView;
   /** The last poll failed; the previous records stay on screen. */
   failed: boolean;
 };
@@ -48,7 +50,7 @@ export function mergeItems(current: readonly NewsItem[], incoming: readonly News
     const latest = stale ? known : item;
     // A cached original cannot be attached to a newly translated headline, nor can a delayed
     // detail response restore the old language. Within one language, keep the loaded text.
-    const sameLanguage = (candidate: NewsItem) => candidate.translation?.status === latest.translation?.status
+    const sameLanguage = (candidate: NewsItem) => (candidate.contentRevision ?? 0) === (latest.contentRevision ?? 0) && candidate.translation?.status === latest.translation?.status
       && candidate.translation?.sourceLanguage === latest.translation?.sourceLanguage;
     const full = item.paragraphs === undefined && sameLanguage(item) ? item
       : known && known.paragraphs === undefined && sameLanguage(known) ? known : undefined;
@@ -87,6 +89,7 @@ export function createLiveNewsStore(port: NewsIntake, now: () => number = Date.n
       ready: true,
       failed: false,
       rssApp: answer.rssApp,
+      search: answer.search,
       feeds,
       news: mergeItems(snapshot.news, answer.items),
     });
