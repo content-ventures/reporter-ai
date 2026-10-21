@@ -4,10 +4,90 @@ import { charsetOf, fetchText } from '../src/server/news-fetch.ts';
 import type { FetchServices } from '../src/server/news-fetch.ts';
 import { discoverFeeds, htmlParagraphs, parseArticlePage, parseFeed } from '../src/server/news-parse.ts';
 import { entriesFor } from '../src/server/news-reader.ts';
-import { resolveFeed } from '../src/server/news-intake.ts';
+import { addSource, feedView, firstRead, importLink, itemView, parseNewsPageCursor, readSourceNow, removeSource, resolveFeed, updateSource } from '../src/server/news-intake.ts';
+import type { NewsServices } from '../src/server/news-intake.ts';
+import { FlowError } from '../src/server/errors.ts';
 import { createRssAppFeed, deleteRssAppFeed } from '../src/server/rss-app.ts';
 
 const NOW = Date.parse('2026-10-19T15:00:00.000Z');
+
+test('news page cursors validate bounded input and preserve microseconds at equal timestamp boundaries', () => {
+  const cursor = { updatedAt: '2026-10-21T12:30:45.123456+00:00', id: '6b1f8a8e-2f7c-4d55-9a51-6f0f3f8d7a10', until: '2026-10-21T12:31:00.654321+00:00' };
+  assert.deepEqual(parseNewsPageCursor(JSON.stringify(cursor)), cursor);
+  assert.equal(parseNewsPageCursor(undefined), undefined);
+  for (const value of ['{', 'null', 'x'.repeat(513), JSON.stringify({ ...cursor, id: 'bad' }),
+    JSON.stringify({ ...cursor, updatedAt: '2026-10-22T12:00:00Z' }),
+    JSON.stringify({ ...cursor, until: 'not a date' }), JSON.stringify({ ...cursor, extra: true })]) {
+    assert.throws(() => parseNewsPageCursor(value), { code: 'INVALID_INPUT', status: 422 });
+  }
+});
+
+describe('news write permission', () => {
+  test('refuses source and link mutations before any fetch, external account call or database mutation', async () => {
+    const calls: string[] = [];
+    const unexpected = async () => { calls.push('external'); throw new Error('An external call ran before authorization'); };
+    const deps: NewsServices = {
+      requireEdit: async () => { calls.push('permission'); throw new FlowError('FORBIDDEN', 403); },
+      fetch: unexpected, createRssApp: unexpected, deleteRssApp: unexpected,
+      rssApp: () => { calls.push('account'); return true; }, now: () => NOW,
+    };
+    const sourceId = '6b1f8a8e-2f7c-4d55-9a51-6f0f3f8d7a10';
+    const actions = [
+      () => addSource({ kind: 'rss', url: 'https://portal.exemplo/feed', everyMinutes: 60 }, deps),
+      () => addSource({ kind: 'rss-app', site: 'https://portal.exemplo', everyMinutes: 60 }, deps),
+      () => importLink({ url: 'https://portal.exemplo/article' }, deps),
+      () => readSourceNow(sourceId, deps),
+      () => updateSource(sourceId, { paused: true }, deps),
+      () => removeSource(sourceId, deps),
+    ];
+    for (const action of actions) {
+      calls.length = 0;
+      await assert.rejects(action, { code: 'FORBIDDEN', status: 403 });
+      assert.deepEqual(calls, ['permission']);
+    }
+  });
+});
+
+describe('source first read and news text', () => {
+  const source = {
+    id: '6b1f8a8e-2f7c-4d55-9a51-6f0f3f8d7a10', kind: 'rss' as const, name: 'Portal',
+    url: 'https://portal.exemplo/feed', everyMinutes: 60, paused: false, failures: 0,
+  };
+
+  test('keeps a saved source with an actionable failure when its first collection fails', async () => {
+    let failure: string | undefined;
+    const result = await firstRead(source, [], {}, {
+      claim: async () => ({ id: source.id, kind: source.kind, name: source.name, url: source.url, firstRead: true }),
+      ingest: async () => { throw new FlowError('NEWS_TIMEOUT'); },
+      failed: async (_role, _claim, _owner, code) => { failure = code; },
+      source: async () => ({ ...source, failures: 1, lastError: failure }),
+    });
+    assert.equal(failure, 'NEWS_TIMEOUT');
+    assert.equal(result.source.id, source.id);
+    assert.equal(result.source.state, 'failing');
+    assert.ok(result.source.lastError);
+    assert.equal(result.inserted, 0);
+    assert.equal(result.grouped, 0);
+    assert.equal(feedView({ ...source, paused: true, failures: 1, lastError: failure }).state, 'paused');
+  });
+
+  test('marks feed text and page extraction honestly and keeps a long single paragraph intact', () => {
+    const paragraph = 'Este primeiro parágrafo precisa permanecer completo. '.repeat(20);
+    const stored = {
+      id: '0c2b3d4e-5f60-4718-8a9b-0c1d2e3f4a5b', title: 'Notícia', url: 'https://portal.exemplo/article',
+      via: 'rss' as const, outlet: 'Portal', excerpt: paragraph.slice(0, 400),
+      publishedAt: new Date(NOW).toISOString(), importedAt: new Date(NOW).toISOString(),
+      duplicates: [], paragraphs: 1,
+    };
+    const summary = itemView(stored);
+    assert.equal(summary.contentKind, 'feed');
+    assert.equal(summary.paragraphs, 1);
+    const article = itemView({ ...stored, via: 'url', body: [paragraph] });
+    assert.equal(article.contentKind, 'article');
+    assert.equal(article.paragraphs, undefined);
+    assert.deepEqual(article.body, [paragraph]);
+  });
+});
 
 const WORDPRESS = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">

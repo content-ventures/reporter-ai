@@ -17,7 +17,9 @@ import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
 import { handleFactCheck } from './fact-check';
-import { handleNews } from './news-intake.ts';
+import { handleNews, requireNewsEdit } from './news-intake.ts';
+import { discoverNewsSources } from './news-discovery.ts';
+import { decideNewsItem } from './news-decisions.ts';
 import { NEWS_MESSAGES } from '../domain/news-intake.ts';
 import { handleProfile } from './profile.ts';
 import { handleInvites, handlePlatform } from './platform.ts';
@@ -85,6 +87,9 @@ function reply(value: unknown, status = 200) {
 }
 const messages: Record<string, string> = {
   ...NEWS_MESSAGES,
+  NEWS_DECISION_INVALID: 'Confira a decisão e tente novamente.',
+  NEWS_DECISION_CONFLICT: 'Esta notícia foi alterada por outra pessoa. Confira a situação atual antes de decidir novamente.',
+  NEWS_PAGE_CURSOR_INVALID: 'Não foi possível continuar a leitura das notícias. Atualize o radar e tente novamente.',
   CITATION_NOT_LITERAL: 'Copie um trecho contínuo da transcrição, com pelo menos quatro palavras. Não altere a fala.',
   CITATION_METADATA_INVALID: 'Confira a data e o link HTTPS do episódio.',
   CITATION_AUTHOR_INVALID: 'Escolha um participante do material e confirme a autoria; não atribua uma voz por suposição.',
@@ -100,9 +105,9 @@ const messages: Record<string, string> = {
   FACT_DECISION_INVALID: 'Escolha uma afirmação checável da última checagem.',
   CITATION_AUTHOR_REQUIRED: 'Escolha quem disse a fala antes de checá-la.',
   FACT_DECISION_STALE: 'A fala foi checada de novo. Abra a checagem atual antes de corrigir o veredito.',
-  TAVILY_KEY_MISSING: 'Adicione TAVILY_API_KEY no servidor para checar fatos. A chave fica somente no backend.',
+  TAVILY_KEY_MISSING: 'A busca na web não está configurada. Um administrador precisa conectar o Tavily.',
   TAVILY_AUTH_INVALID: 'O Tavily recusou a chave. Confira TAVILY_API_KEY no servidor.',
-  TAVILY_QUOTA_EXHAUSTED: 'Os créditos de busca do Tavily acabaram. Confira o plano antes de checar mais falas.',
+  TAVILY_QUOTA_EXHAUSTED: 'Os créditos de busca do Tavily acabaram. Um administrador precisa conferir o plano.',
   TAVILY_RATE_LIMIT: 'Limite temporário de buscas do Tavily. Aguarde e tente de novo.',
   TAVILY_UNAVAILABLE: 'A busca na web não respondeu. Tente de novo.',
   TAVILY_REQUEST_FAILED: 'A busca na web falhou. Tente de novo.',
@@ -185,6 +190,12 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
+    if (path[0] === 'news' && path[1] === 'discover' && path.length === 2 && request.method === 'POST') {
+      await requireNewsEdit();
+      return reply(await discoverNewsSources(await jsonBody(request), undefined, request.signal));
+    }
+    if (path[0] === 'news' && path[1] === 'items' && path[3] === 'decision' && path.length === 4 && request.method === 'POST')
+      return reply(await decideNewsItem(path[2], await jsonBody(request)));
     if (path[0] === 'news') return await handleNews(request,path.slice(1),{ readJson: jsonBody,wake: () => { if (shouldWakeForNews()) kick(); } });
     if (path[0] === 'visuals') return await handleVisualLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'profile') return await handleProfile(request,path.slice(1),jsonBody);

@@ -81,6 +81,13 @@ BEGIN
   RETURN core.reporter_require(p_permission);
 END $$;
 
+-- Check write permission before the server reads a URL or creates a paid external feed.
+CREATE OR REPLACE FUNCTION public.reporter_news_require_edit() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+BEGIN
+  PERFORM core.reporter_require('reporter.edit');
+END $$;
+
 -- One source as the screens read it. Counts are rolling 24-hour windows, the last one is "em 24 h".
 CREATE OR REPLACE FUNCTION core.reporter_news_source_json(s public.reporter_news_sources) RETURNS jsonb
 LANGUAGE sql STABLE SET search_path=pg_catalog,core,public,pg_temp AS $$
@@ -99,19 +106,15 @@ LANGUAGE sql STABLE SET search_path=pg_catalog,core,public,pg_temp AS $$
     'duplicates',i.duplicates,'paragraphs',cardinality(i.body),'body',CASE WHEN p_body THEN to_jsonb(i.body) END))
 $$;
 
--- The radar's read: every source, and the news changed since `p_since` (the last week, newest first).
--- A poll with nothing new returns no sources and no items, only the clock and whether a read is due.
+-- Sources are a small complete snapshot (at most 30), including an empty list after the last
+-- source is removed in another session. News remain incremental to keep their larger list cheap.
 CREATE OR REPLACE FUNCTION public.reporter_news_view(p_since timestamptz,p_limit integer) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
 DECLARE portal uuid := core.reporter_require('reporter.read'); read_at timestamptz := clock_timestamp();
-  changed boolean;
 BEGIN
-  changed := p_since IS NULL
-    OR EXISTS(SELECT FROM public.reporter_news_sources WHERE portal_id=portal AND updated_at>p_since)
-    OR EXISTS(SELECT FROM public.reporter_news_items WHERE portal_id=portal AND imported_at>p_since);
   RETURN jsonb_build_object('at',read_at,
-    'sources',CASE WHEN changed THEN coalesce((SELECT jsonb_agg(core.reporter_news_source_json(s) ORDER BY s.created_at,s.id)
-      FROM public.reporter_news_sources s WHERE s.portal_id=portal),'[]'::jsonb) END,
+    'sources',coalesce((SELECT jsonb_agg(core.reporter_news_source_json(s) ORDER BY s.created_at,s.id)
+      FROM public.reporter_news_sources s WHERE s.portal_id=portal),'[]'::jsonb),
     'items',coalesce((SELECT jsonb_agg(x.item ORDER BY x.updated_at DESC,x.id)
       FROM (SELECT core.reporter_news_item_json(i,false) AS item,i.updated_at,i.id FROM public.reporter_news_items i
         WHERE i.portal_id=portal AND i.imported_at>read_at-interval '7 days' AND (p_since IS NULL OR i.updated_at>p_since)
@@ -172,8 +175,12 @@ CREATE OR REPLACE FUNCTION public.reporter_news_source_remove(p_id uuid) RETURNS
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
 DECLARE portal uuid := core.reporter_require('reporter.edit'); source public.reporter_news_sources;
 BEGIN
-  DELETE FROM public.reporter_news_sources WHERE id=p_id AND portal_id=portal RETURNING * INTO source;
+  -- Match ingestion's source-then-item lock order while a feed is being read.
+  SELECT * INTO source FROM public.reporter_news_sources WHERE id=p_id AND portal_id=portal FOR UPDATE;
   IF NOT FOUND THEN RETURN NULL; END IF;
+  -- The foreign key clears source_id; advance the items' cursor so other desks see that change.
+  UPDATE public.reporter_news_items SET updated_at=clock_timestamp() WHERE source_id=p_id AND portal_id=portal;
+  DELETE FROM public.reporter_news_sources WHERE id=p_id AND portal_id=portal;
   PERFORM core.reporter_audit(portal,'reporter.news_source.removed','news_source',source.id,
     jsonb_build_object('kind',source.kind,'name',source.name,'url',source.url));
   RETURN jsonb_strip_nulls(jsonb_build_object('id',source.id,'kind',source.kind,'remoteId',source.remote_id));
@@ -210,6 +217,9 @@ RETURNS TABLE(item_id uuid,outcome text)
 LANGUAGE plpgsql SET search_path=pg_catalog,core,public,pg_temp AS $$
 DECLARE existing public.reporter_news_items; published timestamptz := (p_entry->>'publishedAt')::timestamptz; new_id uuid;
 BEGIN
+  -- Feeds and pasted links may arrive together. Serialize the identity/story decision so two
+  -- new outlets cannot both create the first row, or lose a duplicate added by the other read.
+  PERFORM pg_advisory_xact_lock(hashtextextended('reporter_news_items:'||p_portal::text,0));
   SELECT * INTO existing FROM public.reporter_news_items WHERE portal_id=p_portal
     AND (canonical_url=p_entry->>'canonicalUrl' OR (p_source IS NOT NULL AND source_id=p_source AND guid=p_entry->>'guid')
       OR duplicates @> jsonb_build_array(jsonb_build_object('key',p_entry->>'canonicalUrl')))
@@ -325,6 +335,7 @@ ALTER FUNCTION core.reporter_news_portal(text) OWNER TO reporter_executor;
 ALTER FUNCTION core.reporter_news_source_json(public.reporter_news_sources) OWNER TO reporter_executor;
 ALTER FUNCTION core.reporter_news_item_json(public.reporter_news_items,boolean) OWNER TO reporter_executor;
 ALTER FUNCTION core.reporter_news_place(uuid,uuid,text,jsonb) OWNER TO reporter_executor;
+ALTER FUNCTION public.reporter_news_require_edit() OWNER TO reporter_executor;
 ALTER FUNCTION public.reporter_news_view(timestamptz,integer) OWNER TO reporter_executor;
 ALTER FUNCTION public.reporter_news_item(uuid) OWNER TO reporter_executor;
 ALTER FUNCTION public.reporter_news_source_add(text,text,text,text,integer,text,text,text) OWNER TO reporter_executor;
@@ -338,12 +349,13 @@ ALTER FUNCTION public.reporter_news_lookup(text) OWNER TO reporter_executor;
 ALTER FUNCTION public.reporter_worker_pending() OWNER TO reporter_executor;
 REVOKE ALL ON FUNCTION core.reporter_news_portal(text),core.reporter_news_source_json(public.reporter_news_sources),
   core.reporter_news_item_json(public.reporter_news_items,boolean),core.reporter_news_place(uuid,uuid,text,jsonb),
+  public.reporter_news_require_edit(),
   public.reporter_news_view(timestamptz,integer),public.reporter_news_item(uuid),
   public.reporter_news_source_add(text,text,text,text,integer,text,text,text),public.reporter_news_source_update(uuid,text,integer,boolean),
   public.reporter_news_source_remove(uuid),public.reporter_news_claim(text,uuid),public.reporter_news_ingest(uuid,text,jsonb,text,text),
   public.reporter_news_failed(uuid,text,text),public.reporter_news_import(jsonb),public.reporter_news_lookup(text),
   public.reporter_worker_pending() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.reporter_news_view(timestamptz,integer),public.reporter_news_item(uuid),
+GRANT EXECUTE ON FUNCTION public.reporter_news_require_edit(),public.reporter_news_view(timestamptz,integer),public.reporter_news_item(uuid),
   public.reporter_news_source_add(text,text,text,text,integer,text,text,text),public.reporter_news_source_update(uuid,text,integer,boolean),
   public.reporter_news_source_remove(uuid),public.reporter_news_import(jsonb),public.reporter_news_lookup(text) TO reporter_runtime;
 GRANT EXECUTE ON FUNCTION public.reporter_news_claim(text,uuid),public.reporter_news_ingest(uuid,text,jsonb,text,text),
