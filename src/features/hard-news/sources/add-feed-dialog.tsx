@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { Button, Dialog, Field, Input, Section, Segmented, Select, toast } from '@content-ventures/design-system/v3';
+import { useRef, useState } from 'react';
+import { Alert, Button, Dialog, Field, Input, Section, Segmented, Select, toast } from '@content-ventures/design-system/v3';
 import type { SegmentOption } from '@content-ventures/design-system/v3';
 import type { NewSource } from '@/ports/news-intake';
+import { useCan } from '@/state';
+import { refusalOf } from '@/ui/permission-dialog';
 import { useHardNews } from '../state/hard-news-provider';
 import { DEFAULT_INTERVAL, INTERVAL_OPTIONS } from './feed-format';
 
@@ -16,6 +18,7 @@ type Mode = 'feed' | 'site' | 'keyword';
  */
 export function AddFeedDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { actions, rssApp } = useHardNews();
+  const canEdit = useCan('production.edit');
   const [mode, setMode] = useState<Mode>('feed');
   const [address, setAddress] = useState('');
   const [name, setName] = useState('');
@@ -23,6 +26,8 @@ export function AddFeedDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [every, setEvery] = useState(String(DEFAULT_INTERVAL));
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<{ id: string; name: string; error: string }>();
+  const working = useRef(false);
   const modes: SegmentOption<Mode>[] = [
     { value: 'feed', label: 'Feed ou site' },
     { value: 'site', label: 'Site sem feed', ...(rssApp ? {} : { disabled: true, disabledReason: 'O RSS.app não está conectado' }) },
@@ -31,36 +36,62 @@ export function AddFeedDialog({ open, onClose }: { open: boolean; onClose: () =>
   const ready = mode === 'keyword' ? keyword.trim().length > 0 : address.trim().length > 0;
 
   function close() {
-    if (saving) return;
+    if (working.current) return;
     setMode('feed');
     setAddress('');
     setName('');
     setKeyword('');
     setEvery(String(DEFAULT_INTERVAL));
     setError(undefined);
+    setSaved(undefined);
     onClose();
   }
 
   async function submit() {
-    if (!ready || saving) return;
+    if (!ready || working.current || !canEdit) return;
     const everyMinutes = Number(every);
     const input: NewSource = mode === 'keyword'
       ? { kind: 'rss-app', keyword: keyword.trim(), everyMinutes }
       : mode === 'site'
         ? { kind: 'rss-app', site: address.trim(), name: name.trim() || undefined, everyMinutes }
         : { kind: 'rss', url: address.trim(), name: name.trim() || undefined, everyMinutes };
+    working.current = true;
     setSaving(true);
-    const result = await actions.addFeed(input);
-    setSaving(false);
-    if (!result.ok) {
-      setError(result.message);
-      return;
+    try {
+      const result = await actions.addFeed(input);
+      if (!result.ok) { setError(result.message); return; }
+      if (result.feed.state === 'failing') {
+        setSaved({ id: result.feed.id, name: result.feed.name, error: result.feed.lastError ?? 'A fonte não respondeu à primeira coleta.' });
+        return;
+      }
+      toast('Fonte adicionada', { description: `${result.feed.name} · ${result.inserted} ${result.inserted === 1 ? 'notícia nova' : 'notícias novas'}` });
+      working.current = false;
+      close();
+    } catch (cause) {
+      setError(refusalOf(cause, 'Não foi possível adicionar a fonte.').message);
+    } finally {
+      working.current = false;
+      setSaving(false);
     }
-    toast('Fonte adicionada', {
-      description: result.inserted > 0 ? `${result.feed.name} · ${result.inserted} ${result.inserted === 1 ? 'notícia' : 'notícias'}` : result.feed.name,
-    });
-    setSaving(false);
-    close();
+  }
+
+  async function retry() {
+    if (!saved || working.current || !canEdit) return;
+    working.current = true;
+    setSaving(true);
+    try {
+      const feed = await actions.retryFeed(saved.id);
+      if (!feed || feed.state === 'failing') {
+        setSaved({ ...saved, error: feed?.lastError ?? 'A fonte não respondeu. Tente novamente.' });
+        return;
+      }
+      toast('Coleta concluída', { description: feed.name });
+      working.current = false;
+      close();
+    } finally {
+      working.current = false;
+      setSaving(false);
+    }
   }
 
   const onEnter = (event: { key: string }) => { if (event.key === 'Enter') void submit(); };
@@ -73,16 +104,19 @@ export function AddFeedDialog({ open, onClose }: { open: boolean; onClose: () =>
       size="sm"
       title="Adicionar fonte"
       divided={false}
+      dismissible={!saving}
       dirty={address.trim().length > 0 || keyword.trim().length > 0 || name.trim().length > 0}
       footer={(
         <>
-          <Button variant="secondary" disabled={saving} onClick={close}>Cancelar</Button>
-          <Button variant="primary" disabled={!ready} loading={saving} onClick={() => void submit()}>Adicionar fonte</Button>
+          <Button variant="secondary" disabled={saving} onClick={close}>{saved ? 'Concluir' : 'Cancelar'}</Button>
+          <Button variant="primary" disabled={!canEdit || (!saved && !ready)} loading={saving} onClick={() => void (saved ? retry() : submit())}>
+            {saved ? 'Tentar coleta' : 'Adicionar fonte'}
+          </Button>
         </>
       )}
     >
       {/* A headless Section gives the fields the form rhythm (20 px between them). */}
-      <Section>
+      {saved ? <Alert tone="danger" title={`${saved.name}: coleta pendente`}>{saved.error} A fonte já está cadastrada.</Alert> : <Section>
         <Field label="Tipo">
           {() => <Segmented label="Tipo de fonte" options={modes} value={mode} onChange={(value) => { setMode(value); setError(undefined); }} full />}
         </Field>
@@ -122,7 +156,7 @@ export function AddFeedDialog({ open, onClose }: { open: boolean; onClose: () =>
             <Select id={id} describedBy={describedBy} value={every} options={INTERVAL_OPTIONS} onChange={setEvery} />
           )}
         </Field>
-      </Section>
+      </Section>}
     </Dialog>
   );
 }

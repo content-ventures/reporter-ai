@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActionBar,
+  Alert,
   AgentTrace,
   Badge,
   BrandMark,
@@ -24,6 +25,7 @@ import {
   TextLink,
   Timeline,
   Tooltip,
+  toast,
   VisuallyHidden,
   formatRelative,
 } from '@content-ventures/design-system/v3';
@@ -57,10 +59,16 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
   const dossier = useDossier(item.productionId);
   const { live, actions } = useHardNews();
   // News on the server come without their text: the open story reads it once.
-  const pending = (item.paragraphs ?? 0) > 1;
+  const pending = live && item.paragraphs !== undefined;
+  const [failedId, setFailedId] = useState<string>();
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (pending) actions.loadBody(item.id);
-  }, [actions, item.id, pending]);
+    let active = true;
+    if (pending) void actions.loadBody(item.id).then((ok) => {
+      if (active) setFailedId(ok ? undefined : item.id);
+    });
+    return () => { active = false; };
+  }, [actions, item.id, pending, attempt]);
   const facts = [at(item.publishedAt, now)];
   if (item.via === 'url') facts.push('Link colado');
   if (item.status === 'later' && item.laterUntil) facts.push(returnLabel(item.laterUntil, now));
@@ -82,7 +90,10 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
       <Prose variant="compact" measure="wide">{item.excerpt}</Prose>
       {live ? null : <AiReading item={item} />}
       {item.duplicates.length > 0 ? <WhoPublished item={item} now={now} /> : null}
-      {item.body.length > 1 ? <OriginalText item={item} /> : null}
+      {pending ? failedId === item.id
+        ? <Alert tone="danger" title="Não foi possível carregar o texto" action={<Button variant="secondary" size="sm" onClick={() => { setFailedId(undefined); setAttempt((value) => value + 1); }}>Tentar de novo</Button>} />
+        : <Spinner label="Carregando texto da notícia" />
+        : item.body.length ? <OriginalText item={item} /> : null}
     </PageStack>
   );
 }
@@ -196,11 +207,11 @@ function OriginalText({ item }: { item: NewsItem }) {
   const body = useMemo<ArticleBody>(() => ({
     type: 'article',
     title: item.title,
-    blocks: item.body.slice(1).map((text, index) => paragraphBlock(`${item.id}-p${index}`, text)),
+    blocks: item.body.map((text, index) => paragraphBlock(`${item.id}-p${index}`, text)),
   }), [item]);
   const editor = useArticleReader({ body });
   return (
-    <Disclosure summary="Texto original" meta={`${item.body.length - 1} ${item.body.length === 2 ? 'parágrafo' : 'parágrafos'}`} headingLevel="h3">
+    <Disclosure summary={item.contentKind === 'feed' ? 'Texto recebido do feed' : item.contentKind === 'article' ? 'Texto extraído da página' : 'Texto original'} meta={`${item.body.length} ${item.body.length === 1 ? 'parágrafo' : 'parágrafos'}`} headingLevel="h3">
       <Prose variant="compact" measure="wide" label="Texto original">
         <EditorContent editor={editor} />
       </Prose>
@@ -221,8 +232,9 @@ export type DecisionProps = {
 
 /** The one decision under the story: Descartar, Adiar, Cobrir (the only blue button of the desk). */
 export function DecisionBar({ item, covering, canCover, demo = false, onCover, onPostpone, onDiscard }: DecisionProps) {
-  const { actions } = useHardNews();
+  const { actions, live } = useHardNews();
   const dossier = useDossier(item.productionId);
+  if (live) return <LiveDecisionBar item={item} covering={covering} canCover={canCover} onCover={onCover} onPostpone={onPostpone} onDiscard={onDiscard} />;
   if (item.status === 'covered' && item.productionId) {
     const written = dossier?.stage === 'article';
     return (
@@ -283,6 +295,37 @@ export function DecisionBar({ item, covering, canCover, demo = false, onCover, o
       />
       {/* Unavailable, the bar's visible reason explains it: no tooltip promising what it will not do. */}
       <Tooltip content="Abre a pauta e começa a apuração" shortcut="C" disabled={!available}>{cover}</Tooltip>
+    </ActionBar>
+  );
+}
+
+/** A durable selection keeps the source material ready for the writing workflow. */
+function LiveDecisionBar({ item, covering, canCover, onCover, onPostpone, onDiscard }: DecisionProps) {
+  const { actions } = useHardNews();
+  const [restoring, setRestoring] = useState(false);
+  const busy = covering || restoring;
+  async function restore() {
+    if (busy || !canCover) return;
+    setRestoring(true);
+    try {
+      const result = await actions.decideNews(item.id, { revision: item.decisionRevision ?? 0, action: 'restore' });
+      if (!result.ok) toast('Não foi possível devolver à fila', { tone: 'error', description: result.message });
+    } finally { setRestoring(false); }
+  }
+  if (item.status !== 'new') return (
+    <ActionBar position="static" detail={item.status === 'selected' ? 'Selecionada para redação' : item.status === 'later' ? 'Notícia adiada' : 'Notícia descartada'}>
+      {canCover ? <Button variant="secondary" loading={restoring} onClick={() => void restore()}>Voltar para a fila</Button> : null}
+    </ActionBar>
+  );
+  return (
+    <ActionBar position="static" detail={!canCover ? 'Só editor ou admin pode selecionar notícias.' : undefined}>
+      <Menu label="Descartar" align="end" side="top"
+        sections={[{ label: 'Motivo', items: DISCARD_REASONS.map(reason => ({ label: reason, onSelect: () => { if (canCover && !busy) onDiscard(item, reason); } })) }]}
+        trigger={props => <Button {...props} variant="ghost" disabled={!canCover || busy} trailingIcon={ChevronDown}>Descartar</Button>} />
+      <Menu label="Adiar" align="end" side="top"
+        sections={[{ items: POSTPONE_OPTIONS.map(option => ({ label: option.label, icon: Clock, onSelect: () => { if (canCover && !busy) onPostpone(item, option.hours, option.label); } })) }]}
+        trigger={props => <Button {...props} variant="secondary" disabled={!canCover || busy} trailingIcon={ChevronDown}>Adiar</Button>} />
+      <Button variant="primary" loading={covering} disabled={!canCover || busy} onClick={() => onCover(item)}>Selecionar para redação</Button>
     </ActionBar>
   );
 }

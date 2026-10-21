@@ -18,6 +18,21 @@ The desk adds sources in **Fontes** (`/news/sources`, "Feed ou site", "Site sem 
 and in **Integrações** (Google Alertas and RSS.app pages). The first read happens while the source is
 added, so it arrives with its news. Removing a source keeps its news and deletes its RSS.app feed.
 
+## Start with a portal or sector
+
+The empty radar and Fontes offer **Descobrir fontes**. Enter a portal URL, a sector, or both, with
+an optional region. The server reads public portal metadata and uses the existing Tavily search
+integration to find candidate publishers. Every selectable suggestion has a feed that was actually
+fetched and parsed, a search reference, a reason and recent sample headlines. Inaccessible sites and
+sites without a verified feed remain visible with their limitation; they cannot be subscribed to.
+
+Review the selection, then add the sources. Discovery itself writes nothing. Each selected source
+is saved and read immediately, with its own result and number of newly imported stories. A source
+whose first collection fails stays registered and can be retried without a duplicate subscription.
+A valid feed with no recent stories says so; it never receives invented sample news. Existing feeds
+are marked as registered. RSS and URL import work without any external API key; discovery requires
+`TAVILY_API_KEY`. RSS.app is optional and is only needed to create feeds for unsupported sites.
+
 ## Normalization and dedupe
 
 `src/domain/news-intake.ts` (pure, tested) turns every entry into one shape: title, link, canonical
@@ -45,7 +60,8 @@ link, outlet, publication date, lead and paragraphs (at most 20,000 characters),
   Fontes or Integrações open, the page polls every minute and the poll wakes the worker when a source
   is due (at most once a minute per server instance), so the 15- and 30-minute frequencies hold while
   the desk is watching and nothing runs while nobody is.
-- A failed read keeps only a code; three in a row show the source as "Com falha" with the reason.
+- A failed read keeps only a code; a failed first collection or three later failures in a row show
+  the source as "Com falha" with the reason.
   The next try waits for the source's own interval.
 
 ## Limits (pending decision: feeds, frequency and limits)
@@ -58,24 +74,40 @@ link, outlet, publication date, lead and paragraphs (at most 20,000 characters),
 | Feed / page size | 2 MB / 3 MB |
 | Read timeout | 15 s |
 | Frequencies | 15, 30, 60 (default), 120, 360 minutes |
-| Radar window | the last 7 days, 400 items per poll |
+| Radar window | the last 7 days plus retained selections and postponements, 400 items per poll |
 
 They are constants in `NEWS_LIMITS` (domain) and the migration.
 
 ## Database
 
-`database/migrations/021-news-intake.sql`: `public.reporter_news_sources` and
+`database/migrations/024-news-intake.sql`: `public.reporter_news_sources` and
 `public.reporter_news_items`, reachable only through security-definer functions. Reads need
 `reporter.read`; every write needs `reporter.edit` and lands in the audit log. The radar's poll
-(`reporter_news_view(since)`) returns only the clock when nothing changed; items travel without their
-text, which the open story reads once (`reporter_news_item`). Tests: `database/tests/news-intake.integration.sql`.
+(`reporter_news_view(since)`) returns the current source list and changed items; items travel without
+their text, which the open story reads once (`reporter_news_item`). A direct item link also works
+outside the initial radar window. A poll drains all 400-item pages using a fixed upper bound and
+the exact timestamp/id cursor before advancing its checkpoint. Failed pages retry the same
+window, so larger initial collections and older selections are not skipped.
+Tests: `database/tests/news-intake.integration.sql`.
+
+`025-news-decisions.sql` adds durable select, postpone, discard and restore actions. Every action
+checks `reporter.edit`, the portal and the decision revision before writing its actor, time and audit
+entry. Conflicting decisions return HTTP 409. Due postponements return once during a server read,
+with a system audit event; selected stories stay available beyond the import window. Tests:
+`database/tests/news-decisions.integration.sql` and `tests/news-decisions.test.ts`.
 
 ## Screens
 
 In the connected build the radar, Fontes and the Google Alertas and RSS.app pages read the server
-and carry no "Demo". The AI's triage (F2.4) and the desk's decisions (Cobrir, Adiar, Descartar) are
-not there yet: the radar shows what arrived, what spread to more than one outlet and the sources'
-health, and the open story has no decision bar. The fixtures builds keep the simulated desk.
+and carry no "Demo". The radar shows arrivals, grouped coverage and source health. The story's
+decision bar offers **Selecionar para redação**, **Adiar** and **Descartar**, with restore available
+under Decididas. Selection keeps the article's source material ready for the writing workflow;
+it does not create a production or generate a Hard News article. The AI's editorial classification
+(F2.4) is still outside this delivery. The fixtures build keeps the simulated desk.
+
+Feed text can be only a summary. The story labels it as **Texto recebido do feed**; manually
+imported pages use **Texto extraído da página**. The original link and publication attribution
+remain available in either case. Body-loading failures expose a retry without hiding the lead.
 
 ## RSS.app account
 

@@ -26,6 +26,9 @@ import type {
   WritingGuide,
 } from '@/domain/hard-news';
 import type { NewSource, SourcePatch } from '@/ports/news-intake';
+import type { NewsDiscoveryInput, NewsDiscoveryResult } from '@/domain/news-discovery';
+import type { NewsDecisionInput } from '@/domain/news-decisions';
+import { toast } from '@content-ventures/design-system/v3';
 import { useCommands, useRuntime, useSession } from '@/state';
 import type { Arrival } from '../preview/arrivals';
 import { ARTICLE_NEWS_ID, classificationFor, clockAt, RESEARCH_NEWS_ID } from '../preview/news';
@@ -51,6 +54,9 @@ export const WRITING_STEPS: readonly WritingStep[] = [
 export type WritingProgress = { productionId: string; step: number };
 
 export type HardNewsActions = {
+  discoverSources(input: NewsDiscoveryInput): Promise<NewsDiscoveryResult>;
+  refreshNews(): Promise<void>;
+  decideNews(id: string, input: NewsDecisionInput): Promise<{ ok: true } | { ok: false; message: string }>;
   cover(newsId: string): Promise<string | undefined>;
   postpone(newsId: string, hours: number): void;
   discard(newsId: string, reason: string): void;
@@ -59,13 +65,13 @@ export type HardNewsActions = {
   /** "Colar link": the story's id, also when it was already in the queue (`outcome: 'repeat'`). */
   importUrl(url: string): Promise<{ ok: true; id: string; outcome: 'inserted' | 'grouped' | 'repeat' } | { ok: false; message: string }>;
   setGoal(perDay: number): void;
-  addFeed(input: NewSource): Promise<{ ok: true; feed: NewsFeed; inserted: number } | { ok: false; message: string }>;
+  addFeed(input: NewSource): Promise<{ ok: true; feed: NewsFeed; inserted: number; grouped?: number } | { ok: false; message: string }>;
   updateFeed(id: string, patch: SourcePatch): Promise<{ ok: true } | { ok: false; message: string }>;
   /** "Tentar de novo": the source as the new read left it. */
   retryFeed(id: string): Promise<NewsFeed | undefined>;
   removeFeed(id: string): Promise<{ ok: true } | { ok: false; message: string }>;
   /** The text of a story read from the server (the ficha's "Texto original"). */
-  loadBody(id: string): void;
+  loadBody(id: string): Promise<boolean>;
   research(productionId: string): void;
   setSource(productionId: string, sourceId: string, state: ResearchSource['state']): void;
   addSource(productionId: string, url: string): { ok: true } | { ok: false; message: string };
@@ -109,6 +115,8 @@ type HardNewsContextValue = {
   demo: boolean;
   /** F2.1 on the server (connected build): sources and news are real, the triage is not there yet. */
   live: boolean;
+  /** Last read failed; keep the previous records visible and offer a retry. */
+  newsFailed: boolean;
   /** RSS.app can create feeds: the platform's account in the connected build, simulated otherwise. */
   rssApp: boolean;
   /** A screen that shows the news keeps the server polling while mounted (a no-op in the simulation). */
@@ -218,7 +226,7 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
 
   // The example's covered stories: one being researched, one already written in the studio.
   useEffect(() => {
-    if (demo || !ready || latest.current.seeded || seeding.current || !runtime.runtime) return;
+    if (demo || newsPort || !ready || latest.current.seeded || seeding.current || !runtime.runtime) return;
     seeding.current = true;
     const live = runtime.runtime;
     /**
@@ -283,7 +291,7 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
       }));
       seeding.current = false;
     })();
-  }, [commands, demo, latest, openProduction, ready, runtime.runtime, update]);
+  }, [commands, demo, latest, newsPort, openProduction, ready, runtime.runtime, update]);
 
   /** The article piece of a covered story and its revision, read from the workspace. */
   const articlePieceId = useCallback(async (productionId: string): Promise<{ pieceId: string; revision: number } | undefined> => {
@@ -324,9 +332,24 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
   }, [latest, patchDossier]);
 
   const actions = useMemo<HardNewsActions>(() => ({
+    async discoverSources(input) {
+      if (!newsPort) throw new Error('A descoberta de fontes está disponível no ambiente conectado.');
+      return newsPort.discover(input);
+    },
+    async refreshNews() { await liveStore?.refresh(); },
+    async decideNews(id, input) {
+      if (!newsPort || !liveStore) return { ok: false, message: 'As decisões estão disponíveis no ambiente conectado.' };
+      try {
+        liveStore.putItem(await newsPort.decide(id, input));
+        return { ok: true };
+      } catch (error) {
+        await liveStore.refresh();
+        return failure(error);
+      }
+    },
     async cover(newsId) {
-      // The demonstration never opens a production in the real workspace.
-      if (demo) return undefined;
+      // Connected stories are selected as material; the prototype cannot create productions.
+      if (demo || newsPort) return undefined;
       const news = latest.current.news.find((item) => item.id === newsId);
       if (!news) return undefined;
       if (news.productionId) return news.productionId;
@@ -371,6 +394,7 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
         try {
           const imported = await newsPort.importLink(url.trim());
           await liveStore.refresh();
+          await liveStore.loadBody(imported.id);
           return { ok: true, ...imported };
         } catch (error) {
           return failure(error);
@@ -402,8 +426,8 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
         try {
           const read = await newsPort.addSource(input);
           liveStore.putFeed(read.source);
-          void liveStore.refresh();
-          return { ok: true, feed: read.source, inserted: read.inserted };
+          await liveStore.refresh();
+          return { ok: true, feed: read.source, inserted: read.inserted, grouped: read.grouped };
         } catch (error) {
           return failure(error);
         }
@@ -449,7 +473,8 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
           liveStore.putFeed(read.source);
           void liveStore.refresh();
           return read.source;
-        } catch {
+        } catch (error) {
+          toast('Não foi possível ler a fonte', { tone: 'error', description: failure(error).message });
           return undefined;
         }
       }
@@ -472,8 +497,10 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
       update((current) => ({ ...current, feeds: current.feeds.filter((feed) => feed.id !== id) }));
       return { ok: true };
     },
-    loadBody(id) {
-      void liveStore?.loadBody(id).catch(() => {});
+    async loadBody(id) {
+      if (!liveStore) return true;
+      try { await liveStore.loadBody(id); return true; }
+      catch { return false; }
     },
     research,
     setSource(productionId, sourceId, sourceState) {
@@ -722,9 +749,10 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
     actions,
     demo,
     live,
+    newsFailed: live && liveNews.failed,
     rssApp: live ? liveNews.rssApp : true,
     watch,
-  }), [actions, demo, live, liveNews.ready, liveNews.rssApp, ready, shown, watch, writing]);
+  }), [actions, demo, live, liveNews.failed, liveNews.ready, liveNews.rssApp, ready, shown, watch, writing]);
   return <HardNewsContext value={value}>{children}</HardNewsContext>;
 }
 

@@ -23,7 +23,11 @@ Production is an R1 build. `HARD_NEWS_DEMO` (`ui/r2-preview.ts`) is true there, 
 - Imagens and Citações read the R1 libraries in the connected build, and "Usar em artigo" places a photo in a real article, as in R2;
 - Modelos is the gallery below, on the workspace's own models.
 
-`e2e/hard-news-demo.spec.ts` (connected smoke) opens Acervo, Mapa editorial, Guia de escrita, Integrações, one app and WordPress at 1440 and 390 px, with "Demo" in the top bar, and checks that no API request writes. It also opens the radar, Fontes and RSS.app on the server's news (mocked), without "Demo", triage or decisions, with the story's text read on demand.
+`e2e/hard-news-demo.spec.ts` (connected smoke) opens Acervo, Mapa editorial, Guia de escrita, Integrações, one app and WordPress at 1440 and 390 px, with "Demo" in the top bar, and checks that no API request writes. It also checks the connected radar, source discovery and collection at both widths, partial failures and retries, direct item links, and durable selection for writing through mocked server contracts. The story's text is read on demand. The database suite checks real persistence, permissions, conflicts and postponement expiry.
+
+The connected news workflow is described in `NEWS_INTAKE.md`: portal/sector → verified sources →
+first collection → news → selection for writing. Its decision is **Selecionar para redação**;
+it preserves imported source material without starting the simulated research flow described below.
 
 ## Journey
 
