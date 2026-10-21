@@ -65,6 +65,7 @@ import {
   toCreateInput,
   validateMaterial,
   withFormat,
+  withMaterialText,
   withoutPersonLabel,
   type DraftField,
   type MaterialFile,
@@ -199,10 +200,10 @@ function NewProductionForm({ received }: { received?: string }) {
     // A new person named after the misheard label takes the corrected name too.
     for (const { label, choice, next } of moved) if (next.count && !(next.text.normalize('NFC') in speakers))
       speakers[next.text.normalize('NFC')] = choice.kind === 'new' && choice.name === label ? { ...choice, name: next.text.normalize('NFC') } : choice;
-    const { text } = result;
-    if (draft.mode === 'paste') update({ pasted: text, speakers });
-    else if (draft.mode === 'file' && draft.file) update({ file: { ...draft.file, text }, speakers });
-    else if (draft.mode === 'link' && draft.linkFile) update({ linkFile: { ...draft.linkFile, text }, speakers });
+    // A material in parts takes the corrected text back part by part; one that no longer splits is refused.
+    const material = withMaterialText(draft, result.text);
+    if (Object.keys(material).length === 0) return { refused: 'structure', count: result.count };
+    update({ ...material, speakers });
     return result;
   };
   const fileReader = useFileReader(intake, onFileLoaded);
