@@ -239,18 +239,37 @@ test('a panel quotes every speaker with a quotable line and develops each thesis
 
 test('awards list every winner and every nominee the material names, with a number only from the source', () => {
   const awards = withFormatFunnels(defaultPipelineDefinition()).funnels.awards;
-  // Planning and curation put the nominees' list in their category's section or, without categories, in the last one.
-  for (const key of ['outline', 'quotes'] as const) {
+  for (const key of ['outline', 'quotes'] as const)
     assert.match(awards[key].prompt, /As seções trazem só listas, sem falas: os vencedores e os indicados ou finalistas que a fonte nomear/, key);
-    assert.match(awards[key].prompt, /quando a fonte não os separar por categoria, na última seção: inclua os ids da lista deles nas evidências dessa seção/, key);
-  }
   const section = awards.section.prompt;
-  assert.match(section, /Liste todos os vencedores e todos os indicados ou finalistas que o material nomear, mesmo sem uma seção só para eles/);
-  assert.match(section, /em um único parágrafo no molde "Os indicados foram: \[Nome\], da \[Instituição\]; \[Nome\], da \[Instituição\]\."/);
+  assert.match(section, /Liste todos os vencedores e todos os indicados ou finalistas que o material nomear, em um único parágrafo por lista, no molde "Os indicados foram: \[Nome\], da \[Instituição\]; \[Nome\], da \[Instituição\]\."/);
   assert.match(section, /Um número de vencedores, indicados ou finalistas só entra quando a fonte o escreve; nunca conte nomes para criar um número/);
   assert.doesNotMatch(section, /houver uma seção para eles/);
-  assert.match(section, /Os indicados foram: Ana Souza, da Cooperativa Rio Claro; João Pires/);
   assert.match(awards.intro.prompt, /os vencedores e os indicados vêm nas seções/);
+});
+
+test('an awards nominee list the source does not split by category never sits under a category', () => {
+  const awards = withFormatFunnels(defaultPipelineDefinition()).funnels.awards;
+  // The rehearsal's mixed list of men and women read as the men's category nominees under "Categoria Personalidade Masculina".
+  for (const key of ['outline', 'quotes'] as const) {
+    const prompt = awards[key].prompt;
+    assert.ok(prompt.includes('Uma lista de indicados ou finalistas que a fonte não separa por categoria nunca fica sob o intertítulo de uma categoria: a última seção da pauta se chama "Indicados" ("Finalistas" quando a fonte os chamar assim) e recebe só os ids dessa lista; as categorias ocupam as seções anteriores.'), key);
+    // The outline keeps the pauta's number of sections (the server validates it): categories share a section to make room.
+    assert.ok(prompt.includes('agrupe categorias vizinhas numa seção "Categorias [Nome] e [Nome]", sem omitir nenhum vencedor'), key);
+    assert.ok(prompt.includes('Com uma só seção na pauta, ela se chama "Vencedores e indicados"'), key);
+    assert.doesNotMatch(prompt, /quando a fonte não os separar por categoria, na última seção/, key);
+  }
+  const section = awards.section.prompt;
+  assert.ok(section.includes('Uma lista que a fonte não separa por categoria nunca fica sob o intertítulo de uma categoria: ela forma a seção "Indicados" ou "Finalistas"'));
+  assert.ok(section.includes('abra o parágrafo com "Os indicados ao prêmio, em todas as categorias, foram: …"'));
+  assert.ok(section.includes('Numa seção que reúne mais de uma categoria, cada vencedor leva a sua antes da colocação: ">> [Categoria] – [Colocação]: [Nome], da [Instituição]."'));
+  // The style reference shows the list in its own last section, after a grouped one.
+  assert.match(section, /\[Intertítulo\] Categorias Academia e Sustentabilidade\n\n>> Academia – Ouro: Pedro Lins/);
+  assert.match(section, /\[Intertítulo\] Indicados\n\nOs indicados foram: Ana Souza, da Cooperativa Rio Claro; João Pires/);
+  // The lide names the winners, never only the categories.
+  assert.ok(awards.intro.prompt.includes('o [Prêmio] e quem o venceu, pelo nome (todos os vencedores, cada um com a sua categoria, quando couberem nas 40 palavras;'));
+  assert.ok(awards.intro.prompt.includes('nunca só as categorias premiadas'));
+  assert.doesNotMatch(awards.intro.prompt, /, ou as categorias premiadas —/);
 });
 
 test('headlines and texts carry the date as the event gives it, never hoje, amanhã or ontem', () => {
