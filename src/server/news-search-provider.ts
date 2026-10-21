@@ -21,6 +21,19 @@ const SOCIAL = ['instagram.com', 'facebook.com', 'tiktok.com', 'youtube.com', 'x
 type Services = { request: typeof fetch; key(): string | undefined; now(): number; known?(urls: string[]): Promise<string[]> };
 const services: Services = { request: fetch, key: () => process.env.TAVILY_API_KEY?.trim(), now: Date.now };
 
+/** Keep the article when extraction also includes the publisher's menus and related links. */
+function articleParagraphs(text: string, title: string) {
+  const lines = text.split(/\n\s*\n|\n/).map(line => line.trim()).filter(Boolean);
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const headline = normalize(title.split(/\s+[|—–-]\s+/)[0]);
+  const heading = headline.length >= 20 ? lines.findIndex(line => normalize(line) === headline) : -1;
+  const article = heading >= 0 ? lines.slice(heading + 1) : lines;
+  const related = article.findIndex((line, index) => index > 3 && /^(related (articles|news|stories)|most popular|read more|not[ií]cias relacionadas|leia tamb[eé]m|m[aá]s noticias)\s*:?$/i.test(line));
+  return (related >= 0 ? article.slice(0, related) : article)
+    .filter(line => !/^(home|menu|subscribe|sign in|login|contact us|advertising|inicio|assine|entrar|publicidade)$/i.test(line))
+    .join('\n').slice(0, NEWS_LIMITS.bodyChars).split('\n').flatMap(part => part.match(/[\s\S]{1,5000}/g) ?? []);
+}
+
 async function call(path: 'search' | 'extract', body: object, signal: AbortSignal, deps: Services) {
   const key = deps.key();
   if (!key) throw new FlowError('TAVILY_KEY_MISSING', 503);
@@ -84,7 +97,7 @@ export async function collectSearchNews(claim: NewsSearchClaim, signal: AbortSig
   const items = candidates.flatMap(result => {
     const page = extracted.find(item => item.url === result.url);
     const text = page?.raw_content || result.raw_content || result.content || '';
-    const paragraphs = text.slice(0, NEWS_LIMITS.bodyChars).split(/\n\s*\n|\n/).flatMap(part => part.match(/[\s\S]{1,5000}/g) ?? []);
+    const paragraphs = articleParagraphs(text, result.title ?? '');
     // Only images associated with this URL. Query-wide image search is not article photography.
     const images = page?.images?.length ? page.images : result.images?.map(image => typeof image === 'string' ? image : image.url);
     const image = images?.find(url => !/favicon|logo|avatar/i.test(url) && !searchExcluded(url, claim.domains));

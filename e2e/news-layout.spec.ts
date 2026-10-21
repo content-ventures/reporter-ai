@@ -369,7 +369,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await expect(dialog.getByText('Na fila', { exact: true })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Buscar agora', exact: true })).toBeDisabled();
     await expectNoHorizontalOverflow(page);
-    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Fechar', exact: true }).last().click();
     view = { ...view, state: 'idle', usedToday: 2, lastAdded: 3, lastRunAt: new Date().toISOString() };
     await page.getByRole('button', { name: 'Busca complementar', exact: true }).click();
     await expect(dialog.getByRole('textbox', { name: 'Portal cliente', exact: true })).toHaveValue('https://seafoodbrasil.com.br');
