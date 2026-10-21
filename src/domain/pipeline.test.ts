@@ -168,6 +168,19 @@ test('every funnel writes hard news', () => {
   assert.match(definition.funnels.stand.section.prompt, /Gravação de estande sem rótulos de falante/);
 });
 
+test('the quote request lets a part decline and never reaches the interviewer', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  const writing = [definition.steps.intro.prompt, definition.steps.section.prompt,
+    ...EDITORIAL_FORMATS.flatMap(format => [definition.funnels[format].intro.prompt, definition.funnels[format].section.prompt])];
+  for (const prompt of writing) {
+    assert.match(prompt, /copie exatamente um trecho contínuo e curto de uma das falas de revisionFeedback\.availableQuotes/);
+    assert.match(prompt, /nunca de quem entrevista, pergunta, apresenta ou agradece; se nenhuma servir, devolva a parte sem citação/);
+  }
+  // Only a stand interview gives the answers of a recording without speaker labels to its one person.
+  for (const format of EDITORIAL_FORMATS) assert.equal(/uma única pessoa em people, as respostas são dela/.test(definition.funnels[format].quotes.prompt), format === 'stand', format);
+  assert.doesNotMatch(definition.steps.quotes.prompt, /uma única pessoa em people/);
+});
+
 test('a saved revision without funnels gets the defaults; saved funnels are never changed', () => {
   const saved = defaultPipelineDefinition();
   assert.equal(saved.funnels, undefined);

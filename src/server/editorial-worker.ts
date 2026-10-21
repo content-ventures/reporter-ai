@@ -24,7 +24,7 @@ import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
 import { contiguousSourcePassages, r1ArticleIssue, unquoteUnsupported, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
 import { articleContractFor, articleGateFor, outletPunctuation, quoteRuleFor, tidyQuoteOpenings } from '../domain/formats.ts';
-import { quotableIds } from '../domain/quote-plan.ts';
+import { quotableIds, quotableSpeaker } from '../domain/quote-plan.ts';
 import { ungroundedTerms } from '../domain/grounding.ts';
 import { currentSourceVersion } from '../domain/source.ts';
 import type { Person } from '../domain/workspace.ts';
@@ -172,9 +172,10 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     const brief = JSON.stringify(input.record.production.brief);
     const format = input.record.production.brief.format;
     const people = confirmedPeople(input.record,input.people);
-    // A line is quotable when a linked speaker said it, or, in an unlabeled recording, when one person is confirmed.
+    // A line is quotable when a linked speaker said it, or, in a stand interview without speaker labels and one
+    // confirmed person, when it is one of her answers (never a line that names or thanks her, which is the interviewer's).
     const linked = new Set(input.record.sources.flatMap(s => s.speakers.filter(speaker => speaker.personId && !speaker.unattributed).map(speaker => speaker.label)));
-    const identified = (candidate: { speaker?: string }) => candidate.speaker ? linked.has(candidate.speaker) : people.length === 1;
+    const identified = quotableSpeaker({ linked,people,unlabeledAnswers: format === 'stand' });
     const today = new Intl.DateTimeFormat('pt-BR',{ timeZone: 'America/Sao_Paulo',weekday: 'long',day: 'numeric',month: 'long',year: 'numeric' }).format(new Date());
     // Event formats: every number and name must exist in the material, the speakers or the event typed by a person.
     // Speaker labels are part of what the material says ("Categoria Personalidade Feminina: …" parses as one).
