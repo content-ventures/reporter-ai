@@ -4,12 +4,14 @@ import { z } from 'zod';
 import { normalizeEntry, NEWS_LIMITS } from '../domain/news-intake.ts';
 import type { NormalizedNews } from '../domain/news-intake.ts';
 import { newsSearchQuery, searchExcluded } from '../domain/news-search.ts';
+import { isNewsSearchCandidate } from '../domain/news-search-candidate.ts';
 import type { NewsSearchClaim } from '../domain/news-search.ts';
 import { FlowError } from './errors.ts';
 import { privateAddress } from './public-address.ts';
 
 export type SearchNewsEntry = NormalizedNews & { contentKind: 'article' | 'search' };
 const resultSchema = z.object({ url: z.string(), title: z.string().nullish(), content: z.string().nullish(),
+  score: z.number().optional(),
   raw_content: z.string().nullish(), published_date: z.string().nullish(),
   images: z.array(z.union([z.string(), z.object({ url: z.string() }).passthrough()])).optional() }).passthrough();
 const searchSchema = z.object({ results: z.array(resultSchema).max(100) }).passthrough();
@@ -61,7 +63,8 @@ export async function collectSearchNews(claim: NewsSearchClaim, signal: AbortSig
   const seen = new Set<string>();
   const external = parsed.data.results.filter(result => {
     const at = Date.parse(result.published_date ?? '');
-    if (searchExcluded(result.url, [...claim.domains, ...SOCIAL]) || !Number.isFinite(at) || at > deps.now() || at < deps.now() - 7 * 86_400_000 || seen.has(result.url)) return false;
+    if (searchExcluded(result.url, [...claim.domains, ...SOCIAL]) || !Number.isFinite(at) || at > deps.now() || at < deps.now() - 7 * 86_400_000 || seen.has(result.url)
+      || !isNewsSearchCandidate(claim.config, result)) return false;
     const host = new URL(result.url).hostname.replace(/^\[|\]$/g, '');
     if (!host.includes('.') || host.endsWith('.local') || host.endsWith('.localhost') || isIP(host) && privateAddress(host)) return false;
     seen.add(result.url); return true;

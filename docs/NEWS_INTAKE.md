@@ -172,6 +172,8 @@ connected and the RSS.app page shows how to connect it. The worker needs no RSS.
 
 ## Complementary web collection (Tavily)
 
+Search candidates must have a recent publication estimate and a headline matching the configured subject. The collector rejects homepages, category indexes, academic catalogues, document downloads and low-relevance search results before extraction. This conservative filter favors usable news; it is not an AI editorial priority score.
+
 Fontes → **Busca complementar**, and the radar's **Buscar na web**, configure one durable
 collection profile per portal. Save the client portal URL, sector, region, up to six topics,
 Portuguese/English/Spanish search languages, optional excluded domains, frequency (1, 2 or 6
