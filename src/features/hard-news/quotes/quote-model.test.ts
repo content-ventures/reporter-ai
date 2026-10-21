@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { CitationView } from '../../../domain/citation-library.ts';
 import type { BankQuote } from '../../../domain/hard-news.ts';
-import { bankSummary, citationInputOf, DEFAULT_SORT, inTab, kindDistribution, locatorOf, matchesFilters, NO_FILTERS, pendingBatch, QUOTE_TABS, quoteOf, rankQuote, sortQuotes, verdictDistribution } from './quote-model.ts';
+import { bankSummary, citationInputOf, DEFAULT_SORT, identified, inTab, kindDistribution, locatorOf, matchesFilters, NO_FILTERS, pendingBatch, QUOTE_TABS, quoteOf, rankQuote, sortQuotes, verdictDistribution } from './quote-model.ts';
 
 function citation(patch: Partial<CitationView> = {}): CitationView {
   return {
@@ -91,7 +91,7 @@ test('the ranking puts the best first, keeps unchecked quotes last and caps a di
   assert.deepEqual(sortQuotes(entries, { key: 'score', direction: 'asc' }).map(entry => entry.quote.id), ['c', 'd', 'a', 'b']);
   assert.equal(entries[2].score?.total, 30);
   assert.deepEqual(QUOTE_TABS.map(tab => entries.filter(entry => inTab(entry, tab.value)).map(entry => entry.quote.id)),
-    [['a', 'b', 'c', 'd'], ['a'], ['c', 'd'], ['b'], []]);
+    [['a', 'b', 'c', 'd'], ['a'], ['c', 'd'], ['b'], [], []]);
 });
 
 test('a suggestion has its own tab: never pending a check, never an author to confirm, never in a batch', () => {
@@ -127,4 +127,19 @@ test('an undated citation saves no recording day unless the editor set one, even
   assert.equal(citationInputOf(undated, shown).recordedOn, undefined, 'an empty day is never saved');
   const set = { ...shown, recordedOn: '2026-09-18', attribution: { sourceNamed: true, dated: true } };
   assert.equal(citationInputOf(undated, set).recordedOn, '2026-09-18', 'a day the editor picked is saved, even the creation day');
+});
+
+test('a quote without the person who said it waits under Sem autor: no ranking, no score, no check', () => {
+  const anonymous = quoteOf(citation({ id: 'x', personId: undefined, authorConfirmed: false, speaker: 'Autoria a confirmar',
+    participants: [{ id: 'person-1', name: 'Marina Castro' }] }));
+  assert.equal(anonymous.identified, false);
+  const entries = [rankQuote({ ...anonymous, factCheck: quote('x', ['validated']).factCheck }), rankQuote(quote('a', null))];
+  assert.equal(entries[0].score, undefined, 'never scored, even when checked');
+  assert.deepEqual(QUOTE_TABS.map(tab => entries.filter(entry => inTab(entry, tab.value)).map(entry => entry.quote.id)),
+    [['a'], [], [], ['a'], [], ['x']]);
+  assert.deepEqual(pendingBatch(entries), ['a']);
+  // The editor links a participant: the save carries that person.
+  const linked = citationInputOf(citation({ id: 'x', personId: undefined, authorConfirmed: false }), { ...anonymous, personId: 'person-1', verified: true });
+  assert.deepEqual([linked.personId, linked.authorConfirmed], ['person-1', true]);
+  assert.equal(identified({}), true, 'preview quotes name their author');
 });

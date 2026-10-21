@@ -46,17 +46,25 @@ export function quoteOf(citation: CitationView): BankQuote {
     ...(citation.factCheck ? { factCheck: citation.factCheck } : {}),
     attribution: { sourceNamed: citation.podcast !== UNNAMED_PODCAST, dated: Boolean(citation.recordedOn) },
     checkable: citation.authorized,
+    identified: Boolean(citation.personId),
+    ...(citation.personId ? { personId: citation.personId } : {}),
+    participants: citation.participants,
   };
 }
 
+/** A quote is a quote only with the person who said it: one without stays under "Sem autor". */
+export const identified = (quote: Pick<BankQuote, 'identified'>): boolean => quote.identified !== false;
+
 /** What saving a quote sends: the citation's words, source and speaker, the desk's context, date and check. */
-export function citationInputOf(citation: CitationView, quote: Pick<BankQuote, 'context' | 'recordedOn' | 'verified' | 'attribution'>): CitationInput {
+export function citationInputOf(citation: CitationView, quote: Pick<BankQuote, 'context' | 'recordedOn' | 'verified' | 'attribution' | 'personId'>): CitationInput {
+  // The person the editor linked in the drawer, else the one the transcript already had.
+  const personId = quote.personId ?? citation.personId;
   return {
     sourceId: citation.ref.sourceId,
     sourceVersion: citation.ref.sourceVersion,
     text: citation.text,
     productionId: citation.productionId,
-    ...(citation.personId ? { personId: citation.personId } : {}),
+    ...(personId ? { personId } : {}),
     authorConfirmed: quote.verified,
     relevance: quote.context.trim(),
     ...(citation.podcastName ? { podcastName: citation.podcastName } : {}),
@@ -70,7 +78,9 @@ export function citationInputOf(citation: CitationView, quote: Pick<BankQuote, '
 
 // ── Gestão: veracity, score and the ranking ─────────────────────────────────────────────────
 
+/** Undefined until the quote is checked, and for a quote without its author, which is never ranked. */
 export function quoteScore(quote: BankQuote): CitationScore | undefined {
+  if (!identified(quote)) return undefined;
   return citationScore({ check: quote.factCheck, authorConfirmed: quote.verified,
     sourceNamed: quote.attribution?.sourceNamed ?? Boolean(quote.sourceTitle.trim()),
     dated: quote.attribution?.dated ?? Boolean(quote.recordedOn), linked: Boolean(quote.sourceUrl), uses: quote.uses });
@@ -86,15 +96,20 @@ export const rankQuote = (quote: BankQuote): RankedQuote => ({ quote, verdict: q
 export const BEST_FROM = 70;
 export const REVIEW_BELOW = 50;
 
-export type QuoteTab = 'all' | 'best' | 'review' | 'pending' | 'suggested';
+export type QuoteTab = 'all' | 'best' | 'review' | 'pending' | 'suggested' | 'unattributed';
 /** "Sugeridas" is listed only while the bank holds a suggestion (or the tab is open). */
 export const QUOTE_TABS: { value: QuoteTab; label: string }[] = [
   { value: 'all', label: 'Todas' }, { value: 'best', label: 'Melhores' }, { value: 'review', label: 'A revisar' }, { value: 'pending', label: 'Pendentes' },
-  { value: 'suggested', label: 'Sugeridas' },
+  { value: 'suggested', label: 'Sugeridas' }, { value: 'unattributed', label: 'Sem autor' },
 ];
 
-/** An outline passage nobody confirmed has its own tab: it is not waiting for a check, nor for its author. */
+/**
+ * "Sem autor" holds the quotes waiting for their person; every other tab holds only quotes with
+ * one. An outline passage nobody confirmed has its own tab: it is not waiting for a check.
+ */
 export function inTab(entry: RankedQuote, tab: QuoteTab): boolean {
+  if (tab === 'unattributed') return !identified(entry.quote);
+  if (!identified(entry.quote)) return false;
   if (tab === 'suggested') return Boolean(entry.quote.suggested);
   if (tab === 'pending') return entry.verdict === 'pending' && !entry.quote.suggested;
   if (tab === 'best') return Boolean(entry.score && entry.score.total >= BEST_FROM);

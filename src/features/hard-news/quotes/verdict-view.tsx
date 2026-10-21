@@ -3,7 +3,7 @@
 import { Badge, Meter, SourceChip, type ChartColor, type MeterTone, type Tone } from '@content-ventures/design-system/v3';
 import { CLAIM_VERDICT_LABELS, VERDICT_LABELS } from '@/domain/fact-check';
 import type { CitationScore, CitationVerdict, ClaimKind, ClaimVerdict, FactSource } from '@/domain/fact-check';
-import { REVIEW_BELOW } from './quote-model';
+import { identified, REVIEW_BELOW } from './quote-model';
 import type { RankedQuote } from './quote-model';
 
 /** Validated is "ok", not validated asks attention, disputed is a loss; the rest is parked. */
@@ -16,8 +16,12 @@ export function VerdictBadge({ verdict }: { verdict: CitationVerdict }) {
   return <Badge tone={VERDICT_TONE[verdict]} variant="soft" size="sm" dot={verdict !== 'pending'}>{VERDICT_LABELS[verdict]}</Badge>;
 }
 
-/** A quote's seal: "Sugerida" while an outline passage waits for a person, then its verdict. */
+/**
+ * A quote's seal: "Sem autor" while no person is linked, "Sugerida" while an outline passage waits
+ * for a person to confirm it, then its verdict.
+ */
 export function QuoteSeal({ entry }: { entry: RankedQuote }) {
+  if (!identified(entry.quote)) return <Badge tone="amber" variant="soft" size="sm" dot>Sem autor</Badge>;
   return entry.quote.suggested ? <Badge tone="violet" variant="soft" size="sm">Sugerida</Badge> : <VerdictBadge verdict={entry.verdict} />;
 }
 

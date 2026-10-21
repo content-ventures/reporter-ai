@@ -127,7 +127,7 @@ export function useQuoteBank(): QuoteBank {
         } catch (error) {
           // A source withdrawn or a quote removed since the page loaded: skip it, the rest can still be checked.
           const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-          if (ids.length > 1 && (code === 'SOURCE_NOT_AUTHORIZED' || code === 'NOT_FOUND')) {
+          if (ids.length > 1 && (code === 'SOURCE_NOT_AUTHORIZED' || code === 'NOT_FOUND' || code === 'CITATION_AUTHOR_REQUIRED')) {
             skipped += 1;
             // Not offered again by "Checar pendentes" until the library is read again.
             setView((current) => current && { ...current, items: current.items.map((item) => (item.id === id ? { ...item, authorized: false } : item)) });

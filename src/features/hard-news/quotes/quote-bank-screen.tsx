@@ -40,7 +40,7 @@ import { useCan } from '@/state';
 import { useHardNews } from '../state/hard-news-provider';
 import { DecisionDialog } from './decision-dialog';
 import { FactCheckPanel } from './fact-check-panel';
-import { DEFAULT_SORT, inTab, matchesFilters, NO_FILTERS, pendingBatch, QUOTE_TABS, rankQuote, sortQuotes } from './quote-model';
+import { DEFAULT_SORT, identified, inTab, matchesFilters, NO_FILTERS, pendingBatch, QUOTE_TABS, rankQuote, sortQuotes } from './quote-model';
 import type { QuoteFilters, QuoteSort, QuoteTab, RankedQuote } from './quote-model';
 import { filterCount, QUOTE_FILTER_BAND_ID, QuoteActiveFilters, QuoteFilterBand } from './quote-filters';
 import { QuoteOverview } from './quote-overview';
@@ -106,6 +106,8 @@ export function QuoteBankScreen() {
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
 
   const ranked = useMemo(() => quotes.map(rankQuote), [quotes]);
+  // The bank is made of quotes with their author; the others wait under "Sem autor".
+  const bank = useMemo(() => ranked.filter((entry) => identified(entry.quote)), [ranked]);
   const counts = Object.fromEntries(QUOTE_TABS.map((entry) => [entry.value, ranked.filter((item) => inTab(item, entry.value)).length])) as Record<QuoteTab, number>;
   const authors = useMemo(() => [...new Set(quotes.map((quote) => quote.author))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [quotes]);
   const sources = useMemo(() => [...new Set(quotes.map((quote) => quote.sourceTitle))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [quotes]);
@@ -114,7 +116,7 @@ export function QuoteBankScreen() {
   const pages = Math.max(1, Math.ceil(shown.length / pageSize));
   const current = Math.min(page, pages);
   const paged = shown.slice((current - 1) * pageSize, current * pageSize);
-  const pending = pendingBatch(ranked);
+  const pending = pendingBatch(bank);
   const busy = checking.size > 0;
   const opened: BankQuote | 'new' | null = open === 'new' ? 'new' : open ? quotes.find((quote) => quote.id === open) ?? null : null;
   const reset = () => { setPage(1); setSelected(new Set()); };
@@ -158,7 +160,7 @@ export function QuoteBankScreen() {
         ) : undefined}
         actionsNote={canEdit && connected ? { id: addNoteId, text: FROM_TRANSCRIPT } : undefined}
       />
-      <QuoteOverview entries={ranked} ready={ready} />
+      <QuoteOverview entries={bank} ready={ready} />
       <FilterBar
         spacing="comfortable"
         tabs={<Tabs label="Ranking" value={tab} onChange={(value) => { setTab(value); reset(); }}
@@ -206,7 +208,7 @@ export function QuoteBankScreen() {
           onClear={() => setSelected(new Set())}
           actions={[{ label: 'Checar', icon: BadgeCheck, disabled: busy, hint: 'Aguarde a checagem em andamento.',
             onSelect: () => {
-              const ids = quotes.filter((quote) => selected.has(quote.id) && quote.checkable !== false).map((quote) => quote.id);
+              const ids = quotes.filter((quote) => selected.has(quote.id) && quote.checkable !== false && identified(quote)).map((quote) => quote.id);
               setSelected(new Set()); void run(ids, true);
             } }]}
         />
@@ -219,7 +221,13 @@ export function QuoteBankScreen() {
         connected={connected}
         checking={opened !== null && opened !== 'new' && checking.has(opened.id)}
         busy={busy}
-        onSave={save}
+        onSave={async (next) => {
+          const before = quotes.find((quote) => quote.id === next.id);
+          if (!(await save(next))) return false;
+          // A quote that just got its author enters the bank: check it at once.
+          if (connected && before && !identified(before) && next.personId && !next.factCheck) void run([next.id], false);
+          return true;
+        }}
         onCheck={(quote) => void run([quote.id], Boolean(quote.factCheck))}
         onCorrect={() => setCorrecting(true)}
         onClose={() => setOpen(null)}
@@ -300,6 +308,8 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave
   const patch = (next: Partial<BankQuote>) => setDraft((current) => ({ ...current, ...next }));
   const missing = { text: !draft.text.trim(), author: !draft.author.trim(), source: !draft.sourceTitle.trim() };
   const editable = canEdit && !connected && (creating || !draft.verified || quote === null);
+  // A connected quote without its person: the editor links one of the material's confirmed participants.
+  const linking = canEdit && connected && Boolean(live) && !identified(live!);
 
   async function save() {
     setTried(true);
@@ -324,7 +334,7 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave
       ) : undefined}
     >
       <PageStack>
-        {live ? (
+        {live && identified(live) ? (
           <FactCheckPanel quote={live} canEdit={canEdit} checking={checking} busy={busy} onCheck={() => onCheck(live)} onCorrect={onCorrect} />
         ) : null}
         <Panel label="Fala">
@@ -334,9 +344,22 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave
                 <Textarea id={id} aria-describedby={describedBy} invalid={invalid} rows={3} autoSize disabled={!editable} value={draft.text} onChange={(event) => patch({ text: event.target.value })} />
               )}
             </Field>
-              <Field label="Quem disse" required error={tried && missing.author ? 'Diga quem falou.' : undefined}>
-                {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} disabled={!editable} value={draft.author} onChange={(event) => patch({ author: event.target.value })} />}
-              </Field>
+              {linking ? (
+                <Field label="Quem disse" required hint={draft.participants?.length ? undefined : 'Nenhum participante confirmado no material.'}>
+                  {({ id, describedBy }) => (
+                    <Select id={id} describedBy={describedBy} disabled={!draft.participants?.length} placeholder="Escolha quem falou" value={draft.personId ?? ''}
+                      options={(draft.participants ?? []).map((person) => ({ value: person.id, label: person.name }))}
+                      onChange={(personId) => {
+                        const person = draft.participants?.find((entry) => entry.id === personId);
+                        if (person) patch({ personId: person.id, author: person.name, verified: true });
+                      }} />
+                  )}
+                </Field>
+              ) : (
+                <Field label="Quem disse" required error={tried && missing.author ? 'Diga quem falou.' : undefined}>
+                  {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} disabled={!editable} value={draft.author} onChange={(event) => patch({ author: event.target.value })} />}
+                </Field>
+              )}
               <Field label="Cargo">
                 {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} disabled={!editable} value={draft.role} onChange={(event) => patch({ role: event.target.value })} />}
               </Field>
