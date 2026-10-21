@@ -187,32 +187,37 @@ test('the quote request lets a part decline and never reaches the interviewer', 
   assert.doesNotMatch(definition.steps.quotes.prompt, /uma única pessoa em people/);
 });
 
-test('a section keeps one quote as the floor and adds a second only when it brings its own information', () => {
+test('a section keeps one quote as the floor and asks for a second whenever a complete line brings its own information', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
-  const condition = 'só quando ela for uma frase ou oração completa com informação própria (um número, uma razão, uma posição ou uma previsão) que nem o texto nem a paráfrase ao lado já dizem';
+  const condition = 'sempre que as evidências da seção tiverem outra frase ou oração completa com informação própria (um número, uma razão, uma posição ou uma previsão) que nem o texto nem a paráfrase ao lado já dizem';
+  const quote = 'cite essa informação entre aspas em vez de parafraseá-la';
   const placement = 'Alterne paráfrase e fala: nunca dois parágrafos seguidos só de fala e nunca duas falas coladas no mesmo parágrafo.';
   const opening = 'A abertura traz no máximo uma fala curta (mais só quando sizing.quotePlan.required pedir), nunca na primeira frase do lide.';
-  // The shared block: the floor stays; a second quote is a complete clause with information of its own, never a list fragment.
+  // The shared block: the floor stays; a second quote is asked for, not only allowed, and it replaces the paraphrase of its
+  // information instead of following it. Round 4 measured 2.5 quotes per text with the "only when" wording.
   assert.match(HARD_NEWS, /Cada seção traz uma fala literal sempre que suas evidências tiverem uma frase citável/);
-  assert.ok(HARD_NEWS.includes(`Uma segunda fala literal curta entra na mesma seção ${condition.replace('ela ', '')}: nunca um fragmento de lista, sempre atribuída e nunca de quem entrevista. ${placement} ${opening}`));
+  assert.ok(HARD_NEWS.includes(`Uma segunda fala literal curta entra na mesma seção ${condition}: ${quote}, nunca um fragmento de lista, sempre atribuída e nunca de quem entrevista. ${placement} ${opening}`));
+  assert.ok(HARD_NEWS.includes('Prefira as falas conferidas pela redação (FALAS CURADAS na fonte; curated: true em literalEvidence) e cite-as entre aspas em vez de parafraseá-las.'));
   assert.match(HARD_NEWS, /Nunca use uma fala que só repete a frase ou a paráfrase anterior\./);
-  assert.doesNotMatch(HARD_NEWS, /que o texto ainda não traz/);
+  assert.doesNotMatch(HARD_NEWS, /que o texto ainda não traz|segunda fala literal curta entra na mesma seção só quando/);
   for (const format of EDITORIAL_FORMATS) {
     for (const key of ['intro', 'section'] as const) {
       const prompt = definition.funnels[format][key].prompt;
-      assert.ok(prompt.includes(`Numa seção que já traz uma fala, acrescente uma segunda fala curta de literalEvidence, de outro trecho, ${condition}: nunca um fragmento de lista nem uma fala que repete a frase anterior, sempre atribuída e nunca de quem entrevista; entre as duas falas, ao menos uma frase de paráfrase com fato novo. ${opening}`), `${format} ${key}`);
+      assert.ok(prompt.includes(`Numa seção que já traz uma fala, acrescente uma segunda fala curta de literalEvidence, de outro trecho, ${condition}: ${quote}, nunca um fragmento de lista nem uma fala que repete a frase anterior, sempre atribuída e nunca de quem entrevista; entre as duas falas, ao menos uma frase de paráfrase com fato novo. ${opening}`), `${format} ${key}`);
+      assert.ok(prompt.includes('prefira-a quando sustentar a parte e cite-a entre aspas em vez de parafraseá-la.'), `${format} ${key}`);
       assert.doesNotMatch(prompt, /Quando esta parte já traz uma fala/, `${format} ${key}`);
     }
-    // Curation hands a section a second line only under the same condition.
-    assert.ok(definition.funnels[format].quotes.prompt.includes('Selecione uma segunda passagem citável para a mesma seção só quando ela for uma frase ou oração completa com informação própria (um número, uma razão, uma posição ou uma previsão) que nem a primeira passagem nem as demais evidências da seção já dizem, nunca um fragmento de lista nem uma passagem que repete outra evidência: até 2 passagens citáveis por seção, cada uma com os ids de todas as suas frases.'), format);
+    // Curation hands a section its second line whenever the source has one, never a list fragment or a repeat.
+    assert.ok(definition.funnels[format].quotes.prompt.includes('Selecione também uma segunda passagem citável para a mesma seção sempre que a fonte tiver, para o assunto dela, outra frase ou oração completa com informação própria (um número, uma razão, uma posição ou uma previsão) que a primeira passagem não diz, nunca um fragmento de lista nem uma passagem que repete outra evidência: até 2 passagens citáveis por seção, cada uma com os ids de todas as suas frases.'), format);
+    assert.doesNotMatch(definition.funnels[format].quotes.prompt, /segunda passagem citável para a mesma seção só quando/, format);
   }
-  assert.match(definition.steps.quotes.prompt, /Selecione uma segunda passagem citável para a mesma seção só quando ela for uma frase ou oração completa com informação própria/);
+  assert.match(definition.steps.quotes.prompt, /Selecione também uma segunda passagem citável para a mesma seção sempre que a fonte tiver, para o assunto dela, outra frase ou oração completa com informação própria/);
   assert.match(definition.steps.quotes.prompt, /até 2 passagens citáveis por seção, cada uma com os ids de todas as suas frases/);
   assert.match(definition.steps.section.prompt, /Traga uma fala literal curta — uma ideia, uma ou duas frases — sempre que/);
-  assert.ok(definition.steps.section.prompt.includes(`Traga uma segunda fala literal curta, de outro trecho, ${condition}: nunca um fragmento de lista nem uma fala que repete a frase anterior, sempre atribuída e nunca de quem entrevista. ${placement}`));
-  assert.ok(definition.steps.article.prompt.includes(`e uma segunda na mesma seção ${condition} (nunca um fragmento de lista nem uma fala que repete a frase anterior, sempre atribuída e nunca de quem entrevista); alterne paráfrase e fala, sem dois parágrafos seguidos só de fala nem duas falas coladas no mesmo parágrafo, e a abertura traz no máximo uma fala curta, nunca na primeira frase do lide;`));
-  // The panel's own rule defers to the shared one, so the rehearsal's back-to-back quotes have no second licence.
-  assert.match(definition.funnels.panel.section.prompt, /Uma segunda fala curta entra só nas condições de Falas, nunca colada à primeira\./);
+  assert.ok(definition.steps.section.prompt.includes(`Traga uma segunda fala literal curta, de outro trecho, ${condition}: ${quote}, nunca um fragmento de lista nem uma fala que repete a frase anterior, sempre atribuída e nunca de quem entrevista. ${placement}`));
+  assert.ok(definition.steps.article.prompt.includes(`e uma segunda na mesma seção ${condition} (${quote}, nunca um fragmento de lista nem uma fala que repete a frase anterior, sempre atribuída e nunca de quem entrevista); alterne paráfrase e fala, sem dois parágrafos seguidos só de fala nem duas falas coladas no mesmo parágrafo, e a abertura traz no máximo uma fala curta, nunca na primeira frase do lide;`));
+  // The panel's own rule asks for the shared second quote and still never glues it to the first.
+  assert.match(definition.funnels.panel.section.prompt, /Uma segunda fala curta entra sempre que as evidências da seção tiverem uma nas condições de Falas, nunca colada à primeira\./);
   // The minimums do not move, and awards sections stay lists.
   assert.deepEqual(EDITORIAL_FORMATS.map(format => FORMAT_SPECS[format].minQuotes), [2, 3, 0, 2, 0]);
   assert.match(definition.funnels.awards.section.prompt, /Nesta premiação as seções não levam citação: só a lista/);
