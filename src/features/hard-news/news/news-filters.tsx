@@ -20,9 +20,9 @@ export function NewsFilters({ tab, onTab, counts, query, onQuery, open, onOpen, 
     onRemove: () => onSource('all'), onEdit: () => onOpen(true) });
   const clear = () => { onTier('all'); onSource('all'); };
   return <>
-    <Tabs<DeskTab> label="Situação" size="sm" value={tab} onChange={onTab}
-      items={DESK_TABS.map(entry => ({ ...entry, count: counts?.[entry.value] }))} />
     <FilterBar
+      tabs={<Tabs<DeskTab> label="Situação" size="sm" value={tab} onChange={onTab}
+        items={DESK_TABS.map(entry => ({ ...entry, count: counts?.[entry.value] }))} />}
       search={<SearchField label="Buscar notícias" value={query} onValueChange={onQuery} placeholder="Buscar notícia ou fonte" size="sm" />}
       filtersOpen={open} onFiltersOpenChange={onOpen} filterCount={applied.length} bandId="news-filters"
     />

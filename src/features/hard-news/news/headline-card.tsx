@@ -26,10 +26,10 @@ export function HeadlineCard({ item, rating, now, onSelect, variant = 'compact',
   const feature = variant === 'feature';
   const compact = variant === 'compact';
   const content = <Grid columns="1:1" gap="sm">
-      {signal ? <GridItem span="full"><MetaList size="sm" items={[<Badge key="signal" tone={signal === 'Prioridade alta' ? 'orange' : 'blue'} size="sm">{signal}</Badge>]} /></GridItem> : null}
       <GridItem span="full"><MetaList size="sm" items={[
         <BrandMark key="logo" name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />,
         item.source,
+        signal ? <Badge key="signal" tone={signal === 'Prioridade alta' ? 'orange' : 'blue'} size="sm">{signal}</Badge> : null,
       ]} /></GridItem>
       <GridItem span="full">{feature ? <EditableTitle value={item.title} as="h3" size="page" label="Manchete principal" readOnly onCommit={() => undefined} /> : <CardHeader size="md" titleAs="h3" title={
         <CardLink onClick={() => onSelect(item.id)} aria-label={`Ler notícia: ${item.title}`}>{item.title}</CardLink>
@@ -40,8 +40,8 @@ export function HeadlineCard({ item, rating, now, onSelect, variant = 'compact',
         decision ? <Badge key="decision" variant="text" tone={decision.tone} dot>{decision.label}</Badge> : null,
         item.status === 'later' && item.laterUntil ? returnLabel(item.laterUntil, now) : null,
         item.duplicates.length ? `${item.duplicates.length + 1} veículos` : null,
+        feature ? <CardLink key="read" onClick={() => onSelect(item.id)} aria-label={`Ler notícia: ${item.title}`}>Ler notícia</CardLink> : null,
       ]} /></GridItem>
-      {feature ? <GridItem span="full"><CardLink onClick={() => onSelect(item.id)} aria-label={`Ler notícia: ${item.title}`}>Ler notícia</CardLink></GridItem> : null}
     </Grid>;
   const alt = item.imageUrl ? `Imagem da notícia: ${item.title}` : `Marca de ${item.source}; notícia sem foto`;
   return <Card as="article" padding="sm" interactive data-testid={`news-card-${item.id}`} data-news-layout={variant}>
@@ -49,9 +49,8 @@ export function HeadlineCard({ item, rating, now, onSelect, variant = 'compact',
       <MediaFrame src={item.imageUrl ?? newsLogoUrl(item.url)} alt={alt} ratio="1/1" maxHeight={96} fit={item.imageUrl ? 'cover' : 'contain'} />
       {content}
     </Grid> : <Grid columns="1:1" gap="sm">
-      <GridItem span="full"><MediaFrame src={item.imageUrl} ratio={feature ? '16/7' : '16/9'} alt={alt}>
-        {!item.imageUrl ? <BrandMark name={alt} src={newsLogoUrl(item.url)} size="lg" /> : undefined}
-      </MediaFrame></GridItem>
+      <GridItem span="full"><MediaFrame src={item.imageUrl ?? newsLogoUrl(item.url)} ratio={feature ? '16/6' : '16/9'} alt={alt}
+        fit={item.imageUrl ? 'cover' : 'contain'} /></GridItem>
       <GridItem span="full">{content}</GridItem>
     </Grid>}
   </Card>;
