@@ -12,6 +12,12 @@
  * Word boundaries are Unicode-aware: "único" and "amanhã" match as whole words, "unicórnio" does not.
  * A relative date is "amanhã" or "ontem" in the body; in the headline "hoje" counts too, because a
  * headline's "hoje" always means the day it went out, while the body's often means "nowadays".
+ * The prompts are stricter on purpose: they ask for "atualmente" for the general present, so a body
+ * "hoje" outside quotes breaks the prompt, but the lint cannot tell "today" from "nowadays" and
+ * leaves it uncounted rather than report a date that may not be one.
+ * "marca" is the soft verb only when it is not the noun: a determiner or preposition before it
+ * ("a marca", "sua marca") or "própria", "registrada" or a preposition after it ("marca própria",
+ * "marca de pescado") makes it the noun.
  */
 import { inlinesText } from './article.ts';
 import type { ArticleBody, ParagraphBlock } from './article.ts';
@@ -55,6 +61,8 @@ const EVENT_LEAD_IN = new Set(['a', 'o', 'as', 'os', 'na', 'no', 'nas', 'nos', '
 const SOFT_VERB = W('destaca(?:m)?|aposta(?:m)? em|reforça(?:m)?|discute(?:m)?|debate(?:m)?|leva(?:m)?|traz(?:em)?|foca(?:m)? em');
 /** "marca" after one of these is the noun ("A marca Rio lança…"), not the soft verb. */
 const MARCA_NOUN_AFTER = new Set(['a', 'à', 'da', 'na', 'pela', 'sua', 'uma', 'nova', 'própria', 'de', 'com', 'sem', 'cada', 'mesma', 'essa', 'esta', 'nossa']);
+/** "marca" before one of these is the noun ("prepara marca própria", "lança marca de pescado"), not the soft verb. */
+const MARCA_NOUN_BEFORE = new Set(['própria', 'próprias', 'próprio', 'próprios', 'registrada', 'registradas', 'de', 'do', 'da', 'dos', 'das']);
 const EVALUATIVE = W('(?:ressalt|avali|pontu|destac|enfatiz|salient|comemor|celebr|fris|sublinh)(?:a|ou|am|aram)');
 const NEUTRAL = W('disse|disseram|afirmou|afirmaram|informou|informaram|explicou|contou|declarou|acrescentou|relatou|segundo|de acordo com');
 /** Case-sensitive, so an award named "Prêmio Excelência" passes. */
@@ -98,7 +106,7 @@ function headlineSoftVerbs(title: string): string[] {
   const soft = found(SOFT_VERB, title).map(verb => verb.toLocaleLowerCase('pt-BR'));
   const tokens = words(title.toLocaleLowerCase('pt-BR'));
   tokens.forEach((token, index) => {
-    if ((token === 'marca' || token === 'marcam') && !MARCA_NOUN_AFTER.has(tokens[index - 1] ?? '')) soft.push(token);
+    if ((token === 'marca' || token === 'marcam') && !MARCA_NOUN_AFTER.has(tokens[index - 1] ?? '') && !MARCA_NOUN_BEFORE.has(tokens[index + 1] ?? '')) soft.push(token);
   });
   return soft;
 }
