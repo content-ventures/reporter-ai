@@ -70,6 +70,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const [activityOpen, setActivityOpen] = useState(false);
   const [headlineLimit, setHeadlineLimit] = useState(24);
   const overviewScroll = useRef(0);
+  const loadMoreFocus = useRef<string | undefined>(undefined);
   const returnFocus = useRef<string | undefined>(undefined);
   const selectedId = initialItem;
   function setSelectedId(id: string | undefined) {
@@ -107,6 +108,14 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     const ordered = tab === 'open' ? [...hero, ...groups.flatMap((group) => group.items)] : decided;
     return { hero, overflow, groups, decided, ordered, open: queue.length };
   }, [now, query, seenSince, sourceId, sourceTier, state.feeds, state.news, tab, triage]);
+
+  useEffect(() => {
+    if (!loadMoreFocus.current) return;
+    const id = loadMoreFocus.current;
+    loadMoreFocus.current = undefined;
+    const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="news-card-${id}"] button[data-card-link]`)?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [headlineLimit]);
 
   const signals = useMemo(() => pulse(state.news, state.feeds, seenSince, now), [now, seenSince, state.feeds, state.news]);
   // Merely visiting the radar never reads a body or enables a decision on an unseen story.
@@ -307,7 +316,10 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     hero: board.hero, overflow: board.overflow, groups: board.groups, decided: board.decided,
     query: query || (sourceTier !== 'all' || sourceId !== 'all' ? 'fonte' : ''),
     selectedId: shown?.id, onSelect: select,
-    visibleCount: headlineLimit, onLoadMore: () => setHeadlineLimit(value => value + 24),
+    visibleCount: headlineLimit, onLoadMore: () => {
+      loadMoreFocus.current = board.ordered[headlineLimit]?.id;
+      setHeadlineLimit(value => value + 24);
+    },
     onEditGoal: () => { setActivityOpen(false); setGoalOpen(true); }, onClearFilters: clearFilters,
   };
   const inbox = onServer && newsFailed ? (
