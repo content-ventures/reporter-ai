@@ -53,6 +53,15 @@ export function useQuoteBank(): QuoteBank {
   const [checking, setChecking] = useState<ReadonlySet<string>>(new Set());
   const [progress, setProgress] = useState<{ done: number; total: number }>();
   const quotesRef = useRef<BankQuote[]>([]);
+  // One batch at a time, and none after the page is gone: each check spends search credits.
+  const running = useRef(false);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!port || view || failed) return undefined;
@@ -86,20 +95,23 @@ export function useQuoteBank(): QuoteBank {
     const citation = view?.items.find((item) => item.id === quote.id);
     if (!citation) return false;
     try {
-      await port.save(citationInputOf(citation, quote), citation.id, citation.revision);
-      setView(await port.get());
+      // The saved citation alone: a full reload could land after, and undo, a check applied meanwhile.
+      replace(await port.save(citationInputOf(citation, quote), citation.id, citation.revision));
       return true;
     } catch (error) {
       notifyRefusal('Não foi possível salvar a citação', refusalOf(error, 'Tente de novo em instantes.'));
       return false;
     }
-  }, [port, view, actions]);
+  }, [port, view, actions, replace]);
 
   const check = useCallback(async (ids: readonly string[], force = false) => {
+    if (running.current) return 0;
+    running.current = true;
     let done = 0;
     if (ids.length > 1) setProgress({ done: 0, total: ids.length });
     try {
       for (const id of ids) {
+        if (!live.current) break;
         setChecking(new Set([id]));
         try {
           if (port) replace(await port.check(id, force));
@@ -110,6 +122,9 @@ export function useQuoteBank(): QuoteBank {
             actions.saveQuote({ ...quote, factCheck: previewCheck(quote, new Date().toISOString()) });
           }
         } catch (error) {
+          // A source withdrawn or a quote removed since the page loaded: skip it, the rest can still be checked.
+          const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+          if (ids.length > 1 && (code === 'SOURCE_NOT_AUTHORIZED' || code === 'NOT_FOUND')) continue;
           notifyRefusal(done ? `Checagem parada depois de ${done} ${done === 1 ? 'fala' : 'falas'}` : 'Não foi possível checar a fala',
             refusalOf(error, 'Tente de novo em instantes.'));
           return done;
@@ -119,8 +134,11 @@ export function useQuoteBank(): QuoteBank {
       }
       return done;
     } finally {
-      setChecking(new Set());
-      setProgress(undefined);
+      running.current = false;
+      if (live.current) {
+        setChecking(new Set());
+        setProgress(undefined);
+      }
     }
   }, [port, replace, actions]);
 

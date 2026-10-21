@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { citationScore, citationVerdict, claimTally, DISPUTED_CEILING, primarySource, recheck, settleClaim, siteOf, tallyLabel } from './fact-check.ts';
+import { citationScore, citationVerdict, claimTally, DISPUTED_CEILING, effectiveClaims, primarySource, recheck, settleClaim, siteOf, tallyLabel } from './fact-check.ts';
 import type { FactCheck, FactClaim, FactSource } from './fact-check.ts';
 
 const source = (url: string): FactSource => ({ url, title: 'Título da busca', site: siteOf(url), excerpt: 'Trecho devolvido pela busca.' });
@@ -54,11 +54,22 @@ test('the score explains its parts, caps a disputed quote and never penalises an
 test('labels, primary source and a recheck that keeps editor decisions', () => {
   const value = check([claim('fact', 'not_validated'), claim('fact', 'validated', [embrapa]), claim('opinion')]);
   assert.equal(tallyLabel(claimTally(value)), '2 fatos · 1 opinião');
-  assert.equal(primarySource(value)?.site, 'embrapa.br');
+  assert.equal(primarySource(value), undefined, 'a quote that is not validated shows no source beside its seal');
+  assert.equal(primarySource(check([claim('fact', 'validated', [embrapa]), claim('opinion')]))?.site, 'embrapa.br');
+  assert.equal(primarySource(check([claim('fact', 'validated', [embrapa]), claim('fact', 'disputed', [ibge])]))?.site, 'ibge.gov.br',
+    'a disputed seal shows the contradicting page, not a confirming one');
   const decided = { ...value, overrides: [{ claim: 0, verdict: 'validated' as const, reason: 'Confirmado por telefone.', personId: 'ana', at: '2026-10-20T13:00:00Z' }] };
   const next = recheck(decided, { id: 'c1', checkedAt: '2026-10-21T12:00:00Z', model: 'test', strength: { score: 3, reason: '' },
     claims: [claim('opinion'), { ...value.claims[0], verdict: 'not_validated' }] });
   assert.deepEqual(next.overrides.map(entry => entry.claim), [1], 'the decision follows its claim text');
   assert.deepEqual(next.history, [{ checkedAt: '2026-10-20T12:00:00Z', verdict: 'validated' }], 'the seal the editor saw');
   assert.equal(citationVerdict(next), 'validated');
+});
+
+test('an editor decision that changes the verdict drops the model sources', () => {
+  const value = { ...check([claim('fact', 'disputed', [ibge])]), overrides: [{ claim: 0, verdict: 'validated' as const, reason: 'Fonte oficial.', personId: 'ana', at: '2026-10-20T13:00:00Z' }] };
+  assert.deepEqual(effectiveClaims(value)[0].sources, []);
+  assert.equal(primarySource(value), undefined);
+  const same = { ...value, overrides: [{ ...value.overrides[0], verdict: 'disputed' as const }] };
+  assert.deepEqual(effectiveClaims(same)[0].sources, [ibge], 'confirming the model keeps its source');
 });

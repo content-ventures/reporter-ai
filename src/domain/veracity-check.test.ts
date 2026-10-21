@@ -29,3 +29,12 @@ test('a quotation no source validated also warns; pending, settled and absent ch
   assert.deepEqual([done.status, done.detail], ['pass', '1 de 1 afirmação validada']);
   assert.equal(veracityCheck(quotes, []), undefined, 'no checked citation: no row');
 });
+
+test('a quotation takes its own citation, not a longer passage that contains it', () => {
+  const quotes = [{ range: range('p1'), text: 'a tilápia responde por mais de 60% da piscicultura' }];
+  const result = veracityCheck(quotes, [
+    { text: 'Hoje a tilápia responde por mais de 60% da piscicultura e o resto é outra conversa.', factCheck: check([{ text: 'x', kind: 'fact', verdict: 'disputed', sources: [source] }]) },
+    { text: 'A tilápia responde por mais de 60% da piscicultura.', factCheck: check([{ text: 'Tilápia', kind: 'fact', verdict: 'validated', sources: [source] }]) },
+  ])!;
+  assert.equal(result.status, 'pass');
+});

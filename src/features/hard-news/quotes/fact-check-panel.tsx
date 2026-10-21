@@ -49,8 +49,10 @@ function claimEntries(check: FactCheck): TimelineEntry[] {
  * The fact check inside the quote drawer: seal, score and its parts, each claim with its type,
  * verdict, reason and sources, the editor's correction, and the articles that used the quote.
  */
-export function FactCheckPanel({ quote, canEdit, checking, onCheck, onCorrect }: {
+export function FactCheckPanel({ quote, canEdit, checking, busy, onCheck, onCorrect }: {
   quote: BankQuote; canEdit: boolean; checking: boolean;
+  /** Another quote is being checked: one check runs at a time. */
+  busy: boolean;
   onCheck: () => void;
   /** Opens the verdict dialog, which lives beside the drawer: a dialog inside it would close it on closing. */
   onCorrect: () => void;
@@ -66,7 +68,9 @@ export function FactCheckPanel({ quote, canEdit, checking, onCheck, onCorrect }:
         <Section
           title="Checagem"
           {...(check ? { meta: `Checada em ${dateOf(check.checkedAt)}` } : {})}
-          action={canEdit ? <Button variant="secondary" size="sm" icon={BadgeCheck} loading={checking} onClick={onCheck}>{check ? 'Checar de novo' : 'Checar'}</Button> : undefined}
+          action={canEdit && quote.checkable !== false ? (
+            <Button variant="secondary" size="sm" icon={BadgeCheck} loading={checking} disabled={busy && !checking} onClick={onCheck}>{check ? 'Checar de novo' : 'Checar'}</Button>
+          ) : undefined}
         >
           <DescriptionList
             labelWidth={120}

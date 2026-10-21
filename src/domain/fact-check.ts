@@ -64,10 +64,15 @@ export function settleClaim(claim: FactClaim, returned: readonly FactSource[]): 
   return { ...claim, sources };
 }
 
+/**
+ * Claims with the editor's decisions applied. A decision that changes the verdict drops the
+ * model's sources: a page that contradicted the claim is not shown as confirming it.
+ */
 export function effectiveClaims(check: FactCheck): EffectiveClaim[] {
   return check.claims.map((claim, index) => {
     const override = check.overrides.filter(entry => entry.claim === index).at(-1);
-    return override && checkable(claim.kind) ? { ...claim, verdict: override.verdict, overridden: override } : claim;
+    if (!override || !checkable(claim.kind)) return claim;
+    return { ...claim, verdict: override.verdict, overridden: override, sources: override.verdict === claim.verdict ? claim.sources : [] };
   });
 }
 
@@ -101,11 +106,14 @@ export function tallyLabel(tally: ClaimTally): string {
     .map(kind => `${tally.kinds[kind]} ${tally.kinds[kind] === 1 ? CLAIM_KIND_LABELS[kind].toLowerCase() : plural[kind]}`).join(' · ');
 }
 
-/** The source shown beside the seal: the first one of a validated claim, else of a disputed one. */
+/**
+ * The source shown beside the seal, chosen by the seal: a contradicting page for a disputed
+ * quote, a confirming one for a validated quote, none for a quote that is not validated.
+ */
 export function primarySource(check: FactCheck | undefined): FactSource | undefined {
-  const claims = check ? effectiveClaims(check) : [];
-  return (claims.find(claim => claim.verdict === 'validated' && claim.sources.length)
-    ?? claims.find(claim => claim.verdict === 'disputed' && claim.sources.length))?.sources[0];
+  const verdict = citationVerdict(check);
+  if (!check || (verdict !== 'validated' && verdict !== 'disputed')) return undefined;
+  return effectiveClaims(check).find(claim => claim.verdict === verdict && claim.sources.length)?.sources[0];
 }
 
 // ── Score ────────────────────────────────────────────────────────────────────────────────
