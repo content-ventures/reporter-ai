@@ -27,6 +27,8 @@ import { articleContractFor, articleGateFor, outletPunctuation, quoteRuleFor, ti
 import { quotableIds, quotableSpeaker } from '../domain/quote-plan.ts';
 import { ungroundedTerms } from '../domain/grounding.ts';
 import { currentSourceVersion } from '../domain/source.ts';
+import type { Source } from '../domain/source.ts';
+import { writingResearchEvidence } from '../domain/writing-research-evidence.ts';
 import type { Person } from '../domain/workspace.ts';
 import type { ProductionRecord } from '../domain/record.ts';
 import type { ArticlePolicyIssue } from '../domain/article-policy.ts';
@@ -41,6 +43,14 @@ import type { EditorialJob, ServerImageAsset } from '../ports/connected-workspac
 import { articleImageTarget } from './article-image-task.ts';
 import { editorialResponseValid } from './editorial-validation';
 import { planEditorialOutline } from './editorial-outline';
+import { runWritingOrchestration } from './writing-orchestration';
+import { writingArticleBody } from '../domain/writing-article.ts';
+import type { WritingTrace } from '../domain/writing-orchestration.ts';
+import { effectiveWritingMinimumQuotes } from '../domain/writing-orchestration.ts';
+import { writingSourceCandidates } from '../domain/writing-source.ts';
+import { writingExecutionDate, writingTemporalContext } from '../domain/writing-context.ts';
+import { writingArticleChecks, writingArticleLimits } from '../domain/writing-checks.ts';
+import { interruptWritingTraces, nextWritingExecutionAttempt, writingTraceForExecution, writingTraceUsage } from '../domain/writing-execution.ts';
 
 const object = (properties: Record<string,unknown>) => ({ type: 'object',additionalProperties: false,properties,required: Object.keys(properties) });
 const string = { type: 'string' }, strings = { type: 'array',items: string };
@@ -68,15 +78,21 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
   const claimed = await editorialTransaction('worker', async (checkpoint,engine) => {
     const job = checkpoint.jobs[claim.runId];
     if (!job || job.lease?.fence !== claim.lease.fence || !isRunActive(engine.store.state.runFolds[claim.runId]?.run)) return undefined;
+    if (job.writingTraces?.some(trace => trace.status === 'running')) {
+      job.writingTraces = interruptWritingTraces(job.writingTraces, new Date().toISOString());
+      const usage = writingTraceUsage(job.writingTraces);
+      if (usage) appendEditorialEvent(engine, job, { type: 'usage', usage });
+    }
     if (job.attempts > 8) { appendEditorialEvent(engine,job,{ type: 'run.failed',error: { code: 'RETRY_EXHAUSTED',message: 'Limite de tentativas atingido. Tente uma nova geração.',retryable: false } }); delete job.lease; return undefined; }
     return structuredClone(job);
   },true,'reporter.edit',claim.attempts > 8 ? scope : light);
   const job = claimed.value;
   if (!job) return true;
+  const writingExecutionAttempt = nextWritingExecutionAttempt(job.writingTraces ?? []);
   const controller = new AbortController();
   const combined = AbortSignal.any([signal,controller.signal]);
   let checkedAt = Date.now();
-  const guarded = async (events: RunEventPayload[],call?: PipelineCall, additions?: { citations: Citation[]; assets: ServerImageAsset[]; queueImages?: boolean; provider?: EditorialJob['provider'] }) => {
+  const guarded = async (events: RunEventPayload[],call?: PipelineCall, additions?: { citations: Citation[]; assets: ServerImageAsset[]; researchSources?: Source[]; queueImages?: boolean; provider?: EditorialJob['provider'] }, writingTrace?: WritingTrace) => {
     // Sources and plan are re-read at most once a minute and always before the result settles.
     const full = Boolean(additions) || events.some(event => event.type === 'run.completed') || Date.now()-checkedAt >= 60000;
     const committed = await editorialTransaction('worker',async (checkpoint,engine) => {
@@ -95,7 +111,26 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
         const index = current.calls.findIndex(previous => previous.hash === call.hash);
         if (index < 0) current.calls.push(call); else current.calls[index] = call;
       }
+      if (writingTrace) {
+        current.writingTraces ??= [];
+        const index = current.writingTraces.findIndex(previous => previous.id === writingTrace.id);
+        if (index < 0) current.writingTraces.push(writingTrace); else current.writingTraces[index] = writingTrace;
+      }
+      // Attach immutable external provenance atomically with the accepted output, after checking
+      // the original context. Old research remains available to historical article versions.
+      if (additions?.researchSources?.length) {
+        const entry = engine.store.state.productions.find(entry => entry.production.id === job.meta.productionId);
+        if (!entry) throw new FlowError('PRODUCTION_NOT_FOUND', 404);
+        for (const source of additions.researchSources) {
+          if (!engine.store.state.sources.some(existing => existing.id === source.id)) engine.store.state.sources.push(source);
+          if (!entry.production.sourceIds.includes(source.id)) entry.production.sourceIds.push(source.id);
+        }
+      }
       for (const event of events) appendEditorialEvent(engine,current,event);
+      if (writingTrace && writingTrace.status !== 'running') {
+        const usage = writingTraceUsage(current.writingTraces ?? []);
+        if (usage) appendEditorialEvent(engine, current, { type: 'usage', usage });
+      }
       if (additions) {
         checkpoint.citations = mergeCitationAdditions(checkpoint.citations ?? [],additions.citations,job.meta.productionId);
         checkpoint.imageAssets = [...(checkpoint.imageAssets ?? []),...additions.assets];
@@ -152,7 +187,8 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
       logEvent('worker','editorial_completed',{ generation_id: job.meta.runId });
       return true;
     }
-    const candidates = editorialCandidates(input.record);
+    const candidates = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
+      ? writingSourceCandidates(input.record.sources) : editorialCandidates(input.record);
     // Curated citations and quotable lines reach a step only when its prompt explains them.
     const curated = curatedEvidence(input.citations,input.record.sources,candidates);
     const hints = explainedHints(pipeline.definition);
@@ -166,7 +202,9 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     const directory = await workDirectory(job.meta.runId);
     const previousDirectory = job.cacheSourceRunId ? await workDirectory(job.cacheSourceRunId) : undefined;
     const factsDirectory = await sourcePreparationDirectory();
-    const sizing = draftSizeInstructions(input.record.production.brief);
+    const minimumQuotes = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
+      ? effectiveWritingMinimumQuotes(pipeline.definition.writing, articleGateFor(input.record.production.brief).minQuotes) : undefined;
+    const sizing = draftSizeInstructions(input.record.production.brief, minimumQuotes === undefined ? undefined : { minimumQuotes });
     const source = candidates.map(c => '['+c.key+'] '+(c.speaker ? c.speaker+': ' : '')+c.text).join('\n');
     if (!source.trim()) throw new FlowError('EMPTY_EDITORIAL_SOURCE',422);
     const brief = JSON.stringify(input.record.production.brief);
@@ -176,7 +214,61 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     // confirmed person, when it is one of her answers (never a line that names or thanks her, which is the interviewer's).
     const linked = new Set(input.record.sources.flatMap(s => s.speakers.filter(speaker => speaker.personId && !speaker.unattributed).map(speaker => speaker.label)));
     const identified = quotableSpeaker({ linked,people,unlabeledAnswers: format === 'stand' });
-    const today = new Intl.DateTimeFormat('pt-BR',{ timeZone: 'America/Sao_Paulo',weekday: 'long',day: 'numeric',month: 'long',year: 'numeric' }).format(new Date());
+    const executionTime = new Date();
+    const today = new Intl.DateTimeFormat('pt-BR',{ timeZone: 'America/Sao_Paulo',weekday: 'long',day: 'numeric',month: 'long',year: 'numeric' }).format(executionTime);
+    if (job.kind === 'article.draft' && pipeline.definition.writing?.enabled) {
+      await guarded([{ type: 'step.completed', stepId: 'source', meta: `${candidates.length} trechos originais disponíveis` }]);
+      const completed = new Set<string>();
+      const originalSources = input.record.sources.filter(source => !source.research);
+      const evidenceContext = { runId: job.meta.runId, workspaceId: input.record.production.workspaceId, actorId: input.record.production.createdBy };
+      const written = await runWritingOrchestration({
+        configuration: pipeline.definition.writing, policy: pipeline.definition.editorial,
+        source: candidates.map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}) })),
+        brief: { ...input.record.production.brief, people, today, limits: sizing, requestedOutline: requestedOutline ?? null,
+          temporalContext: writingTemporalContext(originalSources, writingExecutionDate(executionTime)),
+          sourceReferences: candidates.map(candidate => ({ id: candidate.key, reference: candidate.ref })) },
+        directory, signal: combined,
+        validateArticle: (article, externalSources = []) => {
+          const external = writingResearchEvidence(externalSources, evidenceContext);
+          const resolve = (keys: string[]) => keys.flatMap(key => external.references.has(key) ? [external.references.get(key)!] : refs([key]));
+          return writingArticleChecks(writingArticleBody(article, job.meta.runId, resolve), [...originalSources, ...external.sources],
+            input.record.production.brief, people.flatMap(person => [person.name, person.title ?? '', person.organization ?? '']), { minimumQuotes: minimumQuotes! });
+        },
+        trace: async trace => {
+          lastStepId = `writing-${trace.stage}-${trace.attempt}`;
+          if (trace.status === 'completed') completed.add(lastStepId);
+          const researchSkipped = trace.stage === 'research' && (trace.research?.status === 'skipped'
+            || trace.status === 'failed' && pipeline.definition.writing?.research?.failureMode === 'continue_original');
+          if (researchSkipped) {
+            await guarded([{ type: 'step.skipped', stepId: lastStepId }, { type: 'step.progress', stepId: lastStepId,
+              meta: trace.status === 'failed' ? 'Pesquisa falhou; seguindo somente com o conteúdo original' : 'Sem consulta necessária para este recorte' }],
+            undefined, undefined, writingTraceForExecution(trace, writingExecutionAttempt));
+            return;
+          }
+          const event: RunEventPayload = trace.status === 'running'
+            ? { type: 'step.started', stepId: lastStepId, meta: `Aguardando ${pipelineModelLabel(trace.model)}` }
+            : trace.status === 'completed' ? { type: 'step.completed', stepId: lastStepId, meta: trace.cached ? 'Resultado validado reutilizado' : 'Resposta registrada' }
+            : { type: 'step.progress', stepId: lastStepId, meta: `Falha registrada: ${trace.error}` };
+          await guarded([event], undefined, undefined, writingTraceForExecution(trace, writingExecutionAttempt));
+        },
+      });
+      const external = writingResearchEvidence(written.externalSources ?? [], evidenceContext);
+      const resolve = (keys: string[]) => keys.flatMap(key => external.references.has(key) ? [external.references.get(key)!] : refs([key]));
+      const finalSources = [...originalSources, ...external.sources];
+      const body = writingArticleBody(written.article, job.meta.runId, resolve);
+      const issue = r1ArticleIssue(body, finalSources, writingArticleLimits(input.record.production.brief, minimumQuotes));
+      if (issue) throw new FlowError(issue, 422);
+      const events: RunEventPayload[] = [{ type: 'outline', title: body.title, ...(body.dek ? { dek: body.dek } : {}), sections: [] }];
+      for (const block of body.blocks) events.push({ type: 'block.started', block: { id: block.id, type: block.type } }, { type: 'block.completed', block });
+      if (pipeline.definition.writing.maxCorrections) for (const stepId of ['writing-correct-1', 'writing-review-2']) {
+        if (!completed.has(stepId)) events.push({ type: 'step.skipped', stepId });
+      }
+      events.push({ type: 'run.completed' });
+      await guarded(events, undefined, { assets: [], queueImages: false, researchSources: external.sources,
+        citations: citationsFromArticle(body, finalSources, job.meta.productionId, new Date().toISOString()) });
+      logEvent('worker', 'editorial_completed', { generation_id: job.meta.runId });
+      return true;
+    }
     // Event formats: every number and name must exist in the material, the speakers or the event typed by a person.
     // Speaker labels are part of what the material says ("Categoria Personalidade Feminina: …" parses as one).
     const corpus = [...input.record.sources.flatMap(s => currentSourceVersion(s).content.segments.map(segment => (segment.speaker ? segment.speaker + ': ' : '') + segment.text)),
@@ -376,10 +468,17 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
     logEvent('worker','editorial_completed',{ generation_id: job.meta.runId });
   } catch (error) {
     const code = error instanceof z.ZodError ? 'INVALID_PROVIDER_OUTPUT' : safeCode(error);
+    const writingReason = job.pipeline?.definition.writing?.enabled && error instanceof FlowError ? error.reason : undefined;
     try {
       await editorialTransaction('worker',async (checkpoint,engine) => {
         const current = checkpoint.jobs[job.meta.runId];
         if (current?.lease?.fence !== job.lease?.fence || !isRunActive(engine.store.state.runFolds[job.meta.runId]?.run)) return;
+        if (current.writingTraces?.some(trace => trace.status === 'running')) {
+          current.writingTraces = interruptWritingTraces(current.writingTraces, new Date().toISOString(), code,
+            writingReason ?? 'A execução foi interrompida antes de concluir esta etapa.');
+          const usage = writingTraceUsage(current.writingTraces);
+          if (usage) appendEditorialEvent(engine, current, { type: 'usage', usage });
+        }
         const policy = editorialRetryPolicy(error,current.attempts,engine.store.state.runFolds[job.meta.runId].run.createdAt,signal.aborted);
         // Keep an already visible preview through a provider retry. Clearing it here sent the
         // editor back to its skeletons and replayed the text when the worker resumed.
@@ -392,14 +491,14 @@ export async function runEditorialJob(owner: string, signal: AbortSignal): Promi
             ? `Limite temporário do provedor; nova tentativa em ${Math.ceil(policy.delayMs/1000)} s. Os trechos concluídos estão salvos.` : 'Nova tentativa aguardando o provedor' });
         } else {
           delete current.lease;
-          const error = { code,stepId: lastStepId,message: code.endsWith('_RATE_LIMIT')
+          const error = { code,stepId: lastStepId,message: writingReason ?? (code.endsWith('_RATE_LIMIT')
             ? 'O provedor atingiu o limite de uso. A geração foi interrompida; tente novamente ou escolha outro modelo em Prompts.'
             : code.endsWith('_QUOTA_EXHAUSTED') ? 'A conta do provedor está sem cota disponível. Confira o saldo ou escolha outro modelo em Prompts.'
             : code === 'INVALID_PROVIDER_OUTPUT' ? 'A resposta da IA não passou na validação. Tente novamente ou ajuste o modelo e o prompt em Prompts.'
             : code === 'UNGROUNDED_FACT' ? 'O texto usaria um número ou nome que não está no material. Gere de novo ou complete o material e os falantes.'
             : code in ARTICLE_POLICY_MESSAGES ? articlePolicyMessage(code as ArticlePolicyIssue,articleContractFor(engine.records.record(job.meta.productionId)?.production.brief ?? {}))
             : code === 'ARTICLE_PART_SIZE_EXCEEDED' ? 'Uma parte do artigo excedeu seu orçamento. Ajuste a distribuição de evidências ou o prompt, sem cortar frases.'
-            : 'O provedor não concluiu um resultado válido. Código: '+code,retryable: true };
+            : 'O provedor não concluiu um resultado válido. Código: '+code),retryable: true };
           appendEditorialEvent(engine,current,{ type: 'step.failed',stepId: lastStepId,error });
           appendEditorialEvent(engine,current,{ type: 'run.failed',error });
         }
