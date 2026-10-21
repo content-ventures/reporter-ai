@@ -22,6 +22,41 @@ test('a list update keeps a text already read and adds the new items', () => {
   assert.deepEqual(merged.map((entry) => [entry.id, entry.title, entry.body.length]), [['a', 'a novo', 3], ['b', 'b', 1]]);
 });
 
+test('a translation arriving by poll invalidates the cached original and rejects a late original detail', () => {
+  const original = item('a', { title: 'Fish exports rise', excerpt: 'Original lead', body: ['Original text'],
+    paragraphs: undefined, updatedAt: '2026-10-21T12:00:00.000Z', translation: { status: 'pending', targetLanguage: 'pt-BR' } });
+  const translated = item('a', { title: 'Exportações de peixe crescem', excerpt: 'Lead traduzido', body: ['Lead traduzido'],
+    updatedAt: '2026-10-21T12:01:00.000Z', translation: { status: 'translated', sourceLanguage: 'en', targetLanguage: 'pt-BR' } });
+  const polled = mergeItems([original], [translated])[0];
+  assert.equal(polled.paragraphs, 3);
+  assert.deepEqual(polled.body, ['Lead traduzido']);
+  const late = mergeItems([polled], [original])[0];
+  assert.equal(late.title, translated.title);
+  assert.equal(late.paragraphs, 3);
+  assert.deepEqual(late.body, ['Lead traduzido']);
+  const read = { ...translated, body: ['Texto traduzido completo'], paragraphs: undefined };
+  assert.deepEqual(mergeItems([read], [translated])[0].body, read.body);
+});
+
+test('a body load waits for the translated detail when its original request loses a race with polling', async () => {
+  const old = deferred<NewsItem>();
+  const original = item('a', { title: 'English title', updatedAt: '2026-10-21T12:00:00.000Z',
+    translation: { status: 'pending', targetLanguage: 'pt-BR' } });
+  const translated = item('a', { title: 'Título traduzido', updatedAt: '2026-10-21T12:01:00.000Z',
+    translation: { status: 'translated', targetLanguage: 'pt-BR', sourceLanguage: 'en' } });
+  let reads = 0;
+  const store = createLiveNewsStore({ item: async () => ++reads === 1 ? old.promise
+    : { ...translated, body: ['Texto traduzido'], paragraphs: undefined } } as unknown as NewsIntake);
+  store.putItem(original);
+  const loading = store.loadBody('a');
+  store.putItem(translated);
+  old.resolve({ ...original, body: ['English body'], paragraphs: undefined });
+  await loading;
+  assert.equal(reads, 2);
+  assert.deepEqual(store.get().news[0].body, ['Texto traduzido']);
+  assert.equal(store.get().news[0].paragraphs, undefined);
+});
+
 test('polls from a minute before the last answer, keeps sources when unchanged, reads a text once', async () => {
   const calls: (string | undefined)[] = [];
   const answers: NewsSnapshot[] = [

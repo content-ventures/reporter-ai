@@ -264,6 +264,7 @@ export const NEWS_MESSAGES: Record<string, string> = {
   NEWS_ADDRESS_BLOCKED: 'Esse endereço não é público.',
   NEWS_PAGE_INVALID: 'Não encontramos uma notícia nesse endereço.',
   NEWS_ITEM_NOT_FOUND: 'Essa notícia não existe mais.',
+  NEWS_TRANSLATION_UNCONFIGURED: 'A tradução não está configurada. Peça a um administrador para conectar a API de texto.',
   RSS_APP_UNCONFIGURED: 'O RSS.app ainda não está conectado.',
   RSS_APP_REFUSED: 'O RSS.app não conseguiu criar um feed desse endereço.',
   RSS_APP_LIMIT: 'O plano do RSS.app chegou ao limite de feeds.',

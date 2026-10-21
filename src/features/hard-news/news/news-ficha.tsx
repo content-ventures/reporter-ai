@@ -2,7 +2,7 @@
 
 import { newsLogoUrl } from '@/domain/news-branding';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionBar,
   Alert,
@@ -38,6 +38,7 @@ import type { ArticleBody } from '@/domain';
 import { DISCARD_REASONS, priorityOf, PRIORITY_LABELS } from '@/domain/hard-news';
 import type { HardNewsDossier, NewsItem, NewsPriority } from '@/domain/hard-news';
 import { EditorContent, useArticleReader } from '@/editor';
+import { useCan } from '@/state';
 import { pieceHref } from '@/ui/routes';
 import { researchHref } from '../routes';
 import { useDossier, useHardNews } from '../state/hard-news-provider';
@@ -60,10 +61,13 @@ const at = (iso: string, now: number) => formatRelative(new Date(Math.min(Date.p
 export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
   const dossier = useDossier(item.productionId);
   const { live, actions } = useHardNews();
+  const canEdit = useCan('production.edit');
   // News on the server come without their text: the open story reads it once.
   const pending = live && item.paragraphs !== undefined;
   const [failedId, setFailedId] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  const [translating, setTranslating] = useState(false);
+  const retryingTranslation = useRef(false);
   useEffect(() => {
     let active = true;
     if (pending) void actions.loadBody(item.id).then((ok) => {
@@ -75,6 +79,20 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
   if (item.via === 'url') facts.push('Link colado');
   if (item.status === 'later' && item.laterUntil) facts.push(returnLabel(item.laterUntil, now));
   if (item.status === 'discarded' && item.discardReason) facts.push(item.discardReason);
+
+  async function retryTranslation() {
+    if (!canEdit || retryingTranslation.current) return;
+    retryingTranslation.current = true;
+    setTranslating(true);
+    try {
+      const result = await actions.retryTranslation(item.id);
+      if (!result.ok) toast('Não foi possível traduzir', { tone: 'error', description: result.message });
+    } finally {
+      retryingTranslation.current = false;
+      setTranslating(false);
+    }
+  }
+
   return (
     <PageStack>
       <CardHeader
@@ -84,10 +102,17 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
         description={`${item.source} · ${facts.join(' · ')}`}
         actions={(
           <ButtonLink href={item.url} target="_blank" rel="noopener noreferrer" variant="ghost" size="sm" trailingIcon={ArrowUpRight}>
-            Original<VisuallyHidden> (abre em nova aba)</VisuallyHidden>
+            Ver original<VisuallyHidden> (abre em nova aba)</VisuallyHidden>
           </ButtonLink>
         )}
       />
+      {item.translation?.status === 'translated' ? <Badge variant="text" tone="gray" size="sm">Tradução automática · pt-BR</Badge> : null}
+      {item.translation?.status === 'pending' ? <Prose variant="compact" measure="wide">Preparando tradução · exibindo original</Prose> : null}
+      {item.translation?.status === 'failed' ? (
+        <Alert tone="warning" title="Tradução indisponível" action={canEdit
+          ? <Button variant="secondary" size="sm" loading={translating} onClick={() => void retryTranslation()}>Tentar tradução novamente</Button>
+          : undefined}>Exibindo o texto original.</Alert>
+      ) : null}
       {item.status === 'covered' && dossier ? <ResearchTrace dossier={dossier} /> : null}
       <Prose variant="compact" measure="wide">{item.excerpt}</Prose>
       {live ? null : <AiReading item={item} />}
@@ -95,7 +120,7 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
       {pending ? failedId === item.id
         ? <Alert tone="danger" title="Não foi possível carregar o texto" action={<Button variant="secondary" size="sm" onClick={() => { setFailedId(undefined); setAttempt((value) => value + 1); }}>Tentar de novo</Button>} />
         : <Spinner label="Carregando texto da notícia" />
-        : item.body.length ? <OriginalText item={item} /> : null}
+        : item.body.length ? <NewsText item={item} /> : null}
     </PageStack>
   );
 }
@@ -205,16 +230,19 @@ function WhoPublished({ item, now }: { item: NewsItem; now: number }) {
   );
 }
 
-function OriginalText({ item }: { item: NewsItem }) {
+function NewsText({ item }: { item: NewsItem }) {
   const body = useMemo<ArticleBody>(() => ({
     type: 'article',
     title: item.title,
     blocks: item.body.map((text, index) => paragraphBlock(`${item.id}-p${index}`, text)),
   }), [item]);
   const editor = useArticleReader({ body });
+  const translated = item.translation?.status === 'translated';
+  const summary = translated ? item.contentKind === 'feed' ? 'Texto traduzido (feed)' : 'Notícia traduzida'
+    : item.contentKind === 'feed' ? 'Texto recebido do feed' : item.contentKind === 'article' ? 'Texto extraído da página' : 'Texto original';
   return (
-    <Disclosure summary={item.contentKind === 'feed' ? 'Texto recebido do feed' : item.contentKind === 'article' ? 'Texto extraído da página' : 'Texto original'} meta={`${item.body.length} ${item.body.length === 1 ? 'parágrafo' : 'parágrafos'}`} headingLevel="h3">
-      <Prose variant="compact" measure="wide" label="Texto original">
+    <Disclosure summary={summary} meta={`${item.body.length} ${item.body.length === 1 ? 'parágrafo' : 'parágrafos'}`} headingLevel="h3">
+      <Prose variant="compact" measure="wide" label={translated ? 'Texto traduzido' : 'Texto original'}>
         <EditorContent editor={editor} />
       </Prose>
     </Disclosure>

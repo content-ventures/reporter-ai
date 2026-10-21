@@ -2,7 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { FEED_INTERVALS } from '../domain/hard-news.ts';
-import type { NewsFeed, NewsItem } from '../domain/hard-news.ts';
+import type { NewsFeed, NewsItem, NewsTranslation } from '../domain/hard-news.ts';
 import { canonicalUrl, feedStateOf, isNewsAddress, NEWS_LIMITS, newsMessage, normalizeEntry, sourceKindOf } from '../domain/news-intake.ts';
 import type { NewsSourceKind, NormalizedNews } from '../domain/news-intake.ts';
 import type { LinkImport, NewsPageCursor, NewsSnapshot, SourceRead } from '../ports/news-intake.ts';
@@ -14,6 +14,7 @@ import type { ParsedFeed } from './news-parse.ts';
 import { claimSource, entriesFor, FEED_ACCEPT, ingest, markFailed, readSource } from './news-reader.ts';
 import type { NewsClaim, ReadResult } from './news-reader.ts';
 import { createRssAppFeed, deleteRssAppFeed, rssAppConfigured } from './rss-app.ts';
+import { newsTranslationConfigured } from './news-translation.ts';
 
 /** F2.1 routes under `/api/reporter/news`. Reads need membership; every write needs `reporter.edit` (checked in SQL). */
 
@@ -27,6 +28,7 @@ export type StoredItem = {
   paragraphs: number; body?: string[];
   status?: 'new' | 'selected' | 'later' | 'discarded'; decisionRevision?: number;
   decidedBy?: string; decidedAt?: string; laterUntil?: string; discardReason?: string; returnedAt?: string;
+  translation?: NewsTranslation & { title?: string; excerpt?: string; body?: string[] };
 };
 
 const iso = (value: string | undefined) => (value ? new Date(value).toISOString() : undefined);
@@ -50,10 +52,13 @@ export function feedView(source: StoredSource): NewsFeed {
 }
 
 export function itemView(item: StoredItem): NewsItem {
-  const body = item.body ?? (item.excerpt ? [item.excerpt] : []);
+  const translated = item.translation?.status === 'translated' ? item.translation : undefined;
+  const excerpt = translated?.excerpt ?? item.excerpt;
+  const body = translated ? translated.body ?? (excerpt ? [excerpt] : []) : item.body ?? (excerpt ? [excerpt] : []);
+  const translation = item.translation;
   return {
     id: item.id,
-    title: item.title,
+    title: translated?.title ?? item.title,
     url: item.url,
     source: item.outlet,
     ...(item.sourceId ? { feedId: item.sourceId } : {}),
@@ -62,8 +67,11 @@ export function itemView(item: StoredItem): NewsItem {
     publishedAt: iso(item.publishedAt)!,
     importedAt: iso(item.importedAt)!,
     ...(item.updatedAt ? { updatedAt: iso(item.updatedAt) } : {}),
-    excerpt: item.excerpt,
+    excerpt,
     body,
+    ...(translation ? { translation: { status: translation.status, targetLanguage: 'pt-BR' as const,
+      ...(translation.sourceLanguage ? { sourceLanguage: translation.sourceLanguage } : {}),
+      ...(translation.error ? { error: translation.error } : {}) } } : {}),
     ...(item.body ? {} : { paragraphs: item.paragraphs }),
     duplicates: item.duplicates.map((duplicate) => ({ source: duplicate.source, url: duplicate.url, publishedAt: iso(duplicate.publishedAt)! })),
     status: item.status ?? 'new',
@@ -82,7 +90,7 @@ async function sql<T>(query: string, values: unknown[]): Promise<T> {
   } catch (error) {
     // The SQL names its own refusals; they reach the desk as words.
     const message = error instanceof Error ? error.message : '';
-    if (/^NEWS_[A-Z_]+$/.test(message)) throw new FlowError(message, message === 'NEWS_SOURCE_NOT_FOUND' ? 404 : message === 'NEWS_SOURCE_DUPLICATE' ? 409 : 422);
+    if (/^NEWS_[A-Z_]+$/.test(message)) throw new FlowError(message, ['NEWS_SOURCE_NOT_FOUND', 'NEWS_ITEM_NOT_FOUND'].includes(message) ? 404 : message === 'NEWS_SOURCE_DUPLICATE' ? 409 : 422);
     throw error;
   }
 }
@@ -289,17 +297,37 @@ async function route(request: Request, path: string[], deps: { readJson: (reques
   }
   if (request.method === 'GET' && path.length === 2 && path[0] === 'items') {
     const value = await sql<StoredItem | null>('SELECT public.reporter_news_item($1) AS value', [parsed(UUID, path[1])]);
+    if (value?.translation?.status === 'pending') deps.wake();
     return reply(value ? { item: itemView(value) } : {});
   }
   if (request.method !== 'POST') throw new FlowError('NOT_FOUND', 404);
-  if (path.length === 1 && path[0] === 'links') return reply(await importLink(await deps.readJson(request)));
+  if (path.length === 4 && path[0] === 'items' && path[2] === 'translation' && path[3] === 'retry') {
+    await requireNewsEdit();
+    if (!newsTranslationConfigured()) throw new FlowError('NEWS_TRANSLATION_UNCONFIGURED', 503);
+    const value = await sql<StoredItem>('SELECT public.reporter_news_translation_retry($1) AS value', [parsed(UUID, path[1])]);
+    deps.wake();
+    return reply(itemView(value));
+  }
+  if (path.length === 1 && path[0] === 'links') {
+    const result = await importLink(await deps.readJson(request));
+    deps.wake();
+    return reply(result);
+  }
   if (path[0] !== 'sources') throw new FlowError('NOT_FOUND', 404);
-  if (path.length === 1) return reply(await addSource(await deps.readJson(request)));
+  if (path.length === 1) {
+    const result = await addSource(await deps.readJson(request));
+    deps.wake();
+    return reply(result);
+  }
   const id = parsed(UUID, path[1]);
   if (path.length === 2) {
     return reply(await updateSource(id, await deps.readJson(request)));
   }
-  if (path.length === 3 && path[2] === 'read') return reply(await readSourceNow(id));
+  if (path.length === 3 && path[2] === 'read') {
+    const result = await readSourceNow(id);
+    deps.wake();
+    return reply(result);
+  }
   if (path.length === 3 && path[2] === 'remove') { await removeSource(id); return reply({ ok: true }); }
   throw new FlowError('NOT_FOUND', 404);
 }
