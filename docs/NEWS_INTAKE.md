@@ -130,7 +130,7 @@ exact hostname (ignoring `www`), never by its displayed name. Google Alerts and 
 feeds cannot themselves receive a publisher rating.
 
 `027-news-source-ratings.sql` stores the assessment per portal and audits its previous and new
-values. The existing source PATCH accepts `rating: { tier, relevance, rationale }`; omitted
+values. The existing source update (`POST /news/sources/:id`) accepts `rating: { tier, relevance, rationale }`; omitted
 `rating` preserves it and `rating: null` clears it. Incremental snapshots carry rating changes.
 `news-source-ratings.integration.sql` verifies persistence, clearing, strict input validation,
 aggregator exclusion, role restrictions, portal isolation and audit records.
