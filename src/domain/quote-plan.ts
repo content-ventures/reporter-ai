@@ -43,15 +43,23 @@ export function quotableIds(ids: readonly string[], candidates: ReadonlyMap<stri
   });
 }
 
+type QuoteNeed = { rule: QuoteRule; quoted: number; available: readonly number[]; index: number };
+const base = (rule: QuoteRule, available: readonly number[], part: number) =>
+  (available[part] ?? 0) > 0 && (part === 0 ? rule.openingQuote : rule.sectionQuotes) ? 1 : 0;
+
 /**
- * The quotations part `index` (0 is the opening) should carry. `available` counts each part's
- * quotable ids and `quoted` the distinct quotations already written: a part takes one where it can,
- * plus what the minimum still needs that the later parts cannot give.
+ * The quotations of part `index` (0 is the opening) the text's minimum depends on: what the minimum
+ * still needs that the later parts cannot give. `available` counts each part's quotable ids and
+ * `quoted` the distinct quotations already written.
  */
-export function quoteRequirement({ rule, quoted, available, index }: { rule: QuoteRule; quoted: number; available: readonly number[]; index: number }): number {
-  const base = (part: number) => (available[part] ?? 0) > 0 && (part === 0 ? rule.openingQuote : rule.sectionQuotes) ? 1 : 0;
+export function essentialQuotes({ rule, quoted, available, index }: QuoteNeed): number {
   const need = Math.max(0, rule.minQuotes - quoted);
   let later = 0;
-  for (let part = index + 1; part < available.length; part++) later += Math.min(available[part] ?? 0, base(part));
-  return Math.min(available[index] ?? 0, Math.max(base(index), need - later));
+  for (let part = index + 1; part < available.length; part++) later += Math.min(available[part] ?? 0, base(rule, available, part));
+  return Math.min(available[index] ?? 0, Math.max(0, need - later));
+}
+
+/** The quotations part `index` should carry: one where its evidence allows, plus the essential ones. */
+export function quoteRequirement(need: QuoteNeed): number {
+  return Math.max(base(need.rule, need.available, need.index), essentialQuotes(need));
 }
