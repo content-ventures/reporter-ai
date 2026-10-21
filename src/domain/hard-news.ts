@@ -6,6 +6,7 @@
 
 import type { FactCheck } from './fact-check.ts';
 import type { NewsSourceKind } from './news-intake.ts';
+import type { SourceRating } from './news-source-rating.ts';
 
 // ── F2.1 · Fontes de notícias ─────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,8 @@ export type NewsFeed = {
   site?: string;
   /** Google Alertas and RSS.app: the keyword it follows. */
   keyword?: string;
+  /** Explicit editorial assessment; absent until an editor evaluates this publication. */
+  rating?: SourceRating;
 };
 
 export const FEED_INTERVALS = [15, 30, 60, 120, 360] as const;

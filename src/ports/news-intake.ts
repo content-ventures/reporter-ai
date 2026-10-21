@@ -1,6 +1,7 @@
 import type { NewsFeed, NewsItem } from '../domain/hard-news.ts';
 import type { NewsDiscoveryInput, NewsDiscoveryResult } from '../domain/news-discovery.ts';
 import type { NewsDecisionInput } from '../domain/news-decisions.ts';
+import type { SourceRatingInput } from '../domain/news-source-rating.ts';
 
 /**
  * F2.1 · Entrada de notícias: the desk's sources and the news they bring, on the server. The radar
@@ -30,7 +31,7 @@ export type NewSource =
   | { kind: 'rss-app'; site: string; name?: string; everyMinutes: number }
   | { kind: 'rss-app'; keyword: string; everyMinutes: number };
 
-export type SourcePatch = { name?: string; everyMinutes?: number; paused?: boolean };
+export type SourcePatch = { name?: string; everyMinutes?: number; paused?: boolean; rating?: SourceRatingInput | null };
 
 /** What a read brought: new items, and stories that gained another outlet. */
 export type SourceRead = { source: NewsFeed; inserted: number; grouped: number };
