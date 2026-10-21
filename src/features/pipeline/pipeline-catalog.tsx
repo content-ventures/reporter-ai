@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge, Button, EmptyState, FilterBar, Grid, MetaList, PageStack, Panel, Prose, SearchField, Section, Select } from '@content-ventures/design-system/v3';
 import type { FunnelStepKey, PipelineDefinition, PipelineStep, PipelineStepKey } from '@/domain/pipeline';
 import { FUNNEL_STEP_KEYS, FUNNEL_STEP_LABELS, pipelineModelLabel } from '@/domain/pipeline';
 import { EDITORIAL_FORMATS, FORMAT_SPECS, type EditorialFormat } from '@/domain/formats';
 import { funnelPromptKey, type FunnelPromptKey, type WorkerPromptKey } from '@/domain/pipeline-workers';
+import { promptDefaultState } from '@/domain/pipeline-preset';
 
 export { funnelPromptKey, type FunnelPromptKey };
 export type PromptKey = 'system' | WorkerPromptKey;
@@ -88,6 +89,11 @@ export function PipelineCatalog({ draft, active, onEdit }: {
 }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  // A prompt still on a default an earlier release shipped: the preset upgrade would replace it.
+  const previous = useMemo(() => new Set((Object.keys(PROMPTS) as PromptKey[]).filter(key => {
+    const text = key === 'system' ? draft.systemPrompt : promptStep(key, draft)?.prompt;
+    return text !== undefined && promptDefaultState(key, text, draft.steps.intro.model) === 'previous';
+  })), [draft]);
   const term = search.trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const groups = GROUPS.map(group => ({ ...group, keys: group.keys.filter(key => {
     const step = promptStep(key, draft);
@@ -112,6 +118,7 @@ export function PipelineCatalog({ draft, active, onEdit }: {
           <Badge key="usage" tone={promptInactive(key, draft) ? 'gray' : 'blue'} size="sm">{promptUsage(key, draft)}</Badge>,
           promptStep(key, draft) ? pipelineModelLabel(promptStep(key, draft)!.model) : 'Todas as etapas',
           ...(promptChanged(key, draft, active) ? [<Badge key="changed" tone="amber" size="sm">Alterado</Badge>] : []),
+          ...(previous.has(key) ? [<Badge key="previous" tone="gray" size="sm">Padrão anterior</Badge>] : []),
         ]} />
       </Section></Panel>))}
     </Grid> : <EmptyState size="panel" title="Nenhum prompt encontrado" actions={<Button onClick={() => { setSearch(''); setFilter('all'); }}>Limpar filtros</Button>} />}
