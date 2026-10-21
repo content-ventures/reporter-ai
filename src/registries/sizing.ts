@@ -121,6 +121,6 @@ function formatSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'format
     neverPad: true,
     introChars,
     sections: Array.from({ length: count }, (_, index) => ({ stepId: sectionStepId(index + 1), budgetChars })),
-    instruction: `${spec.label}: escreva entre ${groupDigits(option.minChars)} e ${groupDigits(option.maxChars)} caracteres, perto de ${groupDigits(option.targetChars)}, com ao menos ${spec.minQuotes} citações literais. Se o material não sustentar, escreva menos e não complete.`,
+    instruction: `${spec.label}: escreva entre ${groupDigits(option.minChars)} e ${groupDigits(option.maxChars)} caracteres, perto de ${groupDigits(option.targetChars)}${spec.minQuotes ? `, com ao menos ${spec.minQuotes} citações literais` : ''}. Se o material não sustentar, escreva menos e não complete.`,
   };
 }
