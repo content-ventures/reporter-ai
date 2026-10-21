@@ -1,4 +1,6 @@
 export const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
+/** A Drive folder file is copied server to server, so it may be a whole event video as recorded. */
+export const MAX_DRIVE_BYTES = 20 * 1024 ** 3;
 export const MAX_TEXT_BYTES = 1024 ** 2;
 export const MAX_DURATION_SECONDS = 3 * 60 * 60;
 

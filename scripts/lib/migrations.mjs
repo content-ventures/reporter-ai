@@ -64,6 +64,7 @@ export const CLOUD = Object.freeze([
   'database/migrations/021-drive-intake.sql',
   'database/migrations/022-drive-received.sql',
   'database/migrations/023-fact-check.sql',
+  'database/migrations/024-drive-large-files.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 

@@ -25,13 +25,18 @@ const DRIVE_TOKEN = 'ya29.rehearsal-drive-access-token';
 const FILE_ID = '1RehearsalDriveFile_abc-123';
 const OPUS_ID = '1RehearsalWhatsAppAudio_xyz-789';
 const BROKEN_ID = '1RehearsalCorruptFile_zzz-321';
+const RESUMED_ID = '1RehearsalResumedCopy_rst-654';
+const BIG_ID = '1RehearsalFiveGigabyteVideo_big-555';
+const HUGE_ID = '1RehearsalTwentyOneGigabyteVideo_hug-777';
 
 let db: Awaited<ReturnType<typeof startRehearsalDatabase>>, s3: Awaited<ReturnType<typeof startFakeS3>>;
 let host: Awaited<ReturnType<typeof startWorkerHost>>, providers: ReturnType<typeof installFakeProviders>, workDir: string;
 let handleReporter: typeof import('../../src/server/http.ts').handleReporter;
 let media: Buffer, opus: Buffer, restoreDrive: () => void;
 const corrupt = Buffer.alloc(4096, 7);
-const drive = { ranges: [] as string[], refused: 0 };
+const drive = { ranges: [] as string[], refused: 0, resumed: [] as string[], failing: 0 };
+/** Sizes Drive reports for files too large to stand in memory: their bytes are never served. */
+const REPORTED: Record<string, number> = { [BIG_ID]: 5 * 1024 ** 3, [HUGE_ID]: 21 * 1024 ** 3 };
 const deferred: Promise<void>[] = [];
 
 async function call<T = Record<string, unknown>>(path: string, body?: unknown, headers: Record<string, string> = {}, who: typeof OWNER = OWNER) {
@@ -57,7 +62,7 @@ async function settle() {
   await host.idle();
 }
 
-/** Drive's media endpoint: byte ranges of one file, only with the folder script's token. */
+/** Drive's metadata and media endpoints: a file's size and its byte ranges, only with the folder script's token. */
 function installFakeDrive() {
   const inner = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
@@ -66,11 +71,19 @@ function installFakeDrive() {
     const headers = new Headers(init?.headers);
     const path = new URL(url);
     if (headers.get('authorization') !== `Bearer ${DRIVE_TOKEN}`) { drive.refused++; return new Response('{}', { status: 401 }); }
-    const file = ({ [FILE_ID]: media, [OPUS_ID]: opus, [BROKEN_ID]: corrupt } as Record<string, Buffer>)[path.pathname.replace('/drive/v3/files/', '')];
+    const id = path.pathname.replace('/drive/v3/files/', '');
+    if (path.searchParams.get('fields') === 'size' && REPORTED[id]) return Response.json({ size: String(REPORTED[id]) });
+    if (REPORTED[id]) return new Response('{}', { status: 503 });
+    const file = ({ [FILE_ID]: media, [OPUS_ID]: opus, [BROKEN_ID]: corrupt, [RESUMED_ID]: media } as Record<string, Buffer>)[id];
+    if (file && path.searchParams.get('fields') === 'size') return Response.json({ size: String(file.length) });
     if (!file || path.searchParams.get('alt') !== 'media') return new Response('{}', { status: 404 });
     const range = /^bytes=(\d+)-(\d+)$/.exec(headers.get('range') ?? '');
     if (!range) return new Response(new Uint8Array(file));
-    if (file === media) drive.ranges.push(range[0]);
+    if (id === RESUMED_ID) {
+      drive.resumed.push(range[0]);
+      // Drive fails the second part for a while: the copy stops with only the first one stored.
+      if (Number(range[1]) > 0 && drive.failing > 0) { drive.failing--; return new Response('{}', { status: 503 }); }
+    } else if (file === media) drive.ranges.push(range[0]);
     const start = Number(range[1]), end = Math.min(Number(range[2]), file.length - 1);
     return new Response(new Uint8Array(file.subarray(start, end + 1)), { status: 206,
       headers: { 'content-range': `bytes ${start}-${end}/${file.length}` } });
@@ -197,6 +210,9 @@ test('a copy that never reaches storage turns failed after an hour and leaves th
   assert.deepEqual((await listed()).map(item => item.status), ['transcribing'], 'still within the hour the script keeps retrying');
   await owner("UPDATE public.reporter_drive_intakes SET created_at=clock_timestamp()-interval '2 hours' WHERE transcript_id=$1", [first.body.transcriptId]);
   assert.deepEqual((await listed()).map(item => [item.status, item.errorCode]), [['failed', 'UPLOAD_FAILED']]);
+  const abandoned = await sync(lost);
+  assert.deepEqual([abandoned.body.stage, abandoned.body.error], ['failed', 'UPLOAD_FAILED'], 'the script files it in Erro');
+  assert.equal(deferred.length, 0, 'and no copy starts again');
   await owner("UPDATE public.reporter_drive_intakes SET created_at=clock_timestamp()-interval '3 days' WHERE transcript_id=$1", [first.body.transcriptId]);
   assert.deepEqual(await listed(), [], 'a failed file leaves the board after two days');
 });
@@ -220,4 +236,58 @@ test('any editor who opens a failed Drive transcription retries it, though the f
   const [after] = await owner<{ revision: number; status: string }>('SELECT revision,status FROM public.reporter_transcripts WHERE id=$1', [id]);
   assert.ok(after.revision > before.revision + 1, 'the worker took the file again');
   assert.equal(after.status, 'failed', 'a corrupt file fails again, now with a fresh attempt');
+});
+
+test('a file over 2 GB is taken up to 20 GB, by the size Drive reports rather than the script\'s', { timeout: 60_000 }, async () => {
+  const huge = await sync({ fileId: HUGE_ID, name: 'Gravação 4K.mp4', size: 3, folder: undefined });
+  assert.deepEqual([huge.status, (huge.body as { error?: string }).error], [413, 'FILE_TOO_LARGE'], 'Drive says 21 GB: the script files it in Erro at once');
+  assert.equal(deferred.length, 0);
+
+  const big = await sync({ fileId: BIG_ID, name: 'Painel completo.mp4', size: -1, folder: undefined });
+  assert.equal(big.status, 202, JSON.stringify(big.body));
+  assert.equal(big.body.stage, 'uploading');
+  await settle();
+  const [stored] = await owner<{ size: string; status: string }>(
+    'SELECT s.size::text AS size,s.status FROM core.storage_objects s JOIN public.reporter_transcripts t ON t.source_object_id=s.id WHERE t.id=$1', [big.body.transcriptId]);
+  assert.deepEqual(stored, { size: String(5 * 1024 ** 3), status: 'pending' }, 'registered at its 5 GB; this stand-in Drive never serves the bytes');
+
+  // The worker reads such a source too: only the local upload, which is not Drive, keeps 2 GB.
+  const capped = await owner<{ proname: string }>("SELECT proname FROM pg_proc WHERE prosrc ~ '2147483648([^0-9]|$)' ORDER BY proname");
+  assert.deepEqual(capped.map(row => row.proname), ['reporter_register_upload']);
+});
+
+test('a copy cut short continues from the parts already stored, which the folder script reads as progress', { timeout: 300_000 }, async () => {
+  const resumed = { fileId: RESUMED_ID, name: 'Palestra completa.wav', size: 3, folder: undefined };
+  drive.failing = 3;
+  const first = await sync(resumed);
+  assert.equal(first.body.stage, 'uploading', JSON.stringify(first.body));
+  await settle();
+  assert.deepEqual(drive.resumed.filter(range => range === 'bytes=0-16777215'), ['bytes=0-16777215'], 'the first part was stored');
+  const id = first.body.transcriptId!;
+  const intake = async () => (await owner<{ copied: string; held: boolean }>(
+    'SELECT copied_bytes::text AS copied,copy_until IS NOT NULL AS held FROM public.reporter_drive_intakes WHERE transcript_id=$1', [id]))[0];
+  assert.deepEqual(await intake(), { copied: String(16 * 1024 ** 2), held: false }, 'the stopped copy recorded its progress and let the file go');
+
+  // Two hours after it arrived, the copy's progress keeps it alive.
+  await owner("UPDATE public.reporter_drive_intakes SET created_at=clock_timestamp()-interval '2 hours' WHERE transcript_id=$1", [id]);
+  const board = async () => (await call<{ items: { id: string; status: string; size: number }[] }>('drive/received')).body.items.find(item => item.id === id);
+  assert.equal((await board())?.status, 'transcribing');
+
+  await owner("UPDATE public.reporter_drive_intakes SET copy_until=clock_timestamp()+interval '5 minutes' WHERE transcript_id=$1", [id]);
+  const progress = Math.floor(16 * 1024 ** 2 / media.length * 100);
+  const running = await sync(resumed);
+  assert.deepEqual([running.body.stage, (running.body as { progress?: number }).progress], ['copying', progress]);
+  assert.equal(deferred.length, 0, 'no second copy starts while one holds the file');
+
+  await owner('UPDATE public.reporter_drive_intakes SET copy_until=NULL WHERE transcript_id=$1', [id]);
+  const resume = await sync(resumed);
+  assert.deepEqual([resume.body.stage, (resume.body as { progress?: number }).progress], ['copying', progress], 'not one of the script\'s upload tries');
+  await settle();
+  const second = `bytes=16777216-${media.length - 1}`;
+  assert.deepEqual(drive.resumed.filter(range => range === 'bytes=0-16777215'), ['bytes=0-16777215'], 'the stored part is not read again');
+  assert.equal(drive.resumed.filter(range => range === second).length, 4, 'three refusals, then the part');
+
+  const ready = await sync(resumed);
+  assert.equal(ready.body.stage, 'ready', JSON.stringify(ready.body));
+  assert.equal(Number((await board())?.size), media.length, 'stored at the size Drive reports, not the script\'s');
 });
