@@ -208,6 +208,20 @@ test('a section keeps one quote as the floor and adds a second when it brings ne
   assert.match(definition.funnels.awards.section.prompt, /Nesta premiação as seções não levam citação: só a lista/);
 });
 
+test('an article section quotes an unnamed voice while the text still lacks its minimum', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  const section = definition.steps.section.prompt;
+  // A recording without speaker labels and with two people has no identified line: the quote plan
+  // still says how many quotations the text lacks, and the section brings them as unnamed voices.
+  assert.ok(section.includes('enquanto sizing.quotePlan.quotesStillNeeded for maior que zero, esta seção traz ao menos uma fala literal curta de suas evidências'));
+  assert.match(section, /nunca de quem entrevista, pergunta ou agradece; sem falante identificado, contextualize-a como fala do episódio, sem nome\. Na última seção, traga todas as que ainda faltarem\./);
+  // The floor per section and the rule against naming an unidentified voice stay.
+  assert.match(section, /Traga uma fala literal curta — uma ideia, uma ou duas frases — sempre que as evidências desta seção tiverem uma frase citável de um falante identificado/);
+  assert.match(section, /Identifique a pessoa só quando a evidência associar essa fala ao falante/);
+  // Formats keep their own part prompts.
+  for (const format of EDITORIAL_FORMATS) assert.doesNotMatch(definition.funnels[format].section.prompt, /quotesStillNeeded/, format);
+});
+
 test('a panel quotes every speaker with a quotable line and develops each thesis without padding', () => {
   const panel = withFormatFunnels(defaultPipelineDefinition()).funnels.panel;
   for (const key of ['outline', 'quotes'] as const) {

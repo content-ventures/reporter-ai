@@ -57,7 +57,7 @@ export const KNOWN_DEFAULT_PROMPTS: Readonly<Record<PresetPromptKey, readonly st
   outline: ['e5203e280fee131e', '9e4c72ad919acb04', 'fbd4792135b03f69'],
   quotes: ['80d9eaf28f5ffad7', 'dc4da6b485fd6dbe', '6a42ff28515dc30e', '588b6df7cd2cd78a'],
   intro: ['2369abf2e11a5efd', 'b221e8c51a52d9a3', '65999fd2cbcf956e', '4a6e9e8d94462a57', '773cc328ca7a29a7', '9c4b44a36797dd71'],
-  section: ['dee060967f886971', '65d0d5d891a6f1fc', 'a1c067a739fcb2ee', '341985903195a0c7', 'bded3e9b7b26149f', '3a78aae6ef08d04d', 'a58c1ce857db7775'],
+  section: ['dee060967f886971', '65d0d5d891a6f1fc', 'a1c067a739fcb2ee', '341985903195a0c7', 'bded3e9b7b26149f', '3a78aae6ef08d04d', '27591cf83356c368'],
   article: ['daaa232019f19657', '522cea1f71f21043', '9ab2414d0e317afc'],
   assist: ['38867eb4b4bba83d', 'e32c54e92f3a7801'],
   images: ['6068d8ef38d2cf73', 'c988ebb8cc482094'],
