@@ -168,3 +168,60 @@ and Preview): `RSS_APP_API_KEY` and `RSS_APP_API_SECRET` (sent as `Bearer key:se
 `RSS_APP_REGION` for keyword feeds (default `BR:pt-419`; RSS.app documents only `US:en`, so confirm
 it with the account). Without the key, "Site sem feed" and "Palavra-chave" say RSS.app is not
 connected and the RSS.app page shows how to connect it. The worker needs no RSS.app setting.
+
+
+## Complementary web collection (Tavily)
+
+Fontes → **Busca complementar**, and the radar's **Buscar na web**, configure one durable
+collection profile per portal. Save the client portal URL, sector, region, up to six topics,
+Portuguese/English/Spanish search languages, optional excluded domains, frequency (1, 2 or 6
+hours) and a daily limit (1–48 searches, default 12). Saving an enabled profile queues its first
+collection; **Buscar agora** joins or queues the same worker flow. Pausing cancels outstanding
+leases. The form is editable only by editors/admins; source material remains readable by readers.
+
+Every topic/language pair runs through both `general` (specialized sites) and `news` (news
+coverage), one provider search per worker claim. Results must have a detectable date within the
+last seven days. Tavily dates are estimates of publication/update time; the reader labels this
+explicitly. The browser is never responsible for collection. The existing hourly safety sweep
+and on-demand worker wakes execute due profiles, with no new frequent cron.
+
+`029-news-search.sql` stores the configuration, revision, cursor, UTC daily counter, last result,
+retry state and fenced two-minute lease. The claim reserves one search before any provider call.
+Automatic searches, manual requests, failures and crash recovery all consume the same daily
+allowance. Saving or pausing does not reset it. Requests already in flight are coalesced, and
+late results cannot commit after a configuration change. Failed queries retry twice at five-minute
+intervals before moving to the next query; the daily ceiling still applies. Collection outcomes
+are audited with counts and error codes. No original text or credentials enter operational logs.
+
+The persisted client and redirect domains, their subdomains and optional exclusions are applied
+both before provider extraction and inside the shared SQL placement function, including RSS,
+manual links and grouped duplicates. This policy affects new ingestion, not historical records.
+Registered source and manual-link writes also refuse excluded URLs before fetching them.
+
+`news-search-provider.ts` uses the existing `TAVILY_API_KEY`: basic search with dated results and
+raw page text, at most ten candidates. Previously complete exact URLs skip enrichment. Up to
+five incomplete or imageless results per search use one basic Extract request. Only images tied
+to that individual URL are eligible; query-wide image results are never article photos. Failed
+extraction keeps a clearly labelled search excerpt. Extracted text is labelled as extracted, not
+promised to be the entire publication. Domain, size, date and result limits are enforced.
+
+Items use `via=tavily` and enter the existing canonical-link/title deduplication, translation and
+decision pipeline. Their publisher remains the original outlet; Tavily is recorded as discovery.
+A previously imported RSS summary can gain page text without creating another card. Content
+revision changes invalidate cached bodies and fence old translations before translating again.
+Source tiers do not become article scores, and editorial AI classification remains separate.
+
+### Release and acceptance
+
+- Apply migration 029 after 028; the shared migration lists include local and cloud replay.
+- Deploy the updated worker and application together through the controlled GitHub release.
+- Configure the existing `TAVILY_API_KEY` in both the app and worker; translation retains its
+  existing provider key. No new provider account or environment variable is introduced.
+- The daily setting limits Search requests. Each may also make one Extract request for up to
+  five URLs. Provider credits, rate limits and account limits still apply.
+- Database acceptance covers tenant/role isolation, coalescing, budget preservation, fencing,
+  enrichment and translation invalidation. Backend tests exercise provider errors, dates,
+  exclusions, partial extraction and the no-fabricated-news contract. Browser smoke covers
+  saving/reopening the profile and manual collection on desktop and phone.
+- For a live acceptance, use a small daily allowance and verify news arrival, original URLs,
+  translation, source attribution and absence of the client's own URLs before raising it.

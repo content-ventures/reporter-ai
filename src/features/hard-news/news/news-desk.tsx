@@ -1,5 +1,7 @@
 'use client';
 
+import { NewsSearchDialog } from '../sources/news-search-dialog';
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -54,7 +56,7 @@ export function NewsDeskFromUrl() {
 
 /** Headline overview first; the URL opens an explicit story and browser history returns to it. */
 export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
-  const { state, ready, actions, demo, live: onServer, newsFailed } = useHardNews();
+  const { state, ready, actions, demo, live: onServer, newsFailed, search: webSearch } = useHardNews();
   useNewsWatch();
   // The connected desk supports editorial decisions before AI classification is available.
   const triage = !onServer;
@@ -82,6 +84,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   }
   const [importing, setImporting] = useState(false);
   const [discovering, setDiscovering] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [failedItem, setFailedItem] = useState<string>();
   const [bodyAttempt, setBodyAttempt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -144,7 +147,8 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     return () => cancelAnimationFrame(frame);
   }, [selectedId]);
   const read = lastRead(state.feeds);
-  const anyActive = state.feeds.some((feed) => feed.state === 'active');
+  const anyActive = state.feeds.some((feed) => feed.state === 'active')
+    || Boolean(webSearch?.configured && webSearch.config?.enabled && !['failed', 'limited'].includes(webSearch.state));
   useDocumentTitle(live ? (signals.fresh.count > 0 ? `(${signals.fresh.count}) Notícias` : 'Notícias') : null);
 
   async function refresh() {
@@ -281,7 +285,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
             ...(phone ? [{ label: 'Ver atividade', icon: Activity, onSelect: () => setActivityOpen(true) }] : []),
             { label: 'Marcar como vistas', icon: CheckCheck, onSelect: () => actions.markSeen() },
             ...(triage ? [{ label: 'Ajustar meta do dia', icon: Target, onSelect: () => setGoalOpen(true) }] : []),
-            ...(onServer && canEdit ? [{ label: 'Descobrir fontes', icon: Rss, onSelect: () => setDiscovering(true) }] : []),
+            ...(onServer && canEdit ? [{ label: 'Busca complementar', onSelect: () => setSearching(true) }, { label: 'Descobrir fontes', icon: Rss, onSelect: () => setDiscovering(true) }] : []),
           ],
         },
         ...(phone ? [{ items: [
@@ -301,6 +305,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       meta={live && read ? [`Lido ${waitLabel(read, now)}`] : undefined}
       actions={phone ? undefined : (
         <>
+          {onServer && canEdit ? <Button variant="secondary" onClick={() => setSearching(true)}>Buscar na web</Button> : null}
           <Button variant="ghost" icon={Activity} onClick={() => setActivityOpen(true)}>Ver atividade</Button>
           {canEdit ? <Button variant="secondary" icon={Link2} onClick={() => setImporting(true)}>Colar link</Button> : null}
           <ButtonLink href={NEWS_SOURCES_HREF} variant="secondary" icon={Rss}>Fontes</ButtonLink>
@@ -367,6 +372,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       </Drawer>
       {region}
       <ImportLinkDialog open={importing} onClose={() => setImporting(false)} onImported={(id) => { setTab('open'); setQuery(''); select(id); }} />
+      {searching ? <NewsSearchDialog onClose={() => setSearching(false)} /> : null}
       {discovering ? <DiscoverSourcesDialog open onClose={() => setDiscovering(false)} /> : null}
       <DeskGoalDialog open={goalOpen} onClose={() => setGoalOpen(false)} />
     </>

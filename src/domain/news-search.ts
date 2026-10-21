@@ -42,8 +42,10 @@ export function searchExcluded(url: string, domains: readonly string[]): boolean
 }
 
 export function newsSearchQuery(config: NewsSearchConfig, index: number) {
-  const language = config.languages[index % config.languages.length];
-  const topic = config.topics[Math.floor(index / config.languages.length) % config.topics.length];
+  const combination = Math.floor(index / 2);
+  const language = config.languages[combination % config.languages.length];
+  const topic = config.topics[Math.floor(combination / config.languages.length) % config.topics.length];
   const news = { pt: 'notícias', en: 'news', es: 'noticias' }[language];
-  return { query: [topic, config.sector, config.region, news].filter(Boolean).join(' ').slice(0, 380), language };
+  return { query: [topic, config.sector, config.region, news].filter(Boolean).join(' ').slice(0, 380), language,
+    mode: index % 2 ? 'news' as const : 'general' as const };
 }

@@ -9,7 +9,7 @@ import { fetchText } from './news-fetch.ts';
 import { tavilyConfigured } from './tavily.ts';
 
 const configSchema = z.object({
-  portalUrl: z.string().trim().max(2000).refine(isNewsAddress),
+  portalUrl: z.string().trim().max(2000).refine(value => isNewsAddress(value) && Boolean(searchDomain(value))),
   sector: z.string().trim().min(1).max(160), region: z.string().trim().max(100),
   topics: z.array(z.string().trim().min(1).max(160)).min(1).max(6),
   languages: z.array(z.enum(['pt', 'en', 'es'])).min(1).max(3),
@@ -61,9 +61,12 @@ export async function saveNewsSearch(input: unknown, deps: SearchSettingsService
   if (config.enabled && !deps.configured()) throw new FlowError('TAVILY_KEY_MISSING', 503);
   const current = await deps.read();
   if (revision !== current.revision) throw new FlowError('NEWS_SEARCH_CONFLICT', 409);
+  config.excludedDomains = [...new Set(config.excludedDomains.map(value => searchDomain(value)!))];
+  const oldExcluded = current.config?.excludedDomains ?? [];
+  const reuse = current.config?.portalUrl === config.portalUrl && oldExcluded.every(domain => config.excludedDomains.includes(domain));
   const domains = [searchDomain(config.portalUrl)!];
-  // Persist the actual redirect target too. Changing terms never needs to reread the client site.
-  if (current.config?.portalUrl === config.portalUrl) domains.push(...current.domains ?? []);
+  // Removing optional exclusions revalidates redirects so a client alias cannot be unblocked.
+  if (reuse) domains.push(...(current.domains ?? []).filter(domain => !oldExcluded.includes(domain)));
   else {
     const page = await deps.fetch(config.portalUrl, { maxBytes: 512_000, accept: 'text/html' });
     const redirected = searchDomain(page.url);
@@ -72,10 +75,7 @@ export async function saveNewsSearch(input: unknown, deps: SearchSettingsService
   }
   config.topics = [...new Set(config.topics)];
   config.languages = [...new Set(config.languages)];
-  config.excludedDomains = [...new Set(config.excludedDomains.map(value => searchDomain(value)!))];
-  // Retain client redirect identities, but allow editors to remove optional exclusions.
-  const oldExcluded = current.config?.excludedDomains ?? [];
-  const excluded = [...new Set([...domains.filter(domain => !oldExcluded.includes(domain)), ...config.excludedDomains, searchDomain(config.portalUrl)!])];
+  const excluded = [...new Set([...domains, ...config.excludedDomains])];
   const { domains: _domains, ...saved } = await deps.save(revision, config, excluded);
   return { ...saved, configured: deps.configured() };
 }

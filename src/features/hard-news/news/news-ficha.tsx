@@ -85,6 +85,7 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
     return () => { active = false; };
   }, [actions, item.id, pending, attempt]);
   const facts = [at(item.publishedAt, now)];
+  if (item.via === 'tavily') facts.push('Encontrada na web · data estimada');
   if (item.via === 'url') facts.push('Link colado');
   if (item.status === 'later' && item.laterUntil) facts.push(returnLabel(item.laterUntil, now));
   if (item.status === 'discarded' && item.discardReason) facts.push(item.discardReason);
@@ -249,7 +250,7 @@ function NewsText({ item }: { item: NewsItem }) {
   }), [item]);
   const editor = useArticleReader({ body });
   const translated = item.translation?.status === 'translated';
-  const summary = translated ? item.contentKind === 'feed' ? 'Texto recebido do feed · traduzido' : 'Notícia traduzida'
+  const summary = item.contentKind === 'search' ? (translated ? 'Trecho da busca · traduzido' : 'Trecho da busca') : translated ? item.contentKind === 'feed' ? 'Texto recebido do feed · traduzido' : 'Notícia traduzida'
     : item.contentKind === 'feed' ? 'Texto recebido do feed' : item.contentKind === 'article' ? 'Texto extraído da página' : 'Texto original';
   return (
     <Disclosure summary={summary} meta={`${item.body.length} ${item.body.length === 1 ? 'parágrafo' : 'parágrafos'}`} headingLevel="h3" defaultOpen>
