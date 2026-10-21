@@ -38,6 +38,8 @@ export function activitySummary(event: ActivityEvent, actor: PersonSummary | nul
       return `${who} corrigiu o material`;
     case 'source.authorized':
       return `${who} autorizou o material`;
+    case 'source.date_updated':
+      return data?.after ? `${who} alterou a data do material` : `${who} removeu a data do material`;
     case 'run.started':
       return `${runName(data)} iniciada por ${who}`;
     case 'run.completed':

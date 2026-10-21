@@ -80,6 +80,10 @@ function mapActivity(event: ActivityEvent, lookup: ActivityLookup): Mapped | und
     }
     case 'source.authorized':
       return { action: 'source.authorized', target: sourceTarget(event) };
+    case 'source.date_updated':
+      return { action: 'source.updated', target: sourceTarget(event), changes: [
+        { field: 'Data do material', before: text(event.data, 'before') ?? 'Não informada', after: text(event.data, 'after') ?? 'Não informada' },
+      ] };
     case 'run.completed':
     case 'run.failed': {
       const runKind = text(event.data, 'runKind');

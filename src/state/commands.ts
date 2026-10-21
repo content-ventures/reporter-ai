@@ -62,6 +62,7 @@ const PRODUCTION_METHODS: Methods<ProductionCommands> = {
   rename: true,
   updateBrief: true,
   updateSpeakers: true,
+  updateSourceRecordedOn: true,
   updatePerson: true,
   setMaterialAuthorization: true,
   saveDraft: true,

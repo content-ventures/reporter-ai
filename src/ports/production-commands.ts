@@ -123,6 +123,7 @@ export type BriefRefusal = NotFoundRefusal | ForbiddenRefusal | 'conflict' | 'se
 /** `personId: null` with `unattributed` is "Sem atribuição"; without it, the label is left undecided. */
 export type SpeakerMapping = { label: string; personId: PersonId | null; newPerson?: PersonDetails; unattributed?: true };
 export type SpeakersRefusal = NotFoundRefusal | ForbiddenRefusal | 'unknown_speaker' | 'unknown_person';
+export type SourceDateRefusal = NotFoundRefusal | ForbiddenRefusal | 'invalid_date' | 'conflict';
 
 /** Name, role and organisation of a person; `null` clears a field. */
 export type PersonPatch = { name?: string; title?: string | null; organization?: string | null };
@@ -234,6 +235,8 @@ export interface ProductionCommands {
   /** Pass `baseRevision` to detect a concurrent edit. */
   updateBrief(productionId: ProductionId, brief: BriefInput, baseRevision?: number): Promise<Result<Brief, BriefRefusal>>;
   updateSpeakers(sourceId: SourceId, mapping: SpeakerMapping[]): Promise<Result<SourceDetail, SpeakersRefusal>>;
+  /** Only the supplied source date changes; null clears it. The opening value detects concurrent edits. */
+  updateSourceRecordedOn(sourceId: SourceId, recordedOn: string | null, baseRecordedOn: string | null): Promise<Result<{ recordedOn: string | null }, SourceDateRefusal>>;
   /** "Participantes": name, "Cargo ou função" and "Organização" of a person (every production sees it). */
   updatePerson(personId: PersonId, patch: PersonPatch): Promise<Result<PersonSummary, PersonRefusal>>;
   setMaterialAuthorization(sourceId: SourceId, authorized: boolean): Promise<Result<{ authorized: boolean }, NotFoundRefusal | ForbiddenRefusal>>;

@@ -40,7 +40,7 @@ function commandScope(method: string, args: readonly unknown[]): EditorialScope 
     case 'derive': case 'recordDelivery': return { productions: text(field(args[0], 'productionId')) };
     case 'archive': return { productions: Array.isArray(args[0]) ? args[0].filter((id): id is string => typeof id === 'string') : [] };
     case 'createFromSource': return { sources: text(field(args[0], 'reuseSourceId')) };
-    case 'updateSpeakers': case 'setMaterialAuthorization': return { sources: text(args[0]), sourceUsers: text(args[0]) };
+    case 'updateSpeakers': case 'updateSourceRecordedOn': case 'setMaterialAuthorization': return { sources: text(args[0]), sourceUsers: text(args[0]) };
     case 'feedback.vote': case 'recordFeedback': return feedbackScope(field(args[0], 'target'));
     default: return FULL_SCOPE;
   }
