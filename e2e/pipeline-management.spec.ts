@@ -168,6 +168,9 @@ for (const viewport of VIEWPORTS) {
       await drawer.getByRole('button', { name: 'Atualizar para 3.0', exact: true }).click();
       await expect(page.getByText('Prompts 3.0 ativados · revisão 2', { exact: true })).toBeVisible();
       await expect(page.getByText('Prompts padrão 3.0')).toHaveCount(0);
+      // The banner and its drawer leave together: focus goes to the open tab, never to the page body.
+      await expect(page.getByRole('tab', { name: /^Todos os prompts/ })).toBeFocused();
+      await expect(page.getByRole('tabpanel', { name: /^Todos os prompts/ })).toBeVisible();
       await expect(page.getByText('Revisão 2 ativa', { exact: true })).toBeVisible();
       await expect(page.getByText('Padrão anterior', { exact: true })).toHaveCount(0);
       expect(saves).toBe(1);
