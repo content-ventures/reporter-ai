@@ -4,6 +4,35 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-21
+
+### Added
+
+- Add fact check rules, score and usage count.
+- Check citations against the web with Tavily.
+- Rank the quote bank by veracity and score.
+- Manage citations with fact check views.
+- Fact-check generated articles in the background.
+- Warn about disputed and unvalidated quotes.
+
+### Fixed
+
+- Show the bulk check only when quotes are pending.
+- Run background fact checks right after the text.
+- Version editor verdicts and scope the studio read.
+- Show sources by the seal and guard quote bank actions.
+- Authorize joined checks and fail on provider refusals.
+- Let any editor retry a failed Drive transcription.
+
+### Maintenance
+
+- Require and verify the Tavily key.
+- Make the Tavily key optional.
+
+### Documentation
+
+- Document the fact check.
+
 ## [0.16.0] - 2026-10-21
 
 ### Added

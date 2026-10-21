@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.16.0",
+  "currentVersion": "0.17.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,76 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.17.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-21",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 15 validated changes: let any editor retry a failed drive transcription; authorize joined checks and fail on provider refusals; make the tavily key optional.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Add fact check rules, score and usage count"
+        },
+        {
+          "type": "Added",
+          "description": "Check citations against the web with Tavily"
+        },
+        {
+          "type": "Added",
+          "description": "Rank the quote bank by veracity and score"
+        },
+        {
+          "type": "Added",
+          "description": "Manage citations with fact check views"
+        },
+        {
+          "type": "Added",
+          "description": "Fact-check generated articles in the background"
+        },
+        {
+          "type": "Added",
+          "description": "Warn about disputed and unvalidated quotes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Show the bulk check only when quotes are pending"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Require and verify the Tavily key"
+        },
+        {
+          "type": "Documentation",
+          "description": "Document the fact check"
+        },
+        {
+          "type": "Fixed",
+          "description": "Run background fact checks right after the text"
+        },
+        {
+          "type": "Fixed",
+          "description": "Version editor verdicts and scope the studio read"
+        },
+        {
+          "type": "Fixed",
+          "description": "Show sources by the seal and guard quote bank actions"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Make the Tavily key optional"
+        },
+        {
+          "type": "Fixed",
+          "description": "Authorize joined checks and fail on provider refusals"
+        },
+        {
+          "type": "Fixed",
+          "description": "Let any editor retry a failed Drive transcription"
+        }
+      ]
+    },
     {
       "version": "0.16.0",
       "roadmapRelease": "R0",
