@@ -64,6 +64,7 @@ function FinalText({ body, label }: { body: ArticleBody; label: string }) {
           {body.cover ? <CoverImage cover={body.cover} images={images} /> : null}
           {/* h2: the page's h1 is the production in the header line. */}
           <EditableTitle value={body.title} label="Título do artigo" size="document" as="h2" readOnly onCommit={() => undefined} />
+          {body.dek && <Prose variant="read" measure="wide">{body.dek}</Prose>}
         </PageStack>
       }
     >

@@ -100,6 +100,7 @@ export function ArticleReading({ body, label, anchors, recorded = [], litBlockId
             <MetaList size="sm" items={[`${COVER_SLOT_LABEL}: ${body.coverSlot.subject}`]} />
           ) : null}
           <EditableTitle value={body.title} label="Título do artigo" size="document" as="h2" readOnly onCommit={() => undefined} />
+          {body.dek && <Prose variant="read" measure="wide">{body.dek}</Prose>}
         </PageStack>
       }
     >
