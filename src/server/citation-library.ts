@@ -47,8 +47,27 @@ const schema = z.object({ id: z.string().regex(/^[a-f0-9]{16}$/).optional(), bas
   }).strict() }).strict();
 // Citations come from article drafts and versions plus curated entries; runs are never read.
 export const CITATION_SCOPE: EditorialScope = { productions: 'all',parts: ['piece','version'],runs: 'none',pipelines: false,items: { citation: 'all',fact_check: 'all' } };
+/**
+ * One production's citations with their checks, for the studio: its pieces and versions and the
+ * citation rows it owns, then only those citations' checks. The library holds every production.
+ */
+export async function productionCitations(productionId: string): Promise<CitationLibraryView> {
+  const view = (await editorialTransaction('runtime',async checkpoint => citationRegistry(checkpoint),false,'reporter.edit',
+    { productions: [productionId],parts: ['piece','version'],runs: 'none',pipelines: false,items: { citation: 'production' } })).value;
+  const items = view.items.filter(item => item.productionId === productionId);
+  if (!items.length) return { items: [],sources: view.sources };
+  const checks = (await editorialTransaction('runtime',async checkpoint => checkpoint.factChecks ?? [],false,'reporter.edit',
+    { productions: [],sources: 'none',runs: 'none',pipelines: false,items: { fact_check: items.map(item => item.id) } })).value;
+  const byId = new Map(checks.map(check => [check.id,check]));
+  return { items: items.map(item => (byId.has(item.id) ? { ...item,factCheck: byId.get(item.id)! } : item)),sources: view.sources };
+}
 export async function handleCitationLibrary(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>) {
   if (path.length) throw new FlowError('NOT_FOUND',404);
+  const production = request.method === 'GET' ? new URL(request.url).searchParams.get('production') : null;
+  if (production !== null) {
+    if (!production || production.length > 128) throw new FlowError('NOT_FOUND',404);
+    return Response.json(await productionCitations(production),{ headers: { 'Cache-Control': 'no-store' } });
+  }
   if (request.method === 'GET') return Response.json((await editorialTransaction('runtime',async checkpoint => citationRegistry(checkpoint),false,'reporter.edit',CITATION_SCOPE)).value,{ headers: { 'Cache-Control': 'no-store' } });
   if (request.method !== 'POST') throw new FlowError('NOT_FOUND',404);
   const payload = schema.parse(await readJson(request));

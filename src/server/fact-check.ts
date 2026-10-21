@@ -53,13 +53,25 @@ export function factCheckProviders(model: string) {
   };
 }
 
+/** Checks of this instance in flight: a second request for the same citation joins the first. */
+const inflight = new Map<string, Promise<CitationView>>();
+
 /** Checks one citation now; a citation already checked is returned as is unless `force`. */
-export async function checkCitation(id: string, force: boolean): Promise<CitationView> {
+export function checkCitation(id: string, force: boolean): Promise<CitationView> {
+  const running = inflight.get(id);
+  if (running) return running;
+  const task = runCheck(id, force).finally(() => inflight.delete(id));
+  inflight.set(id, task);
+  return task;
+}
+
+async function runCheck(id: string, force: boolean): Promise<CitationView> {
   const read = (await editorialTransaction('runtime', async checkpoint => {
     const citation = editable(checkpoint, id);
     return { citation, model: activePipeline(checkpoint).definition.steps.quotes.model };
   }, false, 'reporter.edit', CHECK_READ_SCOPE)).value;
   if (read.citation.factCheck && !force) return read.citation;
+  const seen = read.citation.factCheck?.checkedAt;
   const started = Date.now();
   let result: Awaited<ReturnType<typeof runFactCheck>>;
   try {
@@ -73,14 +85,17 @@ export async function checkCitation(id: string, force: boolean): Promise<Citatio
   logEvent('fact_check', 'completed', { duration_ms: Date.now() - started });
   return (await editorialTransaction('runtime', async checkpoint => {
     const citation = editable(checkpoint, id);
-    const check = recheck(checkpoint.factChecks?.find(item => item.id === id), result);
+    const previous = checkpoint.factChecks?.find(item => item.id === id);
+    // Another check (the worker, another tab) landed while this one ran: keep it, do not stack a duplicate.
+    if (previous && previous.checkedAt !== seen) return { ...citation, factCheck: previous };
+    const check = recheck(previous, result);
     store(checkpoint, check);
     return { ...citation, factCheck: check };
   }, true, 'reporter.edit', CITATION_SCOPE)).value;
 }
 
 const decision = z.object({ claim: z.number().int().min(0).max(20), verdict: z.enum(['validated', 'disputed', 'not_validated']),
-  reason: z.string().trim().min(3).max(300) }).strict();
+  reason: z.string().trim().min(3).max(300), checkedAt: z.string().min(1).max(40) }).strict();
 
 /** The editor's verdict prevails over the model's and keeps its reason and author. */
 export async function decideClaim(id: string, payload: unknown): Promise<CitationView> {
@@ -88,9 +103,12 @@ export async function decideClaim(id: string, payload: unknown): Promise<Citatio
   return (await editorialTransaction('runtime', async checkpoint => {
     const citation = editable(checkpoint, id);
     const current = checkpoint.factChecks?.find(item => item.id === id);
+    // The claim index belongs to one check: a recheck in between would land it on another claim.
+    if (current && current.checkedAt !== input.checkedAt) throw new FlowError('FACT_DECISION_STALE', 409);
     const claim = current?.claims[input.claim];
     if (!current || !claim || !checkable(claim.kind)) throw new FlowError('FACT_DECISION_INVALID', 422);
-    const check: FactCheck = { ...current, overrides: [...current.overrides, { ...input, personId: checkpoint.state.sessionPersonId,
+    const check: FactCheck = { ...current, overrides: [...current.overrides, { claim: input.claim, verdict: input.verdict, reason: input.reason,
+      personId: checkpoint.state.sessionPersonId,
       at: new Date().toISOString() }].slice(-MAX_OVERRIDES) };
     store(checkpoint, check);
     return { ...citation, factCheck: check };

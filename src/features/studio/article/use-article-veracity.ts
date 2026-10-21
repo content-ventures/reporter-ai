@@ -6,23 +6,29 @@ import type { CitationView } from '@/domain/citation-library';
 import { veracityCheck } from '@/domain/veracity-check';
 import { useRuntime } from '@/state';
 
-/** Background checks finish after the article: look again this often while a quotation waits. */
-const RECHECK_MS = 20000, RECHECKS = 8;
+/**
+ * Background checks run after the text (and after its images): look again this often while a
+ * quotation waits, for up to ten minutes after each generation. The read is one production's.
+ */
+const RECHECK_MS = 20000, RECHECKS = 30;
 
 /**
  * "Veracidade das falas" for the studio: the fact checks of this production's citations, matched
- * to the quotations of the text. Read when the studio opens and when a generation ends; a build
- * without the citation library (the preview) has no row.
+ * to the quotations of the text. Read when the studio opens and when a generation ends, scoped to
+ * this production; a build without the citation library (the preview) has no row.
  */
 export function useArticleVeracity(productionId: string, quotes: readonly { range: TextRange; text: string }[], generating: boolean): CheckResult | undefined {
   const port = useRuntime().runtime?.citations;
   const [citations, setCitations] = useState<CitationView[]>();
-  const [round, setRound] = useState(0);
+  // Re-reads since the last generation ended; a new generation starts the count again.
+  const [poll, setPoll] = useState({ generating, round: 0 });
+  if (poll.generating !== generating) setPoll({ generating, round: 0 });
+  const round = poll.round;
   useEffect(() => {
     if (!port || generating) return undefined;
     let live = true;
-    void port.get().then((view) => {
-      if (live) setCitations(view.items.filter((item) => item.productionId === productionId));
+    void port.forProduction(productionId).then((view) => {
+      if (live) setCitations(view.items);
     }).catch(() => undefined);
     return () => {
       live = false;
@@ -31,9 +37,9 @@ export function useArticleVeracity(productionId: string, quotes: readonly { rang
   const waiting = useMemo(() => Boolean(citations?.some((citation) => !citation.factCheck
     && quotes.some((quote) => quoteMatches(quote.text, foldForMatch(citation.text))))), [citations, quotes]);
   useEffect(() => {
-    if (!waiting || round >= RECHECKS) return undefined;
-    const timer = setTimeout(() => setRound((value) => value + 1), RECHECK_MS);
+    if (generating || !waiting || round >= RECHECKS) return undefined;
+    const timer = setTimeout(() => setPoll((value) => ({ ...value, round: value.round + 1 })), RECHECK_MS);
     return () => clearTimeout(timer);
-  }, [waiting, round]);
+  }, [generating, waiting, round]);
   return useMemo(() => (citations ? veracityCheck(quotes, citations) : undefined), [citations, quotes]);
 }
