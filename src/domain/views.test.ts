@@ -23,6 +23,7 @@ import {
 } from './testing/scenario.ts';
 import { buildProductionView, toSourceSummary } from './views.ts';
 import { sendChecklist } from './approval.ts';
+import { writingResearchEvidence } from './writing-research-evidence.ts';
 
 describe('ProductionView', () => {
   test('real provider productions expose mandatory R1 checks and their next corrective actions', () => {
@@ -185,5 +186,29 @@ describe('delivery package', () => {
     const b = { kind: 'version' as const, pieceId: 'pb', versionId: 'vb', number: 1, hash: 'hb' };
     assert.equal(deliveryIdempotencyKey('prod', 'export', [a, b]), deliveryIdempotencyKey('prod', 'export', [b, a]));
     assert.notEqual(deliveryIdempotencyKey('prod', 'export', [a]), deliveryIdempotencyKey('prod', 'export', [b]));
+  });
+
+  test('manifest carries web provenance without exporting source contents or private provider fields', () => {
+    const kit = createKit(), { record } = approvedPackage(kit);
+    const research = writingResearchEvidence([{ id: 'web-context', kind: 'external', provider: 'tavily',
+      title: 'Technical context', query: 'ISKNV technical context', url: 'https://example.org/technical-context',
+      site: 'example.org', excerpt: 'Private retained excerpt, not exported in the manifest.',
+      retrievedAt: '2026-10-21T12:00:00Z', publishedOn: null }],
+    { runId: 'writing-run', workspaceId: record.production.workspaceId, actorId: JOAO });
+    const web = research.sources[0];
+    Object.assign(web.research!, { apiKey: 'fake-private-provider-field' });
+    record.sources.push(web);
+    const manifest = buildManifest(record, [], [], kit.now());
+    const original = record.sources[0];
+    assert.deepEqual(manifest.sources[0], { id: original.id, title: original.title, version: 1,
+      hash: original.versions[0].hash, authorized: original.rights.authorized });
+    assert.deepEqual(manifest.sources[1], { id: web.id, title: web.title, version: 1,
+      hash: web.versions[0].hash, authorized: true, sourceUrl: 'https://example.org/technical-context',
+      research: { provider: 'tavily', runId: 'writing-run', query: 'ISKNV technical context',
+        retrievedAt: '2026-10-21T12:00:00Z', publishedOn: null } });
+    const serialized = JSON.stringify(manifest);
+    assert.ok(!serialized.includes('fake-private-provider-field'));
+    assert.ok(!serialized.includes(web.versions[0].content.segments[0].text));
+    assert.ok(!serialized.includes(original.versions[0].content.segments[0].text));
   });
 });
