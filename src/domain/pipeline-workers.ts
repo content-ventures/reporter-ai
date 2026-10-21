@@ -44,14 +44,14 @@ const images: WorkerNode[] = [
 const veracity: WorkerNode = { id: 'veracity', title: 'Checar veracidade das falas', description: 'Busca cada afirmação das citações na web e registra o veredito com a fonte.',
   kind: 'automatic', condition: 'Em segundo plano; o texto não espera' };
 
-/** An event format's worker: its own structure, opening and parts, the article's shared steps around them, no AI images. */
+/** An event format's worker: its own structure, curation, opening and parts, the shared long-source step before them, no AI images. */
 function formatWorkerFlow(format: EditorialFormat): WorkerNode[] {
   const spec = FORMAT_SPECS[format];
   return [
     { id: 'source', title: 'Material, pauta e evento', description: 'Recebe a transcrição, as pessoas confirmadas, o formato escolhido e os dados do evento.', kind: 'input' },
     { id: 'facts', title: 'Preparar fontes longas', description: 'Processa os trechos da fonte até caberem no contexto.', kind: 'prompt', prompt: 'facts', condition: 'Somente fontes com mais de 24 mil caracteres', scope: 'shared' },
     { id: 'outline', title: 'Estrutura do formato', description: 'Planeja título, linha fina e intertítulos no padrão da Seafood Brasil.', kind: 'prompt', prompt: funnelPromptKey(format, 'outline'), scope: 'format' },
-    { id: 'quotes', title: 'Evidências e citações', description: 'Distribui os trechos da fonte entre as partes do texto.', kind: 'prompt', prompt: 'quotes', condition: 'Durante o planejamento da estrutura', scope: 'shared' },
+    { id: 'quotes', title: 'Evidências e citações', description: 'Distribui os trechos da fonte entre as partes do texto.', kind: 'prompt', prompt: funnelPromptKey(format, 'quotes'), condition: 'Durante o planejamento da estrutura', scope: 'format' },
     { id: 'intro', title: 'Abertura', description: 'Escreve o lide e a apresentação de quem fala.', kind: 'prompt', prompt: funnelPromptKey(format, 'intro'), scope: 'format' },
     { id: 'section', title: spec.headings ? 'Seções' : 'Contexto', description: spec.headings ? 'Escreve cada intertítulo em sequência, com falas literais.' : 'Escreve o contexto da nota, sem intertítulo.', kind: 'prompt', prompt: funnelPromptKey(format, 'section'), condition: 'Repete uma vez por parte', scope: 'format' },
     { id: 'grounding', title: 'Checar fatos e repetições', description: 'Confere cada número e nome contra o material, as pessoas e o evento; revisa a parte ou remove a frase.', kind: 'automatic' },

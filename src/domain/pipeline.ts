@@ -29,7 +29,7 @@ export const PIPELINE_STEP_LABELS: Record<PipelineStepKey, string> = {
   intro: 'Escrever introdução', section: 'Escrever cada seção', article: 'Escrever artigo completo', assist: 'Assistente do artigo', images: 'Sugerir imagens', carousel: 'Escrever carrossel',
 };
 export type PipelineStep = { prompt: string; model: PipelineModel; temperature: number; maxTokens: number };
-/** An event format's own structure, opening and part prompts (formats.ts, format-prompts.ts). */
+/** An event format's own structure, curation, opening and part prompts (formats.ts, format-prompts.ts). */
 export type FunnelDefinition = Record<FunnelStepKey, PipelineStep>;
 export type PipelineDefinition = {
   systemPrompt: string; articleMode: 'sequential' | 'single'; curateQuotes: boolean;
@@ -37,7 +37,7 @@ export type PipelineDefinition = {
   /** Event-format funnels; absent on revisions saved before them (`withFormatFunnels` fills them). */
   funnels?: Partial<Record<EditorialFormat, Partial<FunnelDefinition>>>;
 };
-export const FUNNEL_STEP_LABELS: Record<FunnelStepKey, string> = { outline: 'Estrutura', intro: 'Abertura', section: 'Seções' };
+export const FUNNEL_STEP_LABELS: Record<FunnelStepKey, string> = { outline: 'Estrutura', quotes: 'Evidências', intro: 'Abertura', section: 'Seções' };
 export type PipelineRevision = { revision: number; hash: string; savedAt: string | null; definition: PipelineDefinition };
 export type PipelineCall = {
   key: PipelineStepKey; index?: number; hash: string; model: string; status: 'running' | 'completed' | 'failed';
@@ -335,7 +335,7 @@ export function pipelineRunSteps(definition: PipelineDefinition, kind: string, s
 /** The default funnels of the event formats, on the model the article writing uses. */
 export function defaultFunnels(model: PipelineModel): Record<EditorialFormat, FunnelDefinition> {
   const step = (format: EditorialFormat, key: FunnelStepKey): PipelineStep =>
-    ({ prompt: defaultFunnelPrompt(format, key), model, temperature: key === 'outline' ? 0.2 : 0.3, maxTokens: pipelineModelReasons(model) ? 8192 : 4096 });
+    ({ prompt: defaultFunnelPrompt(format, key), model, temperature: key === 'outline' ? 0.2 : key === 'quotes' ? 0.1 : 0.3, maxTokens: pipelineModelReasons(model) ? 8192 : 4096 });
   return Object.fromEntries(EDITORIAL_FORMATS.map(format => [format,
     Object.fromEntries(FUNNEL_STEP_KEYS.map(key => [key, step(format, key)])) as FunnelDefinition])) as Record<EditorialFormat, FunnelDefinition>;
 }
@@ -374,14 +374,14 @@ export function compactFunnels(definition: PipelineDefinition): PipelineDefiniti
 }
 
 /**
- * The definition a job of an event format runs: the format's structure, opening and part prompts
- * in place of the article's, written part by part (the mechanics that guard size and literal
- * quotes). Everything else, the system message included, is the workspace's.
+ * The definition a job of an event format runs: the format's structure, curation, opening and part
+ * prompts in place of the article's, written part by part (the mechanics that guard size and
+ * literal quotes); the system message and the long-source facts step are the workspace's.
  */
 export function formatPipelineDefinition(definition: PipelineDefinition, format: EditorialFormat): PipelineDefinition {
   const funnel = withFormatFunnels(definition).funnels![format]!;
   return { ...structuredClone(definition), articleMode: 'sequential',
-    steps: { ...structuredClone(definition.steps), outline: funnel.outline, intro: funnel.intro, section: funnel.section } };
+    steps: { ...structuredClone(definition.steps), outline: funnel.outline, quotes: funnel.quotes, intro: funnel.intro, section: funnel.section } };
 }
 
 /** Add only the new stage to a draft; never mutate a saved or running revision. */

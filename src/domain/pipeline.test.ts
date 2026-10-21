@@ -174,6 +174,19 @@ test('a format job writes part by part with the funnel prompts; the article step
   assert.equal(job.systemPrompt, base.systemPrompt);
 });
 
+test('a format job curates evidence with its own funnel prompt', () => {
+  const base = defaultPipelineDefinition();
+  const job = formatPipelineDefinition(base, 'awards');
+  const prompt = job.steps.quotes.prompt;
+  assert.equal(prompt, withFormatFunnels(base).funnels.awards.quotes.prompt);
+  for (const pattern of [/sizing\.minQuotes/, /\{\{sizing\}\}/, /\{\{people\}\}/, /de 1 a 4 ids/, /sem falas/]) assert.match(prompt, pattern);
+  // The workspace's shared curation stays the article's.
+  assert.deepEqual(base.steps.quotes, defaultPipelineDefinition().steps.quotes);
+  assert.notEqual(prompt, base.steps.quotes.prompt);
+  assert.equal(job.curateQuotes, true);
+  assert.equal(formatPipelineDefinition({ ...base, curateQuotes: false }, 'awards').curateQuotes, false);
+});
+
 test('a funnel prompt without its required data is refused on save', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
   definition.funnels.note.section = { ...definition.funnels.note.section, prompt: 'Escreva {{section}} {{history}} {{futureSections}} {{sizing}}' };

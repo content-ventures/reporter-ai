@@ -36,6 +36,7 @@ export function withPromptStep(definition: PipelineDefinition, key: PromptKey, p
 
 const FUNNEL_DESCRIPTIONS: Record<FunnelStepKey, string> = {
   outline: 'Planeja título, linha fina e intertítulos no padrão da Seafood Brasil.',
+  quotes: 'Distribui as evidências e as falas entre as partes do formato.',
   intro: 'Escreve a abertura no padrão do formato, só com fatos do material.',
   section: 'Escreve cada parte com falas literais e dados atribuídos.',
 };
