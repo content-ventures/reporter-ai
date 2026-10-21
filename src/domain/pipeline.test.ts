@@ -333,6 +333,19 @@ test('headlines and texts carry the date as the event gives it, never hoje, aman
   assert.doesNotMatch(note.intro.prompt, /"ontem" sem a data/);
 });
 
+test('a note leads with what happens, never the event\'s generic sentence, and headlines name the event as event.name writes it', () => {
+  const definition = withFormatFunnels(defaultPipelineDefinition());
+  const note = definition.funnels.note;
+  // The rehearsal's note opened on "O ministro … participa da abertura" and followed with "A feira reúne empresas e profissionais…".
+  assert.ok(note.intro.prompt.includes('a primeira frase diz o que acontece ou é anunciado (a atração, a medida, o número), com quem faz, quando e onde, em até 40 palavras e sem citação; não apenas quem comparece'));
+  assert.ok(note.intro.prompt.includes('("participa da abertura" só abre a nota quando o material não trouxer outro fato)'));
+  assert.ok(note.intro.prompt.includes('nem sobre o que o evento é ou reúne ("A feira reúne empresas e profissionais…"): o box de serviço já apresenta o evento'));
+  assert.match(note.outline.prompt, /- title: o fato \(o que acontece ou é anunciado, não só quem comparece\)/);
+  // Its headline said "Seafood Show" for the event; every structure prompt now asks for event.name whole, or no event.
+  for (const format of EDITORIAL_FORMATS)
+    assert.ok(definition.funnels[format].outline.prompt.includes('Quando o título citar o evento, use o nome exatamente como event.name o escreve, nunca encurtado nem como a fonte o grafa ("Feira Modelo" no lugar de "Feira Modelo Internacional 2026" é erro); se o nome inteiro não couber no limite do título, deixe o evento fora dele.'), format);
+});
+
 test('the newsroom\'s note on a curated quote is never a source', () => {
   const definition = withFormatFunnels(defaultPipelineDefinition());
   for (const prompt of [definition.steps.outline.prompt, ...EDITORIAL_FORMATS.map(format => definition.funnels[format].outline.prompt)])
