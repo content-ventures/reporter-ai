@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { DataTable, RowActions, type Column, type SortState } from '@content-ventures/design-system/v3';
 import { BadgeCheck, Copy, Eye } from '@content-ventures/design-system/v3/icons';
 import { claimTally, primarySource, tallyLabel } from '@/domain/fact-check';
-import type { QuoteSort, QuoteSortKey, RankedQuote } from './quote-model';
+import { identified, type QuoteSort, type QuoteSortKey, type RankedQuote } from './quote-model';
 import { FactSourceChip, QuoteSeal, ScoreMeter } from './verdict-view';
 
 export type QuoteTableProps = {
@@ -51,7 +51,7 @@ export function QuoteTable({ rows, sort, onSort, selected, onSelectedChange, che
         label={`Ações da fala de ${entry.quote.author}`}
         actions={[
           { id: 'open', label: 'Abrir', icon: Eye, onSelect: () => onOpen(entry) },
-          { id: 'check', label: entry.verdict === 'pending' ? 'Checar' : 'Checar de novo', icon: BadgeCheck, hidden: !onCheck || entry.quote.checkable === false,
+          { id: 'check', label: entry.verdict === 'pending' ? 'Checar' : 'Checar de novo', icon: BadgeCheck, hidden: !onCheck || entry.quote.checkable === false || !identified(entry.quote),
             disabled: checking.size > 0, hint: 'Aguarde a checagem em andamento.', onSelect: () => onCheck?.(entry) },
           // As in the cards: a quote is copied with its attribution only once the author is confirmed.
           { id: 'copy', label: 'Copiar com atribuição', icon: Copy, hidden: !entry.quote.verified, onSelect: () => onCopy(entry) },

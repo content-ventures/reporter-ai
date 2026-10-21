@@ -2,6 +2,16 @@
 
 Fidelity and veracity are separate questions. Fidelity asks whether the person said it: the literal transcript match in `src/domain/citation-library.ts` and `quotes.ts` already answers that. Veracity asks whether what they said is true. The fact check answers that with web evidence from [Tavily](https://docs.tavily.com). The words of a quote never change; the check only informs.
 
+## Only quotes with their author
+
+A quote exists only with the person who said it: a speaker linked to a person (`personId`). Without one, nobody can publish, attribute or compare it, so such a quote is only a candidate:
+
+- It is not ranked and has no score. The bank's indicators and charts do not count it.
+- It is never fact-checked. The background job, "Checar pendentes" and the route skip it, and the route answers `CITATION_AUTHOR_REQUIRED`.
+- It waits under the **Sem autor** tab. There, in the drawer, the editor picks who said it among the material's confirmed participants. The save links the person, and the quote enters the bank and is checked at once.
+
+Audio transcripts (Whisper) do not label speakers. In those materials most quotes start under Sem autor, unless a single confirmed person is speaking, which is the stand rule. "Autoria conferida" stays a separate editorial check worth 10 points of the score.
+
 ## Claims and verdicts
 
 A check splits the quote into at most six claims, and gives each one a kind:

@@ -403,6 +403,15 @@ export type BankQuote = {
   attribution?: { sourceNamed: boolean; dated: boolean };
   /** False when the source is no longer authorized: it can be read, not checked. */
   checkable?: boolean;
+  /**
+   * A quote exists only with the person who said it: false while no participant is linked, and
+   * then it waits under "Sem autor", out of the ranking and the fact check. Absent: the author is
+   * named (the preview's desk quotes).
+   */
+  identified?: boolean;
+  /** The linked person, and who the editor may link: the confirmed participants of the material. */
+  personId?: string;
+  participants?: { id: string; name: string }[];
 };
 
 // ── F2.12 · Acervo ───────────────────────────────────────────────────────────────────────────
