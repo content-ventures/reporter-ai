@@ -12,10 +12,11 @@ const SECOND_TITLE = 'Tilápia ganha novo estudo sobre alimentação e qualidade
 async function mockDesk(page: Page) {
   const checkpoint = emptyEditorialCheckpoint();
   const at = new Date().toISOString();
-  const feeds: NewsFeed[] = ['Instituto do Pescado', 'Revista Aquicultura', 'Observatório do Mar'].map((name, index) => ({
+  const feeds: NewsFeed[] = ['Instituto do Pescado', 'Revista Aquicultura', 'Alerta pescado'].map((name, index) => ({
     id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`, name,
     url: `https://fonte${index}.example/feed/`, everyMinutes: 60, state: 'active', lastDay: 6,
-    lastReadAt: at, lastWeek: [2, 4, 3, 5, 2, 4, 6], kind: 'rss',
+    lastReadAt: at, lastWeek: [2, 4, 3, 5, 2, 4, 6], kind: index === 2 ? 'google-alerts' : 'rss',
+    ...(index === 2 ? { keyword: 'pescado' } : {}),
     ...(index < 2 ? { rating: { tier: index === 0 ? 'A1' as const : 'A2' as const, relevance: 'high' as const,
       rationale: 'Publica informações especializadas sobre a cadeia do pescado.', updatedAt: at } } : {}),
   }));
@@ -108,6 +109,17 @@ for (const viewport of VIEWPORTS) {
       for (const name of ['Outras ações da notícia', 'Selecionar para redação']) {
         await entirelyVisible(page, decisions.getByRole('button', { name, exact: true }));
       }
+      const writes: string[] = [];
+      page.on('request', request => {
+        if (new URL(request.url()).pathname.startsWith('/api/') && request.method() !== 'GET') writes.push(request.url());
+      });
+      await decisions.getByRole('button', { name: 'Outras ações da notícia', exact: true }).click();
+      for (const name of ['Por 2 horas', 'Até amanhã cedo', 'Fora do mapa editorial']) {
+        await entirelyVisible(page, page.getByRole('menuitem', { name, exact: true }));
+      }
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('menuitem', { name: 'Por 2 horas', exact: true })).toHaveCount(0);
+      expect(writes, 'consultar as ações não grava decisões').toEqual([]);
       await expectNoHorizontalOverflow(page);
       expect(errors).toEqual([]);
     });
@@ -163,6 +175,14 @@ for (const viewport of VIEWPORTS) {
       await expect(article.getByRole('heading', { name: SECOND_TITLE, exact: true })).toBeVisible();
       if (viewport.width < 900) await page.getByRole('tab', { name: 'Radar', exact: true }).click();
       await expect(search).toHaveValue('tilápia');
+      await page.getByRole('button', { name: 'Limpar busca', exact: true }).click();
+      await page.getByRole('button', { name: /^Filtros/ }).click();
+      await choose(page, 'Fonte', 'Alerta pescado');
+      await expect(page.getByTestId(/^news-row-/)).toHaveCount(6);
+      await expect(first).toHaveCount(0);
+      await expect(second).toHaveCount(0);
+      await page.getByRole('button', { name: 'Limpar', exact: true }).click();
+      await expect(page.getByTestId(/^news-row-/)).toHaveCount(18);
       await expectNoHorizontalOverflow(page);
       await expectHeadingOutline(page);
       expect(errors).toEqual([]);

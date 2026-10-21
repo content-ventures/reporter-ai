@@ -93,7 +93,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
 
   const board = useMemo(() => {
     const filtered = state.news.filter(item => matchesSourceTier(item, state.feeds, sourceTier)
-      && (sourceId === 'all' || sourceForNews(item, state.feeds)?.id === sourceId));
+      && (sourceId === 'all' || (item.feedId ?? sourceForNews(item, state.feeds)?.id) === sourceId));
     const queue = queueOf(filtered, query);
     const { hero, overflow } = triage ? heroOf(queue, 1) : { hero: [], overflow: 0 };
     const rest = queue.filter((item) => !hero.includes(item));
@@ -131,7 +131,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       setTab(item.status === 'new' ? 'open' : 'decided');
       if (!matchesQuery(item, query)) setQuery('');
       if (!matchesSourceTier(item, state.feeds, sourceTier)) setSourceTier('all');
-      if (sourceId !== 'all' && sourceForNews(item, state.feeds)?.id !== sourceId) setSourceId('all');
+      if (sourceId !== 'all' && (item.feedId ?? sourceForNews(item, state.feeds)?.id) !== sourceId) setSourceId('all');
     }
     setSelectedId(id);
     setView('main');
