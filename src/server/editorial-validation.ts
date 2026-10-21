@@ -21,9 +21,10 @@ export function outlineResponseSchema(sections: number,ids: readonly string[],de
 }
 /**
  * A model that opens with a fact tends to pick its id again for the section on the same subject. The
- * opening keeps that id and each section drops the opening's ids, as long as one of its own remains.
- * A section that would be left empty, and any other repeat (inside a part or between sections), stay
- * as they came for `editorialResponseValid` to reject. An answer without that overlap is returned as is.
+ * opening keeps that id and each section drops every copy of the opening's ids, as long as one of its
+ * own remains. A section that would be left empty, a repeat inside the opening, and a repeat of an id
+ * that is not the opening's (inside a section or between sections) stay as they came for
+ * `editorialResponseValid` to reject. An answer without that overlap is returned as is.
  */
 export function withoutOpeningRepeats(key: PipelineStepKey,value: unknown): unknown {
   if (key !== 'outline' && key !== 'quotes' || !value || typeof value !== 'object') return value;

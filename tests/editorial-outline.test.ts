@@ -119,6 +119,10 @@ test('a section drops the ids the opening already uses, never down to an empty s
   const selection = withoutOpeningRepeats('quotes', { introIds: ['0'], sectionIds: [['0', '2'], ['3']] });
   assert.deepEqual(selection, { introIds: ['0'], sectionIds: [['2'], ['3']] });
   assert.equal(editorialResponseValid('quotes', selection, KNOWN, 2), true);
+  // Every copy of an opening id leaves the section: a part that repeats it twice keeps only its own ids.
+  const twice = withoutOpeningRepeats('outline', { ...OVERLAP, introIds: ['1'], sections: [{ title: 'A', evidenceIds: ['1', '1', '2'] }, { title: 'B', evidenceIds: ['3'] }] });
+  assert.deepEqual((twice as typeof OVERLAP).sections.map(section => section.evidenceIds), [['2'], ['3']]);
+  assert.equal(editorialResponseValid('outline', twice, KNOWN, 2), true);
   // A section made only of opening ids stays as it came, so validation still rejects it.
   const emptied = { ...OVERLAP, sections: [{ title: 'Primeira seção', evidenceIds: ['1'] }, { title: 'Segunda seção', evidenceIds: ['3'] }] };
   assert.equal(withoutOpeningRepeats('outline', emptied), emptied);
