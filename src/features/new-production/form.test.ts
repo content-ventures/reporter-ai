@@ -14,6 +14,7 @@ import {
   draftMaterial,
   dropPart,
   emptyPartMessage,
+  partsIssue,
   landPart,
   materialTooLong,
   movePart,
@@ -379,5 +380,14 @@ describe('Nova produção · a material sent in parts', () => {
     assert.equal(emptyPartMessage({}), undefined);
     assert.equal(emptyPartMessage({ parts: [{ format: 'srt', segments: 2 }, { format: 'vtt', segments: 3 }] }), undefined);
     assert.equal(emptyPartMessage({ parts: [{ format: 'srt', segments: 2 }, { format: 'vtt', segments: 0 }] }), 'A parte 2 não tem falas. Remova ou troque o arquivo.');
+  });
+
+  test('partsIssue names a material too long or a part without speech', () => {
+    const long = 'x'.repeat(MAX_MATERIAL_CHARS / 2);
+    const both = filed(part('a', srt('um')), part('b', srt('dois')));
+    assert.equal(partsIssue(filed(part('a', long), part('b', long)), undefined), MATERIAL_TOO_LONG);
+    assert.equal(partsIssue(both, { parts: [{ format: 'srt', segments: 0 }, { format: 'srt', segments: 1 }] }), 'A parte 1 não tem falas. Remova ou troque o arquivo.');
+    assert.equal(partsIssue(both, { parts: [{ format: 'srt', segments: 1 }, { format: 'srt', segments: 1 }] }), undefined);
+    assert.equal(partsIssue(filed(part('a', long)), undefined), undefined);
   });
 });

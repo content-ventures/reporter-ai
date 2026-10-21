@@ -58,7 +58,7 @@ export function MaterialProgressDialog({ open, progress, onClose, onCancel, onRe
               valueText={upload ? `${formatBytes(upload.sent)} de ${formatBytes(upload.total)} · ${upload.percent}%` : undefined} /> : null}
             {progress.largeUpload ? <Prose variant="compact" measure="wide">O envio depende da sua conexão. Mantenha esta página aberta até terminar.</Prose> : null}
           </PageStack>
-          <LiveRegion message={status === 'ready' ? 'Material pronto para revisar os falantes e continuar.' : status === 'error' ? 'O preparo do material falhou. Tente novamente.' : ''} />
+          <LiveRegion message={status === 'ready' ? 'Material pronto para revisar os falantes e continuar.' : status === 'error' ? `O preparo do material falhou.${progress.retry ? ' Tente novamente.' : ''}` : ''} />
         </Section>
       ) : null}
     </ResponsiveDialog>

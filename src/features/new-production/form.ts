@@ -214,6 +214,11 @@ export function emptyPartMessage(analysis: Pick<SourceAnalysis, 'parts'> | undef
   return index >= 0 ? `A parte ${index + 1} não tem falas. Remova ou troque o arquivo.` : undefined;
 }
 
+/** Why a material in parts with every part in still cannot go on (`ready`: its analysis, once ready). */
+export function partsIssue(draft: NewProductionDraft, ready: Pick<SourceAnalysis, 'parts'> | undefined): string | undefined {
+  return materialTooLong(draft) ? MATERIAL_TOO_LONG : emptyPartMessage(ready);
+}
+
 export function hasMaterial(draft: NewProductionDraft): boolean {
   return draftMaterial(draft).text.trim().length > 0;
 }
