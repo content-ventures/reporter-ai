@@ -6,6 +6,7 @@ const id = (value: string) => encodeURIComponent(value);
 /** The connected build's news desk: the same-origin `/api/reporter/news` routes. */
 export function createHttpNewsIntake(): NewsIntake {
   return {
+    search: { read: () => reporterRequest('/news/search'), save: input => reporterRequest('/news/search', input), collect: () => reporterRequest('/news/search/collect', {}) },
     discover: (input) => reporterRequest('/news/discover', input, AbortSignal.timeout(45_000)),
     decide: (itemId, input) => reporterRequest(`/news/items/${id(itemId)}/decision`, input),
     retryTranslation: (itemId) => reporterRequest(`/news/items/${id(itemId)}/translation/retry`, {}),

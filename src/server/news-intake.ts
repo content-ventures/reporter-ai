@@ -1,4 +1,5 @@
 import 'server-only';
+import { readNewsSearch, requireExternalNews } from './news-search.ts';
 import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { z } from 'zod';
@@ -28,7 +29,7 @@ type StoredSource = {
   rating?: SourceRating;
 };
 export type StoredItem = {
-  id: string; sourceId?: string; via: 'rss' | 'url'; url: string; title: string; outlet: string; excerpt: string;
+  id: string; sourceId?: string; via: 'rss' | 'url' | 'tavily'; contentKind?: 'feed' | 'article' | 'search'; contentRevision?: number; discoveredAt?: string; url: string; title: string; outlet: string; excerpt: string;
   publishedAt: string; importedAt: string; updatedAt?: string; duplicates: { source: string; url: string; publishedAt: string }[];
   paragraphs: number; body?: string[]; imageUrl?: string;
   status?: 'new' | 'selected' | 'later' | 'discarded'; decisionRevision?: number;
@@ -81,7 +82,9 @@ export function itemView(item: StoredItem): NewsItem {
     source: item.outlet,
     ...(item.sourceId ? { feedId: item.sourceId } : {}),
     via: item.via,
-    contentKind: item.via === 'rss' ? 'feed' : 'article',
+    contentKind: item.contentKind ?? (item.via === 'rss' ? 'feed' : item.via === 'tavily' ? 'search' : 'article'),
+    contentRevision: item.contentRevision,
+    ...(item.discoveredAt ? { discoveredAt: iso(item.discoveredAt) } : {}),
     publishedAt: iso(item.publishedAt)!,
     importedAt: iso(item.importedAt)!,
     ...(item.updatedAt ? { updatedAt: iso(item.updatedAt) } : {}),
@@ -160,8 +163,9 @@ export type NewsServices = {
   deleteRssApp: typeof deleteRssAppFeed;
   rssApp: () => boolean;
   now: () => number;
+  external?: (url: string) => Promise<void>;
 };
-const services: NewsServices = { requireEdit: requireNewsEdit, fetch: fetchText, createRssApp: createRssAppFeed, deleteRssApp: deleteRssAppFeed, rssApp: () => rssAppConfigured(), now: Date.now };
+const services: NewsServices = { requireEdit: requireNewsEdit, fetch: fetchText, createRssApp: createRssAppFeed, deleteRssApp: deleteRssAppFeed, rssApp: () => rssAppConfigured(), now: Date.now, external: requireExternalNews };
 
 /**
  * The feed behind an address: the address itself when it is a feed, else the feed its page
@@ -217,6 +221,8 @@ const hostName = (url: string) => new URL(url).hostname.replace(/^www\./, '');
 export async function addSource(value: unknown, deps: NewsServices = services): Promise<SourceRead> {
   await deps.requireEdit();
   const input = parsed(NewSource, value);
+  const address = 'url' in input ? input.url : 'site' in input ? input.site : undefined;
+  if (address) await deps.external?.(address);
   if (input.kind === 'rss-app') {
     if (!deps.rssApp()) throw new FlowError('RSS_APP_UNCONFIGURED', 422);
     const created = await deps.createRssApp('site' in input ? { url: input.site } : { keyword: input.keyword });
@@ -235,6 +241,8 @@ export async function addSource(value: unknown, deps: NewsServices = services): 
   }
   const kind = input.kind === 'google-alerts' ? 'google-alerts' : sourceKindOf(input.url);
   const resolved = await resolveFeed(input.url, deps);
+  await deps.external?.(resolved.url);
+  if (resolved.feed.site) await deps.external?.(resolved.feed.site);
   const name = input.kind === 'google-alerts' ? input.keyword : input.name || resolved.feed.title || hostName(resolved.url);
   const source = await addSourceRow({ kind, name, url: resolved.url, every: input.everyMinutes, keyword: input.kind === 'google-alerts' ? input.keyword : undefined });
   return firstRead(source, (claim) => entriesFor(claim, resolved.feed.entries, deps.now()), resolved);
@@ -262,12 +270,14 @@ export async function removeSource(id: string, deps: NewsServices = services): P
 export async function importLink(value: unknown, deps: NewsServices = services): Promise<LinkImport> {
   await deps.requireEdit();
   const { url } = parsed(z.object({ url: ADDRESS }).strict(), value);
+  await deps.external?.(url);
   // A link already in the queue opens its story, even when the site refuses to be read.
   const canonical = canonicalUrl(url);
   const known = canonical ? await sql<string | null>('SELECT public.reporter_news_lookup($1) AS value', [canonical]) : null;
   if (known) return { id: known, outcome: 'repeat' };
   const page = await deps.fetch(url, { maxBytes: NEWS_LIMITS.pageBytes, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5' });
   if (page.status !== 200) throw new FlowError('NEWS_PAGE_INVALID', 422);
+  await deps.external?.(page.url);
   const entry = parseArticlePage(page.text, page.url);
   const item = entry ? normalizeEntry(entry, { now: deps.now() }) : undefined;
   if (!item) throw new FlowError('NEWS_PAGE_INVALID', 422);
@@ -297,13 +307,15 @@ export async function newsSnapshot(since: string | undefined, page?: NewsPageCur
   const value = await sql<{ at: string; sources: StoredSource[] | null; items: StoredItem[]; next?: NewsPageCursor; due: boolean }>(
     'SELECT public.reporter_news_page($1,$2,$3,$4,$5) AS value',
     [since ?? null, page?.updatedAt ?? null, page?.id ?? null, page?.until ?? null, 400]);
+  const search = await readNewsSearch();
   return {
+    search,
     at: iso(value.at)!,
     ...(value.sources ? { sources: value.sources.map(feedView) } : {}),
     items: value.items.map(itemView),
     ...(value.next ? { next: value.next } : {}),
     rssApp: deps.rssApp(),
-    due: value.due,
+    due: value.due || search.state === 'queued',
   };
 }
 

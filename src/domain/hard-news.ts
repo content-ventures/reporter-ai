@@ -79,9 +79,11 @@ export type NewsItem = {
   imageUrl?: string;
   source: string;
   feedId?: string;
-  via: 'rss' | 'url';
+  via: 'rss' | 'url' | 'tavily';
   /** What was retrieved; neither a feed nor page extraction guarantees the full publication. */
-  contentKind?: 'feed' | 'article';
+  contentKind?: 'feed' | 'article' | 'search';
+  contentRevision?: number;
+  discoveredAt?: string;
   publishedAt: string;
   importedAt: string;
   /** Server revision timestamp used to ignore delayed responses. */

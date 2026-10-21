@@ -1,3 +1,4 @@
+import type { NewsSearchView, NewsSearchWrite } from '../domain/news-search.ts';
 import type { NewsFeed, NewsItem } from '../domain/hard-news.ts';
 import type { NewsDiscoveryInput, NewsDiscoveryResult } from '../domain/news-discovery.ts';
 import type { NewsDecisionInput } from '../domain/news-decisions.ts';
@@ -20,6 +21,7 @@ export type NewsSnapshot = {
   items: NewsItem[];
   /** RSS.app can create feeds here (the platform's account is configured). */
   rssApp: boolean;
+  search?: NewsSearchView;
   next?: NewsPageCursor;
 };
 
@@ -39,6 +41,7 @@ export type SourceRead = { source: NewsFeed; inserted: number; grouped: number }
 export type LinkImport = { id: string; outcome: 'inserted' | 'grouped' | 'repeat' };
 
 export interface NewsIntake {
+  search?: { read(): Promise<NewsSearchView>; save(input: NewsSearchWrite): Promise<NewsSearchView>; collect(): Promise<NewsSearchView> };
   /** Discover and verify candidate feeds without subscribing to any source. */
   discover(input: NewsDiscoveryInput): Promise<NewsDiscoveryResult>;
   decide(id: string, input: NewsDecisionInput): Promise<NewsItem>;
