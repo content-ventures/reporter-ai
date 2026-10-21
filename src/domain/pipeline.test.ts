@@ -73,6 +73,10 @@ test('provider contracts require the same nonempty editorial parts as the worker
   assert.deepEqual([article.sections.minItems,article.sections.maxItems],[1,8]);
   assert.deepEqual(article.sections.items.properties.paragraphs,section);
 });
+test('the opening selects up to four passages in planning and in curation', () => {
+  assert.equal((PIPELINE_SCHEMAS.outline.properties.introIds as { maxItems: number }).maxItems, 4);
+  assert.equal((PIPELINE_SCHEMAS.quotes.properties.introIds as { maxItems: number }).maxItems, 4);
+});
 test('prompt substitution is single pass: source text cannot become variables or code',() => {
   assert.equal(renderPipelinePrompt('Fonte {{ source }} / pauta {{brief}}',variables),'Fonte Dados com {{brief}} e {{env.SECRET}} / pauta Pauta real');
   assert.throws(() => renderPipelinePrompt('{{env.SECRET}}',variables),/UNKNOWN_PROMPT_VARIABLE/);
