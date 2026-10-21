@@ -8,6 +8,7 @@ import { quotableIds, quotableSpeaker, quoteRequirement } from '../src/domain/qu
 import type { QuotableCandidate, QuoteRule } from '../src/domain/quote-plan.ts';
 import { writeSequentialArticle } from '../src/server/pipeline-runner.ts';
 import { quotedIn, quotedWords } from '../src/domain/article-policy.ts';
+import { countCharacters } from '../src/domain/text/stats.ts';
 
 process.env.REPORTER_LOCAL_MODE = 'true';
 process.env.GROQ_API_KEY = 'test-placeholder-not-a-real-key';
@@ -165,16 +166,53 @@ test('an opening left without its quotation raises what the next part is asked f
   assert.deepEqual(plans, [{ required: 1, quotesStillNeeded: 2 }, { required: 2, quotesStillNeeded: 2 }]);
 });
 
-test('the last-resort cut drops sentences without a quotation first and keeps the last one asked for', async () => {
-  const outline = { title: 'Hecke na APAS', introIds: ['e1'], sections: [{ title: 'Embalagem', evidenceIds: ['e2'] }] };
-  const oversized = { title: 'Embalagem', paragraphs: [paragraph('A embalagem é a principal aposta de comunicação da empresa no varejo.'),
-    paragraph(`${quoted} A empresa também estampa receitas no pacote para incentivar o consumo.`)] };
-  let calls = 0;
-  const result = await writeSequentialArticle(outline, variables, { introChars: intro.paragraphs[0].text.length, sections: [{ budgetChars: 120 }] }, async key => {
-    if (key === 'intro') return intro;
-    calls++;
-    return oversized;
-  }, evidence, undefined, undefined, [], soft({ minQuotes: 1, openingQuote: false, sectionQuotes: true }));
-  assert.equal(calls, 3);
-  assert.deepEqual(result.sections[0].paragraphs, [paragraph(quoted)]);
+test('a soft quotation never costs a part its floor, unless the text\'s minimum depends on it', async () => {
+  const opening = { paragraphs: [paragraph(`A Hecke Alimentos apresentou a merluza empanada na APAS Show 2026, voltada ao varejo. ${quoted}`, ['e1', 'e2'])] };
+  const long = 'A empresa também levou o produto às lojas com ações de degustação e reforçou a presença nos supermercados do Sul, segundo Scorsin, que citou as promotoras como apoio às vendas da linha.';
+  const shortQuoted = '“Também passamos a introduzir promotoras nas lojas”, disse Scorsin.';
+  const write = async (introParagraphs: typeof opening) => {
+    const violations: string[] = [];
+    const outline = { title: 'Hecke na APAS', introIds: ['e1'], sections: [{ title: 'Lojas', evidenceIds: ['e4'] }] };
+    const result = await writeSequentialArticle(outline, variables, { introChars: 300, sections: [{ budgetChars: 400 }], minChars: 350 }, async (key, _schema, values) => {
+      if (key === 'intro') return introParagraphs;
+      violations.push(JSON.parse(values.sizing).revisionFeedback?.violation ?? 'first');
+      // Asked for the quotation, the provider quotes and shortens; asked to develop, it drops the quotation again.
+      return { title: 'Lojas', paragraphs: [paragraph(violations.length === 2 ? shortQuoted : long, ['e4'])] };
+    }, evidence, undefined, undefined, [], soft({ minQuotes: 1, openingQuote: false, sectionQuotes: true }));
+    return { violations, text: result.sections[0].paragraphs.map(p => p.text).join(' ') };
+  };
+  const met = await write(opening);
+  assert.deepEqual(met.violations, ['first', 'SECTION_QUOTE_REQUIRED', 'ARTICLE_PART_TOO_SHORT']);
+  assert.equal(met.text, long, 'the opening already reached the minimum: the part keeps its floor');
+  const needed = await write(intro);
+  assert.equal(needed.text, shortQuoted, 'the minimum depends on this part: its quotation wins');
+});
+
+const lead = 'A Hecke Alimentos apresentou a merluza empanada na APAS Show 2026.';
+const how = 'O produto chega ao varejo em junho, em embalagens para famílias.';
+const speaker = 'A gerente de marketing da empresa, Giaceli Scorsin, disse que a embalagem foi o foco do lançamento.';
+const quotedLine = '“Nossa embalagem foi pensada para comunicar os benefícios do produto”, afirmou.';
+/** Every opening draft is too long, so the last-resort cut decides what stays. */
+async function cutOpening(paragraphs: { text: string; evidenceIds: string[] }[], budget: number, rule?: QuoteRule) {
+  const outline = { title: 'Hecke na APAS', introIds: ['e1', 'e2'], sections: [{ title: 'Lojas', evidenceIds: ['e4'] }] };
+  const result = await writeSequentialArticle(outline, variables, { introChars: budget, sections: [{ budgetChars: 400 }] }, async key =>
+    key === 'intro' ? { paragraphs } : { title: 'Lojas', paragraphs: [paragraph('A empresa levou promotoras às lojas, segundo Scorsin.', ['e4'])] },
+  evidence, undefined, undefined, [], rule ? soft(rule) : undefined);
+  return result.intro.map(p => p.text);
+}
+const stand: QuoteRule = { minQuotes: 2, openingQuote: true, sectionQuotes: true };
+
+test('the last-resort cut keeps the lead, and the speaker with the quotation asked for', async () => {
+  const opening = [paragraph(`${lead} ${how}`, ['e1']), paragraph(`${speaker} ${quotedLine} A marca também patrocina feiras regionais.`, ['e2'])];
+  const fits = countCharacters(lead) + countCharacters(`${speaker} ${quotedLine}`);
+  assert.deepEqual(await cutOpening(opening, fits, stand), [lead, `${speaker} ${quotedLine}`], 'the how goes before the speaker or the quotation');
+  // When the quotation cannot fit with the lead, it goes: the part is cut as without the request, never failed.
+  assert.deepEqual(await cutOpening(opening, countCharacters(lead) + 10, stand), [lead]);
+  assert.deepEqual(await cutOpening(opening, countCharacters(lead) + 10), [lead]);
+});
+
+test('the last-resort cut never leaves an opening that is only a quotation', async () => {
+  const opening = [paragraph(`${lead} “Nossa embalagem foi pensada para comunicar os benefícios do produto”, disse Scorsin.`, ['e1', 'e2'])];
+  assert.deepEqual(await cutOpening(opening, countCharacters(lead) + 30, stand), [lead], 'asked for the quotation, the part keeps its lead');
+  assert.deepEqual(await cutOpening(opening, countCharacters(lead) + 30, { minQuotes: 3, openingQuote: false, sectionQuotes: true }), [lead], 'not asked for one');
 });
