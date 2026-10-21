@@ -14,7 +14,7 @@ import { countWords } from './text/stats.ts';
  */
 
 /** What a prompt names when it explains the hints. A prompt saved before them (production's
- * revision 1) names neither, so it keeps its exact source and its cache. */
+ * revision 1) names neither, so its steps keep their exact source. */
 export const PLANNING_HINT = 'FALAS CURADAS', WRITING_HINT = 'curated: true';
 export function explainedHints(definition: PipelineDefinition): { planning: boolean; writing: boolean } {
   const explains = (key: PipelineStepKey, marker: string) => Boolean(definition.steps[key]?.prompt.includes(marker));
