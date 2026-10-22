@@ -7,7 +7,7 @@ import { expectHeadingOutline, expectNoHorizontalOverflow, watchErrors } from '.
 const VIEWPORTS = [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 709, height: 790 }, { width: 390, height: 844 }];
 const FIRST = '10000000-0000-4000-8000-000000000001';
 const SECOND = '10000000-0000-4000-8000-000000000002';
-const THIRD = '10000000-0000-4000-8000-000000000003';
+const SIXTH = '10000000-0000-4000-8000-000000000006';
 const FIRST_TITLE = 'Tilápia brasileira amplia presença no mercado externo e produtores discutem os próximos investimentos';
 const SECOND_TITLE = 'Tilápia ganha novo estudo sobre alimentação e qualidade da água';
 const IMAGE_ORIGIN = 'https://images.example';
@@ -36,9 +36,12 @@ async function mockDesk(page: Page, count = 18) {
       via: 'rss', contentKind: 'feed', status: 'new', publishedAt, importedAt: publishedAt,
       excerpt: 'Os novos dados ajudam a acompanhar a produção, o comércio e os próximos desafios do setor.',
       body: Array.from({ length: 12 }, (_, paragraph) => `Parágrafo ${paragraph + 1} da notícia ${index + 1}. Pesquisadores e produtores apresentam os resultados, explicam a metodologia e discutem seus efeitos sobre a cadeia do pescado no Brasil.`),
-      duplicates: [], decisionRevision: 0,
+      // Two stories ran in a second outlet: they lead the cover, in order of publication.
+      duplicates: index === 0 || index === 5 ? [{ source: 'Jornal do Pescado', url: `https://jornal.example/noticia-${index + 1}`, publishedAt }] : [],
+      decisionRevision: 0,
     };
   });
+  const decisions: unknown[] = [];
   await page.route('https://www.google.com/s2/favicons?**', route => route.fulfill({ contentType: 'image/png', body: PNG }));
   // A corrupt image response exercises decode failure without an unrelated HTTP console error.
   await page.route(`${IMAGE_ORIGIN}/**`, route => route.fulfill({ contentType: 'image/png',
@@ -46,9 +49,21 @@ async function mockDesk(page: Page, count = 18) {
   await page.route('**/api/reporter/workspace', route => route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } }));
   await page.route('**/api/reporter/news**', route => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/decision')) {
+      const input = route.request().postDataJSON() as { revision: number; action: string; hours?: number; reason?: string };
+      decisions.push(input);
+      const index = items.findIndex(item => path.includes(`/items/${item.id}/`));
+      const now = new Date().toISOString();
+      const status = { select: 'selected', postpone: 'later', discard: 'discarded', restore: 'new' }[input.action] as NewsItem['status'];
+      items[index] = { ...items[index], status, decisionRevision: (items[index].decisionRevision ?? 0) + 1,
+        decidedAt: status === 'new' ? undefined : now, laterUntil: input.hours ? new Date(Date.now() + input.hours * 3_600_000).toISOString() : undefined,
+        discardReason: input.reason };
+      return route.fulfill({ json: items[index] });
+    }
     if (path.startsWith('/api/reporter/news/items/')) return route.fulfill({ json: { item: items.find(item => path.endsWith(item.id)) } });
     return route.fulfill({ json: { at: new Date().toISOString(), sources: feeds, items, rssApp: false } });
   });
+  return { decisions };
 }
 
 async function loadedNewsImage(card: Locator, index: number) {
@@ -58,49 +73,41 @@ async function loadedNewsImage(card: Locator, index: number) {
   return image;
 }
 
-/** CardLink stretches over the media; click the image's real screen coordinates. */
-async function clickImage(page: Page, image: Locator) {
-  await image.scrollIntoViewIfNeeded();
-  const box = (await image.boundingBox())!;
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-}
-
-/** The lead is intentionally larger; missing and broken photos keep each tier's geometry. */
-async function expectPortalHeadlines(page: Page) {
-  const lead = page.locator('[data-news-layout="feature"]');
-  const tiles = page.locator('[data-news-layout="tile"]');
-  const compact = page.locator('[data-news-layout="compact"]');
+/** The radar's first view: the pulse, the lead with its photo, the highlights and the subjects beside them. */
+async function expectRadar(page: Page) {
+  await expect(page.getByRole('region', { name: 'Pulso do radar', exact: true })).toBeVisible();
+  const lead = page.locator('[data-news-layout="lead"]');
   await expect(lead).toHaveCount(1);
-  await expect(tiles).toHaveCount(3);
-  const sizes = await tiles.evaluateAll(elements => elements.map(element => {
-    const box = element.querySelector('[data-state][data-radius]')!.getBoundingClientRect();
-    return { width: box.width, height: box.height };
-  }));
-  for (const size of sizes) expect(size.width / size.height).toBeCloseTo(16 / 9, 1);
-  expect(Math.max(...sizes.map(size => size.height)) - Math.min(...sizes.map(size => size.height)),
-    'foto ausente e quebrada preservam a mesma área nos destaques').toBeLessThanOrEqual(1);
+  await loadedNewsImage(lead, 1);
+  await expect(lead.getByText('Em 2 veículos', { exact: true })).toBeVisible();
+  const highlights = page.getByRole('list', { name: 'Outros destaques', exact: true });
+  await expect(highlights.getByTestId(/^news-card-/)).toHaveCount(3);
+  await expect(highlights.getByTestId(`news-card-${SIXTH}`).getByText('Em 2 veículos', { exact: true })).toBeVisible();
+  // A story without a photo leads with its outlet's mark, never an icon stretched into a photo frame.
+  const second = page.getByTestId(`news-card-${SECOND}`);
+  await expect(second.locator(`img[src^="${IMAGE_ORIGIN}/"]`)).toHaveCount(0);
+  await expect(second.locator('img[src*="s2/favicons"]')).toHaveCount(1);
+  await expect(page.getByTestId('news-headlines').locator(`img[src="${IMAGE_ORIGIN}/broken.png"]`)).toHaveCount(0);
+  // Where and how strong: the outlet and its rating ride along every row; the time has its column.
+  await expect(second.getByText('Revista Aquicultura')).toBeVisible();
+  await expect(second.getByText('A2', { exact: true })).toBeVisible();
   const leadFont = await lead.getByRole('heading', { level: 3 }).evaluate(el => parseFloat(getComputedStyle(el).fontSize));
-  const secondaryFont = await tiles.first().getByRole('heading', { level: 3 }).evaluate(el => parseFloat(getComputedStyle(el).fontSize));
-  expect(leadFont, 'a manchete principal tem peso visual maior').toBeGreaterThan(secondaryFont);
-  for (const media of await compact.locator('[data-state][data-radius]').all()) {
-    const box = (await media.boundingBox())!;
-    expect(box.height).toBeLessThanOrEqual(96);
-    expect(box.width / box.height).toBeCloseTo(1, 1);
-  }
+  const rowFont = await second.getByText(SECOND_TITLE, { exact: true }).evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+  expect(leadFont, 'a manchete principal tem peso visual maior').toBeGreaterThan(rowFont);
+  const subjects = page.getByRole('list', { name: 'Assuntos em alta', exact: true });
+  await expect(subjects.getByTestId('news-topic-tilapia')).toContainText('2 notícias');
   const viewport = page.viewportSize()!;
   if (viewport.width >= 1280) {
-    const leadHeading = (await page.getByRole('heading', { name: 'Em destaque', exact: true }).boundingBox())!;
-    const latestHeading = (await page.getByRole('heading', { name: 'Últimas notícias', exact: true }).boundingBox())!;
-    expect(Math.abs(leadHeading.y - latestHeading.y), 'as duas colunas começam na mesma linha').toBeLessThanOrEqual(4);
+    const coverHeading = (await page.getByRole('heading', { name: 'Em destaque', exact: true }).boundingBox())!;
+    const subjectsHeading = (await page.getByRole('heading', { name: 'Em alta', exact: true }).boundingBox())!;
+    expect(Math.abs(coverHeading.y - subjectsHeading.y), 'destaques e assuntos começam na mesma linha').toBeLessThanOrEqual(4);
     const leadBox = (await lead.boundingBox())!;
-    const latestBox = (await page.getByRole('region', { name: 'Últimas notícias', exact: true }).locator('[data-news-layout="compact"]').first().boundingBox())!;
-    expect(latestBox.x, 'últimas notícias ficam ao lado da manchete').toBeGreaterThan(leadBox.x + leadBox.width);
-    const headings = await page.getByTestId(/^news-card-/).getByRole('heading').evaluateAll(elements => elements.map(el => {
+    expect(subjectsHeading.x, 'os assuntos ficam ao lado dos destaques').toBeGreaterThan(leadBox.x + leadBox.width);
+    const visible = await page.getByTestId(/^news-card-/).evaluateAll(elements => elements.filter(el => {
       const { y, height } = el.getBoundingClientRect();
-      return { y, height };
-    }));
-    expect(headings.filter(box => box.y >= 0 && box.y + box.height <= viewport.height).length,
-      'várias manchetes são legíveis antes de rolar').toBeGreaterThanOrEqual(5);
+      return y >= 0 && y + height <= window.innerHeight;
+    }).length);
+    expect(visible, 'o destaque e outros destaques aparecem antes de rolar, abaixo do pulso').toBeGreaterThanOrEqual(3);
   }
 }
 
@@ -113,29 +120,64 @@ test('carrega mais manchetes com foco útil e preserva a página e a busca ao vo
   // All thirty headlines contain this term; a non-empty search also exercises return state.
   await search.fill('a');
   await expect(page.getByTestId(/^news-card-/)).toHaveCount(24);
+  await expect(page.getByRole('region', { name: 'Pulso do radar', exact: true })).toHaveCount(0);
   const more = page.getByRole('button', { name: 'Carregar mais manchetes', exact: true });
   await more.click();
   await expect(page.getByTestId(/^news-card-/)).toHaveCount(30);
   await expect(more).toHaveCount(0);
   const card = page.getByTestId('news-card-10000000-0000-4000-8000-000000000025');
-  const open = card.getByRole('button', { name: 'Ler notícia: Cadeia do pescado acompanha pesquisa e mercado 25', exact: true });
-  await expect(open).toBeFocused();
-  const image = await loadedNewsImage(card, 25);
-  await image.scrollIntoViewIfNeeded();
+  await expect(card).toBeFocused();
   await expect(card).toBeInViewport();
   const before = (await card.boundingBox())!.y;
-  await clickImage(page, image);
+  await card.click();
   await expect(page.getByRole('heading', { level: 2, name: 'Cadeia do pescado acompanha pesquisa e mercado 25', exact: true })).toBeVisible();
+  await loadedNewsImage(page.locator('[data-ws-stop="main"]'), 25);
   await page.goBack();
   await expect(page).toHaveURL(/\/news$/);
   await expect(search).toHaveValue('a');
   await expect(page.getByTestId(/^news-card-/)).toHaveCount(30);
-  await loadedNewsImage(card, 25);
-  await expect(open).toBeFocused();
+  await expect(card).toBeFocused();
   await expect(card).toBeInViewport();
   await expect.poll(async () => Math.abs((await card.boundingBox())!.y - before), { message: 'a volta mantém a posição entre as manchetes carregadas' }).toBeLessThan(3);
   await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
+  expect(errors).toEqual([]);
+});
+
+test('decide na fila sem abrir a notícia e desfaz pela confirmação', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { decisions } = await mockDesk(page);
+  const errors = watchErrors(page);
+  await page.goto('/news');
+  const open = page.getByRole('tab', { name: /^Para decidir/ });
+  const decided = page.getByRole('tab', { name: /^Decididas/ });
+  await expect(open).toContainText('18');
+  const row = page.getByTestId('news-card-10000000-0000-4000-8000-000000000010');
+  const actions = row.locator('xpath=ancestor::li[1]');
+  await actions.getByRole('button', { name: 'Selecionar para redação', exact: true }).click();
+  await expect(page.getByText('Notícia selecionada para redação', { exact: true })).toBeVisible();
+  await expect(row).toHaveCount(0);
+  await expect(open).toContainText('17');
+  await expect(decided).toContainText('1');
+  await page.getByRole('button', { name: 'Desfazer', exact: true }).click();
+  await expect(row).toBeVisible();
+  await expect(open).toContainText('18');
+  await actions.getByRole('button', { name: 'Adiar ou descartar', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Fora do mapa editorial', exact: true }).click();
+  await expect(page.getByText('Notícia descartada', { exact: true })).toBeVisible();
+  await expect(row).toHaveCount(0);
+  await decided.click();
+  await expect(page.getByRole('heading', { level: 2, name: 'Descartadas', exact: true })).toBeVisible();
+  await expect(row).toContainText('Fora do mapa editorial');
+  await page.getByTestId('news-card-10000000-0000-4000-8000-000000000010').locator('xpath=ancestor::li[1]')
+    .getByRole('button', { name: 'Voltar para a fila', exact: true }).click();
+  await expect(page.getByText('De volta à fila', { exact: true })).toBeVisible();
+  expect(decisions).toEqual([
+    { revision: 0, action: 'select' }, { revision: 1, action: 'restore' },
+    { revision: 2, action: 'discard', reason: 'Fora do mapa editorial' }, { revision: 3, action: 'restore' },
+  ]);
+  await expectNoHorizontalOverflow(page);
+  await expectHeadingOutline(page);
   expect(errors).toEqual([]);
 });
 
@@ -157,11 +199,18 @@ async function entirelyVisible(page: Page, target: Locator) {
   expect(rect!.y + rect!.height, 'bottom edge').toBeLessThanOrEqual(viewport.height + 1);
 }
 
+/** "Ver atividade" lives in "Mais ações" at every width. */
+async function openActivity(page: Page) {
+  await page.getByRole('button', { name: 'Mais ações', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Ver atividade', exact: true }).click();
+}
+
 for (const viewport of VIEWPORTS) {
   test.describe(`radar e leitura em ${viewport.width}`, () => {
     test.use(viewport.width === 390 ? { viewport, hasTouch: true, isMobile: true } : { viewport });
+    const phone = viewport.width < 768;
 
-    test('abre manchetes sem selecionar e só mostra leitura expandida e decisões após o clique', async ({ page }) => {
+    test('abre o radar sem selecionar e só mostra a leitura e a barra de decisão após o clique', async ({ page }) => {
       await mockDesk(page);
       const errors = watchErrors(page);
       const writes: string[] = [];
@@ -178,40 +227,26 @@ for (const viewport of VIEWPORTS) {
       await entirelyVisible(page, search);
       await expect(first.getByRole('heading', { name: FIRST_TITLE, exact: true })).toBeVisible();
       await expect(decisions).toHaveCount(0);
-      await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: 'Outras ações da notícia', exact: true })).toHaveCount(0);
       await expect(page.getByText('Parágrafo 1 da notícia 1.', { exact: false })).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Chegadas', exact: true })).toHaveCount(0);
       await expect(page.getByRole('combobox', { name: 'Força editorial da fonte', exact: true })).toHaveCount(0);
       const searchBox = (await search.boundingBox())!;
-      const firstBox = (await first.boundingBox())!;
-      expect(firstBox.y, 'as manchetes vêm depois da busca').toBeGreaterThanOrEqual(searchBox.y + searchBox.height);
-      expect(firstBox.y - searchBox.y - searchBox.height, 'o radar de assuntos é compacto e deixa as manchetes próximas da busca').toBeLessThan(330);
-      await expect(page.getByRole('heading', { level: 2, name: 'Em pauta', exact: true })).toBeVisible();
+      const pulseBox = (await page.getByRole('region', { name: 'Pulso do radar', exact: true }).boundingBox())!;
+      expect(pulseBox.y, 'o pulso vem logo depois da busca').toBeGreaterThanOrEqual(searchBox.y + searchBox.height);
       const overviewWidth = (await article.boundingBox())!.width;
       // Decision shortcuts must not act on a story the person has not opened.
       await page.keyboard.press('c');
       await page.keyboard.press('a');
       await expect(page.getByTestId('news-headlines')).toBeVisible();
       expect(writes).toEqual([]);
+      await expectRadar(page);
       await expectNoHorizontalOverflow(page);
-
-      const image = await loadedNewsImage(first, 1);
-      const second = page.getByTestId(`news-card-${SECOND}`);
-      await expect(second.locator(`img[src^="${IMAGE_ORIGIN}/"]`)).toHaveCount(0);
-      await expect(second.getByRole('img', { name: 'Marca de Revista Aquicultura; notícia sem foto', exact: true })).toBeVisible();
-      await expect(second.getByText('Imagem indisponível', { exact: true })).toHaveCount(0);
-      const broken = page.getByTestId(`news-card-${THIRD}`);
-      await expect(broken.getByRole('img', { name: /imagem indisponível/i })).toBeVisible();
-      // A failed photo keeps the same reserved area as its neighboring secondary stories.
-      await expect(broken.locator('[data-state="error"] svg')).toBeVisible();
-      await expect(page.getByTestId('news-headlines').getByText('Os novos dados ajudam a acompanhar a produção, o comércio e os próximos desafios do setor.', { exact: true })).toHaveCount(0);
-      await expectPortalHeadlines(page);
-      if (viewport.width === 1440 || viewport.width === 709) await page.screenshot({ path: test.info().outputPath(`news-portal-${viewport.width}.png`), animations: 'disabled' });
+      await expectHeadingOutline(page);
+      if (viewport.width === 1440 || viewport.width === 709) await page.screenshot({ path: test.info().outputPath(`news-radar-${viewport.width}.png`), animations: 'disabled' });
       const headline = first.getByRole('heading', { name: FIRST_TITLE, exact: true });
-      await headline.scrollIntoViewIfNeeded();
+      await headline.evaluate(element => element.scrollIntoView({ block: 'center' }));
       await entirelyVisible(page, headline);
-      await clickImage(page, image);
+      await first.getByRole('button', { name: `Ler notícia: ${FIRST_TITLE}`, exact: true }).click();
       await expect(page).toHaveURL(new RegExp(`/news\\?item=${FIRST}$`));
       await expect(page.getByTestId('news-headlines')).toHaveCount(0);
       await expect(search).toHaveCount(0);
@@ -219,28 +254,37 @@ for (const viewport of VIEWPORTS) {
       const heading = article.getByRole('heading', { name: FIRST_TITLE, exact: true });
       await entirelyVisible(page, heading);
       await entirelyVisible(page, article.getByRole('link', { name: /^Ver original/ }));
+      await loadedNewsImage(article, 1);
+      await expect(page.getByText('1 de 18', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Notícia anterior', exact: true })).toBeDisabled();
       const back = page.getByRole('navigation', { name: 'Trilha de navegação', exact: true }).getByRole('link', { name: 'Notícias', exact: true });
       await entirelyVisible(page, back);
       await expect(back).toHaveAttribute('href', '/news');
-      for (const name of ['Outras ações da notícia', 'Selecionar para redação']) {
-        await entirelyVisible(page, decisions.getByRole('button', { name, exact: true }));
-      }
+      const choices = phone ? ['Outras ações da notícia', 'Selecionar para redação'] : ['Descartar', 'Adiar', 'Selecionar para redação'];
+      for (const name of choices) await entirelyVisible(page, decisions.getByRole('button', { name, exact: true }));
       await entirelyVisible(page, decisions);
       await entirelyVisible(page, article);
-      expect((await article.boundingBox())!.width, 'a leitura ocupa toda a largura usada pelo overview').toBeCloseTo(overviewWidth, 0);
+      expect((await article.boundingBox())!.width, 'a leitura ocupa toda a largura usada pelo radar').toBeCloseTo(overviewWidth, 0);
       // The received text is expanded on entry, without an additional disclosure click.
       await expect(article.getByText('Parágrafo 1 da notícia 1.', { exact: false })).toBeVisible();
+      // Other open stories on the same subject follow the text.
+      await expect(article.getByRole('heading', { name: 'Na mesma pauta', exact: true })).toBeVisible();
+      await expect(article.getByTestId(`news-card-${SECOND}`)).toBeVisible();
       await article.getByText('Parágrafo 12 da notícia 1.', { exact: false }).scrollIntoViewIfNeeded();
-      for (const name of ['Outras ações da notícia', 'Selecionar para redação']) {
-        await entirelyVisible(page, decisions.getByRole('button', { name, exact: true }));
-      }
-      await decisions.getByRole('button', { name: 'Outras ações da notícia', exact: true }).click();
-      for (const name of ['Por 2 horas', 'Até amanhã cedo', 'Fora do mapa editorial']) {
-        await entirelyVisible(page, page.getByRole('menuitem', { name, exact: true }));
+      for (const name of choices) await entirelyVisible(page, decisions.getByRole('button', { name, exact: true }));
+      await decisions.getByRole('button', { name: choices[phone ? 0 : 1], exact: true }).click();
+      // "Até amanhã cedo" carries its shortcut (A) in the menu of the wide bar.
+      for (const name of phone ? [/^Por 2 horas$/, /^Até amanhã cedo$/, /^Fora do mapa editorial$/] : [/^Por 2 horas$/, /^Até amanhã cedo/]) {
+        await entirelyVisible(page, page.getByRole('menuitem', { name }));
       }
       await page.keyboard.press('Escape');
       await expect(page.getByRole('menuitem', { name: 'Por 2 horas', exact: true })).toHaveCount(0);
       expect(writes, 'consultar as ações não grava decisões').toEqual([]);
+      // The next story is one click (or J) away, and the position follows.
+      await page.getByRole('button', { name: 'Próxima notícia', exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`/news\\?item=${SIXTH}$`));
+      await expect(page.getByText('2 de 18', { exact: true })).toBeVisible();
+      await expect(article.getByRole('heading', { level: 2, name: 'Cadeia do pescado acompanha pesquisa e mercado 6', exact: true })).toBeVisible();
       await expectNoHorizontalOverflow(page);
       await expectHeadingOutline(page);
       expect(errors).toEqual([]);
@@ -254,18 +298,18 @@ for (const viewport of VIEWPORTS) {
       const first = page.getByTestId(`news-card-${FIRST}`);
       const second = page.getByTestId(`news-card-${SECOND}`);
       await expect(first).toBeVisible();
-      const topic = page.getByRole('button', { name: 'Explorar assunto: Tilápia', exact: true });
+      const topic = page.getByTestId('news-topic-tilapia');
       await topic.click();
       await expect(topic).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(2);
-      await expect(page.getByRole('heading', { level: 2, name: 'Tilápia · últimas 24 h', exact: true })).toBeVisible();
-      await first.getByRole('button', { name: `Ler notícia: ${FIRST_TITLE}`, exact: true }).click();
+      await expect(page.getByRole('region', { name: 'Pulso do radar', exact: true })).toHaveCount(0);
+      await first.click();
       await expect(page).toHaveURL(new RegExp(`/news\\?item=${FIRST}$`));
       await expect(page.getByRole('heading', { level: 2, name: FIRST_TITLE, exact: true })).toBeVisible();
       await page.goBack();
       await expect(topic).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(2);
-      await page.getByRole('button', { name: 'Limpar assunto', exact: true }).click();
+      await page.getByRole('button', { name: 'Ver todas', exact: true }).click();
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(18);
       await search.fill('tilápia');
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(2);
@@ -278,7 +322,7 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole('button', { name: /^Filtros/ }).click();
       await expect(page.getByRole('combobox', { name: 'Fonte', exact: true })).toHaveCount(0);
       await expect(page.getByRole('group', { name: 'Filtros aplicados', exact: true })).toBeVisible();
-      await clickImage(page, await loadedNewsImage(first, 1));
+      await first.click();
       const article = page.locator('[data-ws-stop="main"]');
       await expect(article.getByRole('heading', { name: FIRST_TITLE, exact: true })).toBeVisible();
       await expect(page.getByTestId('news-headlines')).toHaveCount(0);
@@ -287,27 +331,21 @@ for (const viewport of VIEWPORTS) {
       await expect(search).toHaveValue('tilápia');
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(1);
       await expect(first).toBeVisible();
-      await loadedNewsImage(first, 1);
       await expect(page.getByRole('group', { name: 'Filtros aplicados', exact: true })).toContainText('Instituto do Pescado');
       await expect(page.getByRole('group', { name: 'Filtros aplicados', exact: true })).toContainText('A1');
       await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
 
-      const readFirst = first.getByRole('button', { name: `Ler notícia: ${FIRST_TITLE}`, exact: true });
-      await readFirst.focus();
+      await first.focus();
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL(new RegExp(`/news\\?item=${FIRST}$`));
       await page.goBack();
       await expect(page).toHaveURL(/\/news$/);
       await expect(search).toHaveValue('tilápia');
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(1);
-      await expect(first).toBeVisible();
-      await loadedNewsImage(first, 1);
+      await expect(first).toBeFocused();
       await expect(page.locator('[data-ws-stop="footer"]')).toHaveCount(0);
 
-      if (viewport.width < 768) {
-        await page.getByRole('button', { name: 'Mais ações', exact: true }).click();
-        await page.getByRole('menuitem', { name: 'Ver atividade', exact: true }).click();
-      } else await page.getByRole('button', { name: 'Ver atividade', exact: true }).click();
+      await openActivity(page);
       const activity = page.getByRole('dialog', { name: 'Atividade do radar', exact: true });
       await expect(activity).toBeVisible();
       await expect(activity.getByRole('heading', { name: 'Chegadas', exact: true })).toBeVisible();
