@@ -1,75 +1,45 @@
 {
-  "currentVersion": "0.21.0",
-  "currentRoadmapRelease": "R0",
-  "upcoming": {
-    "roadmapRelease": "R1",
-    "title": "Primeiro entregável",
-    "summary": "Da transcrição autorizada ao artigo e carrossel aprovados e exportados, com backend persistente, IA conectada e trilha de auditoria.",
-    "changes": [
-      {
-        "type": "Added",
-        "description": "Nova produção a partir da transcrição, com falantes, orientação e tamanho do artigo em laudas."
-      },
-      {
-        "type": "Added",
-        "description": "Estúdio do artigo com geração ao vivo, copiloto, citações conferidas na transcrição e imagens sugeridas a preencher."
-      },
-      {
-        "type": "Added",
-        "description": "Revisão com comparação de versões e aprovação registrada por quem aprova."
-      },
-      {
-        "type": "Added",
-        "description": "Carrossel feito do artigo aprovado, com o texto de cada slide e a prévia no modelo."
-      },
-      {
-        "type": "Added",
-        "description": "Biblioteca de modelos de carrossel, em feed e quadrado, com a prévia de cada layout e a troca de modelo sem perder os textos."
-      },
-      {
-        "type": "Added",
-        "description": "Entrega do pacote com artigo, carrossel e a origem de cada peça."
-      },
-      {
-        "type": "Added",
-        "description": "Logs de logins, acessos negados e alterações, só para administradores."
-      }
-    ],
-    "roadmapReleaseNotes": {
-      "summary": "Ship the R1 roadmap release with the R0 foundation and the connected editorial workflow.",
+  "currentVersion": "1.0.0",
+  "currentRoadmapRelease": "R1",
+  "releases": [
+    {
+      "version": "1.0.0",
+      "roadmapRelease": "R1",
+      "date": "2026-10-22",
+      "title": "R1 roadmap release",
+      "summary": "Da transcrição autorizada ao artigo e carrossel aprovados e exportados, com backend persistente, IA conectada e trilha de auditoria.",
+      "commit": null,
       "changes": [
         {
           "type": "Added",
-          "description": "Connect transcript intake and editorial context to durable productions"
+          "description": "Nova produção a partir da transcrição, com falantes, orientação e tamanho do artigo em laudas."
         },
         {
           "type": "Added",
-          "description": "Generate articles with server-owned AI providers and reviewed prompts"
+          "description": "Estúdio do artigo com geração ao vivo, copiloto, citações conferidas na transcrição e imagens sugeridas a preencher."
         },
         {
           "type": "Added",
-          "description": "Edit articles and record human approval of exact versions"
+          "description": "Revisão com comparação de versões e aprovação registrada por quem aprova."
         },
         {
           "type": "Added",
-          "description": "Generate slide copy from approved articles"
+          "description": "Carrossel feito do artigo aprovado, com o texto de cada slide e a prévia no modelo."
         },
         {
           "type": "Added",
-          "description": "Compose carousels with approved templates"
+          "description": "Biblioteca de modelos de carrossel, em feed e quadrado, com a prévia de cada layout e a troca de modelo sem perder os textos."
         },
         {
           "type": "Added",
-          "description": "Review and export article and carousel packages"
+          "description": "Entrega do pacote com artigo, carrossel e a origem de cada peça."
         },
         {
           "type": "Added",
-          "description": "Record access and change events in the admin audit trail"
+          "description": "Logs de logins, acessos negados e alterações, só para administradores."
         }
       ]
-    }
-  },
-  "releases": [
+    },
     {
       "version": "0.21.0",
       "roadmapRelease": "R0",

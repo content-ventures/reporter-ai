@@ -4,6 +4,18 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-22
+
+### Added
+
+- Connect transcript intake and editorial context to durable productions.
+- Generate articles with server-owned AI providers and reviewed prompts.
+- Edit articles and record human approval of exact versions.
+- Generate slide copy from approved articles.
+- Compose carousels with approved templates.
+- Review and export article and carousel packages.
+- Record access and change events in the admin audit trail.
+
 ## [0.21.0] - 2026-10-22
 
 ### Added
