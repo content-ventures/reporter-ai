@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Badge,
   Button,
+  ButtonGroup,
   ButtonLink,
   EmptyState,
   Drawer,
@@ -15,10 +16,27 @@ import {
   ListItemSkeleton,
   Menu,
   PageHeader,
+  Tooltip,
   toast,
   WorkspaceLayout,
 } from '@content-ventures/design-system/v3';
-import { Activity, AlertTriangle, CheckCheck, Ellipsis, Link2, Newspaper, Plus, Rss, Target } from '@content-ventures/design-system/v3/icons';
+import {
+  Activity,
+  AlertTriangle,
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Ellipsis,
+  Globe,
+  Link2,
+  Newspaper,
+  Plus,
+  Rss,
+  Target,
+  Telescope,
+} from '@content-ventures/design-system/v3/icons';
 import type { NewsItem } from '@/domain/hard-news';
 import { matchesSourceTier, sourceForNews } from '@/domain/news-source-match';
 import type { SourceTierFilter } from '@/domain/news-source-match';
@@ -36,7 +54,9 @@ import { ImportLinkDialog } from './import-link-dialog';
 import { DecisionBar, NewsFicha } from './news-ficha';
 import { matchesQuery, nextAfter } from './news-model';
 import type { DeskTab } from './news-model';
-import { decidedOf, heroOf, lastRead, pulse, queueOf, waitLabel, wireGroups } from './radar-model';
+import { RowDecision } from './news-row';
+import { decidedOf, decisionGroups, heroOf, lastRead, pulse, queueOf, waitLabel, wireGroups } from './radar-model';
+import type { BoardGroup } from './radar-model';
 import { RadarActivity, RadarBoard, RadarSkeleton, type RadarBoardProps } from './radar-board';
 import { editionOrder } from './edition-model';
 import { NewsFilters } from './news-filters';
@@ -46,6 +66,24 @@ import type { NewsTopic } from './topic-model';
 
 /** On a first visit with no record of the last look, the last 90 minutes are "Novas". */
 const FIRST_LOOK_MS = 90 * 60_000;
+/** The cover: the lead and the next three highlights. */
+const COVER_SIZE = 4;
+const PAGE_SIZE = 24;
+
+type DecisionResult = { ok: true } | { ok: false; message: string };
+type DecisionAction = { action: 'select' } | { action: 'postpone'; hours: number } | { action: 'discard'; reason: string };
+
+/** Another view of the board (a tab, a subject) starts at its top, not where the last one was left. */
+function boardToTop() {
+  requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-ws-stop="main"] [role="region"]')?.scrollTo({ top: 0 }));
+}
+
+/** The headline as it sits on the board: the row itself, or the link that covers a cover card. */
+function focusHeadline(id: string, preventScroll: boolean) {
+  const target = document.querySelector<HTMLElement>(`[data-testid="news-card-${id}"]`);
+  const control = target?.matches('button') ? target : target?.querySelector<HTMLElement>('button[data-card-link]');
+  control?.focus({ preventScroll });
+}
 
 /** The desk opened on one news item (`/news?item=<id>`, from Início). */
 export function NewsDeskFromUrl() {
@@ -74,7 +112,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const [topic, setTopic] = useState<Pick<NewsTopic, 'key' | 'label'>>();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
-  const [headlineLimit, setHeadlineLimit] = useState(24);
+  const [headlineLimit, setHeadlineLimit] = useState(PAGE_SIZE);
   const overviewScroll = useRef(0);
   const loadMoreFocus = useRef<string | undefined>(undefined);
   const returnFocus = useRef<string | undefined>(undefined);
@@ -89,8 +127,11 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const [bodyAttempt, setBodyAttempt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
-  const [covering, setCovering] = useState(false);
-  const deciding = useRef(false);
+  // Stories with a decision on its way: one at a time per story, many stories at once.
+  const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
+  const deciding = useRef(new Set<string>());
+  const newsNow = useRef(state.news);
+  useEffect(() => { newsNow.current = state.news; });
 
   const now = clock?.getTime() ?? 0;
   const live = ready && now > 0;
@@ -103,26 +144,37 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   }
   const tab: DeskTab = chosenTab ?? 'open';
   const seenSince = state.radar?.seenSince ?? new Date(now - FIRST_LOOK_MS).toISOString();
+  const filtered = Boolean(query || topic || sourceTier !== 'all' || sourceId !== 'all');
 
   const board = useMemo(() => {
-    const filtered = state.news.filter(item => matchesSourceTier(item, state.feeds, sourceTier)
+    const scoped = state.news.filter(item => matchesSourceTier(item, state.feeds, sourceTier)
       && (sourceId === 'all' || (item.feedId ?? sourceForNews(item, state.feeds)?.id) === sourceId));
-    const topics = newsTopics(filtered, now);
-    const queue = queueOf(topic ? filtered.filter(item => matchesTopic(item, topic.key, now)) : filtered, query);
-    const { hero, overflow } = triage ? heroOf(queue, 1) : { hero: [], overflow: 0 };
-    const rest = queue.filter((item) => !hero.includes(item));
-    const groups = wireGroups(rest, seenSince, now);
-    const decided = decidedOf(filtered, query);
-    const edition = tab === 'open' && !query && !topic && sourceId === 'all' && sourceTier === 'all';
-    const ordered = tab === 'open' ? edition ? editionOrder(queue, now, triage) : [...hero, ...groups.flatMap((group) => group.items)] : decided;
-    return { hero, overflow, groups, decided, ordered, edition, open: queue.length, topics };
-  }, [now, query, seenSince, sourceId, sourceTier, state.feeds, state.news, tab, topic, triage]);
+    const topics = newsTopics(scoped, now);
+    const queue = queueOf(topic ? scoped.filter(item => matchesTopic(item, topic.key, now)) : scoped, query);
+    const decided = decidedOf(scoped, query);
+    let cover: NewsItem[] = [];
+    let groups: BoardGroup[];
+    if (tab === 'decided') groups = decisionGroups(decided);
+    else if (!filtered) {
+      cover = editionOrder(queue, now, triage).slice(0, COVER_SIZE);
+      groups = wireGroups(queue.filter(item => !cover.includes(item)), seenSince, now);
+    } else {
+      // With a search, a filter or a topic the simulation's top stories lead the results.
+      const { hero } = triage ? heroOf(queue, 3) : { hero: [] as NewsItem[] };
+      groups = [
+        ...(hero.length ? [{ id: 'hero', label: 'Cobrir agora', items: hero }] : []),
+        ...wireGroups(queue.filter(item => !hero.includes(item)), seenSince, now),
+      ];
+    }
+    const ordered = [...cover, ...groups.flatMap(group => group.items)];
+    return { cover, groups, ordered, open: queue.length, decided: decided.length, topics, hero: triage ? heroOf(queue, 1).hero : [] };
+  }, [filtered, now, query, seenSince, sourceId, sourceTier, state.feeds, state.news, tab, topic, triage]);
 
   useEffect(() => {
     if (!loadMoreFocus.current) return;
     const id = loadMoreFocus.current;
     loadMoreFocus.current = undefined;
-    const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="news-card-${id}"] button[data-card-link]`)?.focus());
+    const frame = requestAnimationFrame(() => focusHeadline(id, false));
     return () => cancelAnimationFrame(frame);
   }, [headlineLimit]);
 
@@ -142,11 +194,18 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       const main = document.querySelector<HTMLElement>('[data-ws-stop="main"]');
       main?.querySelector<HTMLElement>('[role="region"]')?.scrollTo({ top: selectedId ? 0 : overviewScroll.current });
       if (selectedId) main?.focus({ preventScroll: true });
-      else if (returnFocus.current) document.querySelector<HTMLElement>(`[data-testid="news-card-${returnFocus.current}"] button[data-card-link]`)?.focus({ preventScroll: true });
+      else if (returnFocus.current) focusHeadline(returnFocus.current, true);
     });
     return () => cancelAnimationFrame(frame);
   }, [selectedId]);
-  // Other open stories on the subjects this one shares with the radar, the most specific subject first.
+  const read = lastRead(state.feeds);
+  const anyActive = state.feeds.some((feed) => feed.state === 'active')
+    || Boolean(webSearch?.configured && webSearch.config?.enabled && !['failed', 'limited'].includes(webSearch.state));
+  useDocumentTitle(live ? (signals.fresh.count > 0 ? `(${signals.fresh.count}) Notícias` : 'Notícias') : null);
+
+  // Where the open story sits on the board, for "anterior" and "próxima".
+  const position = shown ? board.ordered.findIndex(item => item.id === shown.id) : -1;
+  // Other open stories on the subjects this one shares with "Em alta", the most specific subject first.
   const related = useMemo(() => {
     if (!shown) return [];
     const found = new Map<string, NewsItem>();
@@ -156,10 +215,6 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     for (const entry of shared) for (const item of entry.items) if (item.id !== shown.id && !found.has(item.id)) found.set(item.id, item);
     return [...found.values()].slice(0, 4);
   }, [now, shown, state.news]);
-  const read = lastRead(state.feeds);
-  const anyActive = state.feeds.some((feed) => feed.state === 'active')
-    || Boolean(webSearch?.configured && webSearch.config?.enabled && !['failed', 'limited'].includes(webSearch.state));
-  useDocumentTitle(live ? (signals.fresh.count > 0 ? `(${signals.fresh.count}) Notícias` : 'Notícias') : null);
 
   async function refresh() {
     setRefreshing(true);
@@ -186,82 +241,85 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
 
   const { region } = useRadar(select, !triage);
 
-  async function cover(item: NewsItem) {
-    if (covering || deciding.current) return;
+  /** One decision per story at a time: nothing happens while the story's last one is on its way. */
+  async function decide<T>(item: NewsItem, write: () => Promise<T>): Promise<T | undefined> {
+    if (deciding.current.has(item.id)) return undefined;
+    deciding.current.add(item.id);
+    setPending(new Set(deciding.current));
+    try { return await write(); } finally {
+      deciding.current.delete(item.id);
+      setPending(new Set(deciding.current));
+    }
+  }
+
+  /** "Desfazer": the story goes back to the queue with the revision its decision left. */
+  async function undo(id: string) {
+    if (!onServer) { actions.restore(id); return; }
+    const current = newsNow.current.find(item => item.id === id);
+    const result = await actions.decideNews(id, { revision: current?.decisionRevision ?? 0, action: 'restore' });
+    if (!result.ok) toast('Não foi possível desfazer', { tone: 'error', description: result.message });
+  }
+
+  /** A connected decision, with "Desfazer" in its confirmation. */
+  async function decideLive(item: NewsItem, input: DecisionAction, done: { title: string; description?: string }, failure: string): Promise<boolean> {
+    const result: DecisionResult | undefined = await decide(item, () => actions.decideNews(item.id, { ...input, revision: item.decisionRevision ?? 0 }));
+    if (!result) return false;
+    if (!result.ok) { toast(failure, { tone: 'error', description: result.message }); return false; }
+    toast(done.title, { description: done.description, action: { label: 'Desfazer', onClick: () => void undo(item.id) } });
+    return true;
+  }
+
+  /** "Selecionar para redação" (connected) or "Cobrir" (simulation); from the ficha the story stays open. */
+  async function cover(item: NewsItem, from: 'ficha' | 'row' = 'ficha') {
     if (onServer) {
-      deciding.current = true;
-      setCovering(true);
-      try {
-        const result = await actions.decideNews(item.id, { revision: item.decisionRevision ?? 0, action: 'select' });
-        if (!result.ok) { toast('Não foi possível selecionar', { tone: 'error', description: result.message }); return; }
-        setTab('decided');
-        setSelectedId(item.id);
-        toast('Notícia selecionada para redação');
-      } finally { deciding.current = false; setCovering(false); }
+      const done = await decideLive(item, { action: 'select' }, { title: 'Notícia selecionada para redação' }, 'Não foi possível selecionar');
+      if (done && from === 'ficha') { setTab('decided'); setSelectedId(item.id); }
       return;
     }
-    setCovering(true);
-    const productionId = await actions.cover(item.id);
-    setCovering(false);
+    const opened = await decide(item, async () => ({ productionId: await actions.cover(item.id) }));
+    if (!opened) return;
+    const { productionId } = opened;
     if (!productionId) {
       toast('Não foi possível abrir a pauta', { tone: 'error' });
       return;
     }
-    // The story stays open: its research starts right here, in the ficha.
-    setSelectedId(item.id);
+    // From the ficha the story stays open: its research starts right there.
+    if (from === 'ficha') setSelectedId(item.id);
     toast('Pauta aberta em Produções', {
       description: 'A IA já está apurando.',
       action: { label: 'Abrir apuração', onClick: () => router.push(researchHref(productionId)) },
     });
   }
 
-  async function postpone(item: NewsItem, hours: number, label: string) {
-    if (deciding.current) return;
+  async function postpone(item: NewsItem, hours: number, label: string, from: 'ficha' | 'row' = 'ficha') {
     const next = nextAfter(board.ordered, item.id);
     if (onServer) {
-      deciding.current = true;
-      setCovering(true);
-      try {
-        const result = await actions.decideNews(item.id, { revision: item.decisionRevision ?? 0, action: 'postpone', hours });
-        if (!result.ok) { toast('Não foi possível adiar', { tone: 'error', description: result.message }); return; }
-        setSelectedId(next);
-        toast(`Adiada: ${label.toLowerCase()}`);
-      } finally { deciding.current = false; setCovering(false); }
+      const done = await decideLive(item, { action: 'postpone', hours }, { title: `Adiada: ${label.toLowerCase()}` }, 'Não foi possível adiar');
+      if (done && from === 'ficha') setSelectedId(next);
       return;
     }
     actions.postpone(item.id, hours);
-    setSelectedId(next);
+    if (from === 'ficha') setSelectedId(next);
     toast(`Adiada: ${label.toLowerCase()}`, { action: { label: 'Desfazer', onClick: () => actions.restore(item.id) } });
   }
 
-  async function discard(item: NewsItem, reason: string) {
-    if (deciding.current) return;
+  async function discard(item: NewsItem, reason: string, from: 'ficha' | 'row' = 'ficha') {
     const next = nextAfter(board.ordered, item.id);
     if (onServer) {
-      deciding.current = true;
-      setCovering(true);
-      try {
-        const result = await actions.decideNews(item.id, { revision: item.decisionRevision ?? 0, action: 'discard', reason });
-        if (!result.ok) { toast('Não foi possível descartar', { tone: 'error', description: result.message }); return; }
-        setSelectedId(next);
-        toast('Notícia descartada', { description: reason });
-      } finally { deciding.current = false; setCovering(false); }
+      const done = await decideLive(item, { action: 'discard', reason }, { title: 'Notícia descartada', description: reason }, 'Não foi possível descartar');
+      if (done && from === 'ficha') setSelectedId(next);
       return;
     }
     actions.discard(item.id, reason);
-    setSelectedId(next);
+    if (from === 'ficha') setSelectedId(next);
     toast('Notícia descartada', { description: reason, action: { label: 'Desfazer', onClick: () => actions.restore(item.id) } });
   }
 
   async function restore(item: NewsItem) {
-    if (!onServer) { actions.restore(item.id); return; }
-    if (deciding.current) return;
-    deciding.current = true;
-    setCovering(true);
-    try {
-      const result = await actions.decideNews(item.id, { revision: item.decisionRevision ?? 0, action: 'restore' });
-      if (!result.ok) toast('Não foi possível devolver à fila', { tone: 'error', description: result.message });
-    } finally { deciding.current = false; setCovering(false); }
+    if (!onServer) { actions.restore(item.id); toast('De volta à fila'); return; }
+    const result = await decide(item, () => actions.decideNews(item.id, { revision: item.decisionRevision ?? 0, action: 'restore' }));
+    if (result && !result.ok) toast('Não foi possível devolver à fila', { tone: 'error', description: result.message });
+    else if (result) toast('De volta à fila');
   }
 
   // J/K walk the board, C covers, A postpones until tomorrow (never while typing or in a menu).
@@ -289,13 +347,21 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
         void latest.current.cover(current);
       } else if (key === 'a' && current && currentTab === 'open' && current.status === 'new' && allowed) {
         event.preventDefault();
-        latest.current.postpone(current, 18, 'Até amanhã cedo');
+        void latest.current.postpone(current, 18, 'Até amanhã cedo');
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Bringing news in: a pasted link, the web search, new sources.
+  const intake = [
+    ...(canEdit ? [{ label: 'Colar link', icon: Link2, onSelect: () => setImporting(true) }] : []),
+    ...(onServer && canEdit ? [
+      { label: 'Buscar na web', icon: Globe, onSelect: () => setSearching(true) },
+      { label: 'Descobrir fontes', icon: Rss, onSelect: () => setDiscovering(true) },
+    ] : []),
+  ];
   const menu = (
     <Menu
       label="Mais ações"
@@ -303,60 +369,88 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       sections={[
         {
           items: [
-            ...(phone ? [{ label: 'Ver atividade', icon: Activity, onSelect: () => setActivityOpen(true) }] : []),
+            { label: 'Ver atividade', icon: Activity, onSelect: () => setActivityOpen(true) },
             { label: 'Marcar como vistas', icon: CheckCheck, onSelect: () => actions.markSeen() },
             ...(triage ? [{ label: 'Ajustar meta do dia', icon: Target, onSelect: () => setGoalOpen(true) }] : []),
-            ...(onServer && canEdit ? [{ label: 'Busca complementar', onSelect: () => setSearching(true) }, { label: 'Descobrir fontes', icon: Rss, onSelect: () => setDiscovering(true) }] : []),
           ],
         },
-        ...(phone ? [{ items: [
-          ...(canEdit ? [{ label: 'Colar link', icon: Link2, onSelect: () => setImporting(true) }] : []),
-          { label: 'Fontes', icon: Rss, onSelect: () => router.push(NEWS_SOURCES_HREF) },
-        ] }] : []),
+        ...(phone ? [{ items: [...intake, { label: 'Fontes', icon: Rss, onSelect: () => router.push(NEWS_SOURCES_HREF) }] }] : []),
       ]}
       trigger={(props) => <IconButton {...props} label="Mais ações" icon={Ellipsis} variant="ghost" />}
     />
   );
 
-  const header = (
+  const radarHeader = (
     <PageHeader
       variant="frame"
-      title={selectedId ? 'Notícias' : 'Radar de notícias'}
+      title="Radar de notícias"
       status={live ? (anyActive ? <Badge variant="text" tone="green" dot>Ao vivo</Badge> : <Badge variant="text" tone="gray" dot="hollow">Parado</Badge>) : undefined}
       meta={live && read ? [`Lido ${waitLabel(read, now)}`] : undefined}
       actions={phone ? undefined : (
         <>
-          {onServer && canEdit ? <Button variant="secondary" onClick={() => setSearching(true)}>Buscar na web</Button> : null}
-          <Button variant="ghost" icon={Activity} onClick={() => setActivityOpen(true)}>Ver atividade</Button>
-          {canEdit ? <Button variant="secondary" icon={Link2} onClick={() => setImporting(true)}>Colar link</Button> : null}
+          {intake.length ? <Menu label="Adicionar notícias" align="end" sections={[{ items: intake }]}
+            trigger={props => <Button {...props} variant="secondary" icon={Plus} trailingIcon={ChevronDown}>Adicionar</Button>} /> : null}
           <ButtonLink href={NEWS_SOURCES_HREF} variant="secondary" icon={Rss}>Fontes</ButtonLink>
         </>
       )}
       more={menu}
     />
   );
+  const previous = position > 0 ? board.ordered[position - 1] : undefined;
+  const following = position >= 0 ? board.ordered[position + 1] : undefined;
+  // Previous and next keep their place at the end of the title line, on a phone too.
+  const readerNav = position >= 0 ? (
+    <ButtonGroup label="Navegar entre notícias">
+      <Tooltip content="Notícia anterior" shortcut="K" disabled={!previous}>
+        <IconButton icon={ChevronLeft} label="Notícia anterior" title="" disabled={!previous} onClick={() => previous && select(previous.id)} />
+      </Tooltip>
+      <Tooltip content="Próxima notícia" shortcut="J" disabled={!following}>
+        <IconButton icon={ChevronRight} label="Próxima notícia" title="" disabled={!following} onClick={() => following && select(following.id)} />
+      </Tooltip>
+    </ButtonGroup>
+  ) : undefined;
+  const readerHeader = (
+    <PageHeader
+      variant="frame"
+      title="Notícias"
+      meta={position >= 0 ? [{ value: `${position + 1} de ${board.ordered.length}`, numeric: true }] : undefined}
+      actions={phone ? undefined : readerNav}
+      more={phone ? readerNav : undefined}
+    />
+  );
 
   const clearFilters = () => { setQuery(''); setTopic(undefined); setSourceTier('all'); setSourceId('all'); setSelectedId(undefined); };
-  const filters = <NewsFilters tab={tab} onTab={value => { setTab(value); setTopic(undefined); setSelectedId(undefined); }}
-    counts={live ? { open: board.open, decided: board.decided.length } : undefined}
+  const filters = <NewsFilters tab={tab} onTab={value => { setTab(value); setTopic(undefined); setSelectedId(undefined); boardToTop(); }}
+    counts={live ? { open: board.open, decided: board.decided } : undefined}
     query={query} onQuery={value => { setQuery(value); setTopic(undefined); setSelectedId(undefined); }}
     open={filtersOpen} onOpen={setFiltersOpen}
     tier={sourceTier} onTier={value => { setSourceTier(value); setTopic(undefined); setSelectedId(undefined); }}
     source={sourceId} onSource={value => { setSourceId(value); setTopic(undefined); setSelectedId(undefined); }} feeds={state.feeds} />;
+  // The row's decisions: the same ones the ficha offers, for a person who can decide.
+  const primary = onServer
+    ? { label: 'Selecionar para redação', icon: Check, onSelect: (item: NewsItem) => void cover(item, 'row') }
+    : canCover ? { label: 'Cobrir', icon: Telescope, onSelect: (item: NewsItem) => void cover(item, 'row') } : undefined;
+  // Adiar and Descartar change only the simulation's own desk; Cobrir waits in the demonstration.
+  const decides = onServer ? canEdit : canCreate;
   const radarProps: RadarBoardProps = {
-    triage, edition: board.edition, ordered: board.ordered, tab, now, news: state.news, feeds: state.feeds, pulse: signals, seenSince,
+    triage, tab, now, news: state.news, feeds: state.feeds, pulse: signals, seenSince,
     goal: { covered: coveredToday(state.news, now), perDay: state.goal.perDay },
-    hero: board.hero, overflow: board.overflow, groups: board.groups, decided: board.decided,
-    query: query || (topic || sourceTier !== 'all' || sourceId !== 'all' ? 'filtro' : ''),
+    hero: board.hero, cover: board.cover, groups: board.groups, filtered,
     topics: query ? [] : board.topics, topic,
-    onTopic: value => { setTopic({ key: value.key, label: value.label }); setHeadlineLimit(24); },
-    onClearTopic: () => setTopic(undefined),
-    selectedId: shown?.id, onSelect: select,
+    onTopic: value => { setTopic({ key: value.key, label: value.label }); setHeadlineLimit(PAGE_SIZE); boardToTop(); },
+    onClearTopic: () => { setTopic(undefined); boardToTop(); },
+    onSelect: select,
     visibleCount: headlineLimit, onLoadMore: () => {
       loadMoreFocus.current = board.ordered[headlineLimit]?.id;
-      setHeadlineLimit(value => value + 24);
+      setHeadlineLimit(value => value + PAGE_SIZE);
     },
     onEditGoal: () => { setActivityOpen(false); setGoalOpen(true); }, onClearFilters: clearFilters,
+    compact: phone,
+    decision: item => decides ? <RowDecision item={item} compact={phone} busy={pending.has(item.id)}
+      primary={item.status === 'new' && (!triage || item.classification) ? primary : undefined}
+      onPostpone={(story, hours, label) => void postpone(story, hours, label, 'row')}
+      onDiscard={(story, reason) => void discard(story, reason, 'row')}
+      onRestore={story => void restore(story)} /> : null,
   };
   const inbox = onServer && newsFailed ? (
     <EmptyState icon={AlertTriangle} title="Não foi possível carregar as notícias" description="Tente novamente para atualizar o radar."
@@ -380,11 +474,12 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
 
   return (
     <>
-      <WorkspaceLayout docked data-fixed-footer="" header={header}
+      <WorkspaceLayout docked data-fixed-footer="" header={selectedId ? readerHeader : radarHeader}
         mainLabel={selectedId ? 'Notícia' : 'Manchetes'}
         mainHeader={!selectedId ? filters : undefined}
-        footer={live && shown ? <DecisionBar item={shown} covering={covering} canCover={canCover} demo={demo}
-          onCover={item => void cover(item)} onPostpone={postpone} onDiscard={discard} onRestore={item => void restore(item)} /> : undefined}
+        footer={live && shown ? <DecisionBar item={shown} covering={pending.has(shown.id)} canCover={canCover} demo={demo}
+          onCover={item => void cover(item)} onPostpone={(item, hours, label) => void postpone(item, hours, label)}
+          onDiscard={(item, reason) => void discard(item, reason)} onRestore={item => void restore(item)} /> : undefined}
       >
         {selectedId ? reader : inbox}
       </WorkspaceLayout>
