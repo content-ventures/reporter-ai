@@ -72,7 +72,8 @@ export function wireGroups(items: readonly NewsItem[], since: string, now: numbe
     return 'older';
   };
   const order: WireGroupId[] = ['new', 'hour', 'today', 'yesterday', 'older'];
-  const sorted = [...items].sort(newestFirst);
+  // Arrival picks the group; inside it the stories read by the time they show, the newest first.
+  const sorted = [...items].sort((a, b) => time(b.publishedAt) - time(a.publishedAt) || newestFirst(a, b));
   return order
     .map((id) => ({ id, label: label[id], items: sorted.filter((item) => groupOf(item) === id) }))
     .filter((group) => group.items.length > 0);
@@ -83,6 +84,36 @@ export function decidedOf(news: readonly NewsItem[], query: string): NewsItem[] 
   return news
     .filter((item) => item.status !== 'new' && matchesQuery(item, query))
     .sort((a, b) => time(b.decidedAt ?? arrivedAt(b)) - time(a.decidedAt ?? arrivedAt(a)));
+}
+
+/** A labelled run of stories on the board: an arrival group of the wire or one kind of decision. */
+export type BoardGroup = { id: string; label: string; items: NewsItem[] };
+
+const DECISION_GROUPS = [
+  ['selected', 'Selecionadas para redação'],
+  ['covered', 'Cobertas'],
+  ['later', 'Adiadas'],
+  ['discarded', 'Descartadas'],
+] as const;
+
+/** Decided stories by decision, each group keeping the order it was given (the latest first). */
+export function decisionGroups(decided: readonly NewsItem[]): BoardGroup[] {
+  return DECISION_GROUPS
+    .map(([status, label]) => ({ id: status, label, items: decided.filter((item) => item.status === status) }))
+    .filter((group) => group.items.length > 0);
+}
+
+/** The first `limit` stories across the groups, each group keeping its place and label. */
+export function pageOf<G extends BoardGroup>(groups: readonly G[], limit: number): G[] {
+  let left = Math.max(0, limit);
+  const page: G[] = [];
+  for (const group of groups) {
+    if (left === 0) break;
+    const items = group.items.slice(0, left);
+    left -= items.length;
+    if (items.length) page.push({ ...group, items });
+  }
+  return page;
 }
 
 /** A story waiting more than this is flagged on the strip. */
@@ -164,6 +195,51 @@ export function intakePulse(news: readonly NewsItem[], now: number): { lastDay: 
   };
 }
 
+/**
+ * Arrivals in rolling one-hour windows, oldest first: the last value is the last 60 minutes and the
+ * one before it the hour before. Every story counts, decided or not: it is the pace of the sources.
+ */
+export function hourlyPace(news: readonly NewsItem[], now: number, hours = 12): number[] {
+  const pace = Array<number>(hours).fill(0);
+  for (const item of news) {
+    const age = now - time(arrivedAt(item));
+    if (!(age >= 0) || age >= hours * 3_600_000) continue;
+    pace[hours - 1 - Math.floor(age / 3_600_000)] += 1;
+  }
+  return pace;
+}
+
+export type OutletShare = { key: string; label: string; value: number; share: number };
+
+/**
+ * Who published in the last 24 hours: every outlet that ran a story, including the outlets of its
+ * repeats, by number of stories, the busiest first. `share` is the part of the day's stories, 0–100.
+ */
+export function outletShare(news: readonly NewsItem[], now: number, limit = 5): OutletShare[] {
+  const day = (iso: string) => {
+    const at = time(iso);
+    return at > now - 86_400_000 && at <= now;
+  };
+  const counts = new Map<string, OutletShare>();
+  let total = 0;
+  const count = (source: string) => {
+    const key = source.trim().toLocaleLowerCase('pt-BR');
+    if (!key) return;
+    const entry = counts.get(key) ?? { key, label: source.trim(), value: 0, share: 0 };
+    entry.value += 1;
+    counts.set(key, entry);
+    total += 1;
+  };
+  for (const item of news) {
+    if (day(item.publishedAt)) count(item.source);
+    for (const duplicate of item.duplicates) if (day(duplicate.publishedAt)) count(duplicate.source);
+  }
+  return [...counts.values()]
+    .map((entry) => ({ ...entry, share: Math.round((entry.value / total) * 1000) / 10 }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'pt-BR'))
+    .slice(0, limit);
+}
+
 /** Sources for the radar: failing first, then the active ones by last read, then the paused. */
 export function feedRows(feeds: readonly NewsFeed[]): NewsFeed[] {
   const rank = { failing: 0, active: 1, paused: 2 } as const;
@@ -201,6 +277,23 @@ export function returnLabel(laterUntil: string, now: number): string {
   const hours = Math.round(minutes / 60);
   if (hours < 36) return `Volta em ${hours} h`;
   return `Volta em ${Math.round(hours / 24)} dias`;
+}
+
+/**
+ * When a story came out, for a column of times: minutes in the last hour, the clock today,
+ * "ontem, 18:40" and then the date. A time ahead of the clock reads as now.
+ */
+export function whenLabel(iso: string, now: number): string {
+  const at = Math.min(time(iso), now);
+  if (!Number.isFinite(at)) return '';
+  const minutes = Math.floor((now - at) / 60_000);
+  if (minutes < 1) return 'agora';
+  if (minutes < 60) return `há ${minutes} min`;
+  const date = new Date(at);
+  const today = startOfDay(now);
+  if (at >= today) return clock(date);
+  if (at >= today - 86_400_000) return `ontem, ${clock(date)}`;
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
 /** "há 48 min" for a wait (the strip's hint), never "agora". */
