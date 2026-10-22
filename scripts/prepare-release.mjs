@@ -6,6 +6,7 @@ import {
   nextVersion,
   releaseBumpFromSubjects,
   releaseChangeFromSubject,
+  roadmapReleaseFromSubject,
 } from "./lib/versioning.mjs";
 
 function option(name) {
@@ -62,20 +63,40 @@ const log = run("git", ["log", "--reverse", "--format=%s", `${baseline}..HEAD`])
 const subjects = log
   .split("\n")
   .filter(Boolean)
-  .filter((subject) => !subject.startsWith("chore(release):"));
+  .filter((subject) => !/^chore\(release\): v\d+\.\d+\.\d+$/.test(subject));
 
 if (subjects.length === 0) {
   fail("there are no validated commits to include in this release");
 }
 
-const changes = subjects.map(releaseChangeFromSubject);
+const declaration = subjects.map(roadmapReleaseFromSubject).find(Boolean);
+const roadmapNotes = declaration && history.upcoming?.roadmapRelease === declaration
+  ? history.upcoming.roadmapReleaseNotes
+  : undefined;
+if (declaration && (!roadmapNotes?.summary || !Array.isArray(roadmapNotes.changes) || roadmapNotes.changes.length === 0)) {
+  fail("a roadmap release requires reviewed release notes in release-history upcoming");
+}
+const commitChanges = subjects
+  .filter((subject) => !roadmapReleaseFromSubject(subject))
+  .map(releaseChangeFromSubject);
+const changes = [
+  ...(roadmapNotes?.changes ?? []),
+  ...commitChanges,
+];
 
 if (automatic) {
-  bump = releaseBumpFromSubjects(subjects);
+  bump = releaseBumpFromSubjects(subjects, {
+    currentVersion: packageJson.version,
+    currentRoadmapRelease: history.currentRoadmapRelease,
+  });
   requestedRoadmap = bump === "major"
     ? `R${Number(history.currentRoadmapRelease.slice(1)) + 1}`
     : history.currentRoadmapRelease;
-  summary = automaticReleaseSummary(changes, bump);
+  summary = roadmapNotes?.summary ?? automaticReleaseSummary(changes, bump);
+}
+
+if ((bump === "major" || declaration) && (bump !== "major" || requestedRoadmap !== declaration)) {
+  fail("a major version requires a matching roadmap release declaration");
 }
 
 if (!/^[\x20-\x7E]+$/.test(summary) || summary.length < 12) {
@@ -89,10 +110,12 @@ if (bump !== "major" && requestedRoadmap !== history.currentRoadmapRelease) {
 const next = nextVersion(packageJson.version, bump, requestedRoadmap);
 const date = new Date().toISOString().slice(0, 10);
 const title = bump === "major"
-  ? `${requestedRoadmap} commercial release`
+  ? `${requestedRoadmap} roadmap release`
   : bump === "minor"
     ? `${requestedRoadmap} feature release`
     : `${requestedRoadmap} maintenance release`;
+const publicSummary = roadmapNotes ? history.upcoming.summary : summary;
+const publicChanges = roadmapNotes ? [...history.upcoming.changes, ...commitChanges] : changes;
 
 packageJson.version = next;
 history.currentVersion = next;
@@ -106,9 +129,9 @@ history.releases.unshift({
   roadmapRelease: requestedRoadmap,
   date,
   title,
-  summary,
+  summary: publicSummary,
   commit: null,
-  changes,
+  changes: publicChanges,
 });
 
 writeFileSync("package.json", `${JSON.stringify(packageJson, null, 2)}\n`);

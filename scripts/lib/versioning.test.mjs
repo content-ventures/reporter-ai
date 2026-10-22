@@ -8,6 +8,7 @@ import {
   parseVersion,
   releaseBumpFromSubjects,
   releaseChangeFromSubject,
+  roadmapReleaseFromSubject,
   upcomingViolations,
 } from "./versioning.mjs";
 
@@ -31,8 +32,31 @@ test("increments features and fixes independently", () => {
 test("derives the automatic deploy version from validated commits", () => {
   assert.equal(releaseBumpFromSubjects(["fix: repair uploads"]), "patch");
   assert.equal(releaseBumpFromSubjects(["docs: explain uploads", "feat: add direct uploads"]), "minor");
-  assert.equal(releaseBumpFromSubjects(["fix: repair uploads", "feat(storage)!: replace upload protocol"]), "major");
+  assert.throws(() => releaseBumpFromSubjects(["feat(storage)!: replace upload protocol"]), /require an explicit roadmap release/);
   assert.throws(() => releaseBumpFromSubjects([]), /At least one commit/);
+});
+
+test("each accepted roadmap release advances the major version only on declaration", () => {
+  const r1 = "chore(release): declare R1 roadmap release";
+  const r2 = "chore(release): declare R2 roadmap release";
+  assert.equal(roadmapReleaseFromSubject(r1), "R1");
+  assert.equal(roadmapReleaseFromSubject(r2), "R2");
+  const context = { currentVersion: "0.20.1", currentRoadmapRelease: "R0" };
+  assert.equal(releaseBumpFromSubjects([
+    "feat(news): prepare the news desk",
+    r1,
+  ], context), "major");
+  assert.equal(nextVersion(context.currentVersion, "major", "R1"), "1.0.0");
+  assert.equal(releaseBumpFromSubjects([r2], {
+    currentVersion: "1.7.3", currentRoadmapRelease: "R1",
+  }), "major");
+  assert.equal(nextVersion("1.7.3", "major", "R2"), "2.0.0");
+  assert.throws(() => releaseBumpFromSubjects([r2], context), /requires one declaration for the next release/);
+  assert.throws(() => releaseBumpFromSubjects([r1, r1], context), /requires one declaration/);
+  assert.throws(() => releaseBumpFromSubjects([
+    r1, "not a valid commit",
+  ], context), /Cannot calculate a release bump/);
+  assert.throws(() => roadmapReleaseFromSubject("chore(release): declare R8 roadmap release"), /Invalid roadmap release/);
 });
 
 test("creates an automatic explanation for the deployment", () => {
@@ -77,6 +101,14 @@ test("validates the Em preparação block of Novidades", () => {
     upcomingViolations(history({ currentRoadmapRelease: "R0", releases: [{ version: "1.0.0", roadmapRelease: "R1" }] })).join(),
     /already released/,
   );
+  assert.deepEqual(upcomingViolations(history({ upcoming: {
+    ...history().upcoming,
+    roadmapReleaseNotes: { summary: "First roadmap release.", changes: [{ type: "Added", description: "Ship the R1 flow" }] },
+  } })), []);
+  assert.match(upcomingViolations(history({ upcoming: {
+    ...history().upcoming,
+    roadmapReleaseNotes: { summary: "Curto", changes: [] },
+  } })).join(), /roadmap release/);
 });
 
 test("the build release is the released one or the announced next one", () => {

@@ -2,13 +2,13 @@
 
 Produto da Content Ventures para automatizar fluxos de produção editorial.
 
-O projeto local agora conecta a interface aprovada ao fluxo arquivo → transcrição com Groq → artigo → aprovação manual → carrossel, com persistência no PostgreSQL do Reporter AI e sem login. Para subir e verificar, siga [Local connected workflow](docs/LOCAL_BACKEND.md). Use `pnpm worker` e `pnpm dev:local` na raiz do projeto; abra `http://127.0.0.1:3002/productions/new`.
+O fluxo conectado recebe material e contexto, transcreve gravações, gera e permite editar artigos, registra aprovação humana, monta carrosséis e exporta o pacote. A aplicação usa autenticação, PostgreSQL, workers duráveis e provedores de IA no servidor. Para rodar o ambiente local conectado, siga [Local connected workflow](docs/LOCAL_BACKEND.md).
 
-Este é um piloto local, não uma publicação da R1 completa. As seções abaixo registram o escopo e o roteiro histórico da fase **R1 · Experiência**; os limites atuais e o que permanece adiado estão no documento de backend. A versão publicada continua 0.1.0 (R0).
+R0 estabelece a base do produto; R1 entrega o primeiro fluxo editorial completo. O histórico em **Novidades** distingue a versão publicada do escopo em preparação. As seções de simulação abaixo descrevem apenas o ambiente de demonstração local.
 
 Em [Prompts](http://127.0.0.1:3002/config), edite e ative os prompts e parâmetros usados pelo worker. A página mostra a orquestração, revisões e chamadas reais. Gerações já enfileiradas mantêm a configuração original; novas gerações usam a revisão salva.
 
-## Escopo da R1 · Experiência
+## Escopo da R1 · Primeiro entregável
 
 Fluxo: transcrição autorizada → artigo → aprovação → carrossel → aprovação → pacote exportado. Nenhuma peça avança sem decisão humana sobre a versão exata (REQ-T.6).
 
@@ -23,12 +23,10 @@ Fluxo: transcrição autorizada → artigo → aprovação → carrossel → apr
 | Carrossel | `/productions/[id]/carousel` | Modelo escolhido na biblioteca (a capa do artigo em cada modelo; `?model=` chega com um escolhido), textos dos slides derivados do artigo aprovado, "Trocar modelo" mostrando este carrossel no outro modelo e sem perder texto, limites conferidos |
 | Entrega | `/productions/[id]/delivery` | Pacote com .md, .html, .json do carrossel, imagens, manifesto e PNG por slide; artigo final, com as imagens, para ler antes de baixar (`?view=article`); rastreabilidade e retorno do piloto |
 | Modelos | `/library/templates` | Biblioteca de 10 modelos de carrossel, um formato por vez (Feed 4:5, Quadrado 1:1; Stories "Em breve") e busca; cada modelo com todos os layouts sobre a foto de exemplo, os limites e "Usar como padrão" |
-| Novidades | `/whats-new` | Histórico de versões e o bloco "Em preparação · R1 · Experiência" |
+| Novidades | `/whats-new` | Histórico de versões e informações da próxima release |
 | Logs | `/admin/audit` | Logins, acessos negados e alterações, só leitura e só para admin |
 
 O menu lateral mostra o mapa inteiro, da R1 à R7. O que chega depois aparece com o selo "Em breve", sem link, e a dica diz o que a tela fará e em que release chega ("Fila de notícias com triagem por IA. Chega na R2 · Hard News"). A busca ⌘K lista só o que já abre.
-
-Fica para a R1 · Conexão: backend e banco (F0.2), modelo e prompt reais (F1.2), login com sessão expirada (REQ-T.1), custo por execução (REQ-T.4), `.docx` e `pacote.zip` gerados no servidor, estado compartilhado entre aparelhos, trilha de auditoria persistida e upload de `.docx`.
 
 ## Simulação
 
@@ -81,7 +79,7 @@ domain → ports → adapters/fixtures → runtime → state → ui, editor, fea
 - `src/runtime/create-runtime.ts`: a única raiz de composição. Um runtime remoto devolve o mesmo formato `Runtime`, e `src/state` e as telas ficam como estão.
 - `src/registries`: navegação por release (`CURRENT_RELEASE = 'R1'`; `menuFor` devolve o menu R1–R7 com "Em breve", `navigationFor` só o que já abre), tipos de peça e de fonte, receitas, gates, checagens e ferramentas do copiloto. As próximas releases entram como dados.
 
-| Porta | Hoje (adapter local) | Na R1 · Conexão |
+| Porta | Protótipo local (histórico) | Plano original da conexão (histórico) |
 |---|---|---|
 | `ProductionQueries`, `ProductionCommands` | Store em `localStorage` com revisões e conflito de `baseRevision` | API e banco, regras impostas no servidor |
 | `SourceIngest` | Leitura e análise no navegador | Upload e análise no servidor |
@@ -98,7 +96,7 @@ domain → ports → adapters/fixtures → runtime → state → ui, editor, fea
 
 - Toda interface visual vem da API pública `@content-ventures/design-system/v3` e de `/v3/icons`. Fora o reset do documento em `src/app/globals.css`, o Reporter não tem CSS próprio: `className`, `style`, elementos HTML em minúsculas, node views e DOM criado à mão são recusados pelo `pnpm harness:design`.
 - Peça visual nova nasce no DS, com specimen, teste e linha no CHANGELOG do DS.
-- O `package.json` fixa o DS num commit (tarball do GitHub). As telas da R1 usam o DS 0.2.0, que ainda está na branch `editorial-studio`: até ele ser publicado e fixado, um clone limpo não compila as telas da R1, e o desenvolvimento local copia o código do DS para o `node_modules`. Os dois fluxos estão em [docs/DEVELOPMENT_HARNESS.md](docs/DEVELOPMENT_HARNESS.md), seção "Updating the Design System (Atualizar o DS)".
+- O `package.json` fixa o DS num commit (tarball do GitHub). A atualização dessa dependência segue [docs/DEVELOPMENT_HARNESS.md](docs/DEVELOPMENT_HARNESS.md), seção "Updating the Design System (Atualizar o DS)".
 
 ## Requisitos
 
@@ -129,7 +127,7 @@ As regras de branches, commits, PRs, DS, releases e deploys estão em [docs/DEVE
 
 ## Roteiro de aceite
 
-O aceite da R1 · Experiência é de UX: Pedro percorre os fixtures no computador e num celular de 390 px e aprova; Venâncio revisa `src/domain` e os contratos em `src/ports`.
+Este roteiro preserva o aceite histórico da simulação R1. O aceite do fluxo conectado ocorre no workflow de release, com staging, worker, geração e aprovação por uma segunda pessoa.
 
 Use o build de produção, nunca o `pnpm dev`: o indicador do Next cobre a troca de conta no canto da tela. O passo a passo está em "Acceptance build (Build de aceite)" no harness.
 

@@ -1,5 +1,14 @@
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
+export function roadmapReleaseFromSubject(subject) {
+  const match = /^chore\(release\): declare (R[1-7]) roadmap release$/.exec(subject);
+  if (match) return match[1];
+  if (subject.startsWith("chore(release): declare ")) {
+    throw new Error(`Invalid roadmap release declaration: ${subject}`);
+  }
+  return null;
+}
+
 export function parseVersion(version) {
   const match = VERSION_PATTERN.exec(version);
 
@@ -27,13 +36,13 @@ export function nextVersion(currentVersion, bump, roadmapRelease) {
     const match = /^R([1-7])$/.exec(roadmapRelease);
 
     if (!match) {
-      throw new Error("A commercial release requires a roadmap value from R1 to R7");
+      throw new Error("A roadmap release requires a value from R1 to R7");
     }
 
     const targetMajor = Number(match[1]);
 
     if (targetMajor !== current.major + 1) {
-      throw new Error(`The next commercial release after v${currentVersion} must be R${current.major + 1}`);
+      throw new Error(`The next roadmap release after v${currentVersion} must be R${current.major + 1}`);
     }
 
     return `${targetMajor}.0.0`;
@@ -50,30 +59,39 @@ export function nextVersion(currentVersion, bump, roadmapRelease) {
   throw new Error(`Unsupported release bump: ${bump}`);
 }
 
-export function releaseBumpFromSubjects(subjects) {
+export function releaseBumpFromSubjects(subjects, { currentVersion, currentRoadmapRelease } = {}) {
   if (!Array.isArray(subjects) || subjects.length === 0) {
     throw new Error("At least one commit is required to calculate a release bump");
+  }
+
+  const declarations = subjects.map(roadmapReleaseFromSubject).filter(Boolean);
+  if (declarations.length > 0) {
+    const current = typeof currentVersion === "string" ? parseVersion(currentVersion).major : null;
+    if (declarations.length !== 1 || current === null || currentRoadmapRelease !== `R${current}`
+      || declarations[0] !== `R${current + 1}`) {
+      throw new Error("A roadmap release requires one declaration for the next release");
+    }
   }
 
   let bump = "patch";
 
   for (const subject of subjects) {
+    if (roadmapReleaseFromSubject(subject)) continue;
     const match = /^(\w+)(?:\([^)]+\))?(!)?: (.+)$/.exec(subject);
 
     if (!match || !changeTypeByCommitType[match[1]]) {
       throw new Error(`Cannot calculate a release bump from commit: ${subject}`);
     }
 
-    if (match[2] === "!") {
-      return "major";
+    if (match[2] === "!" && declarations.length === 0) {
+      throw new Error("Breaking changes require an explicit roadmap release declaration");
     }
-
     if (match[1] === "feat") {
       bump = "minor";
     }
   }
 
-  return bump;
+  return declarations.length > 0 ? "major" : bump;
 }
 
 export function automaticReleaseSummary(changes, bump) {
@@ -82,7 +100,7 @@ export function automaticReleaseSummary(changes, bump) {
   }
 
   const kind = bump === "major"
-    ? "commercial release"
+    ? "roadmap release"
     : bump === "minor"
       ? "feature release"
       : "maintenance release";
@@ -162,6 +180,17 @@ export function upcomingViolations(history) {
       if (!RELEASE_CHANGE_TYPES.has(change?.type) || typeof change?.description !== "string" || !change.description.trim()) {
         violations.push(`upcoming change must have a known type and a description: ${JSON.stringify(change)}`);
       }
+    }
+  }
+  if (upcoming.roadmapReleaseNotes !== undefined) {
+    const notes = upcoming.roadmapReleaseNotes;
+    if (typeof notes?.summary !== "string" || !/^[\x20-\x7E]{12,}$/.test(notes.summary)) {
+      violations.push("roadmap release requires a clear English summary");
+    }
+    if (!Array.isArray(notes?.changes) || notes.changes.length === 0
+      || notes.changes.some((change) => !RELEASE_CHANGE_TYPES.has(change?.type)
+        || typeof change?.description !== "string" || !/^[\x20-\x7E]+$/.test(change.description))) {
+      violations.push("roadmap release requires described English changes");
     }
   }
   return violations;
