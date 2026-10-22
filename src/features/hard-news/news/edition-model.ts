@@ -31,10 +31,10 @@ export function editionOrder(items: readonly NewsItem[], now: number, triage: bo
     .sort((a, b) => published(b, now) - published(a, now) || a.id.localeCompare(b.id))];
 }
 
-export function editionSignal(item: NewsItem, now: number, triage: boolean): string {
+/** Why the lead leads, when there is more to it than its date (the time is already beside it). */
+export function editionSignal(item: NewsItem, triage: boolean): string | undefined {
   const priority = triage ? priorityOf(item) : undefined;
   if (priority) return `Prioridade ${{ high: 'alta', medium: 'média', low: 'baixa' }[priority]}`;
   const outlets = editionOutlets(item);
-  if (outlets > 1) return `Em ${outlets} veículos`;
-  return published(item, now) > now - DAY ? 'Publicada nas últimas 24 h' : 'Publicação anterior';
+  return outlets > 1 ? `Em ${outlets} veículos` : undefined;
 }

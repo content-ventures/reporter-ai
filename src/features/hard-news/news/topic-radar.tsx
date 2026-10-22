@@ -1,30 +1,40 @@
 'use client';
 
-import { Badge, Button, Card, CardHeader, CardLink, Carousel, Grid, GridItem, IconButton, MetaList, Sparkline, Tooltip } from '@content-ventures/design-system/v3';
+import { Button, CardHeader, Grid, GridItem, IconButton, List, ListItem, Sparkline, Tooltip } from '@content-ventures/design-system/v3';
 import { Info } from '@content-ventures/design-system/v3/icons';
+import { waitLabel } from './radar-model';
 import type { NewsTopic } from './topic-model';
 
-export function TopicRadar({ topics, active, onSelect, onClear, layout = 'rail' }: {
-  topics: NewsTopic[]; active?: string; onSelect: (topic: NewsTopic) => void; onClear: () => void;
-  layout?: 'rail' | 'list';
+/** A subject's size, reach and freshness (its latest story), in one line. */
+export function topicFacts(topic: NewsTopic, now: number): string {
+  const latest = topic.items.reduce((newest, item) => Math.max(newest, Math.min(Date.parse(item.publishedAt) || 0, now)), 0);
+  return [
+    `${topic.items.length} notícias`,
+    `${topic.sources} ${topic.sources === 1 ? 'veículo' : 'veículos'}`,
+    latest ? waitLabel(new Date(latest).toISOString(), now) : undefined,
+  ].filter(Boolean).join(' · ');
+}
+
+/**
+ * "Em alta": the terms the sources repeat in the last 24 hours, with the pace of each one over the
+ * day. A subject filters the board in one click and lets go in another.
+ */
+export function TopicRadar({ topics, active, now, onSelect, onClear }: {
+  topics: NewsTopic[]; active?: string; now: number; onSelect: (topic: NewsTopic) => void; onClear: () => void;
 }) {
   if (!topics.length) return null;
-  const cards = topics.map((topic, index) => <Card key={topic.key} padding="sm" interactive selected={active === topic.key} data-testid={`news-topic-${topic.key}`}>
-          <Grid columns="auto" min={280} gap="sm">
-            <CardHeader size="md" titleAs="h3" leading={<Badge tone={active === topic.key ? 'blue' : 'gray'} size="sm">{index + 1}</Badge>}
-              title={<CardLink aria-pressed={active === topic.key} aria-label={`Explorar assunto: ${topic.label}`} onClick={() => onSelect(topic)}>{topic.label}</CardLink>} />
-            <Grid columns="2:1" collapseBelow={false} gap="sm">
-              <MetaList size="xs" items={[`${topic.items.length} notícias`, `${topic.sources} ${topic.sources === 1 ? 'fonte' : 'fontes'}`]} />
-              <Sparkline points={topic.points} height={20} fluid tone="gray" />
-            </Grid>
-          </Grid>
-        </Card>);
   return <Grid columns="1:1" gap="sm">
-    <GridItem span="full"><CardHeader size="md" titleAs="h2" title="Em pauta" meta="Últimas 24 h" actions={active
-    ? <Button variant="ghost" size="sm" onClick={onClear}>Ver todas</Button>
-    : <Tooltip content="Termos recorrentes nas manchetes coletadas. A linha mostra publicações em intervalos de 4 horas; o número de fontes conta portais distintos."><IconButton label="Como os assuntos são identificados" icon={Info} variant="ghost" size="sm" /></Tooltip>} /></GridItem>
-    <GridItem span="full">{layout === 'rail' ? <Carousel label="Assuntos recorrentes nas fontes" perView={3}>{cards}</Carousel>
-      : <Grid columns="1:1" gap="sm">{cards.map((card, index) => <GridItem key={topics[index].key} span="full">{card}</GridItem>)}</Grid>}
-    </GridItem>
+    <GridItem span="full"><CardHeader size="md" titleAs="h2" title="Em alta" meta="Últimas 24 h" actions={active
+      ? <Button variant="ghost" size="sm" onClick={onClear}>Ver todas</Button>
+      : <Tooltip content="Termos que se repetem nas manchetes das últimas 24 horas. A linha mostra as publicações em intervalos de 4 horas; veículos conta os portais distintos.">
+        <IconButton label="Como os assuntos são identificados" icon={Info} variant="ghost" size="sm" title="" />
+      </Tooltip>} /></GridItem>
+    <GridItem span="full"><List label="Assuntos em alta">
+      {topics.map(topic => <ListItem key={topic.key} data-testid={`news-topic-${topic.key}`}
+        title={topic.label} description={topicFacts(topic, now)}
+        meta={<Sparkline points={topic.points} width={72} height={24} tone={active === topic.key ? 'blue' : 'gray'} />}
+        selected={active === topic.key}
+        onClick={() => (active === topic.key ? onClear() : onSelect(topic))} />)}
+    </List></GridItem>
   </Grid>;
 }

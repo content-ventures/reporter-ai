@@ -15,8 +15,8 @@ test('the live cover uses publication time, not collection order, photo availabi
   const latest = item('latest', 1);
   const older = item('older', 3, { imageUrl: 'https://images.test/fish.jpg', classification });
   assert.deepEqual(editionOrder([older, latest], NOW, false).map(item => item.id), ['latest', 'older']);
-  assert.equal(editionSignal(latest, NOW, false), 'Publicada nas últimas 24 h');
-  assert.equal(editionSignal(older, NOW, false), 'Publicada nas últimas 24 h');
+  assert.equal(editionSignal(latest, false), undefined, 'the time beside the headline already says it is recent');
+  assert.equal(editionSignal(older, false), undefined, 'a simulated priority is not a signal of the live desk');
 });
 
 test('source diversity counts distinct publishers and never repeated URLs or feeds', () => {
@@ -28,7 +28,7 @@ test('source diversity counts distinct publishers and never repeated URLs or fee
   ] });
   assert.equal(editionOutlets(story), 2);
   assert.equal(editionOrder([item('latest', 1), story], NOW, false)[0].id, 'spread');
-  assert.equal(editionSignal(story, NOW, false), 'Em 2 veículos');
+  assert.equal(editionSignal(story, false), 'Em 2 veículos');
 });
 
 test('available editorial priorities honor corrections without reviving old backlog as the lead', () => {
@@ -37,7 +37,7 @@ test('available editorial priorities honor corrections without reviving old back
     correction: { priority: 'low', by: 'Editor', at: new Date(NOW).toISOString() } } });
   const high = item('high', 2, { classification: { ...classification, score: 80 } });
   assert.deepEqual(editionOrder([old, corrected, high], NOW, true).map(item => item.id), ['high', 'corrected', 'old']);
-  assert.equal(editionSignal(corrected, NOW, true), 'Prioridade baixa');
+  assert.equal(editionSignal(corrected, true), 'Prioridade baixa');
 });
 
 test('the chronological wire has no repeated cover items and invalid or future dates cannot lead', () => {
