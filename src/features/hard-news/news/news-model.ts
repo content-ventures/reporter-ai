@@ -19,6 +19,19 @@ export function matchesQuery(item: NewsItem, query: string): boolean {
   return normalize(`${item.title} ${item.source} ${item.classification?.topic ?? ''}`).includes(wanted);
 }
 
+/**
+ * The cover's lead line: the received lead, whole up to `limit` characters, else cut at a word.
+ * Feeds often end it with "…" or send a page label instead of a lead; neither is shown.
+ */
+export function leadLine(excerpt: string, title: string, limit = 220): string | undefined {
+  const text = excerpt.replace(/\s+/g, ' ').trim().replace(/(?:…|\.{3})$/, '').trim();
+  if (text.length < 40 || normalize(text) === normalize(title.trim())) return undefined;
+  if (text.length <= limit) return text;
+  const cut = text.slice(0, limit);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > 0 ? cut.slice(0, space) : cut).replace(/[\s,;:.–-]+$/, '')}…`;
+}
+
 /** After a decision, the next item down the board (or the one above when it was the last). */
 export function nextAfter(ordered: readonly NewsItem[], id: string): string | undefined {
   const index = ordered.findIndex((item) => item.id === id);

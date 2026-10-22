@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { NewsFeed, NewsItem } from '../../../domain/hard-news.ts';
-import { arrivedAt, decidedOf, feedRows, heroOf, hourly, hourlyArrivals, intakePulse, pulse, queueOf, returnLabel, sinceLabel, spread, wireGroups } from './radar-model.ts';
+import { arrivedAt, decidedOf, decisionGroups, feedRows, heroOf, hourly, hourlyArrivals, hourlyPace, intakePulse, outletShare, pageOf, pulse, queueOf, returnLabel, sinceLabel, spread, whenLabel, wireGroups } from './radar-model.ts';
 
 const NOW = new Date(2026, 9, 17, 15, 30).getTime();
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
@@ -47,8 +47,40 @@ test('wire groups go from new to older, by arrival', () => {
   assert.equal(groups[0].label, 'Novas desde 14:50');
 });
 
+test('inside an arrival group the stories read by publication, the newest first', () => {
+  const late = news('late', 10, undefined, { publishedAt: ago(300) });
+  const fresh = news('fresh', 30, undefined, { publishedAt: ago(35) });
+  const groups = wireGroups([late, fresh], ago(60), NOW);
+  assert.deepEqual(groups.map((group) => group.id), ['new']);
+  assert.deepEqual(groups[0].items.map((item) => item.id), ['fresh', 'late']);
+});
+
 test('decided stories read by the latest decision', () => {
   assert.deepEqual(decidedOf(ITEMS, '').map((item) => item.id), ['x', 'y']);
+});
+
+test('decided stories group by decision, selection first, each group keeping its order', () => {
+  const decided = decidedOf([
+    ...ITEMS,
+    news('s1', 30, 50, { status: 'selected', decidedAt: ago(5) }),
+    news('l1', 30, 50, { status: 'later', decidedAt: ago(1), laterUntil: ago(-120) }),
+    news('s2', 30, 50, { status: 'selected', decidedAt: ago(50) }),
+  ], '');
+  const groups = decisionGroups(decided);
+  assert.deepEqual(groups.map((group) => group.id), ['selected', 'covered', 'later', 'discarded']);
+  assert.deepEqual(groups[0].items.map((item) => item.id), ['s1', 's2']);
+  assert.equal(groups[0].label, 'Selecionadas para redação');
+  assert.deepEqual(decisionGroups([]), []);
+});
+
+test('a page takes the first stories across the groups and keeps their labels', () => {
+  const groups = wireGroups(queueOf(ITEMS, ''), ago(40), NOW);
+  const page = pageOf(groups, 3);
+  assert.deepEqual(page.map((group) => group.id), ['new', 'hour']);
+  assert.deepEqual(page.flatMap((group) => group.items.map((item) => item.id)), ['a', 'b', 'c']);
+  assert.equal(page[0].label, groups[0].label);
+  assert.deepEqual(pageOf(groups, 0), []);
+  assert.equal(pageOf(groups, 100).flatMap((group) => group.items).length, queueOf(ITEMS, '').length);
 });
 
 test('pulse counts the fresh, the waiting high-priority and the sources', () => {
@@ -104,6 +136,39 @@ test('before the triage, arrivals count every story and the strip finds the most
   assert.equal(buckets.reduce((total, bucket) => total + bucket.values.all, 0), 3, 'the 30-hour-old story is out of the window');
   assert.deepEqual(intakePulse(untriaged, NOW), { lastDay: 2, spread: { count: 2, topId: 's2', outlets: 3 } });
   assert.deepEqual(intakePulse([], NOW), { lastDay: 0, spread: { count: 0, topId: undefined, outlets: 0 } });
+});
+
+test('outlets of the day count their stories and the repeats they ran, the busiest first', () => {
+  const day = [
+    news('o1', 30, undefined, { source: 'AQUA Chile' }),
+    news('o2', 90, undefined, { source: 'AQUA Chile', duplicates: [{ source: 'The Fish Site', url: 'https://thefishsite.test/a', publishedAt: ago(60) }] }),
+    news('o3', 200, undefined, { source: 'Mundoacuícola' }),
+    news('old', 60 * 30, undefined, { source: 'Mundoacuícola' }),
+  ];
+  const shares = outletShare(day, NOW);
+  assert.deepEqual(shares.map((entry) => [entry.label, entry.value]), [['AQUA Chile', 2], ['Mundoacuícola', 1], ['The Fish Site', 1]]);
+  assert.equal(shares[0].share, 50);
+  assert.equal(outletShare(day, NOW, 1).length, 1);
+  assert.deepEqual(outletShare([], NOW), []);
+});
+
+test('times read as minutes in the last hour, the clock today, then yesterday and the date', () => {
+  assert.equal(whenLabel(ago(0), NOW), 'agora');
+  assert.equal(whenLabel(ago(-30), NOW), 'agora', 'a time ahead of the clock is now');
+  assert.equal(whenLabel(ago(12), NOW), 'há 12 min');
+  assert.equal(whenLabel(ago(75), NOW), '14:15');
+  assert.equal(whenLabel(ago(60 * 20), NOW), 'ontem, 19:30');
+  assert.equal(whenLabel(ago(60 * 24 * 3), NOW), '14/10');
+  assert.equal(whenLabel('invalid', NOW), '');
+});
+
+test('the pace counts arrivals in rolling hours, the last hour last, decided stories included', () => {
+  const pace = hourlyPace(ITEMS, NOW, 4);
+  assert.equal(pace.length, 4);
+  // a (5 min), b (30) and c (50) in the last hour; d (70) and x (100) in the hour before.
+  assert.deepEqual(pace, [1, 0, 2, 3]);
+  assert.deepEqual(hourlyPace([news('future', -30, undefined)], NOW, 2), [0, 0], 'a story from the future has not arrived');
+  assert.deepEqual(hourlyPace([], NOW, 3), [0, 0, 0]);
 });
 
 test('backlog a new source brings arrives at its publication, a fresh story at its import', () => {
