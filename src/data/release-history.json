@@ -1,5 +1,5 @@
 {
-  "currentVersion": "0.20.1",
+  "currentVersion": "0.21.0",
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
@@ -37,6 +37,32 @@
     ]
   },
   "releases": [
+    {
+      "version": "0.21.0",
+      "roadmapRelease": "R0",
+      "date": "2026-10-22",
+      "title": "R0 feature release",
+      "summary": "Automatic feature release with 4 validated changes: cover the radar, row decisions and reading navigation; turn the news overview into a live radar; show photo, related stories and decisions in the reader.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Compute live radar signals for the news board"
+        },
+        {
+          "type": "Added",
+          "description": "Show photo, related stories and decisions in the reader"
+        },
+        {
+          "type": "Added",
+          "description": "Turn the news overview into a live radar"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover the radar, row decisions and reading navigation"
+        }
+      ]
+    },
     {
       "version": "0.20.1",
       "roadmapRelease": "R0",

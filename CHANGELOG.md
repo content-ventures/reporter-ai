@@ -4,6 +4,18 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-22
+
+### Added
+
+- Compute live radar signals for the news board.
+- Show photo, related stories and decisions in the reader.
+- Turn the news overview into a live radar.
+
+### Maintenance
+
+- Cover the radar, row decisions and reading navigation.
+
 ## [0.20.1] - 2026-10-21
 
 ### Fixed
