@@ -4,6 +4,7 @@ import { newsLogoUrl } from '@/domain/news-branding';
 import { sourceForNews } from '@/domain/news-source-match';
 import { SOURCE_RELEVANCE_LABELS } from '@/domain/news-source-rating';
 import { SourceRatingBadge } from '../source-rating';
+import { usePhone } from '@/ui/use-phone';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -22,6 +23,7 @@ import {
   IconTile,
   List,
   ListItem,
+  MediaFrame,
   Menu,
   MetaList,
   ReadingColumn,
@@ -38,7 +40,7 @@ import {
   formatRelative,
 } from '@content-ventures/design-system/v3';
 import type { AgentTraceStep } from '@content-ventures/design-system/v3';
-import { ArrowDown, ArrowUp, ArrowUpRight, ChevronDown, Clock, Ellipsis, Telescope } from '@content-ventures/design-system/v3/icons';
+import { ArrowDown, ArrowUp, ChevronDown, Clock, Ellipsis, Telescope } from '@content-ventures/design-system/v3/icons';
 import { paragraphBlock } from '@/domain';
 import type { ArticleBody } from '@/domain';
 import { DISCARD_REASONS, priorityOf, PRIORITY_LABELS } from '@/domain/hard-news';
@@ -49,6 +51,8 @@ import { pieceHref } from '@/ui/routes';
 import { researchHref } from '../routes';
 import { useDossier, useHardNews } from '../state/hard-news-provider';
 import { POSTPONE_OPTIONS } from './news-model';
+import { photoOf } from './news-photo';
+import { NewsRow } from './news-row';
 import { arrivedAt, PRIORITY_COLOR, returnLabel } from './radar-model';
 
 const PRIORITIES: { value: NewsPriority; label: string }[] = [
@@ -60,10 +64,13 @@ const PRIORITIES: { value: NewsPriority; label: string }[] = [
 const at = (iso: string, now: number) => formatRelative(new Date(Math.min(Date.parse(iso), now)), new Date(now));
 
 /**
- * The selected story opens with its publication details and available source text ready to read.
- * A separate lead remains visible only when the body does not already contain it in full.
+ * The selected story opens with its publication details, its photo and the available source text
+ * ready to read. A separate lead remains visible only when the body does not already contain it in
+ * full. Other open stories on the same subjects follow the text.
  */
-export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
+export function NewsFicha({ item, now, related = [], onOpen }: {
+  item: NewsItem; now: number; related?: readonly NewsItem[]; onOpen?: (id: string) => void;
+}) {
   const dossier = useDossier(item.productionId);
   const { live, actions, state } = useHardNews();
   const source = sourceForNews(item, state.feeds);
@@ -84,6 +91,7 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
     });
     return () => { active = false; };
   }, [actions, item.id, pending, attempt]);
+  const photo = photoOf(item);
   const facts = [at(item.publishedAt, now)];
   if (item.via === 'tavily') facts.push('Encontrada na web · data estimada');
   if (item.via === 'url') facts.push('Link colado');
@@ -109,9 +117,8 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
         <BrandMark key="logo" name={item.source} src={newsLogoUrl(item.url)} size="xs" />,
         item.source,
         ...facts,
-        <ButtonLink key="original" href={item.url} target="_blank" rel="noopener noreferrer" variant="ghost" size="sm" trailingIcon={ArrowUpRight}>
-            Ver original<VisuallyHidden> (abre em nova aba)</VisuallyHidden>
-        </ButtonLink>,
+        // A text link sits on the line of the facts; a button would stand taller than them.
+        <TextLink key="original" href={item.url} external tone="text">Ver original</TextLink>,
       ]} />
       <EditableTitle value={item.title} label="Título da notícia" readOnly as="h2" size="document" onCommit={() => undefined} />
       <MetaList size="sm" label="Avaliação e tradução" items={[
@@ -120,6 +127,7 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
         item.translation?.status === 'translated' ? <Badge key="translation" variant="text" tone="gray" size="sm">Tradução automática · pt-BR</Badge> : null,
         item.translation?.status === 'pending' ? 'Preparando tradução · exibindo original' : null,
       ]} />
+      {photo ? <MediaFrame src={photo} ratio="16/9" alt={`Imagem da notícia: ${item.title}`} radius="lg" /> : null}
       {item.translation?.status === 'failed' ? (
         <Alert tone="warning" title="Tradução indisponível" action={canEdit
           ? <Button variant="secondary" size="sm" loading={translating} onClick={() => void retryTranslation()}>Tentar tradução novamente</Button>
@@ -133,7 +141,23 @@ export function NewsFicha({ item, now }: { item: NewsItem; now: number }) {
         ? <Alert tone="danger" title="Não foi possível carregar o texto" action={<Button variant="secondary" size="sm" onClick={() => { setFailedId(undefined); setAttempt((value) => value + 1); }}>Tentar de novo</Button>} />
         : <Spinner label="Carregando texto da notícia" />
         : item.body.length ? <NewsText item={item} /> : null}
+      {related.length && onOpen ? <Related items={related} now={now} onOpen={onOpen} /> : null}
     </ReadingColumn>
+  );
+}
+
+/** "Na mesma pauta": where to go next without returning to the radar. */
+function Related({ items, now, onOpen }: { items: readonly NewsItem[]; now: number; onOpen: (id: string) => void }) {
+  const { state } = useHardNews();
+  const phone = usePhone();
+  return (
+    <Panel label="Na mesma pauta">
+      <Section title="Na mesma pauta" titleAs="h3" meta={`${items.length} ${items.length === 1 ? 'notícia' : 'notícias'}`}>
+        <List label="Na mesma pauta" framed={false} bleed>
+          {items.map((story) => <NewsRow key={story.id} item={story} rating={sourceForNews(story, state.feeds)?.rating} now={now} compact={phone} onSelect={onOpen} />)}
+        </List>
+      </Section>
+    </Panel>
   );
 }
 
@@ -270,13 +294,36 @@ export type DecisionProps = {
   onCover: (item: NewsItem) => void;
   onPostpone: (item: NewsItem, hours: number, label: string) => void;
   onDiscard: (item: NewsItem, reason: string) => void;
+  onRestore: (item: NewsItem) => void;
 };
 
+/** "Descartar" and "Adiar" as menus of their reasons and times, beside the story's main decision. */
+function LaterAndDiscard({ item, disabled = false, onPostpone, onDiscard }: Pick<DecisionProps, 'item' | 'onPostpone' | 'onDiscard'> & { disabled?: boolean }) {
+  return (
+    <>
+      <Menu
+        label="Descartar"
+        align="end"
+        side="top"
+        sections={[{ label: 'Motivo', items: DISCARD_REASONS.map((reason) => ({ label: reason, onSelect: () => onDiscard(item, reason) })) }]}
+        trigger={(props) => <Button {...props} variant="ghost" trailingIcon={ChevronDown} aria-disabled={disabled || undefined}>Descartar</Button>}
+      />
+      <Menu
+        label="Adiar"
+        align="end"
+        side="top"
+        sections={[{ items: POSTPONE_OPTIONS.map((option) => ({ label: option.label, icon: Clock, shortcut: option.hours === 18 ? 'A' : undefined, onSelect: () => onPostpone(item, option.hours, option.label) })) }]}
+        trigger={(props) => <Button {...props} variant="secondary" trailingIcon={ChevronDown} aria-disabled={disabled || undefined}>Adiar</Button>}
+      />
+    </>
+  );
+}
+
 /** The one decision under the story: Descartar, Adiar, Cobrir (the only blue button of the desk). */
-export function DecisionBar({ item, covering, canCover, demo = false, onCover, onPostpone, onDiscard }: DecisionProps) {
-  const { actions, live } = useHardNews();
+export function DecisionBar({ item, covering, canCover, demo = false, onCover, onPostpone, onDiscard, onRestore }: DecisionProps) {
+  const { live } = useHardNews();
   const dossier = useDossier(item.productionId);
-  if (live) return <LiveDecisionBar item={item} covering={covering} canCover={canCover} onCover={onCover} onPostpone={onPostpone} onDiscard={onDiscard} />;
+  if (live) return <LiveDecisionBar item={item} covering={covering} canCover={canCover} onCover={onCover} onPostpone={onPostpone} onDiscard={onDiscard} onRestore={onRestore} />;
   if (item.status === 'covered' && item.productionId) {
     const written = dossier?.stage === 'article';
     return (
@@ -300,7 +347,7 @@ export function DecisionBar({ item, covering, canCover, demo = false, onCover, o
   if (item.status !== 'new') {
     return (
       <ActionBar position="static">
-        <Button variant="secondary" onClick={() => actions.restore(item.id)}>Voltar para a fila</Button>
+        <Button variant="secondary" onClick={() => onRestore(item)}>Voltar para a fila</Button>
       </ActionBar>
     );
   }
@@ -321,20 +368,7 @@ export function DecisionBar({ item, covering, canCover, demo = false, onCover, o
   );
   return (
     <ActionBar position="static" detail={reading ? 'Aguarde a IA terminar a leitura.' : demo ? 'Na demonstração, Cobrir não abre pauta.' : !canCover ? 'Só editor ou admin abre pautas.' : undefined} detailId={reasonId}>
-      <Menu
-        label="Descartar"
-        align="end"
-        side="top"
-        sections={[{ label: 'Motivo', items: DISCARD_REASONS.map((reason) => ({ label: reason, onSelect: () => onDiscard(item, reason) })) }]}
-        trigger={(props) => <Button {...props} variant="ghost" trailingIcon={ChevronDown}>Descartar</Button>}
-      />
-      <Menu
-        label="Adiar"
-        align="end"
-        side="top"
-        sections={[{ items: POSTPONE_OPTIONS.map((option) => ({ label: option.label, icon: Clock, shortcut: option.hours === 18 ? 'A' : undefined, onSelect: () => onPostpone(item, option.hours, option.label) })) }]}
-        trigger={(props) => <Button {...props} variant="secondary" trailingIcon={ChevronDown}>Adiar</Button>}
-      />
+      <LaterAndDiscard item={item} onPostpone={onPostpone} onDiscard={onDiscard} />
       {/* Unavailable, the bar's visible reason explains it: no tooltip promising what it will not do. */}
       <Tooltip content="Abre a pauta e começa a apuração" shortcut="C" disabled={!available}>{cover}</Tooltip>
     </ActionBar>
@@ -342,32 +376,29 @@ export function DecisionBar({ item, covering, canCover, demo = false, onCover, o
 }
 
 /** A durable selection keeps the source material ready for the writing workflow. */
-function LiveDecisionBar({ item, covering, canCover, onCover, onPostpone, onDiscard }: DecisionProps) {
-  const { actions } = useHardNews();
-  const [restoring, setRestoring] = useState(false);
-  const busy = covering || restoring;
-  async function restore() {
-    if (busy || !canCover) return;
-    setRestoring(true);
-    try {
-      const result = await actions.decideNews(item.id, { revision: item.decisionRevision ?? 0, action: 'restore' });
-      if (!result.ok) toast('Não foi possível devolver à fila', { tone: 'error', description: result.message });
-    } finally { setRestoring(false); }
-  }
+function LiveDecisionBar({ item, covering, canCover, onCover, onPostpone, onDiscard, onRestore }: DecisionProps) {
+  const phone = usePhone();
   if (item.status !== 'new') return (
     <ActionBar position="static" detail={item.status === 'selected' ? 'Selecionada para redação' : item.status === 'later' ? 'Notícia adiada' : 'Notícia descartada'}>
-      {canCover ? <Button variant="secondary" loading={restoring} onClick={() => void restore()}>Voltar para a fila</Button> : null}
+      {canCover ? <Button variant="secondary" loading={covering} onClick={() => onRestore(item)}>Voltar para a fila</Button> : null}
     </ActionBar>
   );
+  const reasonId = `decision-${item.id}`;
+  const select = (
+    <Button variant="primary" loading={covering} aria-disabled={!canCover || undefined} aria-describedby={canCover ? undefined : reasonId}
+      onClick={() => { if (canCover) onCover(item); }}>Selecionar para redação</Button>
+  );
   return (
-    <ActionBar position="static" detail={!canCover ? 'Só editor ou admin pode selecionar notícias.' : undefined}>
-      <Menu label="Outras ações da notícia" align="end" side="top"
+    <ActionBar position="static" detail={!canCover ? 'Só editor ou admin pode selecionar notícias.' : undefined} detailId={reasonId}>
+      {/* On a phone the reasons and times share one menu, so the main decision keeps its width. */}
+      {phone ? <Menu label="Outras ações da notícia" align="end" side="top"
         sections={[
-          { label: 'Adiar', items: POSTPONE_OPTIONS.map(option => ({ label: option.label, icon: Clock, onSelect: () => { if (canCover && !busy) onPostpone(item, option.hours, option.label); } })) },
-          { label: 'Descartar', items: DISCARD_REASONS.map(reason => ({ label: reason, onSelect: () => { if (canCover && !busy) onDiscard(item, reason); } })) },
+          { label: 'Adiar', items: POSTPONE_OPTIONS.map(option => ({ label: option.label, icon: Clock, onSelect: () => onPostpone(item, option.hours, option.label) })) },
+          { label: 'Descartar', items: DISCARD_REASONS.map(reason => ({ label: reason, onSelect: () => onDiscard(item, reason) })) },
         ]}
-        trigger={props => <IconButton {...props} label="Outras ações da notícia" icon={Ellipsis} variant="secondary" disabled={!canCover || busy} />} />
-      <Button variant="primary" loading={covering} disabled={!canCover || busy} onClick={() => onCover(item)}>Selecionar para redação</Button>
+        trigger={props => <IconButton {...props} label="Outras ações da notícia" icon={Ellipsis} variant="secondary" aria-disabled={!canCover || covering || undefined} />} />
+        : <LaterAndDiscard item={item} disabled={!canCover || covering} onPostpone={onPostpone} onDiscard={onDiscard} />}
+      <Tooltip content="Guarda a notícia como material para a redação" shortcut="C" disabled={!canCover}>{select}</Tooltip>
     </ActionBar>
   );
 }

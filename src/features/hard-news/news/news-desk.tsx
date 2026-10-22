@@ -146,6 +146,16 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     });
     return () => cancelAnimationFrame(frame);
   }, [selectedId]);
+  // Other open stories on the subjects this one shares with the radar, the most specific subject first.
+  const related = useMemo(() => {
+    if (!shown) return [];
+    const found = new Map<string, NewsItem>();
+    const shared = newsTopics(state.news, now)
+      .filter(entry => entry.items.some(item => item.id === shown.id))
+      .sort((a, b) => a.items.length - b.items.length);
+    for (const entry of shared) for (const item of entry.items) if (item.id !== shown.id && !found.has(item.id)) found.set(item.id, item);
+    return [...found.values()].slice(0, 4);
+  }, [now, shown, state.news]);
   const read = lastRead(state.feeds);
   const anyActive = state.feeds.some((feed) => feed.state === 'active')
     || Boolean(webSearch?.configured && webSearch.config?.enabled && !['failed', 'limited'].includes(webSearch.state));
@@ -241,6 +251,17 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     actions.discard(item.id, reason);
     setSelectedId(next);
     toast('Notícia descartada', { description: reason, action: { label: 'Desfazer', onClick: () => actions.restore(item.id) } });
+  }
+
+  async function restore(item: NewsItem) {
+    if (!onServer) { actions.restore(item.id); return; }
+    if (deciding.current) return;
+    deciding.current = true;
+    setCovering(true);
+    try {
+      const result = await actions.decideNews(item.id, { revision: item.decisionRevision ?? 0, action: 'restore' });
+      if (!result.ok) toast('Não foi possível devolver à fila', { tone: 'error', description: result.message });
+    } finally { deciding.current = false; setCovering(false); }
   }
 
   // J/K walk the board, C covers, A postpones until tomorrow (never while typing or in a menu).
@@ -348,7 +369,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
         <ButtonLink href={NEWS_SOURCES_HREF} variant="secondary" icon={Plus}>Adicionar fonte</ButtonLink>
       </> : undefined} />
   ) : live ? <RadarBoard {...radarProps} /> : <RadarSkeleton />;
-  const reader = live && shown ? <NewsFicha key={shown.id} item={shown} now={now} /> : live && selectedId && failedItem === selectedId ? (
+  const reader = live && shown ? <NewsFicha key={shown.id} item={shown} now={now} related={related} onOpen={select} /> : live && selectedId && failedItem === selectedId ? (
     <EmptyState icon={AlertTriangle} title="Não foi possível abrir esta notícia" size="panel"
       actions={<Button variant="secondary" onClick={() => { setFailedItem(undefined); setBodyAttempt(value => value + 1); }}>Tentar novamente</Button>} />
   ) : live && !selectedId ? (
@@ -363,7 +384,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
         mainLabel={selectedId ? 'Notícia' : 'Manchetes'}
         mainHeader={!selectedId ? filters : undefined}
         footer={live && shown ? <DecisionBar item={shown} covering={covering} canCover={canCover} demo={demo}
-          onCover={item => void cover(item)} onPostpone={postpone} onDiscard={discard} /> : undefined}
+          onCover={item => void cover(item)} onPostpone={postpone} onDiscard={discard} onRestore={item => void restore(item)} /> : undefined}
       >
         {selectedId ? reader : inbox}
       </WorkspaceLayout>
