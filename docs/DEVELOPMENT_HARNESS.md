@@ -106,11 +106,11 @@ The release automation and SemVer mapping are documented with the version-histor
 
 ## Semantic versioning
 
-- Reporter IA uses `vX.Y.Z` and is currently in Alpha on the `v0.Y.Z` line. The current baseline is `v0.1.0`.
-- `X` is a deliberate commercial release. It changes only for a genuinely new, incompatible product release represented by a breaking Conventional Commit (`type!:`). The first such release moves R0 to R1 and v0 to v1.
+- Reporter IA uses `vX.Y.Z`. The published baseline is the latest version tag and matching public history entry.
+- `X` is the completed roadmap release. After Rn is accepted, the exact commit `chore(release): declare Rn roadmap release` advances from v(n-1) to vn: R1 creates `v1.0.0`, R2 creates `v2.0.0`, and so on. This declaration records scope completion, not code incompatibility. A breaking Conventional Commit (`type!:`) alone cannot advance `X`; it requires the explicit roadmap release declaration in the same delivery.
 - `Y` is an intermediate feature release. Any validated `feat:` commit increments `Y` and resets `Z` to zero.
 - `Z` is a correction release. Deployments containing fixes, documentation, refactors, performance work or maintenance without a feature increment `Z`.
-- When a delivery contains different commit types, the highest impact wins: commercial (`X`), feature (`Y`), then correction (`Z`). A commercial increment must remain explicit in the commit history; the automation never guesses it from ordinary feature work.
+- When a delivery contains different commit types, the highest impact wins: roadmap release (`X`), feature (`Y`), then correction (`Z`). A roadmap increment must remain explicit in the commit history and name exactly the next release; the automation never guesses it from ordinary feature work.
 - Every approved production deployment creates exactly one new version. `pnpm release:prepare:auto` calculates the increment from validated commits, writes the English summary and detailed change list, and updates `package.json`, `CHANGELOG.md`, and `src/data/release-history.json` together.
 
 ## Controlled release workflow
@@ -150,7 +150,7 @@ Publishing a change (the only path that reaches CI, review and acceptance):
 2. In Reporter, replace the commit SHA in the `@content-ventures/design-system` URL with the tagged commit and run `pnpm install`.
 3. Run `pnpm gate` and `pnpm smoke`, then commit `package.json` and `pnpm-lock.yaml` alone as `build(deps): pin design system vX.Y.Z`.
 
-Previewing an unpublished change locally (temporary, while the DS 0.2.0 used by R1 · Experiência is unpublished):
+Previewing an unpublished Design System change locally:
 
 ```sh
 DS=/path/to/design-system   # a local checkout of the DS branch

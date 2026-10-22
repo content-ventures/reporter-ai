@@ -3,8 +3,8 @@
   "currentRoadmapRelease": "R0",
   "upcoming": {
     "roadmapRelease": "R1",
-    "title": "Experiência",
-    "summary": "Da transcrição ao carrossel exportado, com aprovação humana em cada peça, sobre a simulação local.",
+    "title": "Primeiro entregável",
+    "summary": "Da transcrição autorizada ao artigo e carrossel aprovados e exportados, com backend persistente, IA conectada e trilha de auditoria.",
     "changes": [
       {
         "type": "Added",
@@ -34,7 +34,40 @@
         "type": "Added",
         "description": "Logs de logins, acessos negados e alterações, só para administradores."
       }
-    ]
+    ],
+    "roadmapReleaseNotes": {
+      "summary": "Ship the R1 roadmap release with the R0 foundation and the connected editorial workflow.",
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Connect transcript intake and editorial context to durable productions"
+        },
+        {
+          "type": "Added",
+          "description": "Generate articles with server-owned AI providers and reviewed prompts"
+        },
+        {
+          "type": "Added",
+          "description": "Edit articles and record human approval of exact versions"
+        },
+        {
+          "type": "Added",
+          "description": "Generate slide copy from approved articles"
+        },
+        {
+          "type": "Added",
+          "description": "Compose carousels with approved templates"
+        },
+        {
+          "type": "Added",
+          "description": "Review and export article and carousel packages"
+        },
+        {
+          "type": "Added",
+          "description": "Record access and change events in the admin audit trail"
+        }
+      ]
+    }
   },
   "releases": [
     {

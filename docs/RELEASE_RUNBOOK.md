@@ -93,6 +93,12 @@ origin, such as `https://reporteria.contentventures.com.br` and `https://reporte
 
 ## Releasing
 
+- **Roadmap release.** After Rn acceptance, merge the exact commit
+  `chore(release): declare Rn roadmap release` with its actual release number, such as R1 or R2.
+  Its reviewed scope and English release notes are stored in `release-history.json` while that
+  release is upcoming. The controlled workflow then generates `vn.0.0`; do not edit version files
+  or tag the release by hand. Work on the next roadmap release may already be present on `main`,
+  but the release declaration must not describe it as completed.
 - **Validate first.** From the branch under review, dispatch the workflow with `validation_only`.
   It deploys and accepts on staging only.
 - **Release.** After the pull request is merged, dispatch the workflow from `main`.
