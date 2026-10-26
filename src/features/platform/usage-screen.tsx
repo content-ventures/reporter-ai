@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense,useState } from 'react';
+import { useRouter,useSearchParams } from 'next/navigation';
+import type {PlatformFilter} from '@/ports/platform';
 import { DataTable, EmptyState, ErrorState, formatBytes, Grid, MetaList, PageHeader, PageStack, Section, Segmented, type Column } from '@content-ventures/design-system/v3';
 import { ChartNoAxesColumn } from '@content-ventures/design-system/v3/icons';
 import { DEFAULT_USAGE_PERIOD, type ModelUsage, type PersonUsage, type UsagePeriod } from '@/domain';
@@ -11,16 +12,22 @@ import { formatCount } from '@/ui/format';
 import { formatCompact, formatUsd, PEOPLE_HREF, PERIOD_OPTIONS } from './format';
 import { PersonName } from './person-name';
 import { ActivityChart, CostChart, UsageStrip } from './usage-blocks';
+import {PlatformFilters} from './platform-filters';
 
 /**
  * Uso: the chosen period (7, 30 or 90 days) in indicators, activity and spend per day, and the
  * breakdown per model and per person. Cost is an estimate on the reference prices the page names.
  */
 export function UsageScreen() {
+  return<Suspense fallback={null}><UsageView/></Suspense>;
+}
+function UsageView(){
   const router = useRouter();
+  const params=useSearchParams();
+  const [filter,setFilter]=useState<PlatformFilter>({workspaceId:params.get('workspace')??undefined,personId:params.get('person')??undefined});
   const [period, setPeriod] = useState<UsagePeriod>(DEFAULT_USAGE_PERIOD);
-  const usage = usePlatformUsage(period);
-  const directory = usePlatformDirectory();
+  const usage = usePlatformUsage(period,filter);
+  const directory = usePlatformDirectory({workspaceId:filter.workspaceId,personId:filter.personId});
   const report = usage.data;
   const people = new Map((directory.data?.people ?? []).map((person) => [person.id, person]));
   const loading = usage.status === 'loading';
@@ -68,6 +75,7 @@ export function UsageScreen() {
         actions={<Segmented label="Período" size="sm" options={PERIOD_OPTIONS} value={`${period}`} onChange={(value) => setPeriod(Number(value) as UsagePeriod)} />}
       />
       <PageStack>
+        <PlatformFilters value={filter} onChange={setFilter}/>
         <UsageStrip report={report} period={period} loading={loading} />
         <Grid columns="1:1" collapseBelow={1024}>
           <ActivityChart report={report} period={period} />
@@ -108,7 +116,8 @@ export function UsageScreen() {
             size="sm"
             items={[
               `${report.from.split('-').reverse().join('/')} – ${report.to.split('-').reverse().join('/')}`,
-              `Armazenamento: ${formatBytes(report.storageBytes)}`,
+              `Armazenamento${report.storageIncomplete?' com autoria registrada':''}: ${formatBytes(report.storageBytes)}`,
+              ...(report.storageIncomplete?['Arquivos antigos sem autoria ficam fora do filtro por pessoa.']:[]),
               `Custo estimado com preços de ${report.pricesAsOf.split('-').reverse().join('/')}`,
             ]}
           />

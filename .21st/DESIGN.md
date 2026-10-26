@@ -11,7 +11,7 @@
 
 ## Source of truth
 
-- Visual components: `@content-ventures/design-system/v3` (0.2.0, branch `editorial-studio`, until it is tagged and pinned)
+- Visual components: `@content-ventures/design-system/v3` (0.4.0, pinned at `0479b31c567653c76b93ec2ec89eb6976ce31172`)
 - Icons: `@content-ventures/design-system/v3/icons`
 - Theme and typography: `ThemeV3` and `interV3`
 - Product rules: `docs/DEVELOPMENT_HARNESS.md`

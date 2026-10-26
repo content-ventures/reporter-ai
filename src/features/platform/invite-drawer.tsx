@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, type KeyboardEvent } from 'react';
-import { Alert, Button, CopyButton, DescriptionList, Drawer, Field, Input, Select, type SelectOption } from '@content-ventures/design-system/v3';
+import { Alert, Button,Combobox, CopyButton, DescriptionList, Drawer, Field, Input, Select, type SelectOption } from '@content-ventures/design-system/v3';
 import { invitePath, ROLES, roleLabel, type IssuedInvite, type PlatformWorkspace, type Role } from '@/domain';
-import { usePlatform } from '@/state';
+import { usePlatform,usePlatformAdministration,useAdministrationQuery } from '@/state';
 import { formatDateTime } from '@/ui/format';
 import { inputProps } from './field-props';
 
@@ -47,6 +47,8 @@ type Draft = { name: string; email: string; role: Role; workspaceId: string };
  */
 export function InviteDrawer({ open, onClose, workspaces }: { open: boolean; onClose: () => void; workspaces: PlatformWorkspace[] }) {
   const platform = usePlatform();
+  const administration=usePlatformAdministration(),[workspaceSearch,setWorkspaceSearch]=useState('');
+  const targets=useAdministrationQuery(administration,`invite-targets:${workspaceSearch}`,admin=>admin.list({search:workspaceSearch,limit:50}));
   const blank = (): Draft => ({ name: '', email: '', role: 'editor', workspaceId: workspaces[0]?.id ?? '' });
   const [draft, setDraft] = useState<Draft>(blank);
   const [busy, setBusy] = useState(false);
@@ -109,7 +111,8 @@ export function InviteDrawer({ open, onClose, workspaces }: { open: boolean; onC
           <Field label="Função">
             {(props) => <Select {...props} value={draft.role} options={ROLE_OPTIONS} onChange={(value) => setDraft({ ...draft, role: value as Role })} />}
           </Field>
-          {workspaces.length > 1 ? (
+          {administration?<Field label="Workspace">{props=><Combobox {...props} value={workspaceId} onChange={value=>setDraft({...draft,workspaceId:value})} onQuery={setWorkspaceSearch} loading={targets.loading}
+            options={(targets.data?.items??[]).filter(workspace=>workspace.status==='draft'||workspace.status==='active').map(workspace=>({value:workspace.id,label:workspace.name}))}/>}</Field>:workspaces.length > 1 ? (
             <Field label="Workspace">
               {(props) => <Select {...props} value={workspaceId} options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name }))} onChange={(value) => setDraft({ ...draft, workspaceId: value })} />}
             </Field>

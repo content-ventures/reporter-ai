@@ -13,7 +13,7 @@ import {
 import type { InvitePreview, IssuedInvite, PlatformAction, PlatformLogEntry, PlatformPerson, PlatformRefusal, PlatformWorkspace } from '../../../domain/platform.ts';
 import { ok, refuse } from '../../../domain/result.ts';
 import type { Role } from '../../../domain/workspace.ts';
-import type { InviteDesk, PlatformConsole, PlatformResult } from '../../../ports/platform.ts';
+import type { DirectorySearch,PlatformFilter,InviteDesk, PlatformConsole, PlatformResult } from '../../../ports/platform.ts';
 
 /**
  * The platform console of the demo build: people, invites and the log live in this browser
@@ -135,14 +135,22 @@ export function createDemoPlatform(options: DemoPlatformOptions): { console: Pla
       const person = operator();
       return person ? ok({ id: person.id, name: person.name, email: person.email, ...(person.avatarUrl ? { avatarUrl: person.avatarUrl } : {}) }) : failed('restricted');
     },
-    async directory() {
-      return ok({ people: state.people, workspaces: seed.workspaces });
+    async directory(query:DirectorySearch={}) {
+      const matching=state.people.filter(person=>(!query.personId||person.id===query.personId)&&(!query.workspaceId||person.workspace?.id===query.workspaceId||person.memberships?.some(link=>link.workspace.id===query.workspaceId))
+        &&(!query.search||`${person.name} ${person.email}`.toLocaleLowerCase().includes(query.search.toLocaleLowerCase())));
+      const counts={all:matching.length,active:0,invited:0,pending:0,suspended:0};for(const person of matching)counts[person.status]++;
+      const rows=matching.filter(person=>!query.status||person.status===query.status),offset=query.offset??0;
+      return ok({ people:rows.slice(offset,offset+(query.limit??100)),total:rows.length,offset,counts,workspaces:seed.workspaces });
     },
-    async usage(period: UsagePeriod) {
-      return ok(buildUsageReport(seed.facts, period, options.now()));
+    async usage(period: UsagePeriod,filter:PlatformFilter={}) {
+      const include=(fact:{personId:string|null;workspaceId:string})=>(!filter.workspaceId||fact.workspaceId===filter.workspaceId)&&(!filter.personId||fact.personId===filter.personId);
+      return ok(buildUsageReport({...seed.facts,generations:seed.facts.generations.filter(include),productions:seed.facts.productions.filter(include),approvals:seed.facts.approvals.filter(include),
+        audio:seed.facts.audio.filter(include),activeDays:seed.facts.activeDays.filter(include),...(filter.workspaceId||filter.personId?{storageBytes:0,storageIncomplete:true}:{})},period,options.now()));
     },
-    async log(limit: number) {
-      return ok({ items: state.log.slice(0, limit), total: state.log.length });
+    async log(limit: number,filter:PlatformFilter&{offset?:number}={}) {
+      const rows=state.log.filter(entry=>(!filter.personId||entry.actor?.id===filter.personId||entry.target?.id===filter.personId)
+        &&(!filter.workspaceId||(entry.workspace?.id??state.people.find(person=>person.id===entry.target?.id)?.workspace?.id)===filter.workspaceId));
+      return ok({ items:rows.slice(filter.offset??0,(filter.offset??0)+limit),total:rows.length });
     },
     async invite(input) {
       const valid = validateInvite(input);

@@ -23,7 +23,7 @@ import {
 } from '@content-ventures/design-system/v3';
 import { SearchX, UserPlus, Users } from '@content-ventures/design-system/v3/icons';
 import { ACCESS_STATUSES, type AccessStatus, type PlatformPerson } from '@/domain';
-import { usePlatformDirectory, usePlatformUsage } from '@/state';
+import { usePlatform,usePlatformDirectory, usePlatformUsage } from '@/state';
 import { formatCount } from '@/ui/format';
 import { RelativeTime } from '@/ui/time';
 import { usePhone } from '@/ui/use-phone';
@@ -60,13 +60,15 @@ function PeopleView() {
   const router = useRouter();
   const params = useSearchParams();
   const phone = usePhone();
-  const directory = usePlatformDirectory();
-  const usage = usePlatformUsage(30);
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const inviting = params.get('new') === '1';
   const openId = params.get('person');
+  const connected=usePlatform().mode==='connected';
+  const directory = usePlatformDirectory(connected?{search:query,status:filter==='all'?undefined:filter,limit:PAGE_SIZE,offset:(page-1)*PAGE_SIZE}:undefined);
+  const detail=usePlatformDirectory(openId?{personId:openId,limit:1}:undefined);
+  const usage = usePlatformUsage(30);
 
   const setParam = (key: 'new' | 'person', value: string | null) => {
     const next = new URLSearchParams(params.toString());
@@ -83,23 +85,25 @@ function PeopleView() {
     return result;
   }, [people]);
   const rows = useMemo(
-    () => people
+    () => connected?people:people
       .filter((person) => (filter === 'all' || person.status === filter) && matches(person, query))
       .sort((a, b) => ORDER[a.status] - ORDER[b.status] || a.name.localeCompare(b.name, 'pt-BR')),
-    [people, filter, query],
+    [people, filter, query,connected],
   );
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const total=connected?directory.data?.total??0:rows.length;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const current = Math.min(page, pageCount);
-  const shown = rows.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
+  const shown = connected?rows:rows.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
   const usageOf = (id: string) => usage.data?.people.find((entry) => entry.personId === id);
   const multiWorkspace = (directory.data?.workspaces.length ?? 0) > 1;
-  const opened = openId ? people.find((person) => person.id === openId) : undefined;
+  const opened = openId ? detail.data?.people.find((person) => person.id === openId) : undefined;
+  const functionsOf=(person:PlatformPerson)=>person.memberships?.length?person.memberships.map(link=>`${link.workspace.name}: ${rolesLabel(link.roles)}`).join(' · '):rolesLabel(person.roles);
 
   const columns: Column<PlatformPerson>[] = [
     { key: 'person', header: 'Pessoa', width: '22%', pinned: true, skeleton: 'control', render: (person) => <PersonName name={person.name} avatarUrl={person.avatarUrl} you={person.operator} onOpen={() => setParam('person', person.id)} /> },
     { key: 'email', header: 'E-mail', truncate: true, skeleton: 'text', render: (person) => person.email },
-    { key: 'roles', header: 'Função', width: '17%', truncate: true, title: (person) => rolesLabel(person.roles), skeleton: 'short', render: (person) => rolesLabel(person.roles) },
-    ...(multiWorkspace ? [{ key: 'workspace', header: 'Workspace', width: '16%', truncate: true, skeleton: 'short' as const, render: (person: PlatformPerson) => person.workspace?.name ?? '—' }] : []),
+    { key: 'roles', header: 'Funções por workspace', width: '24%', truncate: true, title: functionsOf, skeleton: 'short', render: functionsOf },
+    ...(multiWorkspace ? [{ key: 'workspace', header: 'Vínculos', width: '10%', skeleton: 'short' as const, render: (person: PlatformPerson) => person.memberships?.length??(person.workspace?1:0) }] : []),
     { key: 'status', header: 'Status', width: 176, skeleton: 'short', render: (person) => <Badge tone={STATUS_TONES[person.status]} variant="text" dot wrap>{statusLabel(person.status)}</Badge> },
     { key: 'seen', header: 'Último acesso', width: 132, skeleton: 'short', render: (person) => (person.lastSeenAt ? <RelativeTime at={person.lastSeenAt} /> : '—') },
     { key: 'generations', header: 'Gerações · 30 dias', width: 148, align: 'end', numeric: true, skeleton: 'short', render: (person) => formatCount(usageOf(person.id)?.generations ?? 0) },
@@ -111,7 +115,7 @@ function PeopleView() {
       size="sm"
       value={filter}
       onChange={(value) => { setFilter(value); setPage(1); }}
-      items={(['all', ...ACCESS_STATUSES] as Filter[]).map((value) => ({ value, label: TAB_LABELS[value], count: directory.data ? counts[value] : undefined }))}
+      items={(['all', ...ACCESS_STATUSES] as Filter[]).map((value) => ({ value, label: TAB_LABELS[value], count: directory.data ? directory.data.counts?.[value]??counts[value] : undefined }))}
     />
   );
 
@@ -123,8 +127,8 @@ function PeopleView() {
   const error = directory.status === 'error' ? (
     <ErrorState title="Pessoas indisponíveis" description={directory.error?.message} onRetry={directory.retry} />
   ) : undefined;
-  const pagination = rows.length > PAGE_SIZE ? (
-    <Pagination page={current} pageSize={PAGE_SIZE} total={rows.length} noun={rows.length === 1 ? 'pessoa' : 'pessoas'} variant={phone ? 'compact' : 'auto'} onPageChange={setPage} />
+  const pagination = total > PAGE_SIZE ? (
+    <Pagination page={current} pageSize={PAGE_SIZE} total={total} noun={total === 1 ? 'pessoa' : 'pessoas'} variant={phone ? 'compact' : 'auto'} onPageChange={setPage} />
   ) : undefined;
   const loading = directory.status === 'loading';
 
@@ -151,7 +155,7 @@ function PeopleView() {
                     title={person.name}
                     onClick={() => setParam('person', person.id)}
                     trailing={<Badge tone={STATUS_TONES[person.status]} variant="text" dot>{statusLabel(person.status)}</Badge>}
-                    description={<MetaList size="sm" wrap={false} items={[rolesLabel(person.roles), person.email]} />}
+                    description={<MetaList size="sm" wrap={false} items={[functionsOf(person), person.email]} />}
                   />
                 ))}
               </List>

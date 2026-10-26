@@ -1,9 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, Avatar, Badge, Button, Checkbox, CheckboxGroup, ConfirmDialog, DescriptionList, Drawer, MetricStrip, PageStack, Section } from '@content-ventures/design-system/v3';
+import { Alert, Avatar, Badge, Button,ButtonLink, Checkbox, CheckboxGroup,Combobox, ConfirmDialog, DescriptionList, Drawer,Field, MetricStrip, PageStack,Panel, Section,List,ListItem } from '@content-ventures/design-system/v3';
 import { ROLES, roleLabel, type IssuedInvite, type PersonUsage, type PlatformPerson, type Role } from '@/domain';
-import { usePlatform } from '@/state';
+import { usePlatform,usePlatformAdministration,useAdministrationQuery } from '@/state';
+import type {WorkspaceTeamMember} from '@/domain/workspace-management';
+import {TeamMember} from './workspace-team';
+import {workspaceManagementHref} from './workspaces-screen';
 import { formatCount, formatDateTime } from '@/ui/format';
 import { RelativeTime } from '@/ui/time';
 import { IssuedLink } from './invite-drawer';
@@ -17,6 +20,9 @@ type Confirm = 'suspend' | 'restore' | null;
  */
 export function PersonDrawer({ person: open, usage, onClose }: { person: PlatformPerson | undefined; usage: PersonUsage | undefined; onClose: () => void }) {
   const platform = usePlatform();
+  const administration=usePlatformAdministration();
+  const [membership,setMembership]=useState<WorkspaceTeamMember>();
+  const [signupWorkspace,setSignupWorkspace]=useState(''),[workspaceSearch,setWorkspaceSearch]=useState('');
   // The last person stays on screen while the drawer slides out.
   const [last, setLast] = useState<PlatformPerson>();
   if (open && open !== last) setLast(open);
@@ -34,12 +40,15 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
     setRoles(undefined);
     setError(undefined);
     setIssued(undefined);
+    setMembership(undefined);
+    setSignupWorkspace('');setWorkspaceSearch('');
   }
 
   const chosen = roles && person && roles.id === person.id ? roles.value : person?.roles ?? [];
   const changed = Boolean(person) && chosen.join() !== person?.roles.join();
   const self = person?.operator ?? false;
   const pending = person?.status === 'pending';
+  const signupTargets=useAdministrationQuery(pending?administration:undefined,`signup-targets:${workspaceSearch}`,admin=>admin.list({search:workspaceSearch,limit:50}));
 
   async function act<T>(run: () => Promise<{ ok: true; value: T } | { ok: false; refusal: { message: string } }>, after?: (value: T) => void) {
     setBusy(true);
@@ -58,6 +67,7 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
   }
 
   if (!person) return null;
+  const managed=platform.mode==='connected'&&!pending;
 
   const details = [
     { label: 'Status', value: <Badge tone={STATUS_TONES[person.status]} variant="text" dot>{statusLabel(person.status)}</Badge> },
@@ -68,8 +78,8 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
     ...(person.inviteExpiresAt ? [{ label: 'Link expira em', value: formatDateTime(person.inviteExpiresAt), numeric: true }] : []),
   ];
 
-  const footer = self ? undefined : pending ? (
-    <Button variant="primary" loading={busy} disabled={!chosen.length} onClick={() => void act(() => platform.approve(person.id, chosen))}>Liberar acesso</Button>
+  const footer = managed ? (!self&&platform.accountStatus?<Button variant="danger-soft" disabled={busy} onClick={()=>setConfirm(person.accountStatus==='suspended'?'restore':'suspend')}>{person.accountStatus==='suspended'?'Reativar conta na plataforma':'Suspender conta na plataforma'}</Button>:undefined) : self ? undefined : pending ? (
+    <Button variant="primary" loading={busy} disabled={!chosen.length||(Boolean(administration)&&!signupWorkspace)} onClick={() => void act(() => administration?administration.approveSignup({workspaceId:signupWorkspace,personId:person.id,roles:chosen}):platform.approve(person.id, chosen))}>Liberar acesso</Button>
   ) : person.status === 'suspended' ? (
     <Button variant="primary" loading={busy} onClick={() => setConfirm('restore')}>Reativar acesso</Button>
   ) : (
@@ -93,6 +103,15 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
         <PageStack>
           {self ? <Badge tone="blue">Você · operador da plataforma</Badge> : null}
           <DescriptionList items={details} />
+          {pending&&administration?<Field label="Workspace do novo vínculo">{props=><Combobox {...props} value={signupWorkspace} onChange={setSignupWorkspace} onQuery={setWorkspaceSearch} loading={signupTargets.loading}
+            options={(signupTargets.data?.items??[]).filter(workspace=>workspace.status==='active'||workspace.status==='draft').map(workspace=>({value:workspace.id,label:workspace.name}))}/>}</Field>:null}
+          {managed||usage?<Panel>
+          {managed?<Section title="Vínculos por workspace" titleAs="h3">
+            <List label="Vínculos desta pessoa" framed={false} empty="Esta conta ainda não tem vínculos.">{person.memberships?.map(link=><ListItem key={link.id} title={link.workspace.name}
+              description={`${rolesLabel(link.roles)} · ${link.status==='active'?'Ativo':link.status==='invited'?'Convidado':'Suspenso'}`}
+              onClick={!self&&administration?()=>setMembership({...link,name:person.name,email:person.email,avatarUrl:person.avatarUrl,accountSuspended:person.accountStatus==='suspended'}):undefined}
+              trailing={<ButtonLink size="sm" href={workspaceManagementHref(link.workspace.id)}>Administrar</ButtonLink>}/>)}</List>
+          </Section>:null}
           {usage ? (
             <Section title="Últimos 30 dias" titleAs="h3">
               <MetricStrip
@@ -106,7 +125,8 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
               />
             </Section>
           ) : null}
-          {!self && person.status !== 'suspended' ? (
+          </Panel>:null}
+          {!managed&&!self && person.status !== 'suspended' ? (
             <CheckboxGroup legend={pending ? 'Liberar como' : 'Funções'}>
               {ROLES.map((role) => (
                 <Checkbox key={role} label={roleLabel(role)} checked={chosen.includes(role)} disabled={busy} onChange={(event) => toggle(role, event.target.checked)} />
@@ -120,11 +140,11 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
       <ConfirmDialog
         open={confirm === 'suspend'}
         onClose={() => setConfirm(null)}
-        title={`Suspender ${person.name}?`}
-        description="O acesso termina agora. Um link aberto deixa de funcionar."
-        confirmLabel="Suspender acesso"
+        title={`Suspender ${person.name}${managed?' na plataforma':''}?`}
+        description={managed?'Esta conta perderá acesso a todos os workspaces. Para afetar apenas um cliente, altere o vínculo correspondente.':'O acesso termina agora. Um link aberto deixa de funcionar.'}
+        confirmLabel={managed?'Suspender conta':'Suspender acesso'}
         tone="danger"
-        onConfirm={() => act(() => platform.suspend(person.id))}
+        onConfirm={() => act(() => managed?platform.accountStatus!(person.id,true):platform.suspend(person.id))}
       />
       <ConfirmDialog
         open={confirm === 'restore'}
@@ -132,8 +152,9 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
         title={`Reativar ${person.name}?`}
         description={person.lastSeenAt ? 'A pessoa volta a entrar com a mesma senha.' : 'Um novo link de acesso será gerado.'}
         confirmLabel="Reativar acesso"
-        onConfirm={() => act(() => platform.restore(person.id), (value) => { if (value.invite) setIssued(value.invite); })}
+        onConfirm={() => managed?act(()=>platform.accountStatus!(person.id,false)):act(() => platform.restore(person.id), (value) => { if (value.invite) setIssued(value.invite); })}
       />
+      {membership&&administration?<TeamMember key={membership.id} port={administration} member={membership} onClose={()=>setMembership(undefined)}/>:null}
     </>
   );
 }
