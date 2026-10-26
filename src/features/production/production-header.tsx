@@ -1,7 +1,8 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useId, useLayoutEffect, useState, type ReactElement, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   ActionBar,
   Button,
@@ -140,9 +141,10 @@ function blockedReasonOf(primary: HeaderPrimary | undefined): string | undefined
 
 /** The primary itself: a link when it only navigates, a button otherwise (blocked: `aria-disabled` + reason). */
 function PrimaryControl({ primary, size, reasonId }: { primary: HeaderPrimary; size: 'sm' | 'md'; reasonId?: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   if (primary.kind === 'link') {
     return (
-      <ButtonLink href={primary.href} variant="primary" size={size} icon={primary.icon}>
+      <ButtonLink href={workspaceHrefFor(primary.href)} variant="primary" size={size} icon={primary.icon}>
         {primary.label}
       </ButtonLink>
     );
@@ -164,9 +166,10 @@ function PrimaryControl({ primary, size, reasonId }: { primary: HeaderPrimary; s
 }
 
 function SecondaryControl({ secondary }: { secondary: HeaderSecondary }) {
+  const workspaceHrefFor = useWorkspaceHref();
   if (secondary.href) {
     return (
-      <ButtonLink href={secondary.href} size="sm" icon={secondary.icon}>
+      <ButtonLink href={workspaceHrefFor(secondary.href)} size="sm" icon={secondary.icon}>
         {secondary.label}
       </ButtonLink>
     );

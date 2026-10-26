@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
 import { ButtonLink, EmptyState, MetaList, PageStack, Progress, ProgressSteps, Section, SkeletonText, SlideStrip, WorkspaceLayout, type MediaRatio } from '@content-ventures/design-system/v3';
@@ -20,6 +21,7 @@ import { SlideImage } from './slide-media';
  * template data; the DS only frames them.
  */
 export function CarouselStudio({ productionId }: { productionId: ProductionId }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const frame = useProductionFrame();
   const production = frame.production.data;
   const [started, setStarted] = useState<{ productionId: ProductionId; runId: RunId } | null>(null);
@@ -53,7 +55,7 @@ export function CarouselStudio({ productionId }: { productionId: ProductionId })
           size="page"
           title="Esta produção não tem carrossel"
           actions={
-            <ButtonLink href={pieceHref(production.id, 'article')} variant="primary">
+            <ButtonLink href={workspaceHrefFor(pieceHref(production.id, 'article'))} variant="primary">
               Abrir artigo
             </ButtonLink>
           }

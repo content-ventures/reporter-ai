@@ -1,7 +1,8 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   BulkBar,
   Button,
@@ -137,6 +138,7 @@ function useSearchDraft(params: ListParams, setParams: SetListParams) {
 }
 
 function ProductionsList({ params, setParams }: { params: ListParams; setParams: SetListParams }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const router = useRouter();
   const phone = usePhone();
   const commands = useCommands();
@@ -238,7 +240,7 @@ function ProductionsList({ params, setParams }: { params: ListParams; setParams:
       header: 'Produção',
       pinned: true,
       skeleton: 'lines',
-      render: (item) => <ProductionCell item={item} href={rowHref(item)} query={params.q} />,
+      render: (item) => <ProductionCell item={item} href={workspaceHrefFor(rowHref(item))} query={params.q} />,
     },
     { key: 'situation', header: 'Situação', width: 216, render: (item) => <SituationCell item={item} /> },
     { key: 'next', header: 'Próximo passo', width: 144, skeleton: 'short', render: (item) => <NextStepCell item={item} /> },
@@ -462,11 +464,12 @@ function SortMenu({ sort, onChange }: { sort: ListSort; onChange: (sort: ListSor
 }
 
 function PhoneRow({ item }: { item: ProductionListItem }) {
+  const workspaceHrefFor = useWorkspaceHref();
   return (
     <ListItem
       title={item.title}
       titleLines={2}
-      href={rowHref(item)}
+      href={workspaceHrefFor(rowHref(item))}
       description={<SituationCell item={item} size="sm" />}
       actions={<NextStepButton item={item} />}
     />

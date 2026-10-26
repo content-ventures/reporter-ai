@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Avatar, Badge, Button, ButtonLink, CardHeader, Highlight, TextLink, Tooltip } from '@content-ventures/design-system/v3';
 import type { PersonSummary, ProductionListItem } from '@/ports';
@@ -37,11 +38,12 @@ export function productionMeta(item: ProductionListItem): string {
 }
 
 export function ProductionCell({ item, href, query }: { item: ProductionListItem; href: string; query: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   return (
     <CardHeader
       titleAs="h2"
       title={
-        <TextLink href={href} tone="inherit">
+        <TextLink href={workspaceHrefFor(href)} tone="inherit">
           <Highlight text={item.title} query={query} />
         </TextLink>
       }
@@ -69,10 +71,11 @@ export function SituationCell({ item, size }: { item: ProductionListItem; size?:
 
 /** "Próximo passo": the verb for the person looking; nothing when the move is someone else's. */
 export function NextStepCell({ item }: { item: ProductionListItem }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const step = item.nextStep;
   if (!step) return null;
   return (
-    <TextLink href={nextStepHref(item)} size="sm">
+    <TextLink href={workspaceHrefFor(nextStepHref(item))} size="sm">
       {step.label}
     </TextLink>
   );
@@ -80,10 +83,11 @@ export function NextStepCell({ item }: { item: ProductionListItem }) {
 
 /** The next step as the row's button on a phone (the row is a link; its control sits beside it). */
 export function NextStepButton({ item }: { item: ProductionListItem }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const step = item.nextStep;
   if (!step) return null;
   return (
-    <ButtonLink href={nextStepHref(item)} size="sm">
+    <ButtonLink href={workspaceHrefFor(nextStepHref(item))} size="sm">
       {step.label}
     </ButtonLink>
   );

@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
 import {
@@ -52,6 +53,7 @@ type FileItemProps = {
 };
 
 function FileItem({ file, progress, retrying, anchorRef, onRetry }: FileItemProps) {
+  const workspaceHrefFor = useWorkspaceHref();
   const icon = fileIcon(file);
   const leading = imageThumb(file, progress);
   const caption = file.image ? imageCaption(file) : fileCaption(file);
@@ -112,7 +114,7 @@ function FileItem({ file, progress, retrying, anchorRef, onRetry }: FileItemProp
             <Tooltip content="Baixar">
               <ButtonLink
                 ref={anchorRef(file.fileName)}
-                href={progress.href}
+                href={workspaceHrefFor(progress.href)}
                 download={file.fileName}
                 aria-label={`Baixar ${file.fileName}`}
                 variant="ghost"

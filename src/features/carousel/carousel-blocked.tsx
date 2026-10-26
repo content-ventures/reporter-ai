@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { ButtonLink, EmptyState, WorkspaceLayout } from '@content-ventures/design-system/v3';
 import { Lock } from '@content-ventures/design-system/v3/icons';
@@ -12,6 +13,7 @@ import { StatusBadge } from '@/ui/status-badge';
  * motivo"): the reason from the derive guard and the one action that moves the gate forward.
  */
 export function CarouselBlocked({ production, article }: { production: ProductionDetail; article: PieceView | undefined }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const guard = production.guards.derive.carousel;
   const reason = guard && !guard.allowed ? guard.reason : 'Disponível após aprovar o artigo.';
   const inReview = article?.status === 'in_review';
@@ -31,11 +33,11 @@ export function CarouselBlocked({ production, article }: { production: Productio
         }
         actions={
           inReview ? (
-            <ButtonLink href={reviewHref(production.id, 'article')} variant="primary">
+            <ButtonLink href={workspaceHrefFor(reviewHref(production.id, 'article'))} variant="primary">
               Abrir revisão
             </ButtonLink>
           ) : (
-            <ButtonLink href={pieceHref(production.id, 'article')} variant="primary">
+            <ButtonLink href={workspaceHrefFor(pieceHref(production.id, 'article'))} variant="primary">
               Abrir artigo
             </ButtonLink>
           )

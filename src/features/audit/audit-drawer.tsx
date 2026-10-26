@@ -1,4 +1,5 @@
 'use client';
+import {useWorkspaceHref} from '@/ui/workspace-navigation';
 
 import {
   AccessState,
@@ -29,8 +30,8 @@ function changeBlocks(change: AuditChange): DiffBlock[] {
   return [{ id: change.field, change: 'modified', hunks: diffWords(change.before, change.after) }];
 }
 
-function facts(entry: AuditEntry): DescriptionItem[] {
-  const href = itemHref(entry);
+function facts(entry: AuditEntry, scope:(href:string|undefined)=>string|undefined): DescriptionItem[] {
+  const href = scope(itemHref(entry));
   const label = itemLabel(entry);
   const items: DescriptionItem[] = [
     { label: 'Resultado', value: <ResultBadge result={entry.result} /> },
@@ -77,6 +78,7 @@ export type AuditDrawerProps = {
 };
 
 export function AuditDrawer({ open, onClose, entry, loading, missing }: AuditDrawerProps) {
+  const href=useWorkspaceHref();
   const who = entry ? (entry.actor?.name ?? 'Sistema') : undefined;
   return (
     <Drawer
@@ -91,7 +93,7 @@ export function AuditDrawer({ open, onClose, entry, loading, missing }: AuditDra
       {entry ? (
         <>
           <Section>
-            <DescriptionList label="Detalhes do evento" items={facts(entry)} labelWidth={120} />
+            <DescriptionList label="Detalhes do evento" items={facts(entry,href)} labelWidth={120} />
           </Section>
           {entry.changes?.map((change) => (
             <Section key={change.field} title={change.field} titleAs="h3">

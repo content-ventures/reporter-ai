@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import {
   Button,
@@ -44,10 +45,11 @@ export type CarouselReviewAction = {
 };
 
 export function CarouselSendButton({ action, size }: { action: CarouselReviewAction; size?: 'sm' }) {
-  if (action.approved) return <ButtonLink href={action.href} variant="primary" size={size}>Ir para entrega</ButtonLink>;
+  const workspaceHrefFor = useWorkspaceHref();
+  if (action.approved) return <ButtonLink href={workspaceHrefFor(action.href)} variant="primary" size={size}>Ir para entrega</ButtonLink>;
   if (action.inReview) {
     return (
-      <ButtonLink href={action.href} variant="primary" icon={Send} size={size}>
+      <ButtonLink href={workspaceHrefFor(action.href)} variant="primary" icon={Send} size={size}>
         Abrir revisão
       </ButtonLink>
     );

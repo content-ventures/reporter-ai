@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useSelectedLayoutSegments } from 'next/navigation';
@@ -68,6 +69,7 @@ export function StagePage({
  * production from `useProductionFrame()`.
  */
 export function ProductionFrame({ productionId, children }: { productionId: ProductionId; children: ReactNode }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const production = useProduction(productionId);
   const segments = useSelectedLayoutSegments();
   const route = useMemo(() => productionRoute(segments), [segments]);
@@ -105,7 +107,7 @@ export function ProductionFrame({ productionId, children }: { productionId: Prod
           // REQ-T.1 (B06): who to ask, from the adapter ("Peça acesso a João.").
           description={code === 'restricted' ? production.error?.message : undefined}
           actions={
-            <ButtonLink href={PRODUCTIONS_HREF} variant="primary">
+            <ButtonLink href={workspaceHrefFor(PRODUCTIONS_HREF)} variant="primary">
               Ver produções
             </ButtonLink>
           }
@@ -118,7 +120,7 @@ export function ProductionFrame({ productionId, children }: { productionId: Prod
         title="Não foi possível abrir a produção"
         onRetry={production.retry}
         size="page"
-        actions={<ButtonLink href={PRODUCTIONS_HREF}>Ver produções</ButtonLink>}
+        actions={<ButtonLink href={workspaceHrefFor(PRODUCTIONS_HREF)}>Ver produções</ButtonLink>}
       />
     );
   }

@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import {
@@ -92,6 +93,7 @@ function useSearchDraft(params: AuditParams, setParams: SetAuditParams) {
 }
 
 function AuditView({ params, setParams }: { params: AuditParams; setParams: SetAuditParams }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const phone = usePhone();
   const now = useNow();
   const session = useSession();
@@ -154,7 +156,7 @@ function AuditView({ params, setParams }: { params: AuditParams; setParams: SetA
         title="Logs restritos a administradores"
         meta={member ? `${member.name} · ${memberDetail(member)}` : undefined}
         actions={
-          <ButtonLink href={OVERVIEW_HREF} variant="primary">
+          <ButtonLink href={workspaceHrefFor(OVERVIEW_HREF)} variant="primary">
             Ir para o Início
           </ButtonLink>
         }
