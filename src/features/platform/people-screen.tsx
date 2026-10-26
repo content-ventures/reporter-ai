@@ -23,7 +23,7 @@ import {
 } from '@content-ventures/design-system/v3';
 import { SearchX, UserPlus, Users } from '@content-ventures/design-system/v3/icons';
 import { ACCESS_STATUSES, type AccessStatus, type PlatformPerson } from '@/domain';
-import { usePlatform,usePlatformDirectory, usePlatformUsage } from '@/state';
+import { usePlatform,usePlatformDirectory, usePlatformUsage,usePlatformOperator } from '@/state';
 import { formatCount } from '@/ui/format';
 import { RelativeTime } from '@/ui/time';
 import { usePhone } from '@/ui/use-phone';
@@ -66,6 +66,7 @@ function PeopleView() {
   const inviting = params.get('new') === '1';
   const openId = params.get('person');
   const connected=usePlatform().mode==='connected';
+  const operatorId=usePlatformOperator().data?.id;
   const directory = usePlatformDirectory(connected?{search:query,status:filter==='all'?undefined:filter,limit:PAGE_SIZE,offset:(page-1)*PAGE_SIZE}:undefined);
   const detail=usePlatformDirectory(openId?{personId:openId,limit:1}:undefined);
   const usage = usePlatformUsage(30);
@@ -100,7 +101,7 @@ function PeopleView() {
   const functionsOf=(person:PlatformPerson)=>person.memberships?.length?person.memberships.map(link=>`${link.workspace.name}: ${rolesLabel(link.roles)}`).join(' · '):rolesLabel(person.roles);
 
   const columns: Column<PlatformPerson>[] = [
-    { key: 'person', header: 'Pessoa', width: '22%', pinned: true, skeleton: 'control', render: (person) => <PersonName name={person.name} avatarUrl={person.avatarUrl} you={person.operator} onOpen={() => setParam('person', person.id)} /> },
+    { key: 'person', header: 'Pessoa', width: '22%', pinned: true, skeleton: 'control', render: (person) => <PersonName name={person.name} avatarUrl={person.avatarUrl} you={person.id===operatorId} onOpen={() => setParam('person', person.id)} /> },
     { key: 'email', header: 'E-mail', truncate: true, skeleton: 'text', render: (person) => person.email },
     { key: 'roles', header: 'Funções por workspace', width: '24%', truncate: true, title: functionsOf, skeleton: 'short', render: functionsOf },
     ...(multiWorkspace ? [{ key: 'workspace', header: 'Vínculos', width: '10%', skeleton: 'short' as const, render: (person: PlatformPerson) => person.memberships?.length??(person.workspace?1:0) }] : []),

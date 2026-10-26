@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Alert, Avatar, Badge, Button,ButtonLink, Checkbox, CheckboxGroup,Combobox, ConfirmDialog, DescriptionList, Drawer,Field, MetricStrip, PageStack,Panel, Section,List,ListItem } from '@content-ventures/design-system/v3';
 import { ROLES, roleLabel, type IssuedInvite, type PersonUsage, type PlatformPerson, type Role } from '@/domain';
-import { usePlatform,usePlatformAdministration,useAdministrationQuery } from '@/state';
+import { usePlatform,usePlatformAdministration,useAdministrationQuery,usePlatformOperator } from '@/state';
 import type {WorkspaceTeamMember} from '@/domain/workspace-management';
 import {TeamMember} from './workspace-team';
 import {workspaceManagementHref} from './workspaces-screen';
@@ -20,6 +20,7 @@ type Confirm = 'suspend' | 'restore' | null;
  */
 export function PersonDrawer({ person: open, usage, onClose }: { person: PlatformPerson | undefined; usage: PersonUsage | undefined; onClose: () => void }) {
   const platform = usePlatform();
+  const operatorId=usePlatformOperator().data?.id;
   const administration=usePlatformAdministration();
   const [membership,setMembership]=useState<WorkspaceTeamMember>();
   const [signupWorkspace,setSignupWorkspace]=useState(''),[workspaceSearch,setWorkspaceSearch]=useState('');
@@ -46,7 +47,7 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
 
   const chosen = roles && person && roles.id === person.id ? roles.value : person?.roles ?? [];
   const changed = Boolean(person) && chosen.join() !== person?.roles.join();
-  const self = person?.operator ?? false;
+  const self = Boolean(person&&person.id===operatorId);
   const pending = person?.status === 'pending';
   const signupTargets=useAdministrationQuery(pending?administration:undefined,`signup-targets:${workspaceSearch}`,admin=>admin.list({search:workspaceSearch,limit:50}));
 
@@ -70,9 +71,11 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
   const managed=platform.mode==='connected'&&!pending;
 
   const details = [
-    { label: 'Status', value: <Badge tone={STATUS_TONES[person.status]} variant="text" dot>{statusLabel(person.status)}</Badge> },
-    { label: 'Workspace', value: person.workspace?.name, state: person.workspace ? undefined : ('empty' as const) },
-    { label: 'Funções', value: rolesLabel(person.roles) },
+    { label: managed?'Conta na plataforma':'Status', value: <Badge tone={STATUS_TONES[managed?person.accountStatus??person.status:person.status]} variant="text" dot>{statusLabel(managed?person.accountStatus??person.status:person.status)}</Badge> },
+    ...(managed?[{label:'Vínculos',value:person.memberships?.length??0}]:[
+      { label: 'Workspace', value: person.workspace?.name, state: person.workspace ? undefined : ('empty' as const) },
+      { label: 'Funções', value: rolesLabel(person.roles) },
+    ]),
     { label: 'Último acesso', value: person.lastSeenAt ? <RelativeTime at={person.lastSeenAt} /> : undefined, state: person.lastSeenAt ? undefined : ('empty' as const) },
     { label: 'Criado em', value: formatDateTime(person.createdAt), numeric: true },
     ...(person.inviteExpiresAt ? [{ label: 'Link expira em', value: formatDateTime(person.inviteExpiresAt), numeric: true }] : []),
