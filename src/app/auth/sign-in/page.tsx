@@ -14,6 +14,7 @@ import {
   PageStack,
   Tabs,
 } from '@content-ventures/design-system/v3';
+import {announceAccountChange} from '@/lib/account-events';
 import { authClient } from '@/lib/auth-client';
 import { ReporterBrand } from '@/ui/reporter-brand';
 import { PRODUCT_NAME } from '@/lib/brand';
@@ -42,6 +43,7 @@ export default function SignInPage() {
         ? await authClient.signIn.email({ email: email.trim(),password })
         : await authClient.signUp.email({ email: email.trim(),password,name: name.trim() });
       if (result.error) { setMessage(result.error.message || 'Não foi possível entrar.');return; }
+      announceAccountChange();
       router.replace(mode === 'sign-up' ? '/auth/pending' : '/');router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'O serviço de acesso não respondeu.');
