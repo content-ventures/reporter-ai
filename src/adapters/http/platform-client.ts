@@ -4,6 +4,8 @@ import type { UsageReport } from '../../domain/platform-usage.ts';
 import { ok, refuse } from '../../domain/result.ts';
 import type { Result } from '../../domain/result.ts';
 import type { InviteAccepted, InviteDesk, PlatformConsole, PlatformDirectory, PlatformLogPage, PlatformOperator, Restored } from '../../ports/platform.ts';
+import {createReporterTransport} from './reporter-client.ts';
+import {createHttpWorkspaceAdministration} from './workspace-management.ts';
 
 /**
  * The connected console and invite page: `/api/reporter/platform` and `/api/reporter/invites`.
@@ -32,15 +34,6 @@ async function request(path: string, body?: unknown): Promise<{ status: number; 
   }
 }
 
-async function platformCall<T>(path: string, body?: unknown): Promise<Result<T, PlatformRefusal>> {
-  const answer = await request(`platform/${path}`, body);
-  if (!answer) return refuse('unavailable', PLATFORM_MESSAGES.unavailable);
-  if (answer.status < 300) return ok(answer.value as T);
-  if (answer.value.error === 'auth_required' && typeof window !== 'undefined') window.location.replace('/auth/sign-in');
-  const code = typeof answer.value.error === 'string' && PLATFORM_CODES.has(answer.value.error) ? (answer.value.error as PlatformRefusal) : 'unavailable';
-  return refuse(code, typeof answer.value.message === 'string' ? answer.value.message : PLATFORM_MESSAGES[code]);
-}
-
 async function inviteCall<T, C extends string>(path: string, body?: unknown): Promise<Result<T, C>> {
   const answer = await request(`invites/${path}`, body);
   if (!answer) return refuse('unavailable' as C, INVITE_MESSAGES.unavailable);
@@ -49,11 +42,21 @@ async function inviteCall<T, C extends string>(path: string, body?: unknown): Pr
   return refuse(code as C, typeof answer.value.message === 'string' ? answer.value.message : INVITE_MESSAGES.unavailable);
 }
 
-export function createHttpPlatform(): { console: PlatformConsole; invites: InviteDesk } {
+export function createHttpPlatform() {
   const listeners = new Set<() => void>();
+  const http=createReporterTransport(undefined,{requireAccount:true});
+  let binding:Promise<PlatformOperator>|undefined;
+  const ready=async()=>{await(binding??=http.request<PlatformOperator>('/platform/operator').then(operator=>{http.bindAccount(operator.id);return operator;}).catch(error=>{binding=undefined;throw error;}));};
+  async function platformCall<T>(path:string,body?:unknown):Promise<Result<T,PlatformRefusal>>{
+    try{await ready();return ok(await http.request<T>(`/platform/${path}`,body));}
+    catch(error){const value=error as {code?:string;message?:string};
+      if(value.code==='auth_required'&&typeof window!=='undefined')window.location.replace('/auth/sign-in');
+      const code=value.code&&PLATFORM_CODES.has(value.code)?value.code as PlatformRefusal:'unavailable';return refuse(code,value.message||PLATFORM_MESSAGES[code]);}
+  }
+  const notify=()=>{for(const listener of [...listeners])listener();};
   async function write<T>(path: string, body: unknown): Promise<Result<T, PlatformRefusal>> {
     const result = await platformCall<T>(path, body);
-    if (result.ok) for (const listener of [...listeners]) listener();
+    if (result.ok) notify();
     return result;
   }
   const person = (id: string) => `people/${encodeURIComponent(id)}`;
@@ -82,5 +85,5 @@ export function createHttpPlatform(): { console: PlatformConsole; invites: Invit
       inviteCall<InviteAccepted, PasswordRefusal | InviteLinkRefusal>(`${encodeURIComponent(token)}/accept`, { password, confirmation }),
   };
 
-  return { console: platform, invites };
+  return { console: platform, invites,workspaces:createHttpWorkspaceAdministration({transport:http,ready,notify}),dispose:()=>{http.dispose();listeners.clear();} };
 }

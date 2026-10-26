@@ -116,6 +116,10 @@ The first full rehearsal under substantial concurrent host load passed 98 cases,
 - Provider spend: automated phase checks use synthetic providers and local media. No additional paid generation allowance is inferred from this implementation request. Live editorial comparison requires an explicitly authorized bounded run or existing accepted artifacts.
 - Production pilot: require the exact approved app and worker revisions, preserved Seafood counts/configuration, successful authorized two-workspace journey, no isolation or authorization failures, and observation through one complete processing/review/export cycle plus ten consecutive healthy queue probes. Stop activation on a blocking regression; the observation does not certify a full event-day capacity ceiling.
 
+## M5 dynamic administration (in progress)
+
+Scoped team endpoints now support bounded search, invitations, role changes, suspension and link renewal. The SQL projection exposes only the addressed membership to a workspace administrator, including an independent account-suspended flag. Real platform operators can use the addressed endpoint without acquiring a client membership. Global console transports bind requests to the operator who bootstrapped the tab. Focused PostgreSQL/HTTP checks passed for two-client privacy, stale revision conflicts, real operator audit attribution, account changes and independent suspension. Administration screens and the complete onboarding exit gate remain in progress.
+
 ## Activation and recovery contract
 
 Introduce server-owned rollout modes `off`, `admin` and `all`. Default remains `off` until app, worker and additive migrations agree. `admin` exposes the new navigation only to platform administrators; `all` exposes authorized memberships. Explicit new-client requests must fail closed when disabled; they must never fall back to Seafood. Legacy unscoped links resolve only the preserved pilot ID.

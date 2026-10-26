@@ -17,6 +17,7 @@ import type { VisualLibrary } from '../ports/visual-library.ts';
 import type { ImageGenerator } from '../ports/image-generation.ts';
 import type { CitationLibrary } from '../ports/citation-library.ts';
 import type { Clock, IdGenerator } from '../ports/system.ts';
+import type {WorkspaceAdministration} from '../ports/workspace-management.ts';
 
 /**
  * What the screens run on: port implementations only. `createRuntime()` composes the local
@@ -72,6 +73,7 @@ export type Runtime = {
   readonly citations?: CitationLibrary;
   /** F2.1 news sources and queue on the server (connected build only). */
   readonly news?: NewsIntake;
+  readonly administration?:WorkspaceAdministration;
   readonly render: RenderService;
   readonly export: ExportService;
   readonly session: SessionPort;

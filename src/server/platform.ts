@@ -20,7 +20,8 @@ import { WORKSPACE_MESSAGES, validateWorkspace } from '../domain/workspace-manag
 import { accountAvatarSource } from '../domain/profile.ts';
 import { reporterIdentity } from './auth.ts';
 import { cloudPortalId, localContext } from './config.ts';
-import { pool } from './database.ts';
+import { pool,transaction } from './database.ts';
+import {currentReporterContext} from './request-context.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { FlowError, logEvent } from './errors.ts';
 import {readWorkspaceTemplates,saveWorkspaceTemplates,uploadWorkspaceBrand} from './template-settings.ts';
@@ -87,6 +88,7 @@ const SQL_REFUSALS: Readonly<Record<string, PlatformRefusal | InviteLinkRefusal>
 function translate(error: unknown): unknown {
   if (!error || typeof error !== 'object') return error;
   const { code, message } = error as { code?: unknown; message?: unknown };
+  if(code==='40P01'||code==='40001')return new Refused('conflict',WORKSPACE_MESSAGES.conflict,409);
   if (code === '42501') return platformRefusal('restricted');
   if (code === 'P0001' && typeof message === 'string') {
     const workspaceCode = ({ INVALID_SLUG: 'invalid_slug', SLUG_TAKEN: 'slug_taken', CONFLICT: 'conflict' } as const)[message as 'INVALID_SLUG' | 'SLUG_TAKEN' | 'CONFLICT'];
@@ -138,9 +140,11 @@ const tokenHash = (token: string) => createHash('sha256').update(token, 'utf8').
 
 /** The signed-in operator's `core.users` id; local mode is the synthetic operator (checked in SQL). */
 async function operatorOf(request: Request, deps: PlatformDeps): Promise<string> {
+  const bound=request.headers.get('x-reporter-account');
+  const checked=(actor:string)=>{if(bound&&bound!==actor)throw new Refused('conflict','A conta desta aba mudou. Reabra o console antes de continuar.',409);return actor;};
   if (reporterDeploymentMode() === 'local') {
     deps.guardLocal(request);
-    return localContext.actor;
+    return checked(localContext.actor);
   }
   const url = new URL(request.url);
   const origin = request.headers.get('origin');
@@ -150,7 +154,7 @@ async function operatorOf(request: Request, deps: PlatformDeps): Promise<string>
   if (!identity.emailVerified) throw platformRefusal('restricted');
   const { rows } = await pool('runtime').query<{ user_id: string }>('SELECT user_id FROM public.reporter_platform_context($1,$2)', [identity.subject, identity.email]);
   if (!rows[0]) throw platformRefusal('restricted');
-  return rows[0].user_id;
+  return checked(rows[0].user_id);
 }
 
 const rolesSchema = z.object({ roles: z.array(z.enum(ROLES as readonly [Role, ...Role[]])).max(8) }).strict();
@@ -184,6 +188,8 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
     const [head, id, action] = path;
 
     if (request.method === 'GET') {
+      if(head==='workspaces'&&path.length===2)return reply(await platform(client=>call(client,'SELECT public.reporter_workspace_get($1::uuid) AS value',[personId(id)])));
+      if(head==='workspaces'&&path.length===3&&action==='team')return reply(await teamPage(request,personId(id),platform));
       if (head === 'workspaces' && path.length === 1) {
         const params = new URL(request.url).searchParams;
         return reply(await platform(client => call(client, 'SELECT public.reporter_workspace_list($1,$2,$3) AS value',
@@ -325,6 +331,45 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
   } catch (error) {
     return failure(error, 'platform');
   }
+}
+
+type TeamExecutor=<T>(operation:(client:PoolClient)=>Promise<T>)=>Promise<T>;
+function teamPage(request:Request,workspace:string,execute:TeamExecutor){
+  const params=new URL(request.url).searchParams;
+  return execute(client=>call(client,'SELECT public.reporter_team_page($1::uuid,$2,$3,$4) AS value',[workspace,
+    (params.get('search')??'').slice(0,100),Math.min(100,Math.max(1,Number(params.get('limit'))||20)),Math.min(1000000,Math.max(0,Number(params.get('offset'))||0))]));
+}
+/** An actual workspace administrator manages only this client's relationships. */
+export async function handleWorkspaceTeam(request:Request,path:string[],deps:Pick<PlatformDeps,'readJson'>):Promise<Response>{
+  try{
+    const workspace=currentReporterContext().portal,execute:TeamExecutor=operation=>transaction('runtime',operation);
+    if(request.method==='GET'&&path.join('/')==='workspace')return reply(await execute(client=>call(client,'SELECT public.reporter_workspace_get($1) AS value',[workspace])));
+    if(request.method==='GET'&&path.length===0)return reply(await teamPage(request,workspace,execute));
+    if(request.method!=='POST')throw platformRefusal('not_found');
+    const body=await deps.readJson(request);
+    if(path.join('/')==='invites'){
+      const parsed=inviteSchema.omit({workspaceId:true}).safeParse(body);
+      if(!parsed.success)throw platformRefusal('invalid_state');
+      const valid=validateInvite({...parsed.data,role:parsed.data.role as Role,workspaceId:workspace});
+      if(!valid.ok)throw platformRefusal(valid.refusal.code);
+      const {token,hash}=newToken();
+      const value=await execute(client=>call<Record<string,unknown>>(client,'SELECT public.reporter_platform_invite($1,$2,$3,$4::uuid,$5,$6) AS value',
+        [valid.value.name,valid.value.email,valid.value.role,workspace,hash,INVITE_TTL_DAYS]));
+      return reply({...value,token},201);
+    }
+    if(path.length===2&&path[1]==='renew-invite'){
+      const parsed=z.object({revision:z.number().int().positive()}).strict().safeParse(body);if(!parsed.success)throw platformRefusal('invalid_state');
+      const {token,hash}=newToken();
+      const value=await execute(client=>call<Record<string,unknown>>(client,'SELECT public.reporter_membership_renew($1::uuid,$2::uuid,$3,$4,$5) AS value',
+        [workspace,personId(path[0]),parsed.data.revision,hash,INVITE_TTL_DAYS]));return reply({...value,token});
+    }
+    if(path.length===1){
+      const parsed=membershipSchema.safeParse(body);if(!parsed.success)throw platformRefusal('invalid_state');
+      return reply(await execute(client=>call(client,'SELECT public.reporter_membership_change($1::uuid,$2::uuid,$3,$4::text[],$5) AS value',
+        [workspace,personId(path[0]),parsed.data.revision,parsed.data.roles??null,parsed.data.status??null])));
+    }
+    throw platformRefusal('not_found');
+  }catch(error){return failure(translate(error),'platform');}
 }
 
 function failure(error: unknown, component: 'platform' | 'invites'): Response {
