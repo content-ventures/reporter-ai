@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { CommandPalette, toast, type CommandGroup, type CommandItem } from '@content-ventures/design-system/v3';
 import { Database, Eraser, ListChecks, RotateCcw, Timer, TriangleAlert, type LucideIcon } from '@content-ventures/design-system/v3/icons';
 import { can } from '@/domain';

@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Badge, Card, CardHeader, CardLink, Carousel, Grid, MediaFrame, Meter, MetaList, PageStack, Panel, Prose, Section, SkeletonText } from '@content-ventures/design-system/v3';
 import type { SituationStage } from '@/domain';
@@ -42,6 +43,7 @@ export function ContinueCarousel({ items }: { items: InProgressItem[] | undefine
 
 /** Image, stage, title, where the journey stands and who owns it; the card opens the current stage. */
 function ContinueCard({ item }: { item: InProgressItem }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const story = useStoryPreview(item);
   const stages = story.detail?.stages;
   const at = stages?.findIndex((stage) => stage.id === story.detail?.currentStageId) ?? -1;
@@ -56,7 +58,7 @@ function ContinueCard({ item }: { item: InProgressItem }) {
         {/* One column at the card rhythm (8 px), tighter than the page stack. */}
         <Grid columns="auto" min={1440} gap="sm">
           <MetaList items={[<Badge key="stage" tone="blue" size="sm">{STAGE_LABELS[item.situation.stage]}</Badge>]} />
-          <CardHeader titleAs="h3" title={<CardLink href={href} aria-label={`Continuar: ${item.productionTitle}`}>{story.title}</CardLink>} />
+          <CardHeader titleAs="h3" title={<CardLink href={workspaceHrefFor(href)} aria-label={`Continuar: ${item.productionTitle}`}>{story.title}</CardLink>} />
           {position.index > 0 && (
             <Meter size="sm" value={position.index} max={position.total} label={`Etapa ${position.index} de ${position.total}`} />
           )}

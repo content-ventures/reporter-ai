@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useId, useState } from 'react';
 import { Card, EmptyState, Grid, List, ListItem, MetaList, PageStack, Panel, Section, SkeletonText, Tabs, TextLink, Tooltip } from '@content-ventures/design-system/v3';
@@ -16,6 +17,7 @@ type DeskTab = 'all' | TeamStage;
 
 /** A preview of the existing team desk, filtered by its real R1 stages. */
 export function ProductionDesk({ desk, featuredId }: { desk: DeskView | undefined; featuredId?: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const [tab, setTab] = useState<DeskTab>('all');
   const id = useId();
   // Personal work already appears in the continuation and "Em andamento" panels.
@@ -37,7 +39,7 @@ export function ProductionDesk({ desk, featuredId }: { desk: DeskView | undefine
       <Section
         title="Histórias da redação"
         meta={desk && items.length > preview.length ? `${preview.length} de ${items.length}` : undefined}
-        action={<TextLink size="sm" href={PRODUCTIONS_HREF}>Ver todas</TextLink>}
+        action={<TextLink size="sm" href={workspaceHrefFor(PRODUCTIONS_HREF)}>Ver todas</TextLink>}
       >
         <PageStack>
           {desk && <Tabs<DeskTab> label="Produções por etapa" size="sm" items={tabs} value={tab} onChange={setTab} />}

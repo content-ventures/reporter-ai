@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
 import { Accordion, Alert, Button, ButtonLink, DescriptionList, Field, FieldGroup, Grid, Input, NumberField, PageStack, Panel, Prose, Section, Select, SwitchRow, Textarea } from '@content-ventures/design-system/v3';
@@ -24,6 +25,7 @@ export function WritingOrchestrationEditor({ definition, providers, researchProv
   definition: PipelineDefinition; providers: PipelineView['providers']; researchProviders?: PipelineView['researchProviders']; saving: boolean;
   onChange: (writing: WritingOrchestration) => void;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const configuration = definition.writing ?? defaultWritingOrchestration();
   const [previewStage, setPreviewStage] = useState<WritingStage>('plan');
   const [previewContent, setPreviewContent] = useState('');
@@ -76,8 +78,8 @@ export function WritingOrchestrationEditor({ definition, providers, researchProv
         { label: 'Guia de escrita', value: policy?.guide.version ? `Versão ${policy.guide.version}` : 'Ainda não configurado' },
       ]} />
       <Grid columns="1:1" collapseBelow={760}>
-        <ButtonLink href="/settings/editorial-map" variant="secondary">Editar mapa editorial</ButtonLink>
-        <ButtonLink href="/settings/writing-guide" variant="secondary">Editar guia de escrita</ButtonLink>
+        <ButtonLink href={workspaceHrefFor("/settings/editorial-map")} variant="secondary">Editar mapa editorial</ButtonLink>
+        <ButtonLink href={workspaceHrefFor("/settings/writing-guide")} variant="secondary">Editar guia de escrita</ButtonLink>
       </Grid>
       <Prose variant="compact" measure="wide">Todas as etapas recebem o mapa, o guia e o conteúdo original. Cada execução guarda a versão usada.</Prose>
       <Field label="Instruções compartilhadas da redação" hint="Defina o trabalho comum às etapas. Voz, estrutura e regras do veículo pertencem ao guia de escrita.">

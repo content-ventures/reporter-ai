@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import Image from 'next/image';
 import { TextLink, useShell } from '@content-ventures/design-system/v3';
@@ -10,6 +11,7 @@ import { PRODUCT_NAME } from '@/lib/brand';
  * for the menu, within its 52 px row; the collapsed menu shows the R mark.
  */
 export function ReporterBrand({ signature = false, endorsed = false }: { signature?: boolean; endorsed?: boolean }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { collapsed } = useShell();
   const compact = collapsed && !signature;
   const artwork = compact
@@ -22,7 +24,7 @@ export function ReporterBrand({ signature = false, endorsed = false }: { signatu
   const powered = signature || (endorsed && !compact);
 
   return (
-    <TextLink href="/" tone="inherit" aria-label={`${PRODUCT_NAME} — Início`}>
+    <TextLink href={workspaceHrefFor("/")} tone="inherit" aria-label={`${PRODUCT_NAME} — Início`}>
       <Image {...artwork} alt={powered ? `${PRODUCT_NAME} — Powered by Content Ventures` : PRODUCT_NAME} loading="eager" unoptimized />
     </TextLink>
   );

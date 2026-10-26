@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { requestLeave } from './leave-guard';
 import {useWorkspaceHref} from '../workspace-navigation';
 

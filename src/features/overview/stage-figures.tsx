@@ -1,4 +1,5 @@
 'use client';
+import {useWorkspaceHref} from '@/ui/workspace-navigation';
 
 import { MetricStrip } from '@content-ventures/design-system/v3';
 import type { DeskView, TeamStage } from '@/ports';
@@ -15,6 +16,7 @@ export const STAGE_FIGURES: readonly { stage: TeamStage; label: string }[] = [
 
 /** How many productions sit in each stage; every figure opens the productions board. */
 export function StageFigures({ desk }: { desk: DeskView | undefined }) {
+  const href=useWorkspaceHref();
   return (
     <MetricStrip
       label="Produções por etapa"
@@ -22,7 +24,7 @@ export function StageFigures({ desk }: { desk: DeskView | undefined }) {
         label,
         value: desk?.team.find((group) => group.stage === stage)?.items.length ?? 0,
         loading: !desk,
-        href: PRODUCTIONS_HREF,
+        href: href(PRODUCTIONS_HREF),
       }))}
     />
   );

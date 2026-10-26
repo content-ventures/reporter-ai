@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Accordion, Alert, ButtonLink, DescriptionList, PageStack, Prose } from '@content-ventures/design-system/v3';
 import type { WritingResearchSnapshot } from '@/domain/writing-research';
@@ -21,6 +22,7 @@ export function researchSnapshotFrom(value: unknown): WritingResearchSnapshot | 
 export function WritingResearchDetails({ snapshot, showQueries = true }: {
   snapshot: WritingResearchSnapshot; showQueries?: boolean;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   return <PageStack>
     <Prose variant="compact" measure="wide">Contexto web suplementar. As fontes abaixo são externas ao conteúdo original e têm sua própria origem e data de consulta.</Prose>
     <DescriptionList items={[
@@ -64,7 +66,7 @@ export function WritingResearchDetails({ snapshot, showQueries = true }: {
           { label: 'Consulta de origem', value: source.query },
           { label: 'Trecho recebido da pesquisa', value: source.excerpt },
         ]} />
-        {safeLink(source.url) && <ButtonLink href={source.url} target="_blank" rel="noreferrer" variant="secondary">Abrir fonte original</ButtonLink>}
+        {safeLink(source.url) && <ButtonLink href={workspaceHrefFor(source.url)} target="_blank" rel="noreferrer" variant="secondary">Abrir fonte original</ButtonLink>}
       </PageStack>,
     }))} /> : <DescriptionList items={snapshot.sources.map(source => ({ label: `Fonte externa · ${source.id}`, value: `${source.title}\n${source.url}\n${source.excerpt}` }))} />
       : <Prose variant="compact" measure="wide">Nenhuma fonte externa foi disponibilizada nesta pesquisa.</Prose>}

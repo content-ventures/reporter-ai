@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
@@ -39,6 +40,7 @@ const CLOSED: Readonly<Record<Exclude<InvitePreview['state'], 'open'>, { title: 
  * browser signs in with the same e-mail and password and lands on the workspace.
  */
 export function InviteScreen({ token }: { token: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const router = useRouter();
   const desk = useInviteDesk();
   const [loaded, setLoaded] = useState<Loaded>({ status: 'loading' });
@@ -101,7 +103,7 @@ export function InviteScreen({ token }: { token: string }) {
           heading="h1"
           title={closed?.title ?? 'Este link não é válido'}
           description={closed?.description ?? (loaded.status === 'invalid' ? loaded.message : undefined)}
-          actions={<ButtonLink href="/auth/sign-in" variant="primary">Ir para o login</ButtonLink>}
+          actions={<ButtonLink href={workspaceHrefFor("/auth/sign-in")} variant="primary">Ir para o login</ButtonLink>}
         />
       ) : preview ? (
         <PageStack>
