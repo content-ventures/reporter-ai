@@ -1,5 +1,8 @@
 import 'server-only';
 import { withWorkspaceWork } from './worker-dispatch.ts';
+import { bindWorkerJob } from './worker-context.ts';
+import { withRegisteredWorkerContext } from './worker-job-context.ts';
+import type { WorkerContext } from './worker-context.ts';
 import { rm,stat } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { join } from 'node:path';
@@ -44,7 +47,7 @@ export function directoryChunkStore(directory: string): ChunkStore {
 }
 
 async function jobCommand(name: string,values: unknown[]) {
-  const allowed = new Set(['reporter_claim','reporter_start','reporter_renew','reporter_complete','reporter_worker_input','reporter_progress','reporter_defer',
+  const allowed = new Set(['reporter_claim','reporter_start','reporter_renew','reporter_complete','reporter_worker_input','reporter_worker_job_context','reporter_progress','reporter_defer',
     'reporter_transcript_chunks_read','reporter_transcript_chunk_save','reporter_transcript_chunks_clear','reporter_yield']);
   if (!allowed.has(name)) throw new Error('UNKNOWN_JOB_COMMAND');
   return transaction('worker',async client => (await client.query('SELECT * FROM public.'+name+'('+values.map((_,i) => '$'+(i+1)).join(',')+')',values)).rows);
@@ -182,6 +185,8 @@ async function runScoped(owner: string,outerSignal: AbortSignal,deadline = Numbe
   if (!claimed) return false;
   const [job] = await jobCommand('reporter_start',[claimed.id,owner]) as Job[];
   if (!job || job.processed_at) return true;
+  const [context]=await jobCommand('reporter_worker_job_context',[job.id,owner,job.attempts]);
+  withRegisteredWorkerContext(context.reporter_worker_job_context as WorkerContext,()=>bindWorkerJob((context.reporter_worker_job_context as WorkerContext).actor!,'outbox',job.id));
   const controller = new AbortController();
   const abort = () => controller.abort(outerSignal.reason);
   outerSignal.addEventListener('abort',abort,{ once: true });

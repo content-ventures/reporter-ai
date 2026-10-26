@@ -1,5 +1,6 @@
 import 'server-only';
 import { withWorkspaceWork } from './worker-dispatch.ts';
+import { bindEditorialJob } from './worker-job-context.ts';
 import { citationView } from '../domain/citation-library.ts';
 import { recheck } from '../domain/fact-check.ts';
 import type { EditorialCheckpoint } from '../ports/connected-workspace.ts';
@@ -56,6 +57,7 @@ async function runScoped(owner: string, signal: AbortSignal, deadline?: number):
       .then(renewed => { if (!renewed) controller.abort(); }).catch(() => controller.abort()).finally(() => { renewing = false; });
   }, 15000);
   try {
+    await guarded(async checkpoint=>bindEditorialJob(checkpoint.jobs[claim.runId],checkpoint.state.runFolds[claim.runId].run.createdBy));
     for (;;) {
       if (deadline !== undefined && Date.now() + CITATION_BUDGET_MS > deadline) {
         // Hand the rest to a fresh invocation: claimable now, and this claim does not count as an attempt.

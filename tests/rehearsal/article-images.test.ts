@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withPilotWorker } from '../support/pilot-worker.ts';
 import { randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import pg, { type Pool } from 'pg';
@@ -39,10 +40,10 @@ const workspace = () => api<ConnectedWorkspace>();
 async function fixture() {
   const created = await rpc('createFromSource',[{ title: 'Teste de imagens',plan: ['article'],brief: { sections: 2,size: 'standard' },
     material: { text: quoteA+'\n\n'+quoteB,origin: 'event',authorized: true } }]);
-  await editorial('worker',async checkpoint => {
+  await withPilotWorker(()=>editorial('worker',async checkpoint => {
     const definition = defaultPipelineDefinition(); definition.articleMode = 'single';
     checkpoint.pipeline = pipelineRevision(definition);
-  });
+  }));
   const snapshot = await workspace(),record = snapshot.state.productions.find(p => p.production.id === created.productionId)!;
   const piece = record.pieces[0];
   const candidates = editorialCandidates({ ...record,sources: snapshot.state.sources.filter(source => record.production.sourceIds.includes(source.id)) });
@@ -146,14 +147,14 @@ test('a changed or unauthorized source prevents optional image calls without fai
 test('expired image leases can be reclaimed; their old fence cannot renew or commit',async () => {
   const f = await fixture();
   const { transaction } = await import('../../src/server/database.ts');
-  const claim = async (owner: string) => transaction('worker',async client =>
-    (await client.query('SELECT public.reporter_ed_image_claim($1,60000) AS value',[owner])).rows[0].value as { fence: string });
+  const claim = async (owner: string) => withPilotWorker(()=>transaction('worker',async client =>
+    (await client.query('SELECT public.reporter_ed_image_claim($1,60000) AS value',[owner])).rows[0].value as { fence: string }));
   const first = await claim('rehearsal-first');
   await admin.query("UPDATE public.reporter_ed_runs SET lease_until=clock_timestamp()-interval '1 second' WHERE run_id=$1",[f.runId]);
   const second = await claim('rehearsal-second');
   assert.notEqual(first.fence,second.fence);
-  const renewed = await transaction('worker',async client => (await client.query('SELECT public.reporter_ed_image_renew($1,$2,$3,60000) AS value',
-    [f.runId,'rehearsal-first',first.fence])).rows[0].value);
+  const renewed = await withPilotWorker(()=>transaction('worker',async client => (await client.query('SELECT public.reporter_ed_image_renew($1,$2,$3,60000) AS value',
+    [f.runId,'rehearsal-first',first.fence])).rows[0].value));
   assert.equal(renewed,false);
   await admin.query("UPDATE public.reporter_ed_runs SET lease_until=clock_timestamp()-interval '1 second' WHERE run_id=$1",[f.runId]);
   await imageWorker('rehearsal-final',signal(),{ plan: plan(f.body),illustrate: fakeIllustration });
@@ -168,6 +169,7 @@ test('a stale image worker cannot attach its late result after another worker se
   await entered.promise;
   try {
     await admin.query("UPDATE public.reporter_ed_runs SET lease_until=clock_timestamp()-interval '1 second' WHERE run_id=$1",[f.runId]);
+    await admin.query("UPDATE public.reporter_worker_dispatches SET lease_until=clock_timestamp()-interval '1 second' WHERE portal_id=$1",[PORTAL]);
     await imageWorker('rehearsal-current',signal(),{ plan: plan(f.body),illustrate: fakeIllustration });
     const current = await state(f.productionId);
     release.release(); await stale;

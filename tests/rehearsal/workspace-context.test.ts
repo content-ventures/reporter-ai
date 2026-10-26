@@ -7,6 +7,9 @@ import type { ConnectedWorkspace } from '../../src/ports/connected-workspace.ts'
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { startFakeS3 } from '../support/fake-s3.ts';
 import { startWorkerHost } from '../support/worker-host.ts';
+import { installFakeProviders } from '../support/fake-providers.ts';
+import type { PipelineView } from '../../src/domain/pipeline.ts';
+import { currentWorkerContext, runWithWorkerContext } from '../../src/server/worker-context.ts';
 
 const APP='http://127.0.0.1:3997', PILOT='10000000-0000-0000-0000-000000000101';
 const OPERATOR={subject:'workspace-operator',email:'operator@context.test',name:'Operator',image:undefined,emailVerified:true};
@@ -21,7 +24,7 @@ async function owner(sql:string,values:unknown[]=[]) {
 }
 async function api<T=Record<string,unknown>>(path:string,body?:unknown,identity:typeof OPERATOR|null=EDITOR) {
   const raw=body instanceof Blob;
-  const request=new Request(`${APP}/api/reporter/${path}`,body===undefined?undefined:{method:'POST',headers:{origin:APP,'content-type':raw?body.type:'application/json'},body:raw?body:JSON.stringify(body)});
+  const request=new Request(`${APP}/api/reporter/${path}`,body===undefined?undefined:{method:'POST',headers:{origin:APP,'content-type':raw?body.type:'application/json','idempotency-key':randomUUID()},body:raw?body:JSON.stringify(body)});
   const response=await handle(request,path.split('?')[0].split('/'),{identify:async()=>identity,defer:()=>{}});
   return{status:response.status,body:await response.json() as T};
 }
@@ -32,7 +35,7 @@ before(async()=>{
   [{id:operatorId}]=await owner('SELECT id FROM core.users WHERE email=$1',[OPERATOR.email]);
   await owner("INSERT INTO public.user_roles(user_id,role) VALUES($1,'platform_admin')",[operatorId]);
   Object.assign(process.env,{REPORTER_DEPLOYMENT_MODE:'cloud',REPORTER_DATABASE_URL:db.runtime,REPORTER_WORKER_DATABASE_URL:db.worker,
-    REPORTER_DEFAULT_PORTAL_ID:PILOT,REPORTER_WORKSPACES_MODE:'all',REPORTER_WORKER_PASSWORD:db.workerPassword});
+    REPORTER_DEFAULT_PORTAL_ID:PILOT,REPORTER_WORKSPACES_MODE:'all',REPORTER_WORKER_PASSWORD:db.workerPassword,REPORTER_APP_ORIGINS:APP});
   storage=await startFakeS3({bucket:'reporter-source-media',corsOrigins:[APP]});
   Object.assign(process.env,{AWS_ENDPOINT_URL_S3:storage.endpoint,AWS_REGION:'us-east-1',AWS_ACCESS_KEY_ID:'synthetic-access-key',AWS_SECRET_ACCESS_KEY:'synthetic-secret-key'});
   ({handleReporter:handle}=await import('../../src/server/http.ts'));
@@ -149,4 +152,91 @@ test('membership revocation is effective on the next request without disabling a
   assert.equal((await api('w/second-context/workspace')).status,200);
   const directory=await api<{items:{workspace:{id:string}}[]}>('workspaces');
   assert.deepEqual(directory.body.items.map(item=>item.workspace.id),[second]);
+});
+
+test('original upload callbacks derive the client from registration and tokens, independent of the visible page',async()=>{
+  const {startCloudUpload,completeCloudUpload,finalizeUploadedObject,signedSourceUrl}=await import('../../src/server/cloud-storage.ts');
+  const sourceId=randomUUID(),token=randomUUID()+randomUUID(),bytes=Buffer.from('synthetic original');
+  const prepared=await api<{id:string}>('w/second-context/uploads',{sourceId,token,name:'recording.mp3',size:bytes.length},OPERATOR);
+  assert.equal(prepared.status,202);
+  await assert.rejects(startCloudUpload(sourceId,randomUUID()+randomUUID()),{code:'42501'});
+  const session=await startCloudUpload(sourceId,token);
+  assert.ok(new URL(session.parts[0].url).pathname.includes(`incoming/${second}/${sourceId}.mp3`));
+  assert.equal((await fetch(session.parts[0].url,{method:'PUT',body:bytes})).status,200);
+  await api('w/reporter-ai/workspace',undefined,OPERATOR);
+  const first=await completeCloudUpload(sourceId,token);
+  assert.equal(first.sourceId,sourceId);
+  const key=`incoming/${second}/${sourceId}.mp3`;
+  assert.equal((await finalizeUploadedObject('reporter-source-media',key)).id,prepared.body.id,'a repeated storage callback queues no duplicate');
+  const [row]=await owner("SELECT o.portal_id,o.tenant_id,s.owner_user_id,o.payload->>'entity_type' AS kind FROM core.integration_outbox o JOIN core.storage_objects s ON s.id=$1 WHERE o.aggregate_id=$2 AND o.event_type='reporter.transcription.requested'",[sourceId,prepared.body.id]);
+  assert.equal(row.portal_id,second);assert.equal(row.owner_user_id,operatorId);assert.equal(row.kind,'transcript');
+  await runWithWorkerContext({tenant:row.tenant_id,portal:second,actor:operatorId},async()=>{
+    const url=await signedSourceUrl('reporter-source-media',key);
+    assert.deepEqual(Buffer.from(await(await fetch(url)).arrayBuffer()),bytes);
+    await assert.rejects(finalizeUploadedObject('reporter-source-media',`incoming/${PILOT}/${sourceId}.mp3`),{code:'42501'});
+  });
+  const [{tenant_id:tenant}]=await owner('SELECT tenant_id FROM public.portals WHERE id=$1',[PILOT]);
+  await runWithWorkerContext({tenant,portal:PILOT,actor:operatorId},async()=>{
+    await assert.rejects(signedSourceUrl('reporter-source-media',key),{code:'SOURCE_UNAVAILABLE'});
+    await assert.rejects(finalizeUploadedObject('reporter-source-media',key),{code:'WORKER_CONTEXT_CHANGED'});
+  });
+});
+
+test('two simultaneous generations retain their enqueue identity, workspace, configuration and usage while pages switch',{timeout:30000},async()=>{
+  process.env.GROQ_API_KEY='synthetic-placeholder';
+  const rpc=async<T>(slug:string,method:string,args:unknown[])=>{
+    const response=await api<{ok:boolean;value:T}>(`w/${slug}/workspace`,{method,args,requestId:randomUUID()},OPERATOR);
+    assert.equal(response.body.ok,true,JSON.stringify(response.body));return response.body.value;
+  };
+  const jobs:Array<{slug:string;portal:string;runId:string;productionId:string;hash:string}>=[];
+  for(const [slug,portal] of [['reporter-ai',PILOT],['second-context',second]]){
+    const pipeline=await api<PipelineView>(`w/${slug}/pipeline`,undefined,OPERATOR);
+    const definition=structuredClone(pipeline.body.active.definition);definition.curateQuotes=false;
+    const saved=await rpc<PipelineView>(slug,'pipeline.save',[definition,pipeline.body.active.revision]);
+    const production=await rpc<{productionId:string}>(slug,'createFromSource',[{title:`Owned by ${slug}`,plan:['article'],brief:{sections:2,size:'standard'},
+      material:{text:['A fonte confirmou um teste de rastreabilidade e explicou como os registros devem preservar a origem de cada material.',
+        'Outra fonte descreveu os próximos passos do teste e destacou a importância de conferir o resultado com os documentos de origem.',
+        'A equipe informou que a revisão humana continua sendo uma etapa necessária antes da aprovação de qualquer conteúdo produzido.',
+        'Os responsáveis explicaram que cada cliente usa suas próprias orientações editoriais e acompanha as tarefas em seu espaço de trabalho.'].join('\n\n'),origin:'podcast',authorized:true}}]);
+    const snapshot=await api<ConnectedWorkspace>(`w/${slug}/workspace`,undefined,OPERATOR);
+    const piece=snapshot.body.state.productions.find(item=>item.production.id===production.productionId)!.pieces[0];
+    const started=await rpc<{runId:string}>(slug,'generation.start',['article.outline',{productionId:production.productionId,pieceId:piece.id}]);
+    jobs.push({slug,portal,runId:started.runId,productionId:production.productionId,hash:saved.active.hash});
+  }
+  const providers=installFakeProviders(),fake=globalThis.fetch,seen=new Set<string>();
+  const both=Promise.withResolvers<void>();
+  globalThis.fetch=async(input,init)=>{
+    if(String(input).startsWith('https://api.groq.com/')){
+      const context=currentWorkerContext()!;assert.equal(context.actor,operatorId);
+      assert.equal(context.job?.id,jobs.find(job=>job.portal===context.portal)!.runId);
+      seen.add(context.portal);if(seen.size===2)both.resolve();await both.promise;
+    }
+    return fake(input,init);
+  };
+  try{
+    const {runEditorialJob}=await import('../../src/server/editorial-worker.ts');
+    const tasks=Promise.all([runEditorialJob('concurrent-worker-a',new AbortController().signal),runEditorialJob('concurrent-worker-b',new AbortController().signal)]);
+    await both.promise;
+    await api('w/second-context/workspace',undefined,OPERATOR);await api('w/reporter-ai/workspace',undefined,OPERATOR);
+    assert.deepEqual(await tasks,[true,true]);assert.equal(seen.size,2);
+    for(const job of jobs){
+      const [{portal_id,context,hash,fold}]=await owner("SELECT portal_id,job->'context' AS context,job->>'pipelineHash' AS hash,fold FROM public.reporter_ed_runs WHERE run_id=$1",[job.runId]);
+      assert.equal(portal_id,job.portal);assert.deepEqual(context,{tenant:(await owner('SELECT tenant_id FROM public.portals WHERE id=$1',[job.portal]))[0].tenant_id,workspace:job.portal,actor:operatorId});
+      assert.equal(hash,job.hash);assert.equal(fold.run.status,'completed',JSON.stringify(fold.run.error));assert.ok(fold.run.usage.totalTokens>0);
+      const other=jobs.find(item=>item!==job)!;
+      assert.equal((await owner('SELECT count(*)::int AS count FROM public.reporter_ed_runs WHERE portal_id=$1 AND run_id=$2',[other.portal,job.runId]))[0].count,0);
+    }
+    globalThis.fetch=fake;
+    for(const job of jobs){
+      const snapshot=await api<ConnectedWorkspace>(`w/${job.slug}/workspace`,undefined,OPERATOR);
+      const piece=snapshot.body.state.productions.find(item=>item.production.id===job.productionId)!.pieces[0];
+      const started=await rpc<{runId:string}>(job.slug,'generation.start',['article.outline',{productionId:job.productionId,pieceId:piece.id}]);
+      await owner("UPDATE public.reporter_ed_runs SET job=job-'context' WHERE run_id=$1",[started.runId]);
+      const calls=providers.calls.completions;
+      assert.equal(await runEditorialJob('legacy-context-worker',new AbortController().signal),true);
+      const [{fold}]=await owner('SELECT fold FROM public.reporter_ed_runs WHERE run_id=$1',[started.runId]);
+      if(job.portal===PILOT) assert.equal(fold.run.status,'completed','historical pilot jobs remain compatible');
+      else {assert.equal(fold.run.error.code,'JOB_CONTEXT_MISMATCH');assert.equal(providers.calls.completions,calls,'missing ownership is refused before spending provider requests');}
+    }
+  }finally{providers.restore();delete process.env.GROQ_API_KEY;}
 });

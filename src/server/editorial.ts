@@ -33,6 +33,7 @@ import { effectiveWritingMinimumQuotes } from '../domain/writing-orchestration.t
 import { ARTICLE_ASSIST_KINDS, validateArticleAssistInput } from './article-assist';
 import { citationDay, podcastLink } from '../domain/citation-library.ts';
 import { currentReporterContext } from './request-context.ts';
+import { requireWorkerContext } from './worker-context.ts';
 import type { EditorialIdentity } from '../runtime/editorial-engine.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { compactRunPreviews } from '../domain/run-events.ts';
@@ -107,6 +108,13 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
       ...(reporterDeploymentMode() === 'local' ? { localOperator: true as const } : {}) } : undefined;
     const fallback = emptyEditorialCheckpoint(identity).state.workspace;
     const checkpoint = assembleCheckpoint(rows, fallback, loaded);
+    if (role==='worker') {
+      const worker=requireWorkerContext();
+      if (checkpoint.state.workspace.id!==worker.portal) throw new FlowError('JOB_CONTEXT_MISMATCH',422);
+      const runId=scope.runs && scope.runs!=='none' && scope.runs.length===1 ? scope.runs[0] : undefined;
+      const actor=worker.actor ?? (runId ? checkpoint.state.runFolds[runId]?.run.createdBy : undefined);
+      if (actor) checkpoint.state.sessionPersonId=actor;
+    }
     if (identity && reporterDeploymentMode() === 'cloud') {
       const members=(await client.query('SELECT public.reporter_workspace_members() AS members')).rows[0].members as EditorialIdentity[];
       checkpoint.state.members=[];
@@ -288,7 +296,9 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   if (!started.ok) return started;
   const run = started.value.run;
   const meta: RunMeta = { runId: run.id, productionId, pieceId, label: GENERATION_LABELS[kind], request: { kind, input } as GenerationRequest };
-  const job: EditorialJob = { meta,kind,input: meta.request.input,events: [],attempts: 0,availableAt: Date.now(),contextHash: editorialContextHash(record,pieceId,run.inputs),pipeline,calls: [] };
+  const context=currentReporterContext();
+  const job: EditorialJob = { meta,kind,input: meta.request.input,events: [],attempts: 0,availableAt: Date.now(),
+    context:{tenant:context.tenant,workspace:context.portal,actor:context.actor},contextHash: editorialContextHash(record,pieceId,run.inputs),pipeline,calls: [] };
   const previous = retryOfRunId ? checkpoint.jobs[retryOfRunId] : undefined;
   if (previous?.contextHash === job.contextHash && previous?.pipeline?.hash === pipeline.hash && previous.kind === kind)
     job.cacheSourceRunId = previous.meta.runId;

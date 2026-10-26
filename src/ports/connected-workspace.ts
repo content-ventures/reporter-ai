@@ -36,6 +36,8 @@ export type EditorialState = {
 export type EditorialJob = {
   meta: RunMeta; kind: GenerationKind; input: GenerationInputs[GenerationKind];
   events: RunEvent[]; attempts: number; availableAt: number;
+  /** Captured by the server at enqueue; absent only on pre-workspace pilot jobs. */
+  context?: { tenant: string; workspace: string; actor: string };
   contextHash?: string;
   /** Server-selected retry parent with identical context and immutable prompt snapshot. */
   cacheSourceRunId?: string;
