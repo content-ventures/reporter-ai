@@ -93,6 +93,7 @@ function PeopleView() {
   );
   const total=connected?directory.data?.total??0:rows.length;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if(connected&&directory.data&&page>pageCount)setPage(pageCount);
   const current = Math.min(page, pageCount);
   const shown = connected?rows:rows.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
   const usageOf = (id: string) => usage.data?.people.find((entry) => entry.personId === id);
