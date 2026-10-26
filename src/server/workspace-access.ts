@@ -5,6 +5,8 @@ import { reporterDeploymentMode } from './deployment.ts';
 import { FlowError } from './errors.ts';
 import { workspaceRollout } from './workspace-rollout.ts';
 import type { WorkspaceAccessPage } from '../ports/workspace-management.ts';
+import {accountAvatarSource} from '../domain/profile.ts';
+import {cloudPortalId,localContext} from './config.ts';
 
 export async function workspaceDirectory(request: Request, deps: { guardLocal(request: Request): void; identify?: typeof reporterIdentity }): Promise<WorkspaceAccessPage> {
   const rollout = workspaceRollout();
@@ -26,5 +28,8 @@ export async function workspaceDirectory(request: Request, deps: { guardLocal(re
     value = rows[0].value;
   }
   if (rollout === 'admin' && !value.administrative) throw new FlowError('WORKSPACES_RESTRICTED',403);
+  const expected=request.headers.get('x-reporter-account');
+  if(expected&&value.account?.id!==expected)throw new FlowError('ACCOUNT_CONTEXT_CHANGED',409);
+  if(value.account?.avatarUrl)value.account.avatarUrl=accountAvatarSource(value.account.id,value.account.avatarUrl,reporterDeploymentMode()==='local'?localContext.portal:cloudPortalId());
   return value;
 }

@@ -11,7 +11,7 @@ import type { WorkspaceProcessing } from '../domain/workspace-management.ts';
 
 export type WorkspaceResult<T> = Result<T, WorkspaceRefusal>;
 export type WorkspacePage = { items: ManagedWorkspace[]; total: number; offset: number };
-export type WorkspaceAccessPage = { items: WorkspaceAccess[]; total: number; offset: number; administrative: boolean };
+export type WorkspaceAccessPage = { items: WorkspaceAccess[]; total: number; offset: number; administrative: boolean;account?:{id:PersonId;name:string;email:string;avatarUrl?:string}|null };
 export type WorkspaceSearch = { search?: string; offset?: number; limit?: number };
 export type MembershipChange = { workspaceId: WorkspaceId; personId: PersonId; revision: number };
 export type WorkspaceTeamPage={items:WorkspaceTeamMember[];total:number;offset:number};

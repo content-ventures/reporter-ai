@@ -34,6 +34,8 @@ export type WorkspaceAccess = {
   roles: Role[];
   /** The real platform operator enters explicitly; this never impersonates a member. */
   administrative: boolean;
+  /** Archived/disabled clients can still be inspected in the operator console. */
+  enterable?:boolean;
 };
 
 export type WorkspaceInput = { name: string; slug: string };
