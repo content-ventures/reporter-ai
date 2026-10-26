@@ -84,6 +84,10 @@ M3 validation on source commit `7d95fb6`: `pnpm gate` passed 1,714 general tests
 
 Browser evidence: 85 connected cases passed with one intentional skip; one desktop source-rating menu interaction timed out after its option detached. That exact case passed twice in isolation on the same unchanged build (5.8/5.6 s). This is recorded as an intermittent browser check, not silently counted as a clean initial batch. All 74 fixture cases passed, including downloaded exports. The real database-backed two-tab workspace case passed again (3.6 s), with separate drafts and IndexedDB namespaces. The frozen M0 app also returned pilot bootstrap 200 and new-context 404 against the database migrated through 038. The connected build is restored locally. No production mutation, paid provider request, trigger-frequency increase or rollout activation occurred.
 
+### Scheduling regression found during M4
+
+An image regression under local load returned an empty immediate claim, followed by dependent fixture failures. Its six cases passed in isolation. A controlled five-minute application clock skew then reproduced a concrete scheduling defect: `Date.now()` could enqueue immediate work in PostgreSQL's future. Enqueue now uses the database clock; immediate optional-work handoffs retain their already-due claim time. Deliberate provider retry delays remain unchanged. The clock case failed before the fix, passed after it, and the complete rehearsal passed 96 cases with the same 6 skips afterward. The image fixture records bounded scheduling metadata on a future missed claim instead of hiding it behind a retry.
+
 ## Acceptance budgets established before implementation
 
 - Integrity: zero loss, ownership changes, duplicate pilot workspaces, unexpected policy resets or changes to historical render definitions. Compare stable rows and configuration fingerprints; explicitly exclude newly recorded activity and worker heartbeats from immutable-data comparisons.

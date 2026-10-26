@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { after, before, test } from 'node:test';
+import { after, before, mock, test } from 'node:test';
 import pg, { type Pool } from 'pg';
 import sharp from 'sharp';
 import type { ConnectedWorkspace } from '../../src/ports/connected-workspace.ts';
@@ -285,4 +285,28 @@ test('automated feeds, complementary search and translation claims retain the co
       assert.equal(translation.actor,operatorId);assert.equal(translation.id,item.id);
     }));
   }
+});
+
+test('an application clock ahead of PostgreSQL cannot postpone a newly requested generation',async()=>{
+  const {transaction}=await import('../../src/server/database.ts');
+  const previousKey=process.env.GROQ_API_KEY;process.env.GROQ_API_KEY='synthetic-placeholder';
+  const rpc=async<T>(method:string,args:unknown[])=>{
+    const response=await api<{ok:boolean;value:T}>('w/reporter-ai/workspace',{method,args,requestId:randomUUID()},OPERATOR);
+    assert.equal(response.body.ok,true,JSON.stringify(response.body));return response.body.value;
+  };
+  try{
+    const created=await rpc<{productionId:string}>('createFromSource',[{title:'Database scheduling clock',plan:['article'],brief:{sections:2,size:'standard'},material:{text:'A fonte informou um fato e explicou os próximos passos. A equipe confirmou outra informação do material.',origin:'podcast',authorized:true}}]);
+    const snapshot=await api<ConnectedWorkspace>('w/reporter-ai/workspace',undefined,OPERATOR);
+    const piece=snapshot.body.state.productions.find(item=>item.production.id===created.productionId)!.pieces[0];
+    const realNow=Date.now,skew=mock.method(Date,'now',()=>realNow()+300000);
+    let started:{runId:string};
+    try{started=await rpc('generation.start',['article.outline',{productionId:created.productionId,pieceId:piece.id}]);}
+    finally{skew.mock.restore();}
+    const [{tenant_id:tenant}]=await owner('SELECT tenant_id FROM public.portals WHERE id=$1',[PILOT]);
+    await runWithWorkerContext({tenant,portal:PILOT,actor:operatorId},()=>transaction('worker',async client=>{
+      const claim=(await client.query('SELECT public.reporter_ed_claim($1,$2) AS value',['clock-skew-worker',60000])).rows[0].value;
+      assert.equal(claim?.runId,started.runId,'an immediate enqueue is already due on the database clock');
+    }));
+    await rpc('generation.cancel',[started.runId]);
+  }finally{if(previousKey===undefined)delete process.env.GROQ_API_KEY;else process.env.GROQ_API_KEY=previousKey;}
 });

@@ -64,7 +64,7 @@ async function runScoped(owner: string, signal: AbortSignal, deadline?: number):
         // Hand the rest to a fresh invocation: claimable now, and this claim does not count as an attempt.
         await guarded(async checkpoint => {
           const job = checkpoint.jobs[claim.runId];
-          job.factCheck!.attempts = Math.max(0, job.factCheck!.attempts - 1); job.availableAt = Date.now(); delete job.lease;
+          job.factCheck!.attempts = Math.max(0, job.factCheck!.attempts - 1); delete job.lease;
         });
         return 'yield';
       }
@@ -124,7 +124,7 @@ async function runScoped(owner: string, signal: AbortSignal, deadline?: number):
         retry = !terminal(code) && task.attempts < MAX_ATTEMPTS && (signal.aborted || error instanceof FlowError && error.retryable);
         task.status = retry ? 'queued' : 'failed'; task.error = code; delete job.lease;
         // Claimable at once: a later time would wait for a wake-up that may be an hour away in the cloud.
-        if (retry) job.availableAt = Date.now();
+        // Keep the already-due database availability when handing an immediate retry back.
       });
     } catch { retry = false; /* An expired or replaced lease cannot commit even a failure. */ }
     logEvent('worker', 'fact_check_failed', { generation_id: claim.runId, error_code: code });

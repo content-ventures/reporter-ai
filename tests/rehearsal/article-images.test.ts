@@ -54,7 +54,11 @@ async function fixture() {
   const started = await rpc('generation.start',['article.draft',{ productionId: created.productionId,pieceId: piece.id,
     outline: { title: 'Teste de imagens',intro: { quotes: [] },sections: [{ blockId: 'section-a',title: 'Dados da fonte',quotes: [first.ref] },
       { blockId: 'section-b',title: 'Próximos testes',quotes: [second.ref] }] } }]);
-  assert.equal(await textWorker('rehearsal-text',signal()),true);
+  const ran=await textWorker('rehearsal-text',signal());
+  const scheduling=ran?undefined:(await admin.query(`SELECT r.status,r.available_at,clock_timestamp() AS database_now,
+    r.lease_until,d.lease_owner AS dispatch_owner,d.lease_until AS dispatch_until
+    FROM public.reporter_ed_runs r LEFT JOIN public.reporter_worker_dispatches d USING(portal_id) WHERE r.run_id=$1`,[started.runId])).rows[0];
+  assert.equal(ran,true,JSON.stringify(scheduling));
   const done = await workspace(),production = done.state.productions.find(p => p.production.id === created.productionId)!;
   assert.equal(done.state.runFolds[started.runId].run.status,'completed',JSON.stringify(done.state.runFolds[started.runId].run.error));
   assert.equal(production.versions.length,1,'validated text is an immutable version before any image work');
