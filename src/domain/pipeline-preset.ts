@@ -9,7 +9,7 @@
  */
 import { contentHash } from './text/hash.ts';
 import { EDITORIAL_FORMATS, type EditorialFormat } from './formats.ts';
-import { FUNNEL_STEP_KEYS, defaultFunnelPrompt, type FunnelStepKey } from './format-prompts.ts';
+import { FUNNEL_STEP_KEYS, defaultFunnelPrompt, neutralFunnelPrompt, type FunnelStepKey } from './format-prompts.ts';
 import { PIPELINE_STEP_KEYS, compactFunnels, defaultPipelineDefinition, withArticleAssist } from './pipeline.ts';
 import type { PipelineDefinition, PipelineModel, PipelineStep, PipelineStepKey } from './pipeline.ts';
 import { funnelPromptKey, type FunnelPromptKey } from './pipeline-workers.ts';
@@ -38,9 +38,9 @@ function defaultsOf(model: PipelineModel): PipelineDefinition {
 }
 
 /** The default text this build ships for a prompt. */
-export function currentDefaultPrompt(key: PresetPromptKey, model: PipelineModel): string {
+export function currentDefaultPrompt(key: PresetPromptKey, model: PipelineModel,preset?:PipelineDefinition['funnelPreset']): string {
   const funnel = funnelOf(key);
-  if (funnel) return defaultFunnelPrompt(funnel.format, funnel.step);
+  if (funnel) return (preset==='neutral-v1'?neutralFunnelPrompt:defaultFunnelPrompt)(funnel.format, funnel.step);
   const defaults = defaultsOf(model);
   return key === 'system' ? defaults.systemPrompt : defaults.steps[key as PipelineStepKey].prompt;
 }
@@ -63,33 +63,33 @@ export const KNOWN_DEFAULT_PROMPTS: Readonly<Record<PresetPromptKey, readonly st
   assist: ['38867eb4b4bba83d', 'e32c54e92f3a7801'],
   images: ['6068d8ef38d2cf73', 'c988ebb8cc482094'],
   carousel: ['9cedc2c5c9e818f6', '6172c117be9e19af', 'c443c16324b95cf8'],
-  'funnel:stand:outline': ['ea8f2d1adadeed6f', '1421e239c15ffc51', '2bc03d67f6ddb5a2', 'c44bafc495211542', 'e86ef26109ba12dc', 'b959a6a2cea5186b'],
-  'funnel:stand:quotes': ['635ddafb9444bd1e', 'e32096ae4f313569'],
-  'funnel:stand:intro': ['c11ca073650066cb', 'b0f6a6b6eeb52f69', '3cf22b4b80f421f5', 'c7d7b912bad7cb88', '701284b367713b5b', '3bdae37ab603cbfb', 'ac72b797bc4a4587', 'c74bbb4fb28abc3b', 'fb065860a38f53c3', '0c3f5b62f760ace2'],
-  'funnel:stand:section': ['87d1c11b9480ec22', '365106dc822e3fcf', '3bfa1b6c22e5f49f', 'f4c08defc3e8fbc3', '17aec6140f0115da', 'e7699dd88d1dda8e', '66444d728f5f8421', '3241c3ecdf0e66b9', '42fc296da9b84eeb', 'b482119239914d3c'],
-  'funnel:panel:outline': ['d828f87a79d633af', 'c30ab4db12a8881b', '966cf6a8f9f7a452', '72fb318a2032288c', '00279b3421b21caf'],
-  'funnel:panel:quotes': ['62a5c03431441946', 'a2c5338b2e25fcc5', '41562add8e46aa64'],
-  'funnel:panel:intro': ['6071a81289a79132', 'ed16a6f2c26d6d38', 'ec9568449e2ef2c4', 'cd37fe7db62ecba0', '2e208fd5937bdb1f', '28d03a84473c6228', 'f932a066f628ff20', '1e587d075dd157f4', '08d0aaaf43a223b8'],
-  'funnel:panel:section': ['bd12c5794fe33393', 'b02c1064467bdd7a', 'abca3790861e33be', '0d9ee053d23ec532', 'd8e8a6a28979142d', 'ab63ae1d18b3fb30', '710647bbc0606f34', '1fffdaedffb6bf22', '2df88d0c90cd8ad2'],
-  'funnel:awards:outline': ['55d3d425c4af7d53', 'de87258dd8fd31fb', 'a891aa95d084ed38', '2debb3be8ea17f86', '5d78f923d123d3a4'],
-  'funnel:awards:quotes': ['b0841e1cb73b73c6', '119540aab0788845', '2907335b03d33073'],
-  'funnel:awards:intro': ['6fed0c03b78658a3', 'bc7a8de70330a133', '1a20e24978a4cf9a', 'da94acceb387f386', '66ce80fe4691413d', '769f8bde6f542783', '53c2359f53a9e22b', '07e29bd29007e022', '38a285f0e2d163ae'],
-  'funnel:awards:section': ['1a2ab116ed338e9c', 'e63fdf0418de8686', '760b0fefb22a92e2', '6e2a9440099f4ece', 'e382695afd08bd91', 'fbb71574b55a18b2', 'b9cbb0cc2fd94086', '534e99196875823d', '52ba9fd594134539'],
-  'funnel:opening:outline': ['1d53aa130fd31ebd', '7c3104fd592edc8b', 'ee48fdec6988871c', '50f803e231accf1a', 'a97e0bcc9323d5d1'],
-  'funnel:opening:quotes': ['e721132e396d1530', '4d575861daf7534b', '29adc6fd63662d02'],
-  'funnel:opening:intro': ['f568d9151a2e3582', '606486ea3208ec86', 'ec3f944d570564d6', '369ce9592153078a', 'e179945691de1c53', '299aa77240237256', '61ddcf3f081e997a', 'ba9a040e851188a7', '16b2d5a265e3d114'],
-  'funnel:opening:section': ['26399580938638f3', '22b67b16893ed0cf', '2089193edbdd0fc3', '2773b2a6010684e7', 'e31afa2b1f7e9270', '52030e5536924d2c', 'd774df215757c7ac', '638ab7a0a7e435a5', '397d5e684eeda606'],
-  'funnel:note:outline': ['00ba6f19612bd6ba', '6bebea721fc4eea6', 'a14dba42b28efc3d', 'fce9b63cd2eeab49', 'f973a48ba7b69463'],
-  'funnel:note:quotes': ['c0d55eaf73918b2f', '5310ee600a554e8e', '207044a6783b5e2e'],
-  'funnel:note:intro': ['165f868cd4a7ad48', 'f6527293d797119c', '980cac900d4eeedc', '948dcf5ef035a7d8', 'fadca7268fbd729b', '53b217c180d273a0', 'b9e17418c6d835b8', 'e38f8dbaaba8e1c2', '783841d982643c2c'],
-  'funnel:note:section': ['06dccc7c8623d84d', 'e07faf7aa9c702e9', '0c1428e5a65c6ffd', '2f6a5abbdbd18031', '1c7745174a64e568', '42b8ad50a0170b94', '67aea8a59c44d814', '3237d29da3b8f418', '8c58422eedb0ba81'],
+  'funnel:stand:outline': ['ea8f2d1adadeed6f', '1421e239c15ffc51', '2bc03d67f6ddb5a2', 'c44bafc495211542', 'e86ef26109ba12dc', 'b959a6a2cea5186b', '4525c2c4ed930cc4'],
+  'funnel:stand:quotes': ['635ddafb9444bd1e', 'e32096ae4f313569', '5af61097f08121f0'],
+  'funnel:stand:intro': ['c11ca073650066cb', 'b0f6a6b6eeb52f69', '3cf22b4b80f421f5', 'c7d7b912bad7cb88', '701284b367713b5b', '3bdae37ab603cbfb', 'ac72b797bc4a4587', 'c74bbb4fb28abc3b', 'fb065860a38f53c3', '0c3f5b62f760ace2', '5290582117963d91'],
+  'funnel:stand:section': ['87d1c11b9480ec22', '365106dc822e3fcf', '3bfa1b6c22e5f49f', 'f4c08defc3e8fbc3', '17aec6140f0115da', 'e7699dd88d1dda8e', '66444d728f5f8421', '3241c3ecdf0e66b9', '42fc296da9b84eeb', 'b482119239914d3c', '121ecedc7d09ce53'],
+  'funnel:panel:outline': ['d828f87a79d633af', 'c30ab4db12a8881b', '966cf6a8f9f7a452', '72fb318a2032288c', '00279b3421b21caf', 'a0353d4b9b2a65dc'],
+  'funnel:panel:quotes': ['62a5c03431441946', 'a2c5338b2e25fcc5', '41562add8e46aa64', '6c743257de26a4f3'],
+  'funnel:panel:intro': ['6071a81289a79132', 'ed16a6f2c26d6d38', 'ec9568449e2ef2c4', 'cd37fe7db62ecba0', '2e208fd5937bdb1f', '28d03a84473c6228', 'f932a066f628ff20', '1e587d075dd157f4', '08d0aaaf43a223b8', '82293f5c42844f21'],
+  'funnel:panel:section': ['bd12c5794fe33393', 'b02c1064467bdd7a', 'abca3790861e33be', '0d9ee053d23ec532', 'd8e8a6a28979142d', 'ab63ae1d18b3fb30', '710647bbc0606f34', '1fffdaedffb6bf22', '2df88d0c90cd8ad2', '67bdc0cf8e45f395'],
+  'funnel:awards:outline': ['55d3d425c4af7d53', 'de87258dd8fd31fb', 'a891aa95d084ed38', '2debb3be8ea17f86', '5d78f923d123d3a4', '0e911a016df50e43'],
+  'funnel:awards:quotes': ['b0841e1cb73b73c6', '119540aab0788845', '2907335b03d33073', 'e3f2b29b428a3768'],
+  'funnel:awards:intro': ['6fed0c03b78658a3', 'bc7a8de70330a133', '1a20e24978a4cf9a', 'da94acceb387f386', '66ce80fe4691413d', '769f8bde6f542783', '53c2359f53a9e22b', '07e29bd29007e022', '38a285f0e2d163ae', '6eb136846b553a35'],
+  'funnel:awards:section': ['1a2ab116ed338e9c', 'e63fdf0418de8686', '760b0fefb22a92e2', '6e2a9440099f4ece', 'e382695afd08bd91', 'fbb71574b55a18b2', 'b9cbb0cc2fd94086', '534e99196875823d', '52ba9fd594134539', '43cbbc5bd8c72ed6'],
+  'funnel:opening:outline': ['1d53aa130fd31ebd', '7c3104fd592edc8b', 'ee48fdec6988871c', '50f803e231accf1a', 'a97e0bcc9323d5d1', '13ec27acd41d58ae'],
+  'funnel:opening:quotes': ['e721132e396d1530', '4d575861daf7534b', '29adc6fd63662d02', '43a16e7d52cec04d'],
+  'funnel:opening:intro': ['f568d9151a2e3582', '606486ea3208ec86', 'ec3f944d570564d6', '369ce9592153078a', 'e179945691de1c53', '299aa77240237256', '61ddcf3f081e997a', 'ba9a040e851188a7', '16b2d5a265e3d114', 'ee4b297bbc9dc170'],
+  'funnel:opening:section': ['26399580938638f3', '22b67b16893ed0cf', '2089193edbdd0fc3', '2773b2a6010684e7', 'e31afa2b1f7e9270', '52030e5536924d2c', 'd774df215757c7ac', '638ab7a0a7e435a5', '397d5e684eeda606', 'be0ce35560eef30e'],
+  'funnel:note:outline': ['00ba6f19612bd6ba', '6bebea721fc4eea6', 'a14dba42b28efc3d', 'fce9b63cd2eeab49', 'f973a48ba7b69463', 'de78d5288643ae3e'],
+  'funnel:note:quotes': ['c0d55eaf73918b2f', '5310ee600a554e8e', '207044a6783b5e2e', '49b4537e4e9504cf'],
+  'funnel:note:intro': ['165f868cd4a7ad48', 'f6527293d797119c', '980cac900d4eeedc', '948dcf5ef035a7d8', 'fadca7268fbd729b', '53b217c180d273a0', 'b9e17418c6d835b8', 'e38f8dbaaba8e1c2', '783841d982643c2c', 'fe2b90bb8570579a'],
+  'funnel:note:section': ['06dccc7c8623d84d', 'e07faf7aa9c702e9', '0c1428e5a65c6ffd', '2f6a5abbdbd18031', '1c7745174a64e568', '42b8ad50a0170b94', '67aea8a59c44d814', '3237d29da3b8f418', '8c58422eedb0ba81', '4c01ae4bba42ea15'],
 };
 
 /** current: this build's default; previous: a default an earlier release shipped; custom: edited by someone. */
 export type PromptDefaultState = 'current' | 'previous' | 'custom';
 
-export function promptDefaultState(key: PresetPromptKey, text: string, model: PipelineModel, known = KNOWN_DEFAULT_PROMPTS): PromptDefaultState {
-  if (text === currentDefaultPrompt(key, model)) return 'current';
+export function promptDefaultState(key: PresetPromptKey, text: string, model: PipelineModel, known = KNOWN_DEFAULT_PROMPTS,preset?:PipelineDefinition['funnelPreset']): PromptDefaultState {
+  if (text === currentDefaultPrompt(key, model,preset)) return 'current';
   return known[key]?.includes(promptHash(text)) ? 'previous' : 'custom';
 }
 
@@ -106,7 +106,7 @@ export function upgradePreset(definition: PipelineDefinition, known = KNOWN_DEFA
   const target = defaultPipelineDefinition(model);
   let next = structuredClone(definition);
   const updated: PresetPromptKey[] = [], added: PresetPromptKey[] = [], kept: PresetPromptKey[] = [];
-  const stateOf = (key: PresetPromptKey, text: string) => promptDefaultState(key, text, model, known);
+  const stateOf = (key: PresetPromptKey, text: string) => promptDefaultState(key, text, model, known,definition.funnelPreset);
 
   const system = stateOf('system', next.systemPrompt);
   if (system === 'previous') { next.systemPrompt = target.systemPrompt; updated.push('system'); }
@@ -130,7 +130,7 @@ export function upgradePreset(definition: PipelineDefinition, known = KNOWN_DEFA
     if (!funnel || !stored) continue;
     const key = funnelPromptKey(format, step);
     const state = stateOf(key, stored.prompt);
-    if (state === 'previous') { funnel[step] = { ...stored, prompt: defaultFunnelPrompt(format, step) }; updated.push(key); }
+    if (state === 'previous') { funnel[step] = { ...stored, prompt: currentDefaultPrompt(key,model,definition.funnelPreset) }; updated.push(key); }
     else if (state === 'custom') kept.push(key);
   }
 

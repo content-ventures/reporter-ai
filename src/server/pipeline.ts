@@ -10,6 +10,7 @@ import { generationModel } from './groq';
 import { providerConfigured } from './config';
 import { tavilyConfigured } from './tavily';
 import { COMPOSITION_KEYS } from '../domain/editorial-policy.ts';
+import { isPreservedPilot } from '../domain/workspace-pilot.ts';
 
 const policyText = z.string().max(4000);
 const policyLabel = z.string().trim().min(1).max(300);
@@ -44,13 +45,19 @@ const writing = z.object({ enabled: z.boolean(), maxCorrections: z.union([z.lite
     preservation: z.string().trim().min(1).max(4000), correction: z.string().trim().min(1).max(4000) }).strict().optional(),
   stages: z.object({ plan: step, write: step, review: step, correct: step }).strict() }).strict();
 export const pipelineDefinitionSchema = z.object({ systemPrompt: z.string().min(1).max(12000),
+  funnelPreset:z.literal('neutral-v1').optional(),
   articleMode: z.enum(['sequential','single']),curateQuotes: z.boolean(),steps: z.record(z.enum(PIPELINE_STEP_KEYS),step),
   funnels: z.partialRecord(z.enum(EDITORIAL_FORMATS),funnel).optional(), editorial: editorialPolicySchema.optional(), writing: writing.optional() }).strict();
 
 export function activePipeline(checkpoint: EditorialCheckpoint): PipelineRevision {
-  if (checkpoint.pipeline) return checkpoint.pipeline;
+  if (checkpoint.pipeline) {
+    if(!isPreservedPilot(checkpoint.state.workspace.id)&&checkpoint.pipeline.definition.funnelPreset!=='neutral-v1')
+      return pipelineRevision({...checkpoint.pipeline.definition,funnelPreset:'neutral-v1'},checkpoint.pipeline.revision,checkpoint.pipeline.savedAt);
+    return checkpoint.pipeline;
+  }
   const configured = generationModel();
-  return pipelineRevision(defaultPipelineDefinition(PIPELINE_MODELS.find(model => model === configured) ?? PIPELINE_MODELS[0]));
+  const definition=defaultPipelineDefinition(PIPELINE_MODELS.find(model => model === configured) ?? PIPELINE_MODELS[0]);
+  return pipelineRevision({...definition,...(!isPreservedPilot(checkpoint.state.workspace.id)?{funnelPreset:'neutral-v1' as const}:{})});
 }
 
 export function pipelineView(checkpoint: EditorialCheckpoint): PipelineView {

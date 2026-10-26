@@ -381,7 +381,7 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave
                 </Field>
               )}
             <Field label="Fonte" required error={tried && missing.source ? 'Diga de onde veio a fala.' : undefined}>
-              {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} disabled={!editable} placeholder="Ex.: Podcast Cadeia do Pescado #41" value={draft.sourceTitle} onChange={(event) => patch({ sourceTitle: event.target.value })} />}
+              {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} disabled={!editable} placeholder="Ex.: Podcast do veículo #41" value={draft.sourceTitle} onChange={(event) => patch({ sourceTitle: event.target.value })} />}
             </Field>
               <Field label="Minuto ou parágrafo" optional>
                 {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} disabled={!editable} placeholder="Ex.: 14:32" value={draft.locator ?? ''} onChange={(event) => patch({ locator: event.target.value || undefined })} />}

@@ -36,7 +36,7 @@ export function withPromptStep(definition: PipelineDefinition, key: PromptKey, p
 }
 
 const FUNNEL_DESCRIPTIONS: Record<FunnelStepKey, string> = {
-  outline: 'Planeja título, linha fina e intertítulos no padrão da Seafood Brasil.',
+  outline: 'Planeja título, linha fina e intertítulos conforme o mapa e o guia do workspace.',
   quotes: 'Distribui as evidências e as falas entre as partes do formato.',
   intro: 'Escreve a abertura no padrão do formato, só com fatos do material.',
   section: 'Escreve cada parte com falas literais e dados atribuídos.',
@@ -90,7 +90,7 @@ export function PipelineCatalog({ draft, active, onEdit }: {
   // A prompt still on a default an earlier release shipped: the preset upgrade would replace it.
   const previous = useMemo(() => new Set((Object.keys(PROMPTS) as PromptKey[]).filter(key => {
     const text = key === 'system' ? draft.systemPrompt : promptStep(key, draft)?.prompt;
-    return text !== undefined && promptDefaultState(key, text, draft.steps.intro.model) === 'previous';
+    return text !== undefined && promptDefaultState(key, text, draft.steps.intro.model,undefined,draft.funnelPreset) === 'previous';
   })), [draft]);
   const term = search.trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const groups = GROUPS.map(group => ({ ...group, keys: group.keys.filter(key => {

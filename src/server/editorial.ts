@@ -34,6 +34,7 @@ import { ARTICLE_ASSIST_KINDS, validateArticleAssistInput } from './article-assi
 import { citationDay, podcastLink } from '../domain/citation-library.ts';
 import { currentReporterContext } from './request-context.ts';
 import { requireWorkerContext } from './worker-context.ts';
+import { isPreservedPilot } from '../domain/workspace-pilot.ts';
 import type { EditorialIdentity } from '../runtime/editorial-engine.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { compactRunPreviews } from '../domain/run-events.ts';
@@ -339,6 +340,7 @@ export async function editorialRpc(payload: unknown) {
       if (active.revision !== baseRevision) return refuse('conflict','A configuração foi alterada em outra aba. Recarregue antes de salvar.');
       const parsed = parsePipelineDefinition(args[0]);
       if (!parsed.definition) return refuse('invalid_config',parsed.error!);
+      if(!isPreservedPilot(checkpoint.state.workspace.id))parsed.definition.funnelPreset='neutral-v1';
       // Clients opened before orchestration existed may save unrelated settings without it.
       if (!parsed.definition.writing && active.definition.writing)
         parsed.definition.writing = structuredClone(active.definition.writing);

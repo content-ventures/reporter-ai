@@ -333,3 +333,16 @@ export function defaultFunnelPrompt(format: EditorialFormat, step: FunnelStepKey
   const copy = COPY[format];
   return step === 'outline' ? outlinePrompt(copy) : step === 'quotes' ? quotesPrompt(copy) : step === 'intro' ? introPrompt(copy) : sectionPrompt(copy);
 }
+
+/** New clients start with genre/format mechanics and their own policy, without the pilot's identity or examples. */
+export function neutralFunnelPrompt(format:EditorialFormat,step:FunnelStepKey):string {
+  const copy={...COPY[format],reference:'O mapa editorial e o guia de escrita deste workspace definem a identidade, o público, a voz e os exemplos autorizados. Esses exemplos são referências de estilo e nunca acrescentam fatos à fonte.'};
+  const prompt=step==='outline'?outlinePrompt(copy):step==='quotes'?quotesPrompt(copy):step==='intro'?introPrompt(copy):sectionPrompt(copy);
+  // Only immutable preset text is transformed. Saved client prompts are never rewritten.
+  return prompt.replaceAll('PADRÃO DE ESCRITA DA SEAFOOD BRASIL','POLÍTICA DE ESCRITA DO WORKSPACE')
+    .replaceAll('PADRÃO SEAFOOD BRASIL','POLÍTICA DO VEÍCULO').replaceAll('Seafood Brasil','veículo deste workspace')
+    .replaceAll('jornalismo setorial do pescado','jornalismo orientado pelo mapa editorial')
+    .replaceAll('o ministro da Pesca e Aquicultura (MPA)','a autoridade responsável pelo órgão público')
+    .replaceAll('o ministro da Pesca e Aquicultura','a autoridade responsável pelo órgão público')
+    .replace(/ministro da Pesca e Aquicultura(?: \(MPA\))?/gi,'responsável pelo órgão público');
+}
