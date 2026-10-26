@@ -19,3 +19,8 @@ export function workspacePagePath(slug:string|undefined,path:string):string{
   if(!path.startsWith('/')||path.startsWith('//')||slug!==undefined&&!workspaceSlug(slug))throw new Error('INVALID_WORKSPACE_ADDRESS');
   return `${slug?'/w/'+slug:''}${path}`;
 }
+/** Scope product destinations while keeping global consoles, authentication and files global. */
+export function workspaceHref(slug:string|undefined,href:string):string{
+  if(!slug||!href.startsWith('/')||href.startsWith('//')||/^\/(?:w|api|auth|platform|workspaces|prototypes)(?:[/?#]|$)/.test(href))return href;
+  return workspacePagePath(slug,href);
+}

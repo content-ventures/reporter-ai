@@ -117,6 +117,30 @@ test('one account resolves independent roles; a platform operator enters as the 
   assert.equal(foreignCursor.body.state.workspace.id,second);
 });
 
+test('the directory binds the real account and separates management visibility from entry permission',async()=>{
+  const [{id:editorId}]=await owner('SELECT id FROM core.users WHERE email=$1',[EDITOR.email]);
+  const directory=await api<import('../../src/ports/workspace-management.ts').WorkspaceAccessPage>('workspaces');
+  assert.equal(directory.body.account?.id,editorId);assert.equal(directory.body.account?.email,EDITOR.email);
+  assert.equal(directory.body.administrative,false);assert.ok(directory.body.items.every(item=>item.enterable));
+  const snapshot=await api<ConnectedWorkspace>('w/second-context/workspace');
+  assert.deepEqual(snapshot.body.navigation,{accountId:editorId,administrative:false,enabled:true});
+  const operator=await api<ConnectedWorkspace>('w/second-context/workspace',undefined,OPERATOR);
+  assert.deepEqual(operator.body.navigation,{accountId:operatorId,administrative:true,enabled:true});
+  const mismatch=await handle(new Request(`${APP}/api/reporter/workspaces`,{headers:{'x-reporter-account':operatorId}}),['workspaces'],{identify:async()=>EDITOR});
+  assert.equal(mismatch.status,409);assert.equal((await mismatch.json()).error,'ACCOUNT_CONTEXT_CHANGED');
+  const created=await api<{id:string;revision:number}>('platform/workspaces',{name:'Not active yet',slug:'not-active-yet'},OPERATOR);
+  const issued=await api('platform/invites',{name:EDITOR.name,email:EDITOR.email,role:'editor',workspaceId:created.body.id},OPERATOR);assert.equal(issued.status,200);
+  const [{token_hash:hash}]=await owner('SELECT token_hash FROM core.access_invites WHERE portal_id=$1',[created.body.id]);
+  await owner('SELECT public.reporter_invite_accept($1,$2)',[hash,EDITOR.subject]);
+  const memberDrafts=await api<import('../../src/ports/workspace-management.ts').WorkspaceAccessPage>('workspaces');
+  assert.ok(!memberDrafts.body.items.some(item=>item.workspace.id===created.body.id),'an editor cannot enter an unactivated client');
+  const adminDrafts=await api<import('../../src/ports/workspace-management.ts').WorkspaceAccessPage>('workspaces',undefined,OPERATOR);
+  assert.equal(adminDrafts.body.items.find(item=>item.workspace.id===created.body.id)?.enterable,true);
+  await api(`platform/workspaces/${created.body.id}/update`,{name:'Not active yet',status:'archived',revision:created.body.revision},OPERATOR);
+  const archived=await api<import('../../src/ports/workspace-management.ts').WorkspaceAccessPage>('workspaces',undefined,OPERATOR);
+  assert.equal(archived.body.items.find(item=>item.workspace.id===created.body.id)?.enterable,false);
+});
+
 test('identical retry keys remain scoped; role carryover and foreign production writes are refused',async()=>{
   const requestId=randomUUID();
   const command={method:'createBlank',args:[{title:'Independent draft',brief:{size:'standard',sections:3}}],requestId};

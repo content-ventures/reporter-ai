@@ -17,6 +17,7 @@ import { createHttpImageGenerator, createHttpVisualLibrary } from '../adapters/h
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
 import { createHttpNewsIntake } from '../adapters/http/news-intake.ts';
 import {createHttpWorkspaceAdministration} from '../adapters/http/workspace-management.ts';
+import {createHttpWorkspaceDirectory} from '../adapters/http/workspace-directory.ts';
 import { withServerAssets } from '../adapters/http/server-assets.ts';
 import { committedCommand } from '../adapters/http/committed-command.ts';
 import { createWorkspaceRefresh } from '../adapters/http/workspace-refresh.ts';
@@ -40,6 +41,7 @@ import { isRunActive } from '../domain/run.ts';
 /** Approved screens, server-owned state, real Groq jobs. Demo snapshots remain untouched. */
 export function createConnectedRuntime(options: { typefaces?: Readonly<Record<string,string>>; workspaceSlug?: string } = {}): Runtime {
   const http = createReporterTransport(options.workspaceSlug,{requireAccount:true});
+  const directoryHttp=createReporterTransport(undefined,{requireAccount:true});
   const clock = { now: () => new Date().toISOString() },ids = { next: () => crypto.randomUUID() };
   let current: ConnectedWorkspace = { ...emptyEditorialCheckpoint(),revision: -1,model: '',workerOnline: false };
   // The engine reads image assets through this object, kept in step with every refresh.
@@ -120,6 +122,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       if (options.workspaceSlug && snapshot.state.workspace.slug !== options.workspaceSlug
         || current.revision >= 0 && (snapshot.state.workspace.id !== current.state.workspace.id || snapshot.state.sessionPersonId !== current.state.sessionPersonId)) throw new Error('ACCOUNT_CONTEXT_CHANGED');
       http.bindAccount(snapshot.state.sessionPersonId);
+      directoryHttp.bindAccount(snapshot.navigation?.accountId??snapshot.state.sessionPersonId);
       resolveAssetNamespace(snapshot.deploymentMode === 'local' && snapshot.state.workspace.id === LOCAL_WORKSPACE && snapshot.state.sessionPersonId === LOCAL_OPERATOR
         ? ASSET_DB_NAME : `reporter-assets:${encodeURIComponent(snapshot.state.workspace.id)}:${encodeURIComponent(snapshot.state.sessionPersonId)}`);
       const changed = snapshot.revision !== current.revision || snapshot.syncToken !== current.syncToken;
@@ -161,6 +164,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const audit = createLocalAudit({ store: ports.store,clock });
   const exporter = createLocalExportService({ clock,getRecord: id => ports.records.record(id),render,assets });
   const ready = Promise.all([refresh(),assets.ready()]).then(() => undefined);
+  const directory=createHttpWorkspaceDirectory(directoryHttp,()=>ready);
   // Polls only this application's same-origin endpoint; generation survives leaving the page.
   // A hidden tab stops polling, so a forgotten tab does not keep the database awake.
   const timer = setInterval(() => {
@@ -183,6 +187,8 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   };
   const unwatchAssets = assets.subscribe(change => { if (change.kind !== 'health') ports.store.transact(state => ok({ state,value: undefined,persist: 'none',scope: 'assets',productionIds: change.productionIds })); });
   return {
+    get navigation(){return current.navigation;},
+    get workspaceDirectory(){return current.navigation?.enabled?directory:undefined;},
     administration:createHttpWorkspaceAdministration({transport:http,ready:()=>ready,scope:()=>current.state.workspace.id}),
     mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest,http),generation: generation.service,render,export: exporter,assets,audit,
     visuals: createHttpVisualLibrary(http),
@@ -219,6 +225,6 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     } },
     tabs: { current: () => activeTab,subscribe: () => () => {},claim: () => { void refresh(); } },
     usedAssetIds: () => usedAssetIds(ports.store.state.productions),ready,subscribe: ports.store.subscribe,flush: () => {},
-    dispose() { disposed = true; http.dispose(); rejectAssetNamespace(new DOMException('Context closed','AbortError')); clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
+    dispose() { disposed = true; http.dispose();directoryHttp.dispose(); rejectAssetNamespace(new DOMException('Context closed','AbortError')); clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
   };
 }
