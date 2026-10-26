@@ -40,8 +40,10 @@ import { isRunActive } from '../domain/run.ts';
 
 /** Approved screens, server-owned state, real Groq jobs. Demo snapshots remain untouched. */
 export function createConnectedRuntime(options: { typefaces?: Readonly<Record<string,string>>; workspaceSlug?: string } = {}): Runtime {
-  const http = createReporterTransport(options.workspaceSlug,{requireAccount:true});
-  const directoryHttp=createReporterTransport(undefined,{requireAccount:true});
+  const contextListeners=new Set<()=>void>();
+  const invalidate=()=>{for(const listener of [...contextListeners])listener();};
+  const http = createReporterTransport(options.workspaceSlug,{requireAccount:true,onInvalidated:invalidate});
+  const directoryHttp=createReporterTransport(undefined,{requireAccount:true,onInvalidated:invalidate});
   const clock = { now: () => new Date().toISOString() },ids = { next: () => crypto.randomUUID() };
   let current: ConnectedWorkspace = { ...emptyEditorialCheckpoint(),revision: -1,model: '',workerOnline: false };
   // The engine reads image assets through this object, kept in step with every refresh.
@@ -60,10 +62,13 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const localAssets = createIndexedDbAssetStore({ clock,ids,workspaceId:()=>current.state.workspace.id,actorId:()=>current.state.sessionPersonId,databaseName,reset:false });
   const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(true),() => current.deploymentMode === 'cloud',http);
   const fixtures = createFixtures({ now: clock.now(),empty: true });
+  const imageDisposers=new Set<()=>void>();
+  const ownImage=<T extends {dispose?:()=>void}>(loader:T)=>{if(loader.dispose)imageDisposers.add(loader.dispose);return loader;};
+  const covers=ownImage(assetCoverLoader(assets));
   const initialRender = () => createLocalRenderService({ templates: fixtures.templates,renders: fixtures.templateRenders,
-    descriptions: fixtures.templateDescriptions,library: fixtures.templateLibrary,fontFaces: fixtures.templateFonts,loadCover: assetCoverLoader(assets),
-    coverCredit: id => creditLine(assets.get(id)?.credit),samplePhoto: { assetId: fixtures.samplePhoto.assetId,credit: fixtures.samplePhoto.credit,load: servedCoverLoader(fixtures.samplePhoto.src) },
-    samplePhotos: fixtures.samplePhotos.map(photo => ({ assetId: photo.assetId,credit: photo.credit,load: servedCoverLoader(photo.src) })),typefaces: options.typefaces });
+    descriptions: fixtures.templateDescriptions,library: fixtures.templateLibrary,fontFaces: fixtures.templateFonts,loadCover: covers,
+    coverCredit: id => creditLine(assets.get(id)?.credit),samplePhoto: { assetId: fixtures.samplePhoto.assetId,credit: fixtures.samplePhoto.credit,load: ownImage(servedCoverLoader(fixtures.samplePhoto.src)) },
+    samplePhotos: fixtures.samplePhotos.map(photo => ({ assetId: photo.assetId,credit: photo.credit,load: ownImage(servedCoverLoader(photo.src)) })),typefaces: options.typefaces });
   let drawing = options.workspaceSlug ? createLocalRenderService({templates:[],renders:{}}) : initialRender();
   let catalogHash='';
   const logos=new Map<string,ReturnType<CoverLoader>>();
@@ -71,7 +76,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     const cached=logos.get(id);if(cached)return cached;
     const pending=(async()=>{
       try{const response=await http.fetch(`/templates/logos/${encodeURIComponent(id)}`,{cache:'force-cache'});
-        const image=response.ok?await decodeBitmap(await response.blob()):undefined;return image?ok(image):refuse('unreadable' as const,'Marca indisponível.');
+        const image=response.ok?await decodeBitmap(await response.blob()):undefined;if(image&&disposed){const source=image.source as {close?:()=>void};source.close?.();return refuse('unreadable' as const,'Contexto encerrado.');}return image?ok(image):refuse('unreadable' as const,'Marca indisponível.');
       }catch{return refuse('unreadable' as const,'Marca indisponível.');}
     })();logos.set(id,pending);void pending.then(result=>{if(!result.ok)logos.delete(id);});return pending;
   };
@@ -81,9 +86,9 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     engineCheckpoint.templateConfiguration=configuration;
     const catalog=workspaceTemplateLibrary(configuration);templates.splice(0,templates.length,...catalog.templates);
     drawing=createLocalRenderService({templates,renders:catalog.renders,library:catalog.library,activeTemplateIds:catalog.activeIds,
-      fontFaces:fixtures.templateFonts,typefaces:options.typefaces,loadCover:assetCoverLoader(assets),loadBrandLogo,coverCredit:id=>creditLine(assets.get(id)?.credit),
-      ...(configuration.pilot?{samplePhoto:{assetId:fixtures.samplePhoto.assetId,credit:fixtures.samplePhoto.credit,load:servedCoverLoader(fixtures.samplePhoto.src)},
-        samplePhotos:fixtures.samplePhotos.map(photo=>({assetId:photo.assetId,credit:photo.credit,load:servedCoverLoader(photo.src)}))}:{})});
+      fontFaces:fixtures.templateFonts,typefaces:options.typefaces,loadCover:covers,loadBrandLogo,coverCredit:id=>creditLine(assets.get(id)?.credit),
+      ...(configuration.pilot?{samplePhoto:{assetId:fixtures.samplePhoto.assetId,credit:fixtures.samplePhoto.credit,load:ownImage(servedCoverLoader(fixtures.samplePhoto.src))},
+        samplePhotos:fixtures.samplePhotos.map(photo=>({assetId:photo.assetId,credit:photo.credit,load:ownImage(servedCoverLoader(photo.src))}))}:{})});
   };
   const ensureTemplate=async(id:string)=>{
     if(drawing.sample(id).ok)return;
@@ -171,6 +176,8 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     if (disposed || globalThis.document?.visibilityState === 'hidden') return;
     if (Date.now()-lastRefresh >= (runActive() ? 1000 : 15000)) void refresh().catch(() => {});
   },1000);
+  const resumed=()=>{if(!disposed&&globalThis.document?.visibilityState==='visible')void refresh().catch(()=>{});};
+  globalThis.document?.addEventListener('visibilitychange',resumed);
   // "Meu perfil": the server writes only the signed-in member; the next snapshot brings it back.
   const profileWrite = async (write: () => Promise<unknown>): Promise<Result<SessionMember,ProfileRefusal>> => {
     await ready;
@@ -225,6 +232,8 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     } },
     tabs: { current: () => activeTab,subscribe: () => () => {},claim: () => { void refresh(); } },
     usedAssetIds: () => usedAssetIds(ports.store.state.productions),ready,subscribe: ports.store.subscribe,flush: () => {},
-    dispose() { disposed = true; http.dispose();directoryHttp.dispose(); rejectAssetNamespace(new DOMException('Context closed','AbortError')); clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
+    async settle(){await writeTail;return !disposed&&save.status!=='error';},
+    onInvalidated(listener){contextListeners.add(listener);return()=>{contextListeners.delete(listener);};},
+    dispose() { disposed = true;for(const dispose of imageDisposers)dispose();imageDisposers.clear(); for(const image of logos.values())void image.then(result=>{if(result.ok)(result.value.source as {close?:()=>void}).close?.();});logos.clear();contextListeners.clear(); http.dispose();directoryHttp.dispose();globalThis.document?.removeEventListener('visibilitychange',resumed); rejectAssetNamespace(new DOMException('Context closed','AbortError')); clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
   };
 }

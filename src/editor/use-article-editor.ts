@@ -189,11 +189,13 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
     editor.on('update', onUpdate);
     editor.on('transaction', onTransaction);
     window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('reporter:prepare-navigation',onPageHide);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       editor.off('update', onUpdate);
       editor.off('transaction', onTransaction);
       window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('reporter:prepare-navigation',onPageHide);
       document.removeEventListener('visibilitychange', onVisibility);
       flush();
       flushRef.current = () => undefined;

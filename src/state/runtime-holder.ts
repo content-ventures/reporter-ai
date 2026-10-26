@@ -77,7 +77,9 @@ export function createRuntimeHolder(factory: RuntimeFactory, options: RuntimeHol
     for (const listener of [...listeners]) listener();
   }
 
+  let stopInvalidation:Unsubscribe|undefined;
   function teardown(): void {
+    stopInvalidation?.();stopInvalidation=undefined;
     if (state.status !== 'ready') return;
     const { runtime, queries, runs } = state;
     queries.dispose();
@@ -91,6 +93,7 @@ export function createRuntimeHolder(factory: RuntimeFactory, options: RuntimeHol
       const queries = createQueryStore<Runtime>(runtime, (listener) => runtime.subscribe(listener), options.queries);
       const runs = createRunStore(runtime.generation, options.runs);
       set({ status: 'ready', runtime, queries, runs });
+      stopInvalidation=runtime.onInvalidated?.(()=>{teardown();set({status:'error',error:RUNTIME_ERROR});});
     } catch {
       set({ status: 'error', error: RUNTIME_ERROR });
     }

@@ -56,7 +56,6 @@ function AddressBoundary({children,initialWorkspaceSlug}:{children:ReactNode;ini
   return<RuntimeBoundary key={slug===undefined?'pilot':`workspace:${slug}`} workspaceSlug={slug}>{children}</RuntimeBoundary>;
 }
 function RuntimeBoundary({children,workspaceSlug}:{children:ReactNode;workspaceSlug?:string}){
-  const address=useMemo(()=>({slug:workspaceSlug}),[workspaceSlug]);
   const [holder] = useState(() => createRuntimeHolder((options) => E2E_FIXTURES
     ? createRuntime({ ...options,typefaces: TYPEFACES })
     : createConnectedRuntime({ typefaces: TYPEFACES,workspaceSlug }),{releaseAfterMs:E2E_FIXTURES?1000:0}));
@@ -76,6 +75,10 @@ function RuntimeBoundary({children,workspaceSlug}:{children:ReactNode;workspaceS
     };
   }, [holder]);
 
+  const address=useMemo(()=>({slug:workspaceSlug,prepare:async()=>{
+    window.dispatchEvent(new Event('reporter:prepare-navigation'));
+    holder.flush();const state=holder.get();return state.status==='ready'?(await state.runtime.settle?.()??true):false;
+  }}),[workspaceSlug,holder]);
   return (
     <WorkspaceAddressContext value={address}><RuntimeContext value={holder}>
       {children}
