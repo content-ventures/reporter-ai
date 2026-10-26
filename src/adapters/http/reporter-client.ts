@@ -10,6 +10,7 @@ import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES, MEDIA_EXTENSIONS } from '../../domain
 import type { Transcript } from '../../domain/reporter.ts';
 import { detectTranscriptFormat } from '../../domain/text/transcript-parse.ts';
 import { pipelineModelLabel } from '../../domain/pipeline.ts';
+import { workspaceApiPath } from '../../domain/workspace-address.ts';
 
 export class ReporterHttpError extends Error {
   readonly code: string;
@@ -37,23 +38,58 @@ async function responseValue(response: Response): Promise<Record<string,unknown>
   }
 }
 
-export async function reporterRequest<T>(path = '/workspace', body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch('/api/reporter'+path,{ method: body === undefined ? 'GET' : 'POST',
-    headers: { 'x-reporter-client': 'local',...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-    cache: 'no-store',...(body === undefined ? {} : { body: JSON.stringify(body) }),signal: signal ?? AbortSignal.timeout(30000),
-  });
-  return reporterResponse<T>(response);
+export type ReporterTransport = {
+  url(path: string): string;
+  fetch(path: string, init?: RequestInit): Promise<Response>;
+  request<T>(path?: string, body?: unknown, signal?: AbortSignal): Promise<T>;
+  upload<T>(path: string, file: Blob): Promise<T>;
+  bindAccount(personId: string): void;
+  dispose(): void;
+};
+
+/** Destination and lifetime belong to this runtime, including writes queued before navigation. */
+export function createReporterTransport(slug?: string, options: { requireAccount?: boolean } = {}): ReporterTransport {
+  const lifetime = new AbortController();
+  let account: string | undefined;
+  const url = (path: string) => workspaceApiPath(slug,path);
+  url('/workspace'); // Reject an invalid supplied context before making any request.
+  const send = async (path: string, init: RequestInit = {}) => {
+    lifetime.signal.throwIfAborted();
+    if (options.requireAccount && !account && !['GET','HEAD'].includes(init.method ?? 'GET')) throw new DOMException('Workspace not ready','InvalidStateError');
+    const headers = new Headers(init.headers);
+    if (account) headers.set('x-reporter-account',account);
+    const response = await fetch(url(path),{ ...init,headers,signal: AbortSignal.any([lifetime.signal,init.signal ?? AbortSignal.timeout(30000)]) });
+    lifetime.signal.throwIfAborted();
+    return response;
+  };
+  return { url,fetch: send,
+    async request<T>(path = '/workspace',body?: unknown,signal?: AbortSignal): Promise<T> {
+      return reporterResponse<T>(await send(path,{ method: body === undefined ? 'GET' : 'POST',cache: 'no-store',
+        headers: { 'x-reporter-client': 'local',...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),signal: signal ?? AbortSignal.timeout(30000) }),lifetime.signal);
+    },
+    async upload<T>(path: string,file: Blob): Promise<T> {
+      return reporterResponse<T>(await send(path,{ method:'POST',cache:'no-store',body:file,signal:AbortSignal.timeout(60000),
+        headers:{'x-reporter-client':'local','content-type':file.type || 'application/octet-stream'} }),lifetime.signal);
+    },
+    bindAccount(personId) {
+      if (!personId || account && account !== personId) { lifetime.abort();throw new Error('ACCOUNT_CONTEXT_CHANGED'); }
+      account = personId;
+    },
+    dispose() { lifetime.abort(); },
+  };
 }
+export const defaultReporterTransport = createReporterTransport();
+export const reporterRequest = <T>(path = '/workspace',body?: unknown,signal?: AbortSignal) => defaultReporterTransport.request<T>(path,body,signal);
 
 /** A raw file body (a profile photo), with the same errors as `reporterRequest`. */
 export async function reporterUpload<T>(path: string, file: Blob): Promise<T> {
-  const response = await fetch('/api/reporter'+path,{ method: 'POST',cache: 'no-store',body: file,signal: AbortSignal.timeout(60000),
-    headers: { 'x-reporter-client': 'local','content-type': file.type || 'application/octet-stream' } });
-  return reporterResponse<T>(response);
+  return defaultReporterTransport.upload<T>(path,file);
 }
 
-async function reporterResponse<T>(response: Response): Promise<T> {
+async function reporterResponse<T>(response: Response, signal?: AbortSignal): Promise<T> {
   const value = await responseValue(response);
+  signal?.throwIfAborted();
   if (!response.ok) {
     const code = typeof value.error==='string' ? value.error : 'REQUEST_FAILED';
     if (typeof window !== 'undefined') {
@@ -66,9 +102,9 @@ async function reporterResponse<T>(response: Response): Promise<T> {
 }
 
 /** `active` asks the server to also report whether a running generation is stalled. */
-export function requestWorkspace(syncToken?: string, active = false): Promise<WorkspaceRefresh> {
+export function requestWorkspace(syncToken?: string, active = false, http: ReporterTransport = defaultReporterTransport): Promise<WorkspaceRefresh> {
   const query = [syncToken ? 'since='+encodeURIComponent(syncToken) : '', active ? 'active=1' : ''].filter(Boolean).join('&');
-  return reporterRequest('/workspace'+(query ? '?'+query : ''));
+  return http.request('/workspace'+(query ? '?'+query : ''));
 }
 
 export function createHttpGeneration(deps: { current(): ConnectedWorkspace; refresh(): Promise<void>; rpc<T>(method: string,args: unknown[]): Promise<T> }) {
@@ -179,7 +215,7 @@ async function uploadParts(file: Blob,session: Record<string,unknown>,onProgress
   catch (error) { controller.abort('part_failed');throw error; }
 }
 
-export function createHttpIngest(local: SourceIngest): SourceIngest {
+export function createHttpIngest(local: SourceIngest, http: ReporterTransport = defaultReporterTransport): SourceIngest {
   const uploads = new WeakMap<object,{ key: string;id?: string;sourceId?: string;token?: string;uploaded?: boolean }>();
   const links = new Map<string,{ key: string; id?: string; provider?: 'youtube' | 'spotify'; title?: string; programName?: string; fileName?: string; bytes?: number; sourceUrl?: string }>();
   return {
@@ -192,7 +228,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
         options.onProgress?.(4,'Localizando episódio');
         options.onStatus?.({ phase: 'locating',message: 'Localizando episódio' });
         if (!known.id) {
-          const response = await fetch('/api/reporter/links',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local','idempotency-key': known.key },
+          const response = await http.fetch('/links',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local','idempotency-key': known.key },
             body: JSON.stringify({ url }),signal: options.signal });
           const result = await responseValue(response);
           if (!response.ok) return refuse(forbiddenBody(result) ? 'forbidden' : 'read_failed',messageOf(result,'Não foi possível importar este link.'));
@@ -208,7 +244,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
         }
         for (;;) {
           options.signal?.throwIfAborted();
-          const state = await reporterRequest<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+known.id,undefined,options.signal);
+          const state = await http.request<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+known.id,undefined,options.signal);
           const transcript = state.transcript;
           if (!transcript) return refuse('read_failed','Transcrição não encontrada.');
           if (transcript.status==='ready') {
@@ -221,7 +257,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           if (transcript.status==='failed') {
             if (!retried && state.worker_online) {
               retried = true;
-              const response = await fetch('/api/reporter/transcripts/'+transcript.id+'/retry',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local','idempotency-key': known.key+'-retry-'+transcript.revision },body: JSON.stringify({ revision: transcript.revision }),signal: options.signal });
+              const response = await http.fetch('/transcripts/'+transcript.id+'/retry',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local','idempotency-key': known.key+'-retry-'+transcript.revision },body: JSON.stringify({ revision: transcript.revision }),signal: options.signal });
               if (response.ok) continue;
             }
             return refuse('read_failed','Não foi possível transcrever. Código: '+(transcript.error_code ?? 'TRANSCRIPTION_FAILED'));
@@ -239,7 +275,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
       } catch (error) { return refuse('read_failed',error instanceof Error ? error.message : 'Não foi possível importar este link.'); }
     },
     received: async () => {
-      try { return ok((await reporterRequest<{ items: ReceivedRow[] }>('/drive/received')).items.map(receivedMaterial)); }
+      try { return ok((await http.request<{ items: ReceivedRow[] }>('/drive/received')).items.map(receivedMaterial)); }
       catch (error) { return refuse(isForbidden(error) ? 'forbidden' : 'read_failed',error instanceof Error ? error.message : 'Não foi possível ler os arquivos do Drive.'); }
     },
     // A received file reads as an upload that already reached the server: it waits for the copy and
@@ -248,14 +284,14 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
       let retried = false;
       try {
         const path = '/drive/received/'+encodeURIComponent(id);
-        const found = receivedMaterial(await reporterRequest<ReceivedRow>(path,undefined,options.signal));
+        const found = receivedMaterial(await http.request<ReceivedRow>(path,undefined,options.signal));
         options.onFound?.({ name: found.fileName,size: found.size });
         const extras = { ...(found.format ? { editorialFormat: found.format } : {}),...(found.recordedOn ? { recordedOn: found.recordedOn } : {}) };
         for (let round = 0; ; round++) {
           options.signal?.throwIfAborted();
-          const current = round === 0 ? found : receivedMaterial(await reporterRequest<ReceivedRow>(path,undefined,options.signal));
+          const current = round === 0 ? found : receivedMaterial(await http.request<ReceivedRow>(path,undefined,options.signal));
           if (current.errorCode === 'UPLOAD_FAILED') return refuse('read_failed','O arquivo não chegou do Drive. Coloque uma cópia dele na pasta Entrada.');
-          const state = await reporterRequest<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+encodeURIComponent(id),undefined,options.signal);
+          const state = await http.request<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+encodeURIComponent(id),undefined,options.signal);
           const transcript = state.transcript;
           if (transcript.status==='ready') {
             const text = transcriptFileText(transcript);
@@ -267,7 +303,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
             if (!retried && state.worker_online) {
               retried = true;
               // The Drive retry runs as the member the intake uploads as: any editor may open the card.
-              const response = await fetch('/api/reporter/drive/received/'+encodeURIComponent(transcript.id)+'/retry',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local',
+              const response = await http.fetch('/drive/received/'+encodeURIComponent(transcript.id)+'/retry',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local',
                 'idempotency-key': 'drive-'+transcript.id+'-retry-'+transcript.revision },body: JSON.stringify({ revision: transcript.revision }),signal: options.signal });
               if (response.ok) continue;
             }
@@ -293,7 +329,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
       if (!result.ok) return result;
       delete result.value.outlook;
       try {
-        const insights = await reporterRequest<MaterialInsights>('/material/analysis', { text,
+        const insights = await http.request<MaterialInsights>('/material/analysis', { text,
           ...(options?.fileName ? { fileName: options.fileName } : {}), ...(options?.format ? { format: options.format } : {}) }, AbortSignal.timeout(180000));
         result.value.topicTitle = insights.title;
         for (const { name, ...presentation } of insights.participants) {
@@ -339,7 +375,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           if (!textFile) {
             upload.sourceId ??= crypto.randomUUID();
             upload.token ??= uploadToken();
-            const prepared = await fetch('/api/reporter/uploads',{ method: 'POST',headers: { 'content-type': 'application/json',
+            const prepared = await http.fetch('/uploads',{ method: 'POST',headers: { 'content-type': 'application/json',
               'x-reporter-client': 'local','idempotency-key': upload.key },body: JSON.stringify({ sourceId: upload.sourceId,token: upload.token,
                 name: file.name,size: file.size }),signal: options.signal });
             const value = await responseValue(prepared);
@@ -361,7 +397,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
             upload.uploaded = true;
           } else {
             const data = new FormData();data.set('file',file,file.name);
-            const response = await fetch('/api/reporter/files',{ method: 'POST',headers: { 'x-reporter-client': 'local','idempotency-key': upload.key },body: data,signal: options.signal });
+            const response = await http.fetch('/files',{ method: 'POST',headers: { 'x-reporter-client': 'local','idempotency-key': upload.key },body: data,signal: options.signal });
             const result = await responseValue(response);
             if (!response.ok) return refuse(forbiddenBody(result) ? 'forbidden' : 'read_failed',messageOf(result,'Não foi possível enviar o arquivo.'));
             upload.id = result.id as string;
@@ -370,7 +406,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
         }
         for (;;) {
           options.signal?.throwIfAborted();
-          const state = await reporterRequest<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+upload.id,undefined,options.signal);
+          const state = await http.request<{ transcript: Transcript; worker_online: boolean; stalled?: boolean }>('/transcripts/'+upload.id,undefined,options.signal);
           const transcript = state.transcript;
           if (!transcript) return refuse('read_failed','Transcrição não encontrada.');
           if (transcript.status === 'ready') {
@@ -382,7 +418,7 @@ export function createHttpIngest(local: SourceIngest): SourceIngest {
           if (transcript.status === 'failed') {
             if (!retried && state.worker_online) {
               retried = true;
-              const response = await fetch('/api/reporter/transcripts/'+transcript.id+'/retry',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local','idempotency-key': upload.key+'-retry-'+transcript.revision },body: JSON.stringify({ revision: transcript.revision }),signal: options.signal });
+              const response = await http.fetch('/transcripts/'+transcript.id+'/retry',{ method: 'POST',headers: { 'content-type': 'application/json','x-reporter-client': 'local','idempotency-key': upload.key+'-retry-'+transcript.revision },body: JSON.stringify({ revision: transcript.revision }),signal: options.signal });
               if (response.ok) continue;
             }
             return refuse('read_failed','Não foi possível transcrever. Código: '+(transcript.error_code ?? 'TRANSCRIPTION_FAILED'));

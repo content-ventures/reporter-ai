@@ -42,6 +42,34 @@ assetStoreContract('IndexedDB asset store', () => {
 });
 
 describe('IndexedDB asset store', () => {
+  it('keeps identical asset and production IDs separate by workspace and account, including resets',async()=>{
+    const indexedDB=fakeIndexedDb();
+    const a=createIndexedDbAssetStore({...options(),workspaceId:'workspace-a',databaseName:'reporter-assets:workspace-a:account-a',indexedDB});
+    const b=createIndexedDbAssetStore({...options(),workspaceId:'workspace-b',databaseName:'reporter-assets:workspace-b:account-a',indexedDB});
+    const otherAccount=createIndexedDbAssetStore({...options(),workspaceId:'workspace-a',databaseName:'reporter-assets:workspace-a:account-b',indexedDB});
+    try{
+      const first=await a.put({type:'upload',file:pngFile(),fileName:'a.png'},{productionId:'same-production',authorized:true});
+      assert.ok(first.ok);await Promise.all([b.ready(),otherAccount.ready()]);
+      assert.equal(b.get(first.value.id),undefined);assert.equal(otherAccount.get(first.value.id),undefined);
+      const second=await b.put({type:'upload',file:pngFile(),fileName:'b.png'},{productionId:'same-production',authorized:true});
+      assert.ok(second.ok);assert.equal(first.value.id,second.value.id);
+      assert.equal(a.get(first.value.id)?.workspaceId,'workspace-a');assert.equal(b.get(second.value.id)?.workspaceId,'workspace-b');
+      await b.reset();assert.equal(a.list('same-production').length,1);assert.equal(b.list('same-production').length,0);
+    }finally{a.dispose();b.dispose();otherAccount.dispose();}
+  });
+
+  it('waits for authoritative identity before opening a namespace and stamps the resolved workspace',async()=>{
+    const indexedDB=fakeIndexedDb();let resolve!:(name:string)=>void,workspace='loading';
+    const databaseName=new Promise<string>(done=>{resolve=done;});
+    const store=createIndexedDbAssetStore({...options(),workspaceId:()=>workspace,databaseName,indexedDB});
+    try{
+      assert.equal(indexedDB.dump(ASSET_DB_NAME),undefined);
+      workspace='workspace-a';resolve('reporter-assets:workspace-a:account-a');await store.ready();
+      const result=await store.put({type:'upload',file:pngFile(),fileName:'a.png'},{productionId:'production',authorized:true});
+      assert.ok(result.ok);assert.equal(result.value.workspaceId,'workspace-a');
+      assert.equal(indexedDB.dump(ASSET_DB_NAME),undefined);
+    }finally{store.dispose();}
+  });
   it('writes the record and its bytes to `reporter-sim-assets` in one transaction', async () => {
     const indexedDB = fakeIndexedDb();
     const store = createIndexedDbAssetStore({ ...options(), indexedDB });

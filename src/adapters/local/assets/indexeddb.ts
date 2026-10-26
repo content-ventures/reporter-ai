@@ -65,11 +65,11 @@ class IdbUnavailableError extends Error {
   readonly name = 'SecurityError';
 }
 
-function openDatabase(factory: IdbFactory): Promise<IdbDatabase> {
+function openDatabase(factory: IdbFactory, name: string): Promise<IdbDatabase> {
   return new Promise((resolve, reject) => {
     let request: IdbOpenRequest;
     try {
-      request = factory.open(ASSET_DB_NAME, ASSET_DB_VERSION);
+      request = factory.open(name, ASSET_DB_VERSION);
     } catch (error) {
       reject(error);
       return;
@@ -106,11 +106,11 @@ function isStoredAsset(value: unknown): value is StoredAsset {
   return typeof record.id === 'string' && typeof record.productionId === 'string' && record.asset?.kind === 'image' && record.asset.id === record.id;
 }
 
-export function indexedDbBackend(factory: IdbFactory): AssetBackend {
+export function indexedDbBackend(factory: IdbFactory, name: string | Promise<string> = ASSET_DB_NAME): AssetBackend {
   let database: Promise<IdbDatabase> | undefined;
   const db = (): Promise<IdbDatabase> => {
     if (database) return database;
-    const opening = openDatabase(factory).then((opened) => {
+    const opening = (typeof name === 'string' ? openDatabase(factory,name) : name.then(value=>openDatabase(factory,value))).then((opened) => {
       // Another tab upgrading the schema: close so it can proceed; the next call reopens.
       opened.onversionchange = () => {
         opened.close();

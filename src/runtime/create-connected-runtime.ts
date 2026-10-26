@@ -1,10 +1,10 @@
 import { createEditorialEngine, editorialLocalRoleProfiles, emptyEditorialCheckpoint, LOCAL_OPERATOR, LOCAL_WORKSPACE } from './editorial-engine.ts';
 import { applyWorkspaceDelta } from './editorial-sync.ts';
-import { createIndexedDbAssetStore } from '../adapters/local/assets/index.ts';
+import { ASSET_DB_NAME, createIndexedDbAssetStore } from '../adapters/local/assets/index.ts';
 import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
 import { assetCoverLoader, createLocalRenderService, servedCoverLoader } from '../adapters/local/render/index.ts';
-import { isForbidden, ReporterHttpError, reporterRequest, reporterUpload, requestWorkspace, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
+import { isForbidden, ReporterHttpError, createReporterTransport, requestWorkspace, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
 import { avatarImage } from '../adapters/local/assets/avatar-image.ts';
 import { createHttpImageGenerator, createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
@@ -30,7 +30,8 @@ import type { WritingRunDetails } from '../ports/pipeline-settings.ts';
 import { isRunActive } from '../domain/run.ts';
 
 /** Approved screens, server-owned state, real Groq jobs. Demo snapshots remain untouched. */
-export function createConnectedRuntime(options: { typefaces?: Readonly<Record<string,string>> } = {}): Runtime {
+export function createConnectedRuntime(options: { typefaces?: Readonly<Record<string,string>>; workspaceSlug?: string } = {}): Runtime {
+  const http = createReporterTransport(options.workspaceSlug,{requireAccount:true});
   const clock = { now: () => new Date().toISOString() },ids = { next: () => crypto.randomUUID() };
   let current: ConnectedWorkspace = { ...emptyEditorialCheckpoint(),revision: -1,model: '',workerOnline: false };
   // The engine reads image assets through this object, kept in step with every refresh.
@@ -42,15 +43,18 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   let save: SaveState = { scope: 'remote',status: 'idle' };
   const saveListeners = new Set<(state: SaveState) => void>();
   const setSave = (state: SaveState) => { save = state; for (const listener of saveListeners) listener(save); };
-  const localAssets = createIndexedDbAssetStore({ clock,ids,workspaceId: LOCAL_WORKSPACE,actorId: () => LOCAL_OPERATOR,reset: false });
-  const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(true),() => current.deploymentMode === 'cloud');
+  let resolveAssetNamespace!: (name:string)=>void, rejectAssetNamespace!: (error:unknown)=>void;
+  const databaseName = new Promise<string>((resolve,reject)=>{resolveAssetNamespace=resolve;rejectAssetNamespace=reject;});
+  void databaseName.catch(()=>{});
+  const localAssets = createIndexedDbAssetStore({ clock,ids,workspaceId:()=>current.state.workspace.id,actorId:()=>current.state.sessionPersonId,databaseName,reset:false });
+  const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(true),() => current.deploymentMode === 'cloud',http);
   const fixtures = createFixtures({ now: clock.now(),empty: true });
   const render = createLocalRenderService({ templates: fixtures.templates,renders: fixtures.templateRenders,
     descriptions: fixtures.templateDescriptions,library: fixtures.templateLibrary,fontFaces: fixtures.templateFonts,loadCover: assetCoverLoader(assets),
     coverCredit: id => creditLine(assets.get(id)?.credit),samplePhoto: { assetId: fixtures.samplePhoto.assetId,credit: fixtures.samplePhoto.credit,load: servedCoverLoader(fixtures.samplePhoto.src) },
     samplePhotos: fixtures.samplePhotos.map(photo => ({ assetId: photo.assetId,credit: photo.credit,load: servedCoverLoader(photo.src) })),typefaces: options.typefaces });
   const runActive = () => Object.values(current.state.runFolds).some(fold => isRunActive(fold.run));
-  const refresh = createWorkspaceRefresh(() => requestWorkspace(current.syncToken,runActive()).then(snapshot => {
+  const refresh = createWorkspaceRefresh(() => requestWorkspace(current.syncToken,runActive(),http).then(snapshot => {
       if (disposed || snapshot.revision < current.revision) return;
       if ('unchanged' in snapshot) {
         current = { ...current,workerOnline: snapshot.workerOnline,stalled: snapshot.stalled };
@@ -66,13 +70,18 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
         generation.accept(current);
         return;
       }
+      if (options.workspaceSlug && snapshot.state.workspace.slug !== options.workspaceSlug
+        || current.revision >= 0 && (snapshot.state.workspace.id !== current.state.workspace.id || snapshot.state.sessionPersonId !== current.state.sessionPersonId)) throw new Error('ACCOUNT_CONTEXT_CHANGED');
+      http.bindAccount(snapshot.state.sessionPersonId);
+      resolveAssetNamespace(snapshot.deploymentMode === 'local' && snapshot.state.workspace.id === LOCAL_WORKSPACE && snapshot.state.sessionPersonId === LOCAL_OPERATOR
+        ? ASSET_DB_NAME : `reporter-assets:${encodeURIComponent(snapshot.state.workspace.id)}:${encodeURIComponent(snapshot.state.sessionPersonId)}`);
       const changed = snapshot.revision !== current.revision || snapshot.syncToken !== current.syncToken;
       current = snapshot;
       engineCheckpoint.imageAssets = current.imageAssets;
       assets.adoptSnapshot();
       if (changed) ports.store.transact(() => ok({ state: snapshot.state,value: undefined,persist: 'none',scope: 'external',productionIds: snapshot.state.productions.map(p => p.production.id) }));
       generation.accept(snapshot);
-    }).finally(() => { lastRefresh = Date.now(); }));
+    }).catch(error=>{rejectAssetNamespace(error);throw error;}).finally(() => { lastRefresh = Date.now(); }));
   let writeTail: Promise<unknown> = Promise.resolve();
   let failedWrite: { method: string; args: unknown[]; requestId: string } | undefined;
   const rpc = <T,>(method: string,args: unknown[]): Promise<T> => {
@@ -83,7 +92,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       setSave({ scope: 'remote',status: 'saving' });
       try {
         await ready;
-        const result = await committedCommand(() => reporterRequest<T>('/workspace',payload),() => refresh(true));
+        const result = await committedCommand(() => http.request<T>('/workspace',payload),() => refresh(true));
         failedWrite = undefined;
         setSave({ scope: 'remote',status: 'saved',savedAt: clock.now() });
         return result;
@@ -126,13 +135,13 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   };
   const unwatchAssets = assets.subscribe(change => { if (change.kind !== 'health') ports.store.transact(state => ok({ state,value: undefined,persist: 'none',scope: 'assets',productionIds: change.productionIds })); });
   return {
-    mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest),generation: generation.service,render,export: exporter,assets,audit,
-    visuals: createHttpVisualLibrary(),
-    imageGeneration: createHttpImageGenerator(),
-    citations: createHttpCitationLibrary(),
-    news: createHttpNewsIntake(),
-    pipeline: { get: () => reporterRequest<PipelineView>('/pipeline'), save: (definition,baseRevision) => rpc('pipeline.save',[definition,baseRevision]),
-      getWritingRun: runId => reporterRequest<WritingRunDetails>(`/pipeline/runs/${encodeURIComponent(runId)}`) },
+    mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest,http),generation: generation.service,render,export: exporter,assets,audit,
+    visuals: createHttpVisualLibrary(http),
+    imageGeneration: createHttpImageGenerator(http),
+    citations: createHttpCitationLibrary(http),
+    news: createHttpNewsIntake(http),
+    pipeline: { get: () => http.request<PipelineView>('/pipeline'), save: (definition,baseRevision) => rpc('pipeline.save',[definition,baseRevision]),
+      getWritingRun: runId => http.request<WritingRunDetails>(`/pipeline/runs/${encodeURIComponent(runId)}`) },
     session: {
       mode: 'remote',
       workspace: async () => { await ready; return ports.session.workspace(); },
@@ -142,12 +151,12 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       selectLocalRole: profile => rpc('session.selectLocalRole', [profile]),
       updateProfile: async patch => {
         const valid = validateProfilePatch(patch);
-        return valid.ok ? profileWrite(() => reporterRequest('/profile',valid.value)) : valid;
+        return valid.ok ? profileWrite(() => http.request('/profile',valid.value)) : valid;
       },
       setAvatar: async input => {
-        if (!input) return profileWrite(() => reporterRequest('/profile',{ avatar: null }));
+        if (!input) return profileWrite(() => http.request('/profile',{ avatar: null }));
         const image = await avatarImage(input);
-        return image.ok ? profileWrite(() => reporterUpload('/profile/avatar',image.value)) : image;
+        return image.ok ? profileWrite(() => http.upload('/profile/avatar',image.value)) : image;
       },
       subscribe: ports.session.subscribe,
     },
@@ -155,12 +164,12 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     saveStatus: { current: () => save,subscribe(listener) { saveListeners.add(listener); return () => { saveListeners.delete(listener); }; },async retry() {
       try {
         await writeTail;
-        if (failedWrite) { await reporterRequest('/workspace',failedWrite); failedWrite = undefined; }
+        if (failedWrite) { await http.request('/workspace',failedWrite); failedWrite = undefined; }
         await refresh(true); setSave({ scope: 'remote',status: 'saved',savedAt: clock.now() }); return ok(save);
       } catch { return refuse('save_failed','Servidor indisponível. Suas alterações não foram descartadas.'); }
     } },
     tabs: { current: () => activeTab,subscribe: () => () => {},claim: () => { void refresh(); } },
     usedAssetIds: () => usedAssetIds(ports.store.state.productions),ready,subscribe: ports.store.subscribe,flush: () => {},
-    dispose() { disposed = true; clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
+    dispose() { disposed = true; http.dispose(); rejectAssetNamespace(new DOMException('Context closed','AbortError')); clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
   };
 }

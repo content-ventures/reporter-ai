@@ -12,6 +12,8 @@ export type StockImage = {
 };
 export type LibraryImage = StockImage & {
   id: string; fileKey: string; bytes: number; createdAt: string; authorized: true;
+  /** Read projection from the bound HTTP adapter; never a source-of-truth storage key. */
+  fileUrl?: string;
 };
 /** Technical suitability for a landscape cover, not an aesthetic quality score. */
 export function isCoverResolution(image: Pick<StockImage,'width'|'height'>) {
@@ -67,7 +69,7 @@ export type VisualLibraryView = {
 export function libraryImageUrl(id: string) { return `/api/reporter/visuals/images/${encodeURIComponent(id)}/file`; }
 /** Unsplash originals must be hotlinked; local bytes are only used in derivative banners. */
 export function libraryImageSource(image: LibraryImage,preview = false) {
-  return image.provider === 'unsplash' ? preview ? image.previewUrl : image.imageUrl : libraryImageUrl(image.id);
+  return image.provider === 'unsplash' ? preview ? image.previewUrl : image.imageUrl : image.fileUrl ?? libraryImageUrl(image.id);
 }
 export function imageCreditUrl(value: string | undefined) {
   if (!value) return undefined;
