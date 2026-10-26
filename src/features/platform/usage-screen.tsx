@@ -58,7 +58,7 @@ function UsageView(){
       skeleton: 'control',
       render: (entry) => {
         const person = people.get(entry.personId);
-        return <PersonName name={person?.name ?? 'Pessoa removida'} avatarUrl={person?.avatarUrl} onOpen={person ? () => router.push(`${PEOPLE_HREF}?person=${encodeURIComponent(entry.personId)}`) : undefined} />;
+        return <PersonName name={person?.name ?? `Consultar pessoa ${entry.personId.slice(0,8)}`} avatarUrl={person?.avatarUrl} onOpen={() => router.push(`${PEOPLE_HREF}?person=${encodeURIComponent(entry.personId)}`)} />;
       },
     },
     { key: 'days', header: 'Dias ativos', width: 112, align: 'end', numeric: true, skeleton: 'short', render: (entry) => formatCount(entry.activeDays) },
@@ -100,12 +100,12 @@ function UsageView(){
             label="Uso por pessoa"
             rows={report?.people ?? []}
             rowKey={(entry) => entry.personId}
-            rowLabel={(entry) => people.get(entry.personId)?.name ?? 'Pessoa removida'}
+            rowLabel={(entry) => people.get(entry.personId)?.name ?? `Consultar pessoa ${entry.personId.slice(0,8)}`}
             columns={personColumns}
             variant="plain"
             density="compact"
             fixed
-            onRowClick={(entry) => { if (people.has(entry.personId)) router.push(`${PEOPLE_HREF}?person=${encodeURIComponent(entry.personId)}`); }}
+            onRowClick={(entry) => router.push(`${PEOPLE_HREF}?person=${encodeURIComponent(entry.personId)}`)}
             loading={loading}
             loadingRows={5}
             empty={<EmptyState size="inline" title="Ninguém usou no período" />}
