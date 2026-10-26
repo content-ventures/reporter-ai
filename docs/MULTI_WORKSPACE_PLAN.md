@@ -142,13 +142,13 @@ Main implementation areas: worker transactions, claim functions, drain and conti
 
 The main client differences are the editorial map and writing guide. Their effective values must reach every applicable writing and review path.
 
-- [ ] Provision independent map, guide, pipeline configuration, research exclusions and version history for each workspace. Keep the current Seafood configuration unchanged unless an explicit separately reviewed change requires otherwise.
-- [ ] Define generation readiness separately from access: a team can configure its new workspace, but generation explains which required settings are missing instead of silently adopting Seafood's settings.
-- [ ] Replace Seafood and sector specific assumptions in shared format prompts, fact check instructions, sample defaults and product labels with neutral base rules plus explicit workspace configuration. Rehearse all existing Seafood formats against its preserved preset.
-- [ ] Keep factual integrity and literal quotation rules as platform invariants. Client communication preferences cannot authorize invented sources or weaken evidence checks.
-- [ ] Capture workspace ID, policy versions, pipeline and template versions in generated artifacts and execution records. Editing a guide affects future jobs; existing queued jobs and approved versions retain their captured configuration.
-- [ ] Scope template availability, default template and brand assets to the workspace. Support assignment and configuration through the application, including logo, approved visual preset and licensed typefaces where supported by the renderer. A full visual template builder is a separate product feature.
-- [ ] Preserve old carousel render definitions and export compatibility. Configuration copying is an explicit audited action with a preview of the fields copied, and excludes content, members, approvals and secrets.
+- [x] Provision independent map, guide, pipeline configuration, research exclusions and version history for each workspace. Keep the current Seafood configuration unchanged unless an explicit separately reviewed change requires otherwise.
+- [x] Define generation readiness separately from access: a team can configure its new workspace, but generation explains which required settings are missing instead of silently adopting Seafood's settings.
+- [x] Replace Seafood and sector specific assumptions in shared format prompts, fact check instructions, sample defaults and product labels with neutral base rules plus explicit workspace configuration. Rehearse all existing Seafood formats against its preserved preset.
+- [x] Keep factual integrity and literal quotation rules as platform invariants. Client communication preferences cannot authorize invented sources or weaken evidence checks.
+- [x] Capture workspace ID, policy versions, pipeline and template versions in generated artifacts and execution records. Editing a guide affects future jobs; existing queued jobs and approved versions retain their captured configuration.
+- [x] Scope template availability, default template and brand assets to the workspace. Expose assignment and configuration through authorized application APIs, including logo, validated visual preset and licensed typefaces where supported by the renderer; M5 supplies the management screens. A full visual template builder is a separate product feature.
+- [x] Preserve old carousel render definitions and export compatibility. Configuration copying is an explicit audited action with a preview of the fields copied, and excludes content, members, approvals and secrets.
 
 Exit gate: two clients using the same authorized synthetic source generate drafts with their respective configured communication rules and exports with the correct assigned identity. Reviewers verify the difference; no client receives the other's terminology, brand or references. Previously approved Seafood exports remain reproducible.
 
