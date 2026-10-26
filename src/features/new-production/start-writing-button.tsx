@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { Button, toast } from '@content-ventures/design-system/v3';
 import { FileText } from '@content-ventures/design-system/v3/icons';
 import { DEFAULT_ARTICLE_SIZE, DEFAULT_SECTIONS } from '@/domain';

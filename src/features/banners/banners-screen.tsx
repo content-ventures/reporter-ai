@@ -1,6 +1,8 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { Alert, Badge, Button, ButtonLink, Card, CardHeader, ConfirmDialog, Drawer, EmptyState, Field, Grid, Input, MediaFrame, MetaList, PageHeader, PageStack, Panel, Section, Select, Textarea, toast } from '@content-ventures/design-system/v3';
 import { BANNER_FORMATS, BANNER_PALETTES, BANNER_TEMPLATES, bannerContentKey, initialBanner, type BannerContent, type BannerDraft, type LibraryImage, type VisualLibraryView } from '@/domain/visual-library';
 import { useRuntime } from '@/state';
@@ -12,6 +14,7 @@ export function BannersScreen() {
   return <Suspense fallback={<PageHeader title="Banners" />}><BannerStudio /></Suspense>;
 }
 function BannerStudio() {
+  const workspaceHrefFor = useWorkspaceHref();
   const { runtime,status } = useRuntime(),port = runtime?.visuals,params = useSearchParams(),router = useRouter();
   const [content,setContent] = useState<BannerContent>(initialBanner);
   const [saved,setSaved] = useState<BannerDraft>();
@@ -89,7 +92,7 @@ function BannerStudio() {
   const awaitingPreview = Boolean(port && content.title.trim() && !previewFailure && !ready);
   const exportable = saved && !dirty;
   return <PageStack>
-    <PageHeader title="Banners" status={<Badge>Rascunho</Badge>} actions={<><Button variant="primary" loading={saving} disabled={!ready || !dirty} onClick={() => void save()}>Salvar banner</Button><ButtonLink href="/images" onClick={event => { if (!leave('/images')) event.preventDefault(); }}>Abrir biblioteca</ButtonLink></>} />
+    <PageHeader title="Banners" status={<Badge>Rascunho</Badge>} actions={<><Button variant="primary" loading={saving} disabled={!ready || !dirty} onClick={() => void save()}>Salvar banner</Button><ButtonLink href={workspaceHrefFor("/images")} onClick={event => { if (!leave('/images')) event.preventDefault(); }}>Abrir biblioteca</ButtonLink></>} />
     {!port && status !== 'loading' ? <EmptyState title="Conecte o backend local para criar banners" size="panel" heading="p" /> : null}
     {failure ? <Alert tone="danger" title="Não foi possível concluir">{failure}</Alert> : null}
     <Grid columns="3:2" collapseBelow={760} align="start"><Panel><Section title="Composição"><PageStack>
@@ -103,13 +106,13 @@ function BannerStudio() {
         <Field label="Atribuição confirmada">{({ id }) => <Input id={id} value={content.quoteCredit ?? ''} maxLength={80} onChange={event => patch('quoteCredit',event.target.value)} />}</Field></PageStack> :
         <Field label="Linha de apoio" optional>{({ id }) => <Textarea id={id} value={content.description} maxLength={240} rows={3} onChange={event => patch('description',event.target.value)} />}</Field>}
       <Field label="Chamada para ação">{({ id }) => <Input id={id} value={content.cta} maxLength={50} onChange={event => patch('cta',event.target.value)} />}</Field>
-      {content.template === 'photo' ? <Section title="Foto" titleAs="h3"><Button onClick={() => setPicker(true)}>{image ? 'Trocar foto' : 'Selecionar foto da biblioteca'}</Button>{image ? <MetaList size="sm" items={[image.creatorUrl ? <ButtonLink key="creator" href={image.creatorUrl} target="_blank" rel="noopener noreferrer" size="sm">{image.attribution}</ButtonLink> : image.creator,image.license]} /> : null}</Section> : null}
-      {sourceState ? <MetaList size="sm" items={[sourceState,<ButtonLink key="article" href={`/productions/${content.productionId}/article`} onClick={event => { if (!leave(`/productions/${content.productionId}/article`)) event.preventDefault(); }}>Abrir artigo</ButtonLink>]} /> : null}
+      {content.template === 'photo' ? <Section title="Foto" titleAs="h3"><Button onClick={() => setPicker(true)}>{image ? 'Trocar foto' : 'Selecionar foto da biblioteca'}</Button>{image ? <MetaList size="sm" items={[image.creatorUrl ? <ButtonLink key="creator" href={workspaceHrefFor(image.creatorUrl)} target="_blank" rel="noopener noreferrer" size="sm">{image.attribution}</ButtonLink> : image.creator,image.license]} /> : null}</Section> : null}
+      {sourceState ? <MetaList size="sm" items={[sourceState,<ButtonLink key="article" href={workspaceHrefFor(`/productions/${content.productionId}/article`)} onClick={event => { if (!leave(`/productions/${content.productionId}/article`)) event.preventDefault(); }}>Abrir artigo</ButtonLink>]} /> : null}
     </PageStack></Section></Panel><Panel><Section title="Prévia e exportação" meta={`${format.width} × ${format.height}`}><PageStack>
       {ready || awaitingPreview ? <MediaFrame ratio={`${format.width}/${format.height}`} src={ready ? preview?.src : undefined} alt="Prévia do banner editorial" fit="contain" state={awaitingPreview ? 'loading' : undefined} /> : <EmptyState title={content.title.trim() ? 'A composição precisa de ajustes' : 'Escreva a chamada para visualizar o banner'} size="panel" heading="p" />}
       {previewFailure ? <Alert tone="warning" title="Ajuste a composição">{previewFailure}</Alert> : null}
       <MetaList size="sm" items={['Composição local; não é imagem gerada por IA.','Paleta de partida, sem logotipo ou identidade oficial da Seafood Brasil.']} />
-      {exportable ? <Grid columns="auto" min={180}><ButtonLink href={`/api/reporter/visuals/banners/${saved.id}/png`} download>Baixar PNG</ButtonLink><ButtonLink href={`/api/reporter/visuals/banners/${saved.id}/svg`} download>Baixar SVG editável</ButtonLink><ButtonLink href={`/api/reporter/visuals/banners/${saved.id}/json`} download>Baixar créditos e composição</ButtonLink></Grid> : <MetaList size="sm" items={['Salve a composição para liberar os arquivos.']} />}
+      {exportable ? <Grid columns="auto" min={180}><ButtonLink href={workspaceHrefFor(`/api/reporter/visuals/banners/${saved.id}/png`)} download>Baixar PNG</ButtonLink><ButtonLink href={workspaceHrefFor(`/api/reporter/visuals/banners/${saved.id}/svg`)} download>Baixar SVG editável</ButtonLink><ButtonLink href={workspaceHrefFor(`/api/reporter/visuals/banners/${saved.id}/json`)} download>Baixar créditos e composição</ButtonLink></Grid> : <MetaList size="sm" items={['Salve a composição para liberar os arquivos.']} />}
     </PageStack></Section></Panel></Grid>
     {view?.banners.length ? <Panel><Section title="Banners salvos"><Grid columns="auto" min={200}>{view.banners.map(banner => <Card key={banner.id} as="div" padding="sm"><MediaFrame ratio={`${BANNER_FORMATS[banner.content.format].width}/${BANNER_FORMATS[banner.content.format].height}`} src={`/api/reporter/visuals/banners/${banner.id}/png`} alt={banner.content.title} fit="contain" /><CardHeader titleAs="h3" title={banner.content.title} description={`${BANNER_TEMPLATES.find(item => item.id === banner.content.template)?.label} · ${BANNER_FORMATS[banner.content.format].label} · revisão ${banner.revision}`} /><Button onClick={() => openBanner(banner)}>Editar banner</Button></Card>)}</Grid></Section></Panel> : null}
     <Drawer open={picker} onClose={() => setPicker(false)} title="Selecionar foto"><LibraryBrowser selectedId={content.imageId} onSelect={chooseImage} /></Drawer>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   ActionBar, Button, ButtonGroup, CardHeader, ConfirmDialog, DescriptionList, EmptyState, ErrorState, Field, Grid, Input,
   PageHeader, PageStack, Panel, Section, Select, SwitchRow, toast,

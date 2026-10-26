@@ -1,7 +1,8 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   Alert,
   Badge,
@@ -148,6 +149,7 @@ function MaterialAside({
   onEditBrief?: () => void;
   onShowPart?: (segmentId: string) => void;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const unmapped = withoutPerson(detail);
   const others = detail.productions.filter((production) => production.id !== productionId);
   const parts = detail.source.parts;
@@ -192,7 +194,7 @@ function MaterialAside({
         <Section title="Também usado em" meta={String(others.length)}>
           <List label="Outras produções com este material" framed={false}>
             {others.map((production) => (
-              <ListItem key={production.id} title={production.title} href={materialHref(production.id)} density="sm" />
+              <ListItem key={production.id} title={production.title} href={workspaceHrefFor(materialHref(production.id))} density="sm" />
             ))}
           </List>
         </Section>
@@ -230,6 +232,7 @@ function LoadingMaterial() {
  * versioned (stable segment ids), and a correction will create a new version (R4).
  */
 export function MaterialScreen({ productionId }: { productionId: ProductionId }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { production } = useProductionFrame();
   const detail = production.data;
   const sourceId = detail?.sources[0]?.id;
@@ -310,7 +313,7 @@ export function MaterialScreen({ productionId }: { productionId: ProductionId })
       Gerar artigo
     </Button>
   ) : article && data?.source.rights.authorized && draft.data && draft.data.body.type === 'article' && draft.data.body.blocks.length > 0 ? (
-    <ButtonLink href={pieceHref(productionId, 'article')} size="sm" trailingIcon={ArrowRight}>
+    <ButtonLink href={workspaceHrefFor(pieceHref(productionId, 'article'))} size="sm" trailingIcon={ArrowRight}>
       Abrir artigo
     </ButtonLink>
   ) : null;
