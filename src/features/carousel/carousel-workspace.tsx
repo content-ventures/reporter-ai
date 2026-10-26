@@ -1,7 +1,7 @@
 'use client';
 
 import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   ActionBar,
   ConfirmDialog,
@@ -36,7 +36,7 @@ import {
 import type { PieceView, ProductionDetail, SlotFit } from '@/ports';
 import { useCan, useCommands, usePeople, usePiece, useRun, useRuntime, useSaveStatus, useVersion,useTemplateCatalog } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
-import { rememberTemplate } from '@/features/library/last-template';
+import { useRememberTemplate } from '@/features/library/last-template';
 import { switchSummary } from '@/features/library/library-model';
 import { TemplatePickerDrawer } from '@/features/library/template-drawers';
 import { plural } from '@/ui/format';
@@ -95,6 +95,7 @@ function slideWords(slide: Slide): number {
 }
 
 export function CarouselWorkspace({ production, carousel, article, startedRunId, onRunStarted }: CarouselWorkspaceProps) {
+  const rememberTemplate=useRememberTemplate();
   const router = useRouter();
   const commands = useCommands();
   const people = usePeople();

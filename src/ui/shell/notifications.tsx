@@ -1,11 +1,13 @@
 'use client';
 
-import { useMemo, useSyncExternalStore } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { NotificationDot, NotificationsButton, type MenuSection } from '@content-ventures/design-system/v3';
 import { CheckCheck } from '@content-ventures/design-system/v3/icons';
 import { NOTIFYING_ACTIVITY, type ActivityType } from '@/domain';
 import type { ActivityItem } from '@/ports';
+import {useWorkspaceStorageKey} from '@/state/workspace-storage';
+import {useBrowserPreference} from '@/state/browser-preference';
 import { useActivity } from '@/state';
 import { formatAgo } from '../approval-copy';
 import { PersonAvatar } from '../person-avatar';
@@ -26,54 +28,13 @@ const SYSTEM_TONE: Partial<Record<ActivityType, 'red' | 'gray'>> = {
   'delivery.failed': 'red',
 };
 
-function readSeen(): string | null {
-  try {
-    return window.localStorage.getItem(SEEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeSeen(value: string): void {
-  try {
-    window.localStorage.setItem(SEEN_KEY, value);
-  } catch {
-    // Storage unavailable (private window): the dot simply resets on reload.
-  }
-}
-
-/** Last time the person looked at the bell (per browser). First visit: now. */
-let seen: string | undefined;
-const seenListeners = new Set<() => void>();
-
-function getSeen(): string {
-  if (seen === undefined) {
-    seen = readSeen() ?? new Date().toISOString();
-    writeSeen(seen);
-  }
-  return seen;
-}
-
-function markSeen(): void {
-  seen = new Date().toISOString();
-  writeSeen(seen);
-  for (const listener of [...seenListeners]) listener();
-}
-
-function subscribeSeen(listener: () => void) {
-  seenListeners.add(listener);
-  return () => {
-    seenListeners.delete(listener);
-  };
-}
-
-const getServerSeen = (): string | null => null;
-
 export function ShellNotifications() {
   const router = useRouter();
   const activity = useActivity(QUERY);
   const now = useNow();
-  const seenAt = useSyncExternalStore<string | null>(subscribeSeen, getSeen, getServerSeen);
+  const key=useWorkspaceStorageKey(SEEN_KEY),[seenAt,setSeen]=useBrowserPreference(key);
+  useEffect(()=>{if(key&&seenAt===null&&now)setSeen(new Date(now).toISOString());},[key,seenAt,now,setSeen]);
+  const markSeen=useCallback(()=>setSeen(new Date().toISOString()),[setSeen]);
 
   const items = useMemo(() => activity.data?.items ?? [], [activity.data]);
   const fresh = useMemo(() => (seenAt ? items.filter((item) => item.at > seenAt) : []), [items, seenAt]);
@@ -101,7 +62,7 @@ export function ShellNotifications() {
     }
     if (fresh.length > 0) result.push({ items: [{ label: 'Marcar tudo como visto', icon: CheckCheck, onSelect: markSeen }] });
     return result;
-  }, [activity.status, earlier, fresh, now, router]);
+  }, [activity.status, earlier, fresh, now, router,markSeen]);
 
   return <NotificationsButton sections={sections} unread={fresh.length > 0} />;
 }

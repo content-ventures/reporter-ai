@@ -16,6 +16,7 @@ import type {
 } from '../../../domain/hard-news.ts';
 import { seedArchive, seedCms, seedImages, seedQuotes } from '../preview/library.ts';
 import { clockAt, DESK_GOAL, seedEditorialMap, seedFeeds, seedNews, seedWritingGuide } from '../preview/news.ts';
+import { defaultEditorialPolicy } from '../../../domain/editorial-policy.ts';
 import { answerFrom } from './archive-search.ts';
 
 /**
@@ -141,6 +142,12 @@ export function initialState(now = Date.now()): HardNewsState {
   };
 }
 
+/** Connected clients begin with their own server policy and no demonstration records. */
+export function emptyDeskState():HardNewsState{
+  return {version:2,feeds:[],news:[],goal:{perDay:0},...defaultEditorialPolicy(),dossiers:{},flags:{},suggestions:{},deliveries:{},quotes:[],archive:[],images:[],
+    cms:{platform:'WordPress',siteUrl:'',account:'',status:'disconnected',mode:'draft',categories:[],authors:[],authorMap:{},requires:{category:false,image:false,excerpt:false}},seeded:true};
+}
+
 /** The example's own map, if never edited, gains exclusions added to the example later. */
 function withSeedExclusions(map: EditorialMap, clock: ReturnType<typeof clockAt>): EditorialMap {
   const seed = seedEditorialMap(clock);
@@ -260,9 +267,9 @@ export function migrate(stored: HardNewsState, now: number): HardNewsState {
 
 export const STORAGE_KEY = 'reporter.r2-preview.v2';
 
-export function readStored(): HardNewsState | undefined {
+export function readStored(key=STORAGE_KEY): HardNewsState | undefined {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return undefined;
     const parsed = JSON.parse(raw) as HardNewsState;
     return parsed?.version === 2 ? parsed : undefined;
@@ -271,17 +278,17 @@ export function readStored(): HardNewsState | undefined {
   }
 }
 
-export function writeStored(state: HardNewsState): void {
+export function writeStored(state: HardNewsState,key=STORAGE_KEY): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(key, JSON.stringify(state));
   } catch {
     // The preview keeps working in memory when the browser refuses storage.
   }
 }
 
-export function clearStored(): void {
+export function clearStored(key=STORAGE_KEY): void {
   try {
-    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(key);
   } catch {
     // Nothing stored.
   }

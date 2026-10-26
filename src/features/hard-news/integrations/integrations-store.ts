@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import {useWorkspaceStorageKey} from '@/state/workspace-storage';
+import {useRuntime} from '@/state';
 import { rebase } from './integrations-model';
 import type { ActivityEntry, AppId, AppRecord, IntegrationsState, WebhookDelivery, WebhookEndpoint } from './integrations-model';
 import { seedIntegrations } from './integrations-seed';
@@ -16,9 +18,25 @@ export const INTEGRATIONS_KEY = 'reporter.r2-integrations.v1';
 
 type Snapshot = { state: IntegrationsState; ready: boolean };
 
+export type IntegrationsActions = {
+  updateApp(id: AppId, patch: Partial<AppRecord>): void;
+  /** Ends the connect flow: the app is on, with who connected it and when. */
+  connectApp(id: AppId, patch: Partial<AppRecord>, by: string): void;
+  disconnectApp(id: AppId): void;
+  log(entry: Omit<ActivityEntry, 'id' | 'at'>): void;
+  addEndpoint(endpoint: Omit<WebhookEndpoint, 'id' | 'createdAt' | 'state'>): string;
+  updateEndpoint(id: string, patch: Partial<WebhookEndpoint>): void;
+  removeEndpoint(id: string): void;
+  /** Records a delivery; without `ms`, the preview draws a plausible answer time. */
+  deliver(delivery: Omit<WebhookDelivery, 'id' | 'at' | 'ms'> & { ms?: number }): void;
+  mapCategory(topicId: string, categoryId: string): void;
+};
+
+function createIntegrationsStore(key:string|undefined,example:boolean){
+  const initial=(now:number):IntegrationsState=>example?seedIntegrations(now):{version:1,savedAt:new Date(now).toISOString(),apps:{},endpoints:[],deliveries:[],activity:[],categoryMap:{}};
 function read(): IntegrationsState | undefined {
   try {
-    const raw = window.localStorage.getItem(INTEGRATIONS_KEY);
+    const raw = window.localStorage.getItem(key??'');
     if (!raw) return undefined;
     const parsed = JSON.parse(raw) as IntegrationsState;
     return parsed?.version === 1 ? parsed : undefined;
@@ -28,14 +46,15 @@ function read(): IntegrationsState | undefined {
 }
 
 function write(state: IntegrationsState) {
+  if(!key)return;
   try {
-    window.localStorage.setItem(INTEGRATIONS_KEY, JSON.stringify(state));
+    window.localStorage.setItem(key, JSON.stringify(state));
   } catch {
     /* private window or full storage: the preview keeps working in memory */
   }
 }
 
-const placeholder: Snapshot = { state: seedIntegrations(0), ready: false };
+const placeholder: Snapshot = { state: initial(0), ready: false };
 let snapshot = placeholder;
 const listeners = new Set<() => void>();
 const emit = () => {
@@ -43,7 +62,7 @@ const emit = () => {
 };
 // Another tab of this browser changed the connections: adopt them (never written back).
 const adopt = (event: StorageEvent) => {
-  if (event.key !== INTEGRATIONS_KEY || !snapshot.ready) return;
+  if (event.key !== key || !snapshot.ready) return;
   const stored = read();
   if (!stored) return;
   snapshot = { state: stored, ready: true };
@@ -64,7 +83,7 @@ function load() {
   const now = Date.now();
   const reset = new URL(window.location.href).searchParams.get('reset') === '1';
   const stored = reset ? undefined : read();
-  snapshot = { state: stored ? rebase(stored, now) : seedIntegrations(now), ready: true };
+  snapshot = { state: stored ? example?rebase(stored,now):stored : initial(now), ready: true };
   write(snapshot.state);
   emit();
 }
@@ -79,20 +98,6 @@ function set(recipe: (current: IntegrationsState) => IntegrationsState) {
 
 let sequence = 0;
 const nextId = (prefix: string) => `${prefix}-${Date.now().toString(36)}${(sequence += 1).toString(36)}`;
-
-export type IntegrationsActions = {
-  updateApp(id: AppId, patch: Partial<AppRecord>): void;
-  /** Ends the connect flow: the app is on, with who connected it and when. */
-  connectApp(id: AppId, patch: Partial<AppRecord>, by: string): void;
-  disconnectApp(id: AppId): void;
-  log(entry: Omit<ActivityEntry, 'id' | 'at'>): void;
-  addEndpoint(endpoint: Omit<WebhookEndpoint, 'id' | 'createdAt' | 'state'>): string;
-  updateEndpoint(id: string, patch: Partial<WebhookEndpoint>): void;
-  removeEndpoint(id: string): void;
-  /** Records a delivery; without `ms`, the preview draws a plausible answer time. */
-  deliver(delivery: Omit<WebhookDelivery, 'id' | 'at' | 'ms'> & { ms?: number }): void;
-  mapCategory(topicId: string, categoryId: string): void;
-};
 
 const actions: IntegrationsActions = {
   updateApp(id, patch) {
@@ -139,9 +144,13 @@ const actions: IntegrationsActions = {
   },
 };
 
-/** The connections and their actions; `ready` is false until this browser was read. */
-export function useIntegrations(): { state: IntegrationsState; ready: boolean; actions: IntegrationsActions } {
-  const current = useSyncExternalStore(subscribe, () => snapshot, () => placeholder);
-  useEffect(load, []);
-  return { state: current.state, ready: current.ready, actions };
+return{subscribe,get:()=>snapshot,server:()=>placeholder,load,actions};
+}
+/** Connections belong to the current account and client, including two independent tabs. */
+export function useIntegrations(): {state:IntegrationsState;ready:boolean;actions:IntegrationsActions}{
+  const key=useWorkspaceStorageKey(INTEGRATIONS_KEY),{runtime}=useRuntime(),example=runtime?.mode==='simulated';
+  const store=useMemo(()=>createIntegrationsStore(key,example),[key,example]);
+  const current=useSyncExternalStore(store.subscribe,store.get,store.server);
+  useEffect(()=>{if(key)store.load();},[key,store]);
+  return{...current,actions:store.actions};
 }

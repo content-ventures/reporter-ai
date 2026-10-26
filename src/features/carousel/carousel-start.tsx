@@ -23,7 +23,7 @@ import type { DraftView, PieceView, ProductionDetail, RunView, TemplateInfo } fr
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
 import { useCan, useCommands, useRuntime, useVersion,useTemplateCatalog } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
-import { rememberTemplate, useLastTemplate } from '@/features/library/last-template';
+import { useRememberTemplate, useLastTemplate } from '@/features/library/last-template';
 import { featuredNote, initialTemplate, libraryFilter, type LibraryFilter } from '@/features/library/library-model';
 import { TemplateBrowser } from '@/features/library/template-browser';
 import { TemplateDrawer } from '@/features/library/template-drawers';
@@ -81,6 +81,7 @@ export type CarouselStartProps = {
 };
 
 export function CarouselStart({ production, article, carousel, draft, lastRun, onStartProgress, onStartFailed, onRunStarted }: CarouselStartProps) {
+  const rememberTemplate=useRememberTemplate();
   const commands = useCommands();
   const { runtime } = useRuntime();
   const phone = usePhone();
