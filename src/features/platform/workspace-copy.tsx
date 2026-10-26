@@ -5,12 +5,14 @@ import type {WorkspaceAdministration} from '@/ports/workspace-management';
 import type {ManagedWorkspace} from '@/domain/workspace-management';
 import {CONFIGURATION_COPY_FIELDS,type ConfigurationCopyField,type ConfigurationCopyPreview} from '@/domain/configuration-copy';
 import {useAdministrationQuery} from '@/state';
+import {useWorkspaceForm} from './workspace-form-guard';
 import {inputProps} from './field-props';
 
 const LABELS:Record<ConfigurationCopyField,string>={editorial_map:'Mapa editorial',writing_guide:'Guia de escrita',prompts:'Prompts',templates:'Composições e fonte dos modelos'};
 export function WorkspaceCopy({port,target,onClose}:{port:WorkspaceAdministration;target:ManagedWorkspace;onClose:()=>void}){
   const [search,setSearch]=useState(''),[source,setSource]=useState(''),[fields,setFields]=useState<ConfigurationCopyField[]>(['editorial_map','writing_guide']);
   const [preview,setPreview]=useState<ConfigurationCopyPreview>(),[busy,setBusy]=useState(false),[error,setError]=useState<string>();
+  useWorkspaceForm(false,busy);
   const sources=useAdministrationQuery(port,`copy-sources:${search}`,admin=>admin.list({search,limit:50}));
   async function inspect(){setBusy(true);setError(undefined);const plan=await port.previewCopy({sourceId:source,targetId:target.id,fields});setBusy(false);if(plan.ok)setPreview(plan.value);else setError(plan.refusal.message);}
   async function apply(){if(!preview)return;setBusy(true);setError(undefined);const saved=await port.applyCopy(preview.token);setBusy(false);if(saved.ok)onClose();else{setError(saved.refusal.message);setPreview(undefined);}}

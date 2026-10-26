@@ -4,6 +4,7 @@ import {Alert,Button,Checkbox,CheckboxGroup,Dropzone,ErrorState,Field,Input,Page
 import type {WorkspaceAdministration} from '@/ports/workspace-management';
 import {WORKSPACE_TEMPLATE_FONTS,WORKSPACE_TEMPLATE_PRESETS,type WorkspaceTemplateConfiguration,type WorkspaceTemplateInput} from '@/domain/workspace-templates';
 import {useAdministrationQuery} from '@/state';
+import {useWorkspaceForm} from './workspace-form-guard';
 import {inputProps} from './field-props';
 
 const PRESETS={editorial:'Editorial',photo:'Fotografia',night:'Escuro',paper:'Pauta',minimal:'Minimalista'};
@@ -15,6 +16,7 @@ export function WorkspaceBrand({port,workspaceId,name}:{port:WorkspaceAdministra
 function BrandForm({port,initial,name,reload}:{port:WorkspaceAdministration;initial:WorkspaceTemplateConfiguration;name:string;reload:()=>void}){
   const [base,setBase]=useState(initial),[draft,setDraft]=useState<WorkspaceTemplateInput>(initial.active?.config??{publication:name,presets:['editorial'],defaultPreset:'editorial',font:'Inter'});
   const [busy,setBusy]=useState(false),[error,setError]=useState<string>(),[notice,setNotice]=useState<string>();
+  useWorkspaceForm(JSON.stringify(draft)!==JSON.stringify(base.active?.config??{publication:name,presets:['editorial'],defaultPreset:'editorial',font:'Inter'}),busy);
   async function restoreLatest(){setBusy(true);const latest=await port.templates(base.workspaceId);setBusy(false);setNotice(undefined);
     if(!latest.ok){setError(latest.refusal.message);return;}setBase(latest.value);setDraft(latest.value.active?.config??{publication:name,presets:['editorial'],defaultPreset:'editorial',font:'Inter'});setError(undefined);reload();}
   async function save(){

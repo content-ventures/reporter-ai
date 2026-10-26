@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { workspaceAddress } from '../../domain/workspace-address.ts';
 import {
   AppShell,
@@ -35,7 +35,7 @@ import { SIDEBAR_COLLAPSED_KEY, usePersistentFlag } from './preference';
 import { RunOutcomeToasts } from './run-outcome-toasts';
 import {WorkspaceSwitcher} from './workspace-switcher';
 import {rememberWorkspace} from '@/state/workspace-preference';
-import {useWorkspaceHref} from '../workspace-navigation';
+import {useWorkspaceRouter as useRouter,useWorkspaceHref} from '../workspace-navigation';
 
 const LIST_FILTER: ProductionListFilter = { sort: 'updated_desc' };
 const LIST_PAGE = { page: 1, size: 50 };

@@ -1,13 +1,13 @@
 'use client';
 import {Suspense,useEffect,useState} from 'react';
-import {useSearchParams} from 'next/navigation';
+import {useRouter,useSearchParams} from 'next/navigation';
 import {AppShell,Avatar,Badge,Button,ButtonLink,EmptyState,ErrorState,FilterBar,List,ListItem,PageHeader,PageStack,Pagination,SearchField,Sidebar,SidebarAccount,SkeletonText,TopBar} from '@content-ventures/design-system/v3';
 import {Building2,LogOut} from '@content-ventures/design-system/v3/icons';
 import {workspaceAccessHref} from '@/domain/workspace-address';
 import type {WorkspaceAccess} from '@/domain/workspace-management';
 import {WorkspaceDirectoryProvider,useEntryDirectory,useWorkspaceDirectoryQuery} from '@/state/workspaces';
 import {lastWorkspace,rememberWorkspace} from '@/state/workspace-preference';
-import {authClient} from '@/lib/auth-client';
+
 import {ReporterBrand} from '@/ui/reporter-brand';
 import {roleLabel} from '@/domain/permissions';
 import {SIDEBAR_COLLAPSED_KEY,usePersistentFlag} from '@/ui/shell/preference';
@@ -15,7 +15,7 @@ import {SIDEBAR_COLLAPSED_KEY,usePersistentFlag} from '@/ui/shell/preference';
 const workspaceDestination=(item:WorkspaceAccess)=>workspaceAccessHref(item);
 export function WorkspaceSelectionScreen(){return<WorkspaceDirectoryProvider><Suspense fallback={<SkeletonText lines={3}/>}><SelectionView/></Suspense></WorkspaceDirectoryProvider>;}
 function SelectionView(){
-  const port=useEntryDirectory(),params=useSearchParams(),[search,setSearch]=useState(''),[page,setPage]=useState(1);
+  const router=useRouter(),port=useEntryDirectory(),params=useSearchParams(),[search,setSearch]=useState(''),[page,setPage]=useState(1);
   const query=useWorkspaceDirectoryQuery(port,{search,limit:20,offset:(page-1)*20}),data=query.data,entry=params.get('entry')==='1';
   useEffect(()=>{
     if(!entry||search||page!==1||!data?.account)return;
@@ -35,7 +35,7 @@ function SelectionView(){
   const empty=<EmptyState title={search?'Nenhum workspace encontrado':'Nenhum workspace liberado'} actions={search?<Button onClick={()=>{setSearch('');setPage(1);}}>Limpar busca</Button>:<ButtonLink href="/auth/pending">Consultar meu acesso</ButtonLink>}/>;
   return<AppShell layout="auto" collapsed={collapsed} sidebar={<Sidebar label="Menu de workspaces" product={<ReporterBrand endorsed/>} groups={[]}
     utilities={data?.administrative?[{id:'platform',label:'Plataforma',icon:Building2,href:'/platform'}]:[]}
-    account={account?<SidebarAccount name={account.name} src={account.avatarUrl} detail="Sua conta" sections={[{items:[{label:'Sair',icon:LogOut,onSelect:()=>{void authClient.signOut().finally(()=>window.location.replace('/auth/sign-in'));}}]}]}/>:undefined}/>}
+    account={account?<SidebarAccount name={account.name} src={account.avatarUrl} detail="Sua conta" sections={[{items:[{label:'Sair',icon:LogOut,onSelect:()=>{router.push('/auth/sign-out');}}]}]}/>:undefined}/>}
     topbar={<TopBar breadcrumb={[{label:'Workspaces'}]} onToggleSidebar={()=>setCollapsed(!collapsed)}/> }>
     <PageHeader title="Escolher workspace" actions={<Button disabled={query.loading} onClick={query.retry}>Atualizar acessos</Button>}/>
     <FilterBar filters={false} search={<SearchField label="Buscar workspace" value={search} placeholder="Cliente ou endereço" onValueChange={value=>{setSearch(value);setPage(1);}}/>}/>

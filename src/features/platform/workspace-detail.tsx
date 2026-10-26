@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 import {useState} from 'react';
 import {AccessState,Alert,Badge,Button,ButtonLink,ConfirmDialog,DescriptionList,ErrorState,Field,Input,List,ListItem,PageHeader,PageStack,Section,SkeletonText} from '@content-ventures/design-system/v3';
 import type {WorkspaceAdministration} from '@/ports/workspace-management';
@@ -10,6 +11,7 @@ import {WORKSPACE_STATUS_LABELS} from './workspaces-screen';
 import {WorkspaceBrand} from './workspace-brand';
 import {WorkspaceTeam} from './workspace-team';
 import {WorkspaceAutomation} from './workspace-automation';
+import {WorkspaceFormGuard,useWorkspaceForm} from './workspace-form-guard';
 import {WorkspaceCopy} from './workspace-copy';
 
 export function WorkspaceDetailScreen({workspaceId}:{workspaceId:string}){
@@ -23,19 +25,20 @@ export function ClientAdministrationScreen(){
   return<WorkspaceDetail key={session.data.workspace.id} port={port} workspaceId={session.data.workspace.id}/>;
 }
 function WorkspaceDetail({port,workspaceId}:{port:WorkspaceAdministration;workspaceId:string}){
+  const workspaceHrefFor = useWorkspaceHref();
   const query=useAdministrationQuery(port,`workspace:${workspaceId}`,admin=>admin.get(workspaceId));
   const [copy,setCopy]=useState(false);
   if(query.error)return<ErrorState heading="h1" title="Workspace indisponível" description={query.error.message} onRetry={query.retry}/>;
   const workspace=query.data;if(!workspace)return<SkeletonText lines={4}/>;
   const path=(value:string)=>workspacePagePath(workspace.slug,value),editable=workspace.status==='draft'||workspace.status==='active';
   const labels:Record<WorkspaceRequirement,string>={editorial_map:'Mapa editorial',writing_guide:'Guia de escrita',templates:'Modelos e marca',editor:'Editor ativo',approver:'Aprovador ativo'};
-  return<>
+  return<WorkspaceFormGuard>
     <PageHeader title={workspace.name} status={<Badge tone={workspace.status==='active'?'green':'gray'}>{WORKSPACE_STATUS_LABELS[workspace.status]}</Badge>}
-      actions={editable?<ButtonLink href={path('/')} variant="primary">Abrir workspace</ButtonLink>:undefined}/>
+      actions={editable?<ButtonLink href={workspaceHrefFor(path('/'))} variant="primary">Abrir workspace</ButtonLink>:undefined}/>
     <PageStack>
       <Section title="Prontidão para gerar" titleAs="h2" variant="panel" action={<Button size="sm" aria-label="Reavaliar configuração" onClick={query.retry}>Reavaliar</Button>}>
         <List label="Requisitos para geração" framed={false}>{Object.entries(labels).map(([key,label])=><ListItem key={key} title={label}
-          href={editable&&(key==='editorial_map'||key==='writing_guide')?path(`/settings/${key==='editorial_map'?'editorial-map':'writing-guide'}`):undefined}
+          href={workspaceHrefFor(editable&&(key==='editorial_map'||key==='writing_guide')?path(`/settings/${key==='editorial_map'?'editorial-map':'writing-guide'}`):undefined)}
           trailing={<Badge variant="text" tone={workspace.readiness.missing.includes(key as WorkspaceRequirement)?'orange':'green'}>{workspace.readiness.missing.includes(key as WorkspaceRequirement)?'Pendente':'Pronto'}</Badge>}/>)}</List>
         {port.global&&editable?<Button size="sm" onClick={()=>setCopy(true)}>Copiar configuração</Button>:null}
       </Section>
@@ -43,10 +46,11 @@ function WorkspaceDetail({port,workspaceId}:{port:WorkspaceAdministration;worksp
       {editable?<><WorkspaceBrand port={port} workspaceId={workspace.id} name={workspace.name}/><WorkspaceTeam port={port} workspaceId={workspace.id}/>{port.global?<WorkspaceAutomation port={port} workspaceId={workspace.id}/>:null}</>:<Alert tone="info" title={workspace.status==='archiving'?'Aguardando o processamento terminar':'Workspace arquivado'}>O histórico permanece guardado. Reative o workspace para voltar a operar.</Alert>}
     </PageStack>
     {copy?<WorkspaceCopy port={port} target={workspace} onClose={()=>setCopy(false)}/>:null}
-  </>;
+  </WorkspaceFormGuard>;
 }
 function WorkspaceIdentity({port,workspace,reload}:{port:WorkspaceAdministration;workspace:ManagedWorkspace;reload:()=>void}){
   const [name,setName]=useState(workspace.name),[revision,setRevision]=useState(workspace.revision),[busy,setBusy]=useState(false),[error,setError]=useState<string>(),[confirm,setConfirm]=useState(false);
+  useWorkspaceForm(name!==workspace.name,busy);
   async function update(status:'draft'|'active'|'archived',baseRevision=revision){
     setBusy(true);setError(undefined);const saved=await port.update({workspaceId:workspace.id,name,status,revision:baseRevision});setBusy(false);setConfirm(false);
     if(saved.ok){setRevision(saved.value.revision);setName(saved.value.name);}else setError(saved.refusal.message);

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, use, useEffect, useState, type ReactNode } from 'react';
+import { createContext, use, useEffect,useRef, useState, type ReactNode } from 'react';
 import type { PlatformRefusal } from '../domain/platform.ts';
 import type { UsagePeriod, UsageReport } from '../domain/platform-usage.ts';
 import type { Result } from '../domain/result.ts';
@@ -28,6 +28,8 @@ function browserStorage() {
 
 export function PlatformProvider({ children }: { children: ReactNode }) {
   const [runtime] = useState(() => createPlatformRuntime({ demo: DEMO, storage: browserStorage() }));
+  const release=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+  useEffect(()=>{clearTimeout(release.current);return()=>{release.current=setTimeout(()=>runtime.dispose?.(),0);};},[runtime]);
   return <PlatformContext value={runtime}>{children}</PlatformContext>;
 }
 

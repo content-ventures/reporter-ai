@@ -4,7 +4,7 @@ import { useCallback, useMemo, type MouseEvent, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, Badge, Sidebar, SidebarAccount, ThemeV3, TopBar, type NavGroup, type NavItem } from '@content-ventures/design-system/v3';
 import { ArrowUpRight, ChartNoAxesColumn, LayoutDashboard, LogOut, ScrollText, Users,Building2 } from '@content-ventures/design-system/v3/icons';
-import { authClient } from '@/lib/auth-client';
+import {requestLeave} from '@/ui/shell/leave-guard';
 import { usePlatform, usePlatformDirectory, usePlatformOperator,usePlatformAdministration,useAdministrationQuery } from '@/state';
 import { ReporterBrand } from '@/ui/reporter-brand';
 import { useClientLinks } from '@/ui/shell/client-links';
@@ -34,7 +34,7 @@ function OperatorAccount() {
         name={operator.name}
         src={operator.avatarUrl}
         detail="Operador da plataforma"
-        sections={demo ? [] : [{ label: 'Conta', items: [{ label: 'Sair', icon: LogOut, onSelect: () => { void authClient.signOut().finally(() => router.replace('/auth/sign-in')); } }] }]}
+        sections={demo ? [] : [{ label: 'Conta', items: [{ label: 'Sair', icon: LogOut, onSelect: () => { if(requestLeave('/auth/sign-out'))router.push('/auth/sign-out'); } }] }]}
       />
     </ThemeV3>
   );
@@ -69,7 +69,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
     const href = PAGES.find((item) => item.id === id)?.href;
     if (!href || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    router.push(href);
+    if(requestLeave(href))router.push(href);
   }, [router]);
 
   const crumbs = page.id === 'overview' ? [{ label: 'Plataforma' }] : [{ label: 'Plataforma', href: PLATFORM_HREF },
