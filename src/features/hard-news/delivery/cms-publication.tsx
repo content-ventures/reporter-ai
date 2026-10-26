@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
 import {
@@ -44,6 +45,7 @@ export function CmsPublication({ productionId, title, lead, version, owner }: {
   version: number;
   owner: string;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { state, actions } = useHardNews();
   const canDeliver = useCan('delivery.record');
   const cms = state.cms;
@@ -78,7 +80,7 @@ export function CmsPublication({ productionId, title, lead, version, owner }: {
     return (
       <Panel label="Portal">
         <Section title="Portal" action={<DemoBadge />}>
-          <Alert tone="info" title="CMS não conectado" action={<ButtonLink href="/admin/integrations" size="sm">Conectar</ButtonLink>} />
+          <Alert tone="info" title="CMS não conectado" action={<ButtonLink href={workspaceHrefFor("/admin/integrations")} size="sm">Conectar</ButtonLink>} />
         </Section>
       </Panel>
     );
@@ -95,7 +97,7 @@ export function CmsPublication({ productionId, title, lead, version, owner }: {
           <Alert
             tone={outdated ? 'warning' : 'success'}
             title={outdated ? `O CMS tem a v${delivery.sentVersion}; a aprovada agora é a v${version}` : `${CMS_MODE_LABELS[cms.mode]} criado no CMS`}
-            action={delivery.url ? <TextLink href={delivery.url} target="_blank" rel="noreferrer">Abrir no CMS</TextLink> : undefined}
+            action={delivery.url ? <TextLink href={workspaceHrefFor(delivery.url)} target="_blank" rel="noreferrer">Abrir no CMS</TextLink> : undefined}
           >
             <MetaList size="sm" items={[`Post ${delivery.remoteId}`, `v${delivery.sentVersion}`, delivery.sentAt ? formatRelative(new Date(delivery.sentAt)) : null]} />
           </Alert>

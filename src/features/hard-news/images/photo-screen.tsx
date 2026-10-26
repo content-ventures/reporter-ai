@@ -1,8 +1,10 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useId, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   Badge,
   BrandMark,
@@ -85,6 +87,7 @@ function themeHref(tag: string): string {
  * to the archive; an archive photo goes into an article only when credited and cleared (REQ-2.9).
  */
 export function PhotoScreen({ search = '' }: { search?: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { id } = useParams<{ id: string }>();
   const key = decoded(id);
   const { images: archive, ready, save, editable } = useArchive();
@@ -109,7 +112,7 @@ export function PhotoScreen({ search = '' }: { search?: string }) {
         size="page"
         heading="h1"
         title="Foto não encontrada"
-        actions={<ButtonLink href={back}>Voltar para Imagens</ButtonLink>}
+        actions={<ButtonLink href={workspaceHrefFor(back)}>Voltar para Imagens</ButtonLink>}
       />
     );
   }
@@ -124,6 +127,7 @@ function PhotoPage({ photo, archive, search, save, editable }: {
   /** Credit and license can change here (R1 keeps a library photo's as the bank gave them). */
   editable: boolean;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const router = useRouter();
   const noteId = useId();
   const [editing, setEditing] = useState<{ open: boolean; session: number }>();
@@ -178,7 +182,7 @@ function PhotoPage({ photo, archive, search, save, editable }: {
     <>
       <Button variant="primary" icon={ImagePlus} onClick={() => void saveToArchive()}>Salvar no acervo</Button>
       {photo.sourceUrl ? (
-        <ButtonLink href={photo.sourceUrl} target="_blank" rel="noopener noreferrer" trailingIcon={ExternalLink}>{`Ver no ${bankName}`}</ButtonLink>
+        <ButtonLink href={workspaceHrefFor(photo.sourceUrl)} target="_blank" rel="noopener noreferrer" trailingIcon={ExternalLink}>{`Ver no ${bankName}`}</ButtonLink>
       ) : null}
     </>
   ) : state === 'ready' ? (
@@ -209,7 +213,7 @@ function PhotoPage({ photo, archive, search, save, editable }: {
           aside={<PhotoFacts photo={photo} />}
         />
         {similar.length > 0 ? (
-          <Section title="Imagens parecidas" action={<TextLink href={themeHref(photo.tags[0] ?? photo.title)}>Ver todas</TextLink>}>
+          <Section title="Imagens parecidas" action={<TextLink href={workspaceHrefFor(themeHref(photo.tags[0] ?? photo.title))}>Ver todas</TextLink>}>
             <PhotoMosaic photos={similar} search={search} label="Imagens parecidas" />
           </Section>
         ) : null}
@@ -238,12 +242,13 @@ function PhotoPage({ photo, archive, search, save, editable }: {
 
 /** The side panel: author, license and credit, details and themes. */
 function PhotoFacts({ photo }: { photo: Photo }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const image = photo.image;
   const provider = providerOf(photo);
   const bankName = provider ? SOURCE_LABELS[provider] : undefined;
   const credit = photo.credit.trim();
   const license = provider && photo.licenseUrl && licenseLabel(photo) === BANK_LICENSES[provider].label
-    ? <TextLink external href={photo.licenseUrl}>{licenseLabel(photo)}</TextLink>
+    ? <TextLink external href={workspaceHrefFor(photo.licenseUrl)}>{licenseLabel(photo)}</TextLink>
     : licenseLabel(photo);
   const details: DescriptionItem[] = [
     { label: 'Fonte', value: bankName ?? SOURCE_LABELS.own, leading: <BrandMark name={markName(photo)} size="xs" variant="soft" decorative /> },
@@ -262,7 +267,7 @@ function PhotoFacts({ photo }: { photo: Photo }) {
           leading={<PhotoAuthorMark photo={photo} size="md" />}
           title={photo.creator ?? PORTAL_NAME}
           description={photo.creator && photo.creatorUrl && bankName
-            ? <TextLink external tone="quiet" href={photo.creatorUrl}>{`Perfil no ${bankName}`}</TextLink>
+            ? <TextLink external tone="quiet" href={workspaceHrefFor(photo.creatorUrl)}>{`Perfil no ${bankName}`}</TextLink>
             : SOURCE_LABELS.own}
         />
       </Section>
@@ -280,7 +285,7 @@ function PhotoFacts({ photo }: { photo: Photo }) {
       </Section>
       {photo.tags.length > 0 ? (
         <Section title="Temas">
-          <MetaList items={photo.tags.map((tag) => <TextLink key={tag} tone="text" href={themeHref(tag)}>{tag}</TextLink>)} />
+          <MetaList items={photo.tags.map((tag) => <TextLink key={tag} tone="text" href={workspaceHrefFor(themeHref(tag))}>{tag}</TextLink>)} />
         </Section>
       ) : null}
     </Panel>

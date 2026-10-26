@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -134,6 +135,7 @@ export function HealthTray({ checks }: { checks: HealthCheck[] }) {
 }
 
 function CheckCard({ check }: { check: HealthCheck }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const state = CHECK_STATE[check.state];
   const card = (
     <Card padding="md">
@@ -152,7 +154,7 @@ function CheckCard({ check }: { check: HealthCheck }) {
     <AttachedNote
       tone={check.state === 'error' ? 'red' : 'amber'}
       icon={check.state === 'error' ? XCircle : AlertTriangle}
-      note={<>{check.detail} {check.fix && anchor ? <TextLink href={`#${anchor}`} size="sm" tone="inherit">{check.fix}</TextLink> : null}</>}
+      note={<>{check.detail} {check.fix && anchor ? <TextLink href={workspaceHrefFor(`#${anchor}`)} size="sm" tone="inherit">{check.fix}</TextLink> : null}</>}
     >
       {card}
     </AttachedNote>
@@ -226,6 +228,7 @@ export function ActivityPanel({ entries, name, empty = 'Nada passou por aqui ain
  * path on the site typed appears once the address is valid).
  */
 export function GuideSteps({ guide, values, name }: { guide: ConnectGuide; values: FieldValues; name: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   return (
     <Timeline
       variant="steps"
@@ -237,7 +240,7 @@ export function GuideSteps({ guide, values, name }: { guide: ConnectGuide; value
           title: step.title,
           description: step.detail,
           state: 'upcoming' as const,
-          extra: href && step.link ? <TextLink href={href} size="sm" external>{step.link.label}</TextLink> : undefined,
+          extra: href && step.link ? <TextLink href={workspaceHrefFor(href)} size="sm" external>{step.link.label}</TextLink> : undefined,
         };
       })}
     />

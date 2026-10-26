@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
 import {usePathname} from 'next/navigation';
@@ -73,6 +74,7 @@ function shownFormat(format: CarouselFormatId): CarouselFormatId | null {
 }
 
 function ModelsGallery({ params, setParams }: { params: LibraryParams; setParams: SetLibraryParams }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const phone = usePhone();
   const { runtime, status, templates, samplePhoto, standard,workspaceSlug } = useLibrary();
   // What is on screen answers each keystroke; the address follows (a shared link opens the same view).
@@ -103,7 +105,7 @@ function ModelsGallery({ params, setParams }: { params: LibraryParams; setParams
           <ModelCard
             key={template.id}
             template={template}
-            href={modelHref(shown, template.id,workspaceSlug)}
+            href={workspaceHrefFor(modelHref(shown, template.id,workspaceSlug))}
             articleCover={template.previewPhoto ?? samplePhoto}
             isDefault={template.id === standard}
             compact={phone}
@@ -225,6 +227,7 @@ function ShelvesSkeleton({ format, ratio, compact }: { format: CarouselFormatId;
 
 /** `?model=`: the model's page once the library is in, or why it is not there. */
 function ModelPage({ params }: { params: LibraryParams }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { runtime, status, templates, samplePhoto, standard,workspaceSlug } = useLibrary();
   const template = templates.find((entry) => entry.id === params.model);
   const shown = { format: params.format ?? (template ? shownFormat(template.format) : null), query: params.query };
@@ -244,7 +247,7 @@ function ModelPage({ params }: { params: LibraryParams }) {
     );
   }
   if (!template) {
-    return <EmptyState icon={SearchX} size="page" heading="h1" title="Modelo não encontrado" actions={<ButtonLink href={back}>Ver modelos</ButtonLink>} />;
+    return <EmptyState icon={SearchX} size="page" heading="h1" title="Modelo não encontrado" actions={<ButtonLink href={workspaceHrefFor(back)}>Ver modelos</ButtonLink>} />;
   }
   return (
     <ModelView
