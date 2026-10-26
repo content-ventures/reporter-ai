@@ -1,7 +1,8 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { Button, ButtonLink, TextLink } from '@content-ventures/design-system/v3';
 import type { DeskItem, InProgressItem } from '@/ports';
 import { useCommands } from '@/state';
@@ -50,6 +51,7 @@ function RetryButton({ item, label }: { item: DeskItem & { pieceId: NonNullable<
 
 /** Button of a "Precisa de você" row; nothing for "Aguardando outra pessoa" (no move of the viewer's). */
 export function DeskAction({ item }: { item: DeskItem }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const step = item.nextStep;
   if (!step) return null;
   if (step.kind === 'retry' && item.kind === 'article' && item.pieceId) {
@@ -59,7 +61,7 @@ export function DeskAction({ item }: { item: DeskItem }) {
     <ButtonLink
       variant="secondary"
       size="sm"
-      href={stepTargetHref(item.productionId, step.target)}
+      href={workspaceHrefFor(stepTargetHref(item.productionId, step.target))}
       aria-label={nameOf(step.label, item.productionTitle, item.pieceLabel)}
     >
       {step.label}
@@ -69,11 +71,12 @@ export function DeskAction({ item }: { item: DeskItem }) {
 
 /** Quiet text link of an "Em andamento" / "Equipe" row: "Continuar", "Abrir", "Reenviar"… */
 export function ProgressAction({ item }: { item: InProgressItem }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const step = item.nextStep;
   const label = step?.label ?? 'Abrir';
   const href = step ? stepTargetHref(item.productionId, step.target) : productionHref(item.productionId);
   return (
-    <TextLink size="sm" href={href} aria-label={nameOf(label, item.productionTitle)}>
+    <TextLink size="sm" href={workspaceHrefFor(href)} aria-label={nameOf(label, item.productionTitle)}>
       {label}
     </TextLink>
   );

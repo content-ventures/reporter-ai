@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
 import { Alert, Avatar, Badge, Button,ButtonLink, Checkbox, CheckboxGroup,Combobox, ConfirmDialog, DescriptionList, Drawer,Field, MetricStrip, PageStack,Panel, Section,List,ListItem } from '@content-ventures/design-system/v3';
@@ -19,6 +20,7 @@ type Confirm = 'suspend' | 'restore' | null;
  * can do now (release a sign-up, a new link, suspend, restore). The operator's own row is read-only.
  */
 export function PersonDrawer({ person: open, usage, onClose }: { person: PlatformPerson | undefined; usage: PersonUsage | undefined; onClose: () => void }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const platform = usePlatform();
   const operatorId=usePlatformOperator().data?.id;
   const administration=usePlatformAdministration();
@@ -113,7 +115,7 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
             <List label="Vínculos desta pessoa" framed={false} empty="Esta conta ainda não tem vínculos.">{person.memberships?.map(link=><ListItem key={link.id} title={link.workspace.name}
               description={`${rolesLabel(link.roles)} · ${link.status==='active'?'Ativo':link.status==='invited'?'Convidado':'Suspenso'}`}
               onClick={!self&&administration?()=>setMembership({...link,name:person.name,email:person.email,avatarUrl:person.avatarUrl,accountSuspended:person.accountStatus==='suspended'}):undefined}
-              trailing={<ButtonLink size="sm" href={workspaceManagementHref(link.workspace.id)}>Administrar</ButtonLink>}/>)}</List>
+              trailing={<ButtonLink size="sm" href={workspaceHrefFor(workspaceManagementHref(link.workspace.id))}>Administrar</ButtonLink>}/>)}</List>
           </Section>:null}
           {usage ? (
             <Section title="Últimos 30 dias" titleAs="h3">

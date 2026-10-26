@@ -1,6 +1,7 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { DataTable, EmptyState, ErrorState, MetaList, Panel, Section, TextLink, type Column } from '@content-ventures/design-system/v3';
 import type { ProductionListItem } from '@/ports';
 import { useProductions } from '@/state';
@@ -17,7 +18,7 @@ const columns: Column<ProductionListItem>[] = [
     key: 'production',
     header: 'Produção',
     pinned: true,
-    render: (item) => <TextLink href={rowHref(item)} tone="inherit">{item.title}</TextLink>,
+    render: (item) => <RecentTitle item={item} />,
   },
   {
     key: 'owner',
@@ -31,13 +32,19 @@ const columns: Column<ProductionListItem>[] = [
   { key: 'next', header: 'Próximo passo', width: 120, skeleton: 'short', render: (item) => <NextStepCell item={item} /> },
 ];
 
+function RecentTitle({item}:{item:ProductionListItem}){
+  const href=useWorkspaceHref();
+  return <TextLink href={href(rowHref(item))} tone="inherit">{item.title}</TextLink>;
+}
+
 /** The five productions touched last, from the productions list; the rest is behind "Ver todas". */
 export function RecentProductions() {
+  const workspaceHrefFor = useWorkspaceHref();
   const query = useProductions(FILTER, PAGE);
   const router = useRouter();
   return (
     <Panel>
-      <Section title={TITLE} action={<TextLink size="sm" href={PRODUCTIONS_HREF}>Ver todas</TextLink>}>
+      <Section title={TITLE} action={<TextLink size="sm" href={workspaceHrefFor(PRODUCTIONS_HREF)}>Ver todas</TextLink>}>
         <DataTable
           label={TITLE}
           rows={query.data?.items ?? []}

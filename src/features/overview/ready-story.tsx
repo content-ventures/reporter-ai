@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { EditableTitle, MediaFrame, MetaList, PageStack, Panel, Prose, Section, TextLink } from '@content-ventures/design-system/v3';
 import type { InProgressItem } from '@/ports';
@@ -25,9 +26,10 @@ export function ReadyStory({ item }: { item: InProgressItem }) {
 }
 
 function StoryActions({ item }: { item: InProgressItem }) {
+  const workspaceHrefFor = useWorkspaceHref();
   return (
     <MetaList items={[
-      <TextLink key="read" size="sm" href={`${deliveryHref(item.productionId)}?view=article`}>Ler artigo</TextLink>,
+      <TextLink key="read" size="sm" href={workspaceHrefFor(`${deliveryHref(item.productionId)}?view=article`)}>Ler artigo</TextLink>,
       <ProgressAction key="next" item={item} />,
     ]} />
   );

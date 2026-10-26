@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import type { ReactElement, ReactNode } from 'react';
 import { Banner, LinkButton, TextLink } from '@content-ventures/design-system/v3';
@@ -41,9 +42,10 @@ const ICONS: Partial<Record<BannerKind, LucideIcon>> = {
 };
 
 function Verb({ action }: { action: BannerAction }) {
+  const workspaceHrefFor = useWorkspaceHref();
   if (action.href && !action.loading) {
     return (
-      <TextLink href={action.href} size="sm" tone="inherit">
+      <TextLink href={workspaceHrefFor(action.href)} size="sm" tone="inherit">
         {action.label}
       </TextLink>
     );

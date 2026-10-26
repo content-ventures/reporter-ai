@@ -1,7 +1,9 @@
 "use client";
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   AccessState, Accordion, Alert, Badge, Button, ButtonGroup, ButtonLink, ConfirmDialog, DescriptionList, Drawer, EmptyState, ErrorState, Field, FieldGroup,
   MetaList, PageHeader, PageStack, Panel, Prose, ResponsiveDialog, Section, Select, Tabs, Timeline, focusField, toast,
@@ -43,6 +45,7 @@ export function PipelineScreen() {
 }
 
 function PipelineConfig() {
+  const workspaceHrefFor = useWorkspaceHref();
   const { runtime,error: runtimeError } = useRuntime();
   const port = runtime?.pipeline;
   const router = useRouter();
@@ -60,7 +63,7 @@ function PipelineConfig() {
     if (nextTab !== 'workers') query.set('tab', nextTab);
     if (nextWorker) query.set('worker', nextWorker);
     const href = query.size ? `/config?${query}` : '/config';
-    if (href !== `${window.location.pathname}${window.location.search}`) window.history.pushState(null, '', href);
+    if (href !== `${window.location.pathname}${window.location.search}`) window.history.pushState(null, '', workspaceHrefFor(href));
   }
   useBreadcrumb(currentWorker
     ? [{ label: 'Prompts', href: '/config' }, { label: currentWorker.title }]
@@ -209,7 +212,7 @@ function PipelineConfig() {
           <Panel><Section title="Usar e acompanhar">
             <PageStack>
               <Prose variant="compact" measure="wide">Salve e ative a configuração, depois gere um artigo a partir do conteúdo de uma produção. A aba Execuções mostra os prompts enviados, as respostas, o consumo de tokens e as falhas de cada etapa.</Prose>
-              <ButtonGroup label="Usar a redação"><ButtonLink href={NEW_PRODUCTION_HREF} variant="primary">Criar produção</ButtonLink><Button onClick={() => navigate('runs')}>Ver execuções</Button></ButtonGroup>
+              <ButtonGroup label="Usar a redação"><ButtonLink href={workspaceHrefFor(NEW_PRODUCTION_HREF)} variant="primary">Criar produção</ButtonLink><Button onClick={() => navigate('runs')}>Ver execuções</Button></ButtonGroup>
             </PageStack>
           </Section></Panel>
         </>}
@@ -265,6 +268,7 @@ function PipelineConfig() {
 function WritingRunInspector({ runId, onClose, onSelect, onRefresh }: {
   runId: string; onClose: () => void; onSelect: (runId: string) => void; onRefresh: () => Promise<void>;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { runtime } = useRuntime();
   const port = runtime?.pipeline;
   const narrow = useMediaQuery('(max-width: 640px)');
@@ -318,7 +322,7 @@ function WritingRunInspector({ runId, onClose, onSelect, onRefresh }: {
       {port?.getWritingRun && !run && !failure && <DescriptionList items={[]} loading />}
       {run && <>
         <ButtonGroup label="Gerenciar execução">
-          <ButtonLink href={pieceHref(run.productionId, 'article')}>Abrir artigo</ButtonLink>
+          <ButtonLink href={workspaceHrefFor(pieceHref(run.productionId, 'article'))}>Abrir artigo</ButtonLink>
           {running && <Button disabled={Boolean(action)} loading={action === 'cancel'} onClick={() => void manage('cancel')}>Cancelar execução</Button>}
           {retryable && <Button disabled={Boolean(action)} loading={action === 'retry'} onClick={() => void manage('retry')}>Nova tentativa</Button>}
         </ButtonGroup>

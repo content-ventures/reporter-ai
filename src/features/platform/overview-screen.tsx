@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
 import { Avatar, Banner, ButtonLink, EmptyState, Grid, List, ListItem, ListItemSkeleton, MetaList, PageHeader, PageStack, Section, TextLink } from '@content-ventures/design-system/v3';
@@ -18,6 +19,7 @@ const personHref = (person: Pick<PlatformPerson, 'id'>) => `${PEOPLE_HREF}?perso
  * the one thing that asks for action, so they open the page.
  */
 export function OverviewScreen() {
+  const workspaceHrefFor = useWorkspaceHref();
   const [period, setPeriod] = useState<UsagePeriod>(DEFAULT_USAGE_PERIOD);
   const usage = usePlatformUsage(period);
   const directory = usePlatformDirectory();
@@ -32,14 +34,14 @@ export function OverviewScreen() {
 
   return (
     <>
-      <PageHeader title="Visão geral" actions={<ButtonLink href={`${PEOPLE_HREF}?new=1`} variant="primary" icon={UserPlus}>Novo acesso</ButtonLink>} />
+      <PageHeader title="Visão geral" actions={<ButtonLink href={workspaceHrefFor(`${PEOPLE_HREF}?new=1`)} variant="primary" icon={UserPlus}>Novo acesso</ButtonLink>} />
       <PageStack>
         {waitingCount > 0 ? (
           <Banner
             variant="inline"
             tone="warning"
             title={waitingCount === 1&&waiting[0] ? `${waiting[0].name} aguarda liberação` : `${plural(waitingCount, 'cadastro aguarda', 'cadastros aguardam')} liberação`}
-            action={<ButtonLink size="sm" href={waitingCount === 1&&waiting[0] ? personHref(waiting[0]) : PEOPLE_HREF}>Revisar</ButtonLink>}
+            action={<ButtonLink size="sm" href={workspaceHrefFor(waitingCount === 1&&waiting[0] ? personHref(waiting[0]) : PEOPLE_HREF)}>Revisar</ButtonLink>}
           />
         ) : null}
         <UsageStrip report={report} period={period} loading={usage.status === 'loading'} />
@@ -48,14 +50,14 @@ export function OverviewScreen() {
           <ModelShare report={report} />
         </Grid>
         <Grid columns="1:1">
-          <Section title="Quem mais usou" titleAs="h2" variant="panel" action={<TextLink href={USAGE_HREF}>Ver uso</TextLink>}>
+          <Section title="Quem mais usou" titleAs="h2" variant="panel" action={<TextLink href={workspaceHrefFor(USAGE_HREF)}>Ver uso</TextLink>}>
             <List label="Quem mais usou" framed={false} bleed empty={<EmptyState size="inline" title="Sem uso no período" />}>
               {!report ? [0, 1, 2].map((index) => <ListItemSkeleton key={index} />) : top.map((entry) => {
                 const person = byId.get(entry.personId) as PlatformPerson;
                 return (
                   <ListItem
                     key={entry.personId}
-                    href={personHref(person)}
+                    href={workspaceHrefFor(personHref(person))}
                     leading={<Avatar name={person.name} src={person.avatarUrl} size="sm" decorative />}
                     title={person.name}
                     description={<MetaList size="sm" wrap={false} items={[plural(entry.generations, 'geração', 'gerações'), plural(entry.productions, 'produção', 'produções'), `${formatCompact(entry.tokens)} tokens`]} />}
@@ -65,7 +67,7 @@ export function OverviewScreen() {
               })}
             </List>
           </Section>
-          <Section title="Últimas ações" titleAs="h2" variant="panel" action={<TextLink href={LOG_HREF}>Ver registro</TextLink>}>
+          <Section title="Últimas ações" titleAs="h2" variant="panel" action={<TextLink href={workspaceHrefFor(LOG_HREF)}>Ver registro</TextLink>}>
             <List label="Últimas ações" framed={false} bleed empty={<EmptyState size="inline" icon={ScrollText} title="Nenhuma ação ainda" />}>
               {!log.data ? [0, 1, 2].map((index) => <ListItemSkeleton key={index} />) : log.data.items.map((entry) => (
                 <ListItem

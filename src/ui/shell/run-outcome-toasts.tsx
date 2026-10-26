@@ -1,6 +1,7 @@
 'use client';
 
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { toast } from '@content-ventures/design-system/v3';
 import type { PieceKind } from '@/domain';
 import type { GenerationKind, ProductionListItem, RunUpdate } from '@/ports';

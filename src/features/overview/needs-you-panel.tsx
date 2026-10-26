@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import {
   EmptyState,
@@ -76,12 +77,13 @@ function QueueList({ groups, now }: { groups: readonly DeskGroup[]; now: Date | 
 }
 
 function MyQueue({ desk, now }: { desk: DeskView; now: Date | undefined }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const groups = desk.groups.filter(group => group.id !== 'waiting_other');
   return (
     <PageStack>
       {desk.needsYou === 0 && <EmptyState size="inline" icon={CheckCircle2} title="Nada esperando você" />}
       {groups.length > 0 && <QueueList groups={groups.map(group => ({ ...group, items: group.items.slice(0, 3) }))} now={now} />}
-      {groups.some(group => group.items.length > 3) && <TextLink href={PRODUCTIONS_HREF} size="sm">Ver todas as pendências</TextLink>}
+      {groups.some(group => group.items.length > 3) && <TextLink href={workspaceHrefFor(PRODUCTIONS_HREF)} size="sm">Ver todas as pendências</TextLink>}
     </PageStack>
   );
 }
