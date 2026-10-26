@@ -8,6 +8,7 @@ import { createConnectedRuntime } from '../runtime/create-connected-runtime.ts';
 import { createRuntime } from '../runtime/create-runtime.ts';
 import { createRuntimeHolder } from './runtime-holder.ts';
 import type { RuntimeHolder } from './runtime-holder.ts';
+import { workspaceAddress } from '../domain/workspace-address.ts';
 
 /**
  * Root client provider: creates the runtime once per tab, after hydration (nothing reads
@@ -44,7 +45,7 @@ function FlushOnRouteChange({ holder }: { holder: RuntimeHolder }) {
 export function RuntimeProvider({ children }: { children: ReactNode }) {
   const [holder] = useState(() => createRuntimeHolder((options) => E2E_FIXTURES
     ? createRuntime({ ...options,typefaces: TYPEFACES })
-    : createConnectedRuntime({ typefaces: TYPEFACES })));
+    : createConnectedRuntime({ typefaces: TYPEFACES,workspaceSlug: workspaceAddress(window.location.pathname)?.slug })));
 
   useEffect(() => {
     holder.start({ reset: consumeResetParam() });

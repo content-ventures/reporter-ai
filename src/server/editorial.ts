@@ -8,6 +8,7 @@ import { createEditorialEngine, emptyEditorialCheckpoint, adoptEditorialIdentity
   assembleCheckpoint, diffRows, hasChanges, splitCheckpoint } from '../runtime/editorial-engine.ts';
 import { contentHash } from '../domain/text/hash.ts';
 import { reviseEditorialPolicy } from '../domain/editorial-policy.ts';
+import { accountAvatarSource } from '../domain/profile.ts';
 import { compactFunnels, formatPipelineDefinition, pipelineRevision, pipelineRunSteps, pipelineModelLabel, pipelineModelProvider } from '../domain/pipeline.ts';
 import { isRunActive } from '../domain/run.ts';
 import { pendingReview, latestApproved } from '../domain/record.ts';
@@ -24,7 +25,7 @@ import { workerAvailable } from './storage';
 import { IDLE_QUEUE, queueStatus } from './queue-status.ts';
 import { FlowError, forbiddenError } from './errors';
 import { activePipeline, pipelineView, parsePipelineDefinition, requiredGenerationModels } from './pipeline';
-import { assertLocalMode, providerConfigured } from './config';
+import { assertLocalMode, cloudPortalId, localContext, providerConfigured } from './config';
 import { r1ArticleIssue, articlePolicyMessage } from '../domain/article-policy.ts';
 import { articleGateFor, EDITORIAL_FORMATS, EVENT_FIELDS, EVENT_FIELD_MAX } from '../domain/formats.ts';
 import { articleGateForPiece } from '../domain/article-generation-policy.ts';
@@ -109,7 +110,7 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
     if (identity && reporterDeploymentMode() === 'cloud') {
       const members=(await client.query('SELECT public.reporter_workspace_members() AS members')).rows[0].members as EditorialIdentity[];
       checkpoint.state.members=[];
-      for(const member of members) adoptEditorialIdentity(checkpoint,member);
+      for(const member of members) adoptEditorialIdentity(checkpoint,{ ...member,avatarUrl: accountAvatarSource(member.personId,member.avatarUrl,cloudPortalId()) });
       // The cargo lives only in the members list; the session context carries name and photo.
       identity = { ...identity,title: members.find(member => member.personId === identity!.personId)?.title };
     }
@@ -117,7 +118,8 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
       // The local operator is a server constant until it edits its own profile ("Meu perfil").
       const profile = (await client.query('SELECT public.reporter_profile() AS value')).rows[0]?.value as
         { name: string; title: string | null; image: string | null; updatedAt: string | null } | null;
-      if (profile?.updatedAt) identity = { ...identity,name: profile.name,title: profile.title,avatarUrl: profile.image ?? undefined };
+      if (profile?.updatedAt) identity = { ...identity,name: profile.name,title: profile.title,
+        avatarUrl: accountAvatarSource(identity.personId,profile.image ?? undefined,localContext.portal) };
     }
     if (identity) adoptEditorialIdentity(checkpoint,identity);
     for (const job of Object.values(checkpoint.jobs)) job.events = compactRunPreviews(job.events);

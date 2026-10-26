@@ -25,7 +25,7 @@ import { handleNews, requireNewsEdit } from './news-intake.ts';
 import { discoverNewsSources } from './news-discovery.ts';
 import { decideNewsItem } from './news-decisions.ts';
 import { NEWS_MESSAGES } from '../domain/news-intake.ts';
-import { handleProfile } from './profile.ts';
+import { handleAccountAvatar, handleProfile } from './profile.ts';
 import { handleInvites, handlePlatform } from './platform.ts';
 import { driveReceived, driveRetry, handleDrive } from './drive-intake.ts';
 import { reporterDeploymentMode } from './deployment.ts';
@@ -50,6 +50,11 @@ export function guardLocalRequest(request: Request) {
 }
 
 type Identity = Awaited<ReturnType<typeof reporterIdentity>>;
+function requestedAccount(request: Request, context: ReporterRequestContext): ReporterRequestContext {
+  const expected = request.headers.get('x-reporter-account');
+  if (expected && expected !== context.actor) throw new FlowError('ACCOUNT_CONTEXT_CHANGED',409);
+  return context;
+}
 
 async function guardReporterRequest(request: Request, identify: () => Promise<Identity> = reporterIdentity, slug?: string): Promise<ReporterRequestContext> {
   const rollout = workspaceRollout();
@@ -59,9 +64,9 @@ async function guardReporterRequest(request: Request, identify: () => Promise<Id
     if (slug) {
       const context = await resolveLocalWorkspaceContext(slug);
       if (!context) throw new FlowError('WORKSPACE_NOT_FOUND',404);
-      return context;
+      return requestedAccount(request,context);
     }
-    return { ...localContext,roles: [...localContext.roles] };
+    return requestedAccount(request,{ ...localContext,roles: [...localContext.roles] });
   }
   const url = new URL(request.url);
   const origin = request.headers.get('origin');
@@ -71,7 +76,7 @@ async function guardReporterRequest(request: Request, identify: () => Promise<Id
   const context = await resolveReporterContext(identity,slug);
   if (!context) throw new FlowError(!identity.emailVerified ? 'EMAIL_NOT_VERIFIED' : slug ? 'WORKSPACE_NOT_FOUND' : 'ACCESS_PENDING',slug && identity.emailVerified ? 404 : 403);
   if (slug && rollout === 'admin' && !context.administrative) throw new FlowError('WORKSPACES_RESTRICTED',403);
-  return context;
+  return requestedAccount(request,context);
 }
 
 async function jsonBody(request: Request) {
@@ -98,6 +103,7 @@ function reply(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 }
 const messages: Record<string, string> = {
+  ACCOUNT_CONTEXT_CHANGED: 'A conta conectada mudou. Recarregue para abrir o contexto atual.',
   WORKSPACES_DISABLED: 'A navegação entre workspaces ainda não está habilitada.',
   WORKSPACES_RESTRICTED: 'A navegação está disponível apenas para o administrador da plataforma.',
   WORKSPACE_NOT_FOUND: 'Este workspace não está disponível para sua conta.',
@@ -217,11 +223,12 @@ export async function handleReporter(request: Request, path: string[], deps: { d
       selectedWorkspace = workspaceSlug(path[1] ?? '');
       if (!selectedWorkspace || path.length < 3) throw new FlowError('WORKSPACE_NOT_FOUND',404);
       path = path.slice(2);
-      if (['platform','invites','health','workspaces'].includes(path[0]) || path[0] === 'drive' && path[1] === 'sync') throw new FlowError('NOT_FOUND',404);
+      if (['platform','invites','health','workspaces','avatars'].includes(path[0]) || path[0] === 'drive' && path[1] === 'sync') throw new FlowError('NOT_FOUND',404);
     }
     // The release probe is public: booleans and versions only, no session and no database.
     if (request.method === 'GET' && path.length === 1 && path[0] === 'health') return reply(appHealth());
     if (request.method === 'GET' && path.length === 1 && path[0] === 'workspaces') return reply(await workspaceDirectory(request,{ guardLocal: guardLocalRequest,identify: deps.identify }));
+    if (path[0] === 'avatars') return await handleAccountAvatar(request,path.slice(1),{ guardLocal: guardLocalRequest,identify: deps.identify });
     // The platform console and the access link have their own guards: no workspace membership.
     if (path[0] === 'platform') return await handlePlatform(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest,identify: deps.identify });
     if (path[0] === 'invites') return await handleInvites(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest });
