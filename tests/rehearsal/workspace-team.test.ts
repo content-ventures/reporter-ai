@@ -59,7 +59,10 @@ test('a workspace administrator sees only the managed membership when linking an
 });
 
 test('global operators manage an addressed client as themselves, without gaining a membership',async()=>{
+  await owner('UPDATE core.users SET image=$2 WHERE id=$1',[editorId,`/api/reporter/profile/avatar/${'a'.repeat(64)}.image`]);
   const page=await api<{items:WorkspaceMembership[]}>('w/private-second/team');assert.equal(page.status,200,JSON.stringify(page.body));
+  const avatar=await api<{items:(WorkspaceMembership&{avatarUrl?:string})[]}>('w/private-second/team');
+  assert.ok(avatar.body.items.find(item=>item.personId===editorId)?.avatarUrl?.includes(`/avatars/${editorId}/`),'team photos use the account ID rather than the membership ID');
   const member=page.body.items.find(item=>item.personId===editorId)!;
   const changed=await api<WorkspaceMembership>(`w/private-second/team/${editorId}`,{revision:member.revision,roles:['editor']});assert.equal(changed.status,200);
   assert.deepEqual(changed.body.roles,['editor']);
