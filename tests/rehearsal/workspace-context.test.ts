@@ -10,6 +10,8 @@ import { startWorkerHost } from '../support/worker-host.ts';
 import { installFakeProviders } from '../support/fake-providers.ts';
 import type { PipelineView } from '../../src/domain/pipeline.ts';
 import type { WorkspaceProcessing } from '../../src/domain/workspace-management.ts';
+import type {WorkspaceTemplateConfiguration} from '../../src/domain/workspace-templates.ts';
+import {defaultEditorialPolicy} from '../../src/domain/editorial-policy.ts';
 import { currentWorkerContext, runWithWorkerContext } from '../../src/server/worker-context.ts';
 
 const APP='http://127.0.0.1:3997', PILOT='10000000-0000-0000-0000-000000000101';
@@ -190,9 +192,15 @@ test('two simultaneous generations retain their enqueue identity, workspace, con
     assert.equal(response.body.ok,true,JSON.stringify(response.body));return response.body.value;
   };
   const jobs:Array<{slug:string;portal:string;runId:string;productionId:string;hash:string}>=[];
+  await api('platform/invites',{name:TEAMMATE.name,email:TEAMMATE.email,role:'editor',workspaceId:second},OPERATOR);
+  const [{token_hash:editorToken}]=await owner('SELECT token_hash FROM core.access_invites WHERE portal_id=$1 AND user_id=(SELECT id FROM core.users WHERE email=$2) AND state=\'open\'',[second,TEAMMATE.email]);
+  await owner('SELECT public.reporter_invite_accept($1,$2)',[editorToken,TEAMMATE.subject]);
+  const templates=await api<WorkspaceTemplateConfiguration>('w/second-context/templates',undefined,OPERATOR);
+  assert.equal((await api('w/second-context/templates',{revision:templates.body.revision,config:{publication:'Second publication',presets:['editorial'],defaultPreset:'editorial',font:'Inter'}},OPERATOR)).status,200);
   for(const [slug,portal] of [['reporter-ai',PILOT],['second-context',second]]){
     const pipeline=await api<PipelineView>(`w/${slug}/pipeline`,undefined,OPERATOR);
     const definition=structuredClone(pipeline.body.active.definition);definition.curateQuotes=false;
+    definition.editorial=defaultEditorialPolicy();definition.editorial.map.audience=`Audience of ${slug}`;definition.editorial.guide.voice=`Voice of ${slug}`;
     const saved=await rpc<PipelineView>(slug,'pipeline.save',[definition,pipeline.body.active.revision]);
     const production=await rpc<{productionId:string}>(slug,'createFromSource',[{title:`Owned by ${slug}`,plan:['article'],brief:{sections:2,size:'standard'},
       material:{text:['A fonte confirmou um teste de rastreabilidade e explicou como os registros devem preservar a origem de cada material.',

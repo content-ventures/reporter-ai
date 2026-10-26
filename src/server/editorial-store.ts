@@ -24,13 +24,15 @@ export type EditorialScope = {
   receipt?: string;
   jobs?: boolean;
   pipelines?: false;
+  /** Client render packs are loaded only for reads or commands that use carousel checks. */
+  templates?: boolean;
 };
 
 // Identity and workspace membership are always needed; production items follow their production.
 const DEFAULT_ITEMS: Partial<Record<ItemKind, 'all' | 'production'>> = { person: 'all', member: 'all', image_asset: 'production', feedback: 'production' };
 
 /** Everything: rare commands and library reads that genuinely span the workspace. */
-export const FULL_SCOPE: EditorialScope = { productions: 'all', sources: 'all', history: true,
+export const FULL_SCOPE: EditorialScope = { productions: 'all', sources: 'all', history: true,templates:true,
   items: { person: 'all', member: 'all', image_asset: 'all', feedback: 'all', citation: 'all', fact_check: 'all', library_image: 'all', banner: 'all' } };
 
 export function loadedScope(scope: EditorialScope): LoadedScope {

@@ -146,6 +146,7 @@ export function drawSlide(
     laid: readonly LaidSlot[];
     scale: number;
     cover?: CoverImage;
+    brandLogo?: CoverImage;
     /** Credit line of the cover ("Foto: Ana Prado"), set where the layout's image data says. */
     coverCredit?: string;
     /** Template typeface → the family the page loaded (`Typefaces`). */
@@ -282,6 +283,27 @@ export function drawSlide(
     if (counter?.tracking) context.letterSpacing = `${counter.tracking * scale}px`;
     context.fillText(`${input.index + 1}/${input.total}`, px(counter?.x ?? template.width - MARGIN), px(counter?.y ?? template.height - MARGIN));
     if (counter?.tracking) context.letterSpacing = '0px';
+  }
+  const brand = layout.brand;
+  if (brand) {
+    // A reserved brand strip belongs to renderer-v1 content, outside every text slot.
+    context.fillStyle = brand.background;
+    context.fillRect(px(brand.x),px(brand.y),px(brand.width),px(brand.height));
+    let labelX = brand.x;
+    if (brand.logoId && input.brandLogo) {
+      const logo = input.brandLogo,boxWidth = Math.min(brand.width*.3,200),boxHeight = brand.height;
+      const fit = Math.min(boxWidth/logo.width,boxHeight/logo.height),width = logo.width*fit,height = logo.height*fit;
+      context.drawImage?.(logo.source,0,0,logo.width,logo.height,px(brand.x),px(brand.y+(brand.height-height)/2),px(width),px(height));
+      labelX += width+24;
+    }
+    context.fillStyle = brand.color;context.textAlign = 'left';context.textBaseline = 'top';
+    let size = brand.fontSize;
+    const room = brand.x+brand.width-labelX;
+    do {context.font = cssFont({...brand,fontSize:size},scale,typefaces);if(context.measureText(brand.label).width<=px(room)||size<=10)break;size--;}
+    while(size>0);
+    const measure = (text:string)=>context.measureText(text).width/scale;
+    const label = measure(brand.label)<=room ? brand.label : ellipsize(brand.label,room,measure);
+    context.fillText(label,px(labelX),px(brand.y+(brand.height-size)/2));
   }
   return withImage;
 }

@@ -63,6 +63,7 @@ export function templateFonts(render: TemplateRender | undefined, typefaces?: Ty
   const fonts = new Set<string>();
   const add = (style: Pick<SlotStyle, 'fontFamily' | 'fontWeight' | 'italic'>) => fonts.add(cssFont({ ...style, fontSize: 16 }, 1, typefaces));
   for (const layout of Object.values(render.layouts)) {
+    if (layout.brand) add(layout.brand);
     for (const slot of Object.values(layout.slots)) {
       add(slot);
       if (slot.list) add({ fontFamily: slot.list.fontFamily ?? slot.fontFamily, fontWeight: slot.list.fontWeight });

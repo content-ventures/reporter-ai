@@ -62,6 +62,10 @@ export type LocalRenderDeps = {
   fontFaces?: readonly CreativeFont[];
   /** Decodes the article cover for layouts whose data asks for it (`assetCoverLoader`). */
   loadCover?: CoverLoader;
+  /** Private, immutable workspace brand asset; failure blocks exporting a wrong identity. */
+  loadBrandLogo?: CoverLoader;
+  /** Historical packs remain renderable but cannot be assigned to new work. */
+  activeTemplateIds?: readonly TemplateId[];
   /** Credit line of the cover ("Foto: Ana Prado"), read at each render (it may change). */
   coverCredit?: (assetId: AssetId) => string | undefined;
   /**
@@ -193,6 +197,15 @@ export function createLocalRenderService(deps: LocalRenderDeps): RenderService {
     const width = Math.max(1, Math.round(found.width * scale));
     const height = Math.max(1, Math.round(found.height * scale));
     const visual = deps.renders[found.id];
+    let brandLogo: CoverImage | undefined;
+    const logoId = visual?.layouts[request.body.slides.find(slide => !wanted || wanted.includes(slide.id))?.layout ?? '']?.brand?.logoId;
+    if (logoId) {
+      try {
+        const loaded = await deps.loadBrandLogo?.(logoId);
+        if (!loaded?.ok || loaded.value.width <= 0 || loaded.value.height <= 0) return refuse('render_failed','Não foi possível carregar a marca deste workspace. Tente novamente.');
+        brandLogo = loaded.value;
+      } catch { return refuse('render_failed','Não foi possível carregar a marca deste workspace. Tente novamente.'); }
+    }
     if (probe) await fontsReady(facesOf(found.id));
     const total = request.body.slides.length;
     const slides: RenderedSlide[] = [];
@@ -227,6 +240,7 @@ export function createLocalRenderService(deps: LocalRenderDeps): RenderService {
             rendered.background = status;
           }
           const credit = background?.image && request.articleCover ? creditOf(request.articleCover) : undefined;
+          if (brandLogo && !canDrawImages(surface.context)) return refuse('render_failed','Este navegador não conseguiu desenhar a marca.');
           const drawn = drawSlide(surface.context, {
             template: found,
             render: visual as TemplateRender,
@@ -237,6 +251,7 @@ export function createLocalRenderService(deps: LocalRenderDeps): RenderService {
             scale,
             ...(background?.image ? { cover: background.image } : {}),
             ...(credit ? { coverCredit: credit } : {}),
+            ...(brandLogo ? { brandLogo } : {}),
             ...(deps.typefaces ? { typefaces: deps.typefaces } : {}),
           });
           if (rendered.background && drawn) rendered.background = { source: rendered.background.source, drawn: true };
@@ -282,7 +297,8 @@ export function createLocalRenderService(deps: LocalRenderDeps): RenderService {
   return {
     ...(deps.samplePhoto ? { samplePhoto: deps.samplePhoto.assetId } : {}),
     templates(): readonly TemplateInfo[] {
-      return infos.map((info) => ({ ...info, tags: [...info.tags], formatInfo: { ...info.formatInfo } }));
+      return infos.filter(info => !deps.activeTemplateIds || deps.activeTemplateIds.includes(info.id))
+        .map((info) => ({ ...info, tags: [...info.tags], formatInfo: { ...info.formatInfo } }));
     },
     capabilities(): RenderCapabilities {
       return probe ? { raster: true } : { raster: false, reason: NO_CANVAS };
@@ -318,6 +334,7 @@ export function createLocalRenderService(deps: LocalRenderDeps): RenderService {
       return cached(key, () => render({ body: sampled.value, scale, ...(request.articleCover ? { articleCover: request.articleCover } : {}) }));
     },
     switchTemplate(body, templateId) {
+      if (deps.activeTemplateIds && !deps.activeTemplateIds.includes(templateId)) return refuse('unknown_template',NO_TEMPLATE);
       const to = template(templateId);
       if (!to) return refuse('unknown_template', NO_TEMPLATE);
       const switched = switchTemplate(body, template(body.templateId), to);

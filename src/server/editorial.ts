@@ -42,6 +42,9 @@ import { FULL_SCOPE, commitEditorialChanges, loadEditorialRows, loadedScope, typ
 import { scopeForRpc } from './editorial-scope.ts';
 import { materialPartsSchema, materialTranscriptIds } from './material-parts.ts';
 import { writingRunModel, writingTraceUsage } from '../domain/writing-execution.ts';
+import {workspaceTemplateHash} from '../domain/workspace-templates.ts';
+import {readWorkspaceTemplates,referencedTemplateHashes} from './template-settings.ts';
+import {workspaceTemplateLibrary} from '../runtime/editorial-engine.ts';
 
 const ids = { next: () => randomUUID() };
 const identifier = z.string().min(1).max(128);
@@ -131,6 +134,7 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
         avatarUrl: accountAvatarSource(identity.personId,profile.image ?? undefined,localContext.portal) };
     }
     if (identity) adoptEditorialIdentity(checkpoint,identity);
+    if(scope.templates)checkpoint.templateConfiguration=await readWorkspaceTemplates(client,checkpoint.state.workspace.id,referencedTemplateHashes(checkpoint));
     for (const job of Object.values(checkpoint.jobs)) job.events = compactRunPreviews(job.events);
     const engine = createEditorialEngine(checkpoint, ids);
     try {
@@ -148,7 +152,7 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
 }
 
 // The browser reads every production and the active runs' streams; never job internals.
-const SNAPSHOT_SCOPE: EditorialScope = { productions: 'all', sources: 'all', events: 'active', jobs: false,
+const SNAPSHOT_SCOPE: EditorialScope = { productions: 'all', sources: 'all', events: 'active', jobs: false,templates:true,
   items: { person: 'all', member: 'all', activity: 'all', feedback: 'all', image_asset: 'all' } };
 type Status = { seq: number; floor: number; membersHash: string };
 
@@ -179,7 +183,7 @@ export async function editorialWorkspace(since?: string, options: { active?: boo
   }
   const result = await editorialTransaction('runtime', async () => undefined, false, 'reporter.edit', SNAPSHOT_SCOPE);
   const jobs = Object.fromEntries(Object.entries(result.checkpoint.jobs).map(([id,job]) => [id,{ meta: job.meta,kind: job.kind,events: job.events }])) as EditorialCheckpoint['jobs'];
-  return { state: result.checkpoint.state,jobs,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),
+  return { state: result.checkpoint.state,jobs,templateConfiguration:result.checkpoint.templateConfiguration,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),
     model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline,stalled: queue.stalled,deploymentMode:reporterDeploymentMode() };
 }
 
@@ -253,6 +257,10 @@ export async function requireCapability(capability: Capability) {
 
 async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, client:PoolClient,kind: GenerationKind, input: Record<string, unknown>, retryOfRunId?: string) {
   if (!supportedKinds.has(kind)) return refuse('unsupported_action', 'Esta ação do copiloto ainda não está conectada. Use a geração de artigo ou carrossel.');
+  if(!isPreservedPilot(checkpoint.state.workspace.id)&&!checkpoint.templateConfiguration?.readiness.ready){
+    const names={editorial_map:'mapa editorial',writing_guide:'guia de escrita',templates:'modelos',editor:'editor ativo',approver:'aprovador ativo'};
+    return refuse('workspace_not_ready','Configure este workspace antes de gerar: '+(checkpoint.templateConfiguration?.readiness.missing.map(key=>names[key]).join(', ')??'configuração editorial')+'.');
+  }
   const productionId = identifier.parse(input.productionId), pieceId = identifier.parse(input.pieceId);
   const record = engine.records.record(productionId);
   if (!record) return refuse('unknown_production', 'Produção não encontrada.');
@@ -288,6 +296,9 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   const prompt = { key: 'reporter.pipeline.' + kind, version: String(pipeline.revision), hash: pipeline.hash };
   const model = kind === 'article.draft' && pipeline.definition.writing?.enabled ? pipeline.definition.writing.stages.write.model
     : pipeline.definition.steps[ARTICLE_ASSIST_KINDS.has(kind) ? 'assist' : kind === 'carousel.copy' ? 'carousel' : kind === 'article.outline' ? 'outline' : pipeline.definition.articleMode === 'single' ? 'article' : 'intro'].model;
+  const templateHash=piece.draft.body.type==='carousel'?workspaceTemplateHash(piece.draft.body.templateId,checkpoint.state.workspace.id):undefined;
+  const template=[checkpoint.templateConfiguration?.active,...(checkpoint.templateConfiguration?.history??[])].find(entry=>entry?.hash===templateHash);
+  if(piece.draft.body.type==='carousel'&&!isPreservedPilot(checkpoint.state.workspace.id)&&!template)return refuse('unknown_template','Escolha um modelo deste workspace.');
   const started = engine.runs.begin({ productionId, kind: RUN_KIND_OF[kind], prompt,
     ...(retryOfRunId ? { retryOfRunId } : {}),
     model: kind === 'article.draft' && pipeline.definition.writing?.enabled ? writingRunModel(pipeline.definition.writing, pipeline.revision)
@@ -300,6 +311,7 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   const context=currentReporterContext();
   const job: EditorialJob = { meta,kind,input: meta.request.input,events: [],attempts: 0,availableAt: await databaseNow(client),
     context:{tenant:context.tenant,workspace:context.portal,actor:context.actor},contextHash: editorialContextHash(record,pieceId,run.inputs),pipeline,calls: [] };
+  if(template)job.template=structuredClone(template);
   const previous = retryOfRunId ? checkpoint.jobs[retryOfRunId] : undefined;
   if (previous?.contextHash === job.contextHash && previous?.pipeline?.hash === pipeline.hash && previous.kind === kind)
     job.cacheSourceRunId = previous.meta.runId;
@@ -386,6 +398,18 @@ export async function editorialRpc(payload: unknown) {
     if (method === 'feedback.vote') return engine.feedback.vote(args[0] as Parameters<typeof engine.feedback.vote>[0]);
     if (!writes.has(method)) throw new FlowError('UNKNOWN_COMMAND',404);
     validateEditorialCommandInput(method,args);
+    const config=checkpoint.templateConfiguration;
+    const activeIds=config?workspaceTemplateLibrary(config).activeIds:isPreservedPilot(checkpoint.state.workspace.id)?undefined:[];
+    if(method==='derive'&&(args[0] as {kind?:string}).kind==='carousel'){
+      const target=(args[0] as {templateId?:string}).templateId;
+      if(activeIds&&(!activeIds.length||target&&!activeIds.includes(target)))return refuse('unknown_template','Escolha um modelo ativo deste workspace.');
+    }
+    if(method==='saveDraft'&&(args[1] as {type?:string}).type==='carousel'){
+      const target=(args[1] as {templateId:string}).templateId;
+      const previous=checkpoint.state.productions.flatMap(production=>production.pieces).find(piece=>piece.id===args[0])?.draft.body;
+      if(activeIds&&!(previous?.type==='carousel'&&previous.templateId===target)&&!activeIds.includes(target))
+        return refuse('unknown_template','Escolha um modelo ativo deste workspace.');
+    }
     if (method === 'requestReview') {
       const production = checkpoint.state.productions.find(entry => entry.pieces.some(piece => piece.id === args[0]));
       const record = production ? engine.records.record(production.production.id) : undefined;

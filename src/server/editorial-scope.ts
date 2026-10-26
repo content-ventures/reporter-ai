@@ -18,6 +18,11 @@ function feedbackScope(target: unknown): EditorialScope {
  * pipeline snapshots.
  */
 export function scopeForRpc(method: string, args: readonly unknown[]): EditorialScope {
+  const scope = rpcScope(method,args);
+  return ['saveDraft','derive','requestReview','decide','createVersion','restoreVersion','generation.start','generation.retry'].includes(method)
+    ? {...scope,templates:true} : scope;
+}
+function rpcScope(method: string,args:readonly unknown[]):EditorialScope {
   switch (method) {
     case 'pipeline.save': return { history: true, recentRuns: 20, workspaceLock: true };
     case 'generation.start': return { productions: text(field(args[1], 'productionId')) };
