@@ -30,7 +30,9 @@ async function fingerprint() {
   return JSON.stringify(await owner(`SELECT 'portal' AS kind,md5(to_jsonb(p)::text) AS hash FROM public.portals p WHERE id=$1
     UNION ALL SELECT 'workspace',md5(doc::text) FROM public.reporter_ed_workspace WHERE portal_id=$1
     UNION ALL SELECT 'production',md5(doc::text) FROM public.reporter_ed_productions WHERE portal_id=$1
-    UNION ALL SELECT 'pipeline',md5(doc::text) FROM public.reporter_ed_pipelines WHERE portal_id=$1 ORDER BY kind,hash`, [PILOT]));
+    UNION ALL SELECT 'pipeline',md5(doc::text) FROM public.reporter_ed_pipelines WHERE portal_id=$1
+    UNION ALL SELECT 'membership',md5((to_jsonb(m)-'revision'-'invite_pending')::text) FROM public.portal_members m WHERE portal_id=$1
+    UNION ALL SELECT 'role',md5(to_jsonb(r)::text) FROM public.portal_user_roles r WHERE portal_id=$1 ORDER BY kind,hash`, [PILOT]));
 }
 
 before(async () => {
@@ -82,4 +84,11 @@ test('lifecycle changes use optimistic revision and archival waits for owned job
   assert.equal(value.status, 'active');
   assert.equal((await owner('SELECT count(*)::integer AS count FROM public.reporter_ed_runs WHERE portal_id=$1', [value.id]))[0].count, 1);
   assert.equal(await fingerprint(), baseline);
+});
+
+test('composite constraints reject a foreign workspace role and a role without the matching membership', async () => {
+  const workspace = await platform<ManagedWorkspace>('SELECT public.reporter_workspace_create($1,$2) AS value', ['Role boundary', 'role-boundary']);
+  const [{ id: role }] = await owner("SELECT id FROM public.portal_roles WHERE portal_id=$1 AND name='approver'", [workspace.id]);
+  await assert.rejects(owner('INSERT INTO public.portal_user_roles(portal_id,user_id,portal_role_id) VALUES($1,$2,$3)', [PILOT, editor, role]), { code: '23503' });
+  await assert.rejects(owner('INSERT INTO public.portal_user_roles(portal_id,user_id,portal_role_id) VALUES($1,$2,$3)', [workspace.id, editor, role]), { code: '23503' });
 });

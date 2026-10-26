@@ -16,6 +16,7 @@ import {
   type PlatformRefusal,
 } from '../domain/platform.ts';
 import { ROLES, type Role } from '../domain/workspace.ts';
+import { WORKSPACE_MESSAGES, validateWorkspace } from '../domain/workspace-management.ts';
 import { reporterIdentity } from './auth.ts';
 import { cloudPortalId, localContext } from './config.ts';
 import { pool } from './database.ts';
@@ -77,12 +78,17 @@ const SQL_REFUSALS: Readonly<Record<string, PlatformRefusal | InviteLinkRefusal>
   INVALID_NAME: 'invalid_name', INVALID_EMAIL: 'invalid_email', INVALID_ROLE: 'invalid_role', INVALID_WORKSPACE: 'invalid_workspace',
   EMAIL_TAKEN: 'email_taken', SELF: 'self', NO_ROLES: 'no_roles', INVALID_STATE: 'invalid_state', NOT_FOUND: 'not_found',
   INVALID_LINK: 'invalid_link', USED: 'used', EXPIRED: 'expired',
+  AMBIGUOUS_MEMBERSHIP: 'invalid_state',
 };
 
 function translate(error: unknown): unknown {
   if (!error || typeof error !== 'object') return error;
   const { code, message } = error as { code?: unknown; message?: unknown };
   if (code === '42501') return platformRefusal('restricted');
+  if (code === 'P0001' && typeof message === 'string') {
+    const workspaceCode = ({ INVALID_SLUG: 'invalid_slug', SLUG_TAKEN: 'slug_taken', CONFLICT: 'conflict' } as const)[message as 'INVALID_SLUG' | 'SLUG_TAKEN' | 'CONFLICT'];
+    if (workspaceCode) return new Refused(workspaceCode, WORKSPACE_MESSAGES[workspaceCode], workspaceCode === 'invalid_slug' ? 422 : 409);
+  }
   if (code === 'P0001' && typeof message === 'string' && SQL_REFUSALS[message]) {
     const refusal = SQL_REFUSALS[message];
     return refusal in INVITE_STATUS ? inviteRefusal(refusal as InviteLinkRefusal) : platformRefusal(refusal as PlatformRefusal);
@@ -139,6 +145,10 @@ async function operatorOf(request: Request, deps: PlatformDeps): Promise<string>
 
 const rolesSchema = z.object({ roles: z.array(z.enum(ROLES as readonly [Role, ...Role[]])).max(8) }).strict();
 const inviteSchema = z.object({ name: z.string().max(400), email: z.string().max(400), role: z.string().max(40), workspaceId: z.string().max(80) }).strict();
+const workspaceSchema = z.object({ name: z.string().max(400), slug: z.string().max(100) }).strict();
+const workspaceChangeSchema = z.object({ name: z.string().trim().min(2).max(80), status: z.enum(['draft', 'active', 'archived']), revision: z.number().int().positive() }).strict();
+const membershipSchema = z.object({ revision: z.number().int().positive(), roles: z.array(z.enum(ROLES)).min(1).max(8).optional(), status: z.enum(['active', 'suspended']).optional() }).strict()
+  .refine(value => Boolean(value.roles) !== Boolean(value.status));
 
 function personId(raw: string | undefined): string {
   if (!raw || !UUID.test(raw)) throw platformRefusal('not_found');
@@ -164,6 +174,14 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
     const [head, id, action] = path;
 
     if (request.method === 'GET') {
+      if (head === 'workspaces' && path.length === 1) {
+        const params = new URL(request.url).searchParams;
+        return reply(await platform(client => call(client, 'SELECT public.reporter_workspace_list($1,$2,$3) AS value',
+          [(params.get('search') ?? '').slice(0,100), Math.min(100,Math.max(1,Math.trunc(Number(params.get('limit')) || 50))), Math.min(1000000,Math.max(0,Math.trunc(Number(params.get('offset')) || 0)))])));
+      }
+      if (head === 'workspaces' && path.length === 3 && action === 'members') {
+        return reply(await platform(client => call(client, 'SELECT public.reporter_workspace_members($1::uuid) AS value', [personId(id)])));
+      }
       if (path.length === 1 && head === 'operator') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_operator() AS value')));
       if (path.length === 1 && head === 'directory') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_directory() AS value')));
       if (path.length === 1 && head === 'log') {
@@ -181,6 +199,42 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
     }
     if (request.method !== 'POST') throw platformRefusal('not_found');
 
+    if (head === 'workspaces' && path.length === 1) {
+      const parsed = workspaceSchema.safeParse(await deps.readJson(request));
+      if (!parsed.success) throw platformRefusal('invalid_name');
+      const checked = validateWorkspace(parsed.data);
+      if (!checked.ok) throw new Refused(checked.refusal.code, checked.refusal.message, 422);
+      return reply(await platform(client => call(client, 'SELECT public.reporter_workspace_create($1,$2) AS value', [checked.value.name, checked.value.slug])), 201);
+    }
+    if (head === 'workspaces' && path.length === 3 && action === 'update') {
+      const parsed = workspaceChangeSchema.safeParse(await deps.readJson(request));
+      if (!parsed.success) throw platformRefusal('invalid_state');
+      return reply(await platform(client => call(client, 'SELECT public.reporter_workspace_update($1::uuid,$2,$3,$4) AS value',
+        [personId(id), parsed.data.name, parsed.data.status, parsed.data.revision])));
+    }
+    if (head === 'workspaces' && path.length === 4 && action === 'members') {
+      const parsed = membershipSchema.safeParse(await deps.readJson(request));
+      if (!parsed.success) throw platformRefusal('invalid_state');
+      return reply(await platform(client => call(client, 'SELECT public.reporter_membership_change($1::uuid,$2::uuid,$3,$4::text[],$5) AS value',
+        [personId(id), personId(path[3]), parsed.data.revision, parsed.data.roles ?? null, parsed.data.status ?? null])));
+    }
+    if (head === 'workspaces' && path.length === 5 && action === 'members' && path[4] === 'renew-invite') {
+      const parsed = z.object({ revision: z.number().int().positive() }).strict().safeParse(await deps.readJson(request));
+      if (!parsed.success) throw platformRefusal('invalid_state');
+      const { token, hash } = newToken();
+      const value = await platform(client => call<{ person: unknown; expiresAt: string }>(client,
+        'SELECT public.reporter_membership_renew($1::uuid,$2::uuid,$3,$4,$5) AS value',
+        [personId(id), personId(path[3]), parsed.data.revision, hash, INVITE_TTL_DAYS]));
+      return reply({ ...value, token });
+    }
+    if (head === 'workspaces' && path.length === 5 && action === 'signups' && path[4] === 'approve') {
+      const subject = path[3];
+      if (!subject?.startsWith('auth:') || subject.length > 300) throw platformRefusal('not_found');
+      const chosen = roles(await deps.readJson(request));
+      return reply(await platform(client => call(client, 'SELECT public.reporter_platform_approve($1,$2::text[],$3::uuid) AS value',
+        [subject.slice(5), chosen, personId(id)])));
+    }
+
     if (path.length === 1 && head === 'invites') {
       const input = inviteSchema.safeParse(await deps.readJson(request));
       if (!input.success) throw platformRefusal('invalid_name');
@@ -193,6 +247,11 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
       return reply({ ...value, token });
     }
     if (path.length === 3 && head === 'people') {
+      if (action === 'account-status') {
+        const parsed = z.object({ suspended: z.boolean() }).strict().safeParse(await deps.readJson(request));
+        if (!parsed.success) throw platformRefusal('invalid_state');
+        return reply(await platform(client => call(client, 'SELECT public.reporter_account_status($1::uuid,$2) AS value', [personId(id), parsed.data.suspended])));
+      }
       if (action === 'approve') {
         if (!id?.startsWith('auth:') || id.length > 300) throw platformRefusal('not_found');
         const chosen = roles(await deps.readJson(request));
@@ -285,10 +344,11 @@ export async function handleInvites(request: Request, path: string[], deps: Plat
     if (!valid.ok) return reply({ error: valid.refusal.code, message: valid.refusal.message }, 422);
     const current = await preview();
     if (!current || current.state === 'revoked') throw inviteRefusal('invalid_link');
-    if (current.state === 'used') throw inviteRefusal('used');
     if (current.state === 'expired') throw inviteRefusal('expired');
     // Local development has no Neon Auth: the link only releases the synthetic account.
-    const subject = local ? `local:${randomUUID()}` : await defineAccount(origin, current, valid.value);
+    const subject = local ? await run('invite', null, client => call<string | null>(client, 'SELECT public.reporter_invite_local_subject($1) AS value', [hash]))
+      : await defineAccount(origin, current, valid.value);
+    if (!subject) throw inviteRefusal('invalid_link');
     const accepted = await run('invite', null, client => call<{ email: string }>(client, 'SELECT public.reporter_invite_accept($1,$2) AS value', [hash, subject]));
     return reply({ email: accepted.email, signIn: !local });
   } catch (error) {

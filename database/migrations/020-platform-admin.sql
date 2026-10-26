@@ -27,7 +27,7 @@ INSERT INTO public.portal_role_permissions(portal_role_id,permission)
   WHERE pr.name IN ('admin','editor','approver','creative_reviewer')
   ON CONFLICT(portal_role_id,permission) DO NOTHING;
 
--- One open link per person; only the SHA-256 of the token is kept.
+-- One open link per person and workspace; only the SHA-256 of the token is kept.
 CREATE TABLE IF NOT EXISTS core.access_invites(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES core.users(id) ON DELETE RESTRICT,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS core.access_invites(
   used_at timestamptz,
   FOREIGN KEY(tenant_id,portal_id) REFERENCES public.portals(tenant_id,id) ON DELETE RESTRICT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uq_access_invites_open ON core.access_invites(user_id) WHERE state='open';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_access_invites_open ON core.access_invites(user_id,portal_id) WHERE state='open';
 ALTER TABLE core.access_invites ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON core.access_invites FROM PUBLIC;
 

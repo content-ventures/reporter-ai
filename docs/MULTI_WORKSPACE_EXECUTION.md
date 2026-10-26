@@ -38,6 +38,22 @@ The local database is exclusive to this checkout: Docker project `reporter-ai-lo
 
 Editors and workspace administrators create, edit, submit and export. Approvers and creative reviewers retain their existing assigned review and exact-version decisions. Pipeline configuration and audit access require workspace administration. Existing self-decision and sender rules remain authoritative; adding a platform role must not silently bypass them. Local operator self-review is an explicitly loopback-only development capability. The current simulated "act as" and local role profiles are not production account-switching mechanisms.
 
+## M1 workspace and membership persistence
+
+Migrations 030 and 031 adopt the existing portals rather than creating another Seafood record. Workspace metadata, readiness, revision and lifecycle are additive. New clients start as drafts with empty content and missing configuration clearly identified. An archive request stops new access and stays `archiving` while owned jobs remain; completion preserves history. Resuming actual jobs in other workspaces belongs to M3.
+
+Accounts now project every membership separately. A linked account has one identity and password, independent roles and status per client, and no aggregate union of workspace roles. The legacy single-workspace fields exist only for an unambiguous account. Old person-only role and suspension commands refuse an account with several memberships. Explicit workspace commands use optimistic revisions and preserve self-lockout protection. Account suspension is a separate platform operation.
+
+Invitations are scoped to an account and workspace. Existing accounts authenticate with their existing password, and the new membership remains unavailable until acceptance. Renewing or revoking one link does not invalidate another client's invitation. Repeated authenticated acceptance returns the same result without another acceptance audit entry. Composite foreign keys reject a foreign role or an assignment without the matching membership.
+
+The old migration 020 index definition now permits one open link per account/workspace. This narrow replay compatibility correction prevents a later deployment from failing on two legitimate pending invitations. Cloud and local flow migrations now apply the registered SQL bodies in one transaction, so other requests cannot observe temporary definitions from an earlier migration. A failed batch rolls back instead of committing part of the chain.
+
+M1 validation: 1,707 domain/adapter/script tests and the production build passed; 313 backend tests passed; 75 cloud rehearsal tests passed with the same 6 documented skips. The complete PostgreSQL suite passed on both the upgraded local database and fresh official-image bootstrap, including replay, concurrent sessions and recovery. Fourteen focused HTTP/database cases prove pilot preservation, lifecycle conflicts, independent roles, existing-password acceptance, scoped suspension, global account blocking, invitation renewal and replay with multiple open links. No production migration or write has been performed.
+
+The frozen M0 app was also started against the upgraded synthetic database: its pilot bootstrap returned HTTP 200; a new workspace address returned HTTP 404 rather than another client's data; the new workspace remained present afterwards. Relocating the archived Next build required repairing its dependency symlinks; compiled application JavaScript was unchanged. The retained receipt is `m1-rollback.json` in the private evidence directory.
+
+Implementation is split into reviewable local commits. The next phase replaces the remaining deployment-default request context with an explicit authorized workspace address. The new administration endpoints are persistence capabilities; complete UI onboarding and workspace navigation remain M5 and M6.
+
 ## Acceptance budgets established before implementation
 
 - Integrity: zero loss, ownership changes, duplicate pilot workspaces, unexpected policy resets or changes to historical render definitions. Compare stable rows and configuration fingerprints; explicitly exclude newly recorded activity and worker heartbeats from immutable-data comparisons.
@@ -59,5 +75,6 @@ Before a rollout, stop new commands for the affected workspace, settle or pause 
 | Phase | Status |
 | --- | --- |
 | M0 | Accepted with the two recorded intermittent browser checks; baseline frozen |
-| M1 | In progress: lifecycle and membership persistence |
-| M2–M9 | Not accepted |
+| M1 | Accepted locally: lifecycle, membership persistence and compatibility checks |
+| M2 | Next: authorized request context and private assets |
+| M3–M9 | Not accepted |

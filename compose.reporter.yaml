@@ -39,6 +39,7 @@ services:
       - ./database/migrations/028-news-images.sql:/docker-entrypoint-initdb.d/99-4-news-images.sql:ro
       - ./database/migrations/029-news-search.sql:/docker-entrypoint-initdb.d/99-5-news-search.sql:ro
       - ./database/migrations/030-workspace-lifecycle.sql:/docker-entrypoint-initdb.d/99-6-workspace-lifecycle.sql:ro
+      - ./database/migrations/031-workspace-memberships.sql:/docker-entrypoint-initdb.d/99-7-workspace-memberships.sql:ro
     networks:
       - reporter
     healthcheck:

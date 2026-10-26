@@ -15,6 +15,7 @@ export interface WorkspaceAdministration {
   update(input: WorkspaceChange): Promise<WorkspaceResult<ManagedWorkspace>>;
   members(workspaceId: WorkspaceId): Promise<WorkspaceResult<WorkspaceMembership[]>>;
   invite(input: InviteInput): Promise<WorkspaceResult<IssuedInvite>>;
+  renewInvite(input: MembershipChange): Promise<WorkspaceResult<IssuedInvite>>;
   setRoles(input: MembershipChange & { roles: Role[] }): Promise<WorkspaceResult<WorkspaceMembership>>;
   setStatus(input: MembershipChange & { status: Extract<MembershipStatus, 'active' | 'suspended'> }): Promise<WorkspaceResult<WorkspaceMembership>>;
 }
