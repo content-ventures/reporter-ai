@@ -3,6 +3,7 @@ import type { InviteInput, IssuedInvite } from '../domain/platform.ts';
 import type { Result } from '../domain/result.ts';
 import type { Role } from '../domain/workspace.ts';
 import type { ManagedWorkspace, MembershipStatus, WorkspaceAccess, WorkspaceChange, WorkspaceInput, WorkspaceMembership, WorkspaceRefusal } from '../domain/workspace-management.ts';
+import type { IntegrationChange, IssuedIntegration, WorkspaceIntegration } from '../domain/workspace-management.ts';
 
 export type WorkspaceResult<T> = Result<T, WorkspaceRefusal>;
 export type WorkspacePage = { items: ManagedWorkspace[]; total: number; offset: number };
@@ -20,6 +21,8 @@ export interface WorkspaceAdministration {
   renewInvite(input: MembershipChange): Promise<WorkspaceResult<IssuedInvite>>;
   setRoles(input: MembershipChange & { roles: Role[] }): Promise<WorkspaceResult<WorkspaceMembership>>;
   setStatus(input: MembershipChange & { status: Extract<MembershipStatus, 'active' | 'suspended'> }): Promise<WorkspaceResult<WorkspaceMembership>>;
+  integrations(workspaceId:WorkspaceId):Promise<WorkspaceResult<WorkspaceIntegration[]>>;
+  saveIntegration(input:IntegrationChange):Promise<WorkspaceResult<IssuedIntegration>>;
 }
 
 /** A tab chooses its addressable context; navigation preference is never authorization. */

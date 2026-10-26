@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import type { IssuedIntegration } from '../../src/domain/workspace-management.ts';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -290,4 +291,42 @@ test('a copy cut short continues from the parts already stored, which the folder
   const ready = await sync(resumed);
   assert.equal(ready.body.stage, 'ready', JSON.stringify(ready.body));
   assert.equal(Number((await board())?.size), media.length, 'stored at the size Drive reports, not the script\'s');
+});
+
+test('client bindings receive the same Drive file independently and rotate without duplication or a legacy bypass',{timeout:120000},async()=>{
+  const [{id:actor}]=await owner<{id:string}>('SELECT id FROM core.users WHERE email=$1',[OWNER.email]);
+  await owner("INSERT INTO public.user_roles(user_id,role) VALUES($1,'platform_admin')",[actor]);
+  process.env.REPORTER_WORKSPACES_MODE='all';
+  const adminCall=<T>(path:string,body?:unknown)=>call<T>(path,body,{origin:APP});
+  const created=await adminCall<{id:string;revision:number}>('platform/workspaces',{name:'Other Drive client',slug:'other-drive-client'});
+  assert.equal(created.status,201);const second=created.body.id;
+  assert.equal((await adminCall(`platform/workspaces/${second}/update`,{name:'Other Drive client',status:'active',revision:created.body.revision})).status,200);
+  assert.equal((await adminCall('platform/invites',{name:OWNER.name,email:OWNER.email,role:'editor',workspaceId:second})).status,200);
+  const [{token_hash:hash}]=await owner<{token_hash:string}>('SELECT token_hash FROM core.access_invites WHERE portal_id=$1',[second]);
+  await owner('SELECT public.reporter_invite_accept($1,$2)',[hash,OWNER.subject]);
+  const pilot=await adminCall<IssuedIntegration>(`platform/workspaces/${PORTAL}/integrations`,{ownerId:actor,enabled:true,revision:0});
+  const other=await adminCall<IssuedIntegration>(`platform/workspaces/${second}/integrations`,{ownerId:actor,enabled:true,revision:0});
+  assert.equal(pilot.status,201);assert.equal(other.status,201);assert.equal(pilot.body.credential!.token,SECRET,'adoption retains the existing pilot credential and file derivation');
+  assert.notEqual(other.body.credential!.token,SECRET);
+  const path=(binding:IssuedIntegration)=>new URL(binding.credential!.endpoint).pathname.slice('/api/reporter/'.length);
+  const invoke=(binding:IssuedIntegration,extra:Record<string,unknown>={})=>call<Sync>(path(binding),syncBody(extra),{authorization:`Bearer ${binding.credential!.token}`});
+  const previous=await sync(),a=await invoke(pilot.body),b=await invoke(other.body);
+  assert.equal(a.body.transcriptId,previous.body.transcriptId);assert.notEqual(b.body.transcriptId,a.body.transcriptId);
+  await settle();const ready=await invoke(other.body);
+  assert.equal(ready.body.stage,'ready',JSON.stringify(ready.body));assert.match(ready.body.url!,/\/w\/other-drive-client\/productions\/new\?/);
+  const rows=await owner<{portal_id:string;key:string;created_by:string}>(`SELECT t.portal_id,s.key,t.created_by FROM public.reporter_transcripts t JOIN core.storage_objects s ON s.id=t.source_object_id WHERE t.id=ANY($1)`,[[a.body.transcriptId,b.body.transcriptId]]);
+  assert.equal(rows.length,2);for(const row of rows){assert.match(row.key,new RegExp(`^incoming/${row.portal_id}/`));assert.equal(row.created_by,actor);}
+  const list=await adminCall<IssuedIntegration[]>(`platform/workspaces/${second}/integrations`);
+  assert.equal(list.body[0].credential,undefined);assert.doesNotMatch(JSON.stringify(list.body),/token_hash|derivation|credential/);
+  assert.equal((await invoke(other.body,{workspaceId:PORTAL})).status,422,'posted workspace cannot redirect the binding');
+  const rotated=await adminCall<IssuedIntegration>(`platform/workspaces/${second}/integrations`,{ownerId:actor,enabled:true,revision:other.body.revision,rotate:true});
+  assert.equal((await invoke(other.body)).status,401);assert.equal((await invoke(rotated.body)).body.transcriptId,b.body.transcriptId);
+  assert.equal((await owner<{count:number}>('SELECT count(*)::int AS count FROM public.reporter_transcripts WHERE portal_id=$1',[second]))[0].count,1,'rotation retains the source and transcript');
+  assert.equal((await adminCall(`platform/workspaces/${second}/integrations`,{ownerId:actor,enabled:false,revision:rotated.body.revision})).status,200);
+  assert.equal((await invoke(rotated.body)).status,401);assert.equal((await sync()).body.transcriptId,a.body.transcriptId);
+  const pilotRotation=await adminCall<IssuedIntegration>(`platform/workspaces/${PORTAL}/integrations`,{ownerId:actor,enabled:true,revision:pilot.body.revision,rotate:true});
+  assert.equal((await sync()).status,401,'the old environment secret cannot bypass the adopted binding after rotation');
+  assert.equal((await invoke(pilotRotation.body)).body.transcriptId,a.body.transcriptId);
+  assert.equal((await adminCall(`platform/workspaces/${PORTAL}/integrations`,{ownerId:actor,enabled:false,revision:pilotRotation.body.revision})).status,200);
+  assert.equal((await sync({},pilotRotation.body.credential!.token)).status,401,'disabling also closes the legacy address');
 });

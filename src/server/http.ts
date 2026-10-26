@@ -223,7 +223,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
       selectedWorkspace = workspaceSlug(path[1] ?? '');
       if (!selectedWorkspace || path.length < 3) throw new FlowError('WORKSPACE_NOT_FOUND',404);
       path = path.slice(2);
-      if (['platform','invites','health','workspaces','avatars'].includes(path[0]) || path[0] === 'drive' && path[1] === 'sync') throw new FlowError('NOT_FOUND',404);
+      if (['platform','invites','health','workspaces','avatars'].includes(path[0]) || path[0] === 'drive' && path.at(-1) === 'sync') throw new FlowError('NOT_FOUND',404);
     }
     // The release probe is public: booleans and versions only, no session and no database.
     if (request.method === 'GET' && path.length === 1 && path[0] === 'health') return reply(appHealth());
@@ -233,7 +233,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     if (path[0] === 'platform') return await handlePlatform(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest,identify: deps.identify });
     if (path[0] === 'invites') return await handleInvites(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest });
     // The Drive folder script has no session: it carries the intake secret and acts as one configured member.
-    if (path[0] === 'drive' && path[1] === 'sync') return await handleDrive(request,path.slice(1),{ readJson: jsonBody,defer });
+    if (path[0] === 'drive' && path.at(-1) === 'sync') return await handleDrive(request,path.slice(1),{ readJson: jsonBody,defer });
     const context = await guardReporterRequest(request, deps.identify, selectedWorkspace);
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);
