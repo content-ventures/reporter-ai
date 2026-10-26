@@ -105,7 +105,8 @@ function accountPhotos(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(accountPhotos);
   if (!value || typeof value !== 'object') return value;
   const result: Record<string,unknown> = Object.fromEntries(Object.entries(value).map(([key,item])=>[key,accountPhotos(item)]));
-  if (typeof result.id === 'string' && typeof result.avatarUrl === 'string') result.avatarUrl = accountAvatarSource(result.id,result.avatarUrl,defaultPortal());
+  const accountId=typeof result.personId==='string'?result.personId:result.id;
+  if (typeof accountId === 'string' && typeof result.avatarUrl === 'string') result.avatarUrl = accountAvatarSource(accountId,result.avatarUrl,defaultPortal());
   return result;
 }
 function reply(value: unknown, status = 200): Response {
