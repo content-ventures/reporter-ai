@@ -46,12 +46,12 @@ BEGIN
   IF current_setting('app.access_mode',true)='platform' THEN PERFORM core.platform_operator();
   ELSE PERFORM core.reporter_membership_manager(p_portal); END IF;
   SELECT count(*) INTO total FROM public.portal_members m JOIN core.users u ON u.id=m.user_id
-    WHERE m.portal_id=p_portal AND (u.name ILIKE '%'||search||'%' OR u.email ILIKE '%'||search||'%');
+    WHERE m.portal_id=p_portal AND (u.name ILIKE '%'||search||'%' OR u.email ILIKE '%'||search||'%' OR m.user_id::text=search);
   SELECT coalesce(jsonb_agg(value ORDER BY name,id),'[]') INTO items FROM (
     SELECT u.name,u.id,core.reporter_membership_value(u.id,p_portal)||jsonb_strip_nulls(jsonb_build_object(
       'name',u.name,'email',u.email,'avatarUrl',u.image,'accountSuspended',u.banned)) AS value
     FROM public.portal_members m JOIN core.users u ON u.id=m.user_id WHERE m.portal_id=p_portal
-      AND (u.name ILIKE '%'||search||'%' OR u.email ILIKE '%'||search||'%')
+      AND (u.name ILIKE '%'||search||'%' OR u.email ILIKE '%'||search||'%' OR m.user_id::text=search)
     ORDER BY u.name,u.id LIMIT least(greatest(coalesce(p_limit,20),1),100) OFFSET greatest(coalesce(p_offset,0),0)) page;
   RETURN jsonb_build_object('items',items,'total',total,'offset',greatest(coalesce(p_offset,0),0));
 END $$;
