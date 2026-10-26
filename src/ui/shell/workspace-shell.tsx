@@ -127,10 +127,12 @@ function ShellFrame({ children }: { children: ReactNode }) {
   const items = productions.data?.items ?? NO_PRODUCTIONS;
   // Role-restricted items (Aprovações, Logs) appear once the acting member is known; the session
   // answer keeps its object while unchanged, so `roles` is a stable dependency.
-  const session=useSession();
+  const session=useSession(),rememberedAddress=useRef<string|undefined>(undefined);
   const roles = session.data?.current?.roles;
   useEffect(()=>{const data=session.data;
-    if(data?.navigation?.enabled&&workspaceAddress(routePath)?.slug===data.workspace.slug)rememberWorkspace(data.navigation.accountId,{workspaceId:data.workspace.id,slug:data.workspace.slug});
+    if(!data?.navigation?.enabled||workspaceAddress(routePath)?.slug!==data.workspace.slug)return;
+    const key=`${data.navigation.accountId}:${routePath}`;if(rememberedAddress.current===key)return;rememberedAddress.current=key;
+    rememberWorkspace(data.navigation.accountId,{workspaceId:data.workspace.id,slug:data.workspace.slug});
   },[session.data,routePath]);
   const sections = useMemo(() => menuFor(undefined, roles ? { roles } : undefined, R2_NAVIGATION), [roles]);
   // Only someone who decides at a gate has an Aprovações item, so only they ask for the queue.
