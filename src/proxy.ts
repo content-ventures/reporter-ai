@@ -19,5 +19,5 @@ export default function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/w/:path*', '/productions/:path*', '/approvals/:path*', '/banners/:path*', '/config/:path*', '/images/:path*', '/quotes/:path*', '/library/:path*', '/admin/:path*', '/whats-new/:path*', '/news/:path*', '/archive/:path*', '/settings/:path*', '/platform/:path*'],
+  matcher: ['/', '/w/:path*','/workspaces/:path*', '/productions/:path*', '/approvals/:path*', '/banners/:path*', '/config/:path*', '/images/:path*', '/quotes/:path*', '/library/:path*', '/admin/:path*', '/whats-new/:path*', '/news/:path*', '/archive/:path*', '/settings/:path*', '/platform/:path*'],
 };

@@ -84,7 +84,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
           label="Menu da plataforma"
           product={<ReporterBrand endorsed />}
           groups={groups}
-          utilities={[{ id: 'workspace', label: 'Abrir workspace', icon: ArrowUpRight, href: '/' }]}
+          utilities={[{ id: 'workspace', label: 'Abrir workspace', icon: ArrowUpRight, href: '/workspaces' }]}
           active={page.id}
           onNavigate={onNavigate}
           account={<OperatorAccount />}

@@ -44,6 +44,7 @@ export type SessionData = {
   current: SessionMember | undefined;
   members: SessionMember[];
   localRoleProfiles?: LocalRoleProfile[];
+  navigation?:import('../ports/connected-workspace.ts').WorkspaceNavigation;
 };
 
 const key = (name: string, ...args: unknown[]): string => {
@@ -253,7 +254,7 @@ export function sessionQuery(): RuntimeQuery<SessionData> {
     fetch: async (rt) => {
       const [workspace, current, members] = await Promise.all([rt.session.workspace(), rt.session.current(), rt.session.members()]);
       const localRoleProfiles = await rt.session.localRoleProfiles?.();
-      return ok({ mode: rt.session.mode, workspace, current, members, ...(localRoleProfiles ? { localRoleProfiles } : {}) });
+      return ok({ mode: rt.session.mode, workspace, current, members, ...(localRoleProfiles ? { localRoleProfiles } : {}),...(rt.navigation?{navigation:rt.navigation}:{}) });
     },
     affectedBy: isGlobal,
   };

@@ -25,3 +25,6 @@ export function workspaceHref(slug:string|undefined,href:string):string{
   if(!slug||!href.startsWith('/')||href.startsWith('//')||/^\/(?:w|api|auth|platform|workspaces|prototypes)(?:[/?#]|$)/.test(href))return href;
   return workspacePagePath(slug,href);
 }
+export function workspaceAccessHref(item:{workspace:{id:string;slug:string};enterable?:boolean;administrative:boolean}):string{
+  return item.enterable===false?(item.administrative?`/platform/workspaces/${encodeURIComponent(item.workspace.id)}`:'/workspaces'):workspacePagePath(item.workspace.slug,'/');
+}

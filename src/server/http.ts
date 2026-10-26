@@ -75,6 +75,7 @@ async function guardReporterRequest(request: Request, identify: () => Promise<Id
   const identity = await identify();
   if (!identity) throw new FlowError('AUTH_REQUIRED',401);
   const context = await resolveReporterContext(identity,slug);
+  if(!context&&!slug&&identity.emailVerified&&rollout!=='off')throw new FlowError('WORKSPACE_SELECTION_REQUIRED',409);
   if (!context) throw new FlowError(!identity.emailVerified ? 'EMAIL_NOT_VERIFIED' : slug ? 'WORKSPACE_NOT_FOUND' : 'ACCESS_PENDING',slug && identity.emailVerified ? 404 : 403);
   if (slug && rollout === 'admin' && !context.administrative) throw new FlowError('WORKSPACES_RESTRICTED',403);
   return requestedAccount(request,context);
@@ -106,6 +107,7 @@ function reply(value: unknown, status = 200) {
 const messages: Record<string, string> = {
   ACCOUNT_CONTEXT_CHANGED: 'A conta conectada mudou. Recarregue para abrir o contexto atual.',
   WORKSPACES_DISABLED: 'A navegação entre workspaces ainda não está habilitada.',
+  WORKSPACE_SELECTION_REQUIRED:'Escolha um dos workspaces liberados para sua conta.',
   WORKSPACES_RESTRICTED: 'A navegação está disponível apenas para o administrador da plataforma.',
   WORKSPACE_NOT_FOUND: 'Este workspace não está disponível para sua conta.',
   ...NEWS_MESSAGES,
