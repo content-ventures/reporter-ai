@@ -75,10 +75,12 @@ function RuntimeBoundary({children,workspaceSlug}:{children:ReactNode;workspaceS
     };
   }, [holder]);
 
-  const address=useMemo(()=>({slug:workspaceSlug,prepare:async()=>{
+  const [preparations]=useState(()=>new Set<()=>Promise<boolean>>());
+  const address=useMemo(()=>({slug:workspaceSlug,registerPreparation:(prepare:()=>Promise<boolean>)=>{preparations.add(prepare);return()=>{preparations.delete(prepare);};},prepare:async()=>{
     window.dispatchEvent(new Event('reporter:prepare-navigation'));
+    if(!(await Promise.all([...preparations].map(prepare=>prepare()))).every(Boolean))return false;
     holder.flush();const state=holder.get();return state.status==='ready'?(await state.runtime.settle?.()??true):false;
-  }}),[workspaceSlug,holder]);
+  }}),[workspaceSlug,holder,preparations]);
   return (
     <WorkspaceAddressContext value={address}><RuntimeContext value={holder}>
       {children}

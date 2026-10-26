@@ -17,6 +17,7 @@ import {
   type SelectionInfo,
 } from '@/editor';
 import type { DraftView, PieceView, ProductionDetail } from '@/ports';
+import {useNavigationPreparation} from '@/ui/workspace-navigation';
 import { useRunListener, useTabSync } from '@/state';
 import { revealInUpperThird } from './reveal';
 import { useArticleImages } from './use-article-images';
@@ -88,6 +89,7 @@ export function useStudioText({
     figureSources: images.sources,
     ...images.input,
   });
+  useNavigationPreparation(async()=>{handle.flush();return sync.settle();});
   const { editor } = handle;
   useEffect(() => {
     editorRef.current = editor;

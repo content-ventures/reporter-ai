@@ -232,7 +232,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     } },
     tabs: { current: () => activeTab,subscribe: () => () => {},claim: () => { void refresh(); } },
     usedAssetIds: () => usedAssetIds(ports.store.state.productions),ready,subscribe: ports.store.subscribe,flush: () => {},
-    async settle(){await writeTail;return !disposed&&save.status!=='error';},
+    async settle(){let tail;do{tail=writeTail;await tail;await Promise.resolve();}while(tail!==writeTail);return !disposed&&save.status!=='error';},
     onInvalidated(listener){contextListeners.add(listener);return()=>{contextListeners.delete(listener);};},
     dispose() { disposed = true;for(const dispose of imageDisposers)dispose();imageDisposers.clear(); for(const image of logos.values())void image.then(result=>{if(result.ok)(result.value.source as {close?:()=>void}).close?.();});logos.clear();contextListeners.clear(); http.dispose();directoryHttp.dispose();globalThis.document?.removeEventListener('visibilitychange',resumed); rejectAssetNamespace(new DOMException('Context closed','AbortError')); clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
   };
