@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { SkeletonText } from '@content-ventures/design-system/v3';
 import type { ProductionId } from '@/domain';
 import { stageTargetHref } from '@/ui/routes';

@@ -1,7 +1,8 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   Button,
   Badge,
@@ -88,6 +89,7 @@ export function ProductionsKanbanScreen() {
 }
 
 function ProductionsKanban() {
+  const workspaceHrefFor = useWorkspaceHref();
   const router = useRouter();
   const [params, setParams] = useListParams();
   const commands = useCommands();
@@ -342,7 +344,7 @@ function ProductionsKanban() {
                               <SituationCell item={item} size="sm" />
                             )}
                           </KanbanCardRow>
-                          <NextActorRow item={item} viewerId={viewerId} href={deskCard?.href} />
+                          <NextActorRow item={item} viewerId={viewerId} href={workspaceHrefFor(deskCard?.href)} />
                         </KanbanCard>
                       );
                     })}
@@ -415,6 +417,7 @@ function useKanbanSearchDraft(query: string, setParams: ReturnType<typeof useLis
  * while the person is unknown, the owner stays ("Responsável · João").
  */
 function NextActorRow({ item, viewerId, href }: { item: ProductionListItem; viewerId: string | undefined; href?: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const actor = item.situation.nextActor;
   // An unnamed review is the viewer's when their own next step is that review.
   const yours = Boolean(actor && (actor.personId ? actor.personId === viewerId : item.nextStep?.mine && item.nextStep.kind === actor.step));
@@ -437,7 +440,7 @@ function NextActorRow({ item, viewerId, href }: { item: ProductionListItem; view
         <>
           <KanbanCardMeta>Agora: você ·</KanbanCardMeta>
           {/* The card opens the same place: the link alone navigates. */}
-          <TextLink href={href ?? nextStepHref(item)} size="sm" onClick={(event) => event.stopPropagation()}>{step}</TextLink>
+          <TextLink href={workspaceHrefFor(href ?? nextStepHref(item))} size="sm" onClick={(event) => event.stopPropagation()}>{step}</TextLink>
         </>
       ) : (
         <KanbanCardMeta title={person.name}>Agora: {firstName(person.name)}</KanbanCardMeta>

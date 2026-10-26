@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Suspense, useState } from 'react';
 import {
@@ -88,6 +89,7 @@ function LoadingDelivery() {
 
 /** Entrega opens only after both approvals: say what is missing and open the piece that blocks it. */
 function BlockedDelivery({ productionId, reason, pieces, plan }: { productionId: ProductionId; reason?: string; pieces: readonly PieceView[]; plan: readonly PieceKind[] }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const piece = blockingPiece(pieces, plan);
   const copy = piece ? blockedCopy(piece.kind) : undefined;
   return (
@@ -98,7 +100,7 @@ function BlockedDelivery({ productionId, reason, pieces, plan }: { productionId:
       description={copy?.description ?? reason ?? 'Aprove as peças da produção para liberar a entrega.'}
       actions={
         piece && copy ? (
-          <ButtonLink href={piece.pendingReview ? reviewHref(productionId, piece.kind) : pieceHref(productionId, piece.kind)} variant="primary">
+          <ButtonLink href={workspaceHrefFor(piece.pendingReview ? reviewHref(productionId, piece.kind) : pieceHref(productionId, piece.kind))} variant="primary">
             {copy.action}
           </ButtonLink>
         ) : undefined
@@ -128,6 +130,7 @@ function IncoherentPackage({
   productionId: ProductionId;
   onExportWithParent: (selection: VersionRef[]) => void;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { exportWithParent, updateDerivative } = view.alternatives;
   const derivative = updateDerivative ? PIECE_LABELS[updateDerivative.kind] : 'Peça derivada';
   return (
@@ -140,7 +143,7 @@ function IncoherentPackage({
           actions={
             <>
               {updateDerivative ? (
-                <ButtonLink href={pieceHref(productionId, updateDerivative.kind)} variant="primary">
+                <ButtonLink href={workspaceHrefFor(pieceHref(productionId, updateDerivative.kind))} variant="primary">
                   {updateDerivative.label}
                 </ButtonLink>
               ) : null}
@@ -196,6 +199,7 @@ const TAB_OPTIONS: { value: DeliveryTab; label: string }[] = [
 ];
 
 function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const frame = useProductionFrame();
   const { tab, setTab } = useDeliveryView();
   const commands = useCommands();
@@ -413,7 +417,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
                   tone="warning"
                   title={imageWarning}
                   action={
-                    <ButtonLink href={pieceHref(productionId, 'article')} size="sm">
+                    <ButtonLink href={workspaceHrefFor(pieceHref(productionId, 'article'))} size="sm">
                       Conferir no estúdio
                     </ButtonLink>
                   }

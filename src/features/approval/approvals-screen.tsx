@@ -1,7 +1,9 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Suspense, useState, type ReactNode } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   AccessState,
   Avatar,
@@ -82,6 +84,7 @@ function useDecides(): boolean | undefined {
 }
 
 function ApprovalsView({ tab, onTab }: { tab: ApprovalsTab; onTab: (tab: ApprovalsTab) => void }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const decides = useDecides();
   const query = useApprovals(decides ? tab : null);
   const [retryOf, setRetryOf] = useState<QueryState<ApprovalsPage> | null>(null);
@@ -94,7 +97,7 @@ function ApprovalsView({ tab, onTab }: { tab: ApprovalsTab; onTab: (tab: Approva
         title={APPROVALS_COPY.noAccessTitle}
         description={APPROVALS_COPY.noAccessDescription}
         actions={
-          <ButtonLink href={PRODUCTIONS_HREF} variant="primary">
+          <ButtonLink href={workspaceHrefFor(PRODUCTIONS_HREF)} variant="primary">
             {APPROVALS_COPY.noAccessAction}
           </ButtonLink>
         }
@@ -254,6 +257,7 @@ function ApprovalsTable({ tab, rows, mode, error }: { tab: ApprovalsTab; rows: r
 
 /** A phone: one row per piece — title, the piece and who sent it, the due date — opening the review. */
 function PhoneList({ tab, rows, mode, error }: { tab: ApprovalsTab; rows: readonly ApprovalItem[]; mode: 'loading' | 'error' | 'rows'; error: ReactNode }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const now = useNow();
   if (mode === 'error') return error;
   if (mode === 'rows' && rows.length === 0) return emptyBlock(tab);
@@ -271,7 +275,7 @@ function PhoneList({ tab, rows, mode, error }: { tab: ApprovalsTab; rows: readon
                 titleLines={2}
                 description={phoneDescription(item, tab, now)}
                 meta={due ? <NextAction label={due.text} due={due.tone} /> : undefined}
-                href={reviewHref(item.productionId, item.kind)}
+                href={workspaceHrefFor(reviewHref(item.productionId, item.kind))}
               />
             );
           })}

@@ -1,7 +1,8 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   Alert,
   Button,
@@ -154,6 +155,7 @@ function PendingArticle() {
 }
 
 function EmptyDraft() {
+  const workspaceHrefFor = useWorkspaceHref();
   const studio = useStudio();
   const { generation } = studio;
   const guard = studio.production.guards.pieces.article?.generate;
@@ -220,7 +222,7 @@ function EmptyDraft() {
             ) : null}
             {blocked ? <Tooltip content={blocked}>{generate}</Tooltip> : generate}
             {blocked ? (
-              <ButtonLink href={materialHref(studio.production.id)}>Abrir material</ButtonLink>
+              <ButtonLink href={workspaceHrefFor(materialHref(studio.production.id))}>Abrir material</ButtonLink>
             ) : resume ? null : (
               <Button onClick={() => studio.editor?.commands.focus('start')}>Escrever do zero</Button>
             )}

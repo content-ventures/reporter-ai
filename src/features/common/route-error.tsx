@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { ButtonLink, ErrorState, type StateSize } from '@content-ventures/design-system/v3';
 
@@ -18,6 +19,7 @@ export function RouteError({
   size?: Exclude<StateSize, 'inline'>;
   back?: { label: string; href: string };
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   return (
     <ErrorState
       title="Não foi possível abrir esta tela"
@@ -26,7 +28,7 @@ export function RouteError({
       size={size}
       actions={
         back ? (
-          <ButtonLink href={back.href} size={size === 'page' ? 'md' : 'sm'}>
+          <ButtonLink href={workspaceHrefFor(back.href)} size={size === 'page' ? 'md' : 'sm'}>
             {back.label}
           </ButtonLink>
         ) : undefined

@@ -1,7 +1,8 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Suspense, useMemo, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   Alert,
   Badge,
@@ -106,6 +107,7 @@ function approvedNextOf(kind: PieceKind, production: ProductionDetail | undefine
 type AnchorState = { versionId: string | undefined; list: DecisionAnchor[] };
 
 function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; pieceKind: PieceKind }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const desk = useDossier(productionId);
   const router = useRouter();
   const phone = usePhone();
@@ -309,7 +311,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
         title={`${label} ainda não começou`}
         size="page"
         actions={
-          <ButtonLink href={studioHref} variant="primary">
+          <ButtonLink href={workspaceHrefFor(studioHref)} variant="primary">
             Abrir {label.toLowerCase()}
           </ButtonLink>
         }
@@ -323,7 +325,7 @@ function ReviewRoute({ productionId, pieceKind }: { productionId: ProductionId; 
           title="Nada para revisar"
           size="page"
           actions={
-            <ButtonLink href={studioHref} variant="primary">
+            <ButtonLink href={workspaceHrefFor(studioHref)} variant="primary">
               Abrir estúdio
             </ButtonLink>
           }

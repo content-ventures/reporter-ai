@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Avatar, Badge, Button, MetaList, TextLink, Tooltip } from '@content-ventures/design-system/v3';
 import { AUDIT_RESULT_LABELS, type AuditResult } from '@/domain';
@@ -51,12 +52,13 @@ export function ActionCell({ entry }: { entry: AuditEntry }) {
 
 /** "Artigo v4" (a link while the production exists) and its production below; a sign-in shows its device and IP. */
 export function ItemCell({ entry }: { entry: AuditEntry }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const href = itemHref(entry);
   const label = itemLabel(entry);
   return (
     <>
       {href ? (
-        <TextLink href={href} tone="inherit">
+        <TextLink href={workspaceHrefFor(href)} tone="inherit">
           {label}
         </TextLink>
       ) : (

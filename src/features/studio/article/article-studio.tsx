@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import {
   ButtonLink,
@@ -25,6 +26,7 @@ import { studioBadge } from './studio-session-model';
  * lives inside the studio's `WorkspaceLayout`, so the page keeps a single scroll per region.
  */
 export function ArticleStudio({ productionId }: { productionId: ProductionId }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const frame = useProductionFrame();
   const production = frame.production.data;
   const piece = production?.pieces.find((entry) => entry.kind === 'article');
@@ -42,7 +44,7 @@ export function ArticleStudio({ productionId }: { productionId: ProductionId }) 
           title={unauthorized ? 'Material ainda não autorizado' : 'Artigo ainda não iniciado'}
           meta={production.guards.pieces.article?.generate.allowed === false ? production.guards.pieces.article.generate.reason : undefined}
           actions={
-            <ButtonLink variant="primary" href={materialHref(productionId)}>
+            <ButtonLink variant="primary" href={workspaceHrefFor(materialHref(productionId))}>
               Abrir material
             </ButtonLink>
           }
