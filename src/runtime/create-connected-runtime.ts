@@ -3,7 +3,14 @@ import { applyWorkspaceDelta } from './editorial-sync.ts';
 import { ASSET_DB_NAME, createIndexedDbAssetStore } from '../adapters/local/assets/index.ts';
 import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
-import { assetCoverLoader, createLocalRenderService, servedCoverLoader } from '../adapters/local/render/index.ts';
+import { assetCoverLoader, createLocalRenderService, servedCoverLoader,decodeBitmap } from '../adapters/local/render/index.ts';
+import type {CoverLoader} from '../adapters/local/render/index.ts';
+import type {RenderService} from '../ports/render.ts';
+import type {CarouselTemplate} from '../domain/carousel.ts';
+import type {WorkspaceTemplateConfiguration} from '../domain/workspace-templates.ts';
+import {workspaceTemplateHash} from '../domain/workspace-templates.ts';
+import {isPreservedPilot} from '../domain/workspace-pilot.ts';
+import {workspaceTemplateLibrary} from './workspace-templates.ts';
 import { isForbidden, ReporterHttpError, createReporterTransport, requestWorkspace, createHttpGeneration, createHttpIngest } from '../adapters/http/reporter-client.ts';
 import { avatarImage } from '../adapters/local/assets/avatar-image.ts';
 import { createHttpImageGenerator, createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
@@ -36,7 +43,8 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   let current: ConnectedWorkspace = { ...emptyEditorialCheckpoint(),revision: -1,model: '',workerOnline: false };
   // The engine reads image assets through this object, kept in step with every refresh.
   const engineCheckpoint = { ...current };
-  const ports = createEditorialEngine(engineCheckpoint,ids);
+  const templates:CarouselTemplate[]=[];
+  const ports = createEditorialEngine(engineCheckpoint,ids,templates);
   let disposed = false;
   const activeTab = Object.freeze({ status: 'active' as const });
   let lastRefresh = 0;
@@ -49,10 +57,46 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const localAssets = createIndexedDbAssetStore({ clock,ids,workspaceId:()=>current.state.workspace.id,actorId:()=>current.state.sessionPersonId,databaseName,reset:false });
   const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(true),() => current.deploymentMode === 'cloud',http);
   const fixtures = createFixtures({ now: clock.now(),empty: true });
-  const render = createLocalRenderService({ templates: fixtures.templates,renders: fixtures.templateRenders,
+  const initialRender = () => createLocalRenderService({ templates: fixtures.templates,renders: fixtures.templateRenders,
     descriptions: fixtures.templateDescriptions,library: fixtures.templateLibrary,fontFaces: fixtures.templateFonts,loadCover: assetCoverLoader(assets),
     coverCredit: id => creditLine(assets.get(id)?.credit),samplePhoto: { assetId: fixtures.samplePhoto.assetId,credit: fixtures.samplePhoto.credit,load: servedCoverLoader(fixtures.samplePhoto.src) },
     samplePhotos: fixtures.samplePhotos.map(photo => ({ assetId: photo.assetId,credit: photo.credit,load: servedCoverLoader(photo.src) })),typefaces: options.typefaces });
+  let drawing = options.workspaceSlug ? createLocalRenderService({templates:[],renders:{}}) : initialRender();
+  let catalogHash='';
+  const logos=new Map<string,ReturnType<CoverLoader>>();
+  const loadBrandLogo:CoverLoader=id=>{
+    const cached=logos.get(id);if(cached)return cached;
+    const pending=(async()=>{
+      try{const response=await http.fetch(`/templates/logos/${encodeURIComponent(id)}`,{cache:'force-cache'});
+        const image=response.ok?await decodeBitmap(await response.blob()):undefined;return image?ok(image):refuse('unreadable' as const,'Marca indisponível.');
+      }catch{return refuse('unreadable' as const,'Marca indisponível.');}
+    })();logos.set(id,pending);void pending.then(result=>{if(!result.ok)logos.delete(id);});return pending;
+  };
+  const adoptTemplates=(configuration:WorkspaceTemplateConfiguration|undefined)=>{
+    if(!configuration){if(isPreservedPilot(current.state.workspace.id)){templates.splice(0,templates.length,...fixtures.templates);drawing=initialRender();}return;}
+    const hash=contentHash(configuration);if(hash===catalogHash)return;catalogHash=hash;
+    engineCheckpoint.templateConfiguration=configuration;
+    const catalog=workspaceTemplateLibrary(configuration);templates.splice(0,templates.length,...catalog.templates);
+    drawing=createLocalRenderService({templates,renders:catalog.renders,library:catalog.library,activeTemplateIds:catalog.activeIds,
+      fontFaces:fixtures.templateFonts,typefaces:options.typefaces,loadCover:assetCoverLoader(assets),loadBrandLogo,coverCredit:id=>creditLine(assets.get(id)?.credit),
+      ...(configuration.pilot?{samplePhoto:{assetId:fixtures.samplePhoto.assetId,credit:fixtures.samplePhoto.credit,load:servedCoverLoader(fixtures.samplePhoto.src)},
+        samplePhotos:fixtures.samplePhotos.map(photo=>({assetId:photo.assetId,credit:photo.credit,load:servedCoverLoader(photo.src)}))}:{})});
+  };
+  const ensureTemplate=async(id:string)=>{
+    if(drawing.sample(id).ok)return;
+    const hash=workspaceTemplateHash(id,current.state.workspace.id);if(!hash)return;
+    const loaded=await http.request<WorkspaceTemplateConfiguration>(`/templates?hashes=${hash}`);
+    if(loaded.workspaceId!==current.state.workspace.id||disposed)return;
+    const history=[...loaded.history,...(current.templateConfiguration?.history??[])].filter((entry,index,all)=>all.findIndex(other=>other.hash===entry.hash)===index).slice(0,200);
+    current.templateConfiguration={...loaded,history};adoptTemplates(current.templateConfiguration);
+  };
+  const render:RenderService={
+    get samplePhoto(){return drawing.samplePhoto;},templates:()=>drawing.templates(),capabilities:()=>drawing.capabilities(),
+    measure:body=>drawing.measure(body),sample:id=>drawing.sample(id),switchTemplate:(body,id)=>drawing.switchTemplate(body,id),
+    render:async request=>{await ensureTemplate(request.body.templateId);return drawing.render(request);},
+    thumbnail:async request=>{await ensureTemplate(request.templateId);return drawing.thumbnail(request);},
+    preview:async request=>{await ensureTemplate(request.templateId);return drawing.preview(request);},
+  };
   const runActive = () => Object.values(current.state.runFolds).some(fold => isRunActive(fold.run));
   const refresh = createWorkspaceRefresh(() => requestWorkspace(current.syncToken,runActive(),http).then(snapshot => {
       if (disposed || snapshot.revision < current.revision) return;
@@ -77,6 +121,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
         ? ASSET_DB_NAME : `reporter-assets:${encodeURIComponent(snapshot.state.workspace.id)}:${encodeURIComponent(snapshot.state.sessionPersonId)}`);
       const changed = snapshot.revision !== current.revision || snapshot.syncToken !== current.syncToken;
       current = snapshot;
+      adoptTemplates(snapshot.templateConfiguration);
       engineCheckpoint.imageAssets = current.imageAssets;
       assets.adoptSnapshot();
       if (changed) ports.store.transact(() => ok({ state: snapshot.state,value: undefined,persist: 'none',scope: 'external',productionIds: snapshot.state.productions.map(p => p.production.id) }));

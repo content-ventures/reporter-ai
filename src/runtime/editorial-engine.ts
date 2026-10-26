@@ -24,9 +24,12 @@ import type { LocalRoleProfile, LocalRoleRefusal, SessionMember } from '../ports
 import type { Result } from '../domain/result.ts';
 import type { StoreState } from '../adapters/local/store/state.ts';
 import type { Role } from '../domain/workspace.ts';
+import {isPreservedPilot} from '../domain/workspace-pilot.ts';
+import {workspaceTemplateLibrary} from './workspace-templates.ts';
 import { toSessionMember } from '../adapters/local/store/people.ts';
 // The server composes the engine and the row codec through this module only.
 export { assembleCheckpoint, diffRows, hasChanges, ScopeViolation, splitCheckpoint } from './editorial-sync.ts';
+export {workspaceTemplateLibrary} from './workspace-templates.ts';
 
 export const LOCAL_OPERATOR = '00000000-0000-0000-0000-000000000031';
 export const LOCAL_WORKSPACE = '00000000-0000-0000-0000-000000000101';
@@ -61,7 +64,10 @@ export function selectEditorialLocalRole(engine: ReturnType<typeof createEditori
       value, scope: 'session', productionIds: [], persist: 'none' });
   });
 }
-export function editorialTemplates() { return structuredClone(CAROUSEL_TEMPLATES); }
+export function editorialTemplates(checkpoint?: EditorialCheckpoint) {
+  return checkpoint?.templateConfiguration ? workspaceTemplateLibrary(checkpoint.templateConfiguration).templates
+    : !checkpoint || isPreservedPilot(checkpoint.state.workspace.id) ? structuredClone(CAROUSEL_TEMPLATES) : [];
+}
 /** A quote-shaped layout is never used to turn indirect prose into an attributed quotation. */
 export function editorialCarouselLayouts(template: CarouselTemplate, count: number, article: ArticleBody) {
   const layouts = plannedLayouts(template,count);
@@ -124,11 +130,11 @@ export function adoptEditorialIdentity(checkpoint: EditorialCheckpoint, identity
   state.sessionPersonId = identity.personId;
 }
 /** Tested domain commands execute on the server without a UI dependency. */
-export function createEditorialEngine(checkpoint: EditorialCheckpoint, ids: IdGenerator) {
+export function createEditorialEngine(checkpoint: EditorialCheckpoint, ids: IdGenerator,templates = editorialTemplates(checkpoint)) {
   const state = checkpoint.state;
   return createLocalPorts({
     seed: () => ({ ...state, records: state.productions.map(p => assembleRecord(state, p)) }),
-    clock: systemClock(), ids, templates: CAROUSEL_TEMPLATES,
+    clock: systemClock(), ids, templates,
     assets: id => checkpoint.imageAssets?.find(entry => entry.asset.id === id)?.asset,
     flow: flowById(DEFAULT_FLOW_ID) ?? R1_FLOW, gates: gatesFor(), recoverOrphanedRuns: false,
   });

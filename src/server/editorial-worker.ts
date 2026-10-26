@@ -52,6 +52,7 @@ import type { WritingTrace } from '../domain/writing-orchestration.ts';
 import { effectiveWritingMinimumQuotes } from '../domain/writing-orchestration.ts';
 import { writingSourceCandidates } from '../domain/writing-source.ts';
 import { writingExecutionDate, writingTemporalContext } from '../domain/writing-context.ts';
+import {contentHash} from '../domain/text/hash.ts';
 import { writingArticleChecks, writingArticleLimits } from '../domain/writing-checks.ts';
 import { interruptWritingTraces, nextWritingExecutionAttempt, writingTraceForExecution, writingTraceUsage } from '../domain/writing-execution.ts';
 
@@ -186,9 +187,15 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
     const input = (await editorialTransaction('worker',async (checkpoint,engine) => {
       const record = engine.records.record(job.meta.productionId);
       if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
-      return { record,templates: editorialTemplates(),people: engine.store.state.people,
+      if(job.template&&job.template.workspaceId!==checkpoint.state.workspace.id)throw new FlowError('JOB_CONTEXT_MISMATCH',422);
+      const config=checkpoint.templateConfiguration;
+      if(job.template){
+        const saved=[config?.active,...(config?.history??[])].find(entry=>entry?.hash===job.template!.hash);
+        if(!saved||contentHash(saved)!==contentHash(job.template))throw new FlowError('JOB_CONTEXT_MISMATCH',422);
+      }
+      return { record,templates: editorialTemplates(checkpoint),people: engine.store.state.people,
         citations: (checkpoint.citations ?? []).filter(citation => citation.productionId === job.meta.productionId) };
-    },false,'reporter.edit',scope)).value;
+    },false,'reporter.edit',{...scope,templates:true})).value;
     if (ARTICLE_ASSIST_KINDS.has(job.kind)) {
       lastStepId = 'assist';
       const response = await runArticleAssist(job,input.record,combined,guarded);

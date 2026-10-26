@@ -62,6 +62,18 @@ test('new clients start empty; immutable branded packs preserve the adopted pilo
   assert.equal(JSON.stringify(workspaceTemplateLibrary((await api<WorkspaceTemplateConfiguration>('w/reporter-ai/templates')).body)),before);
   assert.equal((await api('w/reporter-ai/templates',{revision:pilot.body.revision,config},EDITOR)).status,403);
   assert.equal((await owner('SELECT seq FROM public.reporter_ed_workspace WHERE portal_id=$1',[second]))[0].seq>0,true);
+  assert.ok(!restored.body.readiness.missing.includes('templates'));
+});
+
+test('an empty client can configure its own rules but cannot enqueue generation prematurely',async()=>{
+  const blank=await api<{value:{productionId:string}}>('w/other-publication/workspace',{method:'createBlank',args:[{title:'Incomplete setup',brief:{size:'standard',sections:3}}],requestId:randomUUID()});
+  const snapshot=await api<import('../../src/ports/connected-workspace.ts').ConnectedWorkspace>('w/other-publication/workspace');
+  assert.equal(snapshot.body.templateConfiguration?.workspaceId,second);
+  assert.equal(snapshot.body.templateConfiguration?.active?.config.publication,'Other publication');
+  const piece=snapshot.body.state.productions.find(entry=>entry.production.id===blank.body.value.productionId)!.pieces[0];
+  const blocked=await api<{ok:boolean;refusal:{code:string;message:string}}>('w/other-publication/workspace',{method:'generation.start',args:['article.outline',{productionId:blank.body.value.productionId,pieceId:piece.id}],requestId:randomUUID()});
+  assert.equal(blocked.body.ok,false);assert.equal(blocked.body.refusal.code,'workspace_not_ready');assert.match(blocked.body.refusal.message,/mapa editorial/);
+  assert.equal((await owner('SELECT count(*)::int AS count FROM public.reporter_ed_runs WHERE portal_id=$1',[second]))[0].count,0);
 });
 
 test('private brands use the target client even when the real operator has no membership',async()=>{

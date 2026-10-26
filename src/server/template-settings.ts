@@ -5,6 +5,8 @@ import sharp from 'sharp';
 import {z} from 'zod';
 import {WORKSPACE_TEMPLATE_FONTS,WORKSPACE_TEMPLATE_PRESETS,templateConfigurationHash,validateTemplateConfiguration} from '../domain/workspace-templates.ts';
 import type {WorkspaceBrandAsset,WorkspaceTemplateConfiguration} from '../domain/workspace-templates.ts';
+import {workspaceTemplateHash} from '../domain/workspace-templates.ts';
+import type {EditorialCheckpoint} from '../ports/connected-workspace.ts';
 import {transaction} from './database.ts';
 import {FlowError} from './errors.ts';
 import {readImageFile,writeImageFile} from './image-storage.ts';
@@ -26,6 +28,11 @@ function translate(error:unknown):never{
 }
 export async function readWorkspaceTemplates(client:PoolClient,workspaceId:string,hashes:string[]=[]):Promise<WorkspaceTemplateConfiguration>{
   return (await client.query('SELECT public.reporter_template_configuration($1,$2) AS value',[workspaceId,hashes])).rows[0].value;
+}
+/** Current drafts come first; older history is also resolvable individually by its owned hash. */
+export function referencedTemplateHashes(checkpoint:EditorialCheckpoint):string[]{
+  const bodies=checkpoint.state.productions.flatMap(production=>[...production.pieces.map(piece=>piece.draft.body),...production.versions.map(version=>version.body)]);
+  return [...new Set(bodies.flatMap(body=>body.type==='carousel'?[workspaceTemplateHash(body.templateId,checkpoint.state.workspace.id)].filter((hash):hash is string=>Boolean(hash)):[]))].slice(0,200);
 }
 export async function saveWorkspaceTemplates(client:PoolClient,workspaceId:string,body:unknown):Promise<WorkspaceTemplateConfiguration>{
   const parsed=templateInputSchema.safeParse(body);

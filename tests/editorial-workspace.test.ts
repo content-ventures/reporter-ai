@@ -8,12 +8,14 @@ import { runEditorialJob } from '../src/server/editorial-worker.ts';
 
 const emptyDelta = (seq: number) => ({ seq, workspace: null, productions: [], parts: [], sources: [], runs: [], events: [], items: [] });
 const emptyRows = (seq: number) => ({ ...emptyDelta(seq), pipelines: [] });
+const templateSnapshot={workspaceId:localContext.portal,revision:1,pilot:true,active:null,history:[],readiness:{ready:true,missing:[]}};
 
 test('unchanged polls read only the stamp, later changes arrive as deltas, identity or membership changes resend a snapshot', async () => {
   const globals = globalThis as typeof globalThis & { reporterPools?: Partial<Record<'runtime' | 'worker', Pool>> };
   const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
   let loads = 0, deltas = 0, seq = 42, membersHash = 'members';
   const client = { release() {}, async query(sql: string) {
+    if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     if (sql.includes('reporter_ed_status')) return { rows: [{ value: { seq, floor: 0, membersHash } }] };
     if (sql.includes('reporter_ed_load')) { loads++; return { rows: [{ value: emptyRows(seq) }] }; }
     if (sql.includes('reporter_ed_changes')) { deltas++; return { rows: [{ value: emptyDelta(seq) }] }; }
@@ -75,6 +77,7 @@ test('only polls that follow a running generation read the queue, and cloud poll
   const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
   const queries: string[] = [];
   const client = { release() {}, async query(sql: string) {
+    if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     queries.push(sql);
     if (sql.includes('reporter_ed_status')) return { rows: [{ value: { seq: 7, floor: 0, membersHash: 'members' } }] };
     if (sql.includes('reporter_queue_status')) return { rows: [{ value: { pending: true, stalled: true } }] };
@@ -105,6 +108,7 @@ test('a lock cycle or a duplicate receipt reruns the transaction on fresh rows; 
   const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
   let failures: string[] = [], loads = 0;
   const client = { release() {}, async query(sql: string) {
+    if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     if (sql.includes('reporter_ed_load')) { loads++; return { rows: [{ value: emptyRows(5) }] }; }
     if (sql.includes('reporter_ed_commit')) {
       const code = failures.shift();
