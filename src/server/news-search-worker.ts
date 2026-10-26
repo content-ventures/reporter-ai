@@ -1,8 +1,10 @@
 import 'server-only';
+import { logWorkerEvent as logEvent } from './worker-context.ts';
 import { withWorkspaceWork } from './worker-dispatch.ts';
+import { bindAutomatedJob } from './worker-job-context.ts';
 import type { NewsSearchClaim } from '../domain/news-search.ts';
 import { newsSearchQuery } from '../domain/news-search.ts';
-import { FlowError, logEvent, safeCode } from './errors.ts';
+import { FlowError, safeCode } from './errors.ts';
 import { newsSearchSql } from './news-search.ts';
 import { collectSearchNews } from './news-search-provider.ts';
 import type { SearchNewsEntry } from './news-search-provider.ts';
@@ -40,6 +42,7 @@ async function runScoped(owner: string, signal: AbortSignal, deadline?: number, 
   if (!claim) return false;
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
   try {
+    if(deps===services)bindAutomatedJob(claim.actor,'search',claim.fence);
     if (!deps.configured()) throw new FlowError('TAVILY_KEY_MISSING', 503);
     const result = await deps.collect(claim, bounded);
     bounded.throwIfAborted();

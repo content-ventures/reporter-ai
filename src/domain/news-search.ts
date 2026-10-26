@@ -26,6 +26,7 @@ export type NewsSearchView = {
 };
 export type NewsSearchWrite = { revision: number; config: NewsSearchConfig };
 export type NewsSearchClaim = {
+  actor?:string|null;
   fence: string; config: NewsSearchConfig; domains: string[]; queryIndex: number;
 };
 

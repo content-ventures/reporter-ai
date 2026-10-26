@@ -1,11 +1,13 @@
 import 'server-only';
+import { logWorkerEvent as logEvent } from './worker-context.ts';
 import { withWorkspaceWork } from './worker-dispatch.ts';
+import { bindAutomatedJob } from './worker-job-context.ts';
 import { transaction } from './database.ts';
-import { FlowError, logEvent, safeCode } from './errors.ts';
+import { FlowError, safeCode } from './errors.ts';
 import { translateNews } from './news-translation.ts';
 import type { NewsTranslationResult, NewsTranslationText } from './news-translation.ts';
 
-type Claim = NewsTranslationText & { id: string; fence: string; attempts: number };
+type Claim = NewsTranslationText & { id: string; fence: string; attempts: number; actor?:string|null };
 export type NewsTranslationWorkerServices = {
   claim(owner: string): Promise<Claim | null>;
   finish(claim: Claim, owner: string, result: NewsTranslationResult): Promise<boolean>;
@@ -40,6 +42,7 @@ async function runScoped(owner: string, signal: AbortSignal, deadline?: number,
   if (!claim) return false;
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
   try {
+    if(deps===services)bindAutomatedJob(claim.actor,'translation',claim.id);
     const translated = await deps.translate({ title: claim.title, excerpt: claim.excerpt, body: claim.body }, bounded);
     bounded.throwIfAborted();
     await deps.finish(claim, owner, translated);

@@ -22,3 +22,12 @@ export function bindEditorialJob(job: EditorialJob, actor: string): void {
     throw new FlowError('JOB_CONTEXT_MISMATCH',422);
   bindWorkerJob(actor,'editorial',job.meta.runId);
 }
+
+export function bindAutomatedJob(actor:string|null|undefined,kind:string,id:string):void {
+  const context=requireWorkerContext();
+  if(actor){bindWorkerJob(actor,kind,id);return;}
+  if(!['10000000-0000-0000-0000-000000000101','00000000-0000-0000-0000-000000000101'].includes(context.portal))
+    throw new FlowError('JOB_CONTEXT_MISSING',422);
+  if(context.job||context.actor)throw new FlowError('WORKER_CONTEXT_CHANGED',409);
+  context.job={kind,id};context.service='legacy_automation';
+}

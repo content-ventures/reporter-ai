@@ -34,14 +34,15 @@ export function editorialRetryPolicy(error: unknown, attempts: number, createdAt
   return { attempts: nextAttempts, retry: (error instanceof FlowError && error.retryable || interrupted) && nextAttempts < maxAttempts && withinWindow
     && age + delayMs < 5 * 60 * 1000, delayMs };
 }
-export function logEvent(component: string, message: string, attributes: { request_id?: string; job_id?: string; generation_id?: string; error_code?: string; duration_ms?: number } = {}) {
+export function logEvent(component: string, message: string, attributes: { request_id?: string; job_id?: string; generation_id?: string; error_code?: string; duration_ms?: number;workspace_id?:string;actor_id?:string;service_actor?:'legacy_automation' } = {}) {
   if (!/^[a-z_-]{1,40}$/.test(component) || !/^[a-z_]{1,80}$/.test(message)) return;
   // Only bounded, allowlisted operational metadata; never serialize Error objects,
   // provider responses, prompts, paths, credentials, filenames or editorial text.
   const clean = Object.fromEntries(Object.entries(attributes).filter(([key, value]) => {
     if (key === "duration_ms") return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
     if (key === "error_code") return typeof value === "string" && /^(?:[A-Z][A-Z0-9_]{0,63}|[0-9]{5})$/.test(value);
-    return ["request_id","job_id","generation_id"].includes(key) && typeof value === "string" &&
+    if(key==='service_actor')return value==='legacy_automation';
+    return ["request_id","job_id","generation_id","workspace_id","actor_id"].includes(key) && typeof value === "string" &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
   }));
   // Diagnostics are lossy when their output stream is saturated. Do not queue

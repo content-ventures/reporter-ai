@@ -236,6 +236,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     if (path[0] === 'drive' && path.at(-1) === 'sync') return await handleDrive(request,path.slice(1),{ readJson: jsonBody,defer });
     const context = await guardReporterRequest(request, deps.identify, selectedWorkspace);
     return await runWithReporterContext(context, async () => {
+    if(request.method==='GET'&&path.join('/')==='processing') return reply(await transaction('runtime',async client=>(await client.query('SELECT public.reporter_processing_view($1) AS value',[context.portal])).rows[0].value));
     if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
     if (path[0] === 'news' && path[1] === 'search') {
