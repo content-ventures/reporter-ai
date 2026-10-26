@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { workspaceAddress } from '../../domain/workspace-address.ts';
 import {
   AppShell,
   Badge,
@@ -101,7 +102,8 @@ function usePaletteShortcut(open: () => void): void {
 }
 
 function ShellFrame({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const routePath = usePathname();
+  const pathname = workspaceAddress(routePath)?.path ?? routePath;
   const router = useRouter();
   useClientLinks();
   const declared = useDeclaredBreadcrumb();

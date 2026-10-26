@@ -2,10 +2,13 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { z } from 'zod';
-import { AVATAR_SIDE, AVATAR_UPLOAD_MAX_BYTES, avatarPath, validateProfilePatch } from '../domain/profile.ts';
-import { transaction } from './database.ts';
+import { AVATAR_SIDE, AVATAR_UPLOAD_MAX_BYTES, accountAvatarPath, validateProfilePatch } from '../domain/profile.ts';
+import { localWorkspaceQuery, pool, transaction } from './database.ts';
 import { FlowError } from './errors.ts';
 import { readImageFile, writeImageFile } from './image-storage.ts';
+import { currentReporterContext } from './request-context.ts';
+import { reporterIdentity } from './auth.ts';
+import { reporterDeploymentMode } from './deployment.ts';
 
 /**
  * "Meu perfil" over HTTP. The member is always the request's own identity: the SQL updates
@@ -69,7 +72,31 @@ export async function handleProfile(request: Request, path: string[], readJson: 
     const bytes = await normalizeAvatar(await imageBody(request));
     const sha = createHash('sha256').update(bytes).digest('hex');
     await writeImageFile(`${sha}.image`, bytes, 'image/webp');
-    patch = { image: avatarPath(sha) };
+    const context = currentReporterContext();
+    patch = { image: accountAvatarPath(context.actor,context.portal,`${sha}.image`) };
   } else throw new FlowError('NOT_FOUND', 404);
   return Response.json(await saveProfile(patch), { headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+}
+
+/** A member's account photo is visible to themselves, teammates and the platform operator. */
+export async function handleAccountAvatar(request: Request,path: string[],deps: { guardLocal(request: Request): void; identify?: typeof reporterIdentity }): Promise<Response> {
+  const [person,portal,file] = path;
+  const guid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+  if (request.method !== 'GET' || path.length !== 3 || !guid.test(person ?? '') || !guid.test(portal ?? '') || !AVATAR_FILE.test(file ?? '')) throw new FlowError('NOT_FOUND',404);
+  let allowed: boolean;
+  if (reporterDeploymentMode() === 'local') {
+    deps.guardLocal(request);
+    allowed = (await localWorkspaceQuery<{ value: boolean }>('SELECT public.reporter_avatar_access(NULL,NULL,false,$1,$2,$3) AS value',[person,portal,file]))[0].value;
+  } else {
+    const identity = await (deps.identify ?? reporterIdentity)();
+    if (!identity) throw new FlowError('AUTH_REQUIRED',401);
+    const { rows } = await pool('runtime').query<{ value: boolean }>('SELECT public.reporter_avatar_access($1,$2,$3,$4,$5,$6) AS value',
+      [identity.subject,identity.email,identity.emailVerified,person,portal,file]);
+    allowed = rows[0].value;
+  }
+  if (!allowed) throw new FlowError('NOT_FOUND',404);
+  const bytes = await readImageFile(file,portal);
+  if (!isWebp(bytes)) throw new FlowError('NOT_FOUND',404);
+  return new Response(new Uint8Array(bytes),{headers:{'Content-Type':'image/webp','Cache-Control':'private, max-age=300','Vary':'Cookie',
+    'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"}});
 }

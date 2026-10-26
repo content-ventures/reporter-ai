@@ -54,13 +54,19 @@ The frozen M0 app was also started against the upgraded synthetic database: its 
 
 Implementation is split into reviewable local commits. The next phase replaces the remaining deployment-default request context with an explicit authorized workspace address. The new administration endpoints are persistence capabilities; complete UI onboarding and workspace navigation remain M5 and M6.
 
-## M2 progress: explicit authorization
+## M2 explicit authorization, transport and private assets
 
 Migration 032 and `/api/reporter/w/<slug>/...` now resolve the actual account and the addressed workspace server side. The existing unscoped routes keep their original pilot destination. Invalid, unauthorized and disabled explicit contexts fail closed. `REPORTER_WORKSPACES_MODE` defaults to `off`; `admin` permits only a verified platform operator; `all` permits active authorized memberships. The directory is bounded and paginated.
 
-The platform operator's addressed context uses the real account and explicit administrative capabilities without creating a membership or borrowing another person's identity. Database permissions independently validate this context. Four focused HTTP/PostgreSQL tests pass for role separation, real administrative identity, scoped retry receipts, foreign production refusals, invalid/disabled contexts and immediate revocation. The general quick gate currently passes 1,709 tests and the backend gate passes 313 tests.
+The platform operator's addressed context uses the real account and explicit administrative capabilities without creating a membership or borrowing another person's identity. Database permissions independently validate this context. Seven focused HTTP/PostgreSQL/S3 cases pass for roles, administrative identity, retry receipts, foreign production refusals, invalid/disabled contexts, immediate revocation, signed image completion, identical image IDs with different bytes, account-photo visibility and an account change during a queued write.
 
-M2 remains open: runtime transport binding, private files/images, global account avatar ownership, canonical page addressing and final regression checks are still being completed. These intermediate results do not enable production navigation.
+Each connected runtime captures its workspace URL and authoritative account. Pending writes cannot be reattributed after login changes; disposed transports discard late results. IndexedDB opens only after identity resolution and uses a separate database per workspace/account. The original loopback operator retains its legacy database, filtered by actual workspace ownership. This does not copy unknown legacy browser records into another account.
+
+Canonical page addresses `/w/<slug>/...` preserve the existing pages through Next rewrites and bootstrap the explicitly addressed runtime. Global administration/authentication endpoints cannot be smuggled through a workspace prefix. M6 completes the selector, navigation links, leave/upload safeguards and visible account-change reset; these are not claimed as complete here.
+
+Image gateway requests carry an explicit namespace and reject mismatched keys. The new account-avatar route verifies the stored photo, the real viewer and their relationship to its owner. A global account photo can follow its owner between clients; a teammate gains no access to the other client's editorial files. Existing avatar addresses project through a compatibility resolver without rewriting stored client data. The updated worker accepts both legacy pilot gateway calls and explicit namespaces; release must deploy that compatible worker before the app. M3 connects original-file callbacks and worker-generated file keys to their recorded jobs.
+
+M2 validation: `pnpm gate` passed 1,714 tests and the production build; 313 backend tests passed; the full PostgreSQL suite passed on upgrade and fresh bootstrap; 82 cloud rehearsal tests passed with the same 6 documented skips. The ARM64 bundle passed (157 files, 10,292,057 compressed bytes). Browser checks passed: 86 connected scenarios plus one intentional mobile skip, all 74 fixture scenarios including downloaded exports, and a new real PostgreSQL-backed two-tab scenario. The latter saved independent drafts, verified request destinations, reloaded the saved article and confirmed distinct IndexedDB databases in one browser session. No production writes, paid provider requests or rollout activation occurred.
 
 ## Acceptance budgets established before implementation
 
@@ -84,5 +90,6 @@ Before a rollout, stop new commands for the affected workspace, settle or pause 
 | --- | --- |
 | M0 | Accepted with the two recorded intermittent browser checks; baseline frozen |
 | M1 | Accepted locally: lifecycle, membership persistence and compatibility checks |
-| M2 | In progress: explicit API context validated; transport and private assets ongoing |
-| M3–M9 | Not accepted |
+| M2 | Accepted locally: request authorization, context-bound transport and private image access |
+| M3 | Next: workspace-owned worker processing and integrations |
+| M4–M9 | Not accepted |

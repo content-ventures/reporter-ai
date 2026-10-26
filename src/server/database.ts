@@ -4,7 +4,8 @@ import { Pool, type PoolClient } from "pg";
 import { attachDatabasePool } from '@vercel/functions';
 import type { Role } from '../domain/workspace.ts';
 import type { WorkspaceStatus } from '../domain/workspace-management.ts';
-import { assertLocalMode, cloudDatabaseUrl, cloudPortalId, databasePassword, localDatabasePort } from "./config";
+import { accountAvatarSource } from '../domain/profile.ts';
+import { assertLocalMode, cloudDatabaseUrl, cloudPortalId, databasePassword, localDatabasePort, localContext } from "./config";
 import { reporterDeploymentMode } from './deployment.ts';
 import { currentReporterContext, type ReporterRequestContext } from './request-context.ts';
 
@@ -36,7 +37,8 @@ type ContextRow = {
 function contextOf(row: ContextRow | undefined): ReporterRequestContext | null {
   if (!row) return null;
   return { tenant: row.tenant_id,portal: row.portal_id,actor: row.user_id,workspaceName: row.workspace_name,
-    workspaceSlug: row.workspace_slug,name: row.user_name,email: row.user_email,image: row.user_image ?? undefined,
+    workspaceSlug: row.workspace_slug,name: row.user_name,email: row.user_email,
+    image: accountAvatarSource(row.user_id,row.user_image ?? undefined,reporterDeploymentMode() === 'cloud' ? cloudPortalId() : localContext.portal),
     roles: row.roles.filter((role): role is Role => ROLES.has(role as Role)),
     ...(row.administrative !== undefined ? { addressed: true as const, administrative: row.administrative, workspaceStatus: row.workspace_status } : {}) };
 }

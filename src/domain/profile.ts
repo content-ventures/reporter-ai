@@ -26,6 +26,17 @@ export function avatarPath(sha256: string): string {
   return `/api/reporter/profile/avatar/${sha256}.image`;
 }
 
+/** Shared account identity, with an explicit verified storage location. */
+export function accountAvatarPath(personId: string, portalId: string, fileKey: string): string {
+  if (![personId,portalId].every(value=>/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) || !/^[a-f0-9]{64}\.image$/.test(fileKey)) throw new Error('INVALID_AVATAR_ADDRESS');
+  return `/api/reporter/avatars/${personId}/${portalId}/${fileKey}`;
+}
+export function accountAvatarSource(personId: string, image: string | undefined, legacyPortal: string): string | undefined {
+  const match=/^\/api\/reporter\/profile\/avatar\/([a-f0-9]{64}\.image)$/.exec(image ?? '');
+  if (!match) return image;
+  try {return accountAvatarPath(personId,legacyPortal,match[1]);} catch {return undefined;}
+}
+
 /** Trimmed patch, with a blank cargo as `null`; refusals carry the pt-BR message. */
 export function validateProfilePatch(patch: ProfilePatch): Result<ProfilePatch, 'empty_name' | 'too_long'> {
   const next: ProfilePatch = {};

@@ -17,6 +17,7 @@ import {
 } from '../domain/platform.ts';
 import { ROLES, type Role } from '../domain/workspace.ts';
 import { WORKSPACE_MESSAGES, validateWorkspace } from '../domain/workspace-management.ts';
+import { accountAvatarSource } from '../domain/profile.ts';
 import { reporterIdentity } from './auth.ts';
 import { cloudPortalId, localContext } from './config.ts';
 import { pool } from './database.ts';
@@ -96,8 +97,15 @@ function translate(error: unknown): unknown {
   return error;
 }
 
+function accountPhotos(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(accountPhotos);
+  if (!value || typeof value !== 'object') return value;
+  const result: Record<string,unknown> = Object.fromEntries(Object.entries(value).map(([key,item])=>[key,accountPhotos(item)]));
+  if (typeof result.id === 'string' && typeof result.avatarUrl === 'string') result.avatarUrl = accountAvatarSource(result.id,result.avatarUrl,defaultPortal());
+  return result;
+}
 function reply(value: unknown, status = 200): Response {
-  return Response.json(value, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+  return Response.json(accountPhotos(value), { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
 async function run<T>(mode: 'platform' | 'invite', actor: string | null, operation: (client: PoolClient) => Promise<T>): Promise<T> {

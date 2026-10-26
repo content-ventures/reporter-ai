@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@content-ventures/design-system"],
   // The local profile selector occupies the same corner as Next's development indicator.
   devIndicators: false,
+  rewrites: async () => [{ source: '/w/:workspace/:path*',destination: '/:path*' }],
 };
 
 export default function config(phase: string): NextConfig {

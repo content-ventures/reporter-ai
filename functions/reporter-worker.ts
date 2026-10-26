@@ -131,7 +131,7 @@ export function createReporterWorker(services: WorkerDependencies = dependencies
     if (url.pathname === '/objects') {
       if (request.method !== 'POST' || !await hasWorkerSecret(request)) return new Response('Unauthorized',{status:401});
       try {
-        const input = z.object({ action: z.enum(['read','prepare','write']),key: z.string().max(200),mime: z.string().optional(),bytes: z.string().max(14*1024**2).optional() }).strict().parse(await request.json());
+        const input = z.object({ action: z.enum(['read','prepare','write']),key: z.string().max(200),portal: z.guid().optional(),mime: z.string().optional(),bytes: z.string().max(14*1024**2).optional() }).strict().parse(await request.json());
         return Response.json(await workerImageObject(input));
       } catch (error) { return Response.json({error:safeCode(error)},{status:error instanceof FlowError?error.status:503}); }
     }

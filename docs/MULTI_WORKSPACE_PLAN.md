@@ -109,13 +109,13 @@ Main implementation areas: `src/domain/workspace.ts`, `src/domain/platform.ts`, 
 
 Use the selected workspace as an explicit addressable context, resolved and authorized by the server. A mutable global "current workspace" cookie must not determine where another browser tab writes.
 
-- [ ] Introduce canonical workspace routes such as `/w/<workspaceSlug>/...` and a matching explicit workspace context in HTTP adapters and endpoints. Resolve the immutable ID and permissions server side.
-- [ ] Keep existing Seafood deep links through a compatibility resolver that can resolve only their original authorized workspace. Missing, invalid or forbidden context must never fall back to a different client's workspace.
-- [ ] Require either an active membership or the explicit audited platform administrator capability on each request. Check that every supplied resource ID belongs to that authorized workspace.
-- [ ] Cover workspace bootstrap, production lists, originals, transcripts, streaming or polling, article and carousel edits, reviews, exports, citations, images, news, policy settings, profile actions and audit reads.
-- [ ] Namespace database reads, deltas, optimistic revisions, idempotency receipts, render caches and storage keys by workspace. Validate upload preparation, finalization and signed download ownership consistently.
-- [ ] Update the worker image gateway and remote media paths that currently depend on the default portal. Preserve existing object paths and signed URL expiry behavior.
-- [ ] Include membership and workspace state changes in authorization invalidation. Account logout clears the browser state and prevents pending commands from being retried as another account.
+- [x] Introduce canonical `/w/<workspaceSlug>/...` pages and `/api/reporter/w/<workspaceSlug>/...` endpoints, with runtime-bound HTTP context and server-resolved immutable IDs and permissions.
+- [x] Preserve unscoped Seafood links as pilot-only compatibility addresses. Invalid, forbidden and disabled explicit contexts fail closed.
+- [x] Require active membership or the explicit real platform administrator context. Scope resource reads, commands and retry receipts to the addressed workspace.
+- [x] Apply the shared request guard across bootstrap, editorial commands, sources/transcripts, polling, reviews/exports, citations, images, news, policy, profile and audit routes. M3 verifies original-file callbacks and processing in their recorded workspace.
+- [x] Preserve portal-scoped database rows, deltas, revisions and receipts; bind browser transports and image caches to workspace/account; verify signed image preparation/completion and actual downloaded bytes, including identical image IDs in two clients. M6 completes UI cache teardown and navigation safeguards.
+- [x] Extend the authenticated image gateway for explicit namespaces while retaining legacy pilot calls. M3 supplies captured job context to worker-generated keys and original-file callbacks.
+- [x] Re-read authorization on each request and refuse a queued command after its bound account changes. M6 completes visible logout/account-change cleanup; revoked membership in A already leaves B usable.
 
 Exit gate: direct API requests, private asset requests and old or guessed links cannot read or modify another workspace. Two tabs on different workspaces retain independent destinations for reads and writes. Existing Seafood addresses resolve correctly.
 
