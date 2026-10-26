@@ -38,6 +38,7 @@ services:
       - ./database/migrations/027-news-source-ratings.sql:/docker-entrypoint-initdb.d/99-3-news-source-ratings.sql:ro
       - ./database/migrations/028-news-images.sql:/docker-entrypoint-initdb.d/99-4-news-images.sql:ro
       - ./database/migrations/029-news-search.sql:/docker-entrypoint-initdb.d/99-5-news-search.sql:ro
+      - ./database/migrations/030-workspace-lifecycle.sql:/docker-entrypoint-initdb.d/99-6-workspace-lifecycle.sql:ro
     networks:
       - reporter
     healthcheck:

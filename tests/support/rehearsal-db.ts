@@ -26,7 +26,7 @@ function script(args: string[], env: Record<string, string>) {
  * A disposable PostgreSQL on loopback with the complete cloud schema, applied by the same
  * migrator as Neon. Its data lives in tmpfs and the container is removed on stop.
  */
-export async function startRehearsalDatabase(users: { email: string; role: string }[]) {
+export async function startRehearsalDatabase(users: { email: string; role: string }[], options: { beforeMigration?: string } = {}) {
   const configuration = await readFile(new URL('compose.reporter.yaml', root), 'utf8');
   const image = configuration.match(/^    image: (postgres:17\.9@sha256:[a-f0-9]{64})$/m)?.[1];
   if (!image) throw new Error('Pinned PostgreSQL image not found');
@@ -43,7 +43,17 @@ export async function startRehearsalDatabase(users: { email: string; role: strin
       catch (error) { if (attempt > 60) throw error; await delay(500); }
       finally { await client.end().catch(() => {}); }
     }
-    script(['scripts/reporter-cloud.mjs', 'migrate'], { DATABASE_URL: owner });
+    const migrate = () => script(['scripts/reporter-cloud.mjs', 'migrate'], { DATABASE_URL: owner });
+    if (options.beforeMigration) {
+      const { CLOUD } = await import('../../scripts/lib/migrations.mjs');
+      const cutoff = CLOUD.indexOf(options.beforeMigration);
+      if (cutoff < 3) throw new Error('The rehearsal cutoff must name a registered additive migration');
+      const baseline = new pg.Client({ connectionString: owner });
+      await baseline.connect();
+      try {
+        for (const path of CLOUD.slice(0, cutoff)) await baseline.query(await readFile(new URL(path, root), 'utf8'));
+      } finally { await baseline.end(); }
+    } else migrate();
     const runtimePassword = randomBytes(24).toString('base64url'), workerPassword = randomBytes(24).toString('base64url');
     const admin = new pg.Client({ connectionString: owner });
     await admin.connect();
@@ -54,7 +64,7 @@ export async function startRehearsalDatabase(users: { email: string; role: strin
     } finally { await admin.end(); }
     for (const user of users) script(['scripts/reporter-cloud.mjs', 'grant', '--email', user.email, '--role', user.role], { DATABASE_URL: owner });
     const role = (name: string, secret: string) => `postgresql://reporter_${name}:${secret}@127.0.0.1:${port}/reporter_cloud`;
-    return { owner, runtime: role('runtime', runtimePassword), worker: role('worker', workerPassword), workerPassword,
+    return { owner, runtime: role('runtime', runtimePassword), worker: role('worker', workerPassword), workerPassword, migrate,
       stop: () => { docker(['stop', '--time', '2', id]); } };
   } catch (error) { docker(['stop', '--time', '2', id]); throw error; }
 }
