@@ -1,5 +1,8 @@
 import 'server-only';
 import { withWorkspaceWork } from './worker-dispatch.ts';
+import { bindWorkerJob } from './worker-context.ts';
+import { withRegisteredWorkerContext } from './worker-job-context.ts';
+import type { WorkerContext } from './worker-context.ts';
 import { Readable,Transform } from 'node:stream';
 import { PutObjectCommand,S3Client } from '@aws-sdk/client-s3';
 import { transaction } from './database.ts';
@@ -16,6 +19,8 @@ async function runScoped(owner:string,signal:AbortSignal) {
   const source=(await transaction('worker',async db=>(await db.query('SELECT public.reporter_remote_link_claim($1) AS value',[owner])).rows[0]?.value)) as null|{id:string;url:string;key:string;size:number;content_type:string};
   if (!source) return false;
   try {
+    const context=await transaction('worker',async db=>(await db.query('SELECT public.reporter_worker_object_context($1,$2) AS value',['reporter-source-media',source.key])).rows[0]?.value as WorkerContext);
+    withRegisteredWorkerContext(context,()=>bindWorkerJob(context.actor!,'remote',source.id));
     const response=await remoteResponse(source.url,signal);let size=0;
     const body=Readable.fromWeb(response.body as never).pipe(new Transform({transform(chunk,_encoding,callback){size+=chunk.length;callback(size>Number(source.size)?new FlowError('SOURCE_CHANGED',422):null,chunk);}}));
     const client=new S3Client({forcePathStyle:true});

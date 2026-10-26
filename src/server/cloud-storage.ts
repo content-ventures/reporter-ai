@@ -16,6 +16,9 @@ import { MAX_DRIVE_BYTES } from '../domain/reporter.ts';
 import { transaction } from './database.ts';
 import { FlowError } from './errors.ts';
 import { appOrigins } from './worker-config.ts';
+import { requireWorkerContext } from './worker-context.ts';
+import type { WorkerContext } from './worker-context.ts';
+import { withRegisteredWorkerContext } from './worker-job-context.ts';
 
 export const SOURCE_BUCKET = 'reporter-source-media';
 export const MULTIPART_PART_BYTES = 16 * 1024 ** 2;
@@ -72,6 +75,13 @@ async function authorizedUpload(sourceId: string,token: string) {
 }
 
 export async function startCloudUpload(sourceId: string,token: string) {
+  const context=await uploadContext(sourceId,token);
+  return withRegisteredWorkerContext(context,()=>startRegisteredUpload(sourceId,token));
+}
+async function uploadContext(sourceId:string,token:string):Promise<WorkerContext> {
+  return transaction('worker',async db=>(await db.query('SELECT public.reporter_worker_upload_context($1,$2) AS value',[sourceId,token])).rows[0]?.value);
+}
+async function startRegisteredUpload(sourceId: string,token: string) {
   const input = await authorizedUpload(sourceId,token);
   await ensureUploadCors();
   let uploadId = input.upload_id ?? undefined;
@@ -126,6 +136,10 @@ async function storedParts(bucket: string,key: string,uploadId: string) {
 }
 
 export async function completeCloudUpload(sourceId: string,token: string) {
+  const context=await uploadContext(sourceId,token);
+  return withRegisteredWorkerContext(context,()=>completeRegisteredUpload(sourceId,token));
+}
+async function completeRegisteredUpload(sourceId: string,token: string) {
   const input = await authorizedUpload(sourceId,token);
   if (!input.upload_id) throw new FlowError('UPLOAD_SESSION_MISSING',409);
   const parts = (await storedParts(input.bucket,input.key,input.upload_id)).map(part => {
@@ -151,6 +165,10 @@ export async function completeCloudUpload(sourceId: string,token: string) {
 
 export async function finalizeUploadedObject(bucket: string,key: string) {
   if (bucket!==SOURCE_BUCKET || !key.startsWith('incoming/')) throw new FlowError('UPLOAD_OBJECT_DENIED',403);
+  const context=await transaction('worker',async db=>(await db.query('SELECT public.reporter_worker_object_context($1,$2) AS value',[bucket,key])).rows[0]?.value as WorkerContext);
+  return withRegisteredWorkerContext(context,()=>finalizeRegisteredObject(bucket,key));
+}
+async function finalizeRegisteredObject(bucket:string,key:string) {
   const object = await s3().send(new HeadObjectCommand({ Bucket: bucket,Key: key }));
   const size = object.ContentLength,contentType = object.ContentType,etag = object.ETag;
   if (!size || !contentType || !etag) throw new FlowError('UPLOAD_OBJECT_INVALID',422);
@@ -161,6 +179,6 @@ export async function finalizeUploadedObject(bucket: string,key: string) {
 }
 
 export async function signedSourceUrl(bucket: string,key: string) {
-  if (bucket!==SOURCE_BUCKET || !key.startsWith('incoming/')) throw new FlowError('SOURCE_UNAVAILABLE',422);
+  if (bucket!==SOURCE_BUCKET || !key.startsWith(`incoming/${requireWorkerContext().portal}/`)) throw new FlowError('SOURCE_UNAVAILABLE',422);
   return getSignedUrl(s3(),new GetObjectCommand({ Bucket: bucket,Key: key }),{ expiresIn: SOURCE_URL_TTL_SECONDS });
 }

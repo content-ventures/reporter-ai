@@ -68,6 +68,14 @@ Image gateway requests carry an explicit namespace and reject mismatched keys. T
 
 M2 validation: `pnpm gate` passed 1,714 tests and the production build; 313 backend tests passed; the full PostgreSQL suite passed on upgrade and fresh bootstrap; 82 cloud rehearsal tests passed with the same 6 documented skips. The ARM64 bundle passed (157 files, 10,292,057 compressed bytes). Browser checks passed: 86 connected scenarios plus one intentional mobile skip, all 74 fixture scenarios including downloaded exports, and a new real PostgreSQL-backed two-tab scenario. The latter saved independent drafts, verified request destinations, reloaded the saved article and confirmed distinct IndexedDB databases in one browser session. No production writes, paid provider requests or rollout activation occurred.
 
+## M3 processing boundary (in progress)
+
+Migrations 034–035 add bounded, fair client dispatch with renewable leases and stale-owner fences. A worker transaction no longer assumes the pilot. Processing inherits its selected tenant/workspace and binds the originating actor from persisted work. New editorial jobs capture ownership alongside their immutable pipeline; pre-workspace pilot jobs remain readable. A new client's missing or mismatched job context fails before any provider request.
+
+Original-upload callbacks resolve their destination from the registered private object and upload token. They cannot follow a browser context change. Generated image keys and filesystem checkpoints now include the originating workspace. Worker event application uses the run's recorded actor, even when a different person last opened the workspace.
+
+The processing boundary passed 1,714 general tests, 313 backend tests, 89 cloud rehearsal tests (6 unchanged skips), local upgrade/fresh bootstrap, replay, concurrent claims and row recovery. Rehearsals include two concurrent completed generations with independent ownership/configuration/usage, callback retries, actual private original downloads, foreign context refusals, expired dispatch recovery and stale image answers. Remaining M3 work: configurable integration bindings, automated-source provenance, operational attribution and the complete phase build/bundle/browser gate. M3 is not yet accepted.
+
 ## Acceptance budgets established before implementation
 
 - Integrity: zero loss, ownership changes, duplicate pilot workspaces, unexpected policy resets or changes to historical render definitions. Compare stable rows and configuration fingerprints; explicitly exclude newly recorded activity and worker heartbeats from immutable-data comparisons.
@@ -91,5 +99,5 @@ Before a rollout, stop new commands for the affected workspace, settle or pause 
 | M0 | Accepted with the two recorded intermittent browser checks; baseline frozen |
 | M1 | Accepted locally: lifecycle, membership persistence and compatibility checks |
 | M2 | Accepted locally: request authorization, context-bound transport and private image access |
-| M3 | Next: workspace-owned worker processing and integrations |
+| M3 | In progress: processing boundary validated; integration bindings remain |
 | M4–M9 | Not accepted |

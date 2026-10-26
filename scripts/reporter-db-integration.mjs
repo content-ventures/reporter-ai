@@ -9,7 +9,7 @@ const userContext = `SELECT set_config('app.access_mode','user',true),set_config
   set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',true),
   set_config('app.portal_id','00000000-0000-0000-0000-000000000101',true),
   set_config('app.user_id','00000000-0000-0000-0000-000000000011',true);`;
-const workerContext = "SELECT set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true);";
+const workerContext = "SELECT set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),set_config('app.portal_id','00000000-0000-0000-0000-000000000101',true);";
 
 function parallelQuery(id, query) {
   const env = { ...process.env };

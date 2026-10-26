@@ -11,12 +11,16 @@ import { reporterDeploymentMode } from './deployment.ts';
 import { storageRoot } from './storage.ts';
 import { FlowError } from './errors.ts';
 import { workerUrl } from './worker-config.ts';
+import { currentWorkerContext, requireWorkerContext } from './worker-context.ts';
 
 const bucket = 'reporter-source-media';
 const client = new S3Client({ forcePathStyle: true,requestChecksumCalculation: 'WHEN_REQUIRED' });
 export const imageFileKey = /^[a-f0-9]{64}\.(?:photo\.jpg|image)$/;
 const objectKey = /^images\/[0-9a-f-]{36}\/[a-f0-9]{64}\.(?:photo\.jpg|image)$/;
-function portal() { return process.env.REPORTER_FUNCTION_RUNTIME === 'true' ? cloudPortalId() : currentReporterContext().portal; }
+function portal() {
+  if (currentWorkerContext() || process.env.REPORTER_FUNCTION_RUNTIME === 'true') return requireWorkerContext().portal;
+  return currentReporterContext().portal;
+}
 function key(fileKey: string, workspaceId = portal()) {
   if (!imageFileKey.test(fileKey)) throw new FlowError('UNSAFE_STORAGE',500);
   if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(workspaceId)) throw new FlowError('UNSAFE_STORAGE',500);

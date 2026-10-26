@@ -43,6 +43,7 @@ services:
       - ./database/migrations/032-workspace-context.sql:/docker-entrypoint-initdb.d/99-8-workspace-context.sql:ro
       - ./database/migrations/033-account-avatars.sql:/docker-entrypoint-initdb.d/99-9-account-avatars.sql:ro
       - ./database/migrations/034-workspace-worker.sql:/docker-entrypoint-initdb.d/99-a-workspace-worker.sql:ro
+      - ./database/migrations/035-workspace-job-context.sql:/docker-entrypoint-initdb.d/99-b-workspace-job-context.sql:ro
     networks:
       - reporter
     healthcheck:

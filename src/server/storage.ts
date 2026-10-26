@@ -14,6 +14,7 @@ import { inspectMedia } from "./media";
 import { reporterDeploymentMode } from './deployment.ts';
 import { storageRootPath } from './storage-root.ts';
 import { privateAddress } from './public-address.ts';
+import { currentWorkerContext } from './worker-context.ts';
 
 export async function storageRoot() {
   const root = storageRootPath();
@@ -39,14 +40,16 @@ export async function verifySource(key: string, expectedSize: number, checksum: 
 }
 export async function workDirectory(generation: string) {
   UUID.parse(generation);
-  const path = join(await storageRoot(), generation + ".work");
+  const namespace = currentWorkerContext()?.portal;
+  const path = join(await storageRoot(), (namespace ? namespace + '-' : '') + generation + ".work");
   await mkdir(path, { recursive: true, mode: 0o700 });
   if ((await lstat(path)).isSymbolicLink()) throw new FlowError("UNSAFE_STORAGE", 500);
   return path;
 }
 /** Private, exact-request facts checkpoints shared by outline and article jobs. */
 export async function sourcePreparationDirectory() {
-  const path = join(await storageRoot(), 'editorial-facts.work');
+  const namespace = currentWorkerContext()?.portal;
+  const path = join(await storageRoot(), (namespace ? namespace + '-' : '') + 'editorial-facts.work');
   await mkdir(path, { recursive: true, mode: 0o700 });
   if (!(await lstat(path)).isDirectory() || (await lstat(path)).isSymbolicLink()) throw new FlowError('UNSAFE_STORAGE', 500);
   return path;

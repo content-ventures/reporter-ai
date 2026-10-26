@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withPilotWorker } from '../support/pilot-worker.ts';
 import { randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import pg, { type Pool } from 'pg';
@@ -127,13 +128,13 @@ for (const size of [5, 40]) test(`each command costs the same with ${size} produ
 
   // One worker progress event, as the claimed run's preview loop writes it.
   const run = await rpc<{ runId: string }>('generation.start', ['article.outline', { productionId: target!.productionId, pieceId: target!.articleId }]);
-  const claim = await server.transaction('worker', async client => (await client.query('SELECT public.reporter_ed_claim($1,$2) AS claim',
-    [`budget-worker-${size}`, 60000])).rows[0].claim as { runId: string; productionId: string });
+  const claim = await withPilotWorker(()=>server.transaction('worker', async client => (await client.query('SELECT public.reporter_ed_claim($1,$2) AS claim',
+    [`budget-worker-${size}`, 60000])).rows[0].claim as { runId: string; productionId: string }));
   assert.equal(claim.runId, run.runId);
   const { progress } = server.editorialWorkerScopes(claim.runId, claim.productionId);
-  const appendPreview = (label: string) => server.editorialTransaction('worker', async (checkpoint, engine) => {
+  const appendPreview = (label: string) => withPilotWorker(()=>server.editorialTransaction('worker', async (checkpoint, engine) => {
     server.appendEditorialEvent(engine, checkpoint.jobs[claim.runId], { type: 'article.preview', body: article(label, 8) });
-  }, true, 'reporter.edit', progress);
+  }, true, 'reporter.edit', progress));
   await appendPreview('primeira prévia');
   const preview = await measure(() => appendPreview('segunda prévia'));
   await rpc('generation.cancel', [run.runId]);

@@ -1,5 +1,6 @@
 import 'server-only';
 import { withWorkspaceWork } from './worker-dispatch.ts';
+import { bindEditorialJob } from './worker-job-context.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { editorialCandidates, editorialTemplates, appendEditorialEvent, editorialContextHash, editorialCarouselLayouts, validateEditorialOutline } from '../runtime/editorial-engine.ts';
@@ -83,6 +84,11 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
   const claimed = await editorialTransaction('worker', async (checkpoint,engine) => {
     const job = checkpoint.jobs[claim.runId];
     if (!job || job.lease?.fence !== claim.lease.fence || !isRunActive(engine.store.state.runFolds[claim.runId]?.run)) return undefined;
+    try { bindEditorialJob(job,engine.store.state.runFolds[claim.runId].run.createdBy); }
+    catch {
+      appendEditorialEvent(engine,job,{type:'run.failed',error:{code:'JOB_CONTEXT_MISMATCH',message:'O contexto desta geração não corresponde ao workspace.',retryable:false}});
+      delete job.lease;return undefined;
+    }
     if (job.writingTraces?.some(trace => trace.status === 'running')) {
       job.writingTraces = interruptWritingTraces(job.writingTraces, new Date().toISOString());
       const usage = writingTraceUsage(job.writingTraces);

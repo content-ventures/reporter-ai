@@ -1,5 +1,6 @@
 import 'server-only';
 import { withWorkspaceWork } from './worker-dispatch.ts';
+import { bindEditorialJob } from './worker-job-context.ts';
 import type { ArticleBody } from '../domain/article.ts';
 import { PIPELINE_SCHEMAS } from '../domain/pipeline.ts';
 import type { PipelineCall } from '../domain/pipeline.ts';
@@ -53,6 +54,7 @@ async function runScoped(owner: string,signal: AbortSignal,dependencies: Depende
   try {
     const input = (await guarded(async (checkpoint,engine) => {
       const job = checkpoint.jobs[claim.runId], record = eligible(engine,job);
+      bindEditorialJob(job,engine.store.state.runFolds[claim.runId].run.createdBy);
       if (!record || !articleImageTargetMatches(record,job.meta.pieceId,job.images!) || job.images!.attempts > 3) {
         const exhausted = job.images!.attempts > 3;
         job.images!.status = exhausted ? 'failed' : 'skipped'; delete job.lease;
