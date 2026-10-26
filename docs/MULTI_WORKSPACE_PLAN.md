@@ -158,13 +158,13 @@ Main implementation areas: editorial policy and pipeline contracts, `format-prom
 
 Extend the existing platform console so the operator can onboard and maintain a client without a deployment.
 
-- [ ] Add workspace listing, search, creation, editing, readiness, archive and restoration through authorized server operations and public DS components.
-- [ ] Guide setup through client identity, map, guide, available templates and the first team membership. Show a precise readiness result before enabling generation.
-- [ ] Show every membership for a person. Invite new people or link an existing account to another workspace, define roles per membership and manage pending signups in their selected workspace.
-- [ ] Allow workspace administrators to manage the team under the agreed capability matrix. Keep workspace and global account suspension as separately named operations with different effects.
-- [ ] Keep approved invitation delivery behavior: the operator can copy and distribute a link; the system does not silently start sending email.
-- [ ] Filter platform usage and activity by workspace and person. Retain the distinction between estimated provider cost and actual billing, and represent missing usage honestly.
-- [ ] Paginate or bound global directories and searches rather than assuming a permanent limit of tens of people. Validate permission changes during stale forms and concurrent updates.
+- [x] Add workspace listing, search, creation, editing, readiness, archive and restoration through authorized server operations and public DS components.
+- [x] Guide setup through client identity, map, guide, available templates and the first team membership. Show a precise readiness result before enabling generation.
+- [x] Show every membership for a person. Invite new people or link an existing account to another workspace, define roles per membership and manage pending signups in their selected workspace.
+- [x] Allow workspace administrators to manage the team under the agreed capability matrix. Keep workspace and global account suspension as separately named operations with different effects.
+- [x] Keep approved invitation delivery behavior: the operator can copy and distribute a link; the system does not silently start sending email.
+- [x] Filter platform usage and activity by workspace and person. Retain the distinction between estimated provider cost and actual billing, and represent missing usage honestly.
+- [x] Paginate or bound global directories and searches rather than assuming a permanent limit of tens of people. Validate permission changes during stale forms and concurrent updates.
 
 Exit gate: starting from the platform console, create a second client, configure its policy and identity, invite its editor and approver, accept the invitations and verify generation readiness. The entire setup uses application flows; M8 accepts the full editorial journey after navigation is connected.
 
