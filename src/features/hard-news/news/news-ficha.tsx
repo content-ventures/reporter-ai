@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { newsLogoUrl } from '@/domain/news-branding';
 import { sourceForNews } from '@/domain/news-source-match';
@@ -71,6 +72,7 @@ const at = (iso: string, now: number) => formatRelative(new Date(Math.min(Date.p
 export function NewsFicha({ item, now, related = [], onOpen }: {
   item: NewsItem; now: number; related?: readonly NewsItem[]; onOpen?: (id: string) => void;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const dossier = useDossier(item.productionId);
   const { live, actions, state } = useHardNews();
   const source = sourceForNews(item, state.feeds);
@@ -118,7 +120,7 @@ export function NewsFicha({ item, now, related = [], onOpen }: {
         item.source,
         ...facts,
         // A text link sits on the line of the facts; a button would stand taller than them.
-        <TextLink key="original" href={item.url} external tone="text">Ver original</TextLink>,
+        <TextLink key="original" href={workspaceHrefFor(item.url)} external tone="text">Ver original</TextLink>,
       ]} />
       <EditableTitle value={item.title} label="Título da notícia" readOnly as="h2" size="document" onCommit={() => undefined} />
       <MetaList size="sm" label="Avaliação e tradução" items={[
@@ -243,6 +245,7 @@ function AiReading({ item }: { item: NewsItem }) {
 
 /** Every outlet that ran the story, oldest first (REQ-2.1: duplicates keep their origin). */
 function WhoPublished({ item, now }: { item: NewsItem; now: number }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const outlets = [
     { source: item.source, url: item.url, publishedAt: item.publishedAt },
     ...item.duplicates,
@@ -256,7 +259,7 @@ function WhoPublished({ item, now }: { item: NewsItem; now: number }) {
           items={outlets.map((outlet) => ({
             id: outlet.url,
             marker: <BrandMark name={outlet.source} src={newsLogoUrl(outlet.url)} size="xs" variant="soft" decorative />,
-            title: <TextLink href={outlet.url} external tone="text">{outlet.source}</TextLink>,
+            title: <TextLink href={workspaceHrefFor(outlet.url)} external tone="text">{outlet.source}</TextLink>,
             date: at(outlet.publishedAt, now),
             dateTime: outlet.publishedAt,
           }))}
@@ -321,6 +324,7 @@ function LaterAndDiscard({ item, disabled = false, onPostpone, onDiscard }: Pick
 
 /** The one decision under the story: Descartar, Adiar, Cobrir (the only blue button of the desk). */
 export function DecisionBar({ item, covering, canCover, demo = false, onCover, onPostpone, onDiscard, onRestore }: DecisionProps) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { live } = useHardNews();
   const dossier = useDossier(item.productionId);
   if (live) return <LiveDecisionBar item={item} covering={covering} canCover={canCover} onCover={onCover} onPostpone={onPostpone} onDiscard={onDiscard} onRestore={onRestore} />;
@@ -328,10 +332,10 @@ export function DecisionBar({ item, covering, canCover, demo = false, onCover, o
     const written = dossier?.stage === 'article';
     return (
       <ActionBar position="static" detail={item.decidedAt ? `Coberta ${formatRelative(new Date(item.decidedAt))}` : undefined}>
-        {written ? <ButtonLink href={researchHref(item.productionId)} variant="secondary">Ver apuração</ButtonLink> : null}
+        {written ? <ButtonLink href={workspaceHrefFor(researchHref(item.productionId))} variant="secondary">Ver apuração</ButtonLink> : null}
         {written
-          ? <ButtonLink href={pieceHref(item.productionId, 'article')} variant="primary">Abrir artigo</ButtonLink>
-          : <ButtonLink href={researchHref(item.productionId)} variant="primary" icon={Telescope} data-testid="news-open-research">Abrir apuração</ButtonLink>}
+          ? <ButtonLink href={workspaceHrefFor(pieceHref(item.productionId, 'article'))} variant="primary">Abrir artigo</ButtonLink>
+          : <ButtonLink href={workspaceHrefFor(researchHref(item.productionId))} variant="primary" icon={Telescope} data-testid="news-open-research">Abrir apuração</ButtonLink>}
       </ActionBar>
     );
   }

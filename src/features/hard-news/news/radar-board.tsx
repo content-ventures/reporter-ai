@@ -1,4 +1,5 @@
 'use client';
+import {useWorkspaceHref} from '@/ui/workspace-navigation';
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
@@ -122,6 +123,7 @@ export function RadarActivity(props: RadarBoardProps) {
 }
 
 function RadarStrip({ now, hero, pulse, seenSince, goal, onSelect, onEditGoal }: RadarBoardProps) {
+  const workspaceHref=useWorkspaceHref();
   const { fresh, high, feeds } = pulse;
   const freshOnTop = hero.filter((item) => Date.parse(arrivedAt(item)) > Date.parse(seenSince)).length;
   const items: MetricProps[] = [
@@ -154,7 +156,7 @@ function RadarStrip({ now, hero, pulse, seenSince, goal, onSelect, onEditGoal }:
       value: `${feeds.active} de ${feeds.total}`,
       hint: feeds.failing > 0 ? `${feeds.failing} com falha` : 'Todas respondendo',
       warn: feeds.failing > 0,
-      href: NEWS_SOURCES_HREF,
+      href: workspaceHref(NEWS_SOURCES_HREF),
       linkAs: Link,
     },
   ];
@@ -166,6 +168,7 @@ function RadarStrip({ now, hero, pulse, seenSince, goal, onSelect, onEditGoal }:
  * the last hour against the hour before, what more than one outlet ran and whether the sources answer.
  */
 function IntakeStrip({ now, news, pulse, seenSince, onSelect }: RadarBoardProps) {
+  const workspaceHref=useWorkspaceHref();
   const { fresh, feeds } = pulse;
   const intake = intakePulse(news, now);
   const pace = hourlyPace(news, now);
@@ -199,7 +202,7 @@ function IntakeStrip({ now, news, pulse, seenSince, onSelect }: RadarBoardProps)
       value: `${feeds.active} de ${feeds.total}`,
       hint: feeds.failing > 0 ? `${feeds.failing} com falha` : feeds.total ? 'Todas respondendo' : undefined,
       warn: feeds.failing > 0,
-      href: NEWS_SOURCES_HREF,
+      href: workspaceHref(NEWS_SOURCES_HREF),
       linkAs: Link,
     },
   ];

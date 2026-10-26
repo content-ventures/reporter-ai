@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Badge, BrandMark, CardHeader, Checkbox, List, ListItem, MetaList, PageStack, Prose, Section, TextLink } from '@content-ventures/design-system/v3';
 import { newsLogoUrl } from '@/domain/news-branding';
@@ -36,6 +37,7 @@ export function DiscoveryResults({ suggestions, feeds, selected, toggle }: {
   selected: ReadonlySet<string>;
   toggle: (id: string) => void;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   return (
     <PageStack>
       {suggestions.map(suggestion => {
@@ -48,7 +50,7 @@ export function DiscoveryResults({ suggestions, feeds, selected, toggle }: {
               actions={verified ? <Checkbox aria-label={`Selecionar ${suggestion.name}`} checked={Boolean(existing) || selected.has(suggestion.id)}
                 disabled={Boolean(existing)} onChange={() => toggle(suggestion.id)} /> : undefined} />
             <MetaList size="sm" items={[
-              <TextLink key="site" href={suggestion.site} external>{new URL(suggestion.site).hostname.replace(/^www\./, '')}</TextLink>,
+              <TextLink key="site" href={workspaceHrefFor(suggestion.site)} external>{new URL(suggestion.site).hostname.replace(/^www\./, '')}</TextLink>,
               <Badge key="status" size="sm" variant="soft" tone={existing ? 'gray' : verified ? 'green' : 'amber'}>
                 {existing ? 'Já cadastrada' : verified ? 'Feed confirmado' : suggestion.status === 'no-feed' ? 'Sem feed confirmado' : 'Indisponível'}
               </Badge>,
@@ -59,12 +61,12 @@ export function DiscoveryResults({ suggestions, feeds, selected, toggle }: {
             {suggestion.sample.length ? (
               <List label={`Notícias de ${suggestion.name}`} framed={false} bleed>
                 {suggestion.sample.slice(0, 2).map(sample => (
-                  <ListItem key={sample.url} title={<TextLink href={sample.url} external>{sample.title}</TextLink>}
+                  <ListItem key={sample.url} title={<TextLink href={workspaceHrefFor(sample.url)} external>{sample.title}</TextLink>}
                     titleLines={2} description={publishedOn(sample.publishedAt)} density="sm" />
                 ))}
               </List>
             ) : null}
-            <TextLink href={suggestion.evidence.url} external>Ver referência da sugestão</TextLink>
+            <TextLink href={workspaceHrefFor(suggestion.evidence.url)} external>Ver referência da sugestão</TextLink>
           </Section>
         );
       })}

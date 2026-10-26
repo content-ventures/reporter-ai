@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { newsLogoUrl } from '@/domain/news-branding';
 
@@ -34,6 +35,7 @@ export function NewsCard({ item, rating, now, selected = false, onSelect, href, 
   href?: string;
   showPriority?: boolean;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const priority = priorityOf(item);
   const { outlets, lastHour } = spread(item, now);
   const at = new Date(Math.min(Date.parse(item.publishedAt), now));
@@ -44,7 +46,7 @@ export function NewsCard({ item, rating, now, selected = false, onSelect, href, 
           titleAs="h3"
           leading={<BrandMark name={item.source} src={newsLogoUrl(item.url)} size="sm" decorative />}
           title={href
-            ? <CardLink href={href}>{item.title}</CardLink>
+            ? <CardLink href={workspaceHrefFor(href)}>{item.title}</CardLink>
             : <CardLink onClick={() => onSelect?.(item.id)} aria-current={selected ? 'true' : undefined}>{item.title}</CardLink>}
           description={`${item.source} · ${formatRelative(at, new Date(now))}`}
         />

@@ -1,7 +1,8 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   AgentTrace,
   BrandMark,
@@ -47,6 +48,7 @@ import { OutlineEditor } from './outline-editor';
  * header line, one task notice says the decision of the step; the header's primary moves on.
  */
 export function ResearchScreen() {
+  const workspaceHrefFor = useWorkspaceHref();
   const { productionId } = useProductionFrame();
   const { state, writing, actions } = useHardNews();
   const router = useRouter();
@@ -58,7 +60,7 @@ export function ResearchScreen() {
   if (!dossier || !news) {
     return (
       <WorkspaceLayout docked header={<ProductionHeader />} mainLabel="Apuração">
-        <EmptyState icon={ListTree} title="Esta produção não tem apuração" description="Só pautas abertas em Notícias passam pela apuração." size="page" actions={<ButtonLink href={pieceHref(productionId, 'article')} variant="primary">Abrir artigo</ButtonLink>} />
+        <EmptyState icon={ListTree} title="Esta produção não tem apuração" description="Só pautas abertas em Notícias passam pela apuração." size="page" actions={<ButtonLink href={workspaceHrefFor(pieceHref(productionId, 'article'))} variant="primary">Abrir artigo</ButtonLink>} />
       </WorkspaceLayout>
     );
   }
@@ -231,6 +233,7 @@ function ArticleStep({ dossier, writingStep }: { dossier: HardNewsDossier; writi
 
 /** The story being covered and, in its own block, the desk's angle on it. */
 function StoryPanel({ dossier, news }: { dossier: HardNewsDossier; news: NewsItem }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { actions } = useHardNews();
   const [angle, setAngle] = useState(dossier.angle);
   return (
@@ -238,7 +241,7 @@ function StoryPanel({ dossier, news }: { dossier: HardNewsDossier; news: NewsIte
       <Section
         title="Pauta"
         meta={<MetaList size="sm" items={[news.source, formatRelative(new Date(news.publishedAt))]} />}
-        action={<ButtonLink href={news.url} target="_blank" rel="noreferrer" variant="ghost" size="sm" trailingIcon={ArrowUpRight}>Original</ButtonLink>}
+        action={<ButtonLink href={workspaceHrefFor(news.url)} target="_blank" rel="noreferrer" variant="ghost" size="sm" trailingIcon={ArrowUpRight}>Original</ButtonLink>}
       >
         <List label="Notícia" framed={false} dividers={false} bleed>
           <ListItem leading={<BrandMark name={news.source} size="sm" decorative />} title={news.title} titleLines={2} description={news.excerpt} />
@@ -270,6 +273,7 @@ function StoryPanel({ dossier, news }: { dossier: HardNewsDossier; news: NewsIte
  * draft read only these, plus a link of the reporter's).
  */
 function SourcesPanel({ dossier, onAdd }: { dossier: HardNewsDossier; onAdd: () => void }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { actions } = useHardNews();
   const suggested = dossier.sources.filter((source) => source.state === 'suggested');
   const accepted = acceptedSources(dossier);
@@ -325,7 +329,7 @@ function SourcesPanel({ dossier, onAdd }: { dossier: HardNewsDossier; onAdd: () 
               title={source.title}
               titleLines={2}
               description={<MetaList size="sm" items={sourceFacts(source)} />}
-              href={source.url}
+              href={workspaceHrefFor(source.url)}
               actions={<Button variant="ghost" size="sm" onClick={() => actions.setSource(id, source.id, 'suggested')}>Tirar</Button>}
             />
           ))}

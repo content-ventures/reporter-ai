@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useMemo, useState } from 'react';
 import {
@@ -76,6 +77,7 @@ export function EditorialMapScreen() {
 }
 
 function EditorialMapForm({ settings }: { settings: EditorialSettings }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { state } = useHardNews();
   const { map: saved, demo, saving, conflict } = settings;
   const permission = useCan('pipeline.edit');
@@ -121,7 +123,7 @@ function EditorialMapForm({ settings }: { settings: EditorialSettings }) {
         meta={[demo ? 'Simulação local' : saved.version ? `Versão ${saved.version}` : 'Ainda não configurado', ...(saved.version ? [`${saved.updatedBy} · ${formatRelative(new Date(saved.updatedAt))}`] : [])]}
         actions={(
           <>
-            {demo && <ButtonLink href={NEWS_HREF} variant="ghost" icon={Newspaper}>Ver no radar</ButtonLink>}
+            {demo && <ButtonLink href={workspaceHrefFor(NEWS_HREF)} variant="ghost" icon={Newspaper}>Ver no radar</ButtonLink>}
             <Button variant="secondary" icon={History} onClick={() => setVersionsOpen(true)}>Versões</Button>
           </>
         )}

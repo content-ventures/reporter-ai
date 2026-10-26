@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { ButtonLink, List, ListItem, MetaList, Section } from '@content-ventures/design-system/v3';
 import { acceptedSources, RESEARCH_KIND_LABELS } from '@/domain/hard-news';
@@ -12,13 +13,14 @@ import type { DeskStudio } from './use-desk-studio';
  * sources the text was written from, the quotes attached in the research and the way back to it.
  */
 export function DossierTab({ desk }: { desk: DeskStudio }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { state } = useHardNews();
   const sources = acceptedSources(desk.dossier);
   const quotes = state.quotes.filter((quote) => desk.dossier.quoteIds.includes(quote.id));
   const news = state.news.find((item) => item.id === desk.dossier.newsId);
   return (
     <>
-      <Section title="Fontes da matéria" titleAs="h3" action={<><DemoBadge /><ButtonLink href={researchHref(desk.dossier.productionId)} variant="ghost" size="sm">Ver apuração</ButtonLink></>}>
+      <Section title="Fontes da matéria" titleAs="h3" action={<><DemoBadge /><ButtonLink href={workspaceHrefFor(researchHref(desk.dossier.productionId))} variant="ghost" size="sm">Ver apuração</ButtonLink></>}>
         <List label="Fontes da matéria" framed={false} bleed empty="Nenhuma fonte aceita.">
           {sources.map((source) => (
             <ListItem
@@ -26,7 +28,7 @@ export function DossierTab({ desk }: { desk: DeskStudio }) {
               title={source.title}
               titleLines={2}
               description={<MetaList size="sm" items={[RESEARCH_KIND_LABELS[source.kind], source.outlet]} />}
-              href={source.url}
+              href={workspaceHrefFor(source.url)}
             />
           ))}
         </List>
@@ -43,7 +45,7 @@ export function DossierTab({ desk }: { desk: DeskStudio }) {
       {news ? (
         <Section title="Notícia de origem" titleAs="h3">
           <List label="Notícia de origem" framed={false} bleed>
-            <ListItem title={news.title} titleLines={2} description={news.source} href={news.url} />
+            <ListItem title={news.title} titleLines={2} description={news.source} href={workspaceHrefFor(news.url)} />
           </List>
         </Section>
       ) : null}

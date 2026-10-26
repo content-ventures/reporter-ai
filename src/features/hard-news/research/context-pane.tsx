@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useMemo } from 'react';
 import { Avatar, Badge, Button, List, ListItem, MetaList, Section } from '@content-ventures/design-system/v3';
@@ -12,6 +13,7 @@ import { searchArchive } from '../state/archive-search';
  * and the writing guide it will follow. Attaching a quote makes it available to the draft.
  */
 export function ContextPane({ dossier, news }: { dossier: HardNewsDossier; news: NewsItem }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { state, actions } = useHardNews();
   const topic = news.classification?.topic ?? '';
   // Quotes on the story's topic, the ones sharing words with the news first (attached ones always).
@@ -68,7 +70,7 @@ export function ContextPane({ dossier, news }: { dossier: HardNewsDossier; news:
               title={article.title}
               titleLines={2}
               description={<MetaList size="sm" items={[article.section, new Date(article.publishedAt).toLocaleDateString('pt-BR')]} />}
-              href={article.url}
+              href={workspaceHrefFor(article.url)}
             />
           ))}
         </List>

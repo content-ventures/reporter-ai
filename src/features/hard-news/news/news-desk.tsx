@@ -1,9 +1,11 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { NewsSearchDialog } from '../sources/news-search-dialog';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   Badge,
   Button,
@@ -94,6 +96,7 @@ export function NewsDeskFromUrl() {
 
 /** Headline overview first; the URL opens an explicit story and browser history returns to it. */
 export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { state, ready, actions, demo, live: onServer, newsFailed, search: webSearch } = useHardNews();
   useNewsWatch();
   // The connected desk supports editorial decisions before AI classification is available.
@@ -390,7 +393,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
         <>
           {intake.length ? <Menu label="Adicionar notícias" align="end" sections={[{ items: intake }]}
             trigger={props => <Button {...props} variant="secondary" icon={Plus} trailingIcon={ChevronDown}>Adicionar</Button>} /> : null}
-          <ButtonLink href={NEWS_SOURCES_HREF} variant="secondary" icon={Rss}>Fontes</ButtonLink>
+          <ButtonLink href={workspaceHrefFor(NEWS_SOURCES_HREF)} variant="secondary" icon={Rss}>Fontes</ButtonLink>
         </>
       )}
       more={menu}
@@ -460,7 +463,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       description={canEdit ? 'Encontre fontes para o seu veículo ou setor e receba as primeiras notícias.' : undefined}
       actions={canEdit ? <>
         <Button variant="primary" icon={Rss} onClick={() => setDiscovering(true)}>Descobrir fontes</Button>
-        <ButtonLink href={NEWS_SOURCES_HREF} variant="secondary" icon={Plus}>Adicionar fonte</ButtonLink>
+        <ButtonLink href={workspaceHrefFor(NEWS_SOURCES_HREF)} variant="secondary" icon={Plus}>Adicionar fonte</ButtonLink>
       </> : undefined} />
   ) : live ? <RadarBoard {...radarProps} /> : <RadarSkeleton />;
   const reader = live && shown ? <NewsFicha key={shown.id} item={shown} now={now} related={related} onOpen={select} /> : live && selectedId && failedItem === selectedId ? (
