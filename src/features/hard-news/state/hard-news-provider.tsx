@@ -36,7 +36,9 @@ import { ARTICLE_NEWS_ID, classificationFor, clockAt, RESEARCH_NEWS_ID } from '.
 import { outlineFor, researchFor, writeDraft } from '../preview/research';
 import { previewScore } from '../settings/map-preview';
 import { answerFrom } from './archive-search';
+import {useWorkspaceStorageKey} from '@/state/workspace-storage';
 import { createDeskStore } from './desk-store';
+import {STORAGE_KEY} from './hard-news-state';
 import type { HardNewsState } from './hard-news-state';
 import { createLiveNewsStore } from './live-news';
 import type { LiveNews } from './live-news';
@@ -164,12 +166,16 @@ function sameUrl(a: string, b: string): boolean {
  * in the same article studio. As the R1 build's demonstration (`demo`) it writes nothing to the
  * workspace: no example productions and no "Cobrir"; the R1 screens do not see the desk.
  */
-export function HardNewsProvider({ children, demo = false }: { children: ReactNode; demo?: boolean }) {
+export function HardNewsProvider({children,demo=false}:{children:ReactNode;demo?:boolean}){
+  const key=useWorkspaceStorageKey(STORAGE_KEY),{runtime}=useRuntime();
+  return <BoundHardNewsProvider key={key??'pending'} storageKey={key} example={runtime?.mode==='simulated'} demo={demo}>{children}</BoundHardNewsProvider>;
+}
+function BoundHardNewsProvider({children,demo,storageKey,example}:{children:ReactNode;demo:boolean;storageKey?:string;example:boolean}) {
   const commands = useCommands();
   const runtime = useRuntime();
   const session = useSession();
   const actor = session.data?.current?.name ?? 'João';
-  const [store] = useState(createDeskStore);
+  const [store] = useState(()=>createDeskStore({storageKey,example}));
   const { state, ready } = useSyncExternalStore(store.subscribe, store.get, store.server);
   const [writing, setWriting] = useState<WritingProgress>();
   const actorRef = useRef(actor);
@@ -187,7 +193,14 @@ export function HardNewsProvider({ children, demo = false }: { children: ReactNo
   }, [actor]);
 
   // Load once on the client (the store reads this browser, never during render).
-  useEffect(() => store.load(), [store]);
+  useEffect(() => {if(storageKey)store.load();}, [storageKey,store]);
+
+  useEffect(()=>{
+    const port=runtime.runtime?.pipeline;if(!port||!ready)return;
+    let live=true;
+    void port.get().then(view=>{const policy=view.active.definition.editorial;if(live&&policy)store.set(current=>({...current,...policy}));}).catch(()=>{});
+    return()=>{live=false;};
+  },[runtime.runtime,ready,store]);
 
   // Leaving the desk (reload, close): the next visit's "Novas" start here.
   useEffect(() => {

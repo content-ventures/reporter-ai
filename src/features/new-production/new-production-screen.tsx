@@ -1,7 +1,9 @@
 'use client';
+import {useWorkspaceStorageKey} from '@/state/workspace-storage';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   AccessState,
   Button,
@@ -124,6 +126,7 @@ function daysAgoIso(days: number): string {
  * AccessState (nothing while the session is unknown, so the form never flashes).
  */
 export function NewProductionScreen({ received }: { received?: string } = {}) {
+  const workspaceHrefFor = useWorkspaceHref();
   const session = useSession();
   const creates = useCan('production.create');
   if (!session.data) return null;
@@ -134,7 +137,7 @@ export function NewProductionScreen({ received }: { received?: string } = {}) {
         heading="h1"
         title="Nova produção é para quem edita"
         description="Peça a um admin o papel de editor."
-        actions={<ButtonLink href={PRODUCTIONS_HREF} variant="primary">Ver produções</ButtonLink>}
+        actions={<ButtonLink href={workspaceHrefFor(PRODUCTIONS_HREF)} variant="primary">Ver produções</ButtonLink>}
       />
     );
   }
@@ -143,6 +146,7 @@ export function NewProductionScreen({ received }: { received?: string } = {}) {
 
 /** `received`: a file the Drive folder brought in, opened as if it had just been uploaded here. */
 function NewProductionForm({ received }: { received?: string }) {
+  const eventStorageKey=useWorkspaceStorageKey(LAST_EVENT_KEY);
   const router = useRouter();
   const commands = useCommands();
   const intake: SourceIntake = { ...INTAKE,extensions: [...INTAKE.extensions,...MEDIA_EXTENSIONS],maxBytes: MAX_UPLOAD_BYTES };
@@ -160,9 +164,9 @@ function NewProductionForm({ received }: { received?: string }) {
   // a material from another fair would otherwise go out with the wrong box. Undefined: not read yet.
   const [eventSuggestion, setEventSuggestion] = useState<EventDraft | null>();
   const update = useCallback((patch: Partial<NewProductionDraft>) => {
-    if (patch.format) setEventSuggestion((current) => (current === undefined ? lastEvent() ?? null : current));
+    if (patch.format) setEventSuggestion((current) => (current === undefined ? lastEvent(eventStorageKey) ?? null : current));
     setDraft((current) => ({ ...current, ...patch }));
-  }, []);
+  }, [eventStorageKey]);
 
   const [step, setView] = useState<NewProductionStep>('material');
 
@@ -177,7 +181,7 @@ function NewProductionForm({ received }: { received?: string }) {
 
   const onFileLoaded = useCallback((id: string, file: MaterialFile | undefined, extras?: ReceivedExtras) => {
     // A Drive subfolder that names a format offers the previous event, as choosing the format does.
-    if (extras?.format) setEventSuggestion((current) => (current === undefined ? lastEvent() ?? null : current));
+    if (extras?.format) setEventSuggestion((current) => (current === undefined ? lastEvent(eventStorageKey) ?? null : current));
     setDraft((current) => {
       if (!file) return dropPart(current, id);
       const next: NewProductionDraft = landPart(current, id, file);
@@ -187,7 +191,7 @@ function NewProductionForm({ received }: { received?: string }) {
       if (!extras.format || current.format) return next;
       return { ...next, ...withFormat(extras.format) };
     });
-  }, []);
+  }, [eventStorageKey]);
   // "Corrigir termo": a misheard name is fixed in the material itself, before the production exists.
   // A corrected speaker name keeps the choice the reporter already made for that speaker; when two
   // labels become one, the choice already made for the right name wins.
@@ -454,7 +458,7 @@ function NewProductionForm({ received }: { received?: string }) {
     const current = await freshAnalysis();
     if (!current) { setBusy(null); return; }
     const created = await commands.production.createFromSource(toCreateInput(draft, current, people));
-    if (created.ok && draft.format && draft.event.name.trim()) rememberEvent(draft.event);
+    if (created.ok && draft.format && draft.event.name.trim()) rememberEvent(draft.event,eventStorageKey);
     if (!created.ok) {
       setBusy(null);
       notifyRefusal('Produção não criada', created.refusal);
@@ -667,18 +671,19 @@ function withReadParts(draft: NewProductionDraft): NewProductionDraft {
 const LAST_EVENT_KEY = 'reporter.new-production.last-event';
 
 /** The event of the last coverage created on this device, as the form edits it. */
-function lastEvent(): EventDraft | undefined {
+function lastEvent(key:string|undefined): EventDraft | undefined {
   try {
-    const stored = JSON.parse(window.localStorage.getItem(LAST_EVENT_KEY) ?? 'null') as Partial<EventDraft> | null;
+    const stored = JSON.parse((key?window.localStorage.getItem(key):null) ?? 'null') as Partial<EventDraft> | null;
     return stored?.name ? eventDraft(stored) : undefined;
   } catch {
     return undefined;
   }
 }
 
-function rememberEvent(event: EventDraft) {
+function rememberEvent(event: EventDraft,key:string|undefined) {
+  if(!key)return;
   try {
-    window.localStorage.setItem(LAST_EVENT_KEY, JSON.stringify(event));
+    window.localStorage.setItem(key, JSON.stringify(event));
   } catch {
     /* Private windows and blocked storage only lose the convenience. */
   }

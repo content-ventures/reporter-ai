@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useState } from 'react';
 import {
@@ -20,7 +21,7 @@ import { Check, Plus } from '@content-ventures/design-system/v3/icons';
 import type { AssetId } from '@/domain';
 import type { TemplateInfo } from '@/ports';
 import { useCan } from '@/state';
-import { rememberTemplate } from '@/features/library/last-template';
+import { useRememberTemplate } from '@/features/library/last-template';
 import { statusBadge, templateLine, type LibraryParams } from '@/features/library/library-model';
 import { useTemplatePreview } from '@/features/library/use-template-images';
 import { ModelCover } from './model-card';
@@ -78,6 +79,8 @@ export function ModelView({
   isDefault: boolean;
   workspaceSlug?:string;
 }) {
+  const rememberTemplate=useRememberTemplate();
+  const workspaceHrefFor = useWorkspaceHref();
   const [index, setIndex] = useState(0);
   const [starting, setStarting] = useState(false);
   // Starting a carousel is for whoever edits pieces (the carousel stage asks the same).
@@ -154,7 +157,7 @@ export function ModelView({
         {others.length > 0 ? (
           <Carousel label="Outros modelos" title="Outros modelos" perView={5}>
             {others.map((other) => (
-              <ModelCover key={other.id} template={other} href={modelHref(params, other.id,workspaceSlug)} articleCover={other.previewPhoto ?? samplePhoto} />
+              <ModelCover key={other.id} template={other} href={workspaceHrefFor(modelHref(params, other.id,workspaceSlug))} articleCover={other.previewPhoto ?? samplePhoto} />
             ))}
           </Carousel>
         ) : null}
