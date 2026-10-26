@@ -51,7 +51,7 @@ export const drainServices: DrainServices = {
       || await runFactCheckJob(owner, scoped, deadline) || await runNewsSource(owner, scoped)
       || await runNewsSearchJob(owner, scoped, deadline) || await runNewsTranslationJob(owner, scoped, deadline);
     if (ran && !scoped.aborted) await compactEditorialRows().catch(error => logEvent('worker','compaction_failed',{ error_code: safeCode(error) }));
-    return ran;
+    return ran || await transaction('worker',async client=>(await client.query('SELECT public.reporter_worker_archive_maintenance() AS value')).rows[0]?.value===true);
   }),
   now: Date.now,
   compact: () => compactEditorialRows(),

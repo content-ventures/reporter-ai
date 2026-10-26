@@ -9,6 +9,7 @@ import { startFakeS3 } from '../support/fake-s3.ts';
 import { startWorkerHost } from '../support/worker-host.ts';
 import { installFakeProviders } from '../support/fake-providers.ts';
 import type { PipelineView } from '../../src/domain/pipeline.ts';
+import type { WorkspaceProcessing } from '../../src/domain/workspace-management.ts';
 import { currentWorkerContext, runWithWorkerContext } from '../../src/server/worker-context.ts';
 
 const APP='http://127.0.0.1:3997', PILOT='10000000-0000-0000-0000-000000000101';
@@ -239,4 +240,49 @@ test('two simultaneous generations retain their enqueue identity, workspace, con
       else {assert.equal(fold.run.error.code,'JOB_CONTEXT_MISMATCH');assert.equal(providers.calls.completions,calls,'missing ownership is refused before spending provider requests');}
     }
   }finally{providers.restore();delete process.env.GROQ_API_KEY;}
+});
+
+test('processing policy is visible only in the addressed client and saves with an optimistic revision',async()=>{
+  const path=`platform/workspaces/${second}/processing`;
+  const current=await api<WorkspaceProcessing>(path,undefined,OPERATOR);assert.equal(current.status,200);assert.ok(current.body.usedToday>0);
+  const limited=await api<WorkspaceProcessing>(path,{revision:current.body.revision,dailyLimit:1},OPERATOR);
+  assert.equal(limited.status,200);assert.equal(limited.body.state,'limited');
+  assert.equal((await api<WorkspaceProcessing>('w/second-context/processing')).body.state,'limited');
+  assert.equal((await api<WorkspaceProcessing>('w/reporter-ai/processing',undefined,OPERATOR)).body.state,'ready');
+  assert.equal((await api(path,{revision:current.body.revision,dailyLimit:null},OPERATOR)).status,409);
+  assert.equal((await api(path,{revision:limited.body.revision,dailyLimit:null})).status,403);
+  assert.equal((await api('w/second-context/processing',undefined,OUTSIDER)).status,404);
+  assert.equal((await api<WorkspaceProcessing>(path,{revision:limited.body.revision,dailyLimit:null},OPERATOR)).body.state,'ready');
+});
+
+test('automated feeds, complementary search and translation claims retain the configuring account in each client',async()=>{
+  const {resolveReporterContext,transaction}=await import('../../src/server/database.ts');
+  const {runWithReporterContext}=await import('../../src/server/request-context.ts');
+  const {runNewsSource}=await import('../../src/server/news-reader.ts');
+  const contexts=[];
+  for(const slug of ['reporter-ai','second-context']){
+    const context=(await resolveReporterContext(OPERATOR,slug))!;contexts.push(context);
+    await runWithReporterContext(context,()=>transaction('runtime',async client=>{
+      await client.query('SELECT public.reporter_news_source_add($1,$2,$3,$3,$4,$5,$6,$7)',
+        ['rss',slug,`https://feed-${slug}.example.test/rss`,60,null,null,null]);
+      const config={portalUrl:`https://${slug}.test`,sector:slug,region:'Brasil',topics:['Tecnologia'],languages:['pt'],excludedDomains:[],everyMinutes:60,dailyLimit:1,enabled:true};
+      await client.query('SELECT public.reporter_news_search_save($1,$2,$3)',[0,JSON.stringify(config),[`${slug}.test`]]);
+    }));
+  }
+  const seen=new Set<string>();
+  for(let i=0;i<2;i++) assert.equal(await runNewsSource('feed-ownership-worker',new AbortController().signal,{now:Date.now,fetch:async(url)=>{
+    const context=currentWorkerContext()!;assert.equal(context.actor,operatorId);seen.add(context.portal);
+    return {status:200,url,contentType:'application/rss+xml',text:`<rss version="2.0"><channel><title>Teste</title><item><guid>${context.portal}</guid><title>Teste de origem do material</title><link>https://source.example.test/${context.portal}</link><pubDate>${new Date().toUTCString()}</pubDate><description>Material recebido no cliente correto.</description></item></channel></rss>`};
+  }}),true);
+  assert.equal(seen.size,2);
+  for(const context of contexts){
+    const [item]=await owner('SELECT id,imported_by FROM public.reporter_news_items WHERE portal_id=$1',[context.portal]);
+    assert.equal(item.imported_by,operatorId);
+    await runWithWorkerContext({tenant:context.tenant,portal:context.portal},()=>transaction('worker',async client=>{
+      const search=(await client.query('SELECT public.reporter_news_search_claim($1) AS value',['source-context-worker'])).rows[0].value;
+      assert.equal(search.actor,operatorId);assert.equal(search.config.sector,context.workspaceSlug);
+      const translation=(await client.query('SELECT public.reporter_news_translation_claim($1,$2) AS value',['translation-context-worker',120000])).rows[0].value;
+      assert.equal(translation.actor,operatorId);assert.equal(translation.id,item.id);
+    }));
+  }
 });

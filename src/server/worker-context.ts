@@ -1,11 +1,13 @@
 import 'server-only';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { logEvent } from './errors.ts';
 
 /** Execution ownership comes from persisted work, independently of a browser's current page. */
 export type WorkerContext = {
   tenant: string;
   portal: string;
   actor?: string;
+  service?: 'legacy_automation';
   job?: { kind: string; id: string };
   dispatch?: { owner: string; fence: string };
 };
@@ -28,4 +30,9 @@ export function bindWorkerJob(actor: string,kind: string,id: string): void {
   if (!guid.test(actor) || context.actor && context.actor !== actor || context.job && (context.job.kind !== kind || context.job.id !== id)) throw new Error('WORKER_CONTEXT_CHANGED');
   context.actor = actor;
   context.job = {kind,id};
+}
+
+export function logWorkerEvent(component:string,message:string,attributes:Parameters<typeof logEvent>[2]={}):void {
+  const context=currentWorkerContext();
+  logEvent(component,message,{...attributes,...(context?{workspace_id:context.portal,actor_id:context.actor,service_actor:context.service}: {})});
 }

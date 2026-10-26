@@ -192,6 +192,8 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
       }
       if (head==='workspaces' && path.length===3 && action==='integrations')
         return reply(await platform(client=>call(client,'SELECT public.reporter_integration_list($1::uuid) AS value',[personId(id)])));
+      if(head==='workspaces'&&path.length===3&&action==='processing')
+        return reply(await platform(client=>call(client,'SELECT public.reporter_processing_view($1::uuid) AS value',[personId(id)])));
       if (path.length === 1 && head === 'operator') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_operator() AS value')));
       if (path.length === 1 && head === 'directory') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_directory() AS value')));
       if (path.length === 1 && head === 'log') {
@@ -208,6 +210,12 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
       throw platformRefusal('not_found');
     }
     if (request.method !== 'POST') throw platformRefusal('not_found');
+
+    if(head==='workspaces'&&path.length===3&&action==='processing'){
+      const parsed=z.object({revision:z.number().int().positive(),dailyLimit:z.number().int().min(1).max(10000).nullable()}).strict().safeParse(await deps.readJson(request));
+      if(!parsed.success)throw platformRefusal('invalid_state');
+      return reply(await platform(client=>call(client,'SELECT public.reporter_processing_save($1::uuid,$2,$3) AS value',[personId(id),parsed.data.revision,parsed.data.dailyLimit])));
+    }
 
     if(head==='workspaces'&&path.length===3&&action==='integrations'){
       const parsed=z.object({ownerId:z.uuid(),enabled:z.boolean(),revision:z.number().int().min(0),rotate:z.boolean().optional()}).strict().safeParse(await deps.readJson(request));

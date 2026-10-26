@@ -45,6 +45,8 @@ services:
       - ./database/migrations/034-workspace-worker.sql:/docker-entrypoint-initdb.d/99-a-workspace-worker.sql:ro
       - ./database/migrations/035-workspace-job-context.sql:/docker-entrypoint-initdb.d/99-b-workspace-job-context.sql:ro
       - ./database/migrations/036-workspace-integrations.sql:/docker-entrypoint-initdb.d/99-c-workspace-integrations.sql:ro
+      - ./database/migrations/037-workspace-processing.sql:/docker-entrypoint-initdb.d/99-d-workspace-processing.sql:ro
+      - ./database/migrations/038-workspace-automation-actors.sql:/docker-entrypoint-initdb.d/99-e-workspace-automation-actors.sql:ro
     networks:
       - reporter
     healthcheck:

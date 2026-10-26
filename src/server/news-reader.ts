@@ -1,10 +1,12 @@
 import 'server-only';
+import { logWorkerEvent as logEvent } from './worker-context.ts';
 import { withWorkspaceWork } from './worker-dispatch.ts';
+import { bindAutomatedJob } from './worker-job-context.ts';
 import type { PoolClient } from 'pg';
 import { NEWS_LIMITS, normalizeEntries } from '../domain/news-intake.ts';
 import type { NormalizedNews, RawNewsEntry } from '../domain/news-intake.ts';
 import { transaction } from './database.ts';
-import { FlowError, logEvent, safeCode } from './errors.ts';
+import { FlowError, safeCode } from './errors.ts';
 import { fetchText } from './news-fetch.ts';
 import type { FetchedText, FetchOptions } from './news-fetch.ts';
 import { parseFeed } from './news-parse.ts';
@@ -13,6 +15,7 @@ export const FEED_ACCEPT = 'application/rss+xml, application/atom+xml, applicati
 
 /** A source leased for one read (`reporter_news_claim`). */
 export type NewsClaim = {
+  actor?: string|null;
   id: string;
   kind: 'rss' | 'google-alerts' | 'rss-app';
   name: string;
@@ -86,8 +89,10 @@ async function runScoped(owner: string, signal: AbortSignal, deps: ReadServices 
   const claim = await claimSource('worker', owner);
   if (!claim) return false;
   try {
+    bindAutomatedJob(claim.actor,'news',claim.id);
     await readSource('worker', claim, owner, deps);
   } catch (error) {
+    await markFailed('worker',claim,owner,safeCode(error)).catch(()=>{});
     logEvent('worker', 'news_read_failed', { error_code: error instanceof FlowError ? error.code : safeCode(error) });
   }
   return true;

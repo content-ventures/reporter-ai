@@ -43,6 +43,8 @@ export type WorkspaceIntegration = {
 export type IntegrationChange = {workspaceId:WorkspaceId;ownerId:PersonId;enabled:boolean;revision:number;rotate?:boolean};
 /** The credential is displayed once; list/read projections never contain it. */
 export type IssuedIntegration = WorkspaceIntegration & {credential?:{token:string;endpoint:string}};
+/** A dispatch turn runs at most one automatic task; this counter is independent of provider billing. */
+export type WorkspaceProcessing = {workspaceId:WorkspaceId;revision:number;dailyLimit:number|null;usedToday:number;state:'ready'|'limited';resetsAt:IsoDateTime};
 export type WorkspaceChange = { workspaceId: WorkspaceId; name: string; status: Exclude<WorkspaceStatus, 'archiving'>; revision: number };
 export type WorkspaceRefusal = 'restricted' | 'not_found' | 'invalid_name' | 'invalid_slug' | 'slug_taken'
   | 'invalid_state' | 'conflict' | 'self' | 'no_roles' | 'email_taken' | 'invalid_email' | 'unavailable';

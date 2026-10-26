@@ -71,6 +71,26 @@ test('expired dispatches recover after restart and stale renewal/release cannot 
   assert.equal(await sql('SELECT public.reporter_worker_dispatch_release($1,$2,$3) AS value',[current.portal,current.dispatch.owner,current.dispatch.fence]),true);
 });
 
+test('a daily dispatch ceiling pauses only its client, survives a restart and resets in UTC',async()=>{
+  const client=clients[0],other=clients[1];
+  await admin.query("UPDATE public.reporter_workspaces SET lifecycle='archived' WHERE portal_id=ANY($1)",[clients.map(item=>item.portal)]);
+  await admin.query("UPDATE public.reporter_workspaces SET lifecycle='active',settings=$2::jsonb WHERE portal_id=$1",[client.portal,JSON.stringify({processing:{dailyLimit:1}})]);
+  await admin.query('DELETE FROM public.reporter_worker_usage WHERE portal_id=$1',[client.portal]);
+  try{
+    assert.equal(await withWorkspaceWork('outbox','budget-worker-first',signal(),async()=>true),true);
+    assert.equal(await withWorkspaceWork('outbox','budget-worker-restarted',signal(),async()=>true),false);
+    assert.equal(await sql('SELECT public.reporter_worker_pending() AS value'),false);
+    assert.equal((await admin.query('SELECT processed_at FROM core.integration_outbox WHERE id=$1',[client.event])).rows[0].processed_at,null,'the waiting task is retained');
+    await admin.query("UPDATE public.reporter_workspaces SET lifecycle='active' WHERE portal_id=$1",[other.portal]);
+    assert.equal(await withWorkspaceWork('outbox','budget-other-client',signal(),async()=>requireWorkerContext().portal),other.portal);
+    await admin.query("UPDATE public.reporter_workspaces SET lifecycle='archived' WHERE portal_id=$1",[other.portal]);
+    await admin.query("UPDATE public.reporter_worker_usage SET day=day-1 WHERE portal_id=$1",[client.portal]);
+    assert.equal(await withWorkspaceWork('outbox','budget-worker-next-day',signal(),async()=>true),true);
+  }finally{
+    await admin.query("UPDATE public.reporter_workspaces SET lifecycle='active',settings=settings-'processing' WHERE portal_id=ANY($1)",[clients.map(item=>item.portal)]);
+  }
+});
+
 test('disabled modules and archived clients are excluded while archiving clients can settle owned work',async()=>{
   await admin.query("UPDATE public.reporter_workspaces SET lifecycle='archived' WHERE portal_id=ANY($1)",[clients.map(client=>client.portal)]);
   assert.equal(await sql('SELECT public.reporter_worker_pending() AS value'),false);
