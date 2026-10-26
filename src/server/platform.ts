@@ -24,6 +24,7 @@ import { pool } from './database.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { FlowError, logEvent } from './errors.ts';
 import {readWorkspaceTemplates,saveWorkspaceTemplates,uploadWorkspaceBrand} from './template-settings.ts';
+import {previewConfigurationCopy,applyConfigurationCopy} from './configuration-copy.ts';
 
 /**
  * Console da plataforma and the access link over HTTP.
@@ -214,6 +215,12 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
     }
     if (request.method !== 'POST') throw platformRefusal('not_found');
 
+    if(head==='configuration-copy'&&path.length===2){
+      const body=await deps.readJson(request);
+      if(id==='preview')return reply(await platform(client=>previewConfigurationCopy(client,operator,body)));
+      if(id==='apply')return reply(await platform(client=>applyConfigurationCopy(client,operator,body)));
+    }
+
     if(head==='workspaces'&&path.length===3&&action==='templates'){
       const body=await deps.readJson(request);return reply(await platform(client=>saveWorkspaceTemplates(client,personId(id),body)));
     }
@@ -322,7 +329,7 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
 
 function failure(error: unknown, component: 'platform' | 'invites'): Response {
   if (error instanceof Refused) return reply({ error: error.refusal, message: error.text }, error.status);
-  if(error instanceof FlowError&&(/^(TEMPLATE_|BRAND_IMAGE_)/.test(error.code)||error.code==='FORBIDDEN'))
+  if(error instanceof FlowError&&(/^(TEMPLATE_|BRAND_IMAGE_|COPY_)/.test(error.code)||error.code==='FORBIDDEN'))
     return reply({error:error.code,message:error.reason??PLATFORM_MESSAGES.restricted},error.status);
   if (error instanceof FlowError && ['AUTH_REQUIRED', 'ORIGIN_DENIED', 'LOCAL_ACCESS_ONLY', 'CLIENT_HEADER_REQUIRED'].includes(error.code)) {
     return reply({ error: error.code === 'AUTH_REQUIRED' ? 'auth_required' : 'restricted', message: PLATFORM_MESSAGES.restricted }, error.status);

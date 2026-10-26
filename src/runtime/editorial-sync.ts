@@ -7,7 +7,7 @@ import type { BannerDraft, LibraryImage } from '../domain/visual-library.ts';
 import type { Member, Person, Workspace } from '../domain/workspace.ts';
 import type { ConnectedWorkspace, EditorialCheckpoint, EditorialJob, ServerImageAsset } from '../ports/connected-workspace.ts';
 import { PART_FIELDS, PART_KINDS } from '../ports/editorial-rows.ts';
-import type { EditorialChanges, EditorialRows, EventRow, ItemKind, ItemRow, JobDoc, LoadedScope, ProductionState, RunRow, WorkspaceDelta } from '../ports/editorial-rows.ts';
+import type { EditorialChanges, EditorialRows, EventRow, ItemKind, ItemRow, JobDoc, LoadedScope, PipelineReference,ProductionState, RunRow, WorkspaceDelta } from '../ports/editorial-rows.ts';
 export { PART_FIELDS, PART_KINDS };
 export type { EditorialChanges, EditorialRows, ItemKind, LoadedScope, PartKind, WorkspaceDelta } from '../ports/editorial-rows.ts';
 /**
@@ -41,6 +41,10 @@ const itemProduction = (kind: ItemKind, doc: unknown, owner: (entity: string) =>
 const docs = <T,>(items: ItemRow[], kind: ItemKind) => items.filter(item => item.kind === kind).map(item => item.doc as T);
 // The visual library lists newest first, as the engine always kept it; rows keep insertion order.
 const newest = <T,>(values: T[], at: (value: T) => string) => [...values].sort((left, right) => at(right).localeCompare(at(left)));
+const pipelineReference=({hash,revision,savedAt}:PipelineRevision):PipelineReference=>({hash,revision,savedAt});
+const referencedPipeline=(pipelines:Map<string,PipelineRevision>,hash:string|undefined,ref?:PipelineReference)=>{
+  const pipeline=hash?pipelines.get(hash):undefined;return pipeline&&ref?.hash===hash?{...pipeline,...ref}:pipeline;
+};
 
 /** Rebuilds the engine's checkpoint from loaded rows. Missing collections are simply empty. */
 export function assembleCheckpoint(rows: EditorialRows, fallbackWorkspace: Workspace, loaded: LoadedScope): EditorialCheckpoint {
@@ -55,11 +59,11 @@ export function assembleCheckpoint(rows: EditorialRows, fallbackWorkspace: Works
   const jobs: Record<string, EditorialJob> = {};
   for (const run of rows.runs) {
     if (!run.job) continue;
-    const { pipelineHash, ...job } = run.job;
-    const pipeline = pipelineHash ? pipelines.get(pipelineHash) : undefined;
+    const { pipelineHash,pipelineRef, ...job } = run.job;
+    const pipeline = referencedPipeline(pipelines,pipelineHash,pipelineRef);
     // A snapshot that was not loaded keeps its hash, so writing the job back never drops it.
     jobs[run.id] = { ...job, events: events.get(run.id) ?? [], attempts: run.attempts ?? 0, availableAt: run.availableAt ?? 0,
-      ...(run.lease ? { lease: run.lease } : {}), ...(pipeline ? { pipeline } : pipelineHash ? { pipelineHash } : {}) } as EditorialJob;
+      ...(run.lease ? { lease: run.lease } : {}), ...(pipeline ? { pipeline } : pipelineHash ? { pipelineHash,...(pipelineRef?{pipelineRef}:{}) } : {}) } as EditorialJob;
   }
   const workspace = rows.workspace;
   const members = docs<Member>(rows.items, 'member');
@@ -72,9 +76,13 @@ export function assembleCheckpoint(rows: EditorialRows, fallbackWorkspace: Works
     jobs,
     imageAssets: docs<ServerImageAsset>(rows.items, 'image_asset'),
   };
-  const active = workspace?.pipelineHash ? pipelines.get(workspace.pipelineHash) : undefined;
+  const active = referencedPipeline(pipelines,workspace?.pipelineHash,workspace?.pipelineRef);
   if (active) checkpoint.pipeline = active;
-  if (loaded.history) checkpoint.pipelineHistory = (workspace?.historyHashes ?? []).map(hash => pipelines.get(hash)).filter((entry): entry is PipelineRevision => Boolean(entry));
+  if (loaded.history) {
+    const history=workspace?.historyRefs?workspace.historyRefs.map(ref=>referencedPipeline(pipelines,ref.hash,ref))
+      :(workspace?.historyHashes??[]).map(hash=>pipelines.get(hash));
+    checkpoint.pipelineHistory=history.filter((entry):entry is PipelineRevision=>Boolean(entry));
+  }
   if (loaded.items.includes('citation')) checkpoint.citations = docs(rows.items, 'citation');
   if (loaded.items.includes('fact_check')) checkpoint.factChecks = docs(rows.items, 'fact_check');
   if (loaded.items.includes('library_image') || loaded.items.includes('banner'))
@@ -97,7 +105,7 @@ export function splitCheckpoint(checkpoint: EditorialCheckpoint, previous: Edito
     const productionId = job?.meta.productionId ?? fold.run.productionId;
     if (!job) { runs.push({ id: runId, productionId, status: fold.run.status, job: null, fold }); continue; }
     const { events: jobEvents, attempts, availableAt, lease, pipeline, ...rest } = job;
-    const jobDoc: JobDoc = { ...rest, ...(pipeline ? { pipelineHash: pipeline.hash } : {}) };
+    const jobDoc: JobDoc = { ...rest, ...(pipeline ? { pipelineHash: pipeline.hash,pipelineRef:pipelineReference(pipeline) } : {}) };
     for (const event of jobEvents) events.push({ runId, event });
     runs.push({ id: runId, productionId, status: fold.run.status, availableAt, lease: lease ?? null, attempts, job: jobDoc, fold });
   }
@@ -114,10 +122,15 @@ export function splitCheckpoint(checkpoint: EditorialCheckpoint, previous: Edito
   if (loaded.items.includes('fact_check')) add('fact_check', checkpoint.factChecks);
   if (loaded.items.includes('library_image')) add('library_image', checkpoint.visuals?.images);
   if (loaded.items.includes('banner')) add('banner', checkpoint.visuals?.banners);
+  const originalPipeline=previous.workspace?.pipelineHash?previous.pipelines.find(entry=>entry.hash===previous.workspace!.pipelineHash)?.doc:undefined;
+  const pipelineChanged=checkpoint.pipeline&&(!originalPipeline||stableStringify(pipelineReference(checkpoint.pipeline))!==stableStringify(pipelineReference(originalPipeline)));
+  const pipelineRef=checkpoint.pipeline&&(previous.workspace?.pipelineRef||pipelineChanged)?pipelineReference(checkpoint.pipeline):previous.workspace?.pipelineRef;
+  const historyRefs=loaded.history&&(previous.workspace?.historyRefs||pipelineChanged)?(checkpoint.pipelineHistory??[]).map(pipelineReference):previous.workspace?.historyRefs;
   return {
     seq: previous.seq,
     workspace: { workspace: state.workspace, ...(checkpoint.pipeline ? { pipelineHash: checkpoint.pipeline.hash } : previous.workspace?.pipelineHash ? { pipelineHash: previous.workspace.pipelineHash } : {}),
-      historyHashes: loaded.history ? (checkpoint.pipelineHistory ?? []).map(revision => revision.hash) : previous.workspace?.historyHashes ?? [] },
+      historyHashes: loaded.history ? (checkpoint.pipelineHistory ?? []).map(revision => revision.hash) : previous.workspace?.historyHashes ?? [],
+      ...(pipelineRef?{pipelineRef}:{}),...(historyRefs?{historyRefs}:{}) },
     productions: state.productions.map(entry => ({ id: entry.production.id, doc: entry.production,
       sourceIds: [...entry.production.sourceIds], archived: Boolean(entry.production.archivedAt) })),
     parts: state.productions.flatMap(entry => PART_KINDS.flatMap(kind => (entry[PART_FIELDS[kind]] as { id: string }[])

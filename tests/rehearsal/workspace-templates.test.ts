@@ -5,6 +5,9 @@ import pg,{type Pool} from 'pg';
 import sharp from 'sharp';
 import type {WorkspaceBrandAsset,WorkspaceTemplateConfiguration,WorkspaceTemplateInput} from '../../src/domain/workspace-templates.ts';
 import {workspaceTemplateLibrary} from '../../src/runtime/workspace-templates.ts';
+import type {ConfigurationCopyPreview} from '../../src/domain/configuration-copy.ts';
+import type {PipelineView} from '../../src/domain/pipeline.ts';
+import {defaultEditorialPolicy} from '../../src/domain/editorial-policy.ts';
 import {startRehearsalDatabase} from '../support/rehearsal-db.ts';
 import {startFakeS3} from '../support/fake-s3.ts';
 import {startWorkerHost} from '../support/worker-host.ts';
@@ -98,4 +101,48 @@ test('private brands use the target client even when the real operator has no me
   try{await assert.rejects(forbidden.query('SELECT public.reporter_template_save($1,1,$2,$3)',[second,'0123456789abcdef','{}']),{code:'42501'});}
   finally{await forbidden.end();}
   assert.equal((await api(`w/other-publication/templates?hashes=${randomUUID()}`)).status,422);
+});
+
+test('reviewed configuration copying is atomic, audited and retains the target identity',async()=>{
+  const created=await api<{id:string}>('platform/workspaces',{name:'Target publication',slug:'target-publication'}),target=created.body.id;
+  const rpc=async(slug:string,method:string,args:unknown[])=>{
+    const result=await api<{ok:boolean}>(`w/${slug}/workspace`,{method,args,requestId:randomUUID()});assert.equal(result.body.ok,true,JSON.stringify(result.body));
+  };
+  const sourcePipeline=await api<PipelineView>('w/other-publication/pipeline');
+  const definition=structuredClone(sourcePipeline.body.active.definition);definition.editorial=defaultEditorialPolicy();
+  definition.editorial.map.audience='Organic food retailers';definition.editorial.guide.voice='Direct and technical';
+  await rpc('other-publication','pipeline.save',[definition,sourcePipeline.body.active.revision]);
+  const brand=await sharp({create:{width:12,height:12,channels:4,background:{r:120,g:80,b:30,alpha:.5}}}).png().toBuffer();
+  const logo=await api<WorkspaceBrandAsset>(`platform/workspaces/${target}/logo`,new Blob([new Uint8Array(brand)],{type:'image/png'}));
+  const original=await api<WorkspaceTemplateConfiguration>(`platform/workspaces/${target}/templates`);
+  const configured=await api<WorkspaceTemplateConfiguration>(`platform/workspaces/${target}/templates`,{revision:original.body.revision,
+    config:{publication:'Target identity',presets:['minimal'],defaultPreset:'minimal',font:'Inter',logoId:logo.body.id}});assert.equal(configured.status,200);
+  const input={sourceId:second,targetId:target,fields:['editorial_map','writing_guide','templates']};
+  const preview=await api<ConfigurationCopyPreview>('platform/configuration-copy/preview',input);assert.equal(preview.status,200,JSON.stringify(preview.body));
+  assert.equal(preview.body.changes.length,3);
+  assert.deepEqual((preview.body.changes.find(change=>change.field==='templates')!.after as {publication:string;logoId:string}).logoId,logo.body.id);
+  assert.equal((await api('platform/configuration-copy/apply',{token:preview.body.token.replace(/.$/,preview.body.token.endsWith('A')?'B':'A')})).status,422);
+  assert.equal((await api('platform/configuration-copy/apply',{token:preview.body.token},EDITOR)).status,403);
+  const before=await owner('SELECT portal_id,hash,doc FROM public.reporter_ed_pipelines WHERE portal_id=$1',[second]);
+  const applied=await api('platform/configuration-copy/apply',{token:preview.body.token});assert.equal(applied.status,200,JSON.stringify(applied.body));
+  assert.equal((await api('platform/configuration-copy/apply',{token:preview.body.token})).status,409,'a preview is never applied twice');
+  const actual=await api<PipelineView>('w/target-publication/pipeline');assert.equal(actual.body.active.definition.editorial?.map.audience,'Organic food retailers');
+  assert.equal(actual.body.active.definition.editorial?.guide.voice,'Direct and technical');assert.equal(actual.body.active.definition.funnelPreset,'neutral-v1');
+  const templates=await api<WorkspaceTemplateConfiguration>(`platform/workspaces/${target}/templates`);
+  assert.equal(templates.body.active?.config.logoId,logo.body.id);assert.equal(templates.body.active?.config.publication,'Target identity');assert.equal(templates.body.active?.config.font,'Montserrat');
+  assert.deepEqual(await owner('SELECT portal_id,hash,doc FROM public.reporter_ed_pipelines WHERE portal_id=$1',[second]),before);
+  for(const table of ['reporter_ed_productions','portal_members','reporter_integrations'])assert.equal((await owner(`SELECT count(*)::int AS count FROM public.${table} WHERE portal_id=$1`,[target]))[0].count,0);
+  const [audit]=await owner("SELECT user_id,after_data FROM public.audit_log WHERE portal_id=$1 AND action='platform.configuration.copied'",[target]);
+  assert.equal(audit.user_id,adminId);assert.deepEqual(audit.after_data.fields,input.fields);assert.equal(audit.after_data.source,second);assert.equal(JSON.stringify(audit).includes('token'),false);
+  const stale=await api<ConfigurationCopyPreview>('platform/configuration-copy/preview',input);
+  const changed=structuredClone(actual.body.active.definition);changed.editorial!.guide.voice='Changed by another session';
+  await rpc('target-publication','pipeline.save',[changed,actual.body.active.revision]);
+  assert.equal((await api('platform/configuration-copy/apply',{token:stale.body.token})).status,409,'a changed target invalidates the reviewed preview');
+  const variant=await api<PipelineView>('w/target-publication/pipeline'),originalHash=variant.body.active.hash;
+  const prompted=structuredClone(variant.body.active.definition);prompted.systemPrompt+='\nTemporary instructions.';
+  await rpc('target-publication','pipeline.save',[prompted,variant.body.active.revision]);
+  const middle=await api<PipelineView>('w/target-publication/pipeline');
+  await rpc('target-publication','pipeline.save',[variant.body.active.definition,middle.body.active.revision]);
+  const reused=await api<PipelineView>('w/target-publication/pipeline');
+  assert.equal(reused.body.active.hash,originalHash);assert.equal(reused.body.active.revision,middle.body.active.revision+1,'restoring identical prompt content never rewinds optimistic revisions');
 });

@@ -13,11 +13,12 @@ export type PartKind = keyof typeof PART_FIELDS;
 export const PART_KINDS = Object.keys(PART_FIELDS) as PartKind[];
 export type ItemKind = 'person' | 'member' | 'activity' | 'feedback' | 'image_asset' | 'citation' | 'library_image' | 'banner' | 'fact_check';
 
-export type WorkspaceDoc = { workspace: Workspace; pipelineHash?: string; historyHashes?: string[] };
+export type PipelineReference=Pick<PipelineRevision,'hash'|'revision'|'savedAt'>;
+export type WorkspaceDoc = { workspace: Workspace; pipelineHash?: string; historyHashes?: string[];pipelineRef?:PipelineReference;historyRefs?:PipelineReference[] };
 export type ProductionRow = { id: string; ordinal?: number; doc: ProductionState['production']; sourceIds: string[]; archived: boolean };
 export type PartRow = { kind: PartKind; id: string; productionId: string; ordinal?: number; doc: unknown; deleted?: boolean };
 export type SourceRow = { id: string; ordinal?: number; doc: Source };
-export type JobDoc = Omit<EditorialJob, 'events' | 'attempts' | 'availableAt' | 'lease' | 'pipeline'> & { pipelineHash?: string };
+export type JobDoc = Omit<EditorialJob, 'events' | 'attempts' | 'availableAt' | 'lease' | 'pipeline'> & { pipelineHash?: string;pipelineRef?:PipelineReference };
 export type RunRow = { id: string; productionId: string; status: string; availableAt?: number; lease?: EditorialJob['lease'] | null;
   attempts?: number; job: JobDoc | null; fold: RunFold };
 export type EventRow = { runId: string; event: RunEvent };
