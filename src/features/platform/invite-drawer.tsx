@@ -49,12 +49,12 @@ export function InviteDrawer({ open, onClose, workspaces }: { open: boolean; onC
   const platform = usePlatform();
   const administration=usePlatformAdministration(),[workspaceSearch,setWorkspaceSearch]=useState('');
   const targets=useAdministrationQuery(administration,`invite-targets:${workspaceSearch}`,admin=>admin.list({search:workspaceSearch,limit:50}));
-  const blank = (): Draft => ({ name: '', email: '', role: 'editor', workspaceId: workspaces[0]?.id ?? '' });
+  const blank = (): Draft => ({ name: '', email: '', role: 'editor', workspaceId: administration?'':workspaces[0]?.id ?? '' });
   const [draft, setDraft] = useState<Draft>(blank);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ field?: 'name' | 'email'; message: string }>();
   const [issued, setIssued] = useState<IssuedInvite>();
-  const workspaceId = draft.workspaceId || workspaces[0]?.id || '';
+  const workspaceId = administration?draft.workspaceId:draft.workspaceId || workspaces[0]?.id || '';
   const ready = draft.name.trim().length >= 2 && draft.email.includes('@') && Boolean(workspaceId);
 
   function close() {
