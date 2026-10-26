@@ -1,4 +1,5 @@
 import 'server-only';
+import { logWorkerEvent as logEvent } from './worker-context.ts';
 import { withWorkspaceWork } from './worker-dispatch.ts';
 import { bindWorkerJob } from './worker-context.ts';
 import { withRegisteredWorkerContext } from './worker-job-context.ts';
@@ -11,7 +12,7 @@ import { audioChunks,garbledSegment,MAX_REPAIRS,mergeSegments,repairedText,repai
 import { signedSourceUrl } from './cloud-storage.ts';
 import { withCloudMediaSource } from './cloud-media-source.ts';
 import { transaction } from './database.ts';
-import { FlowError,logEvent,safeCode } from './errors.ts';
+import { FlowError,safeCode } from './errors.ts';
 import { generateEditorial,transcribeChunk,transcribeWindow,transcriptionModel,type ProviderResult } from './groq.ts';
 import { inspectMedia,prepareChunk } from './media.ts';
 import { cacheRead,cacheWrite,verifySource,workDirectory } from './storage.ts';

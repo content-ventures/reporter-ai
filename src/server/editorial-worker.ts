@@ -1,4 +1,5 @@
 import 'server-only';
+import { logWorkerEvent as logEvent } from './worker-context.ts';
 import { withWorkspaceWork } from './worker-dispatch.ts';
 import { bindEditorialJob } from './worker-job-context.ts';
 import { randomUUID } from 'node:crypto';
@@ -22,7 +23,7 @@ import { generateStructured } from './groq';
 import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, editorialPassageSize } from './pipeline-runner';
 import { workDirectory, sourcePreparationDirectory } from './storage';
 import { mapEditorialPassages } from './editorial-passages';
-import { FlowError, safeCode, logEvent, editorialRetryPolicy } from './errors';
+import { FlowError, safeCode, editorialRetryPolicy } from './errors';
 import { articlePreview } from './article-preview';
 import { contiguousSourcePassages, r1ArticleIssue, unquoteUnsupported, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
 import { articleContractFor, articleGateFor, outletPunctuation, quoteRuleFor, tidyQuoteOpenings } from '../domain/formats.ts';

@@ -1,4 +1,5 @@
 import 'server-only';
+import { logWorkerEvent as logEvent } from './worker-context.ts';
 import { withWorkspaceWork } from './worker-dispatch.ts';
 import { bindWorkerJob } from './worker-context.ts';
 import { withRegisteredWorkerContext } from './worker-job-context.ts';
@@ -8,7 +9,7 @@ import { PutObjectCommand,S3Client } from '@aws-sdk/client-s3';
 import { transaction } from './database.ts';
 import { remoteResponse } from './storage.ts';
 import { finalizeUploadedObject } from './cloud-storage.ts';
-import { FlowError,logEvent,safeCode } from './errors.ts';
+import { FlowError,safeCode } from './errors.ts';
 
 /** A pending source is the durable import job; expired leases resume after an isolate restart. */
 export async function runRemoteIngest(owner:string,signal:AbortSignal) {
