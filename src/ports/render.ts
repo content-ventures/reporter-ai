@@ -84,7 +84,7 @@ export type RenderResult = {
 };
 
 export type RenderCapabilities = { raster: boolean; reason?: string };
-export type RenderCatalog={templates:readonly TemplateInfo[];samplePhoto?:AssetId};
+export type RenderCatalog={templates:readonly TemplateInfo[];retainedIds:readonly TemplateId[];samplePhoto?:AssetId};
 
 /** Library card image: the template's cover with its sample copy, or with `slots` over it. */
 export type ThumbnailRequest = {
@@ -122,6 +122,9 @@ export interface RenderService {
   readonly samplePhoto?: AssetId;
   /** The library, default first: every selectable template (formats of later releases have none). */
   templates(): readonly TemplateInfo[];
+  /** Owned historical definitions remain readable without becoming new assignment choices. */
+  templateInfo?(id:TemplateId):TemplateInfo|undefined;
+  retainedTemplateIds?():readonly TemplateId[];
   capabilities(): RenderCapabilities;
   /** Approximate text fit per slot, synchronous for live field counters. */
   measure(body: CarouselBody): Result<SlotFit[], RenderRefusal>;

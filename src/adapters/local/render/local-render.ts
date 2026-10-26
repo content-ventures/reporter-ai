@@ -300,6 +300,10 @@ export function createLocalRenderService(deps: LocalRenderDeps): RenderService {
       return infos.filter(info => !deps.activeTemplateIds || deps.activeTemplateIds.includes(info.id))
         .map((info) => ({ ...info, tags: [...info.tags], formatInfo: { ...info.formatInfo } }));
     },
+    templateInfo(id){
+      const info=infos.find(entry=>entry.id===id);return info?{...info,tags:[...info.tags],formatInfo:{...info.formatInfo}}:undefined;
+    },
+    retainedTemplateIds:()=>infos.map(info=>info.id),
     capabilities(): RenderCapabilities {
       return probe ? { raster: true } : { raster: false, reason: NO_CANVAS };
     },

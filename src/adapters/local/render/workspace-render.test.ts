@@ -16,7 +16,8 @@ test('client raster draws its publication and contained transparent logo on ever
     return{context,toPng:async()=>new Uint8Array([137,80,78,71])};
   };
   const render=createLocalRenderService({templates:[entry.template],renders:{[entry.template.id]:entry.render},library:{[entry.template.id]:{meta:entry.meta,sample:entry.sample}},
-    createSurface:surface,fontsReady:async values=>{fonts.push(...values);},loadBrandLogo:async id=>{assert.equal(id,revision.config.logoId);loads++;return ok({source:'private-brand',width:400,height:100});}});
+    activeTemplateIds:[],createSurface:surface,fontsReady:async values=>{fonts.push(...values);},loadBrandLogo:async id=>{assert.equal(id,revision.config.logoId);loads++;return ok({source:'private-brand',width:400,height:100});}});
+  assert.deepEqual(render.templates(),[]);assert.match(render.templateInfo?.(entry.template.id)?.name??'',/Naturaltech/);
   const sample=render.sample(entry.template.id);assert.ok(sample.ok);if(!sample.ok)return;
   const result=await render.render({body:sample.value,scale:.5});assert.ok(result.ok);assert.equal(loads,1);
   assert.ok(texts.filter(text=>text==='Naturaltech').length>=sample.value.slides.length);assert.ok(!texts.includes('Naturaltech…'));
@@ -28,6 +29,7 @@ test('a configured brand failure prevents a false successful export; history is 
   const [entry]=workspaceTemplateEntries(revision);
   const render=createLocalRenderService({templates:[entry.template],renders:{[entry.template.id]:entry.render},activeTemplateIds:[],loadBrandLogo:async()=>refuse('missing','Revoked access')});
   assert.deepEqual(render.templates(),[]);const sample=render.sample(entry.template.id);assert.ok(sample.ok);if(!sample.ok)return;
+  assert.equal(render.templateInfo?.(entry.template.id)?.id,entry.template.id);assert.deepEqual(render.retainedTemplateIds?.(),[entry.template.id]);
   assert.equal(render.switchTemplate(sample.value,entry.template.id).ok,false);
   const failed=await render.render({body:sample.value});assert.equal(failed.ok,false);if(!failed.ok)assert.equal(failed.refusal.code,'render_failed');
 });

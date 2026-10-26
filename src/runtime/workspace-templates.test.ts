@@ -15,6 +15,7 @@ test('client composition retains the legacy catalog and brands each approved pre
   const entries=workspaceTemplateEntries(revision);assert.equal(entries.length,5);
   for(const entry of entries){
     assert.ok(entry.template.id.startsWith(`wst-${workspaceId}-`));assert.match(entry.template.name,/Naturaltech/);
+    assert.equal(entry.meta.status,'base','brand assignment is not a Marketing approval');
     assert.doesNotMatch(JSON.stringify(entry),/Seafood|Pescados Litoral/);
     for(const layout of Object.values(entry.render.layouts)){
       assert.equal(layout.brand?.label,'Naturaltech');assert.equal(layout.brand?.logoId,config.logoId);

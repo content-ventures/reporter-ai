@@ -31,7 +31,7 @@ it('the catalog waits for bootstrap and refetches when an external workspace con
   const runtime={ready:ready.promise,render:{templates:()=>templates,samplePhoto:'own-preview'}} as Runtime;
   const spec=templateCatalogQuery(),pending=spec.fetch(runtime).then(value=>{settled=true;return value;});
   await Promise.resolve();assert.equal(settled,false);ready.resolve();
-  assert.deepEqual(await pending,{ok:true,value:{templates,samplePhoto:'own-preview'}});
+  assert.deepEqual(await pending,{ok:true,value:{templates,retainedIds:[],samplePhoto:'own-preview'}});
   assert.equal(spec.affectedBy(notice({scope:'external'}),undefined),true);assert.equal(spec.affectedBy(notice({scope:'runs'}),undefined),false);
 });
 

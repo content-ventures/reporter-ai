@@ -16,7 +16,7 @@ export function workspaceTemplateEntries(revision:WorkspaceTemplateRevision):Tem
     if(!original)throw new Error('UNKNOWN_TEMPLATE_PRESET');
     const entry=structuredClone(original),id=workspaceTemplateId(revision,preset);
     entry.template.id=id;entry.template.name=`${revision.config.publication} · ${original.template.name}`;entry.render.templateId=id;
-    entry.meta={...entry.meta,status:'aprovado',tags:[revision.config.publication,preset],description:original.meta.description};
+    entry.meta={...entry.meta,status:'base',tags:[revision.config.publication,preset],description:original.meta.description};
     delete entry.previewPhoto;
     for(const layout of Object.values(entry.render.layouts)){
       const firstSlot=Math.min(...Object.values(layout.slots).map(slot=>slot.y));
