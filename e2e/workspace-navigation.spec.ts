@@ -23,7 +23,7 @@ for(const width of [1440,390]){
       }
       await page.goto('/workspaces');await page.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(a.name);
       const entry=page.getByRole('link',{name:new RegExp(a.name)});await expect(entry).toHaveAttribute('href',`/w/${a.slug}/`);
-      await entry.focus();await entry.press('Enter');await expect(page).toHaveURL(new RegExp(`/w/${a.slug}/$`));
+      await entry.focus();await entry.press('Enter');await expect(page).toHaveURL(new RegExp(`/w/${a.slug}/?$`));
       await expectHeadingOutline(page);await expectNoHorizontalOverflow(page);
       if(width===390)await page.getByRole('button',{name:'Abrir menu',exact:true}).click();
       const link=page.getByRole('link',{name:'Produções',exact:true});await expect(link).toHaveAttribute('href',`/w/${a.slug}/productions`);
@@ -41,7 +41,7 @@ for(const width of [1440,390]){
       await intercepted;
       await (await menu()).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();
       await expect(page).toHaveURL(new RegExp(`/w/${a.slug}/`));release();
-      await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/$`));
+      await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
       await expect(other).toHaveURL(new RegExp(`/w/${a.slug}/productions$`));
       const stored=await(await request.get(`/api/reporter/w/${a.slug}/workspace`,{headers})).json();expect(JSON.stringify(stored.state.productions)).toContain(`Saved before changing client ${suffix}`);
       await page.goto(`/w/${a.slug}/settings/writing-guide`);
@@ -50,8 +50,8 @@ for(const width of [1440,390]){
       const warning=page.getByRole('dialog',{name:'Sair sem salvar?',exact:true});await expect(warning).toBeVisible();
       await warning.getByRole('button',{name:'Continuar editando',exact:true}).click();await expect(voice).toHaveValue(`Unsaved policy ${suffix}`);
       await (await menu()).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();await warning.getByRole('button',{name:'Descartar e sair',exact:true}).click();
-      await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/$`));
-      await page.goto('/');await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/$`));
+      await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
+      await page.goto('/');await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
       await menu();await page.screenshot({path:`.reporter-local/multi-workspace/m6-selector-${width}.png`,fullPage:true});await page.keyboard.press('Escape');
       await expectNoHorizontalOverflow(page);
       const latest=await(await request.get(`/api/reporter/platform/workspaces/${b.id}`,{headers})).json();
@@ -62,6 +62,8 @@ for(const width of [1440,390]){
       await expect(page.getByRole('link',{name:new RegExp(b.name)})).toHaveAttribute('href',`/platform/workspaces/${b.id}`);
       await page.goto(`/w/missing-${suffix}/productions`);await expect(page.getByRole('heading',{name:'Escolher workspace',exact:true})).toBeVisible();
       expect(paths).not.toContain('/api/reporter/workspace');expect(paths.some(path=>path.startsWith('/api/reporter/w/reporter-ai/'))).toBe(false);
+      await page.evaluate(()=>localStorage.setItem('reporter:account-revision',crypto.randomUUID()));
+      await expect(other.getByRole('heading',{name:'Escolher workspace',exact:true})).toBeVisible();
       await other.close();expect(errors).toEqual([]);
     });
   });
