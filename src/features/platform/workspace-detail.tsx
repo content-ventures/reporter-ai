@@ -33,10 +33,11 @@ function WorkspaceDetail({port,workspaceId}:{port:WorkspaceAdministration;worksp
     <PageHeader title={workspace.name} status={<Badge tone={workspace.status==='active'?'green':'gray'}>{WORKSPACE_STATUS_LABELS[workspace.status]}</Badge>}
       actions={editable?<ButtonLink href={path('/')} variant="primary">Abrir workspace</ButtonLink>:undefined}/>
     <PageStack>
-      <Section title="Prontidão para gerar" titleAs="h2" variant="panel" action={<><Button size="sm" onClick={query.retry}>Reavaliar configuração</Button>{port.global&&editable?<Button size="sm" onClick={()=>setCopy(true)}>Copiar configuração</Button>:null}</>}>
+      <Section title="Prontidão para gerar" titleAs="h2" variant="panel" action={<Button size="sm" aria-label="Reavaliar configuração" onClick={query.retry}>Reavaliar</Button>}>
         <List label="Requisitos para geração" framed={false}>{Object.entries(labels).map(([key,label])=><ListItem key={key} title={label}
           href={editable&&(key==='editorial_map'||key==='writing_guide')?path(`/settings/${key==='editorial_map'?'editorial-map':'writing-guide'}`):undefined}
           trailing={<Badge variant="text" tone={workspace.readiness.missing.includes(key as WorkspaceRequirement)?'orange':'green'}>{workspace.readiness.missing.includes(key as WorkspaceRequirement)?'Pendente':'Pronto'}</Badge>}/>)}</List>
+        {port.global&&editable?<Button size="sm" onClick={()=>setCopy(true)}>Copiar configuração</Button>:null}
       </Section>
       {port.global?<WorkspaceIdentity key={workspace.id} port={port} workspace={workspace} reload={query.retry}/>:null}
       {editable?<><WorkspaceBrand port={port} workspaceId={workspace.id} name={workspace.name}/><WorkspaceTeam port={port} workspaceId={workspace.id}/>{port.global?<WorkspaceAutomation port={port} workspaceId={workspace.id}/>:null}</>:<Alert tone="info" title={workspace.status==='archiving'?'Aguardando o processamento terminar':'Workspace arquivado'}>O histórico permanece guardado. Reative o workspace para voltar a operar.</Alert>}
