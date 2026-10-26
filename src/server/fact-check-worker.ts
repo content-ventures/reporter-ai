@@ -1,4 +1,5 @@
 import 'server-only';
+import { logWorkerEvent as logEvent } from './worker-context.ts';
 import { withWorkspaceWork } from './worker-dispatch.ts';
 import { bindEditorialJob } from './worker-job-context.ts';
 import { citationView } from '../domain/citation-library.ts';
@@ -6,7 +7,7 @@ import { recheck } from '../domain/fact-check.ts';
 import type { EditorialCheckpoint } from '../ports/connected-workspace.ts';
 import { transaction } from './database.ts';
 import { editorialTransaction } from './editorial';
-import { FlowError, logEvent, safeCode } from './errors';
+import { FlowError, safeCode } from './errors';
 import { factCheckProviders } from './fact-check';
 import { runFactCheck } from './fact-check-pipeline.ts';
 

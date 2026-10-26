@@ -1,4 +1,5 @@
 import 'server-only';
+import { logWorkerEvent as logEvent } from './worker-context.ts';
 import { withWorkspaceWork } from './worker-dispatch.ts';
 import { bindEditorialJob } from './worker-job-context.ts';
 import type { ArticleBody } from '../domain/article.ts';
@@ -12,7 +13,7 @@ import { illustrateArticle } from './article-illustration.ts';
 import { transaction } from './database.ts';
 import { appendEditorialEvent, editorialContextHash, editorialTransaction } from './editorial';
 import { planArticleImages } from './editorial-images';
-import { FlowError, logEvent, safeCode } from './errors';
+import { FlowError, safeCode } from './errors';
 import { executePipelineStep } from './pipeline-runner';
 import { workDirectory } from './storage';
 
