@@ -6,6 +6,8 @@ import type { ManagedWorkspace, MembershipStatus, WorkspaceAccess, WorkspaceChan
 
 export type WorkspaceResult<T> = Result<T, WorkspaceRefusal>;
 export type WorkspacePage = { items: ManagedWorkspace[]; total: number; offset: number };
+export type WorkspaceAccessPage = { items: WorkspaceAccess[]; total: number; offset: number; administrative: boolean };
+export type WorkspaceSearch = { search?: string; offset?: number; limit?: number };
 export type MembershipChange = { workspaceId: WorkspaceId; personId: PersonId; revision: number };
 
 /** Server-authorized administration. No method grants a platform role or changes a password. */
@@ -22,5 +24,5 @@ export interface WorkspaceAdministration {
 
 /** A tab chooses its addressable context; navigation preference is never authorization. */
 export interface WorkspaceDirectory {
-  accessible(): Promise<WorkspaceResult<WorkspaceAccess[]>>;
+  accessible(options?: WorkspaceSearch): Promise<WorkspaceResult<WorkspaceAccessPage>>;
 }

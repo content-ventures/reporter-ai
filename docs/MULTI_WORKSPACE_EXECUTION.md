@@ -54,6 +54,14 @@ The frozen M0 app was also started against the upgraded synthetic database: its 
 
 Implementation is split into reviewable local commits. The next phase replaces the remaining deployment-default request context with an explicit authorized workspace address. The new administration endpoints are persistence capabilities; complete UI onboarding and workspace navigation remain M5 and M6.
 
+## M2 progress: explicit authorization
+
+Migration 032 and `/api/reporter/w/<slug>/...` now resolve the actual account and the addressed workspace server side. The existing unscoped routes keep their original pilot destination. Invalid, unauthorized and disabled explicit contexts fail closed. `REPORTER_WORKSPACES_MODE` defaults to `off`; `admin` permits only a verified platform operator; `all` permits active authorized memberships. The directory is bounded and paginated.
+
+The platform operator's addressed context uses the real account and explicit administrative capabilities without creating a membership or borrowing another person's identity. Database permissions independently validate this context. Four focused HTTP/PostgreSQL tests pass for role separation, real administrative identity, scoped retry receipts, foreign production refusals, invalid/disabled contexts and immediate revocation. The general quick gate currently passes 1,709 tests and the backend gate passes 313 tests.
+
+M2 remains open: runtime transport binding, private files/images, global account avatar ownership, canonical page addressing and final regression checks are still being completed. These intermediate results do not enable production navigation.
+
 ## Acceptance budgets established before implementation
 
 - Integrity: zero loss, ownership changes, duplicate pilot workspaces, unexpected policy resets or changes to historical render definitions. Compare stable rows and configuration fingerprints; explicitly exclude newly recorded activity and worker heartbeats from immutable-data comparisons.
@@ -76,5 +84,5 @@ Before a rollout, stop new commands for the affected workspace, settle or pause 
 | --- | --- |
 | M0 | Accepted with the two recorded intermittent browser checks; baseline frozen |
 | M1 | Accepted locally: lifecycle, membership persistence and compatibility checks |
-| M2 | Next: authorized request context and private assets |
+| M2 | In progress: explicit API context validated; transport and private assets ongoing |
 | M3–M9 | Not accepted |
