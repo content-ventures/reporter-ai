@@ -150,3 +150,25 @@ test('reviewed configuration copying is atomic, audited and retains the target i
   const reused=await api<PipelineView>('w/target-publication/pipeline');
   assert.equal(reused.body.active.hash,originalHash);assert.equal(reused.body.active.revision,middle.body.active.revision+1,'restoring identical prompt content never rewinds optimistic revisions');
 });
+
+test('simultaneous brand configuration forms settle one version and return a recoverable conflict',async()=>{
+  const {saveWorkspaceTemplates}=await import('../../src/server/template-settings.ts');
+  const initial=await api<WorkspaceTemplateConfiguration>(`platform/workspaces/${second}/templates`);
+  const clients=[new pg.Client({connectionString:db.runtime}),new pg.Client({connectionString:db.runtime})];
+  await Promise.all(clients.map(async client=>{
+    await client.connect();await client.query('BEGIN');
+    await client.query("SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode','platform',true),set_config('app.user_id',$1,true)",[adminId]);
+    await client.query('SELECT public.reporter_template_authorize($1)',[second]);
+  }));
+  try{
+    const results=await Promise.allSettled(clients.map(async(client,index)=>{
+      try{const value=await saveWorkspaceTemplates(client,second,{revision:initial.body.revision,config:{...initial.body.active!.config,publication:`Concurrent ${index}`}});await client.query('COMMIT');return value;}
+      catch(error){await client.query('ROLLBACK');throw error;}
+    }));
+    assert.equal(results.filter(result=>result.status==='fulfilled').length,1);
+    const refused=results.find(result=>result.status==='rejected') as PromiseRejectedResult;
+    assert.equal(refused.reason.code,'TEMPLATE_CONFLICT');assert.equal(refused.reason.status,409);
+    const current=await api<WorkspaceTemplateConfiguration>(`platform/workspaces/${second}/templates`);
+    assert.equal(current.body.revision,initial.body.revision+1);assert.match(current.body.active!.config.publication,/^Concurrent [01]$/);
+  }finally{await Promise.all(clients.map(client=>client.end()));}
+});

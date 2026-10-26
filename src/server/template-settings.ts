@@ -21,7 +21,7 @@ const failure=(code:string,status:number,message:string)=>{const error=new FlowE
 function translate(error:unknown):never{
   const {code,message}=error as {code?:string;message?:string};
   if(code==='42501')throw failure('FORBIDDEN',403,'Somente administradores configuram os modelos e a marca deste workspace.');
-  if(code==='40001'||message==='CONFLICT')throw failure('TEMPLATE_CONFLICT',409,'A configuração mudou em outra sessão. Atualize antes de salvar.');
+  if(code==='40001'||code==='40P01'||message==='CONFLICT')throw failure('TEMPLATE_CONFLICT',409,'A configuração mudou em outra sessão. Atualize antes de salvar.');
   if(message==='UNKNOWN_LOGO')throw failure('TEMPLATE_UNKNOWN_LOGO',422,'Escolha uma marca enviada para este workspace.');
   if(message==='INVALID_CONFIGURATION'||code==='22023')throw failure('TEMPLATE_INVALID',422,'Confira o veículo, os modelos e a marca.');
   throw error;
@@ -34,7 +34,7 @@ export function referencedTemplateHashes(checkpoint:EditorialCheckpoint):string[
   const bodies=checkpoint.state.productions.flatMap(production=>[...production.pieces.map(piece=>piece.draft.body),...production.versions.map(version=>version.body)]);
   return [...new Set(bodies.flatMap(body=>body.type==='carousel'?[workspaceTemplateHash(body.templateId,checkpoint.state.workspace.id)].filter((hash):hash is string=>Boolean(hash)):[]))].slice(0,200);
 }
-export async function saveWorkspaceTemplates(client:PoolClient,workspaceId:string,body:unknown):Promise<WorkspaceTemplateConfiguration>{
+export async function saveWorkspaceTemplates(client:Pick<PoolClient,'query'>,workspaceId:string,body:unknown):Promise<WorkspaceTemplateConfiguration>{
   const parsed=templateInputSchema.safeParse(body);
   if(!parsed.success)throw failure('TEMPLATE_INVALID',422,'Confira o veículo, os modelos e a marca.');
   const checked=validateTemplateConfiguration(parsed.data.config);if(!checked.ok)throw failure('TEMPLATE_INVALID',422,checked.refusal.message);
