@@ -9,7 +9,7 @@ for(const width of [1440,390]){
     test('onboards a client through setup, independent invitations and readiness without touching the pilot',async({page,browser,request,baseURL})=>{
       test.skip(process.env.REPORTER_WORKSPACES_MODE!=='all','uses the isolated workspace rollout');
       test.setTimeout(90000);
-      const errors=watchErrors(page),suffix=randomUUID().slice(0,8),name=`Acceptance client ${suffix}`,slug=`acceptance-${suffix}`;
+      const errors=watchErrors(page,[/409.*\/processing/]),suffix=randomUUID().slice(0,8),name=`Acceptance client ${suffix}`,slug=`acceptance-${suffix}`;
       const headers={origin:baseURL!,'x-reporter-client':'local'};
       const pilotBefore=await(await request.get('/api/reporter/pipeline',{headers})).json();
       await page.goto('/platform/workspaces');
@@ -66,6 +66,20 @@ for(const width of [1440,390]){
       await page.getByRole('button',{name:'Salvar limite',exact:true}).click();
       await expect(page.getByText('Limite atualizado.',{exact:true})).toBeVisible();
       await page.reload();await expect(page.getByRole('spinbutton',{name:'Limite diário de operações',exact:true})).toHaveValue('12');
+      const limit=page.getByRole('spinbutton',{name:'Limite diário de operações',exact:true}),id=new URL(detail).pathname.split('/').at(-1)!;
+      await limit.fill('13');
+      const current=await(await request.get(`/api/reporter/platform/workspaces/${id}/processing`,{headers})).json();
+      expect((await request.post(`/api/reporter/platform/workspaces/${id}/processing`,{headers,data:{revision:current.revision,dailyLimit:14}})).ok()).toBeTruthy();
+      await page.getByRole('button',{name:'Recarregar cadastro',exact:true}).click();
+      await page.getByRole('textbox',{name:'Nome do cliente',exact:true}).fill(`${name} renamed`);
+      await page.getByRole('button',{name:'Salvar nome',exact:true}).click();
+      await expect(page.getByRole('heading',{level:1,name:`${name} renamed`,exact:true})).toBeVisible();
+      await expect(limit,'a refreshed query must preserve an edited draft').toHaveValue('13');
+      await page.getByRole('button',{name:'Salvar limite',exact:true}).click();
+      await expect(page.getByText('O cadastro mudou em outra sessão. Atualize antes de salvar.',{exact:true})).toBeVisible();
+      await expect(limit).toHaveValue('13');
+      expect((await(await request.get(`/api/reporter/platform/workspaces/${id}/processing`,{headers})).json()).dailyLimit).toBe(14);
+      await page.getByRole('button',{name:'Recarregar limite',exact:true}).click();await expect(limit).toHaveValue('14');
       await expectHeadingOutline(page);await expectNoHorizontalOverflow(page);
       await page.screenshot({path:`.reporter-local/multi-workspace/m5-client-${width}.png`,fullPage:true});
       const pilotAfter=await(await request.get('/api/reporter/pipeline',{headers})).json();
