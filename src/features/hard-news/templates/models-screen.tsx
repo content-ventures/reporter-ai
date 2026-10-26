@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
+import {usePathname} from 'next/navigation';
+import {workspaceAddress} from '@/domain/workspace-address';
 import {
   Button,
   ButtonLink,
@@ -24,7 +26,7 @@ import type { TemplateInfo } from '@/ports';
 import { useLastTemplate } from '@/features/library/last-template';
 import { DEFAULT_LIBRARY_PARAMS, FIRST_FORMAT, initialTemplate, otherFormatMatch, type LibraryParams } from '@/features/library/library-model';
 import { useLibraryParams, type SetLibraryParams } from '@/features/library/use-library-params';
-import { useCan, useRuntime } from '@/state';
+import { useCan, useRuntime,useTemplateCatalog } from '@/state';
 import { useBreadcrumb } from '@/ui/shell';
 import { usePhone } from '@/ui/use-phone';
 import { ModelCard, ModelCardSkeleton } from './model-card';
@@ -58,10 +60,11 @@ const CARD_MIN = 440;
 
 function useLibrary() {
   const { runtime, status } = useRuntime();
-  const templates = useMemo(() => runtime?.render.templates() ?? [], [runtime]);
+  const catalog=useTemplateCatalog(),templates=catalog.data?.templates??[];
   const lastUsed = useLastTemplate();
   const standard = initialTemplate(templates, { lastUsed });
-  return { runtime, status, templates, samplePhoto: runtime?.render.samplePhoto, standard };
+  const workspaceSlug=workspaceAddress(usePathname())?.slug;
+  return { runtime:catalog.data?runtime:undefined,status:catalog.status==='error'?'error':status,templates,samplePhoto:catalog.data?.samplePhoto,standard,workspaceSlug };
 }
 
 /** Feed is the address default: it stays out of the links. */
@@ -71,7 +74,7 @@ function shownFormat(format: CarouselFormatId): CarouselFormatId | null {
 
 function ModelsGallery({ params, setParams }: { params: LibraryParams; setParams: SetLibraryParams }) {
   const phone = usePhone();
-  const { runtime, status, templates, samplePhoto, standard } = useLibrary();
+  const { runtime, status, templates, samplePhoto, standard,workspaceSlug } = useLibrary();
   // What is on screen answers each keystroke; the address follows (a shared link opens the same view).
   const [query, setQuery] = useState(params.query);
   const [format, setFormat] = useState<CarouselFormatId>(params.format ?? FIRST_FORMAT);
@@ -100,7 +103,7 @@ function ModelsGallery({ params, setParams }: { params: LibraryParams; setParams
           <ModelCard
             key={template.id}
             template={template}
-            href={modelHref(shown, template.id)}
+            href={modelHref(shown, template.id,workspaceSlug)}
             articleCover={template.previewPhoto ?? samplePhoto}
             isDefault={template.id === standard}
             compact={phone}
@@ -222,10 +225,10 @@ function ShelvesSkeleton({ format, ratio, compact }: { format: CarouselFormatId;
 
 /** `?model=`: the model's page once the library is in, or why it is not there. */
 function ModelPage({ params }: { params: LibraryParams }) {
-  const { runtime, status, templates, samplePhoto, standard } = useLibrary();
+  const { runtime, status, templates, samplePhoto, standard,workspaceSlug } = useLibrary();
   const template = templates.find((entry) => entry.id === params.model);
   const shown = { format: params.format ?? (template ? shownFormat(template.format) : null), query: params.query };
-  const back = libraryHref(shown);
+  const back = libraryHref(shown,workspaceSlug);
   useBreadcrumb(runtime ? [{ label: 'Modelos', href: back }, { label: template?.name ?? 'Modelo não encontrado' }] : null);
 
   if (status === 'error') {
@@ -252,6 +255,7 @@ function ModelPage({ params }: { params: LibraryParams }) {
       articleCover={template.previewPhoto ?? samplePhoto}
       samplePhoto={samplePhoto}
       isDefault={template.id === standard}
+      workspaceSlug={workspaceSlug}
     />
   );
 }

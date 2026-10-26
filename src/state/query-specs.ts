@@ -28,6 +28,7 @@ import type {
 import type { LocalRoleProfile, SessionMember, SessionMode } from '../ports/session.ts';
 import type { Runtime } from '../runtime/runtime.ts';
 import type { QuerySpec } from './query-store.ts';
+import type {RenderCatalog} from '../ports/render.ts';
 
 /**
  * Every read a screen can make, as a cache spec: a unique key, the port call, and which change
@@ -78,6 +79,14 @@ function scopedBy<T>(productionOf: (data: T) => ProductionId | undefined) {
 
 /** Any change to a production's workflow (sends, decisions, edits): approval queues may move. */
 const changesProductions = (notice: ChangeNotice): boolean => isGlobal(notice) || notice.scope === 'productions';
+
+/** Server-owned catalogs arrive after runtime construction and change with workspace configuration. */
+export function templateCatalogQuery():RuntimeQuery<RenderCatalog>{
+  return{key:'template-catalog',affectedBy:isGlobal,fetch:async runtime=>{
+    await runtime.ready;
+    return ok({templates:runtime.render.templates(),...(runtime.render.samplePhoto?{samplePhoto:runtime.render.samplePhoto}:{})});
+  }};
+}
 
 export function overviewQuery(range: OverviewRange): RuntimeQuery<OverviewData> {
   return { key: key('overview', range), fetch: (rt) => answer(rt.queries.overview(range)), affectedBy: always };
