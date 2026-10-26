@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import type { Ref } from 'react';
 import {
@@ -151,6 +152,7 @@ export function MaterialSection({
   onUseSample,
   onReplaceTerm,
 }: MaterialSectionProps) {
+  const workspaceHrefFor = useWorkspaceHref();
   const analysis = material.analysis;
   const ready = material.status === 'ready' ? analysis : undefined;
   const duplicate = ready?.duplicate;
@@ -301,7 +303,7 @@ export function MaterialSection({
                 tone="warning"
                 title="Material já usado"
                 action={
-                  <TextLink href={productionHref(firstUse.id)} tone="inherit" size="sm">
+                  <TextLink href={workspaceHrefFor(productionHref(firstUse.id))} tone="inherit" size="sm">
                     Abrir produção
                   </TextLink>
                 }
