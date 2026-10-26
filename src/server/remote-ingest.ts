@@ -1,4 +1,5 @@
 import 'server-only';
+import { withWorkspaceWork } from './worker-dispatch.ts';
 import { Readable,Transform } from 'node:stream';
 import { PutObjectCommand,S3Client } from '@aws-sdk/client-s3';
 import { transaction } from './database.ts';
@@ -8,6 +9,10 @@ import { FlowError,logEvent,safeCode } from './errors.ts';
 
 /** A pending source is the durable import job; expired leases resume after an isolate restart. */
 export async function runRemoteIngest(owner:string,signal:AbortSignal) {
+  return withWorkspaceWork('remote',owner,signal, scoped => runScoped(owner, scoped));
+}
+
+async function runScoped(owner:string,signal:AbortSignal) {
   const source=(await transaction('worker',async db=>(await db.query('SELECT public.reporter_remote_link_claim($1) AS value',[owner])).rows[0]?.value)) as null|{id:string;url:string;key:string;size:number;content_type:string};
   if (!source) return false;
   try {

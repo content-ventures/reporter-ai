@@ -62,7 +62,8 @@ test('an idle worker claims nothing and never loads or writes editorial rows', a
   globals.reporterPools = { worker: { connect: async () => client } as unknown as Pool };
   try {
     assert.equal(await runEditorialJob('test-worker', new AbortController().signal), false);
-    assert.ok(queries.some(sql => sql.includes('reporter_ed_claim')));
+    assert.ok(queries.some(sql => sql.includes('reporter_worker_next')));
+    assert.ok(!queries.some(sql => sql.includes('reporter_ed_claim')),'no workspace task is touched when the directory has no eligible client');
   } finally {
     globals.reporterPools = previous;
     if (previousMode === undefined) delete process.env.REPORTER_DEPLOYMENT_MODE; else process.env.REPORTER_DEPLOYMENT_MODE = previousMode;

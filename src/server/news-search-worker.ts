@@ -1,4 +1,5 @@
 import 'server-only';
+import { withWorkspaceWork } from './worker-dispatch.ts';
 import type { NewsSearchClaim } from '../domain/news-search.ts';
 import { newsSearchQuery } from '../domain/news-search.ts';
 import { FlowError, logEvent, safeCode } from './errors.ts';
@@ -28,6 +29,11 @@ const services: NewsSearchWorkerServices = {
 
 /** One reserved search per job. A restart cannot reset the portal's daily budget. */
 export async function runNewsSearchJob(owner: string, signal: AbortSignal, deadline?: number, deps: NewsSearchWorkerServices = services): Promise<boolean | 'yield'> {
+  if (deps !== services) return runScoped(owner,signal,deadline,deps);
+  return withWorkspaceWork('search',owner,signal, scoped => runScoped(owner,scoped,deadline,deps));
+}
+
+async function runScoped(owner: string, signal: AbortSignal, deadline?: number, deps: NewsSearchWorkerServices = services): Promise<boolean | 'yield'> {
   if (signal.aborted) return false;
   if (deadline !== undefined && deps.now() + 95_000 > deadline) return 'yield';
   const claim = await deps.claim(owner);

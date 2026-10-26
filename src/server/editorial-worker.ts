@@ -1,4 +1,5 @@
 import 'server-only';
+import { withWorkspaceWork } from './worker-dispatch.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { editorialCandidates, editorialTemplates, appendEditorialEvent, editorialContextHash, editorialCarouselLayouts, validateEditorialOutline } from '../runtime/editorial-engine.ts';
@@ -70,6 +71,10 @@ export function editorialWorkerScopes(runId: string, productionId: string) {
 
 /** Claim and renew under a DB transaction; a stale worker cannot commit a result. */
 export async function runEditorialJob(owner: string, signal: AbortSignal): Promise<boolean> {
+  return withWorkspaceWork('editorial',owner,signal, scoped => runScoped(owner, scoped));
+}
+
+async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
   // The claim leases one run in SQL (SKIP LOCKED); afterwards only its production is loaded.
   const claim = await transaction('worker', async client => (await client.query('SELECT public.reporter_ed_claim($1,$2) AS claim',
     [owner,60000])).rows[0].claim as { runId: string; productionId: string; attempts: number; lease: { fence: string } } | null);

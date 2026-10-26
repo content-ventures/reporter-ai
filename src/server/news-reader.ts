@@ -1,4 +1,5 @@
 import 'server-only';
+import { withWorkspaceWork } from './worker-dispatch.ts';
 import type { PoolClient } from 'pg';
 import { NEWS_LIMITS, normalizeEntries } from '../domain/news-intake.ts';
 import type { NormalizedNews, RawNewsEntry } from '../domain/news-intake.ts';
@@ -77,6 +78,10 @@ export async function readSource(role: Role, claim: NewsClaim, owner: string, de
 
 /** The worker's job: one due source per call. `false` when none is due. */
 export async function runNewsSource(owner: string, signal: AbortSignal, deps: ReadServices = services): Promise<boolean> {
+  return withWorkspaceWork('news',owner,signal, scoped => runScoped(owner, scoped, deps));
+}
+
+async function runScoped(owner: string, signal: AbortSignal, deps: ReadServices = services): Promise<boolean> {
   if (signal.aborted) return false;
   const claim = await claimSource('worker', owner);
   if (!claim) return false;

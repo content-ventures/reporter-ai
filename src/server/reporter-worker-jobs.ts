@@ -1,4 +1,5 @@
 import 'server-only';
+import { withWorkspaceWork } from './worker-dispatch.ts';
 import { rm,stat } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { join } from 'node:path';
@@ -173,6 +174,10 @@ async function processJob(job: Job,owner: string,signal: AbortSignal,deadline: n
  * the queue is empty, allowing the caller to try the editorial queue, and 'yield'
  * when a long recording handed its job back to continue in a fresh invocation. */
 export async function runReporterJob(owner: string,outerSignal: AbortSignal,deadline = Number.POSITIVE_INFINITY): Promise<boolean | 'yield'> {
+  return withWorkspaceWork('outbox',owner,outerSignal, scoped => runScoped(owner, scoped, deadline));
+}
+
+async function runScoped(owner: string,outerSignal: AbortSignal,deadline = Number.POSITIVE_INFINITY): Promise<boolean | 'yield'> {
   const [claimed] = await jobCommand('reporter_claim',[owner]);
   if (!claimed) return false;
   const [job] = await jobCommand('reporter_start',[claimed.id,owner]) as Job[];
