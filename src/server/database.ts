@@ -108,6 +108,11 @@ export async function transaction<T>(role: "runtime" | "worker", operation: (cli
   } finally { client.release(); }
 }
 
+/** Immediate work is due on the clock that claims it, independently of app/worker host skew. */
+export async function databaseNow(client:PoolClient):Promise<number> {
+  return Number((await client.query('SELECT floor(extract(epoch FROM clock_timestamp())*1000)::bigint AS now')).rows[0].now);
+}
+
 export async function command<T extends string | number = string>(name: string, values: unknown[], requestId?: string): Promise<T> {
   const allowed = new Set(["reporter_create","reporter_edit_article","reporter_submit_article","reporter_review_article","reporter_edit_carousel","reporter_ready_carousel","reporter_retry"]);
   if (!allowed.has(name)) throw new Error("UNKNOWN_COMMAND");

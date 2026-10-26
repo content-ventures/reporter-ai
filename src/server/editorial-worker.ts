@@ -157,7 +157,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
         // Background work is claimable at once: the text's lease would otherwise hide it for a
         // minute, past the drain that just finished the text, and nothing wakes a cloud worker.
         if (additions.queueImages || current.factCheck) {
-          current.availableAt = Date.now();
+          // The original claim is already due on PostgreSQL's clock; keep it through this handoff.
           if (additions.provider) current.provider = additions.provider;
           delete current.lease;
         }

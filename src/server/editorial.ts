@@ -20,7 +20,7 @@ import type { GenerationKind, GenerationRequest, RunMeta } from '../ports/genera
 import type { OutlineInput } from '../ports/generation.ts';
 import type { EditorialCheckpoint, ConnectedWorkspace, EditorialJob, WorkspaceRefresh } from '../ports/connected-workspace.ts';
 import type { WritingRunDetails } from '../ports/pipeline-settings.ts';
-import { transaction } from './database';
+import { transaction, databaseNow } from './database';
 import { workerAvailable } from './storage';
 import { IDLE_QUEUE, queueStatus } from './queue-status.ts';
 import { FlowError, forbiddenError } from './errors';
@@ -250,7 +250,7 @@ export async function requireCapability(capability: Capability) {
   await editorialTransaction('runtime', async checkpoint => assertCapability(checkpoint, capability), false, 'reporter.edit', { pipelines: false });
 }
 
-async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, kind: GenerationKind, input: Record<string, unknown>, retryOfRunId?: string) {
+async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<typeof createEditorialEngine>, client:PoolClient,kind: GenerationKind, input: Record<string, unknown>, retryOfRunId?: string) {
   if (!supportedKinds.has(kind)) return refuse('unsupported_action', 'Esta ação do copiloto ainda não está conectada. Use a geração de artigo ou carrossel.');
   const productionId = identifier.parse(input.productionId), pieceId = identifier.parse(input.pieceId);
   const record = engine.records.record(productionId);
@@ -297,7 +297,7 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   const run = started.value.run;
   const meta: RunMeta = { runId: run.id, productionId, pieceId, label: GENERATION_LABELS[kind], request: { kind, input } as GenerationRequest };
   const context=currentReporterContext();
-  const job: EditorialJob = { meta,kind,input: meta.request.input,events: [],attempts: 0,availableAt: Date.now(),
+  const job: EditorialJob = { meta,kind,input: meta.request.input,events: [],attempts: 0,availableAt: await databaseNow(client),
     context:{tenant:context.tenant,workspace:context.portal,actor:context.actor},contextHash: editorialContextHash(record,pieceId,run.inputs),pipeline,calls: [] };
   const previous = retryOfRunId ? checkpoint.jobs[retryOfRunId] : undefined;
   if (previous?.contextHash === job.contextHash && previous?.pipeline?.hash === pipeline.hash && previous.kind === kind)
@@ -361,7 +361,7 @@ export async function editorialRpc(payload: unknown) {
       checkpoint.pipeline = next;
       return ok(pipelineView(checkpoint));
     }
-    if (method === 'generation.start') return startJob(checkpoint,engine,z.enum(GENERATION_KINDS as [GenerationKind,...GenerationKind[]]).parse(args[0]),z.record(z.string(),z.json()).parse(args[1]));
+    if (method === 'generation.start') return startJob(checkpoint,engine,client,z.enum(GENERATION_KINDS as [GenerationKind,...GenerationKind[]]).parse(args[0]),z.record(z.string(),z.json()).parse(args[1]));
     if (method === 'generation.cancel') {
       const id = identifier.parse(args[0]), job = checkpoint.jobs[id], fold = engine.store.state.runFolds[id];
       if (!job || !fold) return refuse('unknown_run','Geração não encontrada.');
@@ -379,7 +379,7 @@ export async function editorialRpc(payload: unknown) {
       if (!job || !fold) return refuse('unknown_run','Geração não encontrada.');
       if (isRunActive(fold.run)) return refuse('still_running','Esta geração ainda está em andamento.');
       if (fold.run.status === 'completed') return refuse('nothing_to_retry','Esta geração já terminou.');
-      return startJob(checkpoint,engine,job.kind,job.input as unknown as Record<string,unknown>,id);
+      return startJob(checkpoint,engine,client,job.kind,job.input as unknown as Record<string,unknown>,id);
     }
     if (method === 'feedback.vote') return engine.feedback.vote(args[0] as Parameters<typeof engine.feedback.vote>[0]);
     if (!writes.has(method)) throw new FlowError('UNKNOWN_COMMAND',404);
