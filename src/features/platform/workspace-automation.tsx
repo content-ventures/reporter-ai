@@ -4,6 +4,7 @@ import {Alert,Button,Checkbox,Combobox,ConfirmDialog,CopyButton,DescriptionList,
 import type {WorkspaceAdministration} from '@/ports/workspace-management';
 import type {IssuedIntegration,WorkspaceIntegration,WorkspaceProcessing} from '@/domain/workspace-management';
 import {useAdministrationQuery} from '@/state';
+import {useWorkspaceForm} from './workspace-form-guard';
 import {inputProps} from './field-props';
 
 export function WorkspaceAutomation({port,workspaceId}:{port:WorkspaceAdministration;workspaceId:string}){
@@ -16,6 +17,7 @@ export function WorkspaceAutomation({port,workspaceId}:{port:WorkspaceAdministra
 }
 function ProcessingForm({port,initial,refreshing}:{port:WorkspaceAdministration;initial:WorkspaceProcessing;refreshing:boolean}){
   const [base,setBase]=useState(initial),[limit,setLimit]=useState(initial.dailyLimit===null?'':String(initial.dailyLimit)),[busy,setBusy]=useState(false),[message,setMessage]=useState<{error:boolean;text:string}>();
+  useWorkspaceForm(limit!==(base.dailyLimit===null?'':String(base.dailyLimit)),busy);
   const [received,setReceived]=useState(initial.revision),disabled=busy||refreshing;
   if(initial.revision!==received){setReceived(initial.revision);if(limit===(base.dailyLimit===null?'':String(base.dailyLimit))){setBase(initial);setLimit(initial.dailyLimit===null?'':String(initial.dailyLimit));}}
   async function save(){setBusy(true);const saved=await port.setProcessing({workspaceId:base.workspaceId,revision:base.revision,dailyLimit:limit===''?null:Number(limit)});setBusy(false);
@@ -32,6 +34,7 @@ function ProcessingForm({port,initial,refreshing}:{port:WorkspaceAdministration;
 function DriveForm({port,workspaceId,initial}:{port:WorkspaceAdministration;workspaceId:string;initial?:WorkspaceIntegration}){
   const [base,setBase]=useState(initial),[owner,setOwner]=useState(initial?.ownerId??''),[enabled,setEnabled]=useState(initial?.enabled??true),[search,setSearch]=useState('');
   const [busy,setBusy]=useState(false),[error,setError]=useState<string>(),[issued,setIssued]=useState<IssuedIntegration['credential']>(),[rotate,setRotate]=useState(false);
+  useWorkspaceForm(owner!==(base?.ownerId??'')||enabled!==(base?.enabled??true),busy);
   const team=useAdministrationQuery(port,`drive-team:${workspaceId}:${search}`,admin=>admin.members(workspaceId,{search,limit:50}));
   const selected=useAdministrationQuery(port,`drive-owner:${workspaceId}:${owner}`,admin=>admin.members(workspaceId,{search:owner||'__none__',limit:1}));
   const editors=[...(selected.data?.items??[]),...(team.data?.items??[])].filter((member,index,all)=>all.findIndex(item=>item.id===member.id)===index&&member.status==='active'&&!member.accountSuspended&&member.roles.some(role=>role==='editor'||role==='admin'));

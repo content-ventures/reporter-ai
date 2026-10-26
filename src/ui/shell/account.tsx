@@ -1,11 +1,11 @@
 'use client';
 
 import { SidebarAccount, ThemeV3, useShell, type MenuSection } from '@content-ventures/design-system/v3';
-import { UserRound } from '@content-ventures/design-system/v3/icons';
+import {Building2,Settings, UserRound } from '@content-ventures/design-system/v3/icons';
 import { ACCOUNT_HREF } from '../routes';
 import { requestLeave } from './leave-guard';
-import { useRouter } from 'next/navigation';
-import { authClient } from '@/lib/auth-client';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
+import {useSession} from '@/state';
 import { PersonAvatar } from '../person-avatar';
 import { localRoleMenu, memberDetail, useActAs } from './act-as';
 
@@ -17,7 +17,7 @@ import { localRoleMenu, memberDetail, useActAs } from './act-as';
 export function ShellAccount() {
   const router = useRouter();
   const { closeNav } = useShell();
-  const session = useActAs();
+  const session = useActAs(),navigation=useSession().data?.navigation;
   const { current, members, actAs } = session;
   if (!current) return null;
   const sections: MenuSection[] =
@@ -39,7 +39,7 @@ export function ShellAccount() {
       : [];
   const cloudSections: MenuSection[] = session.localProfiles.length ? [] : [{ label: 'Conta',items: [{
     label: 'Sair',
-    onSelect: () => { void authClient.signOut().finally(() => router.replace('/auth/sign-in')); },
+    onSelect: () => { if(requestLeave('/auth/sign-out'))router.push('/auth/sign-out'); },
   }] }];
   const profile = session.localProfiles.find(profile => profile.id === session.selectedProfile);
   // Keep the account popover in the sidebar layer when the mobile drawer is open.
@@ -48,6 +48,6 @@ export function ShellAccount() {
       detail={profile ? `Perfil de teste: ${profile.label}` : memberDetail(current)}
       sections={[{ items: [{ label: 'Meu perfil', icon: UserRound, onSelect: () => {
         if (requestLeave(ACCOUNT_HREF)) { closeNav(); router.push(ACCOUNT_HREF); }
-      } }] }, ...sections, ...localRoleMenu(session), ...cloudSections]} />
+      } },...(current.roles.includes('admin')?[{label:'Administrar workspace',icon:Settings,onSelect:()=>{if(requestLeave('/admin/workspace')){closeNav();router.push('/admin/workspace');}}}]:[]),...(navigation?.administrative?[{label:'Plataforma',icon:Building2,onSelect:()=>{if(requestLeave('/platform')){closeNav();router.push('/platform');}}}]:[])] }, ...sections, ...localRoleMenu(session), ...cloudSections]} />
   </ThemeV3>;
 }

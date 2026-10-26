@@ -7,6 +7,7 @@ import {ROLES,roleLabel,type Role} from '@/domain';
 import type {IssuedInvite} from '@/domain/platform';
 import {useAdministrationQuery} from '@/state';
 import {IssuedLink,ROLE_OPTIONS} from './invite-drawer';
+import {useWorkspaceForm} from './workspace-form-guard';
 import {inputProps} from './field-props';
 import {rolesLabel} from './format';
 
@@ -31,6 +32,7 @@ export function WorkspaceTeam({port,workspaceId}:{port:WorkspaceAdministration;w
 }
 function TeamInvitation({port,workspaceId,onClose}:{port:WorkspaceAdministration;workspaceId:string;onClose:()=>void}){
   const [name,setName]=useState(''),[email,setEmail]=useState(''),[role,setRole]=useState<Role>('editor'),[busy,setBusy]=useState(false),[error,setError]=useState<string>(),[issued,setIssued]=useState<IssuedInvite>();
+  useWorkspaceForm(!issued&&Boolean(name||email),busy);
   async function submit(){setBusy(true);setError(undefined);const saved=await port.invite({workspaceId,name,email,role});setBusy(false);if(saved.ok)setIssued(saved.value);else setError(saved.refusal.message);}
   return<Drawer open onClose={onClose} dismissible={!busy&&!name&&!email} title={issued?'Convite criado':'Convidar pessoa'} description={issued?'Copie e envie o link à pessoa.':undefined}
     footer={<Button variant="primary" loading={busy} disabled={!issued&&(name.trim().length<2||!email.includes('@'))} onClick={()=>issued?onClose():void submit()}>{issued?'Concluir':'Criar convite'}</Button>}>
@@ -44,6 +46,7 @@ function TeamInvitation({port,workspaceId,onClose}:{port:WorkspaceAdministration
 }
 export function TeamMember({port,member,onClose}:{port:WorkspaceAdministration;member:WorkspaceTeamMember;onClose:()=>void}){
   const [chosen,setChosen]=useState(member.roles),[busy,setBusy]=useState(false),[error,setError]=useState<string>(),[confirm,setConfirm]=useState(false),[issued,setIssued]=useState<IssuedInvite>();
+  useWorkspaceForm(chosen.join()!==member.roles.join(),busy);
   const base={workspaceId:member.workspace.id,personId:member.personId,revision:member.revision};
   async function act(operation:'roles'|'status'|'renew'){
     setBusy(true);setError(undefined);
