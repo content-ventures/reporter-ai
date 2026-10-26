@@ -1,4 +1,5 @@
 /** A workspace address is explicit and tab-local. Missing context means only the legacy pilot. */
+export const WORKSPACE_PAGE_HEADER='x-reporter-page-workspace';
 export function workspaceSlug(value: string): string | undefined {
   return value.length >= 3 && value.length <= 63 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) ? value : undefined;
 }
