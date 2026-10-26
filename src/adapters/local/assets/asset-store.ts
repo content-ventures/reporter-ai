@@ -31,7 +31,7 @@ export type AssetStoreOptions = {
   backend: AssetBackend;
   clock: Clock;
   ids: IdGenerator;
-  workspaceId: WorkspaceId;
+  workspaceId: WorkspaceId | (() => WorkspaceId);
   /** Who adds the image (the acting member). */
   actorId: () => ActorId;
   /** `?reset=1`, "Restaurar exemplo": drop stored images before reading. */
@@ -203,7 +203,8 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
     try {
       if (options.reset) await backend.clear();
       const stored = await backend.load();
-      for (const record of stored) records.set(record.id, { ...record, asset: deepFreeze(structuredClone(record.asset)) });
+      const workspace = typeof options.workspaceId === 'function' ? options.workspaceId() : options.workspaceId;
+      for (const record of stored) if (record.asset.workspaceId === workspace) records.set(record.id, { ...record, asset: deepFreeze(structuredClone(record.asset)) });
     } catch {
       // Storage refused (private mode, blocked site data): keep working in memory, say so on write.
       degraded = backend.scope === 'local';
@@ -245,7 +246,7 @@ export function createAssetStore(options: AssetStoreOptions): AssetStore {
     if (note) rights.note = note;
     const asset: ImageAsset = {
       id: ids.next('img'),
-      workspaceId: options.workspaceId,
+      workspaceId: typeof options.workspaceId === 'function' ? options.workspaceId() : options.workspaceId,
       kind: 'image',
       origin,
       rights,

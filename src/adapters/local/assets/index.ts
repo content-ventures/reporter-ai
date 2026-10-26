@@ -20,10 +20,10 @@ export function createMemoryAssetStore(options: LocalAssetOptions & { memory?: M
 }
 
 /** Images in IndexedDB (`reporter-sim-assets`), or in memory when this browser has none. */
-export function createIndexedDbAssetStore(options: LocalAssetOptions & { indexedDB?: IdbFactory }): AssetStore {
-  const { indexedDB, ...rest } = options;
+export function createIndexedDbAssetStore(options: LocalAssetOptions & { indexedDB?: IdbFactory; databaseName?: string | Promise<string> }): AssetStore {
+  const { indexedDB, databaseName, ...rest } = options;
   const factory = indexedDB ?? browserIndexedDb();
-  return createAssetStore({ ...rest, backend: factory ? indexedDbBackend(factory) : memoryBackend() });
+  return createAssetStore({ ...rest, backend: factory ? indexedDbBackend(factory,databaseName) : memoryBackend() });
 }
 
 export { ASSET_LIMITS, ASSET_SAVE_MESSAGES, bitmapSize, createAssetStore } from './asset-store.ts';
