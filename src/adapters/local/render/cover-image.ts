@@ -12,7 +12,7 @@ import type { CoverImage } from './canvas.ts';
 
 export type CoverRefusal = 'missing' | 'external' | 'unreadable';
 
-export type CoverLoader = (assetId: AssetId) => Promise<Result<CoverImage, CoverRefusal>>;
+export type CoverLoader = ((assetId: AssetId) => Promise<Result<CoverImage, CoverRefusal>>) & {dispose?:()=>void};
 
 type Decode = (blob: Blob, size?: { width?: number; height?: number }) => Promise<CoverImage | undefined>;
 
@@ -62,52 +62,32 @@ async function fetchServed(src: string): Promise<Blob | undefined> {
   }
 }
 
-/**
- * A picture the app itself serves (the library's sample photo), decoded once; a failed read is
- * tried again on the next render.
- */
-export function servedCoverLoader(
-  src: string,
-  { fetchBlob = fetchServed, decode = decodeBitmap }: { fetchBlob?: (src: string) => Promise<Blob | undefined>; decode?: Decode } = {},
-): () => Promise<Result<CoverImage, CoverRefusal>> {
-  let decoded: Promise<Result<CoverImage, CoverRefusal>> | undefined;
-  return () => {
-    if (decoded) return decoded;
-    const pending = (async (): Promise<Result<CoverImage, CoverRefusal>> => {
-      const blob = await fetchBlob(src);
-      if (!blob) return refuse('missing', COVER_REASONS.missing);
-      const image = await decode(blob);
-      return image ? ok(image) : refuse('unreadable', COVER_REASONS.unreadable);
-    })();
-    decoded = pending;
-    void pending.then((result) => {
-      if (!result.ok && decoded === pending) decoded = undefined;
-    });
-    return pending;
-  };
+function imageCache(){
+  const entries=new Map<string,Promise<Result<CoverImage,CoverRefusal>>>();let disposed=false;
+  const close=(result:Result<CoverImage,CoverRefusal>)=>{if(result.ok)(result.value.source as {close?:()=>void})?.close?.();};
+  return{read(key:string,read:()=>Promise<Result<CoverImage,CoverRefusal>>){
+    if(disposed)return Promise.resolve(refuse('unreadable' as const,COVER_REASONS.unreadable));
+    const cached=entries.get(key);if(cached)return cached;
+    const pending=read().then(result=>{if(disposed){close(result);return refuse('unreadable' as const,COVER_REASONS.unreadable);}if(!result.ok&&result.refusal.code!=='external')entries.delete(key);return result;});
+    entries.set(key,pending);return pending;
+  },dispose(){if(disposed)return;disposed=true;for(const pending of entries.values())void pending.then(close);entries.clear();}};
 }
 
-/** One decoded image per asset (bytes never change); failures are retried on the next render. */
-export function assetCoverLoader(assets: Pick<AssetStore, 'get' | 'blob' | 'ready'>, decode: Decode = decodeBitmap): CoverLoader {
-  const decoded = new Map<AssetId, Promise<Result<CoverImage, CoverRefusal>>>();
-  const load = async (assetId: AssetId): Promise<Result<CoverImage, CoverRefusal>> => {
-    await assets.ready();
-    const asset = assets.get(assetId);
-    if (!asset) return refuse('missing', COVER_REASONS.missing);
-    if (asset.origin.type === 'url') return refuse('external', COVER_REASONS.external);
-    const blob = await assets.blob(assetId);
-    if (!blob) return refuse('missing', COVER_REASONS.missing);
-    const image = await decode(blob, { width: asset.width, height: asset.height });
-    return image ? ok(image) : refuse('unreadable', COVER_REASONS.unreadable);
-  };
-  return (assetId) => {
-    const cached = decoded.get(assetId);
-    if (cached) return cached;
-    const pending = load(assetId);
-    decoded.set(assetId, pending);
-    void pending.then((result) => {
-      if (!result.ok && result.refusal.code !== 'external') decoded.delete(assetId);
-    });
-    return pending;
-  };
+/** A served image, decoded once within its owner and explicitly released on context disposal. */
+export function servedCoverLoader(
+  src:string,
+  {fetchBlob=fetchServed,decode=decodeBitmap}:{fetchBlob?:(src:string)=>Promise<Blob|undefined>;decode?:Decode}={},
+):(()=>Promise<Result<CoverImage,CoverRefusal>>)&{dispose:()=>void}{
+  const cache=imageCache();
+  return Object.assign(()=>cache.read(src,async()=>{const blob=await fetchBlob(src);if(!blob)return refuse('missing',COVER_REASONS.missing);const image=await decode(blob);return image?ok(image):refuse('unreadable',COVER_REASONS.unreadable);}),{dispose:cache.dispose});
+}
+/** One decoded image per immutable asset, released with the runtime. */
+export function assetCoverLoader(assets:Pick<AssetStore,'get'|'blob'|'ready'>,decode:Decode=decodeBitmap):CoverLoader{
+  const cache=imageCache();
+  return Object.assign((assetId:AssetId)=>cache.read(assetId,async()=>{
+    await assets.ready();const asset=assets.get(assetId);if(!asset)return refuse('missing',COVER_REASONS.missing);
+    if(asset.origin.type==='url')return refuse('external',COVER_REASONS.external);
+    const blob=await assets.blob(assetId);if(!blob)return refuse('missing',COVER_REASONS.missing);
+    const image=await decode(blob,{width:asset.width,height:asset.height});return image?ok(image):refuse('unreadable',COVER_REASONS.unreadable);
+  }),{dispose:cache.dispose});
 }

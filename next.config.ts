@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@content-ventures/design-system"],
   // The local profile selector occupies the same corner as Next's development indicator.
   devIndicators: false,
+  // Local input files, database evidence and acceptance builds are runtime data, never release assets.
+  outputFileTracingExcludes: {'/*':['./.reporter-local/**/*']},
   rewrites: async () => [{ source: '/w/:workspace/:path*',destination: '/:path*' }],
 };
 

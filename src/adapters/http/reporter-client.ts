@@ -48,7 +48,7 @@ export type ReporterTransport = {
 };
 
 /** Destination and lifetime belong to this runtime, including writes queued before navigation. */
-export function createReporterTransport(slug?: string, options: { requireAccount?: boolean } = {}): ReporterTransport {
+export function createReporterTransport(slug?: string, options: { requireAccount?: boolean;onInvalidated?:()=>void } = {}): ReporterTransport {
   const lifetime = new AbortController();
   let account: string | undefined;
   const url = (path: string) => workspaceApiPath(slug,path);
@@ -60,6 +60,14 @@ export function createReporterTransport(slug?: string, options: { requireAccount
     if (account) headers.set('x-reporter-account',account);
     const response = await fetch(url(path),{ ...init,headers,signal: AbortSignal.any([lifetime.signal,init.signal ?? AbortSignal.timeout(30000)]) });
     lifetime.signal.throwIfAborted();
+    if([401,403,404,409].includes(response.status)){
+      const error=await response.clone().json().catch(()=>null) as {error?:string}|null;
+      if(error?.error&&['ACCOUNT_CONTEXT_CHANGED','AUTH_REQUIRED','ACCESS_PENDING','EMAIL_NOT_VERIFIED','WORKSPACE_NOT_FOUND'].includes(error.error)){
+        options.onInvalidated?.();lifetime.abort();
+        if(typeof window!=='undefined')window.location.replace(error.error==='AUTH_REQUIRED'?'/auth/sign-in':'/workspaces?entry=1');
+        throw new ReporterHttpError('O acesso a este contexto mudou. Abra um workspace liberado.',error.error,response.status);
+      }
+    }
     return response;
   };
   return { url,fetch: send,
@@ -73,7 +81,7 @@ export function createReporterTransport(slug?: string, options: { requireAccount
         headers:{'x-reporter-client':'local','content-type':file.type || 'application/octet-stream'} }),lifetime.signal);
     },
     bindAccount(personId) {
-      if (!personId || account && account !== personId) { lifetime.abort();throw new Error('ACCOUNT_CONTEXT_CHANGED'); }
+      if (!personId || account && account !== personId) { options.onInvalidated?.();lifetime.abort();throw new Error('ACCOUNT_CONTEXT_CHANGED'); }
       account = personId;
     },
     dispose() { lifetime.abort(); },

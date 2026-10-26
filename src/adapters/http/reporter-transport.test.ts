@@ -46,3 +46,15 @@ test('writes wait for the authoritative account and cannot be relabeled after it
     await assert.rejects(context.request('/workspace',{}),{name:'AbortError'});
   }finally{context.dispose();globalThis.fetch=original;}
 });
+
+test('account or membership invalidation closes the context, but ordinary role refusals do not',async()=>{
+  const original=globalThis.fetch;let invalidated=0,code='FORBIDDEN';
+  globalThis.fetch=async()=>Response.json({error:code},{status:403});
+  const context=createReporterTransport('client-one',{onInvalidated:()=>{invalidated++;}});
+  try{
+    context.bindAccount('account-one');
+    await assert.rejects(context.request('/workspace',{}),{code:'FORBIDDEN'});assert.equal(invalidated,0);
+    code='WORKSPACE_NOT_FOUND';await assert.rejects(context.request('/workspace'),{code});assert.equal(invalidated,1);
+    await assert.rejects(context.request('/workspace',{}),{name:'AbortError'});
+  }finally{context.dispose();globalThis.fetch=original;}
+});

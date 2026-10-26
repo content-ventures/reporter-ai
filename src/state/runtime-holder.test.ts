@@ -99,3 +99,9 @@ describe('createRuntimeHolder', () => {
     await assert.rejects(broken.whenReady());
   });
 });
+
+it('clears queries, runs and runtime when the bound account loses its context',()=>{
+  const {factory,created}=tracked();let invalidate:(()=>void)|undefined;
+  const holder=createRuntimeHolder(options=>({...factory(options),onInvalidated(listener){invalidate=listener;return()=>{invalidate=undefined;};}}));
+  holder.start();assert.equal(holder.get().status,'ready');invalidate?.();assert.equal(holder.get().status,'error');assert.equal(created[0].disposed,true);assert.equal(invalidate,undefined);
+});

@@ -5,9 +5,11 @@ import {useWorkspaceDirectoryQuery} from '@/state/workspaces';
 import {rememberWorkspace} from '@/state/workspace-preference';
 import {workspaceAccessHref} from '@/domain/workspace-address';
 import {roleLabel} from '@/domain/permissions';
+import {useWorkspaceDeparture} from '../workspace-navigation';
 import {requestLeave} from './leave-guard';
 
 export function WorkspaceSwitcher(){
+  const prepare=useWorkspaceDeparture();
   const runtime=useRuntime(),session=useSession().data,port=runtime.runtime?.workspaceDirectory;
   const directory=useWorkspaceDirectoryQuery(port,{limit:100}),data=directory.data;
   if(!port||!session?.current)return null;
@@ -21,8 +23,7 @@ export function WorkspaceSwitcher(){
       if(id===session.workspace.id)return;
       const selected=data?.items.find(item=>item.workspace.id===id);if(!selected)return;
       const href=workspaceAccessHref(selected);if(!requestLeave(href))return;
-      if(data?.account&&selected.enterable!==false)rememberWorkspace(data.account.id,{workspaceId:selected.workspace.id,slug:selected.workspace.slug});
-      window.location.assign(href);
+      void prepare().then(allowed=>{if(!allowed)return;if(data?.account&&selected.enterable!==false)rememberWorkspace(data.account.id,{workspaceId:selected.workspace.id,slug:selected.workspace.slug});window.location.assign(href);});
     }}
-    action={{label:data?.administrative?'Gerenciar workspaces':'Ver todos os workspaces',onSelect:()=>{const href=data?.administrative?'/platform/workspaces':'/workspaces';if(requestLeave(href))window.location.assign(href);}}}/>;
+    action={{label:data?.administrative?'Gerenciar workspaces':'Ver todos os workspaces',onSelect:()=>{const href=data?.administrative?'/platform/workspaces':'/workspaces';if(requestLeave(href))void prepare().then(allowed=>{if(allowed)window.location.assign(href);});}}}/>;
 }

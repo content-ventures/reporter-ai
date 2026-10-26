@@ -65,6 +65,9 @@ export type TabSync = {
 
 export type Runtime = {
   readonly mode: RuntimeMode;
+  /** Finish already queued edits before leaving the bound browser context. */
+  settle?():Promise<boolean>;
+  onInvalidated?(listener:()=>void):Unsubscribe;
   readonly queries: ProductionQueries;
   readonly commands: ProductionCommands;
   readonly ingest: SourceIngest;
