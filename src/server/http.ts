@@ -4,7 +4,10 @@ import { rm } from "node:fs/promises";
 import { z } from "zod";
 import { UUID, articleEditSchema, carouselEditSchema, createSchema, revisionSchema } from "./reporter-schema";
 import { assertLocalMode, localContext } from "./config";
-import { command, resolveReporterContext, transaction } from "./database";
+import { command, resolveReporterContext, resolveLocalWorkspaceContext, transaction } from "./database";
+import { workspaceSlug } from '../domain/workspace-address.ts';
+import { workspaceRollout } from './workspace-rollout.ts';
+import { workspaceDirectory } from './workspace-access.ts';
 import { FlowError, logEvent, safeCode } from "./errors";
 import { mediaOf } from '../domain/reporter.ts';
 import { receiveFile, workerAvailable } from "./storage";
@@ -48,9 +51,16 @@ export function guardLocalRequest(request: Request) {
 
 type Identity = Awaited<ReturnType<typeof reporterIdentity>>;
 
-async function guardReporterRequest(request: Request, identify: () => Promise<Identity> = reporterIdentity): Promise<ReporterRequestContext> {
+async function guardReporterRequest(request: Request, identify: () => Promise<Identity> = reporterIdentity, slug?: string): Promise<ReporterRequestContext> {
+  const rollout = workspaceRollout();
+  if (slug && rollout === 'off') throw new FlowError('WORKSPACES_DISABLED',403);
   if (reporterDeploymentMode() === 'local') {
     guardLocalRequest(request);
+    if (slug) {
+      const context = await resolveLocalWorkspaceContext(slug);
+      if (!context) throw new FlowError('WORKSPACE_NOT_FOUND',404);
+      return context;
+    }
     return { ...localContext,roles: [...localContext.roles] };
   }
   const url = new URL(request.url);
@@ -58,8 +68,9 @@ async function guardReporterRequest(request: Request, identify: () => Promise<Id
   if (!['GET','HEAD'].includes(request.method) && (!origin || origin !== url.origin)) throw new FlowError('ORIGIN_DENIED',403);
   const identity = await identify();
   if (!identity) throw new FlowError('AUTH_REQUIRED',401);
-  const context = await resolveReporterContext(identity);
-  if (!context) throw new FlowError(identity.emailVerified ? 'ACCESS_PENDING' : 'EMAIL_NOT_VERIFIED',403);
+  const context = await resolveReporterContext(identity,slug);
+  if (!context) throw new FlowError(!identity.emailVerified ? 'EMAIL_NOT_VERIFIED' : slug ? 'WORKSPACE_NOT_FOUND' : 'ACCESS_PENDING',slug && identity.emailVerified ? 404 : 403);
+  if (slug && rollout === 'admin' && !context.administrative) throw new FlowError('WORKSPACES_RESTRICTED',403);
   return context;
 }
 
@@ -87,6 +98,9 @@ function reply(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 }
 const messages: Record<string, string> = {
+  WORKSPACES_DISABLED: 'A navegação entre workspaces ainda não está habilitada.',
+  WORKSPACES_RESTRICTED: 'A navegação está disponível apenas para o administrador da plataforma.',
+  WORKSPACE_NOT_FOUND: 'Este workspace não está disponível para sua conta.',
   ...NEWS_MESSAGES,
   NEWS_SEARCH_INVALID: 'Confira o portal, setor e temas. Use até 6 temas e um limite de 1 a 48 buscas por dia.',
   NEWS_SEARCH_CONFLICT: 'A configuração mudou em outra sessão. Feche e abra novamente para atualizar.',
@@ -198,14 +212,22 @@ export async function handleReporter(request: Request, path: string[], deps: { d
   const kick = () => defer(() => kickWorker());
   const heal = (stalled: boolean | undefined) => { if (stalled && shouldHealStall()) kick(); };
   try {
+    let selectedWorkspace: string | undefined;
+    if (path[0] === 'w') {
+      selectedWorkspace = workspaceSlug(path[1] ?? '');
+      if (!selectedWorkspace || path.length < 3) throw new FlowError('WORKSPACE_NOT_FOUND',404);
+      path = path.slice(2);
+      if (['platform','invites','health','workspaces'].includes(path[0]) || path[0] === 'drive' && path[1] === 'sync') throw new FlowError('NOT_FOUND',404);
+    }
     // The release probe is public: booleans and versions only, no session and no database.
     if (request.method === 'GET' && path.length === 1 && path[0] === 'health') return reply(appHealth());
+    if (request.method === 'GET' && path.length === 1 && path[0] === 'workspaces') return reply(await workspaceDirectory(request,{ guardLocal: guardLocalRequest,identify: deps.identify }));
     // The platform console and the access link have their own guards: no workspace membership.
     if (path[0] === 'platform') return await handlePlatform(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest,identify: deps.identify });
     if (path[0] === 'invites') return await handleInvites(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest });
     // The Drive folder script has no session: it carries the intake secret and acts as one configured member.
     if (path[0] === 'drive' && path[1] === 'sync') return await handleDrive(request,path.slice(1),{ readJson: jsonBody,defer });
-    const context = await guardReporterRequest(request, deps.identify);
+    const context = await guardReporterRequest(request, deps.identify, selectedWorkspace);
     return await runWithReporterContext(context, async () => {
     if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);

@@ -28,6 +28,7 @@ export const LOCAL_INIT = Object.freeze([
   ['database/migrations/029-news-search.sql', '99-5-news-search.sql'],
   ['database/migrations/030-workspace-lifecycle.sql', '99-6-workspace-lifecycle.sql'],
   ['database/migrations/031-workspace-memberships.sql', '99-7-workspace-memberships.sql'],
+  ['database/migrations/032-workspace-context.sql', '99-8-workspace-context.sql'],
 ].map(entry => Object.freeze(entry)));
 
 // Replayed onto an existing local database by `pnpm db:flow`; every file is idempotent.
@@ -52,6 +53,7 @@ export const LOCAL_FLOW = Object.freeze([
   'database/migrations/029-news-search.sql',
   'database/migrations/030-workspace-lifecycle.sql',
   'database/migrations/031-workspace-memberships.sql',
+  'database/migrations/032-workspace-context.sql',
 ]);
 
 // Neon. The first three files create the schema once; everything after them is replayable.
@@ -89,6 +91,7 @@ export const CLOUD = Object.freeze([
   'database/migrations/029-news-search.sql',
   'database/migrations/030-workspace-lifecycle.sql',
   'database/migrations/031-workspace-memberships.sql',
+  'database/migrations/032-workspace-context.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 
