@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useMemo } from 'react';
 import {
@@ -48,6 +49,7 @@ export function StartDrawer({ template, open, onClose }: { template: TemplateInf
 }
 
 function Targets({ template }: { template: TemplateInfo }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const productions = useProductions(FILTER, PAGE);
   const targets = useMemo(() => carouselTargets(productions.data?.items ?? []), [productions.data]);
 
@@ -71,7 +73,7 @@ function Targets({ template }: { template: TemplateInfo }) {
         title="Nenhum artigo aprovado"
         description="O carrossel começa de um artigo aprovado."
         actions={
-          <ButtonLink size="sm" href={PRODUCTIONS_HREF}>
+          <ButtonLink size="sm" href={workspaceHrefFor(PRODUCTIONS_HREF)}>
             Abrir produções
           </ButtonLink>
         }
@@ -88,7 +90,7 @@ function Targets({ template }: { template: TemplateInfo }) {
           titleLines={2}
           description={item.situation.line}
           meta={formatRelative(item.updatedAt)}
-          href={carouselStartHref(item.id, template.id)}
+          href={workspaceHrefFor(carouselStartHref(item.id, template.id))}
         />
       ))}
     </List>

@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Badge, Card, CardHeader, CardLink, Grid, MediaFrame, SkeletonText } from '@content-ventures/design-system/v3';
 import type { MediaState } from '@content-ventures/design-system/v3';
@@ -54,6 +55,7 @@ export function ModelCard({
   /** Phone: the cover and the name only. */
   compact: boolean;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const preview = useTemplatePreview(template.id, { articleCover, scale: CARD_SCALE });
   const layouts = spreadLayouts(template, compact ? 1 : 3);
   // On a phone the name takes the card's width; the page header already names the default.
@@ -72,7 +74,7 @@ export function ModelCard({
       <CardHeader
         size="sm"
         titleAs="h2"
-        title={<CardLink href={href}>{template.name}</CardLink>}
+        title={<CardLink href={workspaceHrefFor(href)}>{template.name}</CardLink>}
         badge={<ApprovedBadge template={template} />}
         meta={note}
         description={compact ? undefined : template.description}
@@ -101,11 +103,12 @@ export function ModelCardSkeleton({ ratio, compact }: { ratio: string; compact: 
 
 /** One page of a model (its cover), for "Outros modelos". */
 export function ModelCover({ template, href, articleCover }: { template: TemplateInfo; href: string; articleCover?: AssetId }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const preview = useTemplatePreview(template.id, { articleCover, scale: CARD_SCALE });
   return (
     <Card as="div" padding="sm" interactive>
       <Page template={template} preview={preview} layout={template.coverLayoutId} />
-      <CardHeader size="sm" titleAs="h4" title={<CardLink href={href}>{template.name}</CardLink>} badge={<ApprovedBadge template={template} />} />
+      <CardHeader size="sm" titleAs="h4" title={<CardLink href={workspaceHrefFor(href)}>{template.name}</CardLink>} badge={<ApprovedBadge template={template} />} />
     </Card>
   );
 }

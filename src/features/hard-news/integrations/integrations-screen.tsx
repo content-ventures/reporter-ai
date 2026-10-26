@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import Link from 'next/link';
 import { useState } from 'react';
@@ -48,12 +49,13 @@ export function IntegrationsScreen() {
 }
 
 export function AdminOnly() {
+  const workspaceHrefFor = useWorkspaceHref();
   return (
     <AccessState
       kind="restricted"
       heading="h1"
       title="Integrações restritas a administradores"
-      actions={<ButtonLink href={OVERVIEW_HREF} variant="primary">Ir para o Início</ButtonLink>}
+      actions={<ButtonLink href={workspaceHrefFor(OVERVIEW_HREF)} variant="primary">Ir para o Início</ButtonLink>}
     />
   );
 }
@@ -102,6 +104,7 @@ function Catalog() {
 
 /** One app: mark, name and what it does; its state and facts; Conectar or Gerenciar. */
 function AppCard({ app, ready }: { app: CatalogItem; ready: boolean }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const status = STATUS_META[app.status];
   const href = appHref(app.id);
   const live = isLive(app.status);
@@ -117,7 +120,7 @@ function AppCard({ app, ready }: { app: CatalogItem; ready: boolean }) {
           title={app.name}
           description={app.summary}
           actions={ready && !soon ? (
-            <ButtonLink as={Link} href={href} size="sm" variant="secondary">{live ? 'Gerenciar' : 'Conectar'}</ButtonLink>
+            <ButtonLink as={Link} href={workspaceHrefFor(href)} size="sm" variant="secondary">{live ? 'Gerenciar' : 'Conectar'}</ButtonLink>
           ) : undefined}
         />
         {ready ? (
@@ -139,7 +142,7 @@ function AppCard({ app, ready }: { app: CatalogItem; ready: boolean }) {
     <AttachedNote
       tone={app.problem.tone}
       icon={AlertTriangle}
-      note={<>{app.problem.text} <TextLink href={href} size="sm" tone="inherit">{app.problem.fix}</TextLink></>}
+      note={<>{app.problem.text} <TextLink href={workspaceHrefFor(href)} size="sm" tone="inherit">{app.problem.fix}</TextLink></>}
     >
       {card}
     </AttachedNote>

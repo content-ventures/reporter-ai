@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import type { ReactNode } from 'react';
 import {
@@ -48,10 +49,11 @@ export function PhotoMosaic({ photos, search, label = 'Resultados' }: { photos: 
 }
 
 function PhotoTile({ photo, search }: { photo: Photo; search: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const note = tileNote(photo);
   const tile = (
     <Card as="article" interactive padding="none">
-      <CardLink href={photoHref(photo.key, search)} aria-label={`${photo.title} — ${photo.credit.trim() || 'sem crédito'}`}>
+      <CardLink href={workspaceHrefFor(photoHref(photo.key, search))} aria-label={`${photo.title} — ${photo.credit.trim() || 'sem crédito'}`}>
         <MediaFrame src={photo.preview} ratio={`${photo.width}/${photo.height}`} alt={photo.title} radius="lg" />
       </CardLink>
     </Card>
@@ -80,6 +82,7 @@ export function PhotoAuthorMark({ photo, size }: { photo: Photo; size: 'sm' | 'm
 }
 
 function PhotoCard({ photo, search }: { photo: Photo; search: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const note = tileNote(photo);
   const credit = photo.credit.trim();
   const line = note
@@ -87,7 +90,7 @@ function PhotoCard({ photo, search }: { photo: Photo; search: string }) {
     : <><BrandMark name={markName(photo)} size="xs" variant="soft" decorative /> {credit}</>;
   return (
     <Card as="article" interactive padding="sm">
-      <CardLink href={photoHref(photo.key, search)} aria-label={`${photo.title} — ${credit || 'sem crédito'}`}>
+      <CardLink href={workspaceHrefFor(photoHref(photo.key, search))} aria-label={`${photo.title} — ${credit || 'sem crédito'}`}>
         <MediaFrame src={photo.preview} alt={photo.title} ratio="4/3" radius="sm" caption={line} />
       </CardLink>
     </Card>

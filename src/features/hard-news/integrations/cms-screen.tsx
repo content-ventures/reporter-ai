@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
@@ -319,6 +320,7 @@ const SEND_STATE: Record<'sent' | 'failed', { label: string; tone: 'green' | 're
 
 /** The posts sent lately, and the ones that failed with the way back to their Entrega. */
 function SendsPanel({ deliveries }: { deliveries: CmsDelivery[] }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { state } = useHardNews();
   const now = useNow();
   const phone = usePhone();
@@ -346,8 +348,8 @@ function SendsPanel({ deliveries }: { deliveries: CmsDelivery[] }) {
       width: 128,
       align: 'end',
       render: (delivery) => (delivery.state === 'failed'
-        ? <ButtonLink as={Link} href={deliveryHref(delivery.productionId)} size="sm" variant="secondary">Abrir entrega</ButtonLink>
-        : delivery.url ? <TextLink href={delivery.url} external>Abrir no CMS</TextLink> : undefined),
+        ? <ButtonLink as={Link} href={workspaceHrefFor(deliveryHref(delivery.productionId))} size="sm" variant="secondary">Abrir entrega</ButtonLink>
+        : delivery.url ? <TextLink href={workspaceHrefFor(delivery.url)} external>Abrir no CMS</TextLink> : undefined),
     },
   ];
   return (

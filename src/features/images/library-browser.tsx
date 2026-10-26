@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Alert, Badge, Button, ButtonLink, Card, CardHeader, EmptyState, Grid, MediaFrame, PageStack, SearchField } from '@content-ventures/design-system/v3';
 import { bankImages, libraryImageSource, photoBanks, type LibraryImage, type StockImage, type StockProvider, type VisualLibraryView } from '@/domain/visual-library';
@@ -32,6 +33,7 @@ const keyOf = (image: StockImage) => image.provider+':'+image.providerId;
  * photos. Without a search it shows the saved photos; a click keeps the photo and selects it.
  */
 export function LibraryBrowser({ onSelect, selectedId }: { onSelect?: (image: LibraryImage) => void; selectedId?: string }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { runtime,status } = useRuntime(),port = runtime?.visuals;
   const { view,setView,failure: loadFailure } = useLibraryView();
   const bank = photoBanks(view)[0];
@@ -85,7 +87,7 @@ export function LibraryBrowser({ onSelect, selectedId }: { onSelect?: (image: Li
           <MediaFrame ratio="16/9" src={kept ? libraryImageSource(kept,true) : image.previewUrl} alt={image.title} radius="sm" />
           <CardHeader titleAs="h3" size="sm" title={image.title} description={image.attribution} badge={kept && kept.id === selectedId ? <Badge>Selecionada</Badge> : undefined} />
           {onSelect || !kept ? <Button size="sm" loading={busyId === keyOf(image)} disabled={Boolean(busyId)} onClick={() => void choose(image)}>{onSelect ? 'Selecionar' : 'Guardar'}</Button>
-            : <ButtonLink size="sm" href={`/banners?image=${kept.id}`}>Criar banner</ButtonLink>}
+            : <ButtonLink size="sm" href={workspaceHrefFor(`/banners?image=${kept.id}`)}>Criar banner</ButtonLink>}
         </Card>;
       })}</Grid> : view ? <EmptyState title={result ? 'Nenhuma imagem encontrada' : 'Nenhuma imagem salva'} size="panel" heading="p" /> : null}
     {result?.hasMore ? <Button disabled={loading} onClick={() => void search(result.query,result.page+1)}>Ver mais</Button> : null}
