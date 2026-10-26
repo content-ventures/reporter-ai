@@ -5,6 +5,7 @@ import { toast } from '@content-ventures/design-system/v3';
 import type { CarouselBody, PieceId } from '@/domain';
 import type { DraftView } from '@/ports';
 import { isPermissionRefusal } from '@/ui/permission-dialog';
+import {useNavigationPreparation} from '@/ui/workspace-navigation';
 import { useCommands } from '@/state';
 
 /**
@@ -60,9 +61,8 @@ export function useCarouselDraft(draft: DraftView | undefined): CarouselDraft {
       return false;
     }
     const revision = result.value.revision;
-    setLocal((current) =>
-      current && current.pieceId === snapshot.pieceId ? { ...current, revision, dirty: current.body !== snapshot.body } : current,
-    );
+    const current=localRef.current;
+    if(current?.pieceId===snapshot.pieceId){const next={...current,revision,dirty:current.body!==snapshot.body};localRef.current=next;setLocal(next);}
     return true;
   }, [commands]);
 
@@ -104,6 +104,8 @@ export function useCarouselDraft(draft: DraftView | undefined): CarouselDraft {
     return localRef.current?.dirty ? run() : true;
   }, [run]);
 
+  useNavigationPreparation(flush);
+  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(localRef.current?.dirty)event.preventDefault();};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[]);
   const body = local && remote && local.pieceId === remote.pieceId ? local.body : remote?.body;
   return { body, pending: Boolean(local?.dirty), update, flush };
 }

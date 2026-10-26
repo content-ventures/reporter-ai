@@ -182,8 +182,8 @@ export async function editorialWorkspace(since?: string, options: { active?: boo
     // A workspace change (pipeline, name) is rare: send a snapshot rather than merging it.
     if (!delta.workspace) return { delta: true,...delta,revision: Number(delta.seq),syncToken: token(Number(delta.seq)),workerOnline,stalled: queue.stalled };
   }
-  const result = await editorialTransaction('runtime', async () => undefined, false, 'reporter.edit', SNAPSHOT_SCOPE);
-  const navigation=await transaction('runtime',async client=>(await client.query('SELECT public.reporter_navigation_identity() AS value')).rows[0].value as {accountId:string;administrative:boolean});
+  const result = await editorialTransaction('runtime', async (_checkpoint,_engine,client)=>(await client.query('SELECT public.reporter_navigation_identity() AS value')).rows[0].value as {accountId:string;administrative:boolean}, false, 'reporter.edit', SNAPSHOT_SCOPE);
+  const navigation=result.value;
   const rollout=workspaceRollout();
   const jobs = Object.fromEntries(Object.entries(result.checkpoint.jobs).map(([id,job]) => [id,{ meta: job.meta,kind: job.kind,events: job.events }])) as EditorialCheckpoint['jobs'];
   return { state: result.checkpoint.state,jobs,templateConfiguration:result.checkpoint.templateConfiguration,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),

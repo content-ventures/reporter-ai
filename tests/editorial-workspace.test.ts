@@ -15,6 +15,7 @@ test('unchanged polls read only the stamp, later changes arrive as deltas, ident
   const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
   let loads = 0, deltas = 0, seq = 42, membersHash = 'members';
   const client = { release() {}, async query(sql: string) {
+    if(sql.includes('reporter_navigation_identity'))return {rows:[{value:{accountId:localContext.actor,administrative:true}}]};
     if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     if (sql.includes('reporter_ed_status')) return { rows: [{ value: { seq, floor: 0, membersHash } }] };
     if (sql.includes('reporter_ed_load')) { loads++; return { rows: [{ value: emptyRows(seq) }] }; }
@@ -27,6 +28,7 @@ test('unchanged polls read only the stamp, later changes arrive as deltas, ident
     const first = await editorialWorkspace();
     assert.equal(loads, 1);
     assert.ok(first.syncToken);
+    if('state' in first)assert.equal(first.navigation?.accountId,localContext.actor);
     assert.deepEqual(first.imageAssets, [], 'fresh reviewers receive the durable image inventory');
     const same = await editorialWorkspace(first.syncToken);
     assert.equal('unchanged' in same, true);
@@ -77,8 +79,9 @@ test('only polls that follow a running generation read the queue, and cloud poll
   const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
   const queries: string[] = [];
   const client = { release() {}, async query(sql: string) {
-    if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     queries.push(sql);
+    if(sql.includes('reporter_navigation_identity'))return {rows:[{value:{accountId:localContext.actor,administrative:true}}]};
+    if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     if (sql.includes('reporter_ed_status')) return { rows: [{ value: { seq: 7, floor: 0, membersHash: 'members' } }] };
     if (sql.includes('reporter_queue_status')) return { rows: [{ value: { pending: true, stalled: true } }] };
     if (sql.includes('reporter_ed_load')) return { rows: [{ value: emptyRows(7) }] };
@@ -94,6 +97,7 @@ test('only polls that follow a running generation read the queue, and cloud poll
     const idle = await runWithReporterContext(context, () => editorialWorkspace(first.syncToken));
     assert.equal(queries.filter(sql => sql.includes('reporter_queue_status')).length, 0, 'an idle poll reads only the change stamp');
     assert.deepEqual([idle.workerOnline, idle.stalled], [true, false]);
+    assert.equal(queries.filter(sql=>sql.includes('reporter_navigation_identity')).length,1,'only the full snapshot reads navigation identity; the idle poll adds no metadata query');
     const active = await runWithReporterContext(context, () => editorialWorkspace(first.syncToken, { active: true }));
     assert.equal(queries.filter(sql => sql.includes('reporter_queue_status')).length, 1);
     assert.deepEqual([active.workerOnline, active.stalled], [true, true], 'a stalled run is reported without blocking generation');
@@ -108,6 +112,7 @@ test('a lock cycle or a duplicate receipt reruns the transaction on fresh rows; 
   const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
   let failures: string[] = [], loads = 0;
   const client = { release() {}, async query(sql: string) {
+    if(sql.includes('reporter_navigation_identity'))return {rows:[{value:{accountId:localContext.actor,administrative:true}}]};
     if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     if (sql.includes('reporter_ed_load')) { loads++; return { rows: [{ value: emptyRows(5) }] }; }
     if (sql.includes('reporter_ed_commit')) {

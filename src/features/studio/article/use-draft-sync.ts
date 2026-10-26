@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback,useEffect, useMemo, useRef, useState } from 'react';
 import type { ArticleBody, PieceId } from '@/domain';
 import type { SaveState } from '@/ports';
 import { useCommands, useSaveStatus } from '@/state';
@@ -29,6 +29,7 @@ export type DraftSync = {
   save: (body: ArticleBody) => Promise<void>;
   /** Resolves when every queued write has been answered. */
   idle: () => Promise<void>;
+  settle:()=>Promise<boolean>;
   /** A write is queued or in flight. */
   busy: () => boolean;
   /** Last revision the store acknowledged for this tab's writes. */
@@ -55,6 +56,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
   const synced = useRef(initial.body);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const queued = useRef<ArticleBody | null>(null);
+  const requested=useRef(initial.body);
   const writing = useRef(false);
   const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState(false);
@@ -66,6 +68,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
 
   const save = useCallback(
     (body: ArticleBody) => {
+      requested.current=body;
       queued.current = body;
       setPending(true);
       queue.current = queue.current.then(async () => {
@@ -102,6 +105,8 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
     [commands, pieceId],
   );
 
+  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(writing.current||queued.current||savedSnapshot.current!==draftSnapshotHash(requested.current))event.preventDefault();};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[]);
+  const settle=useCallback(async()=>{let pending;do{pending=queue.current;await pending;}while(pending!==queue.current);return savedSnapshot.current===draftSnapshotHash(requested.current);},[]);
   const idle = useCallback(() => queue.current, []);
   const busy = useCallback(() => writing.current || queued.current !== null, []);
   const getBase = useCallback(() => base.current, []);
@@ -109,6 +114,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
     base.current = revision;
     if (body) {
       synced.current = body;
+      requested.current=body;
       savedSnapshot.current = draftSnapshotHash(body);
     }
   }, []);
@@ -128,7 +134,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
   }, [conflict, refused, port, pending, lastOwnSave]);
 
   return useMemo(
-    () => ({ save, idle, busy, base: getBase, syncedBody, adopt, status, retry, clearConflict }),
-    [save, idle, busy, getBase, syncedBody, adopt, status, retry, clearConflict],
+    () => ({ save, idle, settle,busy, base: getBase, syncedBody, adopt, status, retry, clearConflict }),
+    [save, idle, settle,busy, getBase, syncedBody, adopt, status, retry, clearConflict],
   );
 }
