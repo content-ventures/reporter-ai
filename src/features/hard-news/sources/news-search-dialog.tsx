@@ -83,7 +83,7 @@ export function NewsSearchDialog({ onClose }: { onClose(): void }) {
       </Field>
       <Field label="Setor">{({ id }) => <Input id={id} value={config.sector} disabled={disabled} placeholder="Pesca e aquicultura" onChange={event => setConfig({ ...config, sector: event.target.value })} />}</Field>
       <Field label="Temas para acompanhar" hint="Um por linha, até 6 temas.">{({ id, describedBy }) => <Textarea id={id} aria-describedby={describedBy} rows={3} value={topics} disabled={disabled}
-        placeholder={'Exportação de pescado\nSanidade na aquicultura'} onChange={event => setTopics(event.target.value)} />}</Field>
+        placeholder={'Lançamentos do setor\nInovação e mercado'} onChange={event => setTopics(event.target.value)} />}</Field>
       <Field label="Região">{({ id }) => <Input id={id} value={config.region} disabled={disabled} onChange={event => setConfig({ ...config, region: event.target.value })} />}</Field>
       <Field label="Idiomas de busca">{({ id }) => <Select id={id} value={config.languages.join(',')} disabled={disabled}
         options={[['pt', 'Português'], ['en', 'Inglês'], ['es', 'Espanhol'], ['pt,en', 'Português e inglês'], ['pt,es', 'Português e espanhol'], ['en,es', 'Inglês e espanhol'], ['pt,en,es', 'Português, inglês e espanhol']].map(([value, label]) => ({ value, label }))}

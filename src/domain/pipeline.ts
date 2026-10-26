@@ -1,7 +1,7 @@
 import { contentHash } from './text/hash.ts';
 import { EDITORIAL_FORMATS, FORMAT_SPECS } from './formats.ts';
 import type { EditorialFormat } from './formats.ts';
-import { FUNNEL_STEP_KEYS, HARD_NEWS, defaultFunnelPrompt } from './format-prompts.ts';
+import { FUNNEL_STEP_KEYS, HARD_NEWS, defaultFunnelPrompt, neutralFunnelPrompt } from './format-prompts.ts';
 import type { FunnelStepKey } from './format-prompts.ts';
 import type { EditorialPolicy } from './editorial-policy.ts';
 import type { WritingOrchestration } from './writing-orchestration.ts';
@@ -51,6 +51,8 @@ export type PipelineStep = { prompt: string; model: PipelineModel; temperature: 
 /** An event format's own structure, curation, opening and part prompts (formats.ts, format-prompts.ts). */
 export type FunnelDefinition = Record<FunnelStepKey, PipelineStep>;
 export type PipelineDefinition = {
+  /** Omitted only on preserved pilot/fixture revisions. New clients use the neutral preset. */
+  funnelPreset?: 'neutral-v1';
   systemPrompt: string; articleMode: 'sequential' | 'single'; curateQuotes: boolean;
   /** Workspace map and guide, captured with the settings used by each generation. */
   editorial?: EditorialPolicy;
@@ -398,9 +400,9 @@ export function pipelineRunSteps(definition: PipelineDefinition, kind: string, s
 }
 
 /** The default funnels of the event formats, on the model the article writing uses. */
-export function defaultFunnels(model: PipelineModel): Record<EditorialFormat, FunnelDefinition> {
+export function defaultFunnels(model: PipelineModel,preset?:PipelineDefinition['funnelPreset']): Record<EditorialFormat, FunnelDefinition> {
   const step = (format: EditorialFormat, key: FunnelStepKey): PipelineStep =>
-    ({ prompt: defaultFunnelPrompt(format, key), model, temperature: key === 'outline' ? 0.2 : key === 'quotes' ? 0.1 : 0.3, maxTokens: pipelineModelReasons(model) ? 8192 : 4096 });
+    ({ prompt: (preset==='neutral-v1'?neutralFunnelPrompt:defaultFunnelPrompt)(format, key), model, temperature: key === 'outline' ? 0.2 : key === 'quotes' ? 0.1 : 0.3, maxTokens: pipelineModelReasons(model) ? 8192 : 4096 });
   return Object.fromEntries(EDITORIAL_FORMATS.map(format => [format,
     Object.fromEntries(FUNNEL_STEP_KEYS.map(key => [key, step(format, key)])) as FunnelDefinition])) as Record<EditorialFormat, FunnelDefinition>;
 }
@@ -413,7 +415,7 @@ export function defaultFunnels(model: PipelineModel): Record<EditorialFormat, Fu
 export type FilledPipelineDefinition = PipelineDefinition & { funnels: Record<EditorialFormat, FunnelDefinition> };
 
 export function withFormatFunnels(definition: PipelineDefinition): FilledPipelineDefinition {
-  const defaults = defaultFunnels(definition.steps.intro.model);
+  const defaults = defaultFunnels(definition.steps.intro.model,definition.funnelPreset);
   const funnels = Object.fromEntries(EDITORIAL_FORMATS.map(format => [format,
     { ...defaults[format], ...structuredClone(definition.funnels?.[format] ?? {}) }])) as Record<EditorialFormat, FunnelDefinition>;
   return { ...structuredClone(definition), funnels };
@@ -427,7 +429,7 @@ export function withFormatFunnels(definition: PipelineDefinition): FilledPipelin
 export function compactFunnels(definition: PipelineDefinition): PipelineDefinition {
   const { funnels, ...rest } = structuredClone(definition);
   if (!funnels) return rest;
-  const defaults = defaultFunnels(definition.steps.intro.model);
+  const defaults = defaultFunnels(definition.steps.intro.model,definition.funnelPreset);
   const kept = Object.fromEntries(EDITORIAL_FORMATS.flatMap(format => {
     const steps = Object.fromEntries(FUNNEL_STEP_KEYS.flatMap(key => {
       const step = funnels[format]?.[key];

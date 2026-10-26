@@ -1,6 +1,6 @@
 import type { IsoDateTime, PersonId, WorkspaceId } from './ids.ts';
 
-/** Client boundary. R1 runs with a single workspace; R7 (F7.3) adds the switcher. */
+/** Client boundary: all of a customer's coverages share this workspace and its editorial policy. */
 export type Workspace = {
   id: WorkspaceId;
   name: string;
