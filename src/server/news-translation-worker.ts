@@ -1,4 +1,5 @@
 import 'server-only';
+import { withWorkspaceWork } from './worker-dispatch.ts';
 import { transaction } from './database.ts';
 import { FlowError, logEvent, safeCode } from './errors.ts';
 import { translateNews } from './news-translation.ts';
@@ -26,6 +27,12 @@ const services: NewsTranslationWorkerServices = {
 
 /** Translate received text once, outside the feed transaction. The lease fences late answers. */
 export async function runNewsTranslationJob(owner: string, signal: AbortSignal, deadline?: number,
+  deps: NewsTranslationWorkerServices = services): Promise<boolean | 'yield'> {
+  if (deps !== services) return runScoped(owner,signal,deadline,deps);
+  return withWorkspaceWork('translation',owner,signal, scoped => runScoped(owner,scoped,deadline,deps));
+}
+
+async function runScoped(owner: string, signal: AbortSignal, deadline?: number,
   deps: NewsTranslationWorkerServices = services): Promise<boolean | 'yield'> {
   if (signal.aborted) return false;
   if (deadline !== undefined && deps.now() + 95_000 > deadline) return 'yield';

@@ -4,6 +4,7 @@ import { createReporterWorker, type WorkerDependencies } from '../functions/repo
 import { cloudPortalId } from '../src/server/config.ts';
 import type { Pool } from 'pg';
 import { COMPACT_INTERVAL_MS, compactEditorialRows, createDrainScheduler, drainQueue, type DrainResult } from '../src/server/worker-drain.ts';
+import { runWithWorkerContext } from '../src/server/worker-context.ts';
 
 const SOURCE_KEY = 'incoming/10000000-0000-0000-0000-000000000101/550e8400-e29b-41d4-a716-446655440000.mp3';
 const IDLE: DrainResult = { processed: 0, remaining: false, elapsedMs: 0 };
@@ -90,7 +91,10 @@ test('compaction runs at most once every ten minutes per isolate', async () => {
   globals.reporterPools = { worker: { connect: async () => ({ release() {}, async query(sql: string) { statements.push(sql); return { rows: [] }; } }) } as unknown as Pool };
   try {
     const start = 2_000_000_000_000;
-    for (const at of [start, start + 60_000, start + COMPACT_INTERVAL_MS]) await compactEditorialRows(at);
+    const context = {tenant:'10000000-0000-0000-0000-000000000001',portal:cloudPortalId()};
+    await compactEditorialRows(start);
+    assert.equal(statements.length,0,'unscoped housekeeping never defaults to the pilot');
+    for (const at of [start, start + 60_000, start + COMPACT_INTERVAL_MS]) await runWithWorkerContext(context,() => compactEditorialRows(at));
     assert.equal(statements.filter(sql => sql.includes('reporter_ed_compact')).length, 2);
   } finally {
     globals.reporterPools = previous;

@@ -1,4 +1,5 @@
 import 'server-only';
+import { withWorkspaceWork } from './worker-dispatch.ts';
 import type { ArticleBody } from '../domain/article.ts';
 import { PIPELINE_SCHEMAS } from '../domain/pipeline.ts';
 import type { PipelineCall } from '../domain/pipeline.ts';
@@ -20,6 +21,10 @@ const defaults: Dependencies = { plan: executePipelineStep,illustrate: illustrat
 
 /** Durable, lower-priority work on a completed run. No text event is replayed or rewritten. */
 export async function runArticleImageJob(owner: string,signal: AbortSignal,dependencies: Dependencies = defaults): Promise<boolean> {
+  return withWorkspaceWork('images',owner,signal, scoped => runScoped(owner, scoped, dependencies));
+}
+
+async function runScoped(owner: string,signal: AbortSignal,dependencies: Dependencies = defaults): Promise<boolean> {
   const claim = await transaction('worker',async client => (await client.query('SELECT public.reporter_ed_image_claim($1,$2) AS claim',
     [owner,LEASE_MS])).rows[0].claim as { runId: string; productionId: string; fence: string } | null);
   if (!claim) return false;

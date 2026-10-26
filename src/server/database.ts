@@ -8,6 +8,7 @@ import { accountAvatarSource } from '../domain/profile.ts';
 import { assertLocalMode, cloudDatabaseUrl, cloudPortalId, databasePassword, localDatabasePort, localContext } from "./config";
 import { reporterDeploymentMode } from './deployment.ts';
 import { currentReporterContext, type ReporterRequestContext } from './request-context.ts';
+import { currentWorkerContext } from './worker-context.ts';
 
 const globalPools = globalThis as typeof globalThis & { reporterPools?: Partial<Record<"runtime" | "worker", Pool>> };
 export function pool(role: "runtime" | "worker") {
@@ -86,8 +87,9 @@ export async function transaction<T>(role: "runtime" | "worker", operation: (cli
       await client.query("SELECT 1 AS applied FROM (SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode',$5,true),set_config('app.module_key','reporter_ai',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true),set_config('app.correlation_id',$4,true)) settings",
         [context.tenant, context.portal, context.actor, requestId, context.administrative ? 'platform_workspace' : 'user']);
     } else {
-      await client.query("SELECT 1 AS applied FROM (SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),set_config('app.portal_id',$1,true),set_config('app.request_id',$2,true)) settings",
-        [reporterDeploymentMode() === 'cloud' ? cloudPortalId() : '00000000-0000-0000-0000-000000000101',requestId]);
+      const context = currentWorkerContext();
+      await client.query("SELECT 1 AS applied FROM (SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true)) settings",
+        [context?.tenant ?? '',context?.portal ?? '',context?.actor ?? '',requestId]);
     }
     const result = await operation(client);
     await client.query("COMMIT"); return result;

@@ -11,6 +11,8 @@ import { runNewsTranslationJob } from './news-translation-worker.ts';
 import { runRemoteIngest } from './remote-ingest.ts';
 import { runReporterJob } from './reporter-worker-jobs.ts';
 import { workerUrl } from './worker-config.ts';
+import { withWorkspaceWork } from './worker-dispatch.ts';
+import { currentWorkerContext } from './worker-context.ts';
 
 export const MAX_INVOCATION_MS = 13 * 60 * 1000;
 export const MAX_JOBS_PER_INVOCATION = 20;
@@ -27,22 +29,30 @@ export type DrainServices = {
   compact?(): Promise<void>;
 };
 
-let compactedAt = Number.NEGATIVE_INFINITY;
+const compactedAt = new Map<string,number>();
 /**
  * Drops finished runs' event streams, expired receipts and old tombstones, at most every ten
  * minutes per isolate. It rides on drains that did work, so an idle database is never woken.
  */
 export async function compactEditorialRows(now = Date.now()) {
-  if (now - compactedAt < COMPACT_INTERVAL_MS) return;
-  compactedAt = now;
+  const context = currentWorkerContext();
+  if (!context || now - (compactedAt.get(context.portal) ?? Number.NEGATIVE_INFINITY) < COMPACT_INTERVAL_MS) return;
   await transaction('worker', client => client.query('SELECT public.reporter_ed_compact()'));
+  compactedAt.set(context.portal,now);
+  for (const [portal,at] of compactedAt) if (now-at>COMPACT_INTERVAL_MS) compactedAt.delete(portal);
 }
 
 export const drainServices: DrainServices = {
   pending: () => transaction('worker', async client =>
     (await client.query('SELECT public.reporter_worker_pending() AS pending')).rows[0]?.pending === true),
-  run: async (owner, signal, deadline) => await runRemoteIngest(owner, signal)
-    || await runReporterJob(owner, signal, deadline) || await runEditorialJob(owner, signal) || await runArticleImageJob(owner, signal) || await runFactCheckJob(owner, signal, deadline) || await runNewsSource(owner, signal) || await runNewsSearchJob(owner, signal, deadline) || await runNewsTranslationJob(owner, signal, deadline),
+  run: (owner, signal, deadline) => withWorkspaceWork('any',owner,signal,async scoped => {
+    const ran = await runRemoteIngest(owner, scoped)
+      || await runReporterJob(owner, scoped, deadline) || await runEditorialJob(owner, scoped) || await runArticleImageJob(owner, scoped)
+      || await runFactCheckJob(owner, scoped, deadline) || await runNewsSource(owner, scoped)
+      || await runNewsSearchJob(owner, scoped, deadline) || await runNewsTranslationJob(owner, scoped, deadline);
+    if (ran && !scoped.aborted) await compactEditorialRows().catch(error => logEvent('worker','compaction_failed',{ error_code: safeCode(error) }));
+    return ran;
+  }),
   now: Date.now,
   compact: () => compactEditorialRows(),
 };

@@ -1,4 +1,5 @@
 import 'server-only';
+import { withWorkspaceWork } from './worker-dispatch.ts';
 import { citationView } from '../domain/citation-library.ts';
 import { recheck } from '../domain/fact-check.ts';
 import type { EditorialCheckpoint } from '../ports/connected-workspace.ts';
@@ -30,6 +31,10 @@ const pause = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) =
  * the invocation it yields, so the drain continues it in a fresh one.
  */
 export async function runFactCheckJob(owner: string, signal: AbortSignal, deadline?: number): Promise<boolean | 'yield'> {
+  return withWorkspaceWork('fact_check',owner,signal, scoped => runScoped(owner, scoped, deadline));
+}
+
+async function runScoped(owner: string, signal: AbortSignal, deadline?: number): Promise<boolean | 'yield'> {
   const claim = await transaction('worker', async client => (await client.query('SELECT public.reporter_ed_fact_check_claim($1,$2) AS claim',
     [owner, LEASE_MS])).rows[0].claim as { runId: string; productionId: string; fence: string; citationIds: string[] } | null);
   if (!claim) return false;
