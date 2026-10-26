@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { requestLeave } from './leave-guard';
+import {useWorkspaceHref} from '../workspace-navigation';
 
 /**
  * Next/Link behaviour for every DS anchor (NavItem, Crumb, ButtonLink, CardLink, ListItem href,
@@ -12,6 +13,7 @@ import { requestLeave } from './leave-guard';
  */
 export function useClientLinks(): void {
   const router = useRouter();
+  const scopedHref=useWorkspaceHref();
   useEffect(() => {
     function onClick(event: MouseEvent) {
       if (event.defaultPrevented || event.button !== 0) return;
@@ -27,10 +29,10 @@ export function useClientLinks(): void {
       const samePage = url.pathname === window.location.pathname && url.search === window.location.search;
       if (samePage && url.hash) return;
       event.preventDefault();
-      const href = `${url.pathname}${url.search}${url.hash}`;
+      const href = scopedHref(`${url.pathname}${url.search}${url.hash}`);
       if (requestLeave(href)) router.push(href);
     }
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);
-  }, [router]);
+  }, [router,scopedHref]);
 }

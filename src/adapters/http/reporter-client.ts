@@ -94,6 +94,7 @@ async function reporterResponse<T>(response: Response, signal?: AbortSignal): Pr
     const code = typeof value.error==='string' ? value.error : 'REQUEST_FAILED';
     if (typeof window !== 'undefined') {
       if (code === 'AUTH_REQUIRED') window.location.replace('/auth/sign-in');
+      else if(code==='WORKSPACE_SELECTION_REQUIRED')window.location.replace('/workspaces?entry=1');
       else if (code === 'ACCESS_PENDING' || code === 'EMAIL_NOT_VERIFIED') window.location.replace('/auth/pending');
     }
     throw new ReporterHttpError(typeof value.message === 'string' ? value.message : 'O servidor do Reporter IA não respondeu.',code,response.status);

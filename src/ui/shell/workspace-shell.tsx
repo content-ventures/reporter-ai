@@ -33,6 +33,9 @@ import { OtherTabNotice } from './other-tab-notice';
 import { requestLeave } from './leave-guard';
 import { SIDEBAR_COLLAPSED_KEY, usePersistentFlag } from './preference';
 import { RunOutcomeToasts } from './run-outcome-toasts';
+import {WorkspaceSwitcher} from './workspace-switcher';
+import {rememberWorkspace} from '@/state/workspace-preference';
+import {useWorkspaceHref} from '../workspace-navigation';
 
 const LIST_FILTER: ProductionListFilter = { sort: 'updated_desc' };
 const LIST_PAGE = { page: 1, size: 50 };
@@ -105,6 +108,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
   const routePath = usePathname();
   const pathname = workspaceAddress(routePath)?.path ?? routePath;
   const router = useRouter();
+  const hrefForWorkspace=useWorkspaceHref();
   useClientLinks();
   const declared = useDeclaredBreadcrumb();
   const docked = DOCKED_ROUTE.test(pathname) || R2_DOCKED_ROUTE.test(pathname);
@@ -123,7 +127,11 @@ function ShellFrame({ children }: { children: ReactNode }) {
   const items = productions.data?.items ?? NO_PRODUCTIONS;
   // Role-restricted items (Aprovações, Logs) appear once the acting member is known; the session
   // answer keeps its object while unchanged, so `roles` is a stable dependency.
-  const roles = useSession().data?.current?.roles;
+  const session=useSession();
+  const roles = session.data?.current?.roles;
+  useEffect(()=>{const data=session.data;
+    if(data?.navigation?.enabled&&workspaceAddress(routePath)?.slug===data.workspace.slug)rememberWorkspace(data.navigation.accountId,{workspaceId:data.workspace.id,slug:data.workspace.slug});
+  },[session.data,routePath]);
   const sections = useMemo(() => menuFor(undefined, roles ? { roles } : undefined, R2_NAVIGATION), [roles]);
   // Only someone who decides at a gate has an Aprovações item, so only they ask for the queue.
   const decides = sections.some((section) => section.items.some((item) => item.badge === 'awaiting-approval' && !item.soon));
@@ -135,13 +143,13 @@ function ShellFrame({ children }: { children: ReactNode }) {
     const main = sections.filter((section) => section.group.placement === 'main');
     const utility = sections.filter((section) => section.group.placement === 'utility');
     return {
-      groups: main.map((section) => toNavGroup(section, awaitingApproval)),
-      utilities: utility.flatMap((section) => section.items.map((item) => toNavItem(item, awaitingApproval))),
+      groups: main.map((section) => {const group=toNavGroup(section,awaitingApproval);return{...group,items:group.items.map(item=>({...item,...(item.href?{href:hrefForWorkspace(item.href)}:{})}))};}),
+      utilities: utility.flatMap((section) => section.items.map((item) => {const nav=toNavItem(item,awaitingApproval);return{...nav,...(nav.href?{href:hrefForWorkspace(nav.href)}:{})};})),
       hrefs: new Map(
-        sections.flatMap((section) => section.items.filter((item) => !item.soon).map((item) => [item.id, item.href] as const)),
+        sections.flatMap((section) => section.items.filter((item) => !item.soon).map((item) => [item.id, hrefForWorkspace(item.href)] as const)),
       ),
     };
-  }, [awaitingApproval, sections]);
+  }, [awaitingApproval, sections,hrefForWorkspace]);
 
   const onNavigate = useCallback(
     (id: string, event: MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
@@ -153,7 +161,8 @@ function ShellFrame({ children }: { children: ReactNode }) {
     [hrefs, router],
   );
 
-  const crumbs = declared ?? defaultCrumbs(pathname);
+  const crumbs = (declared ?? defaultCrumbs(pathname)).map(crumb=>({...crumb,...(crumb.href?{href:hrefForWorkspace(crumb.href)}:{})}));
+  if(routePath==='/'&&session.data?.navigation?.enabled)return<WorkspaceEntry/>;
 
   return (
     <CommandRegistryProvider onOpenPalette={openPalette}>
@@ -164,6 +173,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
         sidebar={(
           <Sidebar
             product={<ReporterBrand endorsed />}
+            switcher={<WorkspaceSwitcher/>}
             search={<SidebarSearch onOpen={openPalette} label="Buscar" />}
             groups={groups}
             utilities={utilities}
@@ -183,6 +193,11 @@ function ShellFrame({ children }: { children: ReactNode }) {
       <PermissionDialogHost />
     </CommandRegistryProvider>
   );
+}
+function WorkspaceEntry(){
+  const router=useRouter();
+  useEffect(()=>router.replace('/workspaces?entry=1'),[router]);
+  return null;
 }
 
 /**
