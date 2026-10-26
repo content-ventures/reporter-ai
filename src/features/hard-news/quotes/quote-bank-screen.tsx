@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useId, useMemo, useState } from 'react';
 import {
@@ -302,6 +303,7 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave
   onCorrect: () => void;
   onClose: () => void;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   // The fact check moves on its own (a check, a verdict): read it live, never from the draft.
   const live = quote && quote !== 'new' ? quote : undefined;
   const creating = quote === 'new';
@@ -390,7 +392,7 @@ function QuoteDrawer({ quote, topics, canEdit, connected, checking, busy, onSave
                 {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="date" disabled={!(editable || (connected && canEdit))} value={draft.recordedOn}
                   onChange={(event) => patch({ recordedOn: event.target.value, ...(draft.attribution ? { attribution: { ...draft.attribution, dated: Boolean(event.target.value) } } : {}) })} />}
               </Field>
-            {draft.sourceUrl ? <TextLink href={draft.sourceUrl} external>Abrir fonte</TextLink> : null}
+            {draft.sourceUrl ? <TextLink href={workspaceHrefFor(draft.sourceUrl)} external>Abrir fonte</TextLink> : null}
           </Section>
         </Panel>
         {!creating && !connected ? (

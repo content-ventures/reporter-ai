@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { Badge, Button, DescriptionList, List, ListItem, MeterList, Panel, Section, Timeline, type TimelineEntry } from '@content-ventures/design-system/v3';
 import { BadgeCheck } from '@content-ventures/design-system/v3/icons';
@@ -57,6 +58,7 @@ export function FactCheckPanel({ quote, canEdit, checking, busy, onCheck, onCorr
   /** Opens the verdict dialog, which lives beside the drawer: a dialog inside it would close it on closing. */
   onCorrect: () => void;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const { verdict, score } = rankQuote(quote);
   const check = quote.factCheck;
   const decidable = check ? check.claims.some((claim) => checkable(claim.kind)) : false;
@@ -99,7 +101,7 @@ export function FactCheckPanel({ quote, canEdit, checking, busy, onCheck, onCorr
         <Panel label="Usos">
           <Section title="Usos" meta={`${quote.usedIn.length} ${quote.usedIn.length === 1 ? 'matéria' : 'matérias'}`}>
             <List label="Matérias que usaram a fala" framed={false} bleed>
-              {quote.usedIn.map((use) => <ListItem key={use.productionId} title={use.title} meta={dateOf(use.at)} href={`/productions/${use.productionId}`} />)}
+              {quote.usedIn.map((use) => <ListItem key={use.productionId} title={use.title} meta={dateOf(use.at)} href={workspaceHrefFor(`/productions/${use.productionId}`)} />)}
             </List>
           </Section>
         </Panel>

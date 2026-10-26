@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   Alert, Button, EmptyState, Field, FieldGroup, Input, LiveRegion, PageStack, Progress,
   ProgressSteps, Prose, ResponsiveDialog, Section, Stepper,

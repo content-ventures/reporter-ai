@@ -1,4 +1,5 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import {
   ButtonLink,
@@ -29,6 +30,7 @@ export function newsItemHref(id: string): string {
  * card opens the story on the desk.
  */
 export function NewsAgenda() {
+  const workspaceHrefFor = useWorkspaceHref();
   const desk = useOptionalHardNews();
   const clock = useNow();
   if (!desk || !clock) return null;
@@ -45,11 +47,11 @@ export function NewsAgenda() {
       <Section
         title="Pauta do dia"
         meta={[queue.length ? `${queue.length} para decidir · ${high} com prioridade alta` : undefined, `${covered} de ${goal} pautas hoje`].filter(Boolean).join(' · ')}
-        action={<><DemoBadge /><ButtonLink href={NEWS_HREF} variant="ghost" size="sm">Abrir radar</ButtonLink></>}
+        action={<><DemoBadge /><ButtonLink href={workspaceHrefFor(NEWS_HREF)} variant="ghost" size="sm">Abrir radar</ButtonLink></>}
       >
         {shown.length ? (
           <Grid columns="1:1:1" collapseBelow={1024} as="ul" label="Pauta do dia">
-            {shown.map((item) => <NewsCard key={item.id} item={item} now={now} href={newsItemHref(item.id)} showPriority />)}
+            {shown.map((item) => <NewsCard key={item.id} item={item} now={now} href={workspaceHrefFor(newsItemHref(item.id))} showPriority />)}
           </Grid>
         ) : (
           <Prose variant="compact" measure="wide">A fila está em dia.</Prose>

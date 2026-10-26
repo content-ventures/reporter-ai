@@ -1,6 +1,7 @@
 'use client';
+import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   Button,
   ButtonLink,
@@ -37,6 +38,7 @@ export function ArticleDrawer({ article, uses, open, onClose, onResend }: {
   onClose: () => void;
   onResend: (article: ArchiveArticle) => void;
 }) {
+  const workspaceHrefFor = useWorkspaceHref();
   const router = useRouter();
   if (!article) return null;
   const cover = coverOf(article);
@@ -62,7 +64,7 @@ export function ArticleDrawer({ article, uses, open, onClose, onResend }: {
       footer={(
         <>
           {article.index === 'failed' ? <Button variant="secondary" icon={RefreshCw} onClick={() => onResend(article)}>Reenviar para a IA</Button> : null}
-          <ButtonLink href={article.url} target="_blank" rel="noopener noreferrer" variant={article.index === 'failed' ? 'ghost' : 'secondary'} trailingIcon={ExternalLink}>Abrir no portal</ButtonLink>
+          <ButtonLink href={workspaceHrefFor(article.url)} target="_blank" rel="noopener noreferrer" variant={article.index === 'failed' ? 'ghost' : 'secondary'} trailingIcon={ExternalLink}>Abrir no portal</ButtonLink>
         </>
       )}
     >

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import { ConfirmDialog } from '@content-ventures/design-system/v3';
 import { useLeaveGuard } from '@/ui/shell';
 
