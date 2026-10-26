@@ -2,6 +2,7 @@ import type { IsoDateTime, PersonId, WorkspaceId } from './ids.ts';
 import { ok, refuse } from './result.ts';
 import type { Result } from './result.ts';
 import { ROLES, type Role } from './workspace.ts';
+import type { WorkspaceMembership } from './workspace-management.ts';
 
 /**
  * Console da plataforma (`/platform`): the platform operator's view above every workspace. Only
@@ -42,6 +43,9 @@ export type PlatformPerson = {
   title?: string;
   avatarUrl?: string;
   status: AccessStatus;
+  /** Account suspension is distinct from a workspace membership's status. */
+  accountStatus?: AccessStatus;
+  memberships?: WorkspaceMembership[];
   workspace?: PlatformWorkspace;
   /** Workspace roles; empty while pending. */
   roles: Role[];
@@ -168,7 +172,14 @@ export type PlatformAction =
   | 'access.approved'
   | 'access.suspended'
   | 'access.restored'
-  | 'roles.changed';
+  | 'roles.changed'
+  | 'workspace.created'
+  | 'workspace.changed'
+  | 'membership.roles'
+  | 'membership.suspended'
+  | 'membership.restored'
+  | 'account.suspended'
+  | 'account.restored';
 
 export const PLATFORM_ACTION_LABELS: Readonly<Record<PlatformAction, string>> = {
   'invite.created': 'Acesso criado',
@@ -178,6 +189,13 @@ export const PLATFORM_ACTION_LABELS: Readonly<Record<PlatformAction, string>> = 
   'access.suspended': 'Acesso suspenso',
   'access.restored': 'Acesso reativado',
   'roles.changed': 'Funções alteradas',
+  'workspace.created': 'Workspace criado',
+  'workspace.changed': 'Workspace alterado',
+  'membership.roles': 'Funções do vínculo alteradas',
+  'membership.suspended': 'Vínculo suspenso',
+  'membership.restored': 'Vínculo reativado',
+  'account.suspended': 'Conta suspensa',
+  'account.restored': 'Conta reativada',
 };
 
 export type PlatformLogEntry = {

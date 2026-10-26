@@ -91,15 +91,15 @@ Exit gate: the baseline, known existing defects, comparison evidence and a demon
 
 Reuse the portal as the workspace identity and keep its tenant relationship as an internal authorization boundary. Do not create another client entity duplicating that boundary.
 
-- [ ] Extend domain and ports for workspace ID, name, slug, lifecycle, readiness and an account's list of memberships. IDs remain stable if display names change.
-- [ ] Separate global account data from workspace membership status and roles. Remove the single workspace assumption from platform projections and mutations.
-- [ ] Define workspace creation, rename, activation, archive and restoration. Archiving first stops new jobs, then settles or explicitly cancels active jobs before reaching its final read only state; it never deletes editorial history.
-- [ ] Make invitations and signup approval target an explicit workspace. Inviting an existing account adds a membership without creating a duplicate account or changing its password. Repeated invitation acceptance is idempotent.
-- [ ] Scope role changes and membership suspension to the selected workspace. Preserve the controlled platform role grant and the existing protection against accidental self lockout.
-- [ ] Add constraints and indexes that preserve workspace ownership, including composite relationships, uniqueness and retry receipts. Test the same entity or request ID in two workspaces.
-- [ ] Prepare an idempotent compatibility migration that retains Seafood's existing IDs, memberships, active settings and artifacts. Resolve the next migration names from the actual migration inventory at implementation time.
-- [ ] Adopt the current Seafood operation as the initial workspace record and initialize only missing workspace metadata. Repeating the migration must not create another Seafood workspace, duplicate content or reset configuration.
-- [ ] Rehearse the additive migration and a compatible application rollback against the M0 staging copy, checking both existing rows and newly provisioned workspace records.
+- [x] Extend domain and ports for workspace ID, name, slug, lifecycle, readiness and an account's list of memberships. IDs remain stable if display names change.
+- [x] Separate global account data from workspace membership status and roles. Ambiguous legacy mutations refuse instead of choosing a workspace.
+- [x] Define workspace creation, rename, activation, archive and restoration. Archiving stops new access and waits for owned jobs before reaching its final state; it never deletes editorial history. M3 connects workspace-aware processing and settlement.
+- [x] Make invitations and new signup approval endpoints target an explicit workspace. Existing accounts retain their identity and password. Repeated authenticated invitation acceptance is idempotent.
+- [x] Scope role changes and membership suspension to the selected workspace. Preserve controlled platform role grants and self-lockout protection.
+- [x] Add composite role/membership ownership constraints and scoped invitation uniqueness. Retain the existing portal-scoped entity and receipt keys; their request-level isolation is extended in M2.
+- [x] Implement migrations 030 and 031 with idempotent replay and atomic migration batches, preserving pilot identities, memberships and content/configuration fingerprints.
+- [x] Adopt the current Seafood portal in place and initialize missing metadata only, without creating a duplicate pilot or resetting its configuration.
+- [x] Rehearse the additive migration and the frozen M0 application against the upgraded synthetic database: pilot bootstrap succeeds, new workspace addresses fail closed in old code, and newly provisioned workspace records remain intact.
 
 Exit gate: one account can be editor in workspace A and approver in workspace B. Suspending A leaves B usable. Old Seafood records retain their ownership and hashes. Provisioning another workspace requires no manual database edits after deployment.
 

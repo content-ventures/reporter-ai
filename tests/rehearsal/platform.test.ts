@@ -93,6 +93,7 @@ const find = async (email: string) => (await directory()).people.find(person => 
 test('migration 020 replays without changing who holds the platform role', async () => {
   const { readFile } = await import('node:fs/promises');
   await owner(await readFile(new URL('../../database/migrations/020-platform-admin.sql', import.meta.url), 'utf8'));
+  db.migrate(); // Later compatibility migrations must remain the effective definitions.
   const holders = await owner<{ email: string }>(`SELECT u.email FROM public.user_roles r JOIN core.users u ON u.id=r.user_id WHERE r.role='platform_admin'`);
   assert.deepEqual(holders.map(row => row.email), [OPERATOR.email]);
 });
@@ -129,13 +130,75 @@ test('a link creates the access; the person defines the password and the e-mail 
     EXISTS(SELECT FROM core.users u WHERE u.auth_subject=a.id::text AND u.email_verified) AS bound FROM neon_auth."user" a WHERE a.email='clara@rehearsal.test'`);
   assert.deepEqual(account, { verified: true, bound: true });
   assert.equal((await find('clara@rehearsal.test'))?.status, 'active');
-  assert.equal((await api(`invites/${token}/accept`, { password: 'senha-forte', confirmation: 'senha-forte' }, null)).body.error, 'used');
+  assert.equal((await api(`invites/${token}/accept`, { password: 'senha-forte', confirmation: 'senha-forte' }, null)).status, 200);
+  assert.equal((await owner("SELECT count(*)::integer AS count FROM public.audit_log WHERE action='platform.invite.accepted'"))[0].count, 1);
   assert.equal((await api(`invites/${'x'.repeat(43)}`, undefined, null)).body.error, 'invalid_link');
 
   // The workspace now opens for her through the ordinary session binding.
   const [session] = await owner<{ roles: string[] }>(`SELECT roles FROM public.reporter_session_context($1,$2,'Clara',NULL,true,$3)`,
     [account && passwords.get('clara@rehearsal.test')?.id, 'clara@rehearsal.test', PORTAL]);
   assert.deepEqual(session.roles, ['editor']);
+});
+
+test('an existing account joins another client with the same password and independently scoped roles and suspension', async () => {
+  type Membership = { personId: string; revision: number; status: string; roles: string[]; workspace: { id: string } };
+  const original = await find('clara@rehearsal.test');
+  assert.ok(original);
+  const workspace = await api<{ id: string; revision: number }>('platform/workspaces', { name: 'Second client', slug: 'second-client' });
+  assert.equal(workspace.status, 201);
+  const second = workspace.body.id;
+  assert.equal((await api(`platform/workspaces/${second}/update`, { name: 'Second client', status: 'active', revision: workspace.body.revision })).status, 200);
+  const invite = await api<{ token: string; person: Person }>('platform/invites', { name: 'Clara Souto', email: original.email, role: 'approver', workspaceId: second });
+  assert.equal(invite.status, 200);
+  assert.equal(invite.body.person.id, original.id);
+  const context = (portal: string) => owner<{ roles: string[] }>(`SELECT roles FROM public.reporter_session_context($1,$2,'Clara',NULL,true,$3)`, [passwords.get(original.email)?.id, original.email, portal]);
+  assert.equal((await context(second)).length, 0, 'the existing account cannot enter before accepting this membership');
+  assert.equal((await api<{ hasAccount: boolean }>(`invites/${invite.body.token}`, undefined, null)).body.hasAccount, true);
+  assert.equal((await api(`invites/${invite.body.token}/accept`, { password: 'senha-errada', confirmation: 'senha-errada' }, null)).status, 401);
+  assert.equal((await api(`invites/${invite.body.token}/accept`, { password: 'senha-forte', confirmation: 'senha-forte' }, null)).status, 200);
+  assert.equal(passwords.get(original.email)?.password, 'senha-forte');
+  assert.equal((await owner('SELECT count(*)::integer AS count FROM core.users WHERE lower(email)=lower($1)', [original.email]))[0].count, 1);
+  assert.deepEqual((await context(PORTAL))[0].roles, ['editor']);
+  assert.deepEqual((await context(second))[0].roles, ['approver']);
+  const firstMembership = (await api<Membership[]>(`platform/workspaces/${PORTAL}/members`)).body.find(m => m.personId === original.id)!;
+  const suspended = await api<Membership>(`platform/workspaces/${PORTAL}/members/${original.id}`, { revision: firstMembership.revision, status: 'suspended' });
+  assert.equal(suspended.body.status, 'suspended');
+  assert.equal((await context(PORTAL)).length, 0);
+  assert.deepEqual((await context(second))[0].roles, ['approver']);
+  assert.equal((await api(`platform/workspaces/${PORTAL}/members/${original.id}`, { revision: firstMembership.revision, roles: ['admin'] })).status, 409);
+  assert.equal((await api(`platform/people/${original.id}/roles`, { roles: ['admin'] })).body.error, 'invalid_state', 'legacy person-only mutations cannot choose a workspace');
+  assert.equal((await api(`platform/workspaces/${PORTAL}/members/${original.id}`, { revision: suspended.body.revision, status: 'active' })).status, 200);
+  const projected = await find(original.email) as Person & { memberships: Membership[]; workspace?: unknown };
+  assert.equal(projected.memberships.length, 2);
+  assert.equal(projected.workspace, undefined);
+  assert.deepEqual(projected.roles, [], 'there is no union of workspace roles on the account');
+  assert.equal((await api(`platform/people/${original.id}/account-status`, { suspended: true })).status, 200);
+  assert.equal((await context(PORTAL)).length, 0);
+  assert.equal((await context(second)).length, 0);
+  assert.equal((await api(`platform/people/${original.id}/account-status`, { suspended: false })).status, 200);
+  assert.deepEqual((await context(PORTAL))[0].roles, ['editor']);
+  assert.deepEqual((await context(second))[0].roles, ['approver']);
+});
+
+test('pending links and renewal are scoped to a membership, including revocation before acceptance', async () => {
+  type Membership = { personId: string; revision: number; status: string };
+  const workspaces = await Promise.all(['pending-one', 'pending-two'].map(slug => api<{ id: string }>('platform/workspaces', { name: slug, slug })));
+  const invites = await Promise.all(workspaces.map(w => api<{ token: string; person: Person }>('platform/invites', { name: 'Pending person', email: 'pending-person@rehearsal.test', role: 'editor', workspaceId: w.body.id })));
+  assert.equal(invites[0].body.person.id, invites[1].body.person.id);
+  const person = invites[0].body.person.id;
+  const workspace = workspaces[0].body.id;
+  const membership = (await api<Membership[]>(`platform/workspaces/${workspace}/members`)).body.find(m => m.personId === person)!;
+  const suspended = await api<Membership>(`platform/workspaces/${workspace}/members/${person}`, { revision: membership.revision, status: 'suspended' });
+  assert.equal(suspended.body.status, 'suspended');
+  assert.equal((await api<{ state: string }>(`invites/${invites[0].body.token}`, undefined, null)).body.state, 'revoked');
+  assert.equal((await api<{ state: string }>(`invites/${invites[1].body.token}`, undefined, null)).body.state, 'open');
+  const renewed = await api<{ token: string }>(`platform/workspaces/${workspace}/members/${person}/renew-invite`, { revision: suspended.body.revision });
+  assert.equal(renewed.status, 200);
+  assert.equal((await api<{ state: string }>(`invites/${renewed.body.token}`, undefined, null)).body.state, 'open');
+  assert.equal((await api<{ state: string }>(`invites/${invites[1].body.token}`, undefined, null)).body.state, 'open');
+  db.migrate();
+  assert.equal((await api<{ state: string }>(`invites/${renewed.body.token}`, undefined, null)).body.state, 'open');
+  assert.equal((await api<{ state: string }>(`invites/${invites[1].body.token}`, undefined, null)).body.state, 'open');
 });
 
 test('an e-mail that already has an account signs in with its own password', async () => {

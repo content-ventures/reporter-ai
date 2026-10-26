@@ -36,7 +36,7 @@ export type WorkspaceAccess = {
 };
 
 export type WorkspaceInput = { name: string; slug: string };
-export type WorkspaceChange = { workspaceId: WorkspaceId; name: string; status: WorkspaceStatus; revision: number };
+export type WorkspaceChange = { workspaceId: WorkspaceId; name: string; status: Exclude<WorkspaceStatus, 'archiving'>; revision: number };
 export type WorkspaceRefusal = 'restricted' | 'not_found' | 'invalid_name' | 'invalid_slug' | 'slug_taken'
   | 'invalid_state' | 'conflict' | 'self' | 'no_roles' | 'email_taken' | 'invalid_email' | 'unavailable';
 

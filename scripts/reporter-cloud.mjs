@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import nextEnv from '@next/env';
 import pg from 'pg';
 import { CLOUD, CLOUD_BASE_FILES } from './lib/migrations.mjs';
+import { migrationBody } from './lib/migration-body.mjs';
 
 const { loadEnvConfig } = nextEnv;
 loadEnvConfig(process.cwd());
@@ -46,7 +47,6 @@ async function migrate(client) {
   const selected = !core ? files : !r1 ? files.slice(1) : files.slice(CLOUD_BASE_FILES);
   let executorMembershipBefore;
   let ownerRoleName;
-  let migrationError;
   const allowOwnershipTransfer = async () => {
     const membership = (await client.query("SELECT current_user AS name,pg_has_role(current_user,'reporter_executor','MEMBER') AS member,pg_has_role(current_user,'reporter_executor','SET') AS can_set")).rows[0];
     if (!/^[a-zA-Z_][a-zA-Z0-9_$]*$/.test(membership.name)) throw new Error('Unsafe database role name');
@@ -55,6 +55,7 @@ async function migrate(client) {
     if (!membership.can_set) await client.query(`GRANT reporter_executor TO "${membership.name}" WITH SET TRUE`);
   };
   try {
+    await client.query('BEGIN');
     if (core) {
       await client.query(`DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='reporter_executor') THEN
         CREATE ROLE reporter_executor NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS;END IF;END $$`);
@@ -62,24 +63,24 @@ async function migrate(client) {
     }
     for (const file of selected) {
       process.stdout.write(`Applying ${file}... `);
-      await client.query(await readFile(resolve(file),'utf8'));
-      console.log('ok');
+      await client.query(migrationBody(await readFile(resolve(file),'utf8')));
+      console.log('prepared');
       if (file.endsWith('reporter-foundation.sql')) {
         await client.query(`DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='reporter_executor') THEN
           CREATE ROLE reporter_executor NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS;END IF;END $$`);
         await allowOwnershipTransfer();
       }
     }
-  } catch (error) {
-    migrationError = error;
-    await client.query('ROLLBACK').catch(() => {});
-  } finally {
     if (executorMembershipBefore && ownerRoleName) {
       if (!executorMembershipBefore.member) await client.query(`REVOKE reporter_executor FROM "${ownerRoleName}"`);
       else if (!executorMembershipBefore.canSet) await client.query(`REVOKE SET OPTION FOR reporter_executor FROM "${ownerRoleName}"`);
     }
+    await client.query('COMMIT');
+    console.log('Migration batch committed atomically.');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
   }
-  if (migrationError) throw migrationError;
   return status(client);
 }
 
