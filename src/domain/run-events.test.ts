@@ -57,6 +57,12 @@ function streamToSecondBlock(): RunEvent[] {
 }
 
 describe('foldRun', () => {
+  test('the captured client policy and render references remain independent of mutable event inputs',()=>{
+    const start=started();assert.equal(start.type,'run.started');if(start.type!=='run.started')return;
+    start.configuration={workspaceId:'client-a',pipeline:{hash:'pipeline',revision:7},editorial:{mapVersion:3,guideVersion:4},template:{id:'client-a-template',hash:'render-pack',revision:2}};
+    const fold=foldRun([start])!;start.configuration.editorial.guideVersion=99;
+    assert.equal(fold.run.configuration?.editorial.guideVersion,4);assert.equal(fold.run.configuration?.workspaceId,'client-a');assert.equal(fold.run.configuration?.template?.revision,2);
+  });
   test('the saved version keeps the linha fina an event format announced with its title', () => {
     const fold = foldRun([
       started(),

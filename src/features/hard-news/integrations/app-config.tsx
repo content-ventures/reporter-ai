@@ -188,7 +188,7 @@ function AlertSettings({ record, update }: ConfigProps) {
       <Section title="Novo alerta" action={<Button variant="secondary" size="sm" icon={Plus} onClick={add}>Adicionar alerta</Button>}>
         <Field label="Palavra-chave" error={errors.query}>
           {({ id, describedBy, invalid }) => (
-            <Input id={id} aria-describedby={describedBy} invalid={invalid} value={query} placeholder="camarão" onChange={(event) => { setQuery(event.target.value); setErrors((current) => ({ ...current, query: undefined })); }} />
+            <Input id={id} aria-describedby={describedBy} invalid={invalid} value={query} placeholder="Tema ou palavra-chave" onChange={(event) => { setQuery(event.target.value); setErrors((current) => ({ ...current, query: undefined })); }} />
           )}
         </Field>
         <Field label="Link do feed" error={errors.url} hint="Em Google Alertas, o ícone de RSS ao lado do alerta">

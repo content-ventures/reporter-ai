@@ -317,6 +317,9 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
     job.cacheSourceRunId = previous.meta.runId;
   checkpoint.jobs[run.id] = job;
   appendEditorialEvent(engine,job,{ type: 'run.started', kind: run.kind, productionId,pieceId,prompt,model: run.model,
+    configuration:{workspaceId:context.portal,pipeline:{hash:pipeline.hash,revision:pipeline.revision},
+      editorial:{mapVersion:pipeline.definition.editorial?.map.version??0,guideVersion:pipeline.definition.editorial?.guide.version??0},
+      ...(piece.draft.body.type==='carousel'?{template:{id:piece.draft.body.templateId,...(template?{hash:template.hash,revision:template.revision}:{})}}:{})},
     ...(kind === 'article.draft' && pipeline.definition.writing?.enabled
       ? { articlePolicy: { minimumQuotes: effectiveWritingMinimumQuotes(pipeline.definition.writing, articleGateFor(record.production.brief).minQuotes) } } : {}),
     inputs: run.inputs,steps: run.steps.map(s => ({ id: s.id,label: s.label })),createdBy: engine.store.state.sessionPersonId,
@@ -441,6 +444,10 @@ export async function editorialRpc(payload: unknown) {
       }
     }
     // Only named domain commands may mutate the server-owned aggregate; no snapshot upload.
+    if(!isPreservedPilot(checkpoint.state.workspace.id)&&['createFromSource','updateBrief'].includes(method)){
+      const brief=(method==='createFromSource'?(args[0] as {brief?:unknown}).brief:args[1]) as {event?:{name?:string;boxTitle?:string}}|undefined;
+      if(brief?.event?.name&&!brief.event.boxTitle?.trim())brief.event.boxTitle=`${checkpoint.state.workspace.name} na ${brief.event.name}`;
+    }
     const command = engine.commands[method as keyof typeof engine.commands] as (...args: unknown[]) => Promise<unknown>;
     return command(...args);
     };

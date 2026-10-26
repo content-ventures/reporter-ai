@@ -151,7 +151,7 @@ export function DiscoverSourcesDialog({ open, onClose }: { open: boolean; onClos
                   value={portalUrl} disabled={busy} autoFocus onChange={event => { setPortalUrl(event.target.value); setError(undefined); }} onKeyDown={onEnter} />}
               </Field>
               <Field label="Setor ou tema" optional>
-                {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={sector} disabled={busy} placeholder="Ex.: pesca e aquicultura"
+                {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={sector} disabled={busy} placeholder="Ex.: alimentos e bebidas"
                   onChange={event => { setSector(event.target.value); setError(undefined); }} onKeyDown={onEnter} />}
               </Field>
             </FieldGroup>

@@ -166,6 +166,8 @@ describe('delivery package', () => {
 
     const manifest = buildManifest(record, items.value, files, kit.now());
     assert.equal(manifest.schema, 'reporter.delivery/v1');
+    assert.equal(manifest.workspaceId,record.production.workspaceId);
+    assert.equal(manifest.items[1].template?.id,carousel.body.type==='carousel'?carousel.body.templateId:undefined);
     assert.equal(manifest.sources[0].hash, record.sources[0].versions[0].hash);
     assert.deepEqual(manifest.items[1].derivedFrom, [{ pieceId: article.pieceId, version: 1, hash: article.hash }]);
     assert.equal(manifest.items[0].approvedBy, PEDRO);
@@ -186,6 +188,17 @@ describe('delivery package', () => {
     const b = { kind: 'version' as const, pieceId: 'pb', versionId: 'vb', number: 1, hash: 'hb' };
     assert.equal(deliveryIdempotencyKey('prod', 'export', [a, b]), deliveryIdempotencyKey('prod', 'export', [b, a]));
     assert.notEqual(deliveryIdempotencyKey('prod', 'export', [a]), deliveryIdempotencyKey('prod', 'export', [b]));
+  });
+
+  test('manifest keeps captured configuration references without exporting private provider properties',()=>{
+    const kit=createKit(),{record}=approvedPackage(kit),selection=canExport(record,defaultExportSelection(record));assert.ok(selection.ok);if(!selection.ok)return;
+    const version=record.versions.find(item=>item.id===selection.value[0].version.versionId)!;version.runId='captured-run';
+    const configuration={workspaceId:record.production.workspaceId,pipeline:{hash:'pipeline-v7',revision:7},editorial:{mapVersion:3,guideVersion:4}};
+    record.runs.push({id:'captured-run',kind:'article.generate',productionId:record.production.id,prompt:{key:'pipeline',hash:'pipeline-v7',version:'7'},
+      model:{alias:'configured',label:'Configured model',engine:'provider'},configuration:Object.assign(structuredClone(configuration),{providerSecret:'private-test-value'}),
+      inputs:[],steps:[],status:'completed',createdBy:JOAO,createdAt:kit.now()});
+    const manifest=buildManifest(record,selection.value,[],kit.now());
+    assert.deepEqual(manifest.runs[0].configuration,configuration);assert.ok(!JSON.stringify(manifest).includes('private-test-value'));
   });
 
   test('manifest carries web provenance without exporting source contents or private provider fields', () => {

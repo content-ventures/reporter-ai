@@ -217,7 +217,10 @@ test('two simultaneous generations retain their enqueue identity, workspace, con
   globalThis.fetch=async(input,init)=>{
     if(String(input).startsWith('https://api.groq.com/')){
       const context=currentWorkerContext()!;assert.equal(context.actor,operatorId);
-      assert.equal(context.job?.id,jobs.find(job=>job.portal===context.portal)!.runId);
+      const job=jobs.find(job=>job.portal===context.portal)!;assert.equal(context.job?.id,job.runId);
+      const prompts=JSON.stringify(JSON.parse(String(init?.body)).messages);
+      assert.ok(prompts.includes(`Audience of ${job.slug}`));assert.ok(prompts.includes(`Voice of ${job.slug}`));
+      assert.ok(!prompts.includes(`Voice of ${jobs.find(other=>other!==job)!.slug}`),'another client communication policy never reaches this provider request');
       seen.add(context.portal);if(seen.size===2)both.resolve();await both.promise;
     }
     return fake(input,init);
@@ -232,6 +235,8 @@ test('two simultaneous generations retain their enqueue identity, workspace, con
       const [{portal_id,context,hash,fold}]=await owner("SELECT portal_id,job->'context' AS context,job->>'pipelineHash' AS hash,fold FROM public.reporter_ed_runs WHERE run_id=$1",[job.runId]);
       assert.equal(portal_id,job.portal);assert.deepEqual(context,{tenant:(await owner('SELECT tenant_id FROM public.portals WHERE id=$1',[job.portal]))[0].tenant_id,workspace:job.portal,actor:operatorId});
       assert.equal(hash,job.hash);assert.equal(fold.run.status,'completed',JSON.stringify(fold.run.error));assert.ok(fold.run.usage.totalTokens>0);
+      assert.equal(fold.run.configuration.workspaceId,job.portal);assert.equal(fold.run.configuration.pipeline.hash,job.hash);
+      assert.deepEqual(fold.run.configuration.editorial,{mapVersion:1,guideVersion:1});
       const other=jobs.find(item=>item!==job)!;
       assert.equal((await owner('SELECT count(*)::int AS count FROM public.reporter_ed_runs WHERE portal_id=$1 AND run_id=$2',[other.portal,job.runId]))[0].count,0);
     }
