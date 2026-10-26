@@ -8,7 +8,7 @@ export function createHttpWorkspaceDirectory(http:ReporterTransport,ready?:()=>P
   return{async accessible(options){
     try{
       await ready?.();const page=await http.request<WorkspaceAccessPage>(`/workspaces?${managementSearch(options)}`);
-      if(!Array.isArray(page.items)||!Number.isInteger(page.total)||page.total<0||page.items.length>100)throw new Error('Resposta de workspaces inválida.');
+      if(!Array.isArray(page.items)||!Number.isInteger(page.total)||page.total<0||page.items.length>100||page.items.length>0&&!page.account?.id)throw new Error('Resposta de workspaces inválida.');
       if(page.account?.id)http.bindAccount(page.account.id);
       return ok(page);
     }catch(error){const value=error as {status?:number;code?:string;message?:string};

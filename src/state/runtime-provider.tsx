@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, Suspense, useEffect, useState } from 'react';
+import { createContext, Suspense, useEffect,useMemo, useState,useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { interV3 } from '@content-ventures/design-system/v3';
@@ -9,6 +9,7 @@ import { createRuntime } from '../runtime/create-runtime.ts';
 import { createRuntimeHolder } from './runtime-holder.ts';
 import type { RuntimeHolder } from './runtime-holder.ts';
 import { workspaceAddress } from '../domain/workspace-address.ts';
+import {WorkspaceAddressContext} from '../ui/workspace-navigation.ts';
 
 /**
  * Root client provider: creates the runtime once per tab, after hydration (nothing reads
@@ -25,6 +26,9 @@ const TYPEFACES = { Inter: interV3.style.fontFamily };
 // Compiled only into the disposable fixture build used by the legacy UI regression suite. The
 // release build never exposes the simulated workspace and always uses PostgreSQL-backed state.
 const E2E_FIXTURES = process.env.NEXT_PUBLIC_REPORTER_E2E_FIXTURES === 'true';
+const noHydrationSubscription=()=>()=>{};
+const hydrated=()=>true;
+const serverHydrated=()=>false;
 
 /** Reads and removes `?reset=1` (client only). */
 function consumeResetParam(): boolean {
@@ -42,10 +46,20 @@ function FlushOnRouteChange({ holder }: { holder: RuntimeHolder }) {
   return null;
 }
 
-export function RuntimeProvider({ children }: { children: ReactNode }) {
+export function RuntimeProvider({children,initialWorkspaceSlug}:{children:ReactNode;initialWorkspaceSlug?:string}){
+  return E2E_FIXTURES?<RuntimeBoundary>{children}</RuntimeBoundary>:<Suspense fallback={null}><AddressBoundary initialWorkspaceSlug={initialWorkspaceSlug}>{children}</AddressBoundary></Suspense>;
+}
+function AddressBoundary({children,initialWorkspaceSlug}:{children:ReactNode;initialWorkspaceSlug?:string}){
+  const pathname=usePathname()??'';
+  const mounted=useSyncExternalStore(noHydrationSubscription,hydrated,serverHydrated);
+  const slug=mounted?workspaceAddress(pathname)?.slug??(pathname.startsWith('/w/')?'':undefined):initialWorkspaceSlug;
+  return<RuntimeBoundary key={slug===undefined?'pilot':`workspace:${slug}`} workspaceSlug={slug}>{children}</RuntimeBoundary>;
+}
+function RuntimeBoundary({children,workspaceSlug}:{children:ReactNode;workspaceSlug?:string}){
+  const address=useMemo(()=>({slug:workspaceSlug}),[workspaceSlug]);
   const [holder] = useState(() => createRuntimeHolder((options) => E2E_FIXTURES
     ? createRuntime({ ...options,typefaces: TYPEFACES })
-    : createConnectedRuntime({ typefaces: TYPEFACES,workspaceSlug: workspaceAddress(window.location.pathname)?.slug })));
+    : createConnectedRuntime({ typefaces: TYPEFACES,workspaceSlug }),{releaseAfterMs:E2E_FIXTURES?1000:0}));
 
   useEffect(() => {
     holder.start({ reset: consumeResetParam() });
@@ -63,11 +77,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   }, [holder]);
 
   return (
-    <RuntimeContext value={holder}>
+    <WorkspaceAddressContext value={address}><RuntimeContext value={holder}>
       {children}
       <Suspense fallback={null}>
         <FlushOnRouteChange holder={holder} />
       </Suspense>
-    </RuntimeContext>
+    </RuntimeContext></WorkspaceAddressContext>
   );
 }
