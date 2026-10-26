@@ -26,6 +26,7 @@ import { discoverNewsSources } from './news-discovery.ts';
 import { decideNewsItem } from './news-decisions.ts';
 import { NEWS_MESSAGES } from '../domain/news-intake.ts';
 import { handleAccountAvatar, handleProfile } from './profile.ts';
+import {handleWorkspaceTemplates} from './template-settings.ts';
 import { handleInvites, handlePlatform } from './platform.ts';
 import { driveReceived, driveRetry, handleDrive } from './drive-intake.ts';
 import { reporterDeploymentMode } from './deployment.ts';
@@ -236,6 +237,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     if (path[0] === 'drive' && path.at(-1) === 'sync') return await handleDrive(request,path.slice(1),{ readJson: jsonBody,defer });
     const context = await guardReporterRequest(request, deps.identify, selectedWorkspace);
     return await runWithReporterContext(context, async () => {
+    if(path[0]==='templates')return handleWorkspaceTemplates(request,path.slice(1),jsonBody);
     if(request.method==='GET'&&path.join('/')==='processing') return reply(await transaction('runtime',async client=>(await client.query('SELECT public.reporter_processing_view($1) AS value',[context.portal])).rows[0].value));
     if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);
     if (path[0] === 'citations') return await handleCitationLibrary(request,path.slice(1),jsonBody);
