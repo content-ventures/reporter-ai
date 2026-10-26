@@ -117,3 +117,17 @@ test('directory paging and operational filters keep exact totals beyond the firs
   const log=await api<{items:{workspace:{id:string};actor?:{id:string}}[];total:number}>(`platform/log?workspaceId=${second}&personId=${operatorId}&limit=1`);
   assert.equal(log.status,200);assert.equal(log.body.items.length,1);assert.ok(log.body.total>=1);assert.equal(log.body.items[0].workspace.id,second);
 });
+
+test('archival keeps the operator integration projection readable while every mutation remains blocked',async()=>{
+  const created=await api<{id:string;revision:number}>('platform/workspaces',{name:'Archived integration',slug:'archived-integration'}),workspace=created.body;
+  assert.equal((await api('platform/invites',{name:OP.name,email:OP.email,role:'editor',workspaceId:workspace.id})).status,200);
+  const [{token_hash:hash}]=await owner('SELECT token_hash FROM core.access_invites WHERE portal_id=$1',[workspace.id]);
+  await owner('SELECT public.reporter_invite_accept($1,$2)',[hash,OP.subject]);
+  const binding=await api<{id:string;revision:number}>(`platform/workspaces/${workspace.id}/integrations`,{ownerId:operatorId,enabled:true,revision:0});assert.equal(binding.status,201);
+  assert.equal((await api(`platform/workspaces/${workspace.id}/update`,{name:'Archived integration',status:'archived',revision:workspace.revision})).status,200);
+  const list=await api<{id:string;revision:number;enabled:boolean}[]>(`platform/workspaces/${workspace.id}/integrations`);
+  assert.equal(list.status,200,JSON.stringify(list.body));assert.equal(list.body[0].id,binding.body.id);assert.equal(list.body[0].enabled,true);
+  assert.ok(!JSON.stringify(list.body).includes('credential'));assert.ok(!JSON.stringify(list.body).includes('token'));
+  const edit=await api(`platform/workspaces/${workspace.id}/integrations`,{ownerId:operatorId,enabled:false,revision:binding.body.revision});assert.equal(edit.status,409);
+  const unchanged=await api<{enabled:boolean;revision:number}[]>(`platform/workspaces/${workspace.id}/integrations`);assert.equal(unchanged.body[0].enabled,true);assert.equal(unchanged.body[0].revision,1);
+});

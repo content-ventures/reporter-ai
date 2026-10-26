@@ -70,6 +70,16 @@ END $$;
 -- The invitation/renewal bodies below retain the existing atomic implementation, but their
 -- person projection is restricted to the managed membership outside the global console.
 
+CREATE OR REPLACE FUNCTION public.reporter_integration_list(p_portal uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+BEGIN
+  IF current_setting('app.access_mode',true)='platform' THEN
+    PERFORM core.platform_operator();
+    IF NOT EXISTS(SELECT FROM public.reporter_workspaces WHERE portal_id=p_portal) THEN PERFORM core.platform_refuse('NOT_FOUND'); END IF;
+  ELSE PERFORM core.reporter_membership_manager(p_portal); END IF;
+  RETURN (SELECT coalesce(jsonb_agg(core.reporter_integration_value(i) ORDER BY kind),'[]') FROM public.reporter_integrations i WHERE portal_id=p_portal);
+END $$;
+
 CREATE OR REPLACE FUNCTION public.reporter_platform_invite(p_name text,p_email text,p_role text,p_portal uuid,p_token_hash text,p_ttl_days integer)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
 DECLARE actor uuid:=core.reporter_membership_manager(p_portal); target uuid; tenant uuid; expires timestamptz;
