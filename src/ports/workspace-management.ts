@@ -1,0 +1,25 @@
+import type { PersonId, WorkspaceId } from '../domain/ids.ts';
+import type { InviteInput, IssuedInvite } from '../domain/platform.ts';
+import type { Result } from '../domain/result.ts';
+import type { Role } from '../domain/workspace.ts';
+import type { ManagedWorkspace, MembershipStatus, WorkspaceAccess, WorkspaceChange, WorkspaceInput, WorkspaceMembership, WorkspaceRefusal } from '../domain/workspace-management.ts';
+
+export type WorkspaceResult<T> = Result<T, WorkspaceRefusal>;
+export type WorkspacePage = { items: ManagedWorkspace[]; total: number; offset: number };
+export type MembershipChange = { workspaceId: WorkspaceId; personId: PersonId; revision: number };
+
+/** Server-authorized administration. No method grants a platform role or changes a password. */
+export interface WorkspaceAdministration {
+  list(options: { search?: string; offset?: number; limit?: number }): Promise<WorkspaceResult<WorkspacePage>>;
+  create(input: WorkspaceInput): Promise<WorkspaceResult<ManagedWorkspace>>;
+  update(input: WorkspaceChange): Promise<WorkspaceResult<ManagedWorkspace>>;
+  members(workspaceId: WorkspaceId): Promise<WorkspaceResult<WorkspaceMembership[]>>;
+  invite(input: InviteInput): Promise<WorkspaceResult<IssuedInvite>>;
+  setRoles(input: MembershipChange & { roles: Role[] }): Promise<WorkspaceResult<WorkspaceMembership>>;
+  setStatus(input: MembershipChange & { status: Extract<MembershipStatus, 'active' | 'suspended'> }): Promise<WorkspaceResult<WorkspaceMembership>>;
+}
+
+/** A tab chooses its addressable context; navigation preference is never authorization. */
+export interface WorkspaceDirectory {
+  accessible(): Promise<WorkspaceResult<WorkspaceAccess[]>>;
+}
