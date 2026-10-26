@@ -212,15 +212,14 @@ test('two simultaneous generations retain their enqueue identity, workspace, con
     const started=await rpc<{runId:string}>(slug,'generation.start',['article.outline',{productionId:production.productionId,pieceId:piece.id}]);
     jobs.push({slug,portal,runId:started.runId,productionId:production.productionId,hash:saved.active.hash});
   }
-  const providers=installFakeProviders(),fake=globalThis.fetch,seen=new Set<string>();
+  const providers=installFakeProviders(),fake=globalThis.fetch,seen=new Set<string>(),capturedPrompts=new Map<string,string[]>();
   const both=Promise.withResolvers<void>();
   globalThis.fetch=async(input,init)=>{
     if(String(input).startsWith('https://api.groq.com/')){
       const context=currentWorkerContext()!;assert.equal(context.actor,operatorId);
       const job=jobs.find(job=>job.portal===context.portal)!;assert.equal(context.job?.id,job.runId);
       const prompts=JSON.stringify(JSON.parse(String(init?.body)).messages);
-      assert.ok(prompts.includes(`Audience of ${job.slug}`));assert.ok(prompts.includes(`Voice of ${job.slug}`));
-      assert.ok(!prompts.includes(`Voice of ${jobs.find(other=>other!==job)!.slug}`),'another client communication policy never reaches this provider request');
+      capturedPrompts.set(context.portal,[...(capturedPrompts.get(context.portal)??[]),prompts]);
       seen.add(context.portal);if(seen.size===2)both.resolve();await both.promise;
     }
     return fake(input,init);
@@ -232,6 +231,11 @@ test('two simultaneous generations retain their enqueue identity, workspace, con
     await api('w/second-context/workspace',undefined,OPERATOR);await api('w/reporter-ai/workspace',undefined,OPERATOR);
     assert.deepEqual(await tasks,[true,true]);assert.equal(seen.size,2);
     for(const job of jobs){
+      for(const prompts of capturedPrompts.get(job.portal)??[]){
+        assert.ok(prompts.includes(`Audience of ${job.slug}`),'the addressed audience reaches every writing request');
+        assert.ok(prompts.includes(`Voice of ${job.slug}`),'the addressed voice reaches every writing request');
+        assert.ok(!prompts.includes(`Voice of ${jobs.find(other=>other!==job)!.slug}`),'another client communication policy never reaches this provider request');
+      }
       const [{portal_id,context,hash,fold}]=await owner("SELECT portal_id,job->'context' AS context,job->>'pipelineHash' AS hash,fold FROM public.reporter_ed_runs WHERE run_id=$1",[job.runId]);
       assert.equal(portal_id,job.portal);assert.deepEqual(context,{tenant:(await owner('SELECT tenant_id FROM public.portals WHERE id=$1',[job.portal]))[0].tenant_id,workspace:job.portal,actor:operatorId});
       assert.equal(hash,job.hash);assert.equal(fold.run.status,'completed',JSON.stringify(fold.run.error));assert.ok(fold.run.usage.totalTokens>0);

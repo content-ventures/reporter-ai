@@ -33,7 +33,7 @@
     "worker": "node --conditions=react-server --import tsx src/server/worker.ts",
     "worker:local": "REPORTER_DEPLOYMENT_MODE=local REPORTER_LOCAL_MODE=true pnpm worker",
     "test:backend": "node --conditions=react-server --import tsx --test tests/*.test.ts",
-    "test:rehearsal": "node --conditions=react-server --import tsx --test \"tests/rehearsal/*.test.ts\"",
+    "test:rehearsal": "node --conditions=react-server --import tsx --test --test-concurrency=2 \"tests/rehearsal/*.test.ts\"",
     "db:up": "node scripts/reporter-db.mjs up",
     "db:stop": "node scripts/reporter-db.mjs stop",
     "db:status": "node scripts/reporter-db.mjs status",

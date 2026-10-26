@@ -88,6 +88,22 @@ Browser evidence: 85 connected cases passed with one intentional skip; one deskt
 
 An image regression under local load returned an empty immediate claim, followed by dependent fixture failures. Its six cases passed in isolation. A controlled five-minute application clock skew then reproduced a concrete scheduling defect: `Date.now()` could enqueue immediate work in PostgreSQL's future. Enqueue now uses the database clock; immediate optional-work handoffs retain their already-due claim time. Deliberate provider retry delays remain unchanged. The clock case failed before the fix, passed after it, and the complete rehearsal passed 96 cases with the same 6 skips afterward. The image fixture records bounded scheduling metadata on a future missed claim instead of hiding it behind a retry.
 
+## M4 editorial configuration and immutable render identities
+
+New clients use the versioned `neutral-v1` format preset. The preserved pilot IDs retain their original default format prompts, custom saved prompts and render definitions. The twenty original format prompts retain SHA-256 `f75c6f8a84907b675303d9eac0e49bcb34b09bac76e93fda717ebd41af55da38`; the new neutral preset has SHA-256 `ebf885a5a6df9c265d414b51abaf84fc165aa0975e85af9fa29882f0f3b54f52`. Shared fact-check instructions and product labels no longer assume a fishing publication. New client event boxes capture the client's own publication context; existing pilot event boxes retain their compatibility behavior.
+
+Migration 039 stores immutable, workspace-owned template packs and private brand assets. New clients start with no assigned catalog. Administrators select from five approved compositions and the two registered creative typefaces, set the publication and default, and upload a PNG, JPEG or WebP brand. Uploads are bounded to 2 MB and normalized to a transparent-capable PNG within 768 pixels; image processing and storage do not hold a database transaction. Composite ownership constraints and server guards refuse foreign logos and ordinary editor writes. A global operator's upload targets the explicitly authorized client without creating a membership or impersonating a user.
+
+Template IDs capture the workspace, renderer version and configuration hash. The editor lists only active assignments while rendering owned historical packs. The old Seafood catalog remains available for old pilot bodies, including after an explicit future rebrand. Failed private-brand loading refuses the render rather than exporting a missing or wrong identity. Generation readiness is independent of workspace access: new teams can configure settings, but enqueue explains missing map, guide, templates, editor or approver before beginning a run. The pilot retains its existing behavior.
+
+Migration 040 adds selective configuration copying with an actor-bound, signed five-minute preview. Applying it rechecks source and target revisions under locks and writes an audit record. Only selected map, guide, prompts and template assignments can move; the target retains its publication and logo, and no productions, memberships, approvals, integration bindings or secrets are copied. An unconfigured legacy catalog cannot silently become another client's brand. Repeated, expired, altered or stale previews refuse.
+
+Pipeline definitions remain deduplicated by content hash. Separate active, historical and queued revision references prevent restoring identical prompt content from rewinding revisions or relabeling an existing job. Legacy rows remain readable without rewriting their definitions. Generation events capture workspace, pipeline, map, guide and template references; delivery manifests expose those references through an explicit allowlist.
+
+Focused validation passed for configuration conflicts, immutable history, foreign assets, PNG alpha and resizing, copied-field isolation, actual operator attribution, signed preview invalidation and reused prompt hashes. The 317-test backend suite passed. The full phase gate, complete rehearsal, native bundle and production-build browser checks are still in progress; M4 is not accepted yet. M5 connects administration and onboarding screens, and M6 completes navigation and preview-state namespaces.
+
+The first full rehearsal under substantial concurrent host load passed 98 cases, failed the thousand-production snapshot and timed out the 30-second two-client generation case (6 existing skips). Both files then passed all 15 cases in isolation without increasing their limits: the generation case took 8.0 seconds; the thousand-production snapshot transferred 26,369,119 bytes versus M3's 26,368,048 bytes. Idle polling stayed 767 bytes; scoped saves stayed below 9 KB. Rehearsals now run at most two disposable database suites at once; the explicit application-concurrency workload remains separate in M8. Provider-policy assertions are evaluated after both intercepted requests settle, so a failed assertion cannot leave their synchronization barrier waiting indefinitely. A clean complete rerun is still required.
+
 ## Acceptance budgets established before implementation
 
 - Integrity: zero loss, ownership changes, duplicate pilot workspaces, unexpected policy resets or changes to historical render definitions. Compare stable rows and configuration fingerprints; explicitly exclude newly recorded activity and worker heartbeats from immutable-data comparisons.
@@ -112,4 +128,5 @@ Before a rollout, stop new commands for the affected workspace, settle or pause 
 | M1 | Accepted locally: lifecycle, membership persistence and compatibility checks |
 | M2 | Accepted locally: request authorization, context-bound transport and private image access |
 | M3 | Accepted locally with the recorded intermittent menu check; processing, integration and recovery gates passed |
-| M4–M9 | Not accepted |
+| M4 | Implementation and focused checks complete; full phase acceptance in progress |
+| M5–M9 | Not accepted |
