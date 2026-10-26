@@ -80,6 +80,13 @@ for(const width of [1440,390]){
       await expect(limit).toHaveValue('13');
       expect((await(await request.get(`/api/reporter/platform/workspaces/${id}/processing`,{headers})).json()).dailyLimit).toBe(14);
       await page.getByRole('button',{name:'Recarregar limite',exact:true}).click();await expect(limit).toHaveValue('14');
+      await page.getByRole('button',{name:'Arquivar workspace',exact:true}).click();
+      await page.getByRole('dialog',{name:'Arquivar workspace?',exact:true}).getByRole('button',{name:'Arquivar workspace',exact:true}).click();
+      await expect(page.getByRole('button',{name:'Reativar workspace',exact:true})).toBeVisible();
+      await page.getByRole('button',{name:'Reativar workspace',exact:true}).click();
+      await expect(page.getByRole('table',{name:'Equipe do workspace'}).getByText(`Editor ${suffix}`,{exact:true})).toBeVisible();
+      await expect(page.getByRole('textbox',{name:'Nome do veículo',exact:true})).toHaveValue(`Publication ${suffix}`);
+      await expect(limit).toHaveValue('14');
       await expectHeadingOutline(page);await expectNoHorizontalOverflow(page);
       await page.screenshot({path:`.reporter-local/multi-workspace/m5-client-${width}.png`,fullPage:true});
       const pilotAfter=await(await request.get('/api/reporter/pipeline',{headers})).json();
