@@ -1,5 +1,5 @@
 import type { PersonId } from '../domain/ids.ts';
-import type { InviteInput, InviteLinkRefusal, InvitePreview, IssuedInvite, PasswordRefusal, PlatformLogEntry, PlatformPerson, PlatformRefusal, PlatformWorkspace } from '../domain/platform.ts';
+import type { AccessStatus,InviteInput, InviteLinkRefusal, InvitePreview, IssuedInvite, PasswordRefusal, PlatformLogEntry, PlatformPerson, PlatformRefusal, PlatformWorkspace } from '../domain/platform.ts';
 import type { UsagePeriod, UsageReport } from '../domain/platform-usage.ts';
 import type { Result } from '../domain/result.ts';
 import type { Role } from '../domain/workspace.ts';
@@ -16,7 +16,10 @@ export type PlatformOperator = { id: PersonId; name: string; email: string; avat
 export type PlatformDirectory = {
   people: PlatformPerson[];
   workspaces: PlatformWorkspace[];
+  total?:number;offset?:number;workspaceTotal?:number;counts?:Record<AccessStatus|'all',number>;
 };
+export type PlatformFilter={workspaceId?:string;personId?:string};
+export type DirectorySearch=PlatformFilter&{search?:string;status?:AccessStatus;limit?:number;offset?:number};
 
 export type PlatformLogPage = { items: PlatformLogEntry[]; total: number };
 
@@ -29,10 +32,11 @@ export interface PlatformConsole {
   readonly mode: 'demo' | 'connected';
   /** The signed-in operator, or `restricted`. */
   operator(): Promise<PlatformResult<PlatformOperator>>;
-  /** Everyone, every workspace: the console's scale is tens of people, so no paging. */
-  directory(): Promise<PlatformResult<PlatformDirectory>>;
-  usage(period: UsagePeriod): Promise<PlatformResult<UsageReport>>;
-  log(limit: number): Promise<PlatformResult<PlatformLogPage>>;
+  /** Bounded global directory, with independent memberships in every returned person. */
+  directory(options?:DirectorySearch): Promise<PlatformResult<PlatformDirectory>>;
+  usage(period: UsagePeriod,filter?:PlatformFilter): Promise<PlatformResult<UsageReport>>;
+  log(limit: number,options?:PlatformFilter&{offset?:number}): Promise<PlatformResult<PlatformLogPage>>;
+  accountStatus?(personId:PersonId,suspended:boolean):Promise<PlatformResult<PlatformPerson>>;
   invite(input: InviteInput): Promise<PlatformResult<IssuedInvite>>;
   /** A fresh link for someone still `invited`; the previous one stops working. */
   renewInvite(personId: PersonId): Promise<PlatformResult<IssuedInvite>>;

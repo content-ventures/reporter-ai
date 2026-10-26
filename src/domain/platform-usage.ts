@@ -75,6 +75,8 @@ export type UsageFacts = {
   activeDays: (FactKey & { personId: PersonId })[];
   /** Everything stored now (not per period). */
   storageBytes: number;
+  /** Person filters exclude objects whose original owner was not recorded. */
+  storageIncomplete?:boolean;
 };
 
 export type UsageTotals = {
@@ -141,6 +143,7 @@ export type UsageReport = {
   people: PersonUsage[];
   workspaces: WorkspaceUsage[];
   storageBytes: number;
+  storageIncomplete?:boolean;
   pricesAsOf: string;
 };
 
@@ -271,6 +274,7 @@ export function buildUsageReport(facts: UsageFacts, period: UsagePeriod, now: Is
       .sort((a, b) => b.generations - a.generations || b.productions - a.productions || b.activeDays - a.activeDays),
     workspaces: [...workspaces.values()].map(({ people: active, ...entry }) => ({ ...entry, activePeople: active.size })),
     storageBytes: facts.storageBytes,
+    ...(facts.storageIncomplete?{storageIncomplete:true}:{}),
     pricesAsOf: PRICES_AS_OF,
   };
 }

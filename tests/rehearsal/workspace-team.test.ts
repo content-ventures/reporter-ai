@@ -81,3 +81,36 @@ test('workspace suspension leaves the other membership usable and exposes global
   const suspended=await api<{items:(WorkspaceMembership&{accountSuspended:boolean})[]}>('w/reporter-ai/team',undefined,ADMIN);
   const target=suspended.body.items.find(item=>item.personId===editorId)!;assert.equal(target.status,'active');assert.equal(target.accountSuspended,true);
 });
+
+test('directory paging and operational filters keep exact totals beyond the first page',async()=>{
+  await owner(`WITH added AS (INSERT INTO core.users(name,email,auth_subject,email_verified)
+    SELECT 'Paged member '||n,'page-'||n||'@team.test','paged-subject-'||n,true FROM generate_series(1,125) n RETURNING id),
+    tenant AS (INSERT INTO core.tenant_members(tenant_id,user_id,role,status)
+      SELECT p.tenant_id,a.id,'member','active' FROM added a CROSS JOIN public.portals p WHERE p.id=$1 RETURNING user_id)
+    INSERT INTO public.portal_members(tenant_id,portal_id,user_id,status)
+      SELECT p.tenant_id,p.id,t.user_id,'active' FROM tenant t CROSS JOIN public.portals p WHERE p.id=$1`,[second]);
+  type Page={people:PlatformPerson[];total:number;counts:{all:number};offset:number};
+  const first=await api<Page>(`platform/directory?workspaceId=${second}&search=Paged&limit=20`);
+  const next=await api<Page>(`platform/directory?workspaceId=${second}&search=Paged&limit=20&offset=20`);
+  assert.equal(first.status,200,JSON.stringify(first.body));assert.equal(first.body.total,125);assert.equal(first.body.counts.all,125);
+  assert.equal(first.body.people.length,20);assert.equal(next.body.people.length,20);assert.equal(next.body.offset,20);
+  assert.equal(new Set([...first.body.people,...next.body.people].map(person=>person.id)).size,40);
+  assert.ok(first.body.people.every(person=>person.memberships?.[0].workspace.id===second));
+  assert.equal((await api<Page>('platform/directory?limit=900')).body.people.length,100,'the server bounds a requested page');
+  const specific=await api<Page>(`platform/directory?personId=${editorId}`);assert.equal(specific.body.people.length,1);assert.equal(specific.body.people[0].memberships?.length,2);
+  for(const [portal,id,person] of [[second,'filter-second',editorId],['10000000-0000-0000-0000-000000000101','filter-pilot',operatorId]]){
+    await owner(`INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,seq)
+      VALUES($1,$2,jsonb_build_object('createdBy',$3::text,'createdAt',clock_timestamp()),1)`,[portal,id,person]);
+    await owner(`INSERT INTO public.reporter_ed_runs(portal_id,run_id,production_id,status,fold,seq)
+      VALUES($1,$2,$2,'completed',jsonb_build_object('run',jsonb_build_object('createdBy',$3::text,'model',jsonb_build_object('alias','unpriced-model'),
+      'usage',jsonb_build_object('inputTokens',100,'outputTokens',50))),1)`,[portal,id,person]);
+  }
+  type Usage={totals:{generations:number;inputTokens:number;unpriced:boolean};people:{personId:string}[];workspaces:{workspaceId:string}[];storageIncomplete?:boolean};
+  const usage=await api<Usage>(`platform/usage?period=7&workspaceId=${second}&personId=${editorId}`);
+  assert.equal(usage.status,200,JSON.stringify(usage.body));assert.equal(usage.body.totals.generations,1);assert.equal(usage.body.totals.inputTokens,100);
+  assert.equal(usage.body.totals.unpriced,true);assert.equal(usage.body.storageIncomplete,true);
+  assert.deepEqual(usage.body.people.map(item=>item.personId),[editorId]);assert.deepEqual(usage.body.workspaces.map(item=>item.workspaceId),[second]);
+  const noMatch=await api<Usage>(`platform/usage?period=7&workspaceId=${second}&personId=${operatorId}`);assert.equal(noMatch.body.totals.generations,0);
+  const log=await api<{items:{workspace:{id:string};actor?:{id:string}}[];total:number}>(`platform/log?workspaceId=${second}&personId=${operatorId}&limit=1`);
+  assert.equal(log.status,200);assert.equal(log.body.items.length,1);assert.ok(log.body.total>=1);assert.equal(log.body.items[0].workspace.id,second);
+});

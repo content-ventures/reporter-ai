@@ -207,4 +207,5 @@ export type PlatformLogEntry = {
   target: { id: PersonId; name: string; email: string } | null;
   /** Roles after a change or an invite. */
   roles?: Role[];
+  workspace?:PlatformWorkspace;
 };

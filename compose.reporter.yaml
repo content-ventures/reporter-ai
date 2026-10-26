@@ -50,6 +50,7 @@ services:
       - ./database/migrations/039-workspace-templates.sql:/docker-entrypoint-initdb.d/99-f-workspace-templates.sql:ro
       - ./database/migrations/040-configuration-copy.sql:/docker-entrypoint-initdb.d/99-g-configuration-copy.sql:ro
       - ./database/migrations/041-workspace-team.sql:/docker-entrypoint-initdb.d/99-h-workspace-team.sql:ro
+      - ./database/migrations/042-platform-directory.sql:/docker-entrypoint-initdb.d/99-i-platform-directory.sql:ro
     networks:
       - reporter
     healthcheck:
