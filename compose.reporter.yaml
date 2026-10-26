@@ -49,6 +49,7 @@ services:
       - ./database/migrations/038-workspace-automation-actors.sql:/docker-entrypoint-initdb.d/99-e-workspace-automation-actors.sql:ro
       - ./database/migrations/039-workspace-templates.sql:/docker-entrypoint-initdb.d/99-f-workspace-templates.sql:ro
       - ./database/migrations/040-configuration-copy.sql:/docker-entrypoint-initdb.d/99-g-configuration-copy.sql:ro
+      - ./database/migrations/041-workspace-team.sql:/docker-entrypoint-initdb.d/99-h-workspace-team.sql:ro
     networks:
       - reporter
     healthcheck:

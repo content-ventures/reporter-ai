@@ -16,6 +16,7 @@ import { avatarImage } from '../adapters/local/assets/avatar-image.ts';
 import { createHttpImageGenerator, createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
 import { createHttpNewsIntake } from '../adapters/http/news-intake.ts';
+import {createHttpWorkspaceAdministration} from '../adapters/http/workspace-management.ts';
 import { withServerAssets } from '../adapters/http/server-assets.ts';
 import { committedCommand } from '../adapters/http/committed-command.ts';
 import { createWorkspaceRefresh } from '../adapters/http/workspace-refresh.ts';
@@ -182,6 +183,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   };
   const unwatchAssets = assets.subscribe(change => { if (change.kind !== 'health') ports.store.transact(state => ok({ state,value: undefined,persist: 'none',scope: 'assets',productionIds: change.productionIds })); });
   return {
+    administration:createHttpWorkspaceAdministration({transport:http,ready:()=>ready,scope:()=>current.state.workspace.id}),
     mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest,http),generation: generation.service,render,export: exporter,assets,audit,
     visuals: createHttpVisualLibrary(http),
     imageGeneration: createHttpImageGenerator(http),

@@ -3,6 +3,7 @@ import { createDemoPlatform } from '../adapters/local/platform/index.ts';
 import { DEMO_OPERATOR_ID, DEMO_WORKSPACE, demoLog, demoPeople, demoUsageFacts } from '../fixtures/platform.ts';
 import type { InviteDesk, PlatformConsole } from '../ports/platform.ts';
 import type { RuntimeStorage } from './runtime.ts';
+import type {WorkspaceAdministration} from '../ports/workspace-management.ts';
 
 /**
  * Composition of the platform console, apart from the workspace runtime: the console never loads
@@ -10,7 +11,7 @@ import type { RuntimeStorage } from './runtime.ts';
  * history; every other build talks to the server.
  */
 
-export type PlatformRuntime = { console: PlatformConsole; invites: InviteDesk };
+export type PlatformRuntime = { console: PlatformConsole; invites: InviteDesk;workspaces?:WorkspaceAdministration;dispose?:()=>void };
 
 export type CreatePlatformOptions = {
   demo: boolean;

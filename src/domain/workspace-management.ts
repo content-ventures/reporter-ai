@@ -27,6 +27,7 @@ export type WorkspaceMembership = {
   revision: number;
   inviteExpiresAt?: IsoDateTime;
 };
+export type WorkspaceTeamMember=WorkspaceMembership&{name:string;email:string;avatarUrl?:string;accountSuspended:boolean};
 
 export type WorkspaceAccess = {
   workspace: ManagedWorkspace;
