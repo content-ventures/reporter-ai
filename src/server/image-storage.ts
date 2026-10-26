@@ -53,10 +53,10 @@ async function gateway(input: Parameters<typeof workerImageObject>[0]) {
 
 export async function imageFileUrl(fileKey: string, workspaceId?: string) { return (await gateway({ action: 'read',key: key(fileKey,workspaceId) })).url!; }
 export async function prepareImageFile(fileKey: string,mime: string) { return (await gateway({ action: 'prepare',key: key(fileKey),mime })).url!; }
-export async function writeImageFile(fileKey: string,bytes: Buffer,mime = 'image/jpeg') {
+export async function writeImageFile(fileKey: string,bytes: Buffer,mime = 'image/jpeg',workspaceId?:string) {
   if (!imageFileKey.test(fileKey)) throw new FlowError('UNSAFE_STORAGE',500);
   if (reporterDeploymentMode() === 'cloud') {
-    await gateway({ action: 'write',key: key(fileKey),mime,bytes: bytes.toString('base64') });return;
+    await gateway({ action: 'write',key: key(fileKey,workspaceId),mime,bytes: bytes.toString('base64') });return;
   }
   try { await writeFile(join(await storageRoot(),fileKey),bytes,{ mode: 0o600,flag: 'wx' }); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }

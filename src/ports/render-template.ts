@@ -178,6 +178,8 @@ export type LayoutRender = {
   counterColor?: string;
   /** Where and how the counter is set; `false` leaves it out. Default: bottom right, 28 px. */
   counter?: CounterStyle | false;
+  /** Workspace-owned brand block, captured with this immutable template revision. */
+  brand?: {label:string;logoId?:string;x:number;y:number;width:number;height:number;color:string;background:string;fontFamily:string;fontWeight:number;fontSize:number};
 };
 
 /** The visual data of one template: one `LayoutRender` per layout id. Its status lives in the library metadata. */
