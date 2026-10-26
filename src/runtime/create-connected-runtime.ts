@@ -89,9 +89,11 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     if(loaded.workspaceId!==current.state.workspace.id||disposed)return;
     const history=[...loaded.history,...(current.templateConfiguration?.history??[])].filter((entry,index,all)=>all.findIndex(other=>other.hash===entry.hash)===index).slice(0,200);
     current.templateConfiguration={...loaded,history};adoptTemplates(current.templateConfiguration);
+    ports.store.transact(state=>ok({state:{...state},value:undefined,persist:'none',scope:'external',productionIds:[]}));
   };
   const render:RenderService={
     get samplePhoto(){return drawing.samplePhoto;},templates:()=>drawing.templates(),capabilities:()=>drawing.capabilities(),
+    templateInfo:id=>drawing.templateInfo?.(id),retainedTemplateIds:()=>drawing.retainedTemplateIds?.()??drawing.templates().map(template=>template.id),
     measure:body=>drawing.measure(body),sample:id=>drawing.sample(id),switchTemplate:(body,id)=>drawing.switchTemplate(body,id),
     render:async request=>{await ensureTemplate(request.body.templateId);return drawing.render(request);},
     thumbnail:async request=>{await ensureTemplate(request.templateId);return drawing.thumbnail(request);},

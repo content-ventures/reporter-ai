@@ -84,7 +84,8 @@ const changesProductions = (notice: ChangeNotice): boolean => isGlobal(notice) |
 export function templateCatalogQuery():RuntimeQuery<RenderCatalog>{
   return{key:'template-catalog',affectedBy:isGlobal,fetch:async runtime=>{
     await runtime.ready;
-    return ok({templates:runtime.render.templates(),...(runtime.render.samplePhoto?{samplePhoto:runtime.render.samplePhoto}:{})});
+    const templates=runtime.render.templates();
+    return ok({templates,retainedIds:runtime.render.retainedTemplateIds?.()??templates.map(template=>template.id),...(runtime.render.samplePhoto?{samplePhoto:runtime.render.samplePhoto}:{})});
   }};
 }
 

@@ -123,7 +123,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
 
   // ── Template and fit (approximate, measured by the render service) ──────────────────
   const templates = useTemplateCatalog().data?.templates??[];
-  const template = templates.find((entry) => entry.id === body?.templateId);
+  const template = runtime?.render.templateInfo?.(body?.templateId??'')??templates.find((entry) => entry.id === body?.templateId);
   // Measured on a deferred copy: typing never waits for the renderer.
   const measuredBody = useDeferredValue(body);
   const fits = useMemo<SlotFit[]>(() => {

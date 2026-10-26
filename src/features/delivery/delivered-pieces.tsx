@@ -126,7 +126,7 @@ function OpenSuggestions({ slots }: { slots: readonly ImageSlotUse[] }) {
 
 function CarouselLine({ item, pkg, slideRatio }: { item: DeliveryItemView; pkg: PackageController; slideRatio: MediaRatio }) {
   const { runtime } = useRuntime();
-  const template = item.templateId ? runtime?.render.templates().find((entry) => entry.id === item.templateId) : undefined;
+  const template = item.templateId ? runtime?.render.templateInfo?.(item.templateId)??runtime?.render.templates().find((entry) => entry.id === item.templateId) : undefined;
   const slides = (pkg.plan?.files ?? [])
     .filter((file) => file.kind === 'carousel' && file.format === 'png' && file.available && file.versionId === item.version.versionId)
     .sort((a, b) => (a.slideIndex ?? 0) - (b.slideIndex ?? 0));

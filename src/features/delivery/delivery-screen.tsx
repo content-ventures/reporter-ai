@@ -215,8 +215,9 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
   const desk = useDossier(productionId);
 
   const templates = runtime?.render.templates() ?? [];
-  const templateName = (id: string) => templates.find((template) => template.id === id)?.name;
-  const carouselTemplate = templates.find((template) => view?.items.some((item) => item.templateId === template.id));
+  const templateInfo=(id:string)=>runtime?.render.templateInfo?.(id)??templates.find(template=>template.id===id);
+  const templateName = (id: string) => templateInfo(id)?.name;
+  const carouselTemplate = view?.items.flatMap(item=>item.templateId?[templateInfo(item.templateId)]:[]).find(Boolean);
   const slideRatio: MediaRatio | undefined = carouselTemplate ? `${carouselTemplate.width}/${carouselTemplate.height}` : undefined;
   const alreadyDelivered = view?.latestDelivery?.status === 'completed';
 
