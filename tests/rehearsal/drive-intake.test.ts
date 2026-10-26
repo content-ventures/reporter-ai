@@ -322,7 +322,17 @@ test('client bindings receive the same Drive file independently and rotate witho
   const rotated=await adminCall<IssuedIntegration>(`platform/workspaces/${second}/integrations`,{ownerId:actor,enabled:true,revision:other.body.revision,rotate:true});
   assert.equal((await invoke(other.body)).status,401);assert.equal((await invoke(rotated.body)).body.transcriptId,b.body.transcriptId);
   assert.equal((await owner<{count:number}>('SELECT count(*)::int AS count FROM public.reporter_transcripts WHERE portal_id=$1',[second]))[0].count,1,'rotation retains the source and transcript');
-  assert.equal((await adminCall(`platform/workspaces/${second}/integrations`,{ownerId:actor,enabled:false,revision:rotated.body.revision})).status,200);
+  await adminCall('platform/invites',{name:COLLEAGUE.name,email:COLLEAGUE.email,role:'editor',workspaceId:second});
+  const [{token_hash:colleagueHash}]=await owner<{token_hash:string}>('SELECT token_hash FROM core.access_invites WHERE portal_id=$1 AND state=\'open\'',[second]);
+  await owner('SELECT public.reporter_invite_accept($1,$2)',[colleagueHash,COLLEAGUE.subject]);
+  const [{id:newOwner}]=await owner<{id:string}>('SELECT id FROM core.users WHERE email=$1',[COLLEAGUE.email]);
+  const changed=await adminCall<IssuedIntegration>(`platform/workspaces/${second}/integrations`,{ownerId:newOwner,enabled:true,revision:rotated.body.revision});
+  assert.equal(changed.status,200);assert.equal((await invoke(rotated.body)).body.transcriptId,b.body.transcriptId,'changing the configured owner retains earlier files');
+  const next=await invoke(rotated.body,{fileId:OPUS_ID,name:'zap.opus',size:opus.length});await settle();
+  assert.equal((await invoke(rotated.body,{fileId:OPUS_ID,name:'zap.opus',size:opus.length})).body.stage,'ready');
+  assert.equal((await owner<{created_by:string}>('SELECT created_by FROM public.reporter_transcripts WHERE id=$1',[next.body.transcriptId]))[0].created_by,newOwner,'new files capture the new owner');
+  assert.equal((await owner<{created_by:string}>('SELECT created_by FROM public.reporter_transcripts WHERE id=$1',[b.body.transcriptId]))[0].created_by,actor,'earlier provenance remains immutable');
+  assert.equal((await adminCall(`platform/workspaces/${second}/integrations`,{ownerId:newOwner,enabled:false,revision:changed.body.revision})).status,200);
   assert.equal((await invoke(rotated.body)).status,401);assert.equal((await sync()).body.transcriptId,a.body.transcriptId);
   const pilotRotation=await adminCall<IssuedIntegration>(`platform/workspaces/${PORTAL}/integrations`,{ownerId:actor,enabled:true,revision:pilot.body.revision,rotate:true});
   assert.equal((await sync()).status,401,'the old environment secret cannot bypass the adopted binding after rotation');

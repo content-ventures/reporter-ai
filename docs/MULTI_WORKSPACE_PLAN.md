@@ -125,14 +125,14 @@ Main implementation areas: `src/server/database.ts`, `request-context.ts`, route
 
 The ownership of work must remain stable after enqueue, independently of which workspace a person currently has open.
 
-- [ ] Record tenant, workspace, real initiating actor, input versions, configuration snapshot and retry identity on every queued task. Claims and continuations carry that context through every transaction and callback.
-- [ ] Update transcription, generation, revisions, image generation, background illustration, fact checking, translation, feed reading and complementary web search. A missing job context stops processing rather than selecting a default client.
-- [ ] Keep lease fencing, cancellation and idempotent recovery scoped to the job's workspace. Retrying after a restart must not reassign a job, double accept its result or lose already recorded provider usage.
-- [ ] Add bounded scheduling across active workspaces so one busy client cannot consume every available claim. Carry provider rate limits, per workspace usage ceilings and visible queued or refused states through the scheduling contract.
-- [ ] Move Drive intake ownership and authorization to workspace specific integration bindings. The credential determines the destination server side; a posted workspace ID alone cannot redirect material. Deduplication includes workspace and remote file identity.
-- [ ] Bind existing RSS, RSS.app and web search configurations to their workspace. Keep provider secrets server owned; the operator configures or rotates supported client bindings through the authorized integration flow.
-- [ ] Define behavior for inactive workspaces and suspended initiators. Stop new commands immediately; existing workspace owned jobs retain their recorded actor, use only the workspace's active processing policy, and cannot bypass human approval.
-- [ ] Record usage, failures and readiness by workspace and initiating actor. Surface failures in the workspace that owns the job. Redact credentials and source content from operational logs.
+- [x] Record tenant, workspace, real initiating actor, input versions, configuration snapshot and retry identity on every queued task. Claims and continuations carry that context through every transaction and callback.
+- [x] Update transcription, generation, revisions, image generation, background illustration, fact checking, translation, feed reading and complementary web search. A missing job context stops processing rather than selecting a default client.
+- [x] Keep lease fencing, cancellation and idempotent recovery scoped to the job's workspace. Retrying after a restart must not reassign a job, double accept its result or lose already recorded provider usage.
+- [x] Add bounded scheduling across active workspaces so one busy client cannot consume every available claim. Carry provider rate limits, per workspace usage ceilings and visible queued or refused states through the scheduling contract.
+- [x] Move Drive intake ownership and authorization to workspace specific integration bindings. The credential determines the destination server side; a posted workspace ID alone cannot redirect material. Deduplication includes workspace and remote file identity.
+- [x] Bind existing RSS, RSS.app and web search configurations to their workspace. Keep provider secrets server owned; the operator configures or rotates supported client bindings through the authorized integration flow.
+- [x] Define behavior for inactive workspaces and suspended initiators. Stop new commands immediately; existing workspace owned jobs retain their recorded actor, use only the workspace's active processing policy, and cannot bypass human approval.
+- [x] Record usage, failures and readiness by workspace and initiating actor. Surface failures in the workspace that owns the job. Redact credentials and source content from operational logs.
 
 Exit gate: run at least one complete job for each of two workspaces concurrently, switch contexts, restart a worker and retry a failed task. Each result, private file, usage record and integration intake stays with its originating workspace.
 
