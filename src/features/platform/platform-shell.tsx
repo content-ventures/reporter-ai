@@ -3,9 +3,9 @@
 import { useCallback, useMemo, type MouseEvent, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, Badge, Sidebar, SidebarAccount, ThemeV3, TopBar, type NavGroup, type NavItem } from '@content-ventures/design-system/v3';
-import { ArrowUpRight, ChartNoAxesColumn, LayoutDashboard, LogOut, ScrollText, Users } from '@content-ventures/design-system/v3/icons';
+import { ArrowUpRight, ChartNoAxesColumn, LayoutDashboard, LogOut, ScrollText, Users,Building2 } from '@content-ventures/design-system/v3/icons';
 import { authClient } from '@/lib/auth-client';
-import { usePlatform, usePlatformDirectory, usePlatformOperator } from '@/state';
+import { usePlatform, usePlatformDirectory, usePlatformOperator,usePlatformAdministration,useAdministrationQuery } from '@/state';
 import { ReporterBrand } from '@/ui/reporter-brand';
 import { useClientLinks } from '@/ui/shell/client-links';
 import { SIDEBAR_COLLAPSED_KEY, usePersistentFlag } from '@/ui/shell/preference';
@@ -13,6 +13,7 @@ import { LOG_HREF, PEOPLE_HREF, PLATFORM_HREF, USAGE_HREF } from './format';
 
 const PAGES = [
   { id: 'overview', label: 'Visão geral', icon: LayoutDashboard, href: PLATFORM_HREF },
+  { id:'workspaces',label:'Workspaces',icon:Building2,href:'/platform/workspaces'},
   { id: 'people', label: 'Pessoas', icon: Users, href: PEOPLE_HREF },
   { id: 'usage', label: 'Uso', icon: ChartNoAxesColumn, href: USAGE_HREF },
   { id: 'log', label: 'Registro', icon: ScrollText, href: LOG_HREF },
@@ -48,9 +49,11 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   useClientLinks();
   const [collapsed, setCollapsed] = usePersistentFlag(SIDEBAR_COLLAPSED_KEY);
-  const people = usePlatformDirectory().data?.people;
-  const waiting = people?.filter((person) => person.status === 'pending').length ?? 0;
+  const directory = usePlatformDirectory({status:'pending',limit:1}).data;
+  const waiting = directory?.counts?.pending??directory?.people.filter(person=>person.status==='pending').length??0;
   const page = activePage(pathname);
+  const workspaceId=/^\/platform\/workspaces\/([^/]+)$/.exec(pathname)?.[1],administration=usePlatformAdministration();
+  const workspace=useAdministrationQuery(workspaceId?administration:undefined,`trail:${workspaceId}`,admin=>admin.get(workspaceId!));
 
   const groups = useMemo<NavGroup[]>(() => [{
     id: 'platform',
@@ -69,7 +72,8 @@ export function PlatformShell({ children }: { children: ReactNode }) {
     router.push(href);
   }, [router]);
 
-  const crumbs = page.id === 'overview' ? [{ label: 'Plataforma' }] : [{ label: 'Plataforma', href: PLATFORM_HREF }, { label: page.label }];
+  const crumbs = page.id === 'overview' ? [{ label: 'Plataforma' }] : [{ label: 'Plataforma', href: PLATFORM_HREF },
+    { label: page.label,...(workspaceId?{href:page.href}:{}) },...(workspaceId?[{label:workspace.data?.name??'Workspace'}]:[])];
 
   return (
     <AppShell
