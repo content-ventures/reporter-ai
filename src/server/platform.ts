@@ -205,16 +205,24 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
       if(head==='workspaces'&&path.length===3&&action==='templates')
         return reply(await platform(client=>readWorkspaceTemplates(client,personId(id))));
       if (path.length === 1 && head === 'operator') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_operator() AS value')));
-      if (path.length === 1 && head === 'directory') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_directory() AS value')));
+      if (path.length === 1 && head === 'directory') {
+        const query=new URL(request.url).searchParams;
+        return reply(await platform(client=>call(client,'SELECT public.reporter_platform_directory_page($1,$2,$3,$4,$5,$6) AS value',[
+          (query.get('search')??'').slice(0,100),query.get('status')||null,query.get('workspaceId')?personId(query.get('workspaceId')!):null,
+          query.get('personId')?.slice(0,300)||null,Math.min(100,Math.max(1,Number(query.get('limit'))||50)),Math.min(1000000,Math.max(0,Number(query.get('offset'))||0))])));
+      }
       if (path.length === 1 && head === 'log') {
-        const limit = Math.min(200, Math.max(1, Number(new URL(request.url).searchParams.get('limit')) || 50));
-        return reply(await platform(client => call(client, 'SELECT public.reporter_platform_log($1) AS value', [limit])));
+        const query=new URL(request.url).searchParams;
+        const limit = Math.min(200, Math.max(1, Number(query.get('limit')) || 50));
+        return reply(await platform(client => call(client, 'SELECT public.reporter_platform_log_page($1,$2,$3,$4) AS value',
+          [limit,Math.min(1000000,Math.max(0,Number(query.get('offset'))||0)),query.get('workspaceId')?personId(query.get('workspaceId')!):null,query.get('personId')?personId(query.get('personId')!):null])));
       }
       if (path.length === 1 && head === 'usage') {
-        const asked = Number(new URL(request.url).searchParams.get('period'));
+        const query=new URL(request.url).searchParams,asked = Number(query.get('period'));
         const period: UsagePeriod = (USAGE_PERIODS as readonly number[]).includes(asked) ? asked as UsagePeriod : DEFAULT_USAGE_PERIOD;
         const now = new Date().toISOString();
-        const facts = await platform(client => call<UsageFacts>(client, 'SELECT public.reporter_platform_usage($1::date) AS value', [usageWindow(period, now).previousFrom]));
+        const facts = await platform(client => call<UsageFacts>(client, 'SELECT public.reporter_platform_usage($1::date,$2::uuid,$3::uuid) AS value',
+          [usageWindow(period, now).previousFrom,query.get('workspaceId')?personId(query.get('workspaceId')!):null,query.get('personId')?personId(query.get('personId')!):null]));
         return reply(buildUsageReport(facts, period, now));
       }
       throw platformRefusal('not_found');

@@ -4,7 +4,7 @@ import { createContext, use, useEffect, useState, type ReactNode } from 'react';
 import type { PlatformRefusal } from '../domain/platform.ts';
 import type { UsagePeriod, UsageReport } from '../domain/platform-usage.ts';
 import type { Result } from '../domain/result.ts';
-import type { InviteDesk, PlatformConsole, PlatformDirectory, PlatformLogPage, PlatformOperator } from '../ports/platform.ts';
+import type { DirectorySearch,PlatformFilter,InviteDesk, PlatformConsole, PlatformDirectory, PlatformLogPage, PlatformOperator } from '../ports/platform.ts';
 import { createPlatformRuntime, type PlatformRuntime } from '../runtime/create-platform.ts';
 
 /**
@@ -61,7 +61,8 @@ function usePlatformQuery<T>(key: string, load: (platform: PlatformConsole) => P
   const platform = usePlatform();
   const [version, setVersion] = useState(0);
   const [answer, setAnswer] = useState<Answer<T> & { version: number }>();
-  const [kept, setKept] = useState<T>();
+  const [keptAnswer, setKept] = useState<{key:string;value:T}>();
+  const kept=keptAnswer?.key===key?keptAnswer.value:undefined;
 
   useEffect(() => platform.subscribe(() => setVersion((current) => current + 1)), [platform]);
 
@@ -70,7 +71,7 @@ function usePlatformQuery<T>(key: string, load: (platform: PlatformConsole) => P
     void load(platform).then((result) => {
       if (!live) return;
       setAnswer({ key, result, version });
-      if (result.ok) setKept(result.value);
+      if (result.ok) setKept({key,value:result.value});
     });
     return () => { live = false; };
     // `load` is recreated on every render; `key` names what it reads.
@@ -88,14 +89,15 @@ export function usePlatformOperator(): PlatformQuery<PlatformOperator> {
   return usePlatformQuery('operator', (platform) => platform.operator());
 }
 
-export function usePlatformDirectory(): PlatformQuery<PlatformDirectory> {
-  return usePlatformQuery('directory', (platform) => platform.directory());
+export function usePlatformDirectory(options?:DirectorySearch): PlatformQuery<PlatformDirectory> {
+  return usePlatformQuery(`directory:${JSON.stringify(options)}`, (platform) => platform.directory(options));
 }
 
-export function usePlatformUsage(period: UsagePeriod): PlatformQuery<UsageReport> {
-  return usePlatformQuery(`usage:${period}`, (platform) => platform.usage(period));
+export function usePlatformUsage(period: UsagePeriod,filter?:PlatformFilter): PlatformQuery<UsageReport> {
+  return usePlatformQuery(`usage:${period}:${JSON.stringify(filter)}`, (platform) => platform.usage(period,filter));
 }
 
-export function usePlatformLog(limit: number): PlatformQuery<PlatformLogPage> {
-  return usePlatformQuery(`log:${limit}`, (platform) => platform.log(limit));
+export function usePlatformLog(limit: number,options?:PlatformFilter&{offset?:number}): PlatformQuery<PlatformLogPage> {
+  return usePlatformQuery(`log:${limit}:${JSON.stringify(options)}`, (platform) => platform.log(limit,options));
 }
+export function usePlatformAdministration(){return usePlatformRuntime().workspaces;}

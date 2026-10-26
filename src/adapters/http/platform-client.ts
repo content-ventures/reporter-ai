@@ -60,13 +60,15 @@ export function createHttpPlatform() {
     return result;
   }
   const person = (id: string) => `people/${encodeURIComponent(id)}`;
+  const query=(options:object={})=>new URLSearchParams(Object.entries(options).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)])).toString();
 
   const platform: PlatformConsole = {
     mode: 'connected',
     operator: () => platformCall<PlatformOperator>('operator'),
-    directory: () => platformCall<PlatformDirectory>('directory'),
-    usage: (period) => platformCall<UsageReport>(`usage?period=${period}`),
-    log: (limit) => platformCall<PlatformLogPage>(`log?limit=${limit}`),
+    directory: options => platformCall<PlatformDirectory>(`directory?${query(options)}`),
+    usage: (period,filter) => platformCall<UsageReport>(`usage?${query({period,...filter})}`),
+    log: (limit,options) => platformCall<PlatformLogPage>(`log?${query({limit,...options})}`),
+    accountStatus:(id,suspended)=>write<PlatformPerson>(`${person(id)}/account-status`,{suspended}),
     invite: (input) => write<IssuedInvite>('invites', input),
     renewInvite: (id) => write<IssuedInvite>(`${person(id)}/renew-invite`, {}),
     approve: (id, roles) => write<PlatformPerson>(`${person(id)}/approve`, { roles }),
