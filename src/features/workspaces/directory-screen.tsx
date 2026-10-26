@@ -35,7 +35,7 @@ function SelectionView(){
   const empty=<EmptyState title={search?'Nenhum workspace encontrado':'Nenhum workspace liberado'} actions={search?<Button onClick={()=>{setSearch('');setPage(1);}}>Limpar busca</Button>:<ButtonLink href="/auth/pending">Consultar meu acesso</ButtonLink>}/>;
   return<AppShell layout="auto" collapsed={collapsed} sidebar={<Sidebar label="Menu de workspaces" product={<ReporterBrand endorsed/>} groups={[]}
     utilities={data?.administrative?[{id:'platform',label:'Plataforma',icon:Building2,href:'/platform'}]:[]}
-    account={account?<SidebarAccount name={account.name} src={account.avatarUrl} detail="Sua conta" sections={[{items:[{label:'Sair',icon:LogOut,onSelect:()=>{router.push('/auth/sign-out');}}]}]}/>:undefined}/>}
+    account={account?<SidebarAccount name={account.name} src={account.avatarUrl} detail="Sua conta" sections={[{items:[{label:'Sair',icon:LogOut,onSelect:()=>{router.push('/auth/sign-out');}}]}]}/>:<ButtonLink href="/auth/sign-out">Sair</ButtonLink>}/>}
     topbar={<TopBar breadcrumb={[{label:'Workspaces'}]} onToggleSidebar={()=>setCollapsed(!collapsed)}/> }>
     <PageHeader title="Escolher workspace" actions={<Button disabled={query.loading} onClick={query.retry}>Atualizar acessos</Button>}/>
     <FilterBar filters={false} search={<SearchField label="Buscar workspace" value={search} placeholder="Cliente ou endereço" onValueChange={value=>{setSearch(value);setPage(1);}}/>}/>
