@@ -44,7 +44,7 @@ for(const width of [1440,390]){
           const dialog=page.getByRole('dialog',{name:'Convidar pessoa',exact:true});
           await dialog.getByRole('textbox',{name:'Nome',exact:true}).fill(`${label} ${suffix}`);
           await dialog.getByRole('textbox',{name:'E-mail',exact:true}).fill(`${label.toLowerCase()}-${suffix}@acceptance.test`);
-          if(role!=='Editor'){await dialog.getByRole('combobox',{name:'Função neste workspace',exact:true}).click();await page.getByRole('option',{name:role,exact:true}).click();}
+          if(role!=='Editor'){await dialog.getByRole('combobox',{name:'Função neste workspace',exact:true}).click();await page.getByRole('option',{name:new RegExp(`^${role}\\b`)}).click();}
           await dialog.getByRole('button',{name:'Criar convite',exact:true}).click();
           const issued=page.getByRole('dialog',{name:'Convite criado',exact:true});
           const link=await issued.getByRole('textbox',{name:'Link de acesso',exact:true}).inputValue();
@@ -55,7 +55,7 @@ for(const width of [1440,390]){
           await acceptance.getByRole('button',{name:'Criar senha e entrar',exact:true}).click();
           await expect(acceptance).toHaveURL(new RegExp(`${new URL(baseURL!).origin}/$`));await acceptance.close();
         }
-      }finally{await inviteContext.close();}
+      }finally{await inviteContext.close().catch(()=>{});}
       await page.getByRole('button',{name:'Reavaliar configuração',exact:true}).click();
       await expect(page.getByRole('button',{name:'Ativar workspace',exact:true})).toBeEnabled();
       await page.getByRole('button',{name:'Ativar workspace',exact:true}).click();

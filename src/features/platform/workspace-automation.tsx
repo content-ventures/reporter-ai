@@ -10,20 +10,22 @@ export function WorkspaceAutomation({port,workspaceId}:{port:WorkspaceAdministra
   const processing=useAdministrationQuery(port,`processing:${workspaceId}`,admin=>admin.processing(workspaceId));
   const integrations=useAdministrationQuery(port,`integrations:${workspaceId}`,admin=>admin.integrations(workspaceId));
   return<>
-    {processing.data?<ProcessingForm key={workspaceId} port={port} initial={processing.data}/>:<Section title="Processamento" titleAs="h2" variant="panel">{processing.error?<Alert tone="danger" title={processing.error.message} action={<Button onClick={processing.retry}>Tentar novamente</Button>}/>:<SkeletonText lines={2}/>}</Section>}
+    {processing.data?<ProcessingForm key={workspaceId} port={port} initial={processing.data} refreshing={processing.refreshing}/>:<Section title="Processamento" titleAs="h2" variant="panel">{processing.error?<Alert tone="danger" title={processing.error.message} action={<Button onClick={processing.retry}>Tentar novamente</Button>}/>:<SkeletonText lines={2}/>}</Section>}
     {integrations.data?<DriveForm key={workspaceId} port={port} workspaceId={workspaceId} initial={integrations.data[0]}/>:<Section title="Entrada pelo Drive" titleAs="h2" variant="panel">{integrations.error?<Alert tone="danger" title={integrations.error.message} action={<Button onClick={integrations.retry}>Tentar novamente</Button>}/>:<SkeletonText lines={2}/>}</Section>}
   </>;
 }
-function ProcessingForm({port,initial}:{port:WorkspaceAdministration;initial:WorkspaceProcessing}){
+function ProcessingForm({port,initial,refreshing}:{port:WorkspaceAdministration;initial:WorkspaceProcessing;refreshing:boolean}){
   const [base,setBase]=useState(initial),[limit,setLimit]=useState(initial.dailyLimit===null?'':String(initial.dailyLimit)),[busy,setBusy]=useState(false),[message,setMessage]=useState<{error:boolean;text:string}>();
+  const [received,setReceived]=useState(initial.revision),disabled=busy||refreshing;
+  if(initial.revision!==received){setReceived(initial.revision);if(limit===(base.dailyLimit===null?'':String(base.dailyLimit))){setBase(initial);setLimit(initial.dailyLimit===null?'':String(initial.dailyLimit));}}
   async function save(){setBusy(true);const saved=await port.setProcessing({workspaceId:base.workspaceId,revision:base.revision,dailyLimit:limit===''?null:Number(limit)});setBusy(false);
     if(saved.ok)setBase(saved.value);setMessage({error:!saved.ok,text:saved.ok?'Limite atualizado.':saved.refusal.message});}
   async function reload(){setBusy(true);const latest=await port.processing(base.workspaceId);setBusy(false);if(latest.ok){setBase(latest.value);setLimit(latest.value.dailyLimit===null?'':String(latest.value.dailyLimit));setMessage(undefined);}else setMessage({error:true,text:latest.refusal.message});}
   return<Section title="Processamento automático" titleAs="h2" variant="panel" action={<Button size="sm" disabled={busy} onClick={()=>void reload()}>Recarregar limite</Button>}>
     <PageStack><DescriptionList items={[{label:'Operações usadas hoje · UTC',value:initial.usedToday},{label:'Situação',value:initial.state==='limited'?'Limite atingido':'Disponível'}]}/>
-      <Field label="Limite diário de operações" hint="Vazio significa sem teto por cliente. Este limite não representa cobrança dos provedores.">{props=><Input {...inputProps(props)} type="number" min={1} max={10000} value={limit} onChange={event=>setLimit(event.target.value)} disabled={busy}/>}</Field>
+      <Field label="Limite diário de operações" hint="Vazio significa sem teto por cliente. Este limite não representa cobrança dos provedores.">{props=><Input {...inputProps(props)} type="number" min={1} max={10000} value={limit} onChange={event=>setLimit(event.target.value)} disabled={disabled}/>}</Field>
       {message?<Alert tone={message.error?'danger':'success'} title={message.text}/>:null}
-      <Button variant="primary" loading={busy} disabled={limit!==''&&(!Number.isInteger(Number(limit))||Number(limit)<1||Number(limit)>10000)} onClick={()=>void save()}>Salvar limite</Button>
+      <Button variant="primary" loading={busy} disabled={disabled||limit!==''&&(!Number.isInteger(Number(limit))||Number(limit)<1||Number(limit)>10000)} onClick={()=>void save()}>Salvar limite</Button>
     </PageStack>
   </Section>;
 }
