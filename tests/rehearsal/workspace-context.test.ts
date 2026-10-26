@@ -141,6 +141,16 @@ test('the directory binds the real account and separates management visibility f
   assert.equal(archived.body.items.find(item=>item.workspace.id===created.body.id)?.enterable,false);
 });
 
+test('entry handles one membership, none and an unprovisioned verified account without choosing the pilot',async()=>{
+  const one=await api<import('../../src/ports/workspace-management.ts').WorkspaceAccessPage>('workspaces',undefined,TEAMMATE);
+  assert.equal(one.status,200);assert.equal(one.body.total,1);assert.equal(one.body.items[0].workspace.id,PILOT);assert.equal(one.body.items[0].enterable,true);
+  const none=await api<import('../../src/ports/workspace-management.ts').WorkspaceAccessPage>('workspaces',undefined,OUTSIDER);
+  assert.equal(none.status,200);assert.equal(none.body.total,0);assert.ok(none.body.account?.id);
+  const blocked=await api('workspace',undefined,OUTSIDER);assert.equal(blocked.status,409);assert.equal(blocked.body.error,'WORKSPACE_SELECTION_REQUIRED');
+  const pending=await api<import('../../src/ports/workspace-management.ts').WorkspaceAccessPage>('workspaces',undefined,{...OUTSIDER,subject:'unprovisioned',email:'pending@context.test'});
+  assert.equal(pending.status,200);assert.equal(pending.body.total,0);assert.equal(pending.body.administrative,false);
+});
+
 test('identical retry keys remain scoped; role carryover and foreign production writes are refused',async()=>{
   const requestId=randomUUID();
   const command={method:'createBlank',args:[{title:'Independent draft',brief:{size:'standard',sections:3}}],requestId};

@@ -7,7 +7,7 @@ for(const width of [1440,390]){
     test.use({viewport:{width,height:1000},...(width===390?{isMobile:true,hasTouch:true}:{})});
     test('keeps copied links, pending edits, two tabs and the last authorized destination in their client',async({page,context,request,baseURL})=>{
       test.skip(process.env.REPORTER_WORKSPACES_MODE!=='all','requires the isolated workspace rollout');
-      const suffix=randomUUID().slice(0,8),headers={origin:baseURL!,'x-reporter-client':'local'},errors=watchErrors(page);
+      const suffix=randomUUID().slice(0,8),headers={origin:baseURL!,'x-reporter-client':'local'},errors=watchErrors(page,[/404.*\/w\//]);
       const clients=[];
       for(const label of ['Alpha','Beta']){
         const created=await request.post('/api/reporter/platform/workspaces',{headers,data:{name:`000 Navigation ${label} ${suffix}`,slug:`nav-${label.toLowerCase()}-${suffix}`}});
@@ -53,7 +53,16 @@ for(const width of [1440,390]){
       await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/$`));
       await page.goto('/');await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/$`));
       await menu();await page.screenshot({path:`.reporter-local/multi-workspace/m6-selector-${width}.png`,fullPage:true});await page.keyboard.press('Escape');
-      await expectNoHorizontalOverflow(page);await other.close();expect(errors).toEqual([]);
+      await expectNoHorizontalOverflow(page);
+      const latest=await(await request.get(`/api/reporter/platform/workspaces/${b.id}`,{headers})).json();
+      const archived=await request.post(`/api/reporter/platform/workspaces/${b.id}/update`,{headers,data:{name:b.name,status:'archived',revision:latest.revision}});expect(archived.ok()).toBe(true);
+      const paths:string[]=[];page.on('request',request=>{if(request.url().includes('/api/reporter/'))paths.push(new URL(request.url()).pathname);});
+      await page.goto(`/w/${b.slug}/`);await expect(page.getByRole('heading',{name:'Escolher workspace',exact:true})).toBeVisible();
+      await page.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(b.name);
+      await expect(page.getByRole('link',{name:new RegExp(b.name)})).toHaveAttribute('href',`/platform/workspaces/${b.id}`);
+      await page.goto(`/w/missing-${suffix}/productions`);await expect(page.getByRole('heading',{name:'Escolher workspace',exact:true})).toBeVisible();
+      expect(paths).not.toContain('/api/reporter/workspace');expect(paths.some(path=>path.startsWith('/api/reporter/w/reporter-ai/'))).toBe(false);
+      await other.close();expect(errors).toEqual([]);
     });
   });
 }
