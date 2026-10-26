@@ -22,6 +22,7 @@ export {
   useSession,
   useSource,
   useVersion,
+  useTemplateCatalog,
 } from './use-queries.ts';
 export { useRun, useRunListener, useRunOutcomes } from './use-runs.ts';
 export { useAudit, useAuditControls, useAuditEvent } from './use-audit.ts';

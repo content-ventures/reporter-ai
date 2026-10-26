@@ -21,7 +21,7 @@ import { Sparkles } from '@content-ventures/design-system/v3/icons';
 import { blockText, formatSize, plannedLayouts, SIMULATED_MODEL, type CarouselBody, type RunId, type TemplateId } from '@/domain';
 import type { DraftView, PieceView, ProductionDetail, RunView, TemplateInfo } from '@/ports';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
-import { useCan, useCommands, useRuntime, useVersion } from '@/state';
+import { useCan, useCommands, useRuntime, useVersion,useTemplateCatalog } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
 import { rememberTemplate, useLastTemplate } from '@/features/library/last-template';
 import { featuredNote, initialTemplate, libraryFilter, type LibraryFilter } from '@/features/library/library-model';
@@ -35,6 +35,7 @@ import { articleTopic, coverKicker, mainOrganization } from '@/domain/text/kicke
 import { fitTitle } from '@/domain/text/slide-text';
 import { useSlideRenders } from './use-slide-renders';
 import { notifyRefusal } from '@/ui/permission-dialog';
+const NO_TEMPLATES:readonly TemplateInfo[]=[];
 
 /**
  * Start of the carousel (PLAN §3.7, reference 3 "creation page with live preview"): the model
@@ -83,7 +84,7 @@ export function CarouselStart({ production, article, carousel, draft, lastRun, o
   const commands = useCommands();
   const { runtime } = useRuntime();
   const phone = usePhone();
-  const templates = useMemo(() => runtime?.render.templates() ?? [], [runtime]);
+  const templates = useTemplateCatalog().data?.templates??NO_TEMPLATES;
   const lastUsed = useLastTemplate();
   const from = production.guards.derive.carousel?.from ?? article.approvedVersion?.ref;
   const fromVersion = useVersion(from?.versionId);

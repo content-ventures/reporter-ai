@@ -14,3 +14,8 @@ export function workspaceAddress(pathname: string): { slug: string; path: string
   if (!match || !workspaceSlug(match[1])) return undefined;
   return { slug: match[1], path: match[2] ?? '/' };
 }
+/** Internal page links retain the addressed client, including query strings. */
+export function workspacePagePath(slug:string|undefined,path:string):string{
+  if(!path.startsWith('/')||path.startsWith('//')||slug!==undefined&&!workspaceSlug(slug))throw new Error('INVALID_WORKSPACE_ADDRESS');
+  return `${slug?'/w/'+slug:''}${path}`;
+}

@@ -84,6 +84,7 @@ export type RenderResult = {
 };
 
 export type RenderCapabilities = { raster: boolean; reason?: string };
+export type RenderCatalog={templates:readonly TemplateInfo[];samplePhoto?:AssetId};
 
 /** Library card image: the template's cover with its sample copy, or with `slots` over it. */
 export type ThumbnailRequest = {

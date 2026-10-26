@@ -65,6 +65,7 @@ test('each client library draws its own private brand and never offers the Seafo
       const cards=page.getByRole('list',{name:/^Modelos/}).getByRole('listitem');await expect(cards).toHaveCount(1);
       await expect(page.getByRole('main')).not.toContainText('Seafood');await expect(page.getByRole('main')).not.toContainText(`Publication ${client.label==='Alpha'?'Beta':'Alpha'}`);
       await cards.getByRole('link',{name:new RegExp(`Publication ${client.label}`)}).click();
+      await expect(page).toHaveURL(new RegExp(`/w/${client.slug}/library/templates\\?`));
       const image=page.getByRole('img',{name:/no modelo/}).first();await expect(image).toHaveAttribute('src',/^data:image\/png/);
       const data=(await image.getAttribute('src'))!.split(',')[1],png=sharp(Buffer.from(data,'base64')),metadata=await png.metadata(),scale=metadata.width!/1080;
       const pixel=await png.extract({left:Math.round(110*scale),top:Math.round(48*scale),width:1,height:1}).removeAlpha().raw().toBuffer();

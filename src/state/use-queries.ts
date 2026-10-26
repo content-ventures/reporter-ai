@@ -38,6 +38,7 @@ import {
   sessionQuery,
   sourceQuery,
   versionQuery,
+  templateCatalogQuery,
 } from './query-specs.ts';
 import type { RuntimeQuery, SessionData } from './query-specs.ts';
 import { LOADING } from './query-state.ts';
@@ -84,6 +85,7 @@ const when = <I, T>(id: I | Missing, build: (id: I) => RuntimeQuery<T>): Runtime
 export function useOverview(range: OverviewRange = '7d'): QueryState<OverviewData> {
   return useQuery(overviewQuery(range));
 }
+export function useTemplateCatalog(){return useQuery(templateCatalogQuery());}
 
 /** Produções: one page of the list plus the counts per tab. */
 export function useProductions(filter?: ProductionListFilter, page?: Partial<PageRequest>): QueryState<ProductionListPage> {

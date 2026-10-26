@@ -34,7 +34,7 @@ import {
   type VersionView,
 } from '@/domain';
 import type { PieceView, ProductionDetail, SlotFit } from '@/ports';
-import { useCan, useCommands, usePeople, usePiece, useRun, useRuntime, useSaveStatus, useVersion } from '@/state';
+import { useCan, useCommands, usePeople, usePiece, useRun, useRuntime, useSaveStatus, useVersion,useTemplateCatalog } from '@/state';
 import { ProductionHeader } from '@/features/production/production-frame';
 import { rememberTemplate } from '@/features/library/last-template';
 import { switchSummary } from '@/features/library/library-model';
@@ -122,7 +122,7 @@ export function CarouselWorkspace({ production, carousel, article, startedRunId,
   const lockedReason = running ? LOCKED : !canEdit ? whoCan('piece.edit') : undefined;
 
   // ── Template and fit (approximate, measured by the render service) ──────────────────
-  const templates = useMemo(() => runtime?.render.templates() ?? [], [runtime]);
+  const templates = useTemplateCatalog().data?.templates??[];
   const template = templates.find((entry) => entry.id === body?.templateId);
   // Measured on a deferred copy: typing never waits for the renderer.
   const measuredBody = useDeferredValue(body);

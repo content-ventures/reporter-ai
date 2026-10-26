@@ -66,6 +66,7 @@ export function ModelView({
   articleCover,
   samplePhoto,
   isDefault,
+  workspaceSlug,
 }: {
   template: TemplateInfo;
   templates: readonly TemplateInfo[];
@@ -75,6 +76,7 @@ export function ModelView({
   /** The library's sample photo, for the other models without their own. */
   samplePhoto?: AssetId;
   isDefault: boolean;
+  workspaceSlug?:string;
 }) {
   const [index, setIndex] = useState(0);
   const [starting, setStarting] = useState(false);
@@ -152,7 +154,7 @@ export function ModelView({
         {others.length > 0 ? (
           <Carousel label="Outros modelos" title="Outros modelos" perView={5}>
             {others.map((other) => (
-              <ModelCover key={other.id} template={other} href={modelHref(params, other.id)} articleCover={other.previewPhoto ?? samplePhoto} />
+              <ModelCover key={other.id} template={other} href={modelHref(params, other.id,workspaceSlug)} articleCover={other.previewPhoto ?? samplePhoto} />
             ))}
           </Carousel>
         ) : null}

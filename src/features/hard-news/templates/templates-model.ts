@@ -5,6 +5,7 @@ import type { RenderedSlide } from '../../../ports/render.ts';
 import { applyFilter, coverLayouts, featuredNote, formatFacts, formatName, serializeLibraryParams } from '../../library/library-model.ts';
 import type { LibraryFilter, LibraryParams, LibraryTemplate } from '../../library/library-model.ts';
 import { TEMPLATES_HREF } from '../routes.ts';
+import {workspacePagePath} from '../../../domain/workspace-address.ts';
 
 /**
  * "Modelos" in R2 as the screens show it: shelves by family (Notícia, Explica, Podcast), each model
@@ -105,14 +106,14 @@ export function formatOptions(): FormatOption[] {
 type ShownParams = Pick<LibraryParams, 'format' | 'query'>;
 
 /** A model's page, keeping the format and search it was opened from (`?format&q&model`). */
-export function modelHref(params: ShownParams, id: TemplateId): string {
-  return `${TEMPLATES_HREF}?${serializeLibraryParams({ format: params.format, query: params.query, model: id, family: null })}`;
+export function modelHref(params: ShownParams, id: TemplateId,workspaceSlug?:string): string {
+  return workspacePagePath(workspaceSlug,`${TEMPLATES_HREF}?${serializeLibraryParams({ format: params.format, query: params.query, model: id, family: null })}`);
 }
 
 /** The shelves, with that format and search. */
-export function libraryHref(params: ShownParams): string {
+export function libraryHref(params: ShownParams,workspaceSlug?:string): string {
   const search = serializeLibraryParams({ format: params.format, query: params.query, model: null, family: null });
-  return search ? `${TEMPLATES_HREF}?${search}` : TEMPLATES_HREF;
+  return workspacePagePath(workspaceSlug,search ? `${TEMPLATES_HREF}?${search}` : TEMPLATES_HREF);
 }
 
 // ── Starting a carousel ─────────────────────────────────────────────────────────────────
