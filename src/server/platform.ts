@@ -190,6 +190,8 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
       if (head === 'workspaces' && path.length === 3 && action === 'members') {
         return reply(await platform(client => call(client, 'SELECT public.reporter_workspace_members($1::uuid) AS value', [personId(id)])));
       }
+      if (head==='workspaces' && path.length===3 && action==='integrations')
+        return reply(await platform(client=>call(client,'SELECT public.reporter_integration_list($1::uuid) AS value',[personId(id)])));
       if (path.length === 1 && head === 'operator') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_operator() AS value')));
       if (path.length === 1 && head === 'directory') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_directory() AS value')));
       if (path.length === 1 && head === 'log') {
@@ -206,6 +208,18 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
       throw platformRefusal('not_found');
     }
     if (request.method !== 'POST') throw platformRefusal('not_found');
+
+    if(head==='workspaces'&&path.length===3&&action==='integrations'){
+      const parsed=z.object({ownerId:z.uuid(),enabled:z.boolean(),revision:z.number().int().min(0),rotate:z.boolean().optional()}).strict().safeParse(await deps.readJson(request));
+      if(!parsed.success)throw platformRefusal('invalid_state');
+      const creating=parsed.data.revision===0;
+      const legacy=creating&&id===cloudPortalId()?process.env.REPORTER_DRIVE_SECRET?.trim():undefined;
+      const secret=creating||parsed.data.rotate?legacy&&legacy.length>=32?legacy:randomBytes(32).toString('base64url'):undefined;
+      const derivation=creating?legacy&&legacy.length>=32?legacy:randomBytes(32).toString('base64url'):null;
+      const value=await platform(client=>call<{id:string}>(client,'SELECT public.reporter_integration_save($1::uuid,$2::uuid,$3,$4,$5,$6) AS value',
+        [personId(id),parsed.data.ownerId,parsed.data.enabled,parsed.data.revision,secret?createHash('sha256').update(secret).digest('hex'):null,derivation]));
+      return reply({...value,...(secret?{credential:{token:secret,endpoint:new URL(`/api/reporter/drive/${value.id}/sync`,request.url).href}}:{})},creating?201:200);
+    }
 
     if (head === 'workspaces' && path.length === 1) {
       const parsed = workspaceSchema.safeParse(await deps.readJson(request));

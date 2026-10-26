@@ -3,7 +3,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { citationDay } from '../domain/citation-library.ts';
 import { MAX_DRIVE_BYTES } from '../domain/reporter.ts';
-import { resolveServiceContext, transaction } from './database.ts';
+import { resolveServiceContext, resolveDriveBinding, driveRetryContext, transaction } from './database.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { FlowError, logEvent, safeCode } from './errors.ts';
 import { IDLE_QUEUE, queueStatus } from './queue-status.ts';
@@ -63,21 +63,29 @@ function reply(value: unknown, status = 200) {
 
 /** POST /api/reporter/drive/sync. Without REPORTER_DRIVE_SECRET the route does not exist. */
 export async function handleDrive(request: Request, path: string[], deps: { readJson: (request: Request) => Promise<unknown>; defer: Defer }) {
-  const secret = driveSecret();
-  if (!secret || request.method !== 'POST' || path.join('/') !== 'sync') throw new FlowError('NOT_FOUND', 404);
-  if (!hasSecret(request, secret)) throw new FlowError('AUTH_REQUIRED', 401);
+  const legacy=path.join('/')==='sync';
+  const bindingId=path.length===2&&path[1]==='sync'?z.uuid().safeParse(path[0]):undefined;
+  if (request.method!=='POST' || !legacy&&!bindingId?.success) throw new FlowError('NOT_FOUND',404);
   if (reporterDeploymentMode() !== 'cloud') throw new FlowError('DRIVE_CLOUD_ONLY', 503);
+  const supplied=request.headers.get('authorization')?.replace(/^Bearer\s+/i,'').trim()??'';
+  if(supplied.length<32||supplied.length>256)throw new FlowError('AUTH_REQUIRED',401);
+  const binding=await resolveDriveBinding(bindingId?.success?bindingId.data:undefined,createHash('sha256').update(supplied).digest('hex'))
+    .catch(()=>{throw new FlowError('AUTH_REQUIRED',401);});
+  const secret=binding?.derivation??(legacy?driveSecret():undefined);
+  if(!secret)throw new FlowError('NOT_FOUND',404);
+  if(!binding&&!hasSecret(request,secret))throw new FlowError('AUTH_REQUIRED',401);
   const input = syncBody.parse(await deps.readJson(request));
   if (!driveMedia(input.name)) throw new FlowError('UNSUPPORTED_MEDIA', 415);
   const email = process.env.REPORTER_DRIVE_OWNER_EMAIL?.trim();
-  if (!email) throw new FlowError('DRIVE_OWNER_MISSING', 503);
-  const context = await resolveServiceContext(email);
+  if (!binding&&!email) throw new FlowError('DRIVE_OWNER_MISSING', 503);
+  const context = binding?.context ?? await resolveServiceContext(email!);
   if (!context) throw new FlowError('DRIVE_OWNER_UNKNOWN', 503);
   const size = await driveSize(input.fileId, input.accessToken, input.size);
   if (size > MAX_DRIVE_BYTES) throw new FlowError('FILE_TOO_LARGE', 413);
   if (size < 1) throw new FlowError('INVALID_INPUT', 422);
   const app = new URL(request.url).origin;
-  return runWithReporterContext(context, () => syncFile({ ...input, size }, secret, { app, worker: appOrigins()[0] ?? app }, context, deps.defer));
+  return runWithReporterContext(context, () => syncFile({ ...input, size }, secret, { app, worker: appOrigins()[0] ?? app,
+    ...(binding?{workspaceSlug:context.workspaceSlug}:{}) }, context, deps.defer));
 }
 
 /** The file's size as Drive reports it; the script's value only when Drive does not answer. */
@@ -93,8 +101,8 @@ async function driveSize(fileId: string, accessToken: string, fallback: number) 
 }
 
 /** The address that opens a received file in the new-production steps. */
-export function receivedHref(transcriptId: string) {
-  return `/productions/new?material=${encodeURIComponent(transcriptId)}`;
+export function receivedHref(transcriptId: string,workspaceSlug?:string) {
+  return `${workspaceSlug?'/w/'+encodeURIComponent(workspaceSlug):''}/productions/new?material=${encodeURIComponent(transcriptId)}`;
 }
 
 /** GET drive/received (the board's Material lane) and drive/received/:id (one file, for the form). */
@@ -123,15 +131,14 @@ export async function driveRetry(id: string, body: unknown, key: string) {
   if (reporterDeploymentMode() !== 'cloud') throw new FlowError('NOT_FOUND', 404);
   const received = await transaction('runtime', async client => (await client.query('SELECT public.reporter_drive_received($1) AS value', [transcriptId])).rows[0].value as unknown[]);
   if (!received[0]) throw new FlowError('NOT_FOUND', 404);
-  const email = process.env.REPORTER_DRIVE_OWNER_EMAIL?.trim();
-  const owner = email ? await resolveServiceContext(email) : null;
+  const owner = await driveRetryContext(transcriptId);
   if (!owner) throw new FlowError('DRIVE_OWNER_UNKNOWN', 503);
   const generation = await runWithReporterContext(owner, () => transaction('runtime', async client => (await client.query(
     'SELECT public.reporter_retry($1,$2,$3,$4) AS value', ['transcript', transcriptId, revision, key])).rows[0].value as string));
   return reply({ id: transcriptId, generation_id: generation }, 202);
 }
 
-async function syncFile(input: SyncInput, secret: string, origins: { app: string; worker: string }, context: ReporterRequestContext, defer: Defer) {
+async function syncFile(input: SyncInput, secret: string, origins: { app: string; worker: string; workspaceSlug?:string }, context: ReporterRequestContext, defer: Defer) {
   const ids = driveIds(secret, input.fileId), media = driveMedia(input.name)!;
   const name = input.name.normalize('NFC');
   const objectKey = `incoming/${context.portal}/${ids.sourceId}.${media.extension}`;
@@ -139,7 +146,8 @@ async function syncFile(input: SyncInput, secret: string, origins: { app: string
   // Preparing is idempotent per Drive file: the first sync registers the upload, every later
   // one finds the same transcript.
   const { prepared, transcript, stalled } = await transaction('runtime', async client => {
-    const prepared = (await client.query('SELECT public.reporter_prepare_cloud_upload($1,$2,$3,$4,$5,$6,$7) AS value',
+    const existing=(await client.query('SELECT public.reporter_drive_source_transcript($1) AS value',[ids.sourceId])).rows[0].value as string|null;
+    const prepared = existing ? {id:existing,upload_endpoint:null} : (await client.query('SELECT public.reporter_prepare_cloud_upload($1,$2,$3,$4,$5,$6,$7) AS value',
       [ids.sourceId, name, input.size, media.contentType, objectKey, tokenHash, ids.key])).rows[0].value as { id: string; upload_endpoint: string | null };
     await client.query('SELECT public.reporter_drive_intake_record($1,$2,$3,$4)', [prepared.id, name, folderFormat(input.folder) ?? null, input.recordedOn ?? null]);
     const transcript = (await client.query('SELECT public.reporter_local_transcript($1) AS value', [prepared.id])).rows[0].value as Transcript | null;
@@ -172,7 +180,7 @@ async function syncFile(input: SyncInput, secret: string, origins: { app: string
       ...(progress?.total ? { progress: Math.round((progress.done ?? 0) / progress.total * 100) } : {}) }, 202);
   }
   // Transcribed: it waits on the board until a person opens it in the new-production steps.
-  return reply({ ...base, stage: 'ready', url: `${origins.app}${receivedHref(transcript.id)}` });
+  return reply({ ...base, stage: 'ready', url: `${origins.app}${receivedHref(transcript.id,origins.workspaceSlug)}` });
 }
 
 type UploadSession = { partSize: number; parts: { number: number; url: string }[]; uploaded?: number[] };

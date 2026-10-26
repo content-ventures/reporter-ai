@@ -70,10 +70,20 @@ export async function resolveLocalWorkspaceContext(slug: string): Promise<Report
 }
 
 /** A member the server acts for without a session (the Drive folder intake), found by email. */
-export async function resolveServiceContext(email: string): Promise<ReporterRequestContext | null> {
+export async function resolveServiceContext(email: string, workspaceId = cloudPortalId()): Promise<ReporterRequestContext | null> {
   if (reporterDeploymentMode() !== 'cloud' || !email.trim()) return null;
-  const { rows } = await pool('runtime').query<ContextRow>('SELECT * FROM public.reporter_service_context($1,$2)',[email.trim(),cloudPortalId()]);
+  const { rows } = await pool('runtime').query<ContextRow>('SELECT * FROM public.reporter_service_context($1,$2)',[email.trim(),workspaceId]);
   return contextOf(rows[0]);
+}
+
+export async function resolveDriveBinding(id:string|undefined,tokenHash:string):Promise<{context:ReporterRequestContext;derivation:string}|null> {
+  const query=id?'SELECT public.reporter_drive_binding($1,$2) AS value':'SELECT public.reporter_drive_legacy_binding($1,$2) AS value';
+  const {rows}=await pool('runtime').query<{value:{context:ContextRow;derivation:string}|null}>(query,[id??cloudPortalId(),tokenHash]);
+  const value=rows[0]?.value,context=contextOf(value?.context);
+  return context && value ? {context,derivation:value.derivation} : null;
+}
+export async function driveRetryContext(transcriptId:string):Promise<ReporterRequestContext|null> {
+  return transaction('runtime',async client=>contextOf((await client.query('SELECT public.reporter_drive_retry_context($1) AS value',[transcriptId])).rows[0]?.value));
 }
 
 export async function transaction<T>(role: "runtime" | "worker", operation: (client: PoolClient) => Promise<T>, requestId: string = randomUUID()): Promise<T> {
