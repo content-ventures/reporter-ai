@@ -80,6 +80,21 @@ test('writing traces and the immutable settings survive row persistence and the 
   engine.store.dispose();
 });
 
+test('reusing identical prompt content retains active, historical and queued revision identities independently',async()=>{
+  const {checkpoint,engine,runId}=await workspaceWithRun();
+  try{
+    const first=pipelineRevision(defaultPipelineDefinition(),2,'2026-10-26T10:00:00Z');
+    const later=pipelineRevision(first.definition,7,'2026-10-26T12:00:00Z');assert.equal(first.hash,later.hash);
+    checkpoint.pipeline=later;checkpoint.pipelineHistory=[first];checkpoint.jobs[runId].pipeline=first;
+    const scope={...everything,history:true},rows=stored(splitCheckpoint(checkpoint,empty,scope));
+    rows.pipelines=[{hash:first.hash,doc:first}];
+    const restored=assembleCheckpoint(rows,checkpoint.state.workspace,scope);
+    assert.deepEqual(restored.pipeline,later);assert.deepEqual(restored.pipelineHistory,[first]);assert.deepEqual(restored.jobs[runId].pipeline,first);
+    const partial=assembleCheckpoint({...rows,pipelines:[]},checkpoint.state.workspace,scope);
+    assert.deepEqual(splitCheckpoint(partial,rows,scope).runs[0].job?.pipelineRef,{hash:first.hash,revision:2,savedAt:first.savedAt},'a progress update that did not load prompts retains its captured revision');
+  }finally{engine.store.dispose();}
+});
+
 test('a change writes only the rows it touched, and new events only', async () => {
   const { checkpoint, engine, productionId, runId } = await workspaceWithRun();
   const before = stored(splitCheckpoint(checkpoint, empty, everything));
