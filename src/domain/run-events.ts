@@ -28,6 +28,7 @@ export type RunStartedEvent = EventBase & {
   prompt: PromptRef;
   model: ModelInfo;
   articlePolicy?: GenerationRun['articlePolicy'];
+  configuration?:GenerationRun['configuration'];
   inputs: Ref[];
   steps: { id: StepId; label: string }[];
   createdBy: ActorId;
@@ -187,6 +188,7 @@ function initialFold(event: RunStartedEvent): RunFold {
   if (event.parentRunId) run.parentRunId = event.parentRunId;
   if (event.retryOfRunId) run.retryOfRunId = event.retryOfRunId;
   if (event.articlePolicy) run.articlePolicy = { ...event.articlePolicy };
+  if (event.configuration) run.configuration=structuredClone(event.configuration);
   return { run, seq: event.seq, outline: [], blocks: [], slides: [], sourcesUsed: [], suggestions: [] };
 }
 

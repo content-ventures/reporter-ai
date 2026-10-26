@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect,test } from '@playwright/test';
+import sharp from 'sharp';
 
 test('two canonical client addresses keep drafts, requests and image caches separate in the same browser',async({browser,request,baseURL})=>{
   test.skip(process.env.REPORTER_WORKSPACES_MODE!=='all','workspace acceptance requires the isolated rollout mode');
@@ -40,5 +41,35 @@ test('two canonical client addresses keep drafts, requests and image caches sepa
       `reporter-assets:${a.id}:00000000-0000-0000-0000-000000000031`,`reporter-assets:${b.id}:00000000-0000-0000-0000-000000000031`,
     ]));
     await pageA.reload();await expect(pageA.getByRole('textbox',{name:'Texto do artigo'})).toContainText('Text belonging to client one');
+  }finally{await context.close();}
+});
+
+test('each client library draws its own private brand and never offers the Seafood catalog',async({browser,request,baseURL})=>{
+  test.skip(process.env.REPORTER_WORKSPACES_MODE!=='all','workspace acceptance requires the isolated rollout mode');
+  const headers={origin:baseURL!,'x-reporter-client':'local'},clients=[];
+  for(const [label,color]of [['Alpha',{r:208,g:48,b:48}],['Beta',{r:32,g:92,b:200}]]as const){
+    const slug=`brand-${label.toLowerCase()}-${Date.now()}`;
+    const created=await request.post('/api/reporter/platform/workspaces',{headers,data:{name:`Publication ${label}`,slug}});expect(created.status()).toBe(201);
+    const workspace=await created.json();
+    const bytes=await sharp({create:{width:40,height:40,channels:4,background:{...color,alpha:1}}}).png().toBuffer();
+    const upload=await request.post(`/api/reporter/platform/workspaces/${workspace.id}/logo`,{headers:{...headers,'content-type':'image/png'},data:bytes});expect(upload.status()).toBe(201);
+    const logo=await upload.json();
+    const saved=await request.post(`/api/reporter/platform/workspaces/${workspace.id}/templates`,{headers,data:{revision:workspace.revision,
+      config:{publication:`Publication ${label}`,presets:['editorial'],defaultPreset:'editorial',font:'Montserrat',logoId:logo.id}}});expect(saved.ok()).toBeTruthy();
+    clients.push({...workspace,slug,color,label});
+  }
+  const context=await browser.newContext({baseURL,viewport:{width:1440,height:900}});
+  try{
+    for(const client of clients){
+      const page=await context.newPage();await page.goto(`/w/${client.slug}/library/templates`);
+      const cards=page.getByRole('list',{name:/^Modelos/}).getByRole('listitem');await expect(cards).toHaveCount(1);
+      await expect(page.getByRole('main')).not.toContainText('Seafood');await expect(page.getByRole('main')).not.toContainText(`Publication ${client.label==='Alpha'?'Beta':'Alpha'}`);
+      await cards.getByRole('link',{name:new RegExp(`Publication ${client.label}`)}).click();
+      const image=page.getByRole('img',{name:/no modelo/}).first();await expect(image).toHaveAttribute('src',/^data:image\/png/);
+      const data=(await image.getAttribute('src'))!.split(',')[1],png=sharp(Buffer.from(data,'base64')),metadata=await png.metadata(),scale=metadata.width!/1080;
+      const pixel=await png.extract({left:Math.round(110*scale),top:Math.round(48*scale),width:1,height:1}).removeAlpha().raw().toBuffer();
+      expect([...pixel]).toEqual([client.color.r,client.color.g,client.color.b]);
+      await page.screenshot({path:`.reporter-local/multi-workspace/m4-brand-${client.label.toLowerCase()}.png`,fullPage:true});
+    }
   }finally{await context.close();}
 });

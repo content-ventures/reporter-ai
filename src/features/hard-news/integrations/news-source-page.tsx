@@ -181,7 +181,7 @@ function NewAlert() {
       <Section title="Novo alerta" action={<Button variant="secondary" size="sm" icon={Plus} loading={saving} disabled={!ready} onClick={() => void submit()}>Adicionar alerta</Button>}>
         <Field label="Palavra-chave">
           {({ id, describedBy }) => (
-            <Input id={id} aria-describedby={describedBy} value={keyword} placeholder="camarão" onChange={(event) => { setKeyword(event.target.value); setError(undefined); }} />
+            <Input id={id} aria-describedby={describedBy} value={keyword} placeholder="Tema ou palavra-chave" onChange={(event) => { setKeyword(event.target.value); setError(undefined); }} />
           )}
         </Field>
         <Field label="Link do feed" error={error} hint="Em Google Alertas, o ícone de RSS ao lado do alerta">

@@ -77,6 +77,9 @@ test('an empty client can configure its own rules but cannot enqueue generation 
   const blocked=await api<{ok:boolean;refusal:{code:string;message:string}}>('w/other-publication/workspace',{method:'generation.start',args:['article.outline',{productionId:blank.body.value.productionId,pieceId:piece.id}],requestId:randomUUID()});
   assert.equal(blocked.body.ok,false);assert.equal(blocked.body.refusal.code,'workspace_not_ready');assert.match(blocked.body.refusal.message,/mapa editorial/);
   assert.equal((await owner('SELECT count(*)::int AS count FROM public.reporter_ed_runs WHERE portal_id=$1',[second]))[0].count,0);
+  assert.equal((await api<{ok:boolean}>('w/other-publication/workspace',{method:'updateBrief',args:[blank.body.value.productionId,{event:{name:'Client fair'}}],requestId:randomUUID()})).body.ok,true);
+  const updated=await api<import('../../src/ports/connected-workspace.ts').ConnectedWorkspace>('w/other-publication/workspace');
+  assert.equal(updated.body.state.productions.find(entry=>entry.production.id===blank.body.value.productionId)!.production.brief.event?.boxTitle,'Other publication na Client fair');
 });
 
 test('private brands use the target client even when the real operator has no membership',async()=>{

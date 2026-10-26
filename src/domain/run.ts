@@ -69,6 +69,7 @@ export type RunError = {
   retryable: boolean;
   stepId?: StepId;
 };
+export type GenerationConfiguration={workspaceId:string;pipeline:{hash:string;revision:number};editorial:{mapVersion:number;guideVersion:number};template?:{id:string;hash?:string;revision?:number}};
 
 export type GenerationRun = {
   id: RunId;
@@ -81,6 +82,8 @@ export type GenerationRun = {
   model: ModelInfo;
   /** Server-owned editorial requirements captured from this generation's saved configuration. */
   articlePolicy?: { minimumQuotes: number };
+  /** Server-captured policy and render references survive later client configuration changes. */
+  configuration?:GenerationConfiguration;
   /** Context of the run: source version, brief snapshot, parent version, segments used. */
   inputs: Ref[];
   output?: VersionRef;

@@ -10,7 +10,8 @@ import type { PieceKind } from './piece.ts';
 import { decidedImageRights, findVersion } from './record.ts';
 import type { ProductionRecord } from './record.ts';
 import type { ExportItem } from './rules/export.ts';
-import type { ModelInfo, PromptRef, RunKind } from './run.ts';
+import type { GenerationConfiguration,ModelInfo, PromptRef, RunKind } from './run.ts';
+import {workspaceTemplateHash} from './workspace-templates.ts';
 import { laudas } from './sizing.ts';
 import type { ArticleSize } from './sizing.ts';
 import { currentSourceVersion } from './source.ts';
@@ -170,6 +171,7 @@ export function plannedExportFiles(
 export type DeliveryManifest = {
   schema: 'reporter.delivery/v1';
   generatedAt: IsoDateTime;
+  workspaceId:string;
   /** `size`: the brief's "Tamanho do artigo" (Curto · 1 lauda, Padrão · 2 laudas). */
   production: { id: ProductionId; title: string; size: ArticleSize };
   sources: {
@@ -189,13 +191,14 @@ export type DeliveryManifest = {
     derivedFrom: { pieceId: PieceId; version: number; hash: string }[];
     sourceVersions: { sourceId: SourceId; version: number; hash: string }[];
     runId?: RunId;
+    template?:{id:string;hash?:string;renderer?:'workspace-v1'};
     /** Articles: the body's lauda count (characters with spaces, title and captions excluded). */
     characters?: number;
     /** Articles: laudas of the body, rounded up to one decimal. */
     laudas?: number;
     files: string[];
   }[];
-  runs: { id: RunId; kind: RunKind; prompt: PromptRef; model: ModelInfo; startedAt?: IsoDateTime; endedAt?: IsoDateTime }[];
+  runs: { id: RunId; kind: RunKind; prompt: PromptRef; model: ModelInfo; configuration?:GenerationConfiguration;startedAt?: IsoDateTime; endedAt?: IsoDateTime }[];
   /** Every image of the exported article: origin, credit, rights, size and digest (R2 REQ-2.9). */
   assets: ManifestAsset[];
   /**
@@ -321,6 +324,10 @@ export function buildManifest(
       files: files.filter((file) => file.versionId === item.version.versionId && file.available).map((file) => file.fileName),
     };
     if (version?.runId) entry.runId = version.runId;
+    if(version?.body.type==='carousel'){
+      const hash=workspaceTemplateHash(version.body.templateId,record.production.workspaceId);
+      entry.template={id:version.body.templateId,...(hash?{hash,renderer:'workspace-v1' as const}:{})};
+    }
     if (item.kind === 'article' && version?.body.type === 'article') {
       entry.characters = articleCharacters(version.body);
       entry.laudas = laudas(entry.characters);
@@ -330,6 +337,7 @@ export function buildManifest(
   const manifest: DeliveryManifest = {
     schema: 'reporter.delivery/v1',
     generatedAt,
+    workspaceId:record.production.workspaceId,
     production: { id: record.production.id, title: record.production.title, size: record.production.brief.size },
     sources: record.sources.map((source) => {
       const version = currentSourceVersion(source);
@@ -346,6 +354,12 @@ export function buildManifest(
       .filter((run) => runIds.has(run.id))
       .map((run) => {
         const entry: DeliveryManifest['runs'][number] = { id: run.id, kind: run.kind, prompt: run.prompt, model: run.model };
+        if(run.configuration){
+          const config=run.configuration;
+          entry.configuration={workspaceId:config.workspaceId,pipeline:{hash:config.pipeline.hash,revision:config.pipeline.revision},
+            editorial:{mapVersion:config.editorial.mapVersion,guideVersion:config.editorial.guideVersion},
+            ...(config.template?{template:{id:config.template.id,...(config.template.hash?{hash:config.template.hash}:{}),...(config.template.revision?{revision:config.template.revision}:{})}}:{})};
+        }
         if (run.startedAt) entry.startedAt = run.startedAt;
         if (run.endedAt) entry.endedAt = run.endedAt;
         return entry;

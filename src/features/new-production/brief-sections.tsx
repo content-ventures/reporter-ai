@@ -199,7 +199,7 @@ export function BriefStep({ draft, update, charsAvailable, materialMinutes, exis
             {({ id, describedBy }) => (
               <>
                 <Input id={id} aria-describedby={describedBy} value={draft.event.name} maxLength={EVENT_MAX}
-                  placeholder="Ex.: Seafood Show Latin America 2026" onChange={(event) => setEvent('name', event.target.value)} />
+                  placeholder="Ex.: Encontro de Negócios 2026" onChange={(event) => setEvent('name', event.target.value)} />
                 {eventSuggestion ? (
                   <Alert compact tone="info" onDismiss={() => onEventSuggestion?.(false)} dismissLabel="Não é este evento"
                     action={<Button size="sm" onClick={() => onEventSuggestion?.(true)}>Usar</Button>}>
@@ -215,7 +215,7 @@ export function BriefStep({ draft, update, charsAvailable, materialMinutes, exis
                 <FieldGroup label="Serviço" columns={1}>
                   <Grid columns="1:1" collapseBelow={480}>
                     {([
-                      ['boxTitle', 'Título do box', `Seafood Brasil na ${draft.event.name.trim()}`],
+                      ['boxTitle', 'Título do box', `Cobertura: ${draft.event.name.trim()}`],
                       ['dates', 'Data', 'De 20 a 22 de outubro de 2026'],
                       ['hours', 'Horário', 'Das 13h às 20h'],
                       ['venue', 'Local', 'Distrito Anhembi'],
@@ -298,7 +298,7 @@ export function BriefStep({ draft, update, charsAvailable, materialMinutes, exis
           </FormRow>
           {detailsOpen && <>
             <FormRow label="Podcast ou programa" optional>
-              {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={draft.programName ?? ''} maxLength={160} placeholder="Ex.: Podcast Seafood Brasil" onChange={event => update({ programName: event.target.value })} />}
+              {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={draft.programName ?? ''} maxLength={160} placeholder="Ex.: Podcast do veículo" onChange={event => update({ programName: event.target.value })} />}
             </FormRow>
             <FormRow label="Link do episódio" optional error={draft.sourceUrl?.trim() && !podcastLink(draft.sourceUrl) ? 'Informe um link HTTPS válido.' : undefined}>
               {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} value={draft.sourceUrl ?? ''} maxLength={2000} inputMode="url" placeholder="https://" onChange={event => update({ sourceUrl: event.target.value })} />}
