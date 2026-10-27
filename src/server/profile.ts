@@ -7,6 +7,7 @@ import { localWorkspaceQuery, pool, transaction } from './database.ts';
 import { FlowError } from './errors.ts';
 import { readImageFile, writeImageFile } from './image-storage.ts';
 import { currentReporterContext } from './request-context.ts';
+import type {ReporterRequestContext} from './request-context.ts';
 import { reporterIdentity } from './auth.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 
@@ -79,12 +80,14 @@ export async function handleProfile(request: Request, path: string[], readJson: 
 }
 
 /** A member's account photo is visible to themselves, teammates and the platform operator. */
-export async function handleAccountAvatar(request: Request,path: string[],deps: { guardLocal(request: Request): void; identify?: typeof reporterIdentity }): Promise<Response> {
+export async function handleAccountAvatar(request: Request,path: string[],deps: { guardLocal(request: Request): void; identify?: typeof reporterIdentity;context?:ReporterRequestContext }): Promise<Response> {
   const [person,portal,file] = path;
   const guid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
   if (request.method !== 'GET' || path.length !== 3 || !guid.test(person ?? '') || !guid.test(portal ?? '') || !AVATAR_FILE.test(file ?? '')) throw new FlowError('NOT_FOUND',404);
   let allowed: boolean;
-  if (reporterDeploymentMode() === 'local') {
+  if(deps.context?.view){
+    allowed=await transaction('runtime',async client=>(await client.query('SELECT public.reporter_member_view_avatar($1,$2,$3) AS value',[person,portal,file])).rows[0].value);
+  }else if (reporterDeploymentMode() === 'local') {
     deps.guardLocal(request);
     allowed = (await localWorkspaceQuery<{ value: boolean }>('SELECT public.reporter_avatar_access(NULL,NULL,false,$1,$2,$3) AS value',[person,portal,file]))[0].value;
   } else {

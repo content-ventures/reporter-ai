@@ -33,6 +33,7 @@ import { reporterDeploymentMode } from './deployment.ts';
 import { reporterIdentity } from './auth.ts';
 import { runWithReporterContext, type ReporterRequestContext } from './request-context.ts';
 import { appHealth } from './app-config.ts';
+import {endMemberView,memberViewResponse,requestedMemberView,resolveMemberView} from './member-view.ts';
 
 const LOOPBACK = new Set(["localhost","127.0.0.1","[::1]"]);
 export function guardLocalRequest(request: Request) {
@@ -106,6 +107,9 @@ function reply(value: unknown, status = 200) {
 }
 const messages: Record<string, string> = {
   ACCOUNT_CONTEXT_CHANGED: 'A conta conectada mudou. Recarregue para abrir o contexto atual.',
+  MEMBER_VIEW_UNAVAILABLE:'Esta visualização não está disponível para sua conta. Abra novamente pela plataforma.',
+  MEMBER_VIEW_ENDED:'A visualização foi encerrada. Escolha um workspace para continuar com sua conta.',
+  MEMBER_VIEW_READ_ONLY:'Esta visualização é somente leitura. Saia dela para realizar alterações com sua conta.',
   WORKSPACES_DISABLED: 'A navegação entre workspaces ainda não está habilitada.',
   WORKSPACE_SELECTION_REQUIRED:'Escolha um dos workspaces liberados para sua conta.',
   WORKSPACES_RESTRICTED: 'A navegação está disponível apenas para o administrador da plataforma.',
@@ -217,8 +221,9 @@ const runAfterResponse: Defer = task => { void task().catch(() => {}); };
 export async function handleReporter(request: Request, path: string[], deps: { defer?: Defer; identify?: () => Promise<Identity> } = {}) {
   const requestId = randomUUID();
   const defer = deps.defer ?? runAfterResponse;
+  let supportView=false;
   // Every committed enqueue wakes the cloud worker; a stall seen by a poll wakes it again.
-  const kick = () => defer(() => kickWorker());
+  const kick = () => {if(!supportView)defer(() => kickWorker());};
   const heal = (stalled: boolean | undefined) => { if (stalled && shouldHealStall()) kick(); };
   try {
     let selectedWorkspace: string | undefined;
@@ -226,19 +231,30 @@ export async function handleReporter(request: Request, path: string[], deps: { d
       selectedWorkspace = workspaceSlug(path[1] ?? '');
       if (!selectedWorkspace || path.length < 3) throw new FlowError('WORKSPACE_NOT_FOUND',404);
       path = path.slice(2);
-      if (['platform','invites','health','workspaces','avatars'].includes(path[0]) || path[0] === 'drive' && path.at(-1) === 'sync') throw new FlowError('NOT_FOUND',404);
+      if (['platform','invites','health','workspaces','avatars','member-views'].includes(path[0]) || path[0] === 'drive' && path.at(-1) === 'sync') throw new FlowError('NOT_FOUND',404);
+    }
+    if(path[0]==='member-views'&&path.length===3&&path[2]==='end')return await endMemberView(request,path[1],jsonBody,{guardLocal:guardLocalRequest,identify:deps.identify,requestId});
+    const viewId=requestedMemberView(request);
+    supportView=Boolean(viewId);
+    let viewing:ReporterRequestContext|undefined;
+    if(viewId){
+      if(workspaceRollout()==='off')throw new FlowError('WORKSPACES_DISABLED',403);
+      if(!selectedWorkspace&&path[0]!=='avatars')throw new FlowError('MEMBER_VIEW_UNAVAILABLE',403);
+      viewing=await resolveMemberView(request,viewId,selectedWorkspace??null,{guardLocal:guardLocalRequest,identify:deps.identify,requestId});
+      if(!['GET','HEAD'].includes(request.method))throw new FlowError('MEMBER_VIEW_READ_ONLY',403);
     }
     // The release probe is public: booleans and versions only, no session and no database.
     if (request.method === 'GET' && path.length === 1 && path[0] === 'health') return reply(appHealth());
     if (request.method === 'GET' && path.length === 1 && path[0] === 'workspaces') return reply(await workspaceDirectory(request,{ guardLocal: guardLocalRequest,identify: deps.identify }));
-    if (path[0] === 'avatars') return await handleAccountAvatar(request,path.slice(1),{ guardLocal: guardLocalRequest,identify: deps.identify });
+    if (path[0] === 'avatars') return viewing?await runWithReporterContext(viewing,async()=>memberViewResponse(await handleAccountAvatar(request,path.slice(1),{guardLocal:guardLocalRequest,identify:deps.identify,context:viewing})))
+      :await handleAccountAvatar(request,path.slice(1),{ guardLocal: guardLocalRequest,identify: deps.identify });
     // The platform console and the access link have their own guards: no workspace membership.
     if (path[0] === 'platform') return await handlePlatform(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest,identify: deps.identify });
     if (path[0] === 'invites') return await handleInvites(request,path.slice(1),{ readJson: jsonBody,guardLocal: guardLocalRequest });
     // The Drive folder script has no session: it carries the intake secret and acts as one configured member.
     if (path[0] === 'drive' && path.at(-1) === 'sync') return await handleDrive(request,path.slice(1),{ readJson: jsonBody,defer });
-    const context = await guardReporterRequest(request, deps.identify, selectedWorkspace);
-    return await runWithReporterContext(context, async () => {
+    const context = viewing??await guardReporterRequest(request, deps.identify, selectedWorkspace);
+    const response=await runWithReporterContext(context, async () => {
     if(path[0]==='team')return handleWorkspaceTeam(request,path.slice(1),{readJson:jsonBody});
     if(path[0]==='templates')return handleWorkspaceTemplates(request,path.slice(1),jsonBody);
     if(request.method==='GET'&&path.join('/')==='processing') return reply(await transaction('runtime',async client=>(await client.query('SELECT public.reporter_processing_view($1) AS value',[context.portal])).rows[0].value));
@@ -398,6 +414,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     } else throw new FlowError("NOT_FOUND", 404);
     return reply({ id, revision });
     });
+    return context.view?memberViewResponse(response):response;
   } catch (error) {
     // An SQL permission refusal (42501) and an app role refusal are the same FORBIDDEN for the browser.
     const raw = error instanceof z.ZodError ? "INVALID_INPUT" : safeCode(error);

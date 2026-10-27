@@ -26,6 +26,8 @@ import { reporterDeploymentMode } from './deployment.ts';
 import { FlowError, logEvent } from './errors.ts';
 import {readWorkspaceTemplates,saveWorkspaceTemplates,uploadWorkspaceBrand} from './template-settings.ts';
 import {previewConfigurationCopy,applyConfigurationCopy} from './configuration-copy.ts';
+import {memberViewPhotos} from './member-view.ts';
+import type {MemberView} from '../domain/member-view.ts';
 
 /**
  * Console da plataforma and the access link over HTTP.
@@ -187,6 +189,13 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
     const operator = await operatorOf(request, deps);
     const platform = <T>(operation: (client: PoolClient) => Promise<T>) => run('platform', operator, operation);
     const [head, id, action] = path;
+
+    if(head==='member-views'&&path.length===1&&request.method==='POST'){
+      const input=z.object({workspaceId:z.string().regex(UUID),personId:z.string().regex(UUID)}).strict().safeParse(await deps.readJson(request));
+      if(!input.success)throw platformRefusal('invalid_workspace');
+      const view=await platform(client=>call<MemberView>(client,'SELECT public.reporter_member_view_start($1,$2) AS value',[input.data.workspaceId,input.data.personId]));
+      return reply(memberViewPhotos(view),201);
+    }
 
     if (request.method === 'GET') {
       if(head==='workspaces'&&path.length===2)return reply(await platform(client=>call(client,'SELECT public.reporter_workspace_get($1::uuid) AS value',[personId(id)])));

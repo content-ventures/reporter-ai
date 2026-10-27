@@ -53,7 +53,7 @@ export type EditorialJob = {
   lease?: { owner: string; until: number; fence: string };
 };
 export type EditorialCheckpoint = { state: EditorialState; jobs: Record<string, EditorialJob>; pipeline?: PipelineRevision; pipelineHistory?: PipelineRevision[]; templateConfiguration?:WorkspaceTemplateConfiguration; visuals?: { images: LibraryImage[]; banners: BannerDraft[] }; citations?: Citation[]; factChecks?: FactCheck[]; imageAssets?: ServerImageAsset[]; receipts?: Record<string,{ hash: string; result: unknown; projection?: 'pipeline' }> };
-export type WorkspaceNavigation={enabled:boolean;administrative:boolean;accountId:string};
+export type WorkspaceNavigation={enabled:boolean;administrative:boolean;accountId:string;view?:import('../domain/member-view.ts').MemberView};
 export type ConnectedWorkspace = EditorialCheckpoint & { revision: number; model: string; workerOnline: boolean; stalled?: boolean; deploymentMode?: 'cloud' | 'local'; syncToken?: string;navigation?:WorkspaceNavigation };
 /** Rows changed since the browser's change number; the browser merges them into its workspace. */
 export type WorkspaceDeltaRefresh = Omit<WorkspaceDelta, 'seq'> & { delta: true; revision: number; syncToken: string; workerOnline: boolean; stalled?: boolean };
