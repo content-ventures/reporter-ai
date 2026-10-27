@@ -105,6 +105,7 @@ export function usePackage(productionId: ProductionId, selection: readonly Versi
     })();
     return () => {
       live = false;
+      if (prepared.current?.key === jobKey) prepared.current = undefined;
     };
   }, [commands, jobKey, patch, productionId, round.simulation, target.selection]);
 
@@ -168,19 +169,23 @@ export function usePackage(productionId: ProductionId, selection: readonly Versi
   );
 
   /** Saves files through their rendered links, one after the other (the browser asks once). */
+  const isCurrent = useCallback(() => Boolean(jobKey && prepared.current?.key === jobKey), [jobKey]);
   const download = useCallback(async (fileNames: readonly string[]): Promise<string[]> => {
+    const batch = prepared.current;
+    if (!batch || batch.key !== jobKey) return [];
     const saved: string[] = [];
     for (const fileName of fileNames) {
-      const anchor = anchors.current.get(fileName);
-      if (!anchor) continue;
       if (saved.length > 0) await wait(DOWNLOAD_GAP_MS);
+      if (prepared.current !== batch) break;
+      const anchor = anchors.current.get(fileName);
+      if (!anchor?.isConnected) continue;
       anchor.click();
       saved.push(fileName);
     }
     return saved;
-  }, []);
+  }, [jobKey]);
 
-  return { ...state, selection: target.selection, retry, prepareAgain, anchorRef, download };
+  return { ...state, selection: target.selection, retry, prepareAgain, anchorRef, download, isCurrent };
 }
 
 export type PackageController = ReturnType<typeof usePackage>;
