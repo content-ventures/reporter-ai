@@ -2,7 +2,7 @@ import 'server-only';
 import {createHash,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {z} from 'zod';
-import {memberViewId,type MemberView} from '../domain/member-view.ts';
+import {memberViewId,memberViewImageSource,type MemberView} from '../domain/member-view.ts';
 import {accountAvatarSource} from '../domain/profile.ts';
 import {reporterIdentity} from './auth.ts';
 import {cloudPortalId,localContext} from './config.ts';
@@ -60,7 +60,7 @@ function boundAccount(request:Request,value:Resolved){
 }
 export function memberViewPhotos(view:MemberView):MemberView{
   const pilot=reporterDeploymentMode()==='local'?localContext.portal:cloudPortalId();
-  return{...view,person:{...view.person,avatarUrl:accountAvatarSource(view.person.id,view.person.avatarUrl,pilot)},
+  return{...view,person:{...view.person,avatarUrl:memberViewImageSource(view.id,accountAvatarSource(view.person.id,view.person.avatarUrl,pilot))},
     operator:{...view.operator,avatarUrl:accountAvatarSource(view.operator.id,view.operator.avatarUrl,pilot)}};
 }
 export async function resolveMemberView(request:Request,id:string,slug:string|null,deps:MemberViewDeps):Promise<ReporterRequestContext>{
@@ -70,8 +70,8 @@ export async function resolveMemberView(request:Request,id:string,slug:string|nu
   // The transaction has committed any expiry/revocation audit before the refusal is raised.
   if(value.error||!value.context||!value.view)throw new FlowError(value.error==='MEMBER_VIEW_ENDED'?'MEMBER_VIEW_ENDED':'MEMBER_VIEW_UNAVAILABLE',410);
   const view=memberViewPhotos(value.view),context=value.context;
-  return{...context,image:accountAvatarSource(context.actor,typeof context.image==='string'?context.image:undefined,
-    reporterDeploymentMode()==='local'?localContext.portal:cloudPortalId()),view};
+  return{...context,image:memberViewImageSource(view.id,accountAvatarSource(context.actor,typeof context.image==='string'?context.image:undefined,
+    reporterDeploymentMode()==='local'?localContext.portal:cloudPortalId())),view};
 }
 
 /** Ending an owned support context requires the real login, including after its operator role is revoked. */

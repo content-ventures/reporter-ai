@@ -6,6 +6,7 @@ import type { Result } from '../../domain/result.ts';
 import type { InviteAccepted, InviteDesk, PlatformConsole, PlatformDirectory, PlatformLogPage, PlatformOperator, Restored } from '../../ports/platform.ts';
 import {createReporterTransport} from './reporter-client.ts';
 import {createHttpWorkspaceAdministration} from './workspace-management.ts';
+import {createHttpMemberViewing} from './member-view.ts';
 
 /**
  * The connected console and invite page: `/api/reporter/platform` and `/api/reporter/invites`.
@@ -46,7 +47,8 @@ export function createHttpPlatform() {
   const listeners = new Set<() => void>();
   const http=createReporterTransport(undefined,{requireAccount:true});
   let binding:Promise<PlatformOperator>|undefined;
-  const ready=async()=>{await(binding??=http.request<PlatformOperator>('/platform/operator').then(operator=>{http.bindAccount(operator.id);return operator;}).catch(error=>{binding=undefined;throw error;}));};
+  let accountId:string|undefined;
+  const ready=async()=>{await(binding??=http.request<PlatformOperator>('/platform/operator').then(operator=>{http.bindAccount(operator.id);accountId=operator.id;return operator;}).catch(error=>{binding=undefined;throw error;}));};
   async function platformCall<T>(path:string,body?:unknown):Promise<Result<T,PlatformRefusal>>{
     try{await ready();return ok(await http.request<T>(`/platform/${path}`,body));}
     catch(error){const value=error as {code?:string;message?:string};
@@ -87,5 +89,5 @@ export function createHttpPlatform() {
       inviteCall<InviteAccepted, PasswordRefusal | InviteLinkRefusal>(`${encodeURIComponent(token)}/accept`, { password, confirmation }),
   };
 
-  return { console: platform, invites,workspaces:createHttpWorkspaceAdministration({transport:http,ready,notify}),dispose:()=>{http.dispose();listeners.clear();} };
+  return { console: platform, invites,workspaces:createHttpWorkspaceAdministration({transport:http,ready,notify}),memberViewing:createHttpMemberViewing(http,ready,()=>accountId),dispose:()=>{http.dispose();listeners.clear();} };
 }

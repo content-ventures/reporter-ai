@@ -44,6 +44,7 @@ import { scopeForRpc } from './editorial-scope.ts';
 import { materialPartsSchema, materialTranscriptIds } from './material-parts.ts';
 import { writingRunModel, writingTraceUsage } from '../domain/writing-execution.ts';
 import {workspaceTemplateHash} from '../domain/workspace-templates.ts';
+import {memberViewImageSource} from '../domain/member-view.ts';
 import {readWorkspaceTemplates,referencedTemplateHashes} from './template-settings.ts';
 import {workspaceTemplateLibrary} from '../runtime/editorial-engine.ts';
 
@@ -135,7 +136,10 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
         avatarUrl: accountAvatarSource(identity.personId,profile.image ?? undefined,localContext.portal) };
     }
     if (identity) adoptEditorialIdentity(checkpoint,identity);
-    if(context?.view)for(const member of checkpoint.state.members){delete member.localOperator;if(member.personId===context.actor)member.readOnly=true;}
+    if(context?.view){
+      for(const member of checkpoint.state.members){delete member.localOperator;if(member.personId===context.actor)member.readOnly=true;}
+      for(const person of checkpoint.state.people)person.avatarUrl=memberViewImageSource(context.view.id,person.avatarUrl);
+    }
     if(scope.templates)checkpoint.templateConfiguration=await readWorkspaceTemplates(client,checkpoint.state.workspace.id,referencedTemplateHashes(checkpoint));
     for (const job of Object.values(checkpoint.jobs)) job.events = compactRunPreviews(job.events);
     const engine = createEditorialEngine(checkpoint, ids);

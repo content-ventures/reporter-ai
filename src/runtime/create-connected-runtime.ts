@@ -176,6 +176,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const exporter = createLocalExportService({ clock,getRecord: id => ports.records.record(id),render,assets });
   const ready = Promise.all([refresh(),assets.ready()]).then(() => undefined);
   const directory=createHttpWorkspaceDirectory(directoryHttp,()=>ready);
+  const memberViewing=createHttpMemberViewing(directoryHttp,()=>ready,()=>current.navigation?.accountId);
   // Polls only this application's same-origin endpoint; generation survives leaving the page.
   // A hidden tab stops polling, so a forgotten tab does not keep the database awake.
   const timer = setInterval(() => {
@@ -202,7 +203,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   return {
     get navigation(){return current.navigation;},
     get workspaceDirectory(){return current.navigation?.enabled?directory:undefined;},
-    memberViewing:createHttpMemberViewing(directoryHttp,()=>ready),
+    memberViewing,
     administration:createHttpWorkspaceAdministration({transport:http,ready:()=>ready,scope:()=>current.state.workspace.id}),
     mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest,http),generation: generation.service,render,export: exporter,assets,audit,
     visuals: createHttpVisualLibrary(http),
@@ -241,6 +242,6 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     usedAssetIds: () => usedAssetIds(ports.store.state.productions),ready,subscribe: ports.store.subscribe,flush: () => {},
     async settle(){let tail;do{tail=writeTail;await tail;await Promise.resolve();}while(tail!==writeTail);return !disposed&&save.status!=='error';},
     onInvalidated(listener){contextListeners.add(listener);return()=>{contextListeners.delete(listener);};},
-    dispose() { disposed = true;for(const dispose of imageDisposers)dispose();imageDisposers.clear(); for(const image of logos.values())void image.then(result=>{if(result.ok)(result.value.source as {close?:()=>void}).close?.();});logos.clear();contextListeners.clear(); http.dispose();directoryHttp.dispose();globalThis.document?.removeEventListener('visibilitychange',resumed); rejectAssetNamespace(new DOMException('Context closed','AbortError')); clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
+    dispose() { if(current.navigation?.view)void memberViewing.end(current.navigation.view.id,'workspace_changed');disposed = true;for(const dispose of imageDisposers)dispose();imageDisposers.clear(); for(const image of logos.values())void image.then(result=>{if(result.ok)(result.value.source as {close?:()=>void}).close?.();});logos.clear();contextListeners.clear(); http.dispose();directoryHttp.dispose();globalThis.document?.removeEventListener('visibilitychange',resumed); rejectAssetNamespace(new DOMException('Context closed','AbortError')); clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
   };
 }
