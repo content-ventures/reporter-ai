@@ -22,6 +22,13 @@ for(const width of [1440,390]){
         if(width===390){const opener=target.getByRole('button',{name:'Abrir menu',exact:true});if(await opener.getAttribute('aria-expanded')!=='true')await opener.click();}
         await trigger.click();return target.getByRole('menu',{name:'Trocar workspace',exact:true});
       }
+      async function choice(item:{name:string},target:Page=page){
+        const quick=await menu(target),option=quick.getByRole('menuitemradio',{name:new RegExp(item.name)});
+        if(await option.count())return option;
+        await quick.getByRole('menuitem',{name:'Ver todos os workspaces',exact:true}).click();
+        const picker=target.getByRole('dialog',{name:'Trocar workspace',exact:true});await picker.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(item.name);
+        return picker.getByRole('button',{name:new RegExp(item.name)});
+      }
       await page.goto('/workspaces');await page.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(a.name);
       const entry=page.getByRole('link',{name:new RegExp(a.name)});await expect(entry).toHaveAttribute('href',`/w/${a.slug}/`);
       await entry.focus();await entry.press('Enter');await expect(page).toHaveURL(new RegExp(`/w/${a.slug}/?$`));
@@ -43,17 +50,17 @@ for(const width of [1440,390]){
       });
       await editor.click();await editor.press('ControlOrMeta+End');await editor.pressSequentially(`Saved before changing client ${suffix}`);
       await intercepted;
-      await (await menu()).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();
+      await (await choice(b)).click();
       await expect(page).toHaveURL(new RegExp(`/w/${a.slug}/`));release();
       await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
       await expect(other).toHaveURL(new RegExp(`/w/${a.slug}/productions$`));
       const stored=await(await request.get(`/api/reporter/w/${a.slug}/workspace`,{headers})).json();expect(JSON.stringify(stored.state.productions)).toContain(`Saved before changing client ${suffix}`);
       await page.goto(`/w/${a.slug}/settings/writing-guide`);
       const voice=page.getByRole('textbox',{name:'Voz',exact:true});await voice.fill(`Unsaved policy ${suffix}`);
-      await (await menu()).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();
+      await (await choice(b)).click();
       const warning=page.getByRole('dialog',{name:'Sair sem salvar?',exact:true});await expect(warning).toBeVisible();
       await warning.getByRole('button',{name:'Continuar editando',exact:true}).click();await expect(voice).toHaveValue(`Unsaved policy ${suffix}`);
-      await (await menu()).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();await warning.getByRole('button',{name:'Descartar e sair',exact:true}).click();
+      await (await choice(b)).click();await warning.getByRole('button',{name:'Descartar e sair',exact:true}).click();
       await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
       await expect(page.locator('[data-part="switcher"]')).toHaveAttribute('aria-label',new RegExp(b.name));
       await page.goto('/');await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
@@ -64,19 +71,19 @@ for(const width of [1440,390]){
       await other.route(`**/api/reporter/w/${a.slug}/workspace`,route=>route.request().method()==='POST'?route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'SAVE_UNCONFIRMED',message:'Synthetic interrupted save'})}):route.continue());
       const failedEditor=other.getByRole('textbox',{name:'Texto do artigo',exact:true});await expect(failedEditor).toBeVisible();await failedEditor.click();await failedEditor.press('ControlOrMeta+End');await failedEditor.pressSequentially(` Unconfirmed text ${suffix}`);
       await expect(other.getByText('Não foi possível salvar',{exact:true}).first()).toBeVisible();
-      await (await menu(other)).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();
+      await (await choice(b,other)).click();
       const unconfirmed=other.getByRole('dialog',{name:'Sair sem confirmar o salvamento?',exact:true});await expect(unconfirmed).toBeVisible();await unconfirmed.getByRole('button',{name:'Continuar editando',exact:true}).click();await expect(failedEditor).toContainText(`Unconfirmed text ${suffix}`);
-      await (await menu(other)).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();await unconfirmed.getByRole('button',{name:'Sair mesmo assim',exact:true}).click();
+      await (await choice(b,other)).click();await unconfirmed.getByRole('button',{name:'Sair mesmo assim',exact:true}).click();
       await expect(other).toHaveURL(new RegExp(`/w/${b.slug}/?$`));await other.unroute(`**/api/reporter/w/${a.slug}/workspace`);await other.goto(`/w/${a.slug}/productions`);expect(otherErrors).toEqual([]);
       const account=page.getByRole('button',{name:/Menu da conta$/});
       if(width===390){const opener=page.getByRole('button',{name:'Abrir menu',exact:true});if(await opener.getAttribute('aria-expanded')!=='true')await opener.click();}
       await account.click();await page.getByRole('menuitem',{name:'Administrar workspace',exact:true}).click();
       await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/admin/workspace$`));
       const publication=page.getByRole('textbox',{name:'Nome do veículo',exact:true});await publication.fill(`Unsaved brand ${suffix}`);
-      await (await menu()).getByRole('menuitemradio',{name:new RegExp(a.name)}).click();
+      await (await choice(a)).click();
       const formWarning=page.getByRole('dialog',{name:'Sair sem salvar?',exact:true});await expect(formWarning).toBeVisible();
       await formWarning.getByRole('button',{name:'Continuar editando',exact:true}).click();await expect(publication).toHaveValue(`Unsaved brand ${suffix}`);
-      await (await menu()).getByRole('menuitemradio',{name:new RegExp(a.name)}).click();await formWarning.getByRole('button',{name:'Descartar e sair',exact:true}).click();
+      await (await choice(a)).click();await formWarning.getByRole('button',{name:'Descartar e sair',exact:true}).click();
       await expect(page.locator('[data-part="switcher"]')).toHaveAttribute('aria-label',new RegExp(a.name));
       const latest=await(await request.get(`/api/reporter/platform/workspaces/${b.id}`,{headers})).json();
       const archived=await request.post(`/api/reporter/platform/workspaces/${b.id}/update`,{headers,data:{name:b.name,status:'archived',revision:latest.revision}});expect(archived.ok()).toBe(true);
