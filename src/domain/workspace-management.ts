@@ -84,3 +84,10 @@ export function workspaceReadiness(configured: Record<WorkspaceRequirement, bool
     .filter(requirement => !configured[requirement]);
   return { ready: missing.length === 0, missing };
 }
+
+export type WorkspaceRollout='off'|'admin'|'all';
+export type WorkspaceActivation={mode:WorkspaceRollout;effective:WorkspaceRollout;revision:number;updatedAt:string};
+/** An environment restriction can reduce availability; a request cannot raise it. */
+export function limitWorkspaceRollout(ceiling:WorkspaceRollout,mode:WorkspaceRollout):WorkspaceRollout{
+  return ceiling==='off'||mode==='off'?'off':ceiling==='admin'||mode==='admin'?'admin':'all';
+}
