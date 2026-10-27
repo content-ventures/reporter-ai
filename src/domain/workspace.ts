@@ -60,6 +60,8 @@ export type Member = {
   workspaceId: WorkspaceId;
   personId: PersonId;
   roles: Role[];
+  /** A support view keeps these roles for reading while refusing every editorial mutation. */
+  readOnly?:true;
   /** Simulated-only flag that allows "Agir como" demos; ignored by real adapters. */
   simulated?: boolean;
   /** Server-owned development identity: manual self-review only in the loopback pilot. */

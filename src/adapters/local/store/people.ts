@@ -38,7 +38,7 @@ export function currentMember(state: StoreState): Member | undefined {
 export function toSessionMember(state: StoreState, member: Member): SessionMember | undefined {
   const person = state.people.find((candidate) => candidate.id === member.personId);
   if (!person) return undefined;
-  return { ...toPersonSummary(person), workspaceId: member.workspaceId, roles: [...member.roles] };
+  return { ...toPersonSummary(person), workspaceId: member.workspaceId, roles: [...member.roles],...(member.readOnly?{readOnly:true as const}:{}) };
 }
 
 /** Speakers of a production's material, merged by label, with the mapped person. */

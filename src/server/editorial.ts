@@ -110,7 +110,7 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
     const context = role === 'runtime' ? currentReporterContext() : undefined;
     let identity: EditorialIdentity | undefined = context ? { workspaceId: context.portal,workspaceName: context.workspaceName,workspaceSlug: context.workspaceSlug,
       personId: context.actor,name: context.name,email: context.email,avatarUrl: context.image,roles: context.roles,
-      ...(reporterDeploymentMode() === 'local' ? { localOperator: true as const } : {}) } : undefined;
+      ...(reporterDeploymentMode() === 'local'&&!context.view ? { localOperator: true as const } : {}) } : undefined;
     const fallback = emptyEditorialCheckpoint(identity).state.workspace;
     const checkpoint = assembleCheckpoint(rows, fallback, loaded);
     if (role==='worker') {
@@ -135,6 +135,7 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
         avatarUrl: accountAvatarSource(identity.personId,profile.image ?? undefined,localContext.portal) };
     }
     if (identity) adoptEditorialIdentity(checkpoint,identity);
+    if(context?.view)for(const member of checkpoint.state.members){delete member.localOperator;if(member.personId===context.actor)member.readOnly=true;}
     if(scope.templates)checkpoint.templateConfiguration=await readWorkspaceTemplates(client,checkpoint.state.workspace.id,referencedTemplateHashes(checkpoint));
     for (const job of Object.values(checkpoint.jobs)) job.events = compactRunPreviews(job.events);
     const engine = createEditorialEngine(checkpoint, ids);
@@ -203,7 +204,7 @@ export async function editorialPipeline() {
 export async function editorialWritingRun(runId: string): Promise<WritingRunDetails> {
   const id = identifier.parse(runId);
   return (await editorialTransaction('runtime', async checkpoint => {
-    assertCapability(checkpoint, 'pipeline.edit');
+    assertCapability(checkpoint, 'audit.read');
     const job = checkpoint.jobs[id], fold = checkpoint.state.runFolds[id];
     if (!job?.pipeline || !fold) throw new FlowError('WRITING_RUN_NOT_FOUND', 404);
     return { runId: id, productionId: job.meta.productionId, status: fold.run.status,

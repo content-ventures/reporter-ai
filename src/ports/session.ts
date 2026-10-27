@@ -15,6 +15,7 @@ export type SessionMode = 'simulated' | 'remote';
 export type SessionMember = PersonSummary & {
   workspaceId: WorkspaceId;
   roles: Role[];
+  readOnly?:true;
   /** The sign-in e-mail, on `current()` only (never on `members()`). */
   email?: string;
 };
