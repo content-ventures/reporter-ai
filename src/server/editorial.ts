@@ -172,7 +172,10 @@ export async function editorialWorkspace(since?: string, options: { active?: boo
     queue: options.active ? await queueStatus(client, 'editorial') : IDLE_QUEUE,
   }));
   const workerOnline = await workerAvailable();
-  const scope = contentHash({ membersHash: status.membersHash,context: currentReporterContext(),rollout:workspaceRollout() });
+  const context=currentReporterContext();
+  // A shrinking support-view lifetime must not turn every idle poll into a full snapshot.
+  const stableContext=context.view?{...context,view:{...context.view,remainingMs:0}}:context;
+  const scope = contentHash({ membersHash: status.membersHash,context: stableContext,rollout:workspaceRollout() });
   const token = (seq: number) => `v2.${seq}.${scope}`;
   const seq = Number(status.seq);
   if (since === token(seq)) return { unchanged: true,revision: seq,syncToken: token(seq),workerOnline,stalled: queue.stalled };
@@ -188,7 +191,8 @@ export async function editorialWorkspace(since?: string, options: { active?: boo
   const jobs = Object.fromEntries(Object.entries(result.checkpoint.jobs).map(([id,job]) => [id,{ meta: job.meta,kind: job.kind,events: job.events }])) as EditorialCheckpoint['jobs'];
   return { state: result.checkpoint.state,jobs,templateConfiguration:result.checkpoint.templateConfiguration,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),
     model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline,stalled: queue.stalled,deploymentMode:reporterDeploymentMode(),
-    navigation:{...navigation,enabled:rollout==='all'||rollout==='admin'&&navigation.administrative} };
+    navigation:{...navigation,enabled:rollout==='all'||rollout==='admin'&&navigation.administrative,
+      ...(currentReporterContext().view?{view:currentReporterContext().view}:{})} };
 }
 
 export async function editorialPipeline() {

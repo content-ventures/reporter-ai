@@ -103,9 +103,9 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp
 DECLARE actor uuid:=core.reporter_member_view_actor(p_subject,p_email,p_verified); v core.reporter_member_views; reason text; context jsonb;
 BEGIN
   SELECT * INTO v FROM core.reporter_member_views WHERE id=p_view AND operator_id=actor FOR UPDATE;
-  IF NOT FOUND THEN RETURN jsonb_build_object('error','MEMBER_VIEW_UNAVAILABLE'); END IF;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error','MEMBER_VIEW_UNAVAILABLE','accountId',actor); END IF;
   IF p_slug IS NOT NULL AND NOT EXISTS(SELECT FROM public.portals WHERE id=v.portal_id AND slug=p_slug) THEN
-    RETURN jsonb_build_object('error','MEMBER_VIEW_UNAVAILABLE');
+    RETURN jsonb_build_object('error','MEMBER_VIEW_UNAVAILABLE','accountId',actor);
   END IF;
   reason:=core.reporter_member_view_reason(p_view,actor);
   IF reason IS NOT NULL THEN
@@ -114,12 +114,12 @@ BEGIN
       PERFORM core.reporter_member_view_audit(p_view,'ended',reason);
     END IF;
     -- Return, do not raise: the expired/revoked view and its audit must commit.
-    RETURN jsonb_build_object('error','MEMBER_VIEW_ENDED');
+    RETURN jsonb_build_object('error','MEMBER_VIEW_ENDED','accountId',actor);
   END IF;
   SELECT jsonb_build_object('tenant',p.tenant_id,'portal',p.id,'actor',u.id,'workspaceName',p.name,'workspaceSlug',p.slug,
     'name',u.name,'email',u.email,'image',u.image,'roles',v.roles,'addressed',true,'administrative',false,'workspaceStatus',w.lifecycle)
     INTO context FROM public.portals p JOIN public.reporter_workspaces w ON w.portal_id=p.id JOIN core.users u ON u.id=v.person_id WHERE p.id=v.portal_id;
-  RETURN jsonb_build_object('context',context,'view',core.reporter_member_view_value(p_view));
+  RETURN jsonb_build_object('context',context,'view',core.reporter_member_view_value(p_view),'accountId',actor);
 END $$;
 
 CREATE OR REPLACE FUNCTION public.reporter_member_view_end(p_subject text,p_email text,p_verified boolean,p_view uuid,p_reason text) RETURNS boolean
@@ -163,6 +163,29 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_t
         WHERE p.id=p_portal AND p.tenant_id=core.context_tenant_id() AND p.status IN ('draft','active') AND p.deleted_at IS NULL AND t.status='active')),false)
 $$;
 
+CREATE OR REPLACE FUNCTION public.reporter_member_view_avatar(p_target uuid,p_portal uuid,p_file text) RETURNS boolean
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+DECLARE portal uuid:=core.reporter_require('reporter.read'); viewer uuid:=core.context_user_id();
+BEGIN
+  IF nullif(current_setting('app.member_view',true),'') IS NULL OR p_file !~ '^[a-f0-9]{64}\.image$' THEN RETURN false; END IF;
+  RETURN EXISTS(SELECT FROM core.users target WHERE target.id=p_target
+    AND (target.image='/api/reporter/avatars/'||target.id::text||'/'||p_portal::text||'/'||p_file
+      OR target.image='/api/reporter/profile/avatar/'||p_file
+        AND p_portal IN ('10000000-0000-0000-0000-000000000101'::uuid,'00000000-0000-0000-0000-000000000101'::uuid)
+        AND EXISTS(SELECT FROM public.portal_members WHERE user_id=target.id AND portal_id=p_portal))
+    AND (viewer=p_target OR EXISTS(SELECT FROM public.portal_members teammate JOIN core.tenant_members tm ON tm.tenant_id=teammate.tenant_id AND tm.user_id=teammate.user_id
+      WHERE teammate.portal_id=portal AND teammate.user_id=p_target AND teammate.status='active' AND NOT teammate.invite_pending AND tm.status='active' AND NOT target.banned)));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.reporter_navigation_identity() RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+DECLARE actor uuid:=CASE WHEN nullif(current_setting('app.member_view',true),'') IS NULL THEN core.context_user_id()
+  ELSE nullif(current_setting('app.real_user_id',true),'')::uuid END;
+BEGIN
+  PERFORM core.reporter_require('reporter.read');
+  RETURN jsonb_build_object('accountId',actor,'administrative',core.reporter_is_operator(actor));
+END $$;
+
 -- Retain function identity/permissions and the normal lazy initialization contract on replay.
 DO $migration$ DECLARE definition text; needle text:='INSERT INTO public.reporter_ed_sync(portal_id) VALUES(portal) ON CONFLICT DO NOTHING;'; BEGIN
   definition:=pg_get_functiondef('public.reporter_ed_load(jsonb)'::regprocedure);
@@ -178,11 +201,13 @@ DO $$ DECLARE signature text; BEGIN
     'core.reporter_member_view_actor(text,text,boolean)','core.reporter_member_view_reason(uuid,uuid)',
     'core.reporter_member_view_audit(uuid,text,text)','core.reporter_member_view_value(uuid)',
     'public.reporter_member_view_start(uuid,uuid)','public.reporter_member_view_context(text,text,boolean,uuid,text)',
-    'public.reporter_member_view_end(text,text,boolean,uuid,text)','public.reporter_member_view_valid(uuid,uuid,uuid,uuid)'] LOOP
+    'public.reporter_member_view_end(text,text,boolean,uuid,text)','public.reporter_member_view_valid(uuid,uuid,uuid,uuid)',
+    'public.reporter_member_view_avatar(uuid,uuid,text)'] LOOP
     EXECUTE format('ALTER FUNCTION %s OWNER TO CURRENT_USER',signature);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC',signature);
   END LOOP;
   GRANT EXECUTE ON FUNCTION public.reporter_member_view_start(uuid,uuid),public.reporter_member_view_context(text,text,boolean,uuid,text),
-    public.reporter_member_view_end(text,text,boolean,uuid,text),public.reporter_member_view_valid(uuid,uuid,uuid,uuid) TO reporter_runtime;
+    public.reporter_member_view_end(text,text,boolean,uuid,text),public.reporter_member_view_valid(uuid,uuid,uuid,uuid),
+    public.reporter_member_view_avatar(uuid,uuid,text) TO reporter_runtime;
 END $$;
 COMMIT;

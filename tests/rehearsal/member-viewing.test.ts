@@ -13,6 +13,17 @@ const OTHER={email:'support-other@rehearsal.test',subject:'support-other'};
 let db:Awaited<ReturnType<typeof startRehearsalDatabase>>,operator:string,reader:string,other:string;
 let transaction:typeof import('../../src/server/database.ts').transaction;
 let runWithReporterContext:typeof import('../../src/server/request-context.ts').runWithReporterContext;
+let handle:typeof import('../../src/server/http.ts').handleReporter;
+const APP='http://127.0.0.1:3996';
+async function api(path:string,options:{body?:unknown;view?:string;account?:string;identity?:typeof OPERATOR}={}){
+  const identity=options.identity??OPERATOR,headers=new Headers();
+  if(options.view)headers.set('x-reporter-view',options.view);
+  if(options.account)headers.set('x-reporter-account',options.account);
+  if(options.body!==undefined){headers.set('origin',APP);headers.set('content-type','application/json');}
+  const response=await handle(new Request(APP+'/api/reporter/'+path,{headers,...(options.body===undefined?{}:{method:'POST',body:JSON.stringify(options.body)})}),path.split('?')[0].split('/'),
+    {identify:async()=>({...identity,name:identity.email,image:undefined,emailVerified:true}),defer:()=>{throw new Error('Support viewing must not schedule processing');}});
+  return{status:response.status,headers:response.headers,value:await response.json()};
+}
 async function owner(sql:string,values:unknown[]=[]){
   const client=new pg.Client({connectionString:db.owner});await client.connect();
   try{return(await client.query(sql,values)).rows;}finally{await client.end();}
@@ -44,9 +55,10 @@ before(async()=>{
   [{id:reader}]=await owner('SELECT id FROM core.users WHERE email=$1',[READER.email]);
   [{id:other}]=await owner('SELECT id FROM core.users WHERE email=$1',[OTHER.email]);
   await owner("INSERT INTO public.user_roles(user_id,role) VALUES($1,'platform_admin'),($2,'platform_admin')",[operator,reader]);
-  Object.assign(process.env,{REPORTER_DEPLOYMENT_MODE:'cloud',REPORTER_DATABASE_URL:db.runtime,REPORTER_WORKER_DATABASE_URL:db.worker,REPORTER_DEFAULT_PORTAL_ID:PILOT});
+  Object.assign(process.env,{REPORTER_DEPLOYMENT_MODE:'cloud',REPORTER_DATABASE_URL:db.runtime,REPORTER_WORKER_DATABASE_URL:db.worker,REPORTER_DEFAULT_PORTAL_ID:PILOT,REPORTER_WORKSPACES_MODE:'all'});
   ({transaction}=await import('../../src/server/database.ts'));
   ({runWithReporterContext}=await import('../../src/server/request-context.ts'));
+  ({handleReporter:handle}=await import('../../src/server/http.ts'));
 },{timeout:180000});
 after(async()=>{
   const pools=(globalThis as typeof globalThis&{reporterPools?:Partial<Record<string,Pool>>}).reporterPools??{};
@@ -127,4 +139,45 @@ test('workspace archival ends the view, and restoring the workspace does not res
   try{assert.equal((await resolve(view.id)).error,'MEMBER_VIEW_ENDED');}
   finally{await owner("UPDATE public.reporter_workspaces SET lifecycle='active' WHERE portal_id=$1",[PILOT]);}
   assert.equal((await resolve(view.id)).error,'MEMBER_VIEW_ENDED');
+});
+
+test('the HTTP read projection retains the real account and marks its effective member view as uncached',async()=>{
+  const created=await api('platform/member-views',{body:{workspaceId:PILOT,personId:reader}});assert.equal(created.status,201);
+  const view=created.value as MemberView;
+  const snapshot=await api('w/reporter-ai/workspace',{view:view.id,account:operator});assert.equal(snapshot.status,200);
+  assert.equal(snapshot.value.state.sessionPersonId,reader);
+  assert.equal(snapshot.value.navigation.accountId,operator);assert.equal(snapshot.value.navigation.view.id,view.id);
+  assert.equal(snapshot.value.navigation.view.operator.id,operator);assert.equal(snapshot.value.navigation.view.readOnly,true);
+  assert.match(snapshot.headers.get('cache-control')??'',/no-store/);
+  const idle=await api(`w/reporter-ai/workspace?since=${encodeURIComponent(snapshot.value.syncToken)}`,{view:view.id,account:operator});
+  assert.equal(idle.status,200);assert.equal(idle.value.unchanged,true);assert.ok(JSON.stringify(idle.value).length<1000);
+  assert.equal((await api('w/reporter-ai/pipeline',{view:view.id,account:reader})).status,409);
+  assert.equal((await api('w/reporter-ai/pipeline',{view:'invalid-view',account:operator})).status,403);
+});
+
+test('all preview mutations and global or legacy escapes fail before validation, uploads or provider scheduling',async()=>{
+  const view=await start();
+  for(const path of ['workspace','profile','uploads','templates/logo','team/invites','news/search','citations/example/fact-check','visuals/generate']){
+    const answer=await api('w/reporter-ai/'+path,{view:view.id,account:operator,body:{}});
+    assert.equal(answer.status,403,path);assert.equal(answer.value.error,'MEMBER_VIEW_READ_ONLY',path);
+  }
+  for(const path of ['platform/workspaces','invites/invalid','workspace']){
+    const answer=await api(path,{view:view.id,account:operator,body:{}});assert.equal(answer.status,403,path);
+    assert.equal(answer.value.error,'MEMBER_VIEW_UNAVAILABLE',path);
+  }
+  assert.equal((await api(`workspace?_view=${view.id}`,{account:operator})).status,403);
+  assert.equal((await api('w/another-client/pipeline',{view:view.id,account:operator})).status,410);
+});
+
+test('the HTTP exit is owned, idempotent and remains available after platform-role revocation',async()=>{
+  const view=await start();
+  assert.equal((await api(`member-views/${view.id}/end`,{identity:OTHER,account:other,body:{reason:'exit'}})).status,403);
+  await owner("DELETE FROM public.user_roles WHERE user_id=$1 AND role='platform_admin'",[operator]);
+  try{
+    assert.equal((await api(`member-views/${view.id}/end`,{account:operator,body:{reason:'exit'}})).status,200);
+    assert.equal((await api(`member-views/${view.id}/end`,{account:operator,body:{reason:'exit'}})).status,200);
+    const rows=await owner("SELECT user_id,after_data,correlation_id FROM public.audit_log WHERE entity_id=$1 AND action='platform.member_view.ended'",[view.id]);
+    assert.equal(rows.length,1);assert.equal(rows[0].user_id,operator);assert.ok(rows[0].correlation_id);
+    assert.equal(rows[0].after_data.reason,'operator_revoked');
+  }finally{await owner("INSERT INTO public.user_roles(user_id,role) VALUES($1,'platform_admin')",[operator]);}
 });
