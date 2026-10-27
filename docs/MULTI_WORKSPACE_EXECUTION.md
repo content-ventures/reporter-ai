@@ -152,7 +152,7 @@ All eight final connected browser cases passed on the same application build: me
 
 Earlier browser attempts exposed a narrow-screen DS Banner action extending 9 px beyond the page. The final public-component composition keeps its exit in the sticky TopBar on narrow screens. Revocation assertions now await the actual idle-poll refusal before checking recovery, within the original test limits. Initial fresh/upgrade validation also detected a column-order difference after adding the session digest; migration 044 now produces the same schema in both paths. All 74 fixture regressions passed, including the complete review, approval and actual downloaded article/carousel package. M7 is accepted locally; M8 owns complete final-delivery regression and the cross-client workload. No production or paid-provider action occurred.
 
-## M8 complete acceptance in progress
+## M8 complete local acceptance
 
 The final application candidate is `c5d2b36`. Later changes add the browser-storage test contract and operating documentation; they do not change the application build under acceptance. The complete gate passed 1,747 general tests and a production build; the final backend suite passed 319 tests. Fresh/upgrade PostgreSQL integration, all 43 tables, concurrent sessions, migration replay and recovery passed. The full cloud rehearsal passed 128 cases with the same 6 documented skips. The ARM64 worker bundle passed with 157 files and 10,295,984 compressed bytes. All 55 runtime file traces exclude local evidence and environment files.
 
@@ -166,7 +166,7 @@ The initial 18-case browser batch passed 16 cases, failed the pending-upload cas
 
 The isolated 20-editor, 2-approver workload issued 5,040 timed HTTP operations across two clients: 2,640 reads and 2,400 writes, zero failures, 17.08 seconds, p95 reads 82.49 ms and writes 71.86 ms. Both remain below the pre-established 250/500 ms budgets. The old 60.2/98.6 ms single-client numbers remain historical context, not an equivalent baseline or production SLA. Five actual worker claims alternate Alpha/Beta/Alpha/Beta/Alpha, retain the enqueuing actor, workspace, policy and usage, and satisfy the two-round fairness budget. Nineteen unauthorized foreign-context probes are refused; the shared account's legitimate B membership is tested separately. The workload transferred 96,285,881 HTTP response bytes and made five synthetic provider completions, with zero paid calls. Equivalent thousand-production PostgreSQL bootstrap transfer is 26,369,323 bytes versus the 26,368,048-byte baseline; idle polling is 831 bytes versus 767, still below 1 KiB and the 20% investigation threshold. Scoped draft saves remain below 9 KB.
 
-Legacy/fixture final regression and the M8 exit decision remain pending. These automated provider assertions prove that the correct policy reaches each writing request; they do not claim a live model comparison or human editorial approval. No production, remote-delivery, email or paid-provider action has occurred.
+The final complete legacy batch passed 88 cases with its one pre-existing, intentionally skipped mobile case. All 74 disposable-fixture regressions passed, including the complete source, article, separate approval, carousel, creative approval and actual downloaded delivery. The connected build was preserved and restored after fixture validation. The delegated engineering review inspected request-policy composition and downloaded client branding and verified the unchanged Seafood workflow. M8 is accepted locally. These provider assertions prove that the correct policy reaches each writing request; they do not claim a live model comparison or human editorial approval. Production pilot and live editorial observation remain M9 operational acceptance. No production, remote-delivery, email or paid-provider action has occurred.
 
 ## Activation and recovery contract
 
@@ -186,4 +186,5 @@ Before a rollout, stop new commands for the affected workspace, settle or pause 
 | M5 | Accepted locally with the recorded pre-existing menu instability; dynamic setup, teams and archive/restore verified |
 | M6 | Accepted locally: scoped navigation, browser lifetime, pending-edit safeguards and desktop/mobile focus; replay-fixture corrections recorded |
 | M7 | Accepted locally: audited read-only member inspection, real operator identity, bounded reports and desktop/mobile exit/revocation/expiry checks |
-| M8–M9 | Not accepted |
+| M8 | Accepted locally: complete cross-client delivery, pending-upload/context lifetime, isolation/load, policy requests and full legacy/fixture regressions |
+| M9 | Not accepted: controlled remote validation, release, production pilot and board handoff remain pending |
