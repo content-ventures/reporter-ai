@@ -55,6 +55,7 @@ const R2_DOCKED_ROUTE = /^\/news$/;
  * `src/features` here: a pure module with relative imports only.
  */
 function defaultCrumbs(pathname: string): Crumb[] {
+  if(pathname==='/admin/workspace')return[{label:'Administrar workspace'}];
   if (pathname === NEW_PRODUCTION_HREF) return [{ label: 'Produções', href: PRODUCTIONS_HREF }, { label: 'Nova produção' }];
   if (pathname.startsWith(`${PRODUCTIONS_HREF}/`)) {
     return productionTrail(productionRoute(pathname.split('/').slice(3)), { productions: PRODUCTIONS_HREF });
@@ -175,7 +176,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
         sidebar={(
           <Sidebar
             product={<ReporterBrand endorsed />}
-            switcher={<WorkspaceSwitcher/>}
+            switcher={runtime.runtime?.workspaceDirectory?<WorkspaceSwitcher/>:undefined}
             search={<SidebarSearch onOpen={openPalette} label="Buscar" />}
             groups={groups}
             utilities={utilities}

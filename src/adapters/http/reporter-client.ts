@@ -64,7 +64,7 @@ export function createReporterTransport(slug?: string, options: { requireAccount
       const error=await response.clone().json().catch(()=>null) as {error?:string}|null;
       if(error?.error&&['ACCOUNT_CONTEXT_CHANGED','AUTH_REQUIRED','ACCESS_PENDING','EMAIL_NOT_VERIFIED','WORKSPACE_NOT_FOUND'].includes(error.error)){
         options.onInvalidated?.();lifetime.abort();
-        if(typeof window!=='undefined')window.location.replace(error.error==='AUTH_REQUIRED'?'/auth/sign-in':'/workspaces?entry=1');
+        if(typeof window!=='undefined')window.location.replace(error.error==='AUTH_REQUIRED'?'/auth/sign-in':error.error==='ACCESS_PENDING'||error.error==='EMAIL_NOT_VERIFIED'?'/auth/pending':error.error==='WORKSPACE_NOT_FOUND'?'/workspaces?unavailable=1':'/workspaces');
         throw new ReporterHttpError('O acesso a este contexto mudou. Abra um workspace liberado.',error.error,response.status);
       }
     }
