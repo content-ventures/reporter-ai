@@ -107,6 +107,27 @@ test('private brands use the target client even when the real operator has no me
   assert.equal((await api(`w/other-publication/templates?hashes=${randomUUID()}`)).status,422);
 });
 
+test('configuration copying accepts the preserved pilot identifier as source or target',async()=>{
+  const created=await api<{id:string}>('platform/workspaces',{name:'Pilot copy target',slug:'pilot-copy-target'}),target=created.body.id;
+  const source=await api<PipelineView>('w/reporter-ai/pipeline'),definition=structuredClone(source.body.active.definition);
+  definition.editorial=defaultEditorialPolicy();definition.editorial.map.audience='Preserved pilot audience';definition.editorial.guide.voice='Preserved pilot voice';
+  const configured=await api<{ok:boolean}>('w/reporter-ai/workspace',{method:'pipeline.save',args:[definition,source.body.active.revision],requestId:randomUUID()});
+  assert.equal(configured.body.ok,true,JSON.stringify(configured.body));
+  const before=await owner('SELECT hash,doc FROM public.reporter_ed_pipelines WHERE portal_id=$1 ORDER BY hash',[PILOT]);
+  const fields=['editorial_map','writing_guide'];
+  const preview=await api<ConfigurationCopyPreview>('platform/configuration-copy/preview',{sourceId:PILOT,targetId:target,fields});
+  assert.equal(preview.status,200,JSON.stringify(preview.body));assert.equal(preview.body.source.id,PILOT);
+  const reverse=await api<ConfigurationCopyPreview>('platform/configuration-copy/preview',{sourceId:target,targetId:PILOT,fields});
+  assert.equal(reverse.status,200,JSON.stringify(reverse.body));assert.equal(reverse.body.target.id,PILOT);
+  assert.equal((await api('platform/configuration-copy/preview',{sourceId:PILOT+'/foreign',targetId:target,fields})).status,422);
+  const applied=await api('platform/configuration-copy/apply',{token:preview.body.token});assert.equal(applied.status,200,JSON.stringify(applied.body));
+  const actual=await api<PipelineView>('w/pilot-copy-target/pipeline');
+  assert.equal(actual.body.active.definition.funnelPreset,'neutral-v1');
+  assert.equal(actual.body.active.definition.editorial?.map.audience,'Preserved pilot audience');
+  assert.equal(actual.body.active.definition.editorial?.guide.voice,'Preserved pilot voice');
+  assert.deepEqual(await owner('SELECT hash,doc FROM public.reporter_ed_pipelines WHERE portal_id=$1 ORDER BY hash',[PILOT]),before);
+});
+
 test('reviewed configuration copying is atomic, audited and retains the target identity',async()=>{
   const created=await api<{id:string}>('platform/workspaces',{name:'Target publication',slug:'target-publication'}),target=created.body.id;
   const rpc=async(slug:string,method:string,args:unknown[])=>{

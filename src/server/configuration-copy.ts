@@ -15,7 +15,8 @@ import {parsePipelineDefinition} from './pipeline.ts';
 
 type Pair={source:ConfigurationSnapshot;target:ConfigurationSnapshot};
 const fieldsSchema=z.array(z.enum(CONFIGURATION_COPY_FIELDS)).min(1).max(4).refine(fields=>new Set(fields).size===fields.length);
-const previewSchema=z.object({sourceId:z.uuid(),targetId:z.uuid(),fields:fieldsSchema}).strict();
+// The preserved pilot uses a database GUID without RFC UUID version/variant bits.
+const previewSchema=z.object({sourceId:z.guid(),targetId:z.guid(),fields:fieldsSchema}).strict();
 const tokenSchema=previewSchema.extend({version:z.literal(1),actor:z.uuid(),sourceStamp:z.string(),targetStamp:z.string(),expires:z.number().int()}).strict();
 function refuse(code:string,status:number,message:string):never{const error=new FlowError(code,status);error.reason=message;throw error;}
 function signature(payload:string){
