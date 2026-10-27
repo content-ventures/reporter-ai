@@ -1,0 +1,29 @@
+name: Use the official Ubuntu archive
+description: Avoid the degraded Azure APT mirror while retaining Ubuntu signatures and suites
+runs:
+  using: composite
+  steps:
+    - name: Select the official archive in runner sources
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        from pathlib import Path
+        import re
+        import subprocess
+
+        changed = 0
+        # Runner images use either deb822 sources or an ordered mirror list.
+        for name in ['/etc/apt/sources.list', '/etc/apt/sources.list.d/ubuntu.sources', '/etc/apt/apt-mirrors.txt']:
+            path = Path(name)
+            if not path.is_file():
+                continue
+            original = path.read_text()
+            updated = re.sub(r'https?://azure\.archive\.ubuntu\.com/ubuntu(?=[/\s]|$)',
+                             'https://archive.ubuntu.com/ubuntu', original)
+            if updated != original:
+                subprocess.run(['sudo', 'tee', str(path)], input=updated, text=True,
+                               stdout=subprocess.DEVNULL, check=True)
+                changed += 1
+        print(f'Selected the official Ubuntu archive in {changed} runner source file(s).')
+        PY

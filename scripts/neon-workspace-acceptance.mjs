@@ -62,11 +62,18 @@ export async function acceptWorkspaceFlow(environment=process.env,request=fetch)
     FROM public.portals p WHERE p.id=$1`,[PILOT])).rows;
   try{
     const before=await pilotFingerprint();
-    for(const name of ['operator','editor-a','reviewer-a','editor-b','reviewer-b']){
-      const id=randomUUID(),subject='staging-qa-'+randomUUID(),email=`workspace-${suffix}-${name}@acceptance.invalid`;
-      await owner.query('INSERT INTO core.users(id,name,email,auth_subject,email_verified) VALUES($1,$2,$3,$4,true)',[id,'Workspace QA '+name,email,subject]);
-      actors.push({id,subject,email,name:'Workspace QA '+name,emailVerified:true,sessionId:randomUUID()});
-    }
+    const hasAuth=(await owner.query("SELECT to_regclass('neon_auth.\"user\"') IS NOT NULL AS present")).rows[0].present;
+    await owner.query('BEGIN');
+    try{
+      for(const name of ['operator','editor-a','reviewer-a','editor-b','reviewer-b']){
+        const id=randomUUID(),subject=randomUUID(),email=`workspace-${suffix}-${name}@acceptance.invalid`;
+        // The managed Auth table is part of the verified-identity fixture, not a login/session.
+        if(hasAuth)await owner.query('INSERT INTO neon_auth."user"(id,name,email,"emailVerified") VALUES($1,$2,$3,true)',[subject,'Workspace QA '+name,email]);
+        await owner.query('INSERT INTO core.users(id,name,email,auth_subject,email_verified) VALUES($1,$2,$3,$4,true)',[id,'Workspace QA '+name,email,subject]);
+        actors.push({id,subject,email,name:'Workspace QA '+name,emailVerified:true,sessionId:randomUUID()});
+      }
+      await owner.query('COMMIT');
+    }catch(error){await owner.query('ROLLBACK');throw error;}
     const operator=actors[0];
     await owner.query("INSERT INTO public.user_roles(user_id,role) VALUES($1,'platform_admin')",[operator.id]);
     activation=await ok(operator,'platform/workspace-activation');
@@ -76,6 +83,7 @@ export async function acceptWorkspaceFlow(environment=process.env,request=fetch)
       const client=await ok(operator,'platform/workspaces',{name:'Staging QA '+label+' '+suffix,slug:`qa-${suffix}-${label.toLowerCase()}`},201);clients.push(client);
       for(const[actor,role]of [[editor,'editor'],[reviewer,'approver']]){
         const invite=await ok(operator,'platform/invites',{name:actor.name,email:actor.email,role,workspaceId:client.id});
+        await assert.rejects(owner.query('SELECT public.reporter_invite_accept($1,$2)',[createHash('sha256').update(invite.token).digest('hex'),randomUUID()]),/INVALID_LINK/);
         await owner.query('SELECT public.reporter_invite_accept($1,$2)',[createHash('sha256').update(invite.token).digest('hex'),actor.subject]);
       }
       const members=await ok(operator,`platform/workspaces/${client.id}/team`),member=members.items.find(item=>item.personId===reviewer.id);

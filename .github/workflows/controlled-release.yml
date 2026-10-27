@@ -83,6 +83,8 @@ jobs:
       - name: Install the Neon CLI
         run: npm install --global --no-audit --no-fund neon@6.3.0
 
+      - uses: ./.github/actions/use-ubuntu-archive
+
       - name: Install the speech generator for paid ingestion acceptance
         if: inputs.acceptance_scope != 'workspaces'
         run: |

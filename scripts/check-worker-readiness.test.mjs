@@ -17,3 +17,17 @@ test('readiness requires the exact checked-out worker source, including a rollba
   assert.equal(responses.length,0);
   await assert.rejects(waitForWorkerReadiness('https://worker.invalid','private',{expectedCommit:expected,attempts:1,request:async()=>Response.json({ok:true})}),/WORKER_SOURCE_MISMATCH/);
 });
+
+test('source mismatch diagnostics retain the refusal and never log arbitrary response values',async t=>{
+  const messages=[];t.mock.method(console,'log',message=>messages.push(message));
+  const expected='b'.repeat(40),actual='a'.repeat(40);
+  for(const sourceCommit of [actual,undefined,'private-response-value']){
+    await assert.rejects(waitForWorkerReadiness('https://worker.invalid','private-key',{
+      expectedCommit:expected,attempts:1,request:async()=>Response.json({ok:true,sourceCommit}),
+    }),/WORKER_SOURCE_MISMATCH/);
+  }
+  assert.ok(messages.includes(`Worker source expected=${expected} actual=${actual}`));
+  assert.ok(messages.includes(`Worker source expected=${expected} actual=missing`));
+  assert.ok(messages.includes(`Worker source expected=${expected} actual=invalid`));
+  assert.doesNotMatch(messages.join('\n'),/private-response-value|private-key|worker\.invalid/);
+});
