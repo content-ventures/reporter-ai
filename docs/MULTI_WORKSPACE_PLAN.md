@@ -220,9 +220,9 @@ Exit gate: all final acceptance scenarios below pass on the same reviewed build,
 ## M9 Activate production and finish the handoff
 
 - [x] Prepare the cohesive delivery, migration and compatibility notes, configuration changes, exact acceptance evidence and rollback instructions under the repository harness.
-- [ ] Obtain the exact push, PR, merge and controlled release approvals required by the harness after the reviewable result exists. Preserve authenticated GitHub authorship and the GitHub to Francal deployment path.
-- [ ] Run controlled staging acceptance with the updated app and worker together. Recheck old URLs, old queued jobs, private assets and both workspace contexts before production activation.
-- [ ] Release with the new navigation initially limited to the platform administrator in the existing Seafood workspace. Verify the exact deployed commit and version, preserved Seafood identity and configuration, worker readiness, migrations and integration bindings.
+- [x] Obtain the exact push, PR, merge and controlled release approvals required by the harness after the reviewable result exists. Preserve authenticated GitHub authorship and the GitHub to Francal deployment path.
+- [x] Run controlled staging acceptance with the updated app and worker together. Recheck old URLs, old queued jobs, private assets and both workspace contexts before production activation.
+- [x] Release with the new navigation initially limited to the platform administrator in the existing Seafood workspace. Verify the exact deployed commit and version, preserved Seafood identity and configuration, worker readiness, migrations and integration bindings.
 - [ ] On production, verify the current Seafood team and editorial flow as the operational pilot. Run a fully authorized second workspace validation with synthetic material, including invitations, generation, approval and export; this does not require onboarding another real client. Verify the administrative path and observe queues and usage for the agreed pilot window.
 - [ ] Enable the validated navigation for the participating Seafood members, then make the completed onboarding flow available for future clients. Document client onboarding, membership administration, archive/restore, policy changes, integration setup, support viewing and incident recovery.
 - [ ] Update the board and product documentation with the verified state and evidence. Close this delivery only after real operational acceptance; mocks or a selector screenshot alone do not complete it.
