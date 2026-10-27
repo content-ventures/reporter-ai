@@ -174,13 +174,13 @@ Main implementation areas: `src/features/platform`, platform domain and ports, `
 
 Expose the completed context contract through the existing application frame.
 
-- [ ] Use public `PortalSwitcher` in the sidebar, labeled "Trocar workspace", with the active client and a management entry for the authorized operator. A member sees their authorized workspaces; the platform administrator sees every workspace.
-- [ ] Keep the real signed in identity in `SidebarAccount` and show its current workspace role or administrative context. Provide a clear path back to the platform console.
-- [ ] Resolve first login, one membership, several memberships, no memberships, an archived workspace and a deleted or unauthorized deep link. Remember the last valid destination as a navigation preference, not as authorization.
-- [ ] Before switching, finish or explicitly resolve unsaved edits and pending uploads. Keep an in progress upload tied to its original destination or cancel it visibly; never redirect it to the newly selected workspace.
-- [ ] Replace workspace runtime state atomically. Scope browser caches, draft persistence, IndexedDB, subscriptions, command search, polling cursors, failed write retries and pending responses by account and workspace.
-- [ ] Discard late responses from a previous context and prevent new context commands until its bootstrap and permissions are ready. Background jobs continue in their original workspace.
-- [ ] Verify desktop, 390 px touch, keyboard, focus return, loading, empty and failure states. Retain the existing breadcrumb and leave guard contracts.
+- [x] Use public `PortalSwitcher` in the sidebar, labeled "Trocar workspace", with the active client and a management entry for the authorized operator. A member sees their authorized workspaces; the platform administrator sees every workspace.
+- [x] Keep the real signed in identity in `SidebarAccount` and show its current workspace role or administrative context. Provide a clear path back to the platform console.
+- [x] Resolve first login, one membership, several memberships, no memberships, an archived workspace and a deleted or unauthorized deep link. Remember the last valid destination as a navigation preference, not as authorization.
+- [x] Before switching, finish or explicitly resolve unsaved edits and pending uploads. Keep an in progress upload tied to its original destination or cancel it visibly; never redirect it to the newly selected workspace.
+- [x] Replace workspace runtime state atomically. Scope browser caches, draft persistence, IndexedDB, subscriptions, command search, polling cursors, failed write retries and pending responses by account and workspace.
+- [x] Discard late responses from a previous context and prevent new context commands until its bootstrap and permissions are ready. Background jobs continue in their original workspace.
+- [x] Verify desktop, 390 px touch, keyboard, focus return, loading, empty and failure states. Retain the existing breadcrumb and leave guard contracts.
 
 Exit gate: a person with different roles can switch, reload and open two tabs without stale data, role carryover or cross workspace saves. A failed switch preserves their draft or gives an explicit recovery action.
 
