@@ -15,6 +15,7 @@ test('unchanged polls read only the stamp, later changes arrive as deltas, ident
   const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
   let loads = 0, deltas = 0, seq = 42, membersHash = 'members';
   const client = { release() {}, async query(sql: string) {
+    if(sql.includes('reporter_workspace_activation'))return {rows:[{mode:'all'}]};
     if(sql.includes('reporter_navigation_identity'))return {rows:[{value:{accountId:localContext.actor,administrative:true}}]};
     if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     if (sql.includes('reporter_ed_status')) return { rows: [{ value: { seq, floor: 0, membersHash } }] };
@@ -23,7 +24,7 @@ test('unchanged polls read only the stamp, later changes arrive as deltas, ident
     return { rows: [] };
   } };
   process.env.REPORTER_DEPLOYMENT_MODE = 'local';
-  globals.reporterPools = { runtime: { connect: async () => client } as unknown as Pool };
+  globals.reporterPools = { runtime: { connect: async () => client,query:client.query.bind(client) } as unknown as Pool };
   try {
     const first = await editorialWorkspace();
     assert.equal(loads, 1);
@@ -80,6 +81,7 @@ test('only polls that follow a running generation read the queue, and cloud poll
   const queries: string[] = [];
   const client = { release() {}, async query(sql: string) {
     queries.push(sql);
+    if(sql.includes('reporter_workspace_activation'))return {rows:[{mode:'all'}]};
     if(sql.includes('reporter_navigation_identity'))return {rows:[{value:{accountId:localContext.actor,administrative:true}}]};
     if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     if (sql.includes('reporter_ed_status')) return { rows: [{ value: { seq: 7, floor: 0, membersHash: 'members' } }] };
@@ -90,7 +92,7 @@ test('only polls that follow a running generation read the queue, and cloud poll
     return { rows: [] };
   } };
   process.env.REPORTER_DEPLOYMENT_MODE = 'cloud';
-  globals.reporterPools = { runtime: { connect: async () => client } as unknown as Pool };
+  globals.reporterPools = { runtime: { connect: async () => client,query:client.query.bind(client) } as unknown as Pool };
   try {
     const context = { ...localContext, roles: [...localContext.roles] };
     const first = await runWithReporterContext(context, () => editorialWorkspace());
@@ -112,6 +114,7 @@ test('a lock cycle or a duplicate receipt reruns the transaction on fresh rows; 
   const previous = globals.reporterPools, previousMode = process.env.REPORTER_DEPLOYMENT_MODE;
   let failures: string[] = [], loads = 0;
   const client = { release() {}, async query(sql: string) {
+    if(sql.includes('reporter_workspace_activation'))return {rows:[{mode:'all'}]};
     if(sql.includes('reporter_navigation_identity'))return {rows:[{value:{accountId:localContext.actor,administrative:true}}]};
     if(sql.includes('reporter_template_configuration'))return {rows:[{value:templateSnapshot}]};
     if (sql.includes('reporter_ed_load')) { loads++; return { rows: [{ value: emptyRows(5) }] }; }
@@ -123,7 +126,7 @@ test('a lock cycle or a duplicate receipt reruns the transaction on fresh rows; 
     return { rows: [] };
   } };
   process.env.REPORTER_DEPLOYMENT_MODE = 'local';
-  globals.reporterPools = { runtime: { connect: async () => client } as unknown as Pool };
+  globals.reporterPools = { runtime: { connect: async () => client,query:client.query.bind(client) } as unknown as Pool };
   try {
     // A portal without a workspace row always writes one, so every attempt reaches the commit.
     failures = ['40P01', '40001'];
@@ -156,7 +159,7 @@ test('edits made in place on loaded rows are written, never mistaken for the unc
     return { rows: [] };
   } };
   process.env.REPORTER_DEPLOYMENT_MODE = 'local';
-  globals.reporterPools = { runtime: { connect: async () => client } as unknown as Pool };
+  globals.reporterPools = { runtime: { connect: async () => client,query:client.query.bind(client) } as unknown as Pool };
   try {
     await editorialTransaction('runtime', async checkpoint => {
       checkpoint.jobs['run-1'].calls!.push({ key: 'outline', hash: 'call-1', model: 'model', status: 'running', startedAt: '2026-10-15T00:00:00Z' });

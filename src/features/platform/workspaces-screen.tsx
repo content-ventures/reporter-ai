@@ -7,6 +7,7 @@ import type {ManagedWorkspace} from '@/domain/workspace-management';
 import {useAdministrationQuery,usePlatformAdministration} from '@/state';
 import {useWorkspaceForm,WorkspaceFormGuard} from './workspace-form-guard';
 import {inputProps} from './field-props';
+import {WorkspaceActivationDrawer} from './workspace-activation';
 
 export const WORKSPACES_HREF='/platform/workspaces';
 export const workspaceManagementHref=(id:string)=>`${WORKSPACES_HREF}/${encodeURIComponent(id)}`;
@@ -15,7 +16,7 @@ export const WORKSPACE_STATUS_LABELS={draft:'Em configuração',active:'Ativo',a
 export function WorkspacesScreen(){return<WorkspaceFormGuard><WorkspaceList/></WorkspaceFormGuard>;}
 function WorkspaceList(){
   const port=usePlatformAdministration(),router=useRouter();
-  const [search,setSearch]=useState(''),[page,setPage]=useState(1),[creating,setCreating]=useState(false);
+  const [search,setSearch]=useState(''),[page,setPage]=useState(1),[creating,setCreating]=useState(false),[activation,setActivation]=useState(false);
   const result=useAdministrationQuery(port,`workspaces:${search}:${page}`,admin=>admin.list({search,limit:20,offset:(page-1)*20}));
   const columns:Column<ManagedWorkspace>[]=[
     {key:'name',header:'Cliente',pinned:true,render:row=>row.name},
@@ -25,12 +26,13 @@ function WorkspaceList(){
     {key:'pilot',header:'Piloto',render:row=>row.pilot?'Sim':'—'},
   ];
   return<>
-    <PageHeader title="Workspaces" actions={<Button variant="primary" icon={Plus} disabled={!port} onClick={()=>setCreating(true)}>Criar workspace</Button>}/>
+    <PageHeader title="Workspaces" actions={<>{port?<Button onClick={()=>setActivation(true)}>Navegação</Button>:null}<Button variant="primary" icon={Plus} disabled={!port} onClick={()=>setCreating(true)}>Criar workspace</Button></>}/>
     <FilterBar filters={false} search={<SearchField label="Buscar workspace" placeholder="Cliente ou endereço" value={search} onValueChange={value=>{setSearch(value);setPage(1);}}/>}/>
     <PageStack><DataTable label="Workspaces dos clientes" rows={result.data?.items??[]} rowKey={row=>row.id} columns={columns} loading={result.loading} loadingRows={5}
       onRowClick={row=>router.push(workspaceManagementHref(row.id))} empty={<EmptyState title={port?'Nenhum workspace encontrado':'Gestão disponível na conexão real'}/>}
       error={result.error?<ErrorState title="Workspaces indisponíveis" description={result.error.message} onRetry={result.retry}/>:undefined}
       footer={result.data&&result.data.total>20?<Pagination page={page} pageSize={20} total={result.data.total} noun="workspaces" onPageChange={setPage}/>:undefined}/></PageStack>
+    {activation&&port?<WorkspaceActivationDrawer port={port} onClose={()=>setActivation(false)}/>:null}
     {creating&&port?<CreateWorkspace onClose={()=>setCreating(false)} onCreate={async input=>{
       const saved=await port.create(input);if(saved.ok){setCreating(false);router.push(workspaceManagementHref(saved.value.id));}return saved;
     }}/>:null}
