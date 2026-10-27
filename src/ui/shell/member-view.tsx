@@ -5,6 +5,7 @@ import {LogOut} from '@content-ventures/design-system/v3/icons';
 import type {MemberView,MemberViewExit} from '@/domain/member-view';
 import {NAVIGATION_DISCARD_EVENT} from '@/domain/workspace-address';
 import {useRuntime,useSession} from '@/state';
+import {useMediaQuery} from '../use-media-query';
 
 type Controls={view:MemberView|undefined;busy:boolean;error:string|undefined;exit:(destination:string,reason?:MemberViewExit)=>Promise<void>};
 const ViewContext=createContext<Controls|undefined>(undefined);
@@ -42,7 +43,9 @@ export function MemberViewStatus({demo=false}:{demo?:boolean}){
   return<>{demo?<Badge tone="amber">Demo</Badge>:null}<Badge tone="amber">Somente leitura</Badge><IconButton icon={LogOut} size="sm" label={`Sair da visualização de ${view.person.name} em ${view.workspace.name}`} disabled={busy} onClick={()=>void exit(returnToPerson(view))}/></>;
 }
 export function MemberViewBanner(){
+  const compact=useMediaQuery('(max-width: 1023px)');
   const {view,busy,error,exit}=useMemberView();if(!view)return null;
-  return<><Banner title={`Visualizando ${view.person.name} · ${view.workspace.name}`} action={<Button size="sm" loading={busy} onClick={()=>void exit(returnToPerson(view))}>Sair da visualização</Button>}/>
+  // The sticky TopBar keeps its exit action on narrow screens; the band need not repeat it.
+  return<><Banner title={`Visualizando ${view.person.name} · ${view.workspace.name}`} action={compact?undefined:<Button size="sm" loading={busy} onClick={()=>void exit(returnToPerson(view))}>Sair da visualização</Button>}/>
     {error?<Alert tone="danger" title="Não foi possível encerrar a visualização">{error}</Alert>:null}</>;
 }
