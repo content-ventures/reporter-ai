@@ -30,6 +30,6 @@ export function WorkspaceSwitcher(){
   return<>
     <ThemeV3><PortalSwitcher label="Trocar workspace" portals={choices} value={session.workspace.id} onChange={id=>{const selected=data?.items.find(item=>item.workspace.id===id);if(selected)choose(selected);}}
       action={{label:'Ver todos os workspaces',onSelect:()=>{closeNav();setPicking(true);}}}/></ThemeV3>
-    {picking?<WorkspacePicker port={port} currentId={session.workspace.id} administrative={administrative} onClose={()=>setPicking(false)} onChoose={choose} onManage={manage}/>:null}
+    <WorkspacePicker open={picking} port={port} currentId={session.workspace.id} administrative={administrative} onClose={()=>setPicking(false)} onChoose={choose} onManage={manage}/>
   </>;
 }
