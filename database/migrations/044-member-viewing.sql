@@ -9,11 +9,11 @@ CREATE TABLE IF NOT EXISTS core.reporter_member_views (
   person_id uuid NOT NULL,
   membership_revision bigint NOT NULL CHECK(membership_revision>0),
   roles jsonb NOT NULL CHECK(jsonb_typeof(roles)='array' AND jsonb_array_length(roles) BETWEEN 1 AND 4),
-  session_hash text CHECK(session_hash IS NULL OR session_hash ~ '^[a-f0-9]{64}$'),
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   expires_at timestamptz NOT NULL DEFAULT clock_timestamp()+interval '5 minutes',
   ended_at timestamptz,
   end_reason text CHECK(end_reason IN ('exit','workspace_changed','logout','account_changed','expired','operator_revoked','membership_changed','workspace_unavailable')),
+  session_hash text CHECK(session_hash IS NULL OR session_hash ~ '^[a-f0-9]{64}$'),
   FOREIGN KEY(portal_id,membership_id,person_id) REFERENCES public.portal_members(portal_id,id,user_id),
   CHECK(expires_at>created_at AND expires_at<=created_at+interval '5 minutes 1 second'),
   CHECK((ended_at IS NULL)=(end_reason IS NULL))

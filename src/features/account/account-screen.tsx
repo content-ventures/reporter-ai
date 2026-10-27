@@ -101,7 +101,7 @@ function ProfileForm({ member }: { member: SessionMember }) {
 
   const edit = (patch: Partial<Draft>) => { setFailed(false); setDraft({ ...values, ...patch }); };
   async function save() {
-    if (!dirty || nameError || saving) return;
+    if (member.readOnly || !dirty || nameError || saving) return;
     setSaving(true);
     try {
       const result = await commands.session.updateProfile({ name: values.name, title: values.title || null });
@@ -115,6 +115,7 @@ function ProfileForm({ member }: { member: SessionMember }) {
     } finally { setSaving(false); }
   }
   async function removePhoto() {
+    if(member.readOnly)return;
     setRemoving(true);
     try {
       const result = await commands.session.setAvatar(null);
@@ -128,23 +129,23 @@ function ProfileForm({ member }: { member: SessionMember }) {
         <PageStack>
           <CardHeader title={member.name} leading={<PersonAvatar person={member} size="xl" decorative />}
             actions={<ButtonGroup label="Foto de perfil">
-              <Button size="sm" onClick={() => setPhotoOpen(true)}>{member.avatarUrl ? 'Trocar foto' : 'Adicionar foto'}</Button>
-              {member.avatarUrl && <Button size="sm" variant="ghost" loading={removing} onClick={() => void removePhoto()}>Remover foto</Button>}
+              <Button size="sm" disabled={member.readOnly} onClick={() => setPhotoOpen(true)}>{member.avatarUrl ? 'Trocar foto' : 'Adicionar foto'}</Button>
+              {member.avatarUrl && <Button size="sm" variant="ghost" disabled={member.readOnly} loading={removing} onClick={() => void removePhoto()}>Remover foto</Button>}
             </ButtonGroup>} />
           <Grid columns="1:1" collapseBelow={640}>
             <Field label="Nome" required error={draft ? nameError : undefined}>
-              {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} value={values.name} autoComplete="name" maxLength={PROFILE_LIMITS.name}
+              {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} value={values.name} autoComplete="name" disabled={member.readOnly} maxLength={PROFILE_LIMITS.name}
                 onChange={event => edit({ name: event.target.value })} />}
             </Field>
             <Field label="Cargo" optional>
-              {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={values.title} autoComplete="organization-title" maxLength={PROFILE_LIMITS.title}
+              {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={values.title} autoComplete="organization-title" disabled={member.readOnly} maxLength={PROFILE_LIMITS.title}
                 onChange={event => edit({ title: event.target.value })} />}
             </Field>
           </Grid>
           <ActionBar position="static" status={saving ? 'saving' : failed ? 'error' : dirty ? 'unsaved' : undefined}
             statusLabel={saving ? 'Salvando' : failed ? 'Não foi salvo' : dirty ? 'Alterações não salvas' : undefined}>
             {dirty && <Button variant="ghost" disabled={saving} onClick={() => { setDraft(null); setFailed(false); }}>Descartar</Button>}
-            <Button variant="primary" loading={saving} disabled={!dirty || Boolean(nameError)} onClick={() => void save()}>Salvar alterações</Button>
+            <Button variant="primary" loading={saving} disabled={member.readOnly || !dirty || Boolean(nameError)} onClick={() => void save()}>Salvar alterações</Button>
           </ActionBar>
         </PageStack>
         <ProfilePhotoDialog member={member} open={photoOpen} onClose={() => setPhotoOpen(false)} />
