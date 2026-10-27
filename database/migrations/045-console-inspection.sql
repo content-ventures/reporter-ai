@@ -35,6 +35,45 @@ END $$;
 ALTER FUNCTION public.reporter_platform_people_labels(uuid[]) OWNER TO CURRENT_USER;
 REVOKE ALL ON FUNCTION public.reporter_platform_people_labels(uuid[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reporter_platform_people_labels(uuid[]) TO reporter_runtime;
+-- Read-only member inspection must not acquire a management lock or a write permission.
+CREATE OR REPLACE FUNCTION core.reporter_workspace_inspector(p_portal uuid) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+BEGIN
+  IF nullif(current_setting('app.member_view',true),'') IS NULL THEN RETURN core.reporter_membership_manager(p_portal); END IF;
+  IF core.reporter_require('reporter.read') IS DISTINCT FROM p_portal
+    OR NOT (core.platform_roles(core.context_user_id(),p_portal) ? 'admin') THEN RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE='42501'; END IF;
+  RETURN core.context_user_id();
+END $$;
+ALTER FUNCTION core.reporter_workspace_inspector(uuid) OWNER TO CURRENT_USER;
+REVOKE ALL ON FUNCTION core.reporter_workspace_inspector(uuid) FROM PUBLIC;
+CREATE OR REPLACE FUNCTION public.reporter_team_page(p_portal uuid,p_search text,p_limit integer,p_offset integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+DECLARE items jsonb; total bigint; search text:=left(coalesce(p_search,''),100);
+BEGIN
+  IF current_setting('app.access_mode',true)='platform' THEN PERFORM core.platform_operator();
+  ELSE PERFORM core.reporter_workspace_inspector(p_portal); END IF;
+  SELECT count(*) INTO total FROM public.portal_members m JOIN core.users u ON u.id=m.user_id
+    WHERE m.portal_id=p_portal AND (u.name ILIKE '%'||search||'%' OR u.email ILIKE '%'||search||'%' OR m.user_id::text=search);
+  SELECT coalesce(jsonb_agg(value ORDER BY name,id),'[]') INTO items FROM (
+    SELECT u.name,u.id,core.reporter_membership_value(u.id,p_portal)||jsonb_strip_nulls(jsonb_build_object(
+      'name',u.name,'email',u.email,'avatarUrl',u.image,'accountSuspended',u.banned)) AS value
+    FROM public.portal_members m JOIN core.users u ON u.id=m.user_id WHERE m.portal_id=p_portal
+      AND (u.name ILIKE '%'||search||'%' OR u.email ILIKE '%'||search||'%' OR m.user_id::text=search)
+    ORDER BY u.name,u.id LIMIT least(greatest(coalesce(p_limit,20),1),100) OFFSET greatest(coalesce(p_offset,0),0)) page;
+  RETURN jsonb_build_object('items',items,'total',total,'offset',greatest(coalesce(p_offset,0),0));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.reporter_workspace_get(p_portal uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+DECLARE value jsonb;
+BEGIN
+  IF current_setting('app.access_mode',true)='platform' THEN PERFORM core.platform_operator();
+  ELSE PERFORM core.reporter_workspace_inspector(p_portal); END IF;
+  value:=core.reporter_workspace_value(p_portal);
+  IF value IS NULL THEN PERFORM core.platform_refuse('NOT_FOUND'); END IF;
+  RETURN value;
+END $$;
+
 -- Keep immutable revision references and policy version changes without copying prompts into the ledger.
 CREATE OR REPLACE FUNCTION core.reporter_configuration_audit() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
