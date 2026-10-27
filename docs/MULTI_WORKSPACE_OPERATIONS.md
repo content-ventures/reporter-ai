@@ -1,6 +1,6 @@
 # Multi-workspace operations
 
-This runbook describes the implemented application flows. Production activation remains subject to the controlled release and the acceptance evidence in [the execution ledger](MULTI_WORKSPACE_EXECUTION.md). Local validation does not mean the production application has been upgraded.
+This runbook describes the application flows published in v1.1.0 on 2026-10-27. Production initially exposes the new navigation to platform administrators; the real-session pilot and client-team rollout remain separate gates in [the execution ledger](MULTI_WORKSPACE_EXECUTION.md).
 
 ## Client identity and coverage
 
