@@ -1,7 +1,7 @@
 'use client';
 import {Suspense,useEffect,useState} from 'react';
 import {useRouter,useSearchParams} from 'next/navigation';
-import {AppShell,Avatar,Badge,Button,ButtonLink,EmptyState,ErrorState,FilterBar,List,ListItem,PageHeader,PageStack,Pagination,SearchField,Sidebar,SidebarAccount,SkeletonText,TopBar} from '@content-ventures/design-system/v3';
+import {Alert,AppShell,Avatar,Badge,Button,ButtonLink,EmptyState,ErrorState,FilterBar,List,ListItem,PageHeader,PageStack,Pagination,SearchField,Sidebar,SidebarAccount,SkeletonText,TopBar} from '@content-ventures/design-system/v3';
 import {Building2,LogOut} from '@content-ventures/design-system/v3/icons';
 import {workspaceAccessHref} from '@/domain/workspace-address';
 import type {WorkspaceAccess} from '@/domain/workspace-management';
@@ -40,6 +40,7 @@ function SelectionView(){
     <PageHeader title="Escolher workspace" actions={<Button disabled={query.loading} onClick={query.retry}>Atualizar acessos</Button>}/>
     <FilterBar filters={false} search={<SearchField label="Buscar workspace" value={search} placeholder="Cliente ou endereço" onValueChange={value=>{setSearch(value);setPage(1);}}/>}/>
     <PageStack>
+      {params.get('unavailable')==='1'?<Alert tone="warning" title="Workspace indisponível">Escolha um workspace liberado para continuar.</Alert>:null}
       {query.error?<ErrorState heading="h2" title="Workspaces indisponíveis" description={query.error.message} onRetry={query.retry}/>:query.loading?<SkeletonText lines={4}/>:<List label="Workspaces disponíveis" empty={empty}>
         {data?.items.map(item=><ListItem key={item.workspace.id} leading={<Avatar name={item.workspace.name}/>} title={item.workspace.name}
           description={item.administrative?'Administração da plataforma':item.roles.map(roleLabel).join(' · ')} href={workspaceDestination(item)}
