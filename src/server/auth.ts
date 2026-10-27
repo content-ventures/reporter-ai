@@ -17,7 +17,8 @@ export function reporterAuth() {
   });
 }
 
-export async function reporterIdentity() {
+export type ReporterIdentity={subject:string;email:string;name:string;image?:string;emailVerified:boolean;sessionId?:string};
+export async function reporterIdentity():Promise<ReporterIdentity|null> {
   const { data, error } = await reporterAuth().getSession();
   if (error || !data?.user) return null;
   return {
@@ -26,5 +27,6 @@ export async function reporterIdentity() {
     name: String(data.user.name ?? data.user.email ?? 'Usuário').trim(),
     image: typeof data.user.image === 'string' ? data.user.image : undefined,
     emailVerified: data.user.emailVerified === true,
+    ...(typeof data.session?.id==='string'?{sessionId:data.session.id}:{}),
   };
 }

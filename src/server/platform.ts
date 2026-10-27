@@ -26,7 +26,7 @@ import { reporterDeploymentMode } from './deployment.ts';
 import { FlowError, logEvent } from './errors.ts';
 import {readWorkspaceTemplates,saveWorkspaceTemplates,uploadWorkspaceBrand} from './template-settings.ts';
 import {previewConfigurationCopy,applyConfigurationCopy} from './configuration-copy.ts';
-import {memberViewPhotos} from './member-view.ts';
+import {memberViewPhotos,memberViewSession} from './member-view.ts';
 import type {MemberView} from '../domain/member-view.ts';
 
 /**
@@ -193,7 +193,9 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
     if(head==='member-views'&&path.length===1&&request.method==='POST'){
       const input=z.object({workspaceId:z.string().regex(UUID),personId:z.string().regex(UUID)}).strict().safeParse(await deps.readJson(request));
       if(!input.success)throw platformRefusal('invalid_workspace');
-      const view=await platform(client=>call<MemberView>(client,'SELECT public.reporter_member_view_start($1,$2) AS value',[input.data.workspaceId,input.data.personId]));
+      const session=await memberViewSession(request,deps);
+      const view=await platform(async client=>{await client.query("SELECT set_config('app.auth_session',$1,true)",[session]);
+        return call<MemberView>(client,'SELECT public.reporter_member_view_start($1,$2) AS value',[input.data.workspaceId,input.data.personId]);});
       return reply(memberViewPhotos(view),201);
     }
 

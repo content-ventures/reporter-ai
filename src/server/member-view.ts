@@ -1,5 +1,5 @@
 import 'server-only';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {z} from 'zod';
 import {memberViewId,type MemberView} from '../domain/member-view.ts';
@@ -33,12 +33,20 @@ async function identityOf(request:Request,deps:MemberViewDeps):Promise<Identity>
   if(!identity.emailVerified)throw new FlowError('EMAIL_NOT_VERIFIED',403);
   return identity;
 }
-async function viewDatabase<T>(requestId:string,operation:(client:PoolClient)=>Promise<T>):Promise<T>{
+function sessionHash(identity:Identity):string{
+  const session=reporterDeploymentMode()==='local'?`local:${localContext.actor}`:identity?.sessionId;
+  if(!session)throw new FlowError('AUTH_REQUIRED',401);
+  return createHash('sha256').update(session).digest('hex');
+}
+export async function memberViewSession(request:Request,deps:MemberViewDeps):Promise<string>{
+  return sessionHash(await identityOf(request,deps));
+}
+async function viewDatabase<T>(requestId:string,session:string,operation:(client:PoolClient)=>Promise<T>):Promise<T>{
   const client=await pool('runtime').connect(),local=reporterDeploymentMode()==='local';
   try{
     await client.query('BEGIN');
-    await client.query("SELECT 1 AS applied FROM (SELECT set_config('app.access_mode',$1,true),set_config('app.user_id',$2,true),set_config('app.request_id',$3,true),set_config('app.correlation_id',$3,true),set_config('statement_timeout','10s',true)) settings",
-      [local?'platform':'member_view',local?localContext.actor:'',requestId]);
+    await client.query("SELECT 1 AS applied FROM (SELECT set_config('app.access_mode',$1,true),set_config('app.user_id',$2,true),set_config('app.request_id',$3,true),set_config('app.correlation_id',$3,true),set_config('app.auth_session',$4,true),set_config('statement_timeout','10s',true)) settings",
+      [local?'platform':'member_view',local?localContext.actor:'',requestId,session]);
     const value=await operation(client);await client.query('COMMIT');return value;
   }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{client.release();}
 }
@@ -57,7 +65,7 @@ export function memberViewPhotos(view:MemberView):MemberView{
 }
 export async function resolveMemberView(request:Request,id:string,slug:string|null,deps:MemberViewDeps):Promise<ReporterRequestContext>{
   const identity=await identityOf(request,deps);
-  const value=await viewDatabase(deps.requestId??randomUUID(),client=>lookup(client,id,slug,identity));
+  const value=await viewDatabase(deps.requestId??randomUUID(),sessionHash(identity),client=>lookup(client,id,slug,identity));
   boundAccount(request,value);
   // The transaction has committed any expiry/revocation audit before the refusal is raised.
   if(value.error||!value.context||!value.view)throw new FlowError(value.error==='MEMBER_VIEW_ENDED'?'MEMBER_VIEW_ENDED':'MEMBER_VIEW_UNAVAILABLE',410);
@@ -71,7 +79,7 @@ export async function endMemberView(request:Request,id:string,readJson:(request:
   if(request.method!=='POST'||!memberViewId(id))throw new FlowError('NOT_FOUND',404);
   const identity=await identityOf(request,deps);
   const {reason}=z.object({reason:z.enum(['exit','workspace_changed','logout','account_changed']).default('exit')}).strict().parse(await readJson(request));
-  const value=await viewDatabase(deps.requestId??randomUUID(),async client=>{
+  const value=await viewDatabase(deps.requestId??randomUUID(),sessionHash(identity),async client=>{
     const current=await lookup(client,id,null,identity);boundAccount(request,current);
     return(await client.query('SELECT public.reporter_member_view_end($1,$2,$3,$4,$5) AS value',
       [identity?.subject??null,identity?.email??null,identity?.emailVerified??false,id,reason])).rows[0].value as boolean;
