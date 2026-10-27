@@ -204,7 +204,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     get navigation(){return current.navigation;},
     get workspaceDirectory(){return current.navigation?.enabled?directory:undefined;},
     memberViewing,
-    administration:createHttpWorkspaceAdministration({transport:http,ready:()=>ready,scope:()=>current.state.workspace.id}),
+    administration:createHttpWorkspaceAdministration({transport:http,ready:()=>ready,scope:()=>current.state.workspace.id,readOnly:()=>Boolean(current.navigation?.view)}),
     mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest,http),generation: generation.service,render,export: exporter,assets,audit,
     visuals: createHttpVisualLibrary(http),
     imageGeneration: createHttpImageGenerator(http),

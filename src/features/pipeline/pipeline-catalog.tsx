@@ -82,8 +82,8 @@ export function promptUsage(key: PromptKey, definition: PipelineDefinition) {
   return 'No fluxo';
 }
 
-export function PipelineCatalog({ draft, active, onEdit }: {
-  draft: PipelineDefinition; active: PipelineDefinition; onEdit: (key: PromptKey) => void;
+export function PipelineCatalog({ draft, active, onEdit, readOnly=false }: {
+  readOnly?:boolean; draft: PipelineDefinition; active: PipelineDefinition; onEdit: (key: PromptKey) => void;
 }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
@@ -109,7 +109,7 @@ export function PipelineCatalog({ draft, active, onEdit }: {
       ]} />} />
     {groups.length ? <Grid columns="1:1" collapseBelow={960} align="start">
       {groups.flatMap(group => group.keys.map(key => <Panel key={key}><Section title={PROMPTS[key].title}
-        action={<Button size="sm" onClick={() => onEdit(key)} aria-label={`Editar ${PROMPTS[key].title}`}>Editar</Button>}>
+        action={<Button size="sm" onClick={() => onEdit(key)} aria-label={`${readOnly?'Consultar':'Editar'} ${PROMPTS[key].title}`}>{readOnly?'Consultar':'Editar'}</Button>}>
         <Prose variant="compact" measure="wide">{PROMPTS[key].description}</Prose>
         <MetaList size="sm" items={[
           group.title,

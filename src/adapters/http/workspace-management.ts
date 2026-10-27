@@ -11,12 +11,12 @@ export function managementSearch(options:WorkspaceSearch={}){
   query.set('limit',String(options.limit??20));query.set('offset',String(options.offset??0));return query.toString();
 }
 /** Both adapters capture a transport lifetime; a scoped one cannot choose a different client. */
-export function createHttpWorkspaceAdministration(options:{transport:Transport;ready?:()=>Promise<void>;scope?:()=>string;notify?:()=>void}):WorkspaceAdministration{
+export function createHttpWorkspaceAdministration(options:{transport:Transport;ready?:()=>Promise<void>;scope?:()=>string;readOnly?:()=>boolean;notify?:()=>void}):WorkspaceAdministration{
   const {transport}=options,listeners=new Set<()=>void>(),global=!options.scope;
   const signal=()=>{options.notify?.();for(const listener of listeners)listener();};
   const restricted=<T>():Promise<WorkspaceResult<T>>=>Promise.resolve(refuse('restricted',WORKSPACE_MESSAGES.restricted));
   async function call<T>(path:string,body?:unknown,file?:Blob,id?:string):Promise<WorkspaceResult<T>>{
-    try{await options.ready?.();if(id&&options.scope&&options.scope()!==id)return refuse('restricted',WORKSPACE_MESSAGES.restricted);
+    try{await options.ready?.();if(options.readOnly?.()&&(body!==undefined||file))return refuse('restricted',WORKSPACE_MESSAGES.restricted);if(id&&options.scope&&options.scope()!==id)return refuse('restricted',WORKSPACE_MESSAGES.restricted);
       const value=file?await transport.upload<T>(path,file):await transport.request<T>(path,body);if(body!==undefined||file)signal();return ok(value);}
     catch(error){
       const value=error as {code?:string;message?:string;status?:number};
@@ -30,7 +30,7 @@ export function createHttpWorkspaceAdministration(options:{transport:Transport;r
   }
   const memberPath=(input:{personId:string})=>encodeURIComponent(input.personId);
   return{
-    global,
+    global,get readOnly(){return options.readOnly?.()??false;},
     get:id=>scoped(id,global?'':'/team/workspace'),
     list:query=>global?call(`/platform/workspaces?${managementSearch(query)}`):restricted(),
     create:input=>global?call('/platform/workspaces',input):restricted(),

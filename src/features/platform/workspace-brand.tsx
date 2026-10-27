@@ -16,6 +16,7 @@ export function WorkspaceBrand({port,workspaceId,name}:{port:WorkspaceAdministra
 function BrandForm({port,initial,name,reload}:{port:WorkspaceAdministration;initial:WorkspaceTemplateConfiguration;name:string;reload:()=>void}){
   const [base,setBase]=useState(initial),[draft,setDraft]=useState<WorkspaceTemplateInput>(initial.active?.config??{publication:name,presets:['editorial'],defaultPreset:'editorial',font:'Inter'});
   const [busy,setBusy]=useState(false),[error,setError]=useState<string>(),[notice,setNotice]=useState<string>();
+  const disabled=busy||Boolean(port.readOnly);
   useWorkspaceForm(JSON.stringify(draft)!==JSON.stringify(base.active?.config??{publication:name,presets:['editorial'],defaultPreset:'editorial',font:'Inter'}),busy);
   async function restoreLatest(){setBusy(true);const latest=await port.templates(base.workspaceId);setBusy(false);setNotice(undefined);
     if(!latest.ok){setError(latest.refusal.message);return;}setBase(latest.value);setDraft(latest.value.active?.config??{publication:name,presets:['editorial'],defaultPreset:'editorial',font:'Inter'});setError(undefined);reload();}
@@ -31,20 +32,20 @@ function BrandForm({port,initial,name,reload}:{port:WorkspaceAdministration;init
   return<Section title="Modelos e marca" titleAs="h2" variant="panel" action={<Button size="sm" disabled={busy} onClick={()=>void restoreLatest()}>Recarregar configuração</Button>}>
     <PageStack>
       {base.pilot&&!base.active?<Alert tone="info" title="Catálogo atual preservado">Salvar uma nova identidade altera as opções futuras. Produções antigas mantêm seus modelos.</Alert>:null}
-      <Field label="Nome do veículo">{props=><Input {...inputProps(props)} value={draft.publication} maxLength={80} disabled={busy} onChange={event=>setDraft({...draft,publication:event.target.value})}/>}</Field>
-      <CheckboxGroup legend="Modelos disponíveis">{WORKSPACE_TEMPLATE_PRESETS.map(preset=><Checkbox key={preset} label={PRESETS[preset]} checked={draft.presets.includes(preset)} disabled={busy} onChange={event=>{
+      <Field label="Nome do veículo">{props=><Input {...inputProps(props)} value={draft.publication} maxLength={80} disabled={disabled} onChange={event=>setDraft({...draft,publication:event.target.value})}/>}</Field>
+      <CheckboxGroup legend="Modelos disponíveis">{WORKSPACE_TEMPLATE_PRESETS.map(preset=><Checkbox key={preset} label={PRESETS[preset]} checked={draft.presets.includes(preset)} disabled={disabled} onChange={event=>{
         const presets=WORKSPACE_TEMPLATE_PRESETS.filter(value=>value===preset?event.target.checked:draft.presets.includes(value));
         setDraft({...draft,presets,defaultPreset:presets.includes(draft.defaultPreset)?draft.defaultPreset:presets[0]??'editorial'});
       }}/>)}</CheckboxGroup>
-      <Field label="Modelo padrão">{props=><Select {...props} disabled={busy} value={draft.defaultPreset} options={draft.presets.map(value=>({value,label:PRESETS[value]}))} onChange={value=>setDraft({...draft,defaultPreset:value as WorkspaceTemplateInput['defaultPreset']})}/>}</Field>
-      <Field label="Fonte">{props=><Select {...props} disabled={busy} value={draft.font} options={WORKSPACE_TEMPLATE_FONTS.map(value=>({value,label:value}))} onChange={value=>setDraft({...draft,font:value as WorkspaceTemplateInput['font']})}/>}</Field>
-      <Dropzone title="Enviar marca do cliente" accept="image/png,image/jpeg,image/webp" maxSize={2*1024**2} spec="PNG, JPEG ou WebP · até 2 MB" disabled={busy} onFiles={(files,rejected)=>{
+      <Field label="Modelo padrão">{props=><Select {...props} disabled={disabled} value={draft.defaultPreset} options={draft.presets.map(value=>({value,label:PRESETS[value]}))} onChange={value=>setDraft({...draft,defaultPreset:value as WorkspaceTemplateInput['defaultPreset']})}/>}</Field>
+      <Field label="Fonte">{props=><Select {...props} disabled={disabled} value={draft.font} options={WORKSPACE_TEMPLATE_FONTS.map(value=>({value,label:value}))} onChange={value=>setDraft({...draft,font:value as WorkspaceTemplateInput['font']})}/>}</Field>
+      <Dropzone title="Enviar marca do cliente" accept="image/png,image/jpeg,image/webp" maxSize={2*1024**2} spec="PNG, JPEG ou WebP · até 2 MB" disabled={disabled} onFiles={(files,rejected)=>{
         if(rejected.length){setError('Envie PNG, JPEG ou WebP de até 2 MB.');return;}if(files[0])void upload(files[0]);
       }}/>
-      {draft.logoId?<Button size="sm" disabled={busy} onClick={()=>{const {logoId:_,...rest}=draft;void _;setDraft(rest);setNotice('Salve os modelos para remover a marca.');}}>Remover marca selecionada</Button>:null}
+      {draft.logoId?<Button size="sm" disabled={disabled} onClick={()=>{const {logoId:_,...rest}=draft;void _;setDraft(rest);setNotice('Salve os modelos para remover a marca.');}}>Remover marca selecionada</Button>:null}
       {error?<Alert tone="danger" title="Não foi possível salvar">{error}</Alert>:null}
       {notice?<Alert tone="success" title={notice}/>:null}
-      <Button variant="primary" loading={busy} disabled={!draft.presets.length||draft.publication.trim().length<2} onClick={()=>void save()}>Salvar modelos e marca</Button>
+      <Button variant="primary" loading={busy} disabled={disabled||!draft.presets.length||draft.publication.trim().length<2} onClick={()=>void save()}>Salvar modelos e marca</Button>
     </PageStack>
   </Section>;
 }
