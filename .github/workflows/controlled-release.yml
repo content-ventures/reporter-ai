@@ -10,6 +10,12 @@ on:
         type: boolean
         default: false
 
+      acceptance_scope:
+        description: 'Workspace QA uses prepared text and no AI calls; core/full incur provider usage'
+        type: choice
+        options: [workspaces, core, full]
+        default: workspaces
+
 permissions:
   contents: write
   pull-requests: read
@@ -41,6 +47,7 @@ jobs:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
       NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
+      REPORTER_ACCEPTANCE_SCOPE: ${{ inputs.acceptance_scope }}
       REPORTER_ACCEPTANCE_TARGET: ${{ vars.REPORTER_ACCEPTANCE_TARGET }}
       REPORTER_APP_ORIGINS: ${{ vars.REPORTER_APP_ORIGINS }}
       REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
@@ -73,14 +80,21 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install the speech generator and the Neon CLI
+      - name: Install the Neon CLI
+        run: npm install --global --no-audit --no-fund neon@6.3.0
+
+      - name: Install the speech generator for paid ingestion acceptance
+        if: inputs.acceptance_scope != 'workspaces'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends espeak-ng
-          npm install --global --no-audit --no-fund neon@6.3.0
 
-      # A 20-second synthetic upload through storage and Groq, one generated article and
-      # its approval by a second user, against the worker the staging stage just deployed.
+      - name: Install Chromium for actual export downloads
+        if: inputs.acceptance_scope != 'core'
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Workspace QA preserves the pilot and uses prepared text, private branding and
+      # separate approvals/downloads. Paid core/full generation requires an explicit scope.
       - name: Run the staging acceptance
         run: node scripts/neon-acceptance.mjs
 

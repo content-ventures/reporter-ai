@@ -206,6 +206,9 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm exec playwright install-deps chromium
 
+      - name: Verify the zero-provider staging acceptance on disposable services
+        run: node --conditions=react-server --import tsx --test tests/acceptance/workspace-release.rehearsal.test.ts
+
       - name: Run connected smoke on the production build
         env:
           SMOKE_PREBUILT: "1"
