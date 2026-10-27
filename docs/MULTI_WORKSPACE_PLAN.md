@@ -190,12 +190,12 @@ Main implementation areas: session port, state providers, connected runtime, HTT
 
 Give the administrator access to a person's activity and a controlled view of their experience, while preserving the identity that actually performs an action.
 
-- [ ] From the user directory, open the person's memberships, productions, usage and activity within a chosen workspace. Label person filters so they cannot be mistaken for an account change.
-- [ ] Add "Visualizar como usuário" for an active member of the selected workspace. The server establishes a short lived, workspace bound viewing context and checks both the real operator and the selected membership on every request.
-- [ ] Intersect visible content with the selected member's actual permissions. Do not combine the member's roles with platform administrator privileges inside this viewing mode.
-- [ ] Make the preview read only at the server. Editing, generation, approval, configuration, invitation and role mutations are refused. To perform an authorized administrative edit, the operator exits the preview and acts under their own identity.
-- [ ] Display the viewed person and workspace with a persistent DS status and "Sair da visualização" action. Expiry, revocation, logout or workspace change ends the preview. Local simulation profile controls remain separate.
-- [ ] Audit preview start and end, expiry and real administrative changes with actor, workspace, target membership where applicable, action, time and correlation. Record before and after values for configuration and permission changes.
+- [x] From the user directory, open the person's memberships, productions, usage and activity within a chosen workspace. Label person filters so they cannot be mistaken for an account change.
+- [x] Add "Visualizar como usuário" for an active member of the selected workspace. The server establishes a short lived, workspace bound viewing context and checks both the real operator and the selected membership on every request.
+- [x] Intersect visible content with the selected member's actual permissions. Do not combine the member's roles with platform administrator privileges inside this viewing mode.
+- [x] Make the preview read only at the server. Editing, generation, approval, configuration, invitation and role mutations are refused. To perform an authorized administrative edit, the operator exits the preview and acts under their own identity.
+- [x] Display the viewed person and workspace with a persistent DS status and "Sair da visualização" action. Expiry, revocation, logout or workspace change ends the preview. Local simulation profile controls remain separate.
+- [x] Audit preview start and end, expiry and real administrative changes with actor, workspace, target membership where applicable, action, time and correlation. Record before and after values for configuration and permission changes.
 
 Exit gate: João can enter every workspace, inspect a person's operation, view their allowed experience and return to the console. Requests outside the UI cannot mutate data in preview mode, and no change or approval is attributed to the viewed person.
 
