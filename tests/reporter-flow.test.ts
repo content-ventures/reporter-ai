@@ -202,3 +202,14 @@ test("a checkpoint from a different model is not reused", async () => {
     assert.ok(called); assert.equal(result.content, "New content");
   } finally { globalThis.fetch = original; await rm(directory, { recursive: true, force: true }); }
 });
+
+
+test('intentional client cancellation stops early and never records an application failure',async()=>{
+  const aborted=new AbortController();aborted.abort();
+  const lines:string[]=[],spy=mock.method(process.stdout,'write',(chunk:unknown)=>{lines.push(String(chunk));return true;});
+  try{
+    const response=await handleReporter(localRequest(undefined,{signal:aborted.signal}),['workspace']);
+    assert.equal(response.status,499);assert.equal((await response.json()).error,'REQUEST_ABORTED');
+    assert.deepEqual(lines,[]);
+  }finally{spy.mock.restore();}
+});
