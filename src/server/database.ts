@@ -9,6 +9,7 @@ import { assertLocalMode, cloudDatabaseUrl, cloudPortalId, databasePassword, loc
 import { reporterDeploymentMode } from './deployment.ts';
 import { currentReporterContext, type ReporterRequestContext } from './request-context.ts';
 import { currentWorkerContext } from './worker-context.ts';
+import {FlowError} from './errors.ts';
 
 const globalPools = globalThis as typeof globalThis & { reporterPools?: Partial<Record<"runtime" | "worker", Pool>> };
 export function pool(role: "runtime" | "worker") {
@@ -89,13 +90,20 @@ export async function driveRetryContext(transcriptId:string):Promise<ReporterReq
 export async function transaction<T>(role: "runtime" | "worker", operation: (client: PoolClient) => Promise<T>, requestId: string = randomUUID()): Promise<T> {
   const client = await pool(role).connect();
   try {
-    await client.query("BEGIN");
+    const context=role==='runtime'?currentReporterContext():undefined;
+    await client.query(context?.view?'BEGIN READ ONLY':'BEGIN');
     // One round trip sets the timeout and the context; it answers with one integer, not the
     // values it was sent, because every byte PostgreSQL returns is billed transfer.
     if (role === "runtime") {
       const context = currentReporterContext();
       await client.query("SELECT 1 AS applied FROM (SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode',$5,true),set_config('app.module_key','reporter_ai',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true),set_config('app.correlation_id',$4,true)) settings",
         [context.tenant, context.portal, context.actor, requestId, context.administrative ? 'platform_workspace' : 'user']);
+      if(context.view){
+        await client.query("SELECT 1 AS applied FROM (SELECT set_config('app.member_view',$1,true),set_config('app.real_user_id',$2,true)) settings",[context.view.id,context.view.operator.id]);
+        const valid=(await client.query('SELECT public.reporter_member_view_valid($1,$2,$3,$4) AS valid',
+          [context.view.id,context.view.operator.id,context.portal,context.actor])).rows[0]?.valid;
+        if(valid!==true)throw new FlowError('MEMBER_VIEW_ENDED',410);
+      }
     } else {
       const context = currentWorkerContext();
       await client.query("SELECT 1 AS applied FROM (SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true)) settings",
