@@ -44,7 +44,12 @@ for(const width of [1440,390]){
           const dialog=page.getByRole('dialog',{name:'Convidar pessoa',exact:true});
           await dialog.getByRole('textbox',{name:'Nome',exact:true}).fill(`${label} ${suffix}`);
           await dialog.getByRole('textbox',{name:'E-mail',exact:true}).fill(`${label.toLowerCase()}-${suffix}@acceptance.test`);
-          if(role!=='Editor'){await dialog.getByRole('combobox',{name:'Função neste workspace',exact:true}).click();await page.getByRole('option',{name:new RegExp(`^${role}\\b`)}).click();}
+          if(role!=='Editor'){
+            const choice=dialog.getByRole('combobox',{name:'Função neste workspace',exact:true});
+            if(width===1440){await choice.focus();await choice.press('Enter');await choice.press('ArrowDown');await choice.press('Enter');}
+            else{await choice.click();await page.getByRole('option',{name:new RegExp(`^${role}\\b`)}).click();}
+            await expect(choice).toContainText(role);
+          }
           await dialog.getByRole('button',{name:'Criar convite',exact:true}).click();
           const issued=page.getByRole('dialog',{name:'Convite criado',exact:true});
           const link=await issued.getByRole('textbox',{name:'Link de acesso',exact:true}).inputValue();
