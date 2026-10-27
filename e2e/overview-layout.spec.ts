@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { createFixtures, fixtureSeed } from '../src/fixtures/index.ts';
 import { normalizeSeed } from '../src/adapters/local/store/state.ts';
+import {defaultPipelineDefinition,pipelineRevision} from '../src/domain/pipeline.ts';
 import { GREETING, VIEWPORTS, expectHeadingOutline, expectNoHorizontalOverflow, watchErrors } from './support';
 
 for (const viewport of VIEWPORTS) {
@@ -20,7 +21,8 @@ for (const viewport of VIEWPORTS) {
             }
           }
         }
-        await page.route('**/api/reporter/workspace', route => route.fulfill({ json: { state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } }));
+        await page.route(url=>url.pathname==='/api/reporter/workspace', route => route.fulfill({ json: { state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } }));
+        await page.route('**/api/reporter/pipeline',route=>route.fulfill({json:{active:pipelineRevision(defaultPipelineDefinition(),1),history:[],runs:[]}}));
         await page.goto('/');
         await expect(page.getByRole('heading', { name: GREETING, level: 1 })).toBeVisible();
         await expect(page.getByRole('heading', { name: empty ? 'Sua próxima história começa aqui' : 'Continuar de onde parou' })).toBeVisible();
