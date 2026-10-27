@@ -152,6 +152,7 @@ jobs:
           NODE
           }
 
+          export REPORTER_SOURCE_COMMIT="$(git rev-parse HEAD)"
           pull
           node --env-file="$env_file" scripts/reporter-cloud.mjs migrate
           neon deploy --project-id "$NEON_PROJECT_ID" --branch "$NEON_BRANCH_ID" --env "$env_file" --allow-protected --no-env-pull
@@ -163,7 +164,7 @@ jobs:
           import { waitForWorkerReadiness } from './scripts/check-worker-readiness.mjs';
           const endpoint = process.env.NEON_FUNCTION_REPORTERWORKER_BASE_URL, secret = process.env.REPORTER_WORKER_PASSWORD;
           if (!endpoint || !secret) throw new Error('Worker readiness is missing its function URL or password.');
-          await waitForWorkerReadiness(endpoint, secret);
+          await waitForWorkerReadiness(endpoint, secret, {expectedCommit:process.env.REPORTER_SOURCE_COMMIT});
           console.log('Worker database, upload storage and media tools are ready.');
           NODE
           node scripts/check-worker-triggers.mjs

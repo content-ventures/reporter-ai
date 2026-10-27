@@ -219,16 +219,17 @@ test('browser uploads require a configured origin, and completing one starts tra
   assert.equal(calls.drains, 1);
 }));
 
-test('the health check requires the secret, proves database reachability and writes nothing', () => withEnv({ REPORTER_WORKER_PASSWORD: 'worker-secret' }, async () => {
+test('the health check requires the secret, proves database reachability and writes nothing', () => withEnv({ REPORTER_WORKER_PASSWORD: 'worker-secret',REPORTER_SOURCE_COMMIT:'a'.repeat(40) }, async () => {
   const { worker, calls } = harness();
   assert.equal((await worker.fetch(new Request('https://worker.test/', { method: 'POST' }))).status, 404);
   const ready = await worker.fetch(new Request('https://worker.test/', { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ health_secret: 'worker-secret' }) }));
   assert.equal(ready.status, 200);
+  assert.deepEqual(await ready.json(),{ok:true,sourceCommit:'a'.repeat(40)});
   assert.deepEqual([calls.pings, calls.drains], [1, 0]);
   const failing = harness({ ready: async () => { throw new Error('private infrastructure detail'); } });
   const response = await failing.worker.fetch(new Request('https://worker.test/', { headers: { 'x-reporter-worker-key': 'worker-secret' } }));
   assert.equal(response.status, 503);
   assert.equal(failing.calls.pings, 0);
-  assert.deepEqual(await response.json(), { ok: false, error: 'INTERNAL_ERROR' });
+  assert.deepEqual(await response.json(), { ok: false, error: 'INTERNAL_ERROR',sourceCommit:'a'.repeat(40) });
 }));

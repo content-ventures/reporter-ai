@@ -174,7 +174,7 @@ export function createReporterWorker(services: WorkerDependencies = dependencies
       try {
         await services.ready?.();
         await workerDependency('DATABASE',services.ping);
-        return Response.json({ ok: true });
+        return Response.json({ ok: true,sourceCommit:process.env.REPORTER_SOURCE_COMMIT });
       } catch (error) {
         const code=safeCode(error);console.warn(JSON.stringify({component:'worker',message:'readiness_failed',error_code:code}));
         return Response.json({ ok: false,error: code,...(code.startsWith('MEDIA_TOOL_')?{media:await workerMediaDiagnostics()}:{}),sourceCommit:process.env.REPORTER_SOURCE_COMMIT },{ status: 503 });
