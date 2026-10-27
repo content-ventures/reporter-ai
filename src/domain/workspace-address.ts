@@ -33,7 +33,7 @@ export const CONTEXT_RECOVERY_EVENT='reporter:context-invalidated';
 /** Recovery never silently chooses another client's last destination. */
 export function contextRecoveryHref(code:string):string{
   if(code==='MEMBER_VIEW_ENDED'||code==='MEMBER_VIEW_UNAVAILABLE')return'/workspaces?viewing=ended';
-  return code==='AUTH_REQUIRED'?'/auth/sign-in':code==='ACCESS_PENDING'||code==='EMAIL_NOT_VERIFIED'?'/auth/pending':code==='WORKSPACE_NOT_FOUND'?'/workspaces?unavailable=1':'/workspaces';
+  return code==='AUTH_REQUIRED'?'/auth/sign-in':code==='ACCESS_PENDING'||code==='EMAIL_NOT_VERIFIED'?'/auth/pending':['WORKSPACE_NOT_FOUND','WORKSPACES_DISABLED','WORKSPACES_RESTRICTED'].includes(code)?'/workspaces?unavailable=1':'/workspaces';
 }
 
 export const NAVIGATION_DISCARD_EVENT='reporter:discard-navigation';

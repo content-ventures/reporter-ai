@@ -19,7 +19,7 @@ import { GENERATION_LABELS, RUN_KIND_OF, GENERATION_KINDS } from '../ports/gener
 import type { GenerationKind, GenerationRequest, RunMeta } from '../ports/generation.ts';
 import type { OutlineInput } from '../ports/generation.ts';
 import type { EditorialCheckpoint, ConnectedWorkspace, EditorialJob, WorkspaceRefresh } from '../ports/connected-workspace.ts';
-import {workspaceRollout} from './workspace-rollout.ts';
+import {effectiveWorkspaceRollout} from './workspace-activation.ts';
 import type { WritingRunDetails } from '../ports/pipeline-settings.ts';
 import { transaction, databaseNow } from './database';
 import { workerAvailable } from './storage';
@@ -177,10 +177,10 @@ export async function editorialWorkspace(since?: string, options: { active?: boo
     queue: options.active ? await queueStatus(client, 'editorial') : IDLE_QUEUE,
   }));
   const workerOnline = await workerAvailable();
-  const context=currentReporterContext();
+  const context=currentReporterContext(),rollout=context.rollout??await effectiveWorkspaceRollout();
   // A shrinking support-view lifetime must not turn every idle poll into a full snapshot.
   const stableContext=context.view?{...context,view:{...context.view,remainingMs:0}}:context;
-  const scope = contentHash({ membersHash: status.membersHash,context: stableContext,rollout:workspaceRollout() });
+  const scope = contentHash({ membersHash: status.membersHash,context: stableContext,rollout });
   const token = (seq: number) => `v2.${seq}.${scope}`;
   const seq = Number(status.seq);
   if (since === token(seq)) return { unchanged: true,revision: seq,syncToken: token(seq),workerOnline,stalled: queue.stalled };
@@ -192,7 +192,6 @@ export async function editorialWorkspace(since?: string, options: { active?: boo
   }
   const result = await editorialTransaction('runtime', async (_checkpoint,_engine,client)=>(await client.query('SELECT public.reporter_navigation_identity() AS value')).rows[0].value as {accountId:string;administrative:boolean}, false, 'reporter.edit', SNAPSHOT_SCOPE);
   const navigation=result.value;
-  const rollout=workspaceRollout();
   const jobs = Object.fromEntries(Object.entries(result.checkpoint.jobs).map(([id,job]) => [id,{ meta: job.meta,kind: job.kind,events: job.events }])) as EditorialCheckpoint['jobs'];
   return { state: result.checkpoint.state,jobs,templateConfiguration:result.checkpoint.templateConfiguration,imageAssets: result.checkpoint.imageAssets ?? [],revision: result.revision,syncToken: token(result.revision),
     model: activePipeline(result.checkpoint).definition.steps.outline.model,workerOnline,stalled: queue.stalled,deploymentMode:reporterDeploymentMode(),
