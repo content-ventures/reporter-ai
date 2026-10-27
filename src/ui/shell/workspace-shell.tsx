@@ -34,6 +34,7 @@ import { requestLeave } from './leave-guard';
 import { SIDEBAR_COLLAPSED_KEY, usePersistentFlag } from './preference';
 import { RunOutcomeToasts } from './run-outcome-toasts';
 import {WorkspaceSwitcher} from './workspace-switcher';
+import {MemberViewProvider,MemberViewStatus,MemberViewBanner,useMemberView} from './member-view';
 import {rememberWorkspace} from '@/state/workspace-preference';
 import {useWorkspaceRouter as useRouter,useWorkspaceHref} from '../workspace-navigation';
 
@@ -106,6 +107,7 @@ function usePaletteShortcut(open: () => void): void {
 }
 
 function ShellFrame({ children }: { children: ReactNode }) {
+  const {view}=useMemberView();
   const routePath = usePathname();
   const pathname = workspaceAddress(routePath)?.path ?? routePath;
   const router = useRouter();
@@ -185,7 +187,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             account={<ShellAccount />}
           />
         )}
-        topbar={<TopBar actions={isR2DemoPath(pathname, libraries, news, editorialSettings) ? <Badge tone="amber">Demo</Badge> : undefined} breadcrumb={crumbs} onToggleSidebar={() => setCollapsed(!collapsed)} notifications={<ShellNotifications />} />}
+        topbar={<><TopBar actions={view?<MemberViewStatus demo={isR2DemoPath(pathname,libraries,news,editorialSettings)}/>:isR2DemoPath(pathname, libraries, news, editorialSettings) ? <Badge tone="amber">Demo</Badge> : undefined} breadcrumb={crumbs} onToggleSidebar={() => setCollapsed(!collapsed)} notifications={<ShellNotifications />} /><MemberViewBanner/></>}
       >
         {/* On a docked production the notice lives in its own header, not above the studio. */}
         {docked ? null : <OtherTabNotice />}
@@ -211,8 +213,8 @@ function WorkspaceEntry(){
  */
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   return (
-    <BreadcrumbProvider>
+    <MemberViewProvider><BreadcrumbProvider>
       <ShellFrame>{children}</ShellFrame>
-    </BreadcrumbProvider>
+    </BreadcrumbProvider></MemberViewProvider>
   );
 }

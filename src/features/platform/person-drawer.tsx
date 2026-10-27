@@ -12,6 +12,7 @@ import { formatCount, formatDateTime } from '@/ui/format';
 import { RelativeTime } from '@/ui/time';
 import { IssuedLink } from './invite-drawer';
 import { formatCompact, formatUsd, rolesLabel, statusLabel, STATUS_TONES } from './format';
+import {PersonWorkspaceInspection} from './person-workspace-inspection';
 
 type Confirm = 'suspend' | 'restore' | null;
 
@@ -117,6 +118,7 @@ export function PersonDrawer({ person: open, usage, onClose }: { person: Platfor
               onClick={!self&&administration?()=>setMembership({...link,name:person.name,email:person.email,avatarUrl:person.avatarUrl,accountSuspended:person.accountStatus==='suspended'}):undefined}
               trailing={<ButtonLink size="sm" href={workspaceHrefFor(workspaceManagementHref(link.workspace.id))}>Administrar</ButtonLink>}/>)}</List>
           </Section>:null}
+          {managed&&Boolean(person.memberships?.length)?<Section title="Consultar operação" titleAs="h3"><PersonWorkspaceInspection key={person.id} person={person} active={Boolean(open)}/></Section>:null}
           {usage ? (
             <Section title="Últimos 30 dias" titleAs="h3">
               <MetricStrip

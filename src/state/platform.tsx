@@ -103,3 +103,4 @@ export function usePlatformLog(limit: number,options?:PlatformFilter&{offset?:nu
   return usePlatformQuery(`log:${limit}:${JSON.stringify(options)}`, (platform) => platform.log(limit,options));
 }
 export function usePlatformAdministration(){return usePlatformRuntime().workspaces;}
+export function usePlatformMemberViewing(){return usePlatformRuntime().memberViewing;}

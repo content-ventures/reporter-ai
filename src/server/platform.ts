@@ -28,6 +28,7 @@ import {readWorkspaceTemplates,saveWorkspaceTemplates,uploadWorkspaceBrand} from
 import {previewConfigurationCopy,applyConfigurationCopy} from './configuration-copy.ts';
 import {memberViewPhotos,memberViewSession} from './member-view.ts';
 import type {MemberView} from '../domain/member-view.ts';
+import {workspaceRollout} from './workspace-rollout.ts';
 
 /**
  * Console da plataforma and the access link over HTTP.
@@ -191,6 +192,7 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
     const [head, id, action] = path;
 
     if(head==='member-views'&&path.length===1&&request.method==='POST'){
+      if(workspaceRollout()==='off')throw new Refused('restricted','A navegação entre workspaces ainda não está habilitada.',403);
       const input=z.object({workspaceId:z.string().regex(UUID),personId:z.string().regex(UUID)}).strict().safeParse(await deps.readJson(request));
       if(!input.success)throw platformRefusal('invalid_workspace');
       const session=await memberViewSession(request,deps);

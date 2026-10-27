@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import {createHash,randomUUID} from 'node:crypto';
 import {after,before,test} from 'node:test';
 import pg,{type Pool} from 'pg';
+import sharp from 'sharp';
 import {startRehearsalDatabase} from '../support/rehearsal-db.ts';
+import {startFakeS3} from '../support/fake-s3.ts';
 import type {MemberView} from '../../src/domain/member-view.ts';
 import type {ReporterRequestContext} from '../../src/server/request-context.ts';
 
@@ -10,8 +12,10 @@ const PILOT='10000000-0000-0000-0000-000000000101';
 const OPERATOR={email:'support-operator@rehearsal.test',subject:'support-operator'};
 const READER={email:'support-reader@rehearsal.test',subject:'support-reader'};
 const OTHER={email:'support-other@rehearsal.test',subject:'support-other'};
+const OUTSIDER={email:'support-outsider@rehearsal.test',subject:'support-outsider'};
 const SESSION_HASH=createHash('sha256').update(`login:${OPERATOR.subject}`).digest('hex');
 let db:Awaited<ReturnType<typeof startRehearsalDatabase>>,operator:string,reader:string,other:string;
+let storage:Awaited<ReturnType<typeof startFakeS3>>,outsider:string;
 let transaction:typeof import('../../src/server/database.ts').transaction;
 let runWithReporterContext:typeof import('../../src/server/request-context.ts').runWithReporterContext;
 let handle:typeof import('../../src/server/http.ts').handleReporter;
@@ -51,13 +55,17 @@ async function end(id:string,identity=OPERATOR){
     [identity.subject,identity.email,id])).rows[0].value as boolean);
 }
 before(async()=>{
-  db=await startRehearsalDatabase([{email:OPERATOR.email,role:'admin'},{email:READER.email,role:'editor'},{email:OTHER.email,role:'approver'}]);
-  for(const identity of [OPERATOR,READER,OTHER])await owner('UPDATE core.users SET auth_subject=$2,email_verified=true WHERE email=$1',[identity.email,identity.subject]);
+  db=await startRehearsalDatabase([{email:OPERATOR.email,role:'admin'},{email:READER.email,role:'editor'},{email:OTHER.email,role:'approver'},{email:OUTSIDER.email,role:'editor'}]);
+  for(const identity of [OPERATOR,READER,OTHER,OUTSIDER])await owner('UPDATE core.users SET auth_subject=$2,email_verified=true WHERE email=$1',[identity.email,identity.subject]);
   [{id:operator}]=await owner('SELECT id FROM core.users WHERE email=$1',[OPERATOR.email]);
   [{id:reader}]=await owner('SELECT id FROM core.users WHERE email=$1',[READER.email]);
   [{id:other}]=await owner('SELECT id FROM core.users WHERE email=$1',[OTHER.email]);
+  [{id:outsider}]=await owner('SELECT id FROM core.users WHERE email=$1',[OUTSIDER.email]);
+  await owner("UPDATE public.portal_members SET status='disabled' WHERE portal_id=$1 AND user_id=$2",[PILOT,outsider]);
   await owner("INSERT INTO public.user_roles(user_id,role) VALUES($1,'platform_admin'),($2,'platform_admin')",[operator,reader]);
   Object.assign(process.env,{REPORTER_DEPLOYMENT_MODE:'cloud',REPORTER_DATABASE_URL:db.runtime,REPORTER_WORKER_DATABASE_URL:db.worker,REPORTER_DEFAULT_PORTAL_ID:PILOT,REPORTER_WORKSPACES_MODE:'all'});
+  storage=await startFakeS3({bucket:'reporter-source-media',corsOrigins:[APP]});
+  Object.assign(process.env,{AWS_ENDPOINT_URL_S3:storage.endpoint,AWS_REGION:'us-east-1',AWS_ACCESS_KEY_ID:'synthetic-access-key',AWS_SECRET_ACCESS_KEY:'synthetic-secret-key'});
   ({transaction}=await import('../../src/server/database.ts'));
   ({runWithReporterContext}=await import('../../src/server/request-context.ts'));
   ({handleReporter:handle}=await import('../../src/server/http.ts'));
@@ -65,6 +73,7 @@ before(async()=>{
 after(async()=>{
   const pools=(globalThis as typeof globalThis&{reporterPools?:Partial<Record<string,Pool>>}).reporterPools??{};
   await Promise.all(Object.values(pools).map(pool=>pool?.end()));db?.stop();
+  await storage?.stop();
 });
 
 test('an audited support view retains its actual operator and only the selected membership roles',async()=>{
@@ -159,6 +168,14 @@ test('the HTTP read projection retains the real account and marks its effective 
   assert.equal((await api('w/reporter-ai/pipeline',{view:'invalid-view',account:operator})).status,403);
 });
 
+test('disabled workspace navigation cannot establish a support view',async()=>{
+  const [before]=await owner('SELECT count(*)::integer AS total FROM core.reporter_member_views');
+  process.env.REPORTER_WORKSPACES_MODE='off';
+  try{assert.equal((await api('platform/member-views',{body:{workspaceId:PILOT,personId:reader}})).status,403);}
+  finally{process.env.REPORTER_WORKSPACES_MODE='all';}
+  assert.equal((await owner('SELECT count(*)::integer AS total FROM core.reporter_member_views'))[0].total,before.total);
+});
+
 test('a new login cannot resume a previous viewing context even when the actual account is unchanged',async()=>{
   const view=await start();
   const changed=await api('w/reporter-ai/workspace',{view:view.id,account:operator,session:'new-login-for-the-same-account'});
@@ -193,4 +210,29 @@ test('the HTTP exit is owned, idempotent and remains available after platform-ro
     assert.equal(rows.length,1);assert.equal(rows[0].user_id,operator);assert.ok(rows[0].correlation_id);
     assert.equal(rows[0].after_data.reason,'operator_revoked');
   }finally{await owner("INSERT INTO public.user_roles(user_id,role) VALUES($1,'platform_admin')",[operator]);}
+});
+
+test('private avatar bytes are checked as the member, bypass no warm administrator cache, and stop after expiry',async()=>{
+  const stored:string[]=[];
+  for(const [person,color]of [[reader,'#204060'],[outsider,'#804020']]as const){
+    const bytes=await sharp({create:{width:16,height:16,channels:3,background:color}}).webp().toBuffer();
+    const file=createHash('sha256').update(bytes).digest('hex')+'.image',path=`/api/reporter/avatars/${person}/${PILOT}/${file}`;
+    storage.objects.set(`reporter-source-media/images/${PILOT}/${file}`,{body:bytes,contentType:'image/webp',etag:'"synthetic"'});
+    await owner('UPDATE core.users SET image=$2,profile_updated_at=clock_timestamp() WHERE id=$1',[person,path]);stored.push(path);
+  }
+  const previous=process.env.REPORTER_FUNCTION_RUNTIME;process.env.REPORTER_FUNCTION_RUNTIME='true';
+  const image=(path:string)=>handle(new Request(APP+path),new URL(APP+path).pathname.slice('/api/reporter/'.length).split('/'),
+    {identify:async()=>({...OPERATOR,name:'Operator',emailVerified:true,sessionId:`login:${OPERATOR.subject}`}),defer:()=>{}});
+  try{
+    const warm=await image(stored[1]);assert.equal(warm.status,200);const foreignBytes=Buffer.from(await warm.arrayBuffer());assert.ok(foreignBytes.length);
+    const view=await start(),before=storage.requests.length;
+    assert.equal((await image(stored[1]+`?_view=${view.id}`)).status,404);
+    assert.equal(storage.requests.length,before,'a refused member read never reaches storage');
+    const own=await image(stored[0]+`?_view=${view.id}`);assert.equal(own.status,200);assert.match(own.headers.get('cache-control')??'',/no-store/);
+    assert.notDeepEqual(Buffer.from(await own.arrayBuffer()),foreignBytes);
+    const snapshot=await api('w/reporter-ai/workspace',{view:view.id,account:operator});assert.equal(snapshot.status,200);
+    assert.equal(snapshot.value.state.people.find((person:{id:string})=>person.id===reader).avatarUrl,stored[0]+`?_view=${view.id}`);
+    await owner("UPDATE core.reporter_member_views SET created_at=clock_timestamp()-interval '10 minutes',expires_at=clock_timestamp()-interval '5 minutes' WHERE id=$1",[view.id]);
+    const requests=storage.requests.length;assert.equal((await image(stored[0]+`?_view=${view.id}`)).status,410);assert.equal(storage.requests.length,requests);
+  }finally{if(previous===undefined)delete process.env.REPORTER_FUNCTION_RUNTIME;else process.env.REPORTER_FUNCTION_RUNTIME=previous;}
 });

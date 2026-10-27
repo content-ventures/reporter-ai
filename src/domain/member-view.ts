@@ -27,3 +27,13 @@ export function memberViewHref(slug:string|undefined,viewId:string|undefined,hre
   url.searchParams.set('view',viewId);
   return url.pathname+url.search+url.hash;
 }
+/** Private app photos always use this app's checked view route, including old absolute references. */
+export function memberViewImageSource(viewId:string,source:string|undefined):string|undefined{
+  if(!source)return source;
+  try{
+    const url=new URL(source,'https://reporter.invalid');
+    if(!url.pathname.startsWith('/api/reporter/'))return source;
+    url.searchParams.set('_view',viewId);
+    return url.pathname+url.search;
+  }catch{return source;}
+}

@@ -8,6 +8,7 @@ import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {useSession} from '@/state';
 import { PersonAvatar } from '../person-avatar';
 import { localRoleMenu, memberDetail, useActAs } from './act-as';
+import {useMemberView} from './member-view';
 
 /**
  * The acting member from the SessionPort, at the foot of the menu. In the simulation its menu
@@ -17,9 +18,16 @@ import { localRoleMenu, memberDetail, useActAs } from './act-as';
 export function ShellAccount() {
   const router = useRouter();
   const { closeNav } = useShell();
+  const {view,busy,exit}=useMemberView();
   const session = useActAs(),navigation=useSession().data?.navigation;
   const { current, members, actAs } = session;
   if (!current) return null;
+  if(view)return<ThemeV3><SidebarAccount name={view.operator.name} src={view.operator.avatarUrl} detail="Admin da plataforma"
+    sections={[{label:'Visualização',items:[
+      {label:'Sair da visualização',disabled:busy,onSelect:()=>{closeNav();void exit(`/platform/people?person=${encodeURIComponent(view.person.id)}`);}},
+      {label:'Plataforma',disabled:busy,onSelect:()=>{closeNav();void exit('/platform');}},
+      {label:'Sair da conta',disabled:busy,onSelect:()=>{closeNav();void exit('/auth/sign-out','logout');}},
+    ]}]}/></ThemeV3>;
   const sections: MenuSection[] =
     members.length > 1
       ? [

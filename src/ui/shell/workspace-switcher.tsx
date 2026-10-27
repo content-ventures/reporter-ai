@@ -11,8 +11,10 @@ import {roleLabel} from '@/domain/permissions';
 import {useWorkspaceDeparture} from '../workspace-navigation';
 import {requestLeave} from './leave-guard';
 import {WorkspacePicker} from './workspace-picker';
+import {useMemberView} from './member-view';
 
 export function WorkspaceSwitcher(){
+  const {view,exit}=useMemberView();
   const prepare=useWorkspaceDeparture(),{closeNav,drawer,menuButtonRef}=useShell(),[picking,setPicking]=useState(false);
   const runtime=useRuntime(),session=useSession().data,port=runtime.runtime?.workspaceDirectory;
   const directory=useWorkspaceDirectoryQuery(port,{limit:3}),data=directory.data;
@@ -25,9 +27,9 @@ export function WorkspaceSwitcher(){
   function choose(selected:WorkspaceAccess){
     setPicking(false);if(selected.workspace.id===currentId)return;
     const href=workspaceAccessHref(selected);closeNav();if(!requestLeave(href))return;
-    void prepare().then(allowed=>{if(!allowed)return;if(selected.enterable!==false)rememberWorkspace(accountId,{workspaceId:selected.workspace.id,slug:selected.workspace.slug});window.location.assign(new URL(href,window.location.href).href);});
+    void prepare().then(allowed=>{if(!allowed)return;if(view){void exit(href,'workspace_changed');return;}if(selected.enterable!==false)rememberWorkspace(accountId,{workspaceId:selected.workspace.id,slug:selected.workspace.slug});window.location.assign(new URL(href,window.location.href).href);});
   }
-  function manage(){setPicking(false);closeNav();const href='/platform/workspaces';if(requestLeave(href))void prepare().then(allowed=>{if(allowed)window.location.assign(new URL(href,window.location.href).href);});}
+  function manage(){setPicking(false);closeNav();const href='/platform/workspaces';if(requestLeave(href))void prepare().then(allowed=>{if(!allowed)return;if(view){void exit(href);return;}window.location.assign(new URL(href,window.location.href).href);});}
   function openPicker(){
     // Finish the menu's selection callback before the native dialog captures its return target.
     flushSync(()=>closeNav());
