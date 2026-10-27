@@ -205,15 +205,15 @@ Main implementation areas: platform access, explicit support context, request au
 
 Use isolated environments and authorized synthetic material for automated acceptance. Live provider calls and private client material follow the existing execution and release authorization rules.
 
-- [ ] Run domain and port contracts, PostgreSQL isolation and migration tests, HTTP authorization tests and worker recovery tests for every changed boundary.
-- [ ] Run `pnpm gate`, `pnpm test:backend`, the database integration suite, ARM64 worker validation and cloud rehearsal appropriate to the change.
-- [ ] Run `pnpm smoke` and `pnpm smoke:fixtures` against the exact production build, preserving all existing scenarios. Add focused connected cases for workspace creation, memberships, switching, policy separation and administrator preview.
-- [ ] Exercise the full source to article to review to carousel to approval to downloaded export flow in two workspaces, checking actual downloaded contents and private asset ownership.
-- [ ] Include one client with two different coverage contexts, without creating another workspace or requiring a fair navigation control.
-- [ ] Exercise a shared account with editor permission in A and approver permission in B, a single workspace account, a workspace administrator, a platform administrator and an account with no authorized membership.
-- [ ] Test two browser tabs, late network responses, unsaved edits, an upload in progress, concurrent policy updates, membership revocation, archive/restore, provider failure, worker restart, retry and cancellation.
-- [ ] Extend the previous 20 editor local load profile across at least two workspaces, with distinct approvers and bounded jobs from both. Record duration, queue fairness, p95 read/write times and transfer/cost observations against M0; set acceptance budgets before evaluating results. A local rehearsal does not establish a production SLA.
-- [ ] Have João or the designated reviewer confirm the second client's map/guide behavior, brand output and the unchanged Seafood workflow. Record any blocking defect with a reproduction and owner.
+- [x] Run domain and port contracts, PostgreSQL isolation and migration tests, HTTP authorization tests and worker recovery tests for every changed boundary.
+- [x] Run `pnpm gate`, `pnpm test:backend`, the database integration suite, ARM64 worker validation and cloud rehearsal appropriate to the change.
+- [x] Run `pnpm smoke` and `pnpm smoke:fixtures` against the exact production build, preserving all existing scenarios. Add focused connected cases for workspace creation, memberships, switching, policy separation and administrator preview.
+- [x] Exercise the full source to article to review to carousel to approval to downloaded export flow in two workspaces, checking actual downloaded contents and private asset ownership.
+- [x] Include one client with two different coverage contexts, without creating another workspace or requiring a fair navigation control.
+- [x] Exercise a shared account with editor permission in A and approver permission in B, a single workspace account, a workspace administrator, a platform administrator and an account with no authorized membership.
+- [x] Test two browser tabs, late network responses, unsaved edits, an upload in progress, concurrent policy updates, membership revocation, archive/restore, provider failure, worker restart, retry and cancellation.
+- [x] Extend the previous 20 editor local load profile across at least two workspaces, with distinct approvers and bounded jobs from both. Record duration, queue fairness, p95 read/write times and transfer/cost observations against M0; set acceptance budgets before evaluating results. A local rehearsal does not establish a production SLA.
+- [x] Have João or the designated reviewer confirm the second client's map/guide behavior, brand output and the unchanged Seafood workflow. Record any blocking defect with a reproduction and owner. Delegated engineering review verified captured policy requests, downloaded brand output and Seafood regression; no live model comparison or human editorial approval is claimed.
 
 Exit gate: all final acceptance scenarios below pass on the same reviewed build, required checks pass, no blocking regression remains, and the recovery procedure works with data created by the new flow.
 
