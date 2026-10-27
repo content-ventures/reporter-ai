@@ -211,6 +211,12 @@ jobs:
           SMOKE_PREBUILT: "1"
         run: pnpm smoke
 
+      - name: Run connected workspace acceptance on the same production build
+        env:
+          SMOKE_PREBUILT: "1"
+          SMOKE_PORT: "3003"
+        run: pnpm smoke:workspaces
+
       - name: Build the disposable fixture regression app
         env:
           NEXT_PUBLIC_REPORTER_E2E_FIXTURES: "true"
