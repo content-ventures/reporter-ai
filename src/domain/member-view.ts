@@ -1,5 +1,6 @@
 import type {IsoDateTime,PersonId,WorkspaceId} from './ids.ts';
 import type {Role} from './workspace.ts';
+import {workspaceAddress,workspaceHref} from './workspace-address.ts';
 
 /** A context identifier grants no access without its owning, verified platform operator. */
 export type MemberView = {
@@ -16,4 +17,13 @@ export type MemberViewExit='exit'|'workspace_changed'|'logout'|'account_changed'
 export const MEMBER_VIEW_PAGE_HEADER='x-reporter-page-view';
 export function memberViewId(value:string):string|undefined{
   return /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)?value.toLowerCase():undefined;
+}
+/** Global destinations and another client's address explicitly leave the viewing context. */
+export function memberViewHref(slug:string|undefined,viewId:string|undefined,href:string):string{
+  const scoped=workspaceHref(slug,href);
+  if(viewId===undefined||!slug||!scoped.startsWith('/')||scoped.startsWith('//'))return scoped;
+  const url=new URL(scoped,'https://reporter.invalid');
+  if(workspaceAddress(url.pathname)?.slug!==slug)return scoped;
+  url.searchParams.set('view',viewId);
+  return url.pathname+url.search+url.hash;
 }

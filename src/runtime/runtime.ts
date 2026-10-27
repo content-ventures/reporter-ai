@@ -20,6 +20,7 @@ import type { Clock, IdGenerator } from '../ports/system.ts';
 import type {WorkspaceAdministration} from '../ports/workspace-management.ts';
 import type {WorkspaceDirectory} from '../ports/workspace-management.ts';
 import type {WorkspaceNavigation} from '../ports/connected-workspace.ts';
+import type {MemberViewing} from '../ports/member-view.ts';
 
 /**
  * What the screens run on: port implementations only. `createRuntime()` composes the local
@@ -81,6 +82,7 @@ export type Runtime = {
   readonly administration?:WorkspaceAdministration;
   readonly navigation?:WorkspaceNavigation;
   readonly workspaceDirectory?:WorkspaceDirectory;
+  readonly memberViewing?:MemberViewing;
   readonly render: RenderService;
   readonly export: ExportService;
   readonly session: SessionPort;

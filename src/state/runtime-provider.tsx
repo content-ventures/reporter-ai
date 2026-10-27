@@ -2,7 +2,7 @@
 
 import { createContext, Suspense, useCallback,useEffect,useMemo,useRef, useState,useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname,useSearchParams } from 'next/navigation';
 import { ConfirmDialog,interV3 } from '@content-ventures/design-system/v3';
 import { createConnectedRuntime } from '../runtime/create-connected-runtime.ts';
 import { createRuntime } from '../runtime/create-runtime.ts';
@@ -46,19 +46,21 @@ function FlushOnRouteChange({ holder }: { holder: RuntimeHolder }) {
   return null;
 }
 
-export function RuntimeProvider({children,initialWorkspaceSlug}:{children:ReactNode;initialWorkspaceSlug?:string}){
-  return E2E_FIXTURES?<RuntimeBoundary>{children}</RuntimeBoundary>:<Suspense fallback={null}><AddressBoundary initialWorkspaceSlug={initialWorkspaceSlug}>{children}</AddressBoundary></Suspense>;
+export function RuntimeProvider({children,initialWorkspaceSlug,initialViewId}:{children:ReactNode;initialWorkspaceSlug?:string;initialViewId?:string}){
+  return E2E_FIXTURES?<RuntimeBoundary>{children}</RuntimeBoundary>:<Suspense fallback={null}><AddressBoundary initialWorkspaceSlug={initialWorkspaceSlug} initialViewId={initialViewId}>{children}</AddressBoundary></Suspense>;
 }
-function AddressBoundary({children,initialWorkspaceSlug}:{children:ReactNode;initialWorkspaceSlug?:string}){
+function AddressBoundary({children,initialWorkspaceSlug,initialViewId}:{children:ReactNode;initialWorkspaceSlug?:string;initialViewId?:string}){
   const pathname=usePathname()??'';
+  const params=useSearchParams();
   const mounted=useSyncExternalStore(noHydrationSubscription,hydrated,serverHydrated);
   const slug=mounted?workspaceAddress(pathname)?.slug??(pathname.startsWith('/w/')?'':undefined):initialWorkspaceSlug;
-  return<RuntimeBoundary key={slug===undefined?'pilot':`workspace:${slug}`} workspaceSlug={slug}>{children}</RuntimeBoundary>;
+  const viewId=mounted?(params.has('view')?params.getAll('view').length===1?params.get('view')!:'!invalid':undefined):initialViewId;
+  return<RuntimeBoundary key={`${slug===undefined?'pilot':`workspace:${slug}`}:${viewId??'account'}`} workspaceSlug={slug} viewId={viewId}>{children}</RuntimeBoundary>;
 }
-function RuntimeBoundary({children,workspaceSlug}:{children:ReactNode;workspaceSlug?:string}){
+function RuntimeBoundary({children,workspaceSlug,viewId}:{children:ReactNode;workspaceSlug?:string;viewId?:string}){
   const [holder] = useState(() => createRuntimeHolder((options) => E2E_FIXTURES
     ? createRuntime({ ...options,typefaces: TYPEFACES })
-    : createConnectedRuntime({ typefaces: TYPEFACES,workspaceSlug }),{releaseAfterMs:E2E_FIXTURES?1000:0}));
+    : createConnectedRuntime({ typefaces: TYPEFACES,workspaceSlug,viewId }),{releaseAfterMs:E2E_FIXTURES?1000:0}));
 
   useEffect(() => {
     holder.start({ reset: consumeResetParam() });
@@ -80,11 +82,11 @@ function RuntimeBoundary({children,workspaceSlug}:{children:ReactNode;workspaceS
   const answerDiscard=useCallback((allowed:boolean)=>{if(allowed)window.dispatchEvent(new Event(NAVIGATION_DISCARD_EVENT));const pending=waiting.current;waiting.current=[];setDiscard(false);for(const resolve of pending)resolve(allowed);},[]);
   useEffect(()=>{active.current=true;return()=>{active.current=false;for(const resolve of waiting.current)resolve(false);waiting.current=[];};},[]);
   const [preparations]=useState(()=>new Set<()=>Promise<boolean>>());
-  const address=useMemo(()=>({slug:workspaceSlug,confirmDiscard,registerPreparation:(prepare:()=>Promise<boolean>)=>{preparations.add(prepare);return()=>{preparations.delete(prepare);};},prepare:async()=>{
+  const address=useMemo(()=>({slug:workspaceSlug,viewId,confirmDiscard,registerPreparation:(prepare:()=>Promise<boolean>)=>{preparations.add(prepare);return()=>{preparations.delete(prepare);};},prepare:async()=>{
     window.dispatchEvent(new Event('reporter:prepare-navigation'));
     if(!(await Promise.all([...preparations].map(prepare=>prepare()))).every(Boolean))return false;
     holder.flush();const state=holder.get();return state.status==='ready'?(await state.runtime.settle?.()??true):false;
-  }}),[workspaceSlug,holder,preparations,confirmDiscard]);
+  }}),[workspaceSlug,viewId,holder,preparations,confirmDiscard]);
   return (
     <WorkspaceAddressContext value={address}><RuntimeContext value={holder}>
       {children}

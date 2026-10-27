@@ -1,15 +1,16 @@
 'use client';
 import {createContext,use,useCallback,useEffect,useMemo,useRef} from 'react';
 import {usePathname,useRouter} from 'next/navigation';
-import {workspaceAddress,workspaceHref} from '../domain/workspace-address.ts';
+import {workspaceAddress} from '../domain/workspace-address.ts';
+import {memberViewHref} from '../domain/member-view.ts';
 
 type Href={ (href:string):string;(href:undefined):undefined;(href:string|undefined):string|undefined;(href:string|null|undefined):string|null|undefined };
-export const WorkspaceAddressContext=createContext<{slug:string|undefined;prepare?:()=>Promise<boolean>;confirmDiscard?:()=>Promise<boolean>;registerPreparation?:(prepare:()=>Promise<boolean>)=>()=>void}|null>(null);
+export const WorkspaceAddressContext=createContext<{slug:string|undefined;viewId?:string;prepare?:()=>Promise<boolean>;confirmDiscard?:()=>Promise<boolean>;registerPreparation?:(prepare:()=>Promise<boolean>)=>()=>void}|null>(null);
 /** Real hrefs, including modifier-clicks and copied addresses, retain the current client. */
 export function useWorkspaceHref():Href{
   const bound=use(WorkspaceAddressContext),pathname=usePathname()??'';
   const slug=bound?bound.slug:workspaceAddress(pathname)?.slug;
-  return useCallback((href:string|null|undefined)=>typeof href==='string'?workspaceHref(slug,href):href,[slug]) as Href;
+  return useCallback((href:string|null|undefined)=>typeof href==='string'?memberViewHref(slug,bound?.viewId,href):href,[slug,bound?.viewId]) as Href;
 }
 /** Editors register their own queue, so pre-debounce edits finish before context disposal. */
 export function useNavigationPreparation(prepare:()=>Promise<boolean>){
