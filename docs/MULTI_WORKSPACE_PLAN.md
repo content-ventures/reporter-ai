@@ -219,7 +219,7 @@ Exit gate: all final acceptance scenarios below pass on the same reviewed build,
 
 ## M9 Activate production and finish the handoff
 
-- [ ] Prepare the cohesive delivery, migration and compatibility notes, configuration changes, exact acceptance evidence and rollback instructions under the repository harness.
+- [x] Prepare the cohesive delivery, migration and compatibility notes, configuration changes, exact acceptance evidence and rollback instructions under the repository harness.
 - [ ] Obtain the exact push, PR, merge and controlled release approvals required by the harness after the reviewable result exists. Preserve authenticated GitHub authorship and the GitHub to Francal deployment path.
 - [ ] Run controlled staging acceptance with the updated app and worker together. Recheck old URLs, old queued jobs, private assets and both workspace contexts before production activation.
 - [ ] Release with the new navigation initially limited to the platform administrator in the existing Seafood workspace. Verify the exact deployed commit and version, preserved Seafood identity and configuration, worker readiness, migrations and integration bindings.
