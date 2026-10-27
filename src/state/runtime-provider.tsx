@@ -65,13 +65,23 @@ function RuntimeBoundary({children,workspaceSlug,viewId}:{children:ReactNode;wor
   useEffect(() => {
     holder.start({ reset: consumeResetParam() });
     const flush = () => holder.flush();
+    let discarded=false;
+    const allow=()=>{discarded=true;};
+    const beforeUnload=(event:BeforeUnloadEvent)=>{
+      const current=holder.get();
+      if(!discarded&&current.status==='ready'&&['saving','error'].includes(current.runtime.saveStatus.current().status))event.preventDefault();
+    };
     const flushWhenHidden = () => {
       if (document.visibilityState === 'hidden') holder.flush();
     };
     window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload',beforeUnload);
+    window.addEventListener(NAVIGATION_DISCARD_EVENT,allow);
     document.addEventListener('visibilitychange', flushWhenHidden);
     return () => {
       window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload',beforeUnload);
+      window.removeEventListener(NAVIGATION_DISCARD_EVENT,allow);
       document.removeEventListener('visibilitychange', flushWhenHidden);
       holder.release();
     };
