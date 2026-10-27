@@ -49,7 +49,7 @@ for(const width of [1440,390]){
       const held=new Promise<void>(resolve=>{release=resolve;}),intercepted=new Promise<void>(resolve=>{intercept=resolve;});
       await page.route(`**/api/reporter/w/${a.slug}/workspace`,async route=>{
         if(route.request().method()!=='POST')return route.continue();
-        const response=await route.fetch();intercept();await held;await route.fulfill({response});
+        const response=await route.fetch({maxRetries:1});intercept();await held;await route.fulfill({response});
       });
       await editor.click();await editor.press('ControlOrMeta+End');await editor.pressSequentially(`Saved before changing client ${suffix}`);
       await intercepted;
