@@ -1,5 +1,6 @@
 'use client';
 import {useState} from 'react';
+import {flushSync} from 'react-dom';
 import {PortalSwitcher,ThemeV3,useShell,type Portal} from '@content-ventures/design-system/v3';
 import {useRuntime,useSession} from '@/state';
 import {useWorkspaceDirectoryQuery} from '@/state/workspaces';
@@ -27,9 +28,13 @@ export function WorkspaceSwitcher(){
     void prepare().then(allowed=>{if(!allowed)return;if(selected.enterable!==false)rememberWorkspace(accountId,{workspaceId:selected.workspace.id,slug:selected.workspace.slug});window.location.assign(new URL(href,window.location.href).href);});
   }
   function manage(){setPicking(false);closeNav();const href='/platform/workspaces';if(requestLeave(href))void prepare().then(allowed=>{if(allowed)window.location.assign(new URL(href,window.location.href).href);});}
+  function openPicker(){
+    // Commit the drawer's focus restoration before the native dialog captures its return target.
+    flushSync(()=>closeNav());setPicking(true);
+  }
   return<>
     <ThemeV3><PortalSwitcher label="Trocar workspace" portals={choices} value={session.workspace.id} onChange={id=>{const selected=data?.items.find(item=>item.workspace.id===id);if(selected)choose(selected);}}
-      action={{label:'Ver todos os workspaces',onSelect:()=>{closeNav();setPicking(true);}}}/></ThemeV3>
+      action={{label:'Ver todos os workspaces',onSelect:openPicker}}/></ThemeV3>
     <WorkspacePicker open={picking} port={port} currentId={session.workspace.id} administrative={administrative} onClose={()=>setPicking(false)} onChoose={choose} onManage={manage}/>
   </>;
 }
