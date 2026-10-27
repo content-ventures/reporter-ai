@@ -34,6 +34,15 @@ export async function startFakeS3(options: { bucket: string; corsOrigins: string
       response.writeHead(status, { 'content-type': 'application/xml', ...headers }); response.end(body);
     };
     if (bucket !== options.bucket) return send(404, xml('<Error><Code>NoSuchBucket</Code></Error>'));
+    const origin=request.headers.origin;
+    if(origin&&options.corsOrigins.includes(origin)){
+      response.setHeader('access-control-allow-origin',origin);response.setHeader('vary','Origin');response.setHeader('access-control-expose-headers','ETag');
+    }
+    if(method==='OPTIONS'){
+      if(!origin||!options.corsOrigins.includes(origin)||request.headers['access-control-request-method']!=='PUT')return send(403);
+      return send(204,'',{'access-control-allow-methods':'PUT','access-control-allow-headers':'*','access-control-max-age':'3600'});
+    }
+
     if (!key && method === 'GET' && url.searchParams.has('cors')) {
       const rules = `<CORSRule>${options.corsOrigins.map(origin => `<AllowedOrigin>${escape(origin)}</AllowedOrigin>`).join('')}`
         + '<AllowedMethod>PUT</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>3600</MaxAgeSeconds></CORSRule>';
