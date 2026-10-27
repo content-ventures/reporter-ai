@@ -48,7 +48,7 @@ for(const width of [1440,390]){
           if(role!=='Editor'){
             const choice=dialog.getByRole('combobox',{name:'Função neste workspace',exact:true});
             if(width===1440){
-              await choice.focus();await choice.press('Enter');await expect(choice).toHaveAttribute('aria-expanded','true');
+              await choice.focus();await choice.press('ArrowDown');await expect(choice).toHaveAttribute('aria-expanded','true');
               await choice.press('ArrowDown');const target=page.getByRole('option',{name:new RegExp(`^${role}\\b`)});
               await expect(choice).toHaveAttribute('aria-activedescendant',(await target.getAttribute('id'))!);await choice.press('Enter');
             }
