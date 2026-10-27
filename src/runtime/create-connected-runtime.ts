@@ -56,7 +56,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   let lastRefresh = 0;
   let save: SaveState = { scope: 'remote',status: 'idle' };
   const saveListeners = new Set<(state: SaveState) => void>();
-  const setSave = (state: SaveState) => { save = state; for (const listener of saveListeners) listener(save); };
+  const setSave = (state: SaveState) => { save = state; for (const listener of saveListeners) listener(readSave()); };
   let resolveAssetNamespace!: (name:string)=>void, rejectAssetNamespace!: (error:unknown)=>void;
   const databaseName = new Promise<string>((resolve,reject)=>{resolveAssetNamespace=resolve;rejectAssetNamespace=reject;});
   void databaseName.catch(()=>{});
@@ -64,6 +64,16 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   // Support viewing never leaves private files in a persistent browser database.
   const localAssets=options.viewId?createMemoryAssetStore(assetOptions):createIndexedDbAssetStore({...assetOptions,databaseName});
   const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(true),() => current.deploymentMode === 'cloud',http);
+  const uploading:SaveState={scope:'remote',status:'saving'};
+  let assetError:SaveState|undefined;
+  function readSave(): SaveState {
+    if(assets.pending())return uploading;
+    const health=assets.health();
+    if(health.status!=='error')return save;
+    if(assetError?.error?.code!==health.code||assetError.error.message!==health.message)
+      assetError={scope:'remote',status:'error',error:{code:health.code,message:health.message}};
+    return assetError!;
+  }
   const fixtures = createFixtures({ now: clock.now(),empty: true });
   const imageDisposers=new Set<()=>void>();
   const ownImage=<T extends {dispose?:()=>void}>(loader:T)=>{if(loader.dispose)imageDisposers.add(loader.dispose);return loader;};
@@ -201,7 +211,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     const member = await ports.session.current();
     return member ? ok(member) : refuse('unavailable','Nenhuma conta conectada.');
   };
-  const unwatchAssets = assets.subscribe(change => { if (change.kind !== 'health') ports.store.transact(state => ok({ state,value: undefined,persist: 'none',scope: 'assets',productionIds: change.productionIds })); });
+  const unwatchAssets = assets.subscribe(change => { if(change.kind==='health'){for(const listener of saveListeners)listener(readSave());}else ports.store.transact(state => ok({ state,value: undefined,persist: 'none',scope: 'assets',productionIds: change.productionIds })); });
   return {
     get navigation(){return current.navigation;},
     get workspaceDirectory(){return current.navigation?.enabled?directory:undefined;},
@@ -233,16 +243,17 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       subscribe: ports.session.subscribe,
     },
     feedback: { record: input => rpc('recordFeedback',[input]),vote: input => rpc('feedback.vote',[input]),list: async query => { await ready; return ports.feedback.list(query); } },
-    saveStatus: { current: () => save,subscribe(listener) { saveListeners.add(listener); return () => { saveListeners.delete(listener); }; },async retry() {
+    saveStatus: { current: readSave,subscribe(listener) { saveListeners.add(listener); return () => { saveListeners.delete(listener); }; },async retry() {
       try {
         await writeTail;
+        if(!(await assets.settle()))return refuse('save_failed','Tente enviar a imagem novamente antes de sair.');
         if (failedWrite) { await http.request('/workspace',failedWrite); failedWrite = undefined; }
         await refresh(true); setSave({ scope: 'remote',status: 'saved',savedAt: clock.now() }); return ok(save);
       } catch { return refuse('save_failed','Servidor indisponível. Suas alterações não foram descartadas.'); }
     } },
     tabs: { current: () => activeTab,subscribe: () => () => {},claim: () => { void refresh(); } },
     usedAssetIds: () => usedAssetIds(ports.store.state.productions),ready,subscribe: ports.store.subscribe,flush: () => {},
-    async settle(){let tail;do{tail=writeTail;await tail;await Promise.resolve();}while(tail!==writeTail);return !disposed&&save.status!=='error';},
+    async settle(){let tail;do{tail=writeTail;await Promise.all([tail,assets.settle()]);await Promise.resolve();}while(tail!==writeTail||assets.pending());return !disposed&&readSave().status!=='error';},
     onInvalidated(listener){contextListeners.add(listener);return()=>{contextListeners.delete(listener);};},
     dispose() { if(current.navigation?.view)void memberViewing.end(current.navigation.view.id,'workspace_changed');disposed = true;for(const dispose of imageDisposers)dispose();imageDisposers.clear(); for(const image of logos.values())void image.then(result=>{if(result.ok)(result.value.source as {close?:()=>void}).close?.();});logos.clear();contextListeners.clear(); http.dispose();directoryHttp.dispose();globalThis.document?.removeEventListener('visibilitychange',resumed); rejectAssetNamespace(new DOMException('Context closed','AbortError')); clearInterval(timer); generation.dispose(); unwatchAssets(); assets.dispose(); audit.dispose(); ports.store.dispose(); saveListeners.clear(); },
   };
