@@ -13,7 +13,7 @@ import {requestLeave} from './leave-guard';
 import {WorkspacePicker} from './workspace-picker';
 
 export function WorkspaceSwitcher(){
-  const prepare=useWorkspaceDeparture(),{closeNav}=useShell(),[picking,setPicking]=useState(false);
+  const prepare=useWorkspaceDeparture(),{closeNav,drawer,menuButtonRef}=useShell(),[picking,setPicking]=useState(false);
   const runtime=useRuntime(),session=useSession().data,port=runtime.runtime?.workspaceDirectory;
   const directory=useWorkspaceDirectoryQuery(port,{limit:3}),data=directory.data;
   if(!port||!session?.current)return null;
@@ -29,8 +29,9 @@ export function WorkspaceSwitcher(){
   }
   function manage(){setPicking(false);closeNav();const href='/platform/workspaces';if(requestLeave(href))void prepare().then(allowed=>{if(allowed)window.location.assign(new URL(href,window.location.href).href);});}
   function openPicker(){
-    // Commit the drawer's focus restoration before the native dialog captures its return target.
-    flushSync(()=>closeNav());setPicking(true);
+    // Finish the menu's selection callback before the native dialog captures its return target.
+    flushSync(()=>closeNav());
+    queueMicrotask(()=>{if(drawer)menuButtonRef.current?.focus({preventScroll:true});setPicking(true);});
   }
   return<>
     <ThemeV3><PortalSwitcher label="Trocar workspace" portals={choices} value={session.workspace.id} onChange={id=>{const selected=data?.items.find(item=>item.workspace.id===id);if(selected)choose(selected);}}
