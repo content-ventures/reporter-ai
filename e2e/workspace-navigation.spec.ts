@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {expect,test,type Page} from '@playwright/test';
-import {expectHeadingOutline,expectNoHorizontalOverflow,watchErrors} from './support';
+import {expectHeadingOutline,expectLoaded,expectNoHorizontalOverflow,watchErrors} from './support';
 
 for(const width of [1440,390]){
   test.describe(`client navigation at ${width}`,()=>{
@@ -24,10 +24,12 @@ for(const width of [1440,390]){
       await page.goto('/workspaces');await page.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(a.name);
       const entry=page.getByRole('link',{name:new RegExp(a.name)});await expect(entry).toHaveAttribute('href',`/w/${a.slug}/`);
       await entry.focus();await entry.press('Enter');await expect(page).toHaveURL(new RegExp(`/w/${a.slug}/?$`));
-      await expectHeadingOutline(page);await expectNoHorizontalOverflow(page);
+      await expect(page.getByRole('heading',{level:1})).toBeVisible();await expectLoaded(page);await expectHeadingOutline(page);await expectNoHorizontalOverflow(page);
       if(width===390)await page.getByRole('button',{name:'Abrir menu',exact:true}).click();
       const link=page.getByRole('link',{name:'Produções',exact:true});await expect(link).toHaveAttribute('href',`/w/${a.slug}/productions`);
-      const copied=await link.getAttribute('href'),other=await context.newPage();await other.goto(copied!);
+      const copied=await link.getAttribute('href');
+      const other=width===1440?(await Promise.all([context.waitForEvent('page'),link.click({modifiers:['ControlOrMeta']})]))[0]:await context.newPage();
+      if(width===390)await other.goto(copied!);
       await expect(other).toHaveURL(new RegExp(`/w/${a.slug}/productions$`));
       await page.goto(`/w/${a.slug}/productions/${production.productionId}/article`);
       const editor=page.getByRole('textbox',{name:'Texto do artigo',exact:true});await expect(editor).toBeVisible();
@@ -51,6 +53,7 @@ for(const width of [1440,390]){
       await warning.getByRole('button',{name:'Continuar editando',exact:true}).click();await expect(voice).toHaveValue(`Unsaved policy ${suffix}`);
       await (await menu()).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();await warning.getByRole('button',{name:'Descartar e sair',exact:true}).click();
       await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
+      await expect(page.locator('[data-part="switcher"]')).toHaveAttribute('aria-label',new RegExp(b.name));
       await page.goto('/');await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
       await menu();await page.screenshot({path:`.reporter-local/multi-workspace/m6-selector-${width}.png`,fullPage:true});await page.keyboard.press('Escape');
       await expectNoHorizontalOverflow(page);
