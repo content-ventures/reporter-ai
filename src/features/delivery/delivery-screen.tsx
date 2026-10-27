@@ -239,9 +239,11 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
     if (ready.length === prepared.length && !alreadyDelivered) setCelebrate(true);
     // Only what the browser was actually handed counts as delivered.
     const saved = await pkg.download(ready);
+    if (!pkg.isCurrent()) return;
     const outcomes = downloadedOutcomes(prepared, saved);
     const failed = outcomes.filter((outcome) => !outcome.ok).length;
     const result = await commands.production.recordDelivery({ productionId, selection: [...selection], mode: 'download', files: outcomes });
+    if (!pkg.isCurrent()) return;
     setExporting(false);
     if (!result.ok) {
       setCelebrate(false);
@@ -258,6 +260,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
 
   async function retryFile(file: PackageFile) {
     const ok = await pkg.retry(file.fileName);
+    if (!pkg.isCurrent()) return;
     if (!ok) {
       toast('O arquivo falhou de novo', { tone: 'error', description: file.fileName });
       return;
@@ -269,6 +272,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
     if (!latest || latest.status === 'completed' || !deliverable || !selection || !pendingFailures(latest.attempts).has(file.fileName)) return;
     const willComplete = pendingFailures(latest.attempts).size === 1;
     const saved = await pkg.download([file.fileName]);
+    if (!pkg.isCurrent()) return;
     if (saved.length === 0) {
       toast('O arquivo não foi baixado', { tone: 'error', description: file.fileName });
       return;
@@ -280,6 +284,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
       mode: 'download',
       files: [{ fileName: deliverable.fileName, format: deliverable.format, ok: true, ...(deliverable.versionId ? { versionId: deliverable.versionId } : {}) }],
     });
+    if (!pkg.isCurrent()) return;
     if (result.ok && result.value.status === 'completed') {
       // The whole package is out now: say so as the first download does.
       const total = deliverableFiles(pkg.plan?.files ?? []).length;

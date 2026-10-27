@@ -176,14 +176,14 @@ export function createLocalExportService(deps: LocalExportDeps): ExportService {
     return failed(file, 'Formato sem gerador.');
   };
 
-  /** The stored bytes as they are, linked by their object URL; the digest goes to the manifest. */
+  /** Freeze the downloaded bytes together with their digest; later reads cannot change the package. */
   const imageFile = async (file: PackageFile): Promise<BuiltFile> => {
     const assetId = file.image?.assetId;
     const blob = assetId ? await deps.assets?.blob(assetId) : undefined;
     if (!assetId || !blob) return failed(file, MISSING_IMAGE_REASON, 'missing_image');
     try {
       if (!digests.has(assetId)) digests.set(assetId, { sha256: await sha256Hex(new Uint8Array(await blob.arrayBuffer())), bytes: blob.size });
-      const href = (await deps.assets?.objectUrl(assetId)) ?? dataUrl(file.mimeType, new Uint8Array(await blob.arrayBuffer()));
+      const href = dataUrl(file.mimeType, new Uint8Array(await blob.arrayBuffer()));
       return { ...file, status: 'ready', href, bytes: blob.size };
     } catch {
       return failed(file, 'Não foi possível ler esta imagem. Tente de novo.', 'unreadable_image');

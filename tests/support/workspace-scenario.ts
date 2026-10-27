@@ -123,6 +123,7 @@ export async function startWorkspaceScenario(options:{editors?:number;frontendOr
     await link(editors[0],clients[1].id,['approver']);
     return{base,origin,db,owner,operator,editors,reviewers,administrator,pendingActor,clients,call,rpc,providers,
       headers:(actor:ScenarioActor)=>({origin,[TEST_SESSION_HEADER]:actor.token,'x-reporter-account':actor.id}),
+      hold:()=>{held=true;},
       drain:async()=>{const result=await call(operator,'/__acceptance/drain',{});assert.equal(result.status,200,JSON.stringify(result.value));},
       stop};
   }catch(error){await stop();throw error;}
