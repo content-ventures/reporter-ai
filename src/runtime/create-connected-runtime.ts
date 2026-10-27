@@ -1,6 +1,6 @@
 import { createEditorialEngine, editorialLocalRoleProfiles, emptyEditorialCheckpoint, LOCAL_OPERATOR, LOCAL_WORKSPACE } from './editorial-engine.ts';
 import { applyWorkspaceDelta } from './editorial-sync.ts';
-import { ASSET_DB_NAME, createIndexedDbAssetStore } from '../adapters/local/assets/index.ts';
+import { ASSET_DB_NAME, createIndexedDbAssetStore,createMemoryAssetStore } from '../adapters/local/assets/index.ts';
 import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
 import { assetCoverLoader, createLocalRenderService, servedCoverLoader,decodeBitmap } from '../adapters/local/render/index.ts';
@@ -60,7 +60,9 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   let resolveAssetNamespace!: (name:string)=>void, rejectAssetNamespace!: (error:unknown)=>void;
   const databaseName = new Promise<string>((resolve,reject)=>{resolveAssetNamespace=resolve;rejectAssetNamespace=reject;});
   void databaseName.catch(()=>{});
-  const localAssets = createIndexedDbAssetStore({ clock,ids,workspaceId:()=>current.state.workspace.id,actorId:()=>current.navigation?.accountId??current.state.sessionPersonId,databaseName,reset:false });
+  const assetOptions={clock,ids,workspaceId:()=>current.state.workspace.id,actorId:()=>current.navigation?.accountId??current.state.sessionPersonId,reset:false};
+  // Support viewing never leaves private files in a persistent browser database.
+  const localAssets=options.viewId?createMemoryAssetStore(assetOptions):createIndexedDbAssetStore({...assetOptions,databaseName});
   const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(true),() => current.deploymentMode === 'cloud',http);
   const fixtures = createFixtures({ now: clock.now(),empty: true });
   const imageDisposers=new Set<()=>void>();
