@@ -15,8 +15,8 @@ const VARIABLE_LABELS: Record<typeof PIPELINE_VARIABLES[number], string> = {
 };
 const EFFORT_LABELS: Record<PipelineReasoningEffort, string> = { low: 'Baixo', medium: 'Médio', high: 'Alto', xhigh: 'Muito alto', max: 'Máximo' };
 
-export function PipelineEditor({ promptKey, draft, view, saving, dirty, invalid, error, onClose, onUpdate, onUpdateStep, onSave }: {
-  promptKey: PromptKey; draft: PipelineDefinition; view: PipelineView; saving: boolean; dirty: boolean; invalid: boolean; error?: string;
+export function PipelineEditor({ readOnly=false, promptKey, draft, view, saving, dirty, invalid, error, onClose, onUpdate, onUpdateStep, onSave }: {
+  readOnly?:boolean; promptKey: PromptKey; draft: PipelineDefinition; view: PipelineView; saving: boolean; dirty: boolean; invalid: boolean; error?: string;
   onClose: () => void; onUpdate: (patch: Partial<PipelineDefinition>) => void;
   onUpdateStep: (patch: Partial<PipelineStep>) => void; onSave: () => void;
 }) {
@@ -32,7 +32,7 @@ export function PipelineEditor({ promptKey, draft, view, saving, dirty, invalid,
     : JSON.stringify(PIPELINE_SCHEMAS[schemaKey as keyof typeof PIPELINE_SCHEMAS], null, 2);
   const narrow = useMediaQuery('(max-width: 640px)');
   const status = <Badge tone={dirty ? 'amber' : 'gray'}>{dirty ? 'Configuração com alterações' : `Revisão ${view.active.revision} ativa`}</Badge>;
-  const footer = <><Button onClick={onClose}>Fechar edição</Button><Button variant="primary" loading={saving} disabled={!dirty || invalid} onClick={onSave}>Salvar e ativar tudo</Button></>;
+  const footer = <><Button onClick={onClose}>{readOnly?'Fechar consulta':'Fechar edição'}</Button><Button variant="primary" loading={saving} disabled={readOnly || !dirty || invalid} onClick={onSave}>Salvar e ativar tudo</Button></>;
   const content = (
     <PageStack>
       {narrow && status}
@@ -43,11 +43,11 @@ export function PipelineEditor({ promptKey, draft, view, saving, dirty, invalid,
       <Field label="Instruções do prompt" hint={promptKey === 'system'
         ? 'Regras compartilhadas. Este campo não aceita variáveis.'
         : 'Os termos entre {{chaves}} recebem os dados da produção automaticamente.'}>
-        {props => <Textarea ref={startAtTop} id={props.id} aria-describedby={props.describedBy} rows={16} value={prompt} disabled={saving}
+        {props => <Textarea ref={startAtTop} id={props.id} aria-describedby={props.describedBy} rows={16} value={prompt} disabled={saving||readOnly}
           maxLength={selected ? 20000 : 12000} onChange={event => selected ? onUpdateStep({ prompt: event.target.value }) : onUpdate({ systemPrompt: event.target.value })} />}
       </Field>
       {selected && <Field label="Modelo de IA" error={view.providers?.[pipelineModelProvider(selected.model)] === false ? 'Este provedor está sem chave configurada no servidor.' : undefined}>
-        {props => <Select {...props} value={selected.model} disabled={saving} options={PIPELINE_MODELS.map(value => ({ value, label: pipelineModelLabel(value) }))}
+        {props => <Select {...props} value={selected.model} disabled={saving||readOnly} options={PIPELINE_MODELS.map(value => ({ value, label: pipelineModelLabel(value) }))}
           onChange={model => onUpdateStep({ model: model as PipelineStep['model'],
             maxTokens: Math.min(selected.maxTokens, pipelineTokenLimit(model)),
             effort: pipelineModelEffortOptions(model).length ? pipelineDefaultEffort(model) : undefined,
@@ -59,15 +59,15 @@ export function PipelineEditor({ promptKey, draft, view, saving, dirty, invalid,
         </List> }] : []),
         ...(selected ? [{ id: 'settings', title: 'Ajustes avançados do modelo', content: <FieldGroup label="Geração" columns={1}>
           {effortOptions.length > 0
-            ? <Field label="Esforço de raciocínio">{props => <Select {...props} value={effort ?? effortOptions[0]} disabled={saving}
+            ? <Field label="Esforço de raciocínio">{props => <Select {...props} value={effort ?? effortOptions[0]} disabled={saving||readOnly}
               options={effortOptions.map(value => ({ value, label: EFFORT_LABELS[value] }))}
               onChange={value => onUpdateStep({ effort: value as PipelineReasoningEffort })} />}</Field>
             : pipelineModelReasons(selected.model) ? <DescriptionList items={[{ label: 'Raciocínio', value: `${effort ? EFFORT_LABELS[effort] : 'Padrão do modelo'} · sem temperatura` }]} />
             : <Field label="Temperatura" hint="Valores menores tornam a resposta mais previsível.">{props => <NumberField id={props.id} aria-describedby={props.describedBy}
-              value={selected.temperature} decimals={1} min={0} max={pipelineModelProvider(selected.model) === 'anthropic' ? 1 : 2} step={0.1} disabled={saving}
+              value={selected.temperature} decimals={1} min={0} max={pipelineModelProvider(selected.model) === 'anthropic' ? 1 : 2} step={0.1} disabled={saving||readOnly}
               onChange={value => { if (value !== null) onUpdateStep({ temperature: value }); }} />}</Field>}
           <Field label="Limite de tokens" hint={pipelineModelReasons(selected.model) ? 'Inclui raciocínio e texto produzido.' : 'Limite máximo de saída da IA; não é a quantidade de palavras do artigo.'}>
-            {props => <NumberField id={props.id} aria-describedby={props.describedBy} value={selected.maxTokens} min={512} max={pipelineTokenLimit(selected.model)} step={256} disabled={saving}
+            {props => <NumberField id={props.id} aria-describedby={props.describedBy} value={selected.maxTokens} min={512} max={pipelineTokenLimit(selected.model)} step={256} disabled={saving||readOnly}
               onChange={value => { if (value !== null) onUpdateStep({ maxTokens: value }); }} />}
           </Field>
         </FieldGroup> }] : []),

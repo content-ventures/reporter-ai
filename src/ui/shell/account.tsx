@@ -24,6 +24,7 @@ export function ShellAccount() {
   if (!current) return null;
   if(view)return<ThemeV3><SidebarAccount name={view.operator.name} src={view.operator.avatarUrl} detail="Admin da plataforma"
     sections={[{label:'Visualização',items:[
+      ...(current.roles.includes('admin')?[{label:'Consultar administração do workspace',onSelect:()=>{closeNav();router.push('/admin/workspace');}}]:[]),
       {label:'Sair da visualização',disabled:busy,onSelect:()=>{closeNav();void exit(`/platform/people?person=${encodeURIComponent(view.person.id)}`);}},
       {label:'Plataforma',disabled:busy,onSelect:()=>{closeNav();void exit('/platform');}},
       {label:'Sair da conta',disabled:busy,onSelect:()=>{closeNav();void exit('/auth/sign-out','logout');}},

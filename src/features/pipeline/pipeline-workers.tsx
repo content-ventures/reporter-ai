@@ -20,14 +20,14 @@ const SCOPE_NOTES: Record<NonNullable<WorkerNode['scope']>, string> = {
   shared: 'Prompt compartilhado: vale para o artigo e para todos os formatos.',
 };
 
-export function PipelineWorkers({ worker, onSelect, draft, active, saving, onEdit, onUpdate }: {
+export function PipelineWorkers({ worker, onSelect, draft, active, saving, readOnly=false, onEdit, onUpdate }: {
   worker?: PipelineWorkerKey; onSelect: (key?: PipelineWorkerKey) => void;
-  draft: PipelineDefinition; active: PipelineDefinition; saving: boolean;
+  readOnly?:boolean; draft: PipelineDefinition; active: PipelineDefinition; saving: boolean;
   onEdit: (key: PromptKey) => void; onUpdate: (patch: Partial<PipelineDefinition>) => void;
 }) {
   const changedBadge = (key: PromptKey) => promptChanged(key, draft, active) ? [<Badge key="changed" tone="amber" size="sm">Alterado</Badge>] : [];
   const promptCard = (key: PromptKey) => <Card interactive padding="md">
-    <CardHeader titleAs="h3" title={<CardLink onClick={() => onEdit(key)} aria-label={`Editar ${PROMPTS[key].title}`}>{PROMPTS[key].title}</CardLink>}
+    <CardHeader titleAs="h3" title={<CardLink onClick={() => onEdit(key)} aria-label={`${readOnly?'Consultar':'Editar'} ${PROMPTS[key].title}`}>{PROMPTS[key].title}</CardLink>}
       description={PROMPTS[key].description} />
     <MetaList size="sm" items={[promptStep(key, draft) ? pipelineModelLabel(promptStep(key, draft)!.model) : 'Compartilhado entre os workers', ...changedBadge(key)]} />
   </Card>;
@@ -64,8 +64,8 @@ export function PipelineWorkers({ worker, onSelect, draft, active, saving, onEdi
     const step = promptStep(node.prompt!, draft);
     const card = <Card interactive padding="md" data-testid={`worker-node-${node.id}`}>
       <CardHeader titleAs="h3" leading={<Sparkles size={18} />}
-        title={<CardLink onClick={() => onEdit(node.prompt!)} aria-label={`Editar ${node.title}`}>{node.title}</CardLink>}
-        badge={<Badge tone="violet" size="sm" icon={Sparkles}>IA · editável</Badge>} description={node.description} />
+        title={<CardLink onClick={() => onEdit(node.prompt!)} aria-label={`${readOnly?'Consultar':'Editar'} ${node.title}`}>{node.title}</CardLink>}
+        badge={<Badge tone="violet" size="sm" icon={Sparkles}>{readOnly?'IA · consulta':'IA · editável'}</Badge>} description={node.description} />
       <MetaList size="sm" items={[...(step ? [pipelineModelLabel(step.model)] : []), ...(node.condition ? [node.condition] : []), ...changedBadge(node.prompt!)]} />
     </Card>;
     return node.scope ? <AttachedNote tone="blue" icon={Sparkles} note={SCOPE_NOTES[node.scope]}>{card}</AttachedNote> : card;

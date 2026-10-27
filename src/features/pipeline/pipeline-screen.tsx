@@ -1,4 +1,5 @@
 "use client";
+import {workspaceAddress} from '@/domain/workspace-address';
 import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -40,11 +41,11 @@ export function PipelineScreen() {
   const session = useSession();
   const edits = useCan('pipeline.edit');
   if (!session.data) return null;
-  if (!edits) return <AccessState kind="restricted" heading="h1" title="Prompts restritos a administradores" />;
-  return <PipelineConfig />;
+  if (!edits&&!session.data.current?.roles.includes('admin')) return <AccessState kind="restricted" heading="h1" title="Prompts restritos a administradores" />;
+  return <PipelineConfig readOnly={!edits} />;
 }
 
-function PipelineConfig() {
+function PipelineConfig({readOnly}:{readOnly:boolean}) {
   const workspaceHrefFor = useWorkspaceHref();
   const { runtime,error: runtimeError } = useRuntime();
   const port = runtime?.pipeline;
@@ -113,7 +114,7 @@ function PipelineConfig() {
   },[port]);
   useLeaveGuard(dirty || saving, href => {
     // Internal tabs and breadcrumbs keep this screen mounted, including its draft.
-    if (new URL(href, window.location.origin).pathname === '/config') router.push(href);
+    if ((workspaceAddress(new URL(href, window.location.origin).pathname)?.path??new URL(href, window.location.origin).pathname) === '/config') router.push(href);
     else setExitTo(href);
   });
   useEffect(() => {
@@ -124,7 +125,7 @@ function PipelineConfig() {
   },[dirty,saving]);
 
   async function save() {
-    if (!port || !view || !draft || saving) return;
+    if (readOnly || !port || !view || !draft || saving) return;
     setSaving(true); setFailure(undefined);
     try {
       const result = await port.save(compactFunnels(draft),view.active.revision);
@@ -136,7 +137,7 @@ function PipelineConfig() {
   }
   /** Saves the active revision with every untouched prompt on preset 3.0, as a new revision. */
   async function applyPreset(): Promise<boolean> {
-    if (!port || saving) return false;
+    if (readOnly || !port || saving) return false;
     setSaving(true); setFailure(undefined);
     try {
       // Upgrade what is active now, not what this page loaded: another tab may have saved since.
@@ -191,13 +192,13 @@ function PipelineConfig() {
         description={pageTab === 'writing' ? 'Defina as etapas, os modelos e as instruções que usam o mapa editorial e o guia de escrita.' : currentWorker?.description ?? 'Gerencie a redação, edite os prompts e acompanhe as execuções.'}
         status={<Badge tone={dirty ? 'amber' : 'gray'}>{dirty ? 'Alterações não ativadas' : `Revisão ${view.active.revision} ativa`}</Badge>}
         actions={currentWorker || pageTab === 'writing' ? <>
-          <Button variant="primary" icon={Save} loading={saving} disabled={!dirty || Boolean(templateError)} onClick={() => void save()}>Salvar e ativar</Button>
+          <Button variant="primary" icon={Save} loading={saving} disabled={readOnly || !dirty || Boolean(templateError)} onClick={() => void save()}>Salvar e ativar</Button>
           <Button icon={RotateCw} disabled={saving || loading || dirty} onClick={() => void load()}>Recarregar</Button>
           {dirty && <Button disabled={saving} onClick={() => setResetTarget('active')}>Descartar alterações</Button>}
         </> : undefined} />
       {failure && <Alert tone="danger" title="Não foi possível salvar">{failure}</Alert>}
       {templateError && <Alert tone="danger" title="Revise a configuração">{templateError}</Alert>}
-      <PresetUpgrade active={view.active.definition} blocked={dirty || saving} saving={saving} error={failure} onApply={applyPreset} />
+      {!readOnly && <PresetUpgrade active={view.active.definition} blocked={dirty || saving} saving={saving} error={failure} onApply={applyPreset} />}
       <Tabs label="Gerenciar prompts" value={pageTab} onChange={value => navigate(value)} items={[
         { value: 'workers', label: 'Workers', count: PIPELINE_WORKERS.length, panelId: panelId('workers') },
         { value: 'writing', label: 'Redação', panelId: panelId('writing') },
@@ -208,7 +209,7 @@ function PipelineConfig() {
       {dirty && <MetaList items={[...(changed.length ? [`${changed.length} ${changed.length === 1 ? 'prompt alterado' : 'prompts alterados'}`] : []), ...(flowChanged ? ['Fluxo alterado'] : []), ...(writingChanged ? ['Orquestração da redação alterada'] : [])]} />}
       <PageStack role="tabpanel" id={panelId(pageTab)} aria-labelledby={`${panelId(pageTab)}-tab`}>
         {pageTab === 'writing' && <>
-          <WritingOrchestrationEditor definition={draft} providers={view.providers} researchProviders={view.researchProviders} saving={saving} onChange={writing => update({ writing })} />
+          <WritingOrchestrationEditor definition={draft} providers={view.providers} researchProviders={view.researchProviders} saving={saving||readOnly} onChange={writing => update({ writing })} />
           <Panel><Section title="Usar e acompanhar">
             <PageStack>
               <Prose variant="compact" measure="wide">Salve e ative a configuração, depois gere um artigo a partir do conteúdo de uma produção. A aba Execuções mostra os prompts enviados, as respostas, o consumo de tokens e as falhas de cada etapa.</Prose>
@@ -216,13 +217,13 @@ function PipelineConfig() {
             </PageStack>
           </Section></Panel>
         </>}
-        {pageTab === 'prompts' && <PipelineCatalog draft={draft} active={active} onEdit={key => { setTab(key); setEditorOpen(true); }} />}
+        {pageTab === 'prompts' && <PipelineCatalog readOnly={readOnly} draft={draft} active={active} onEdit={key => { setTab(key); setEditorOpen(true); }} />}
         {pageTab === 'workers' && <>
           {active.writing?.enabled && <Alert tone="info" title="A orquestração da redação está ativa">
             <PageStack><Prose variant="compact" measure="wide">As novas gerações de artigos usam planejamento, redação e revisão. Os modelos e as instruções desse fluxo estão na aba Redação.</Prose><Button onClick={() => navigate('writing')}>Gerenciar redação</Button></PageStack>
           </Alert>}
-          <PipelineWorkers worker={worker} onSelect={value => navigate('workers', value)} draft={draft} active={active}
-            saving={saving} onUpdate={update} onEdit={key => { setTab(key); setEditorOpen(true); }} />
+          <PipelineWorkers readOnly={readOnly} worker={worker} onSelect={value => navigate('workers', value)} draft={draft} active={active}
+            saving={saving||readOnly} onUpdate={update} onEdit={key => { setTab(key); setEditorOpen(true); }} />
         </>}
         {pageTab === 'history' && <Panel><Section title="Histórico de configurações" meta={`Revisão ${view.active.revision} ativa`}>
           <PageStack>
@@ -231,7 +232,7 @@ function PipelineConfig() {
               <Field label="Revisão anterior">{props => <Select {...props} value={historyRevision} onChange={setHistoryRevision}
                 options={[...view.history].reverse().map(revision => ({ value: String(revision.revision), label: `Revisão ${revision.revision} · ${savedDate(revision.savedAt)}` }))}
                 disabled={saving} placeholder="Selecione uma revisão" />}</Field>
-              <Button disabled={!historyRevision || saving} onClick={() => dirty ? setResetTarget(historyRevision) : reset(historyRevision)}>Carregar para edição</Button>
+              <Button disabled={readOnly || !historyRevision || saving} onClick={() => dirty ? setResetTarget(historyRevision) : reset(historyRevision)}>Carregar para edição</Button>
             </FieldGroup> : <EmptyState size="inline" title="Nenhuma revisão anterior" />}
           </PageStack>
         </Section></Panel>}
@@ -254,7 +255,7 @@ function PipelineConfig() {
         </Section></Panel>}
       </PageStack>
     </PageStack>
-    {editorOpen && <PipelineEditor promptKey={tab} draft={draft} view={view} saving={saving} dirty={dirty} invalid={Boolean(templateError)} error={templateError ?? failure}
+    {editorOpen && <PipelineEditor readOnly={readOnly} promptKey={tab} draft={draft} view={view} saving={saving} dirty={dirty} invalid={Boolean(templateError)} error={templateError ?? failure}
       onClose={() => setEditorOpen(false)} onUpdate={update} onUpdateStep={updateStep} onSave={() => void save()} />}
     {selectedRun && <WritingRunInspector key={selectedRun} runId={selectedRun} onClose={() => setSelectedRun(undefined)} onSelect={setSelectedRun} onRefresh={refreshRuns} />}
     <ConfirmDialog open={Boolean(resetTarget)} onClose={() => setResetTarget(undefined)} title={resetTarget === 'active' ? 'Descartar as alterações?' : 'Substituir as alterações pela revisão selecionada?'}
@@ -270,6 +271,7 @@ function WritingRunInspector({ runId, onClose, onSelect, onRefresh }: {
 }) {
   const workspaceHrefFor = useWorkspaceHref();
   const { runtime } = useRuntime();
+  const edits=useCan('pipeline.edit');
   const port = runtime?.pipeline;
   const narrow = useMediaQuery('(max-width: 640px)');
   const [run, setRun] = useState<RunDetails>();
@@ -323,8 +325,8 @@ function WritingRunInspector({ runId, onClose, onSelect, onRefresh }: {
       {run && <>
         <ButtonGroup label="Gerenciar execução">
           <ButtonLink href={workspaceHrefFor(pieceHref(run.productionId, 'article'))}>Abrir artigo</ButtonLink>
-          {running && <Button disabled={Boolean(action)} loading={action === 'cancel'} onClick={() => void manage('cancel')}>Cancelar execução</Button>}
-          {retryable && <Button disabled={Boolean(action)} loading={action === 'retry'} onClick={() => void manage('retry')}>Nova tentativa</Button>}
+          {edits && running && <Button disabled={Boolean(action)} loading={action === 'cancel'} onClick={() => void manage('cancel')}>Cancelar execução</Button>}
+          {edits && retryable && <Button disabled={Boolean(action)} loading={action === 'retry'} onClick={() => void manage('retry')}>Nova tentativa</Button>}
         </ButtonGroup>
         {retryable && <Prose variant="compact" measure="wide">A nova tentativa usa a configuração atualmente ativa. Esta execução preserva os prompts e as respostas originais.</Prose>}
         <WritingRunDetails run={run} />

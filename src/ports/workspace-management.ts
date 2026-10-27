@@ -19,6 +19,7 @@ export type WorkspaceTeamPage={items:WorkspaceTeamMember[];total:number;offset:n
 /** Server-authorized administration. No method grants a platform role or changes a password. */
 export interface WorkspaceAdministration {
   readonly global:boolean;
+  readonly readOnly?:boolean;
   get(workspaceId:WorkspaceId):Promise<WorkspaceResult<ManagedWorkspace>>;
   list(options: { search?: string; offset?: number; limit?: number }): Promise<WorkspaceResult<WorkspacePage>>;
   create(input: WorkspaceInput): Promise<WorkspaceResult<ManagedWorkspace>>;

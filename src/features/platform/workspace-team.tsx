@@ -21,7 +21,7 @@ export function WorkspaceTeam({port,workspaceId}:{port:WorkspaceAdministration;w
     {key:'status',header:'Vínculo',render:member=><Badge variant="text" tone={member.status==='active'?'green':'gray'}>{member.status==='active'?'Ativo':member.status==='invited'?'Convidado':'Suspenso'}</Badge>},
     {key:'account',header:'Conta',render:member=>member.accountSuspended?'Suspensa na plataforma':'Disponível'},
   ];
-  return<Section title="Equipe" titleAs="h2" variant="panel" action={<Button size="sm" onClick={()=>setInviting(true)}>Convidar pessoa</Button>}>
+  return<Section title="Equipe" titleAs="h2" variant="panel" action={<Button size="sm" disabled={port.readOnly} onClick={()=>setInviting(true)}>Convidar pessoa</Button>}>
     <FilterBar filters={false} search={<SearchField label="Buscar pessoa na equipe" value={search} onValueChange={value=>{setSearch(value);setPage(1);}}/>}/>
     <DataTable label="Equipe do workspace" variant="plain" rows={query.data?.items??[]} columns={columns} rowKey={member=>member.id} onRowClick={setOpened}
       loading={query.loading} empty={<EmptyState title="Nenhuma pessoa encontrada"/>} error={query.error?<ErrorState title="Equipe indisponível" description={query.error.message} onRetry={query.retry}/>:undefined}
@@ -56,14 +56,14 @@ export function TeamMember({port,member,onClose}:{port:WorkspaceAdministration;m
   }
   return<>
     <Drawer open onClose={onClose} dismissible={!busy&&chosen.join()===member.roles.join()} title={member.name} description={member.email} leading={<Avatar name={member.name} src={member.avatarUrl}/>}
-      footer={issued?<Button onClick={onClose}>Concluir</Button>:<>
+      footer={port.readOnly?<Button onClick={onClose}>Fechar</Button>:issued?<Button onClick={onClose}>Concluir</Button>:<>
         <Button disabled={busy} onClick={()=>setConfirm(true)}>{member.status==='suspended'?'Reativar vínculo':'Suspender vínculo'}</Button>
         {member.status==='invited'||member.status==='suspended'?<Button disabled={busy} onClick={()=>void act('renew')}>Gerar novo link</Button>:null}
         <Button variant="primary" loading={busy} disabled={!chosen.length||chosen.join()===member.roles.join()} onClick={()=>void act('roles')}>Salvar funções</Button>
       </>}>
       <PageStack>
         {member.accountSuspended?<Alert title="Conta suspensa na plataforma" tone="warning">Somente o operador da plataforma pode reativar a conta. O vínculo deste workspace é independente.</Alert>:null}
-        <CheckboxGroup legend="Funções neste workspace">{ROLES.map(role=><Checkbox key={role} label={roleLabel(role)} checked={chosen.includes(role)} disabled={busy||Boolean(issued)} onChange={event=>setChosen(ROLES.filter(value=>value===role?event.target.checked:chosen.includes(value)))}/>)}</CheckboxGroup>
+        <CheckboxGroup legend="Funções neste workspace">{ROLES.map(role=><Checkbox key={role} label={roleLabel(role)} checked={chosen.includes(role)} disabled={port.readOnly||busy||Boolean(issued)} onChange={event=>setChosen(ROLES.filter(value=>value===role?event.target.checked:chosen.includes(value)))}/>)}</CheckboxGroup>
         {issued?<IssuedLink invite={issued}/>:null}
         {error?<Alert title="Não foi possível alterar" tone="danger">{error}</Alert>:null}
       </PageStack>
