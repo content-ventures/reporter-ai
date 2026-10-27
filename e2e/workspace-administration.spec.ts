@@ -42,11 +42,16 @@ for(const width of [1440,390]){
         for(const [label,role]of [['Editor','Editor'],['Reviewer','Aprovador']]as const){
           await page.getByRole('button',{name:'Convidar pessoa',exact:true}).click();
           const dialog=page.getByRole('dialog',{name:'Convidar pessoa',exact:true});
+          await dialog.getByRole('textbox',{name:'Nome',exact:true}).click();
           await dialog.getByRole('textbox',{name:'Nome',exact:true}).fill(`${label} ${suffix}`);
           await dialog.getByRole('textbox',{name:'E-mail',exact:true}).fill(`${label.toLowerCase()}-${suffix}@acceptance.test`);
           if(role!=='Editor'){
             const choice=dialog.getByRole('combobox',{name:'Função neste workspace',exact:true});
-            if(width===1440){await choice.focus();await choice.press('Enter');await choice.press('ArrowDown');await choice.press('Enter');}
+            if(width===1440){
+              await choice.focus();await choice.press('Enter');await expect(choice).toHaveAttribute('aria-expanded','true');
+              await choice.press('ArrowDown');const target=page.getByRole('option',{name:new RegExp(`^${role}\\b`)});
+              await expect(choice).toHaveAttribute('aria-activedescendant',(await target.getAttribute('id'))!);await choice.press('Enter');
+            }
             else{await choice.click();await page.getByRole('option',{name:new RegExp(`^${role}\\b`)}).click();}
             await expect(choice).toContainText(role);
           }
@@ -58,7 +63,7 @@ for(const width of [1440,390]){
           await acceptance.getByLabel('Senha',{exact:true}).fill('synthetic-acceptance-only');
           await acceptance.getByLabel('Confirme a senha',{exact:true}).fill('synthetic-acceptance-only');
           await acceptance.getByRole('button',{name:'Criar senha e entrar',exact:true}).click();
-          await expect(acceptance).toHaveURL(new RegExp(`${new URL(baseURL!).origin}/$`));await acceptance.close();
+          await expect(acceptance).toHaveURL(/\/workspaces(?:\?entry=1)?$/);await expect(acceptance.getByRole('heading',{name:'Escolher workspace',exact:true})).toBeVisible();await acceptance.close();
         }
       }finally{await inviteContext.close().catch(()=>{});}
       await page.getByRole('button',{name:'Reavaliar configuração',exact:true}).click();
