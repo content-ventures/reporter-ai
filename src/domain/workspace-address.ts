@@ -32,6 +32,7 @@ export function workspaceAccessHref(item:{workspace:{id:string;slug:string};ente
 export const CONTEXT_RECOVERY_EVENT='reporter:context-invalidated';
 /** Recovery never silently chooses another client's last destination. */
 export function contextRecoveryHref(code:string):string{
+  if(code==='MEMBER_VIEW_ENDED'||code==='MEMBER_VIEW_UNAVAILABLE')return'/workspaces?viewing=ended';
   return code==='AUTH_REQUIRED'?'/auth/sign-in':code==='ACCESS_PENDING'||code==='EMAIL_NOT_VERIFIED'?'/auth/pending':code==='WORKSPACE_NOT_FOUND'?'/workspaces?unavailable=1':'/workspaces';
 }
 

@@ -11,6 +11,7 @@ import type { Transcript } from '../../domain/reporter.ts';
 import { detectTranscriptFormat } from '../../domain/text/transcript-parse.ts';
 import { pipelineModelLabel } from '../../domain/pipeline.ts';
 import { CONTEXT_RECOVERY_EVENT,contextRecoveryHref,workspaceApiPath } from '../../domain/workspace-address.ts';
+import {memberViewId} from '../../domain/member-view.ts';
 
 export class ReporterHttpError extends Error {
   readonly code: string;
@@ -23,7 +24,7 @@ export function isForbidden(error: unknown): error is ReporterHttpError {
   return error instanceof ReporterHttpError && FORBIDDEN_CODES.has(error.code);
 }
 
-const FORBIDDEN_CODES = new Set(['FORBIDDEN', '42501']);
+const FORBIDDEN_CODES = new Set(['FORBIDDEN', '42501','MEMBER_VIEW_READ_ONLY']);
 const forbiddenBody = (value: Record<string,unknown>) => typeof value.error === 'string' && FORBIDDEN_CODES.has(value.error);
 const messageOf = (value: Record<string,unknown>, fallback: string) => typeof value.message === 'string' ? value.message : fallback;
 
@@ -48,21 +49,28 @@ export type ReporterTransport = {
 };
 
 /** Destination and lifetime belong to this runtime, including writes queued before navigation. */
-export function createReporterTransport(slug?: string, options: { requireAccount?: boolean;onInvalidated?:()=>void } = {}): ReporterTransport {
+export function createReporterTransport(slug?: string, options: { requireAccount?: boolean;onInvalidated?:()=>void;viewId?:string } = {}): ReporterTransport {
   const lifetime = new AbortController();
   let account: string | undefined;
-  const url = (path: string) => workspaceApiPath(slug,path);
+  const viewId=options.viewId;
+  if(viewId!==undefined&&(!slug||!memberViewId(viewId)))throw new Error('INVALID_MEMBER_VIEW');
+  const url = (path: string) => {
+    const value=workspaceApiPath(slug,path);if(viewId===undefined)return value;
+    const address=new URL(value,'https://reporter.invalid');address.searchParams.set('_view',viewId);
+    return address.pathname+address.search+address.hash;
+  };
   url('/workspace'); // Reject an invalid supplied context before making any request.
   const send = async (path: string, init: RequestInit = {}) => {
     lifetime.signal.throwIfAborted();
     if (options.requireAccount && !account && !['GET','HEAD'].includes(init.method ?? 'GET')) throw new DOMException('Workspace not ready','InvalidStateError');
     const headers = new Headers(init.headers);
     if (account) headers.set('x-reporter-account',account);
+    if(viewId)headers.set('x-reporter-view',viewId);
     const response = await fetch(url(path),{ ...init,headers,signal: AbortSignal.any([lifetime.signal,init.signal ?? AbortSignal.timeout(30000)]) });
     lifetime.signal.throwIfAborted();
-    if([401,403,404,409].includes(response.status)){
+    if([401,403,404,409,410].includes(response.status)){
       const error=await response.clone().json().catch(()=>null) as {error?:string}|null;
-      if(error?.error&&['ACCOUNT_CONTEXT_CHANGED','AUTH_REQUIRED','ACCESS_PENDING','EMAIL_NOT_VERIFIED','WORKSPACE_NOT_FOUND'].includes(error.error)){
+      if(error?.error&&['ACCOUNT_CONTEXT_CHANGED','AUTH_REQUIRED','ACCESS_PENDING','EMAIL_NOT_VERIFIED','WORKSPACE_NOT_FOUND','MEMBER_VIEW_ENDED','MEMBER_VIEW_UNAVAILABLE'].includes(error.error)){
         options.onInvalidated?.();lifetime.abort();
         if(typeof window!=='undefined'){
           const handled=typeof window.dispatchEvent==='function'&&!window.dispatchEvent(new CustomEvent(CONTEXT_RECOVERY_EVENT,{cancelable:true,detail:{code:error.error}}));

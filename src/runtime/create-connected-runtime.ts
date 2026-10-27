@@ -18,6 +18,7 @@ import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts'
 import { createHttpNewsIntake } from '../adapters/http/news-intake.ts';
 import {createHttpWorkspaceAdministration} from '../adapters/http/workspace-management.ts';
 import {createHttpWorkspaceDirectory} from '../adapters/http/workspace-directory.ts';
+import {createHttpMemberViewing} from '../adapters/http/member-view.ts';
 import { withServerAssets } from '../adapters/http/server-assets.ts';
 import { committedCommand } from '../adapters/http/committed-command.ts';
 import { createWorkspaceRefresh } from '../adapters/http/workspace-refresh.ts';
@@ -39,10 +40,10 @@ import type { WritingRunDetails } from '../ports/pipeline-settings.ts';
 import { isRunActive } from '../domain/run.ts';
 
 /** Approved screens, server-owned state, real Groq jobs. Demo snapshots remain untouched. */
-export function createConnectedRuntime(options: { typefaces?: Readonly<Record<string,string>>; workspaceSlug?: string } = {}): Runtime {
+export function createConnectedRuntime(options: { typefaces?: Readonly<Record<string,string>>; workspaceSlug?: string;viewId?:string } = {}): Runtime {
   const contextListeners=new Set<()=>void>();
   const invalidate=()=>{for(const listener of [...contextListeners])listener();};
-  const http = createReporterTransport(options.workspaceSlug,{requireAccount:true,onInvalidated:invalidate});
+  const http = createReporterTransport(options.workspaceSlug,{requireAccount:true,onInvalidated:invalidate,viewId:options.viewId});
   const directoryHttp=createReporterTransport(undefined,{requireAccount:true,onInvalidated:invalidate});
   const clock = { now: () => new Date().toISOString() },ids = { next: () => crypto.randomUUID() };
   let current: ConnectedWorkspace = { ...emptyEditorialCheckpoint(),revision: -1,model: '',workerOnline: false };
@@ -59,7 +60,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   let resolveAssetNamespace!: (name:string)=>void, rejectAssetNamespace!: (error:unknown)=>void;
   const databaseName = new Promise<string>((resolve,reject)=>{resolveAssetNamespace=resolve;rejectAssetNamespace=reject;});
   void databaseName.catch(()=>{});
-  const localAssets = createIndexedDbAssetStore({ clock,ids,workspaceId:()=>current.state.workspace.id,actorId:()=>current.state.sessionPersonId,databaseName,reset:false });
+  const localAssets = createIndexedDbAssetStore({ clock,ids,workspaceId:()=>current.state.workspace.id,actorId:()=>current.navigation?.accountId??current.state.sessionPersonId,databaseName,reset:false });
   const assets = withServerAssets(localAssets,() => current.imageAssets ?? [],() => refresh(true),() => current.deploymentMode === 'cloud',http);
   const fixtures = createFixtures({ now: clock.now(),empty: true });
   const imageDisposers=new Set<()=>void>();
@@ -108,7 +109,9 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     preview:async request=>{await ensureTemplate(request.templateId);return drawing.preview(request);},
   };
   const runActive = () => Object.values(current.state.runFolds).some(fold => isRunActive(fold.run));
-  const refresh = createWorkspaceRefresh(() => requestWorkspace(current.syncToken,runActive(),http).then(snapshot => {
+  const refresh = createWorkspaceRefresh(() => {
+    const requestedAt=performance.now();
+    return requestWorkspace(current.syncToken,runActive(),http).then(snapshot => {
       if (disposed || snapshot.revision < current.revision) return;
       if ('unchanged' in snapshot) {
         current = { ...current,workerOnline: snapshot.workerOnline,stalled: snapshot.stalled };
@@ -125,11 +128,13 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
         return;
       }
       if (options.workspaceSlug && snapshot.state.workspace.slug !== options.workspaceSlug
+        || options.viewId!==snapshot.navigation?.view?.id
         || current.revision >= 0 && (snapshot.state.workspace.id !== current.state.workspace.id || snapshot.state.sessionPersonId !== current.state.sessionPersonId)) throw new Error('ACCOUNT_CONTEXT_CHANGED');
-      http.bindAccount(snapshot.state.sessionPersonId);
+      if(snapshot.navigation?.view)snapshot.navigation.view.remainingMs=Math.max(0,snapshot.navigation.view.remainingMs-Math.ceil(performance.now()-requestedAt));
+      http.bindAccount(snapshot.navigation?.accountId??snapshot.state.sessionPersonId);
       directoryHttp.bindAccount(snapshot.navigation?.accountId??snapshot.state.sessionPersonId);
-      resolveAssetNamespace(snapshot.deploymentMode === 'local' && snapshot.state.workspace.id === LOCAL_WORKSPACE && snapshot.state.sessionPersonId === LOCAL_OPERATOR
-        ? ASSET_DB_NAME : `reporter-assets:${encodeURIComponent(snapshot.state.workspace.id)}:${encodeURIComponent(snapshot.state.sessionPersonId)}`);
+      resolveAssetNamespace(!options.viewId&&snapshot.deploymentMode === 'local' && snapshot.state.workspace.id === LOCAL_WORKSPACE && snapshot.state.sessionPersonId === LOCAL_OPERATOR
+        ? ASSET_DB_NAME : `reporter-assets:${encodeURIComponent(snapshot.state.workspace.id)}:${encodeURIComponent(snapshot.navigation?.accountId??snapshot.state.sessionPersonId)}${options.viewId?`:view:${options.viewId}`:''}`);
       const changed = snapshot.revision !== current.revision || snapshot.syncToken !== current.syncToken;
       current = snapshot;
       adoptTemplates(snapshot.templateConfiguration);
@@ -137,7 +142,8 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       assets.adoptSnapshot();
       if (changed) ports.store.transact(() => ok({ state: snapshot.state,value: undefined,persist: 'none',scope: 'external',productionIds: snapshot.state.productions.map(p => p.production.id) }));
       generation.accept(snapshot);
-    }).catch(error=>{rejectAssetNamespace(error);throw error;}).finally(() => { lastRefresh = Date.now(); }));
+    }).catch(error=>{rejectAssetNamespace(error);throw error;}).finally(() => { lastRefresh = Date.now(); });
+  });
   let writeTail: Promise<unknown> = Promise.resolve();
   let failedWrite: { method: string; args: unknown[]; requestId: string } | undefined;
   const rpc = <T,>(method: string,args: unknown[]): Promise<T> => {
@@ -196,6 +202,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   return {
     get navigation(){return current.navigation;},
     get workspaceDirectory(){return current.navigation?.enabled?directory:undefined;},
+    memberViewing:createHttpMemberViewing(directoryHttp,()=>ready),
     administration:createHttpWorkspaceAdministration({transport:http,ready:()=>ready,scope:()=>current.state.workspace.id}),
     mode: 'remote',clock,ids,queries,commands,ingest: createHttpIngest(ports.ingest,http),generation: generation.service,render,export: exporter,assets,audit,
     visuals: createHttpVisualLibrary(http),
@@ -209,7 +216,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
       workspace: async () => { await ready; return ports.session.workspace(); },
       current: async () => { await ready; return ports.session.current(); },
       members: async () => { await ready; return ports.session.members(); },
-      localRoleProfiles: async () => { await ready; return editorialLocalRoleProfiles(ports.store.state); },
+      localRoleProfiles: async () => { await ready; return options.viewId?[]:editorialLocalRoleProfiles(ports.store.state); },
       selectLocalRole: profile => rpc('session.selectLocalRole', [profile]),
       updateProfile: async patch => {
         const valid = validateProfilePatch(patch);

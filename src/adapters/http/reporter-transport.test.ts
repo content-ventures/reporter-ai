@@ -69,3 +69,35 @@ test('a denied client never auto-opens a previous client, and an unverified acco
     }
   }finally{browser.window=before;globalThis.fetch=original;}
 });
+
+test('view transports capture the real account and segregate even ordinary image URLs',async()=>{
+  const original=globalThis.fetch,requests:{url:string;headers:Headers}[]=[];
+  globalThis.fetch=async(input,init)=>{requests.push({url:String(input),headers:new Headers(init?.headers)});return Response.json({});};
+  const first='11111111-1111-4111-8111-111111111111',second='22222222-2222-4222-8222-222222222222';
+  const a=createReporterTransport('client-one',{viewId:first}),b=createReporterTransport('client-one',{viewId:second});
+  try{
+    a.bindAccount('actual-operator');
+    await a.fetch('/visuals/assets/same/file?size=large',{headers:{'x-reporter-view':second}});
+    assert.equal(requests[0].url,`/api/reporter/w/client-one/visuals/assets/same/file?size=large&_view=${first}`);
+    assert.equal(requests[0].headers.get('x-reporter-view'),first);
+    assert.equal(requests[0].headers.get('x-reporter-account'),'actual-operator');
+    assert.notEqual(a.url('/visuals/assets/same/file'),b.url('/visuals/assets/same/file'));
+    assert.throws(()=>createReporterTransport(undefined,{viewId:first}),/INVALID_MEMBER_VIEW/);
+    assert.throws(()=>createReporterTransport('client-one',{viewId:'invalid'}),/INVALID_MEMBER_VIEW/);
+  }finally{a.dispose();b.dispose();globalThis.fetch=original;}
+});
+
+test('a read-only refusal retains the view, while expiry clears it into an explicit choice',async()=>{
+  const browser=globalThis as unknown as {window?:unknown},before=browser.window,original=globalThis.fetch,destinations:string[]=[];
+  let code='MEMBER_VIEW_READ_ONLY',invalidated=0;
+  browser.window={location:{replace:(href:string)=>destinations.push(href)}};
+  globalThis.fetch=async()=>Response.json({error:code},{status:code==='MEMBER_VIEW_ENDED'?410:403});
+  const context=createReporterTransport('client-one',{viewId:'11111111-1111-4111-8111-111111111111',onInvalidated:()=>{invalidated++;}});
+  try{
+    context.bindAccount('actual-operator');await assert.rejects(context.request('/workspace',{}),{code});
+    assert.equal(invalidated,0);assert.deepEqual(destinations,[]);
+    code='MEMBER_VIEW_ENDED';await assert.rejects(context.request('/workspace'),{code});
+    assert.equal(invalidated,1);assert.deepEqual(destinations,['/workspaces?viewing=ended']);
+    await assert.rejects(context.request('/workspace'),{name:'AbortError'});
+  }finally{context.dispose();browser.window=before;globalThis.fetch=original;}
+});
