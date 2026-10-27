@@ -10,3 +10,10 @@ test('readiness waits through a newly deployed function route returning plain te
 test('readiness fails with the bounded media code after retries',async()=>{
   await assert.rejects(waitForWorkerReadiness('https://worker.invalid','private',{attempts:1,request:async()=>Response.json({ok:false,error:'MEDIA_TOOL_EXEC_EACCES'},{status:503})}),/MEDIA_TOOL_EXEC_EACCES/);
 });
+
+test('readiness requires the exact checked-out worker source, including a rollback ref',async()=>{
+  const expected='b'.repeat(40),responses=[Response.json({ok:true,sourceCommit:'a'.repeat(40)}),Response.json({ok:true,sourceCommit:expected})];
+  await waitForWorkerReadiness('https://worker.invalid','private',{expectedCommit:expected,attempts:2,sleep:async()=>{},request:async()=>responses.shift()});
+  assert.equal(responses.length,0);
+  await assert.rejects(waitForWorkerReadiness('https://worker.invalid','private',{expectedCommit:expected,attempts:1,request:async()=>Response.json({ok:true})}),/WORKER_SOURCE_MISMATCH/);
+});
