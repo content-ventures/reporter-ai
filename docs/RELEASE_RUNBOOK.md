@@ -100,7 +100,8 @@ origin, such as `https://reporteria.contentventures.com.br` and `https://reporte
   or tag the release by hand. Work on the next roadmap release may already be present on `main`,
   but the release declaration must not describe it as completed.
 - **Validate first.** From the branch under review, dispatch the workflow with `validation_only`.
-  It deploys and accepts on staging only.
+  It deploys and accepts on staging only. The default `acceptance_scope=workspaces` preserves the pilot and checks two synthetic clients, invitations, independent policy/branding, separate approvals and actual browser downloads without AI calls. It refuses a protected or mismatched database, archives its QA workspaces, restores the prior navigation mode and revokes its temporary staging operator. Login is simulated only at the verified-session boundary; this does not replace real-account operational acceptance.
+  The explicit `core` and `full` scopes retain the previous transcription/generation acceptance and incur provider usage, including background images; use them only with the corresponding spending authorization.
 - **Release.** After the pull request is merged, dispatch the workflow from `main`.
 - **Read the run.** Its summary records the transfer reading, each drain receipt and the live version.
 
