@@ -219,6 +219,11 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
       if(head==='workspaces'&&path.length===3&&action==='templates')
         return reply(await platform(client=>readWorkspaceTemplates(client,personId(id))));
       if (path.length === 1 && head === 'operator') return reply(await platform(client => call(client, 'SELECT public.reporter_platform_operator() AS value')));
+      if(path.length===1&&head==='people-labels'){
+        const ids=(new URL(request.url).searchParams.get('ids')??'').split(',').filter(Boolean);
+        if(ids.length>100||ids.some(id=>!UUID.test(id)))throw new Refused('invalid_state','Informe até 100 pessoas válidas.',422);
+        return reply(await platform(client=>call(client,'SELECT public.reporter_platform_people_labels($1::uuid[]) AS value',[[...new Set(ids)]])));
+      }
       if (path.length === 1 && head === 'directory') {
         const query=new URL(request.url).searchParams;
         return reply(await platform(client=>call(client,'SELECT public.reporter_platform_directory_page($1,$2,$3,$4,$5,$6) AS value',[

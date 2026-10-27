@@ -4,7 +4,7 @@ import { createContext, use, useEffect,useRef, useState, type ReactNode } from '
 import type { PlatformRefusal } from '../domain/platform.ts';
 import type { UsagePeriod, UsageReport } from '../domain/platform-usage.ts';
 import type { Result } from '../domain/result.ts';
-import type { DirectorySearch,PlatformFilter,InviteDesk, PlatformConsole, PlatformDirectory, PlatformLogPage, PlatformOperator } from '../ports/platform.ts';
+import type { DirectorySearch,PlatformFilter,InviteDesk, PlatformConsole, PlatformDirectory, PlatformLogPage, PlatformOperator,PlatformPersonLabel } from '../ports/platform.ts';
 import { createPlatformRuntime, type PlatformRuntime } from '../runtime/create-platform.ts';
 
 /**
@@ -104,3 +104,12 @@ export function usePlatformLog(limit: number,options?:PlatformFilter&{offset?:nu
 }
 export function usePlatformAdministration(){return usePlatformRuntime().workspaces;}
 export function usePlatformMemberViewing(){return usePlatformRuntime().memberViewing;}
+
+export function usePlatformPeopleLabels(ids:readonly string[]):PlatformQuery<PlatformPersonLabel[]> {
+  const selected=[...new Set(ids)].sort().slice(0,100);
+  return usePlatformQuery(`people-labels:${selected.join(',')}`,async platform=>{
+    if(platform.peopleLabels)return platform.peopleLabels(selected);
+    const directory=await platform.directory();
+    return directory.ok?{ok:true,value:directory.value.people.filter(person=>selected.includes(person.id))}:directory;
+  });
+}

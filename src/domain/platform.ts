@@ -179,7 +179,9 @@ export type PlatformAction =
   | 'membership.suspended'
   | 'membership.restored'
   | 'account.suspended'
-  | 'account.restored';
+  | 'account.restored'
+  | 'member_view.started'
+  | 'member_view.ended';
 
 export const PLATFORM_ACTION_LABELS: Readonly<Record<PlatformAction, string>> = {
   'invite.created': 'Acesso criado',
@@ -196,6 +198,8 @@ export const PLATFORM_ACTION_LABELS: Readonly<Record<PlatformAction, string>> = 
   'membership.restored': 'Vínculo reativado',
   'account.suspended': 'Conta suspensa',
   'account.restored': 'Conta reativada',
+  'member_view.started': 'Visualização de usuário iniciada',
+  'member_view.ended': 'Visualização de usuário encerrada',
 };
 
 export type PlatformLogEntry = {

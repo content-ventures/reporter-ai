@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Avatar, Banner, ButtonLink, EmptyState, Grid, List, ListItem, ListItemSkeleton, MetaList, PageHeader, PageStack, Section, TextLink } from '@content-ventures/design-system/v3';
 import { ScrollText, UserPlus } from '@content-ventures/design-system/v3/icons';
 import { DEFAULT_USAGE_PERIOD, PLATFORM_ACTION_LABELS, type PlatformPerson, type UsagePeriod } from '@/domain';
-import { usePlatformDirectory, usePlatformLog, usePlatformUsage } from '@/state';
+import { usePlatformDirectory,usePlatformPeopleLabels, usePlatformLog, usePlatformUsage } from '@/state';
 import { plural } from '@/ui/format';
 import { RelativeTime } from '@/ui/time';
 import { formatCompact, formatUsd, LOG_HREF, PEOPLE_HREF, rolesLabel, USAGE_HREF } from './format';
@@ -22,15 +22,14 @@ export function OverviewScreen() {
   const workspaceHrefFor = useWorkspaceHref();
   const [period, setPeriod] = useState<UsagePeriod>(DEFAULT_USAGE_PERIOD);
   const usage = usePlatformUsage(period);
-  const directory = usePlatformDirectory();
   const pendingDirectory=usePlatformDirectory({status:'pending',limit:5});
   const log = usePlatformLog(6);
   const report = usage.data;
-  const people = directory.data?.people ?? [];
-  const byId = new Map(people.map((person) => [person.id, person]));
+  const top=(report?.people??[]).slice(0,5);
+  const labels=usePlatformPeopleLabels(top.map(entry=>entry.personId));
+  const byId=new Map((labels.data??[]).map(person=>[person.id,person]));
   const waiting = (pendingDirectory.data?.people??[]).filter((person) => person.status === 'pending');
   const waitingCount=pendingDirectory.data?.counts?.pending??waiting.length;
-  const top = (report?.people ?? []).filter((entry) => byId.has(entry.personId)).slice(0, 5);
 
   return (
     <>
@@ -53,7 +52,7 @@ export function OverviewScreen() {
           <Section title="Quem mais usou" titleAs="h2" variant="panel" action={<TextLink href={workspaceHrefFor(USAGE_HREF)}>Ver uso</TextLink>}>
             <List label="Quem mais usou" framed={false} bleed empty={<EmptyState size="inline" title="Sem uso no período" />}>
               {!report ? [0, 1, 2].map((index) => <ListItemSkeleton key={index} />) : top.map((entry) => {
-                const person = byId.get(entry.personId) as PlatformPerson;
+                const person = byId.get(entry.personId)??{id:entry.personId,name:`Consultar pessoa ${entry.personId.slice(0,8)}`};
                 return (
                   <ListItem
                     key={entry.personId}

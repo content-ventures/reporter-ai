@@ -100,6 +100,12 @@ test('directory paging and operational filters keep exact totals beyond the firs
   assert.equal(new Set([...first.body.people,...next.body.people].map(person=>person.id)).size,40);
   assert.ok(first.body.people.every(person=>person.memberships?.[0].workspace.id===second));
   assert.equal((await api<Page>('platform/directory?limit=900')).body.people.length,100,'the server bounds a requested page');
+  const last=await api<Page>(`platform/directory?workspaceId=${second}&search=Paged&limit=20&offset=120`);
+  const exactIds=[first.body.people[0].id,last.body.people.at(-1)!.id];
+  const labels=await api<{id:string;name:string}[]>(`platform/people-labels?ids=${exactIds.join(',')}`);
+  assert.equal(labels.status,200);assert.deepEqual(labels.body.map(person=>person.id).sort(),exactIds.sort());
+  assert.equal((await api('platform/people-labels?ids='+Array(101).fill(editorId).join(','))).status,422);
+  assert.equal((await api(`platform/people-labels?ids=${editorId}`,undefined,ADMIN)).status,403);
   const specific=await api<Page>(`platform/directory?personId=${editorId}`);assert.equal(specific.body.people.length,1);assert.equal(specific.body.people[0].memberships?.length,2);
   for(const [portal,id,person] of [[second,'filter-second',editorId],['10000000-0000-0000-0000-000000000101','filter-pilot',operatorId]]){
     await owner(`INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,seq)
