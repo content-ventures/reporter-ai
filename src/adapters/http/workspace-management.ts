@@ -31,6 +31,8 @@ export function createHttpWorkspaceAdministration(options:{transport:Transport;r
   const memberPath=(input:{personId:string})=>encodeURIComponent(input.personId);
   return{
     global,get readOnly(){return options.readOnly?.()??false;},
+    activation:()=>global?call('/platform/workspace-activation'):restricted(),
+    setActivation:input=>global?call('/platform/workspace-activation',input):restricted(),
     get:id=>scoped(id,global?'':'/team/workspace'),
     list:query=>global?call(`/platform/workspaces?${managementSearch(query)}`):restricted(),
     create:input=>global?call('/platform/workspaces',input):restricted(),

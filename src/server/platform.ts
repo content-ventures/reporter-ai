@@ -28,7 +28,8 @@ import {readWorkspaceTemplates,saveWorkspaceTemplates,uploadWorkspaceBrand} from
 import {previewConfigurationCopy,applyConfigurationCopy} from './configuration-copy.ts';
 import {memberViewPhotos,memberViewSession} from './member-view.ts';
 import type {MemberView} from '../domain/member-view.ts';
-import {workspaceRollout} from './workspace-rollout.ts';
+import {activationPolicy,effectiveWorkspaceRollout} from './workspace-activation.ts';
+import type {WorkspaceActivation} from '../domain/workspace-management.ts';
 
 /**
  * Console da plataforma and the access link over HTTP.
@@ -192,7 +193,7 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
     const [head, id, action] = path;
 
     if(head==='member-views'&&path.length===1&&request.method==='POST'){
-      if(workspaceRollout()==='off')throw new Refused('restricted','A navegação entre workspaces ainda não está habilitada.',403);
+      if(await effectiveWorkspaceRollout()==='off')throw new Refused('restricted','A navegação entre workspaces ainda não está habilitada.',403);
       const input=z.object({workspaceId:z.string().regex(UUID),personId:z.string().regex(UUID)}).strict().safeParse(await deps.readJson(request));
       if(!input.success)throw platformRefusal('invalid_workspace');
       const session=await memberViewSession(request,deps);
@@ -201,6 +202,15 @@ export async function handlePlatform(request: Request, path: string[], deps: Pla
       return reply(memberViewPhotos(view),201);
     }
 
+    if(head==='workspace-activation'&&path.length===1){
+      if(request.method==='GET')return reply(activationPolicy(await platform(client=>call<Omit<WorkspaceActivation,'effective'>>(client,'SELECT public.reporter_workspace_activation() AS value'))));
+      if(request.method==='POST'){
+        const parsed=z.object({mode:z.enum(['off','admin','all']),revision:z.number().int().positive()}).strict().safeParse(await deps.readJson(request));
+        if(!parsed.success)throw platformRefusal('invalid_state');
+        return reply(activationPolicy(await platform(client=>call<Omit<WorkspaceActivation,'effective'>>(client,'SELECT public.reporter_workspace_activation_save($1,$2) AS value',[parsed.data.mode,parsed.data.revision]))));
+      }
+      throw platformRefusal('not_found');
+    }
     if (request.method === 'GET') {
       if(head==='workspaces'&&path.length===2)return reply(await platform(client=>call(client,'SELECT public.reporter_workspace_get($1::uuid) AS value',[personId(id)])));
       if(head==='workspaces'&&path.length===3&&action==='team')return reply(await teamPage(request,personId(id),platform));

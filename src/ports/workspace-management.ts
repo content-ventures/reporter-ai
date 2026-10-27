@@ -2,7 +2,7 @@ import type { PersonId, WorkspaceId } from '../domain/ids.ts';
 import type { InviteInput, IssuedInvite } from '../domain/platform.ts';
 import type { Result } from '../domain/result.ts';
 import type { Role } from '../domain/workspace.ts';
-import type { ManagedWorkspace, MembershipStatus, WorkspaceAccess, WorkspaceChange, WorkspaceInput, WorkspaceMembership, WorkspaceRefusal,WorkspaceTeamMember } from '../domain/workspace-management.ts';
+import type { ManagedWorkspace, MembershipStatus, WorkspaceAccess, WorkspaceChange, WorkspaceInput, WorkspaceMembership, WorkspaceRefusal,WorkspaceTeamMember,WorkspaceActivation,WorkspaceRollout } from '../domain/workspace-management.ts';
 import type {WorkspaceBrandAsset,WorkspaceTemplateConfiguration,WorkspaceTemplateInput} from '../domain/workspace-templates.ts';
 import type {ConfigurationCopyField,ConfigurationCopyPreview} from '../domain/configuration-copy.ts';
 import type {Unsubscribe} from './common.ts';
@@ -20,6 +20,8 @@ export type WorkspaceTeamPage={items:WorkspaceTeamMember[];total:number;offset:n
 export interface WorkspaceAdministration {
   readonly global:boolean;
   readonly readOnly?:boolean;
+  activation():Promise<WorkspaceResult<WorkspaceActivation>>;
+  setActivation(input:{mode:WorkspaceRollout;revision:number}):Promise<WorkspaceResult<WorkspaceActivation>>;
   get(workspaceId:WorkspaceId):Promise<WorkspaceResult<ManagedWorkspace>>;
   list(options: { search?: string; offset?: number; limit?: number }): Promise<WorkspaceResult<WorkspacePage>>;
   create(input: WorkspaceInput): Promise<WorkspaceResult<ManagedWorkspace>>;

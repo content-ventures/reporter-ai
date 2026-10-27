@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { validateWorkspace, workspaceReadiness } from './workspace-management.ts';
+import { validateWorkspace, workspaceReadiness,limitWorkspaceRollout } from './workspace-management.ts';
 
 test('client names retain their identity; ambiguous or reserved addresses are refused', () => {
   assert.deepEqual(validateWorkspace({ name: '  Seafood   Brasil  ', slug: 'seafood-brasil' }),
@@ -19,4 +19,13 @@ test('an empty client identifies its missing configuration instead of inheriting
     ['writing_guide', 'templates', 'approver']);
   assert.deepEqual(workspaceReadiness({ editorial_map: true, writing_guide: true, templates: true, editor: true, approver: true }),
     { ready: true, missing: [] });
+});
+
+test('activation is capped by both server policy and the environment ceiling',()=>{
+  assert.equal(limitWorkspaceRollout('all','admin'),'admin');
+  assert.equal(limitWorkspaceRollout('admin','all'),'admin');
+  assert.equal(limitWorkspaceRollout('all','all'),'all');
+  for(const mode of ['off','admin','all']as const){
+    assert.equal(limitWorkspaceRollout(mode,'off'),'off');assert.equal(limitWorkspaceRollout('off',mode),'off');
+  }
 });
