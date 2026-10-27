@@ -2,6 +2,7 @@ import 'server-only';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Role } from '../domain/workspace.ts';
 import type { WorkspaceStatus } from '../domain/workspace-management.ts';
+import type {MemberView} from '../domain/member-view.ts';
 import { localContext } from './config.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 
@@ -18,6 +19,8 @@ export type ReporterRequestContext = {
   addressed?: true;
   administrative?: boolean;
   workspaceStatus?: WorkspaceStatus;
+  /** The actor above is the effective reader. This immutable context retains the actual operator. */
+  view?:MemberView;
 };
 
 const contexts = new AsyncLocalStorage<ReporterRequestContext>();
