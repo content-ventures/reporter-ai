@@ -22,7 +22,8 @@ for(const width of [1440,390]){
       await expect(page).toHaveURL(new RegExp(`/w/${workspace.slug}/?\\?view=[a-f0-9-]+$`));
       const id=new URL(page.url()).searchParams.get('view')!;
       await expect(page.getByText(`Visualizando ${name} · ${workspace.name}`,{exact:true})).toBeVisible();
-      await expectLoaded(page);await expectHeadingOutline(page);await expectNoHorizontalOverflow(page);
+      await expectLoaded(page);await expectHeadingOutline(page);
+      await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBe(0);await expectNoHorizontalOverflow(page);
       if(width===390)await page.getByRole('button',{name:'Abrir menu',exact:true}).click();
       const account=page.getByRole('button',{name:/Development operator.*Menu da conta$/});await expect(account).toBeVisible();
       await expect(page.getByRole('link',{name:'Produções',exact:true})).toHaveAttribute('href',`/w/${workspace.slug}/productions?view=${id}`);
@@ -39,7 +40,7 @@ for(const width of [1440,390]){
       await expect(prompt.getByRole('textbox',{name:'Instruções do prompt',exact:true})).toBeDisabled();
       await expect(prompt.getByRole('button',{name:'Salvar e ativar tudo',exact:true})).toBeDisabled();
       await prompt.getByRole('button',{name:'Fechar consulta',exact:true}).click();
-      await expect.poll(async()=>page.evaluate(async()=> (await indexedDB.databases()).map(db=>db.name))).toContain(`reporter-assets:${workspace.id}:00000000-0000-0000-0000-000000000031:view:${id}`);
+      expect(await page.evaluate(async()=> (await indexedDB.databases()).map(db=>db.name))).not.toContain(`reporter-assets:${workspace.id}:00000000-0000-0000-0000-000000000031:view:${id}`);
       const mutation=await request.post(`/api/reporter/w/${workspace.slug}/workspace`,{headers:{...headers,'x-reporter-view':id},data:{method:'createBlank',args:[{}],requestId:randomUUID()}});
       expect(mutation.status()).toBe(403);
       await page.getByRole('button',{name:'Sair da visualização',exact:true}).click();
@@ -50,8 +51,9 @@ for(const width of [1440,390]){
       const second=await again.json();await page.goto(`/w/${workspace.slug}/?view=${second.id}`);
       await expect(page.getByText(`Visualizando ${name} · ${workspace.name}`,{exact:true})).toBeVisible();
       const team=await(await request.get(`/api/reporter/platform/workspaces/${workspace.id}/team`,{headers})).json(),member=team.items.find((entry:{personId:string})=>entry.personId===person);
+      const invalidated=page.waitForResponse(response=>new URL(response.url()).pathname===`/api/reporter/w/${workspace.slug}/workspace`&&response.status()===410);
       expect((await request.post(`/api/reporter/platform/workspaces/${workspace.id}/members/${person}`,{headers,data:{revision:member.revision,status:'suspended'}})).ok()).toBe(true);
-      await expect(page).toHaveURL(/\/workspaces\?viewing=ended$/);
+      await invalidated;await expect(page).toHaveURL(/\/workspaces\?viewing=ended$/);
       await expect(page.getByRole('heading',{name:'Escolher workspace',exact:true})).toBeVisible();
       expect(errors).toEqual([]);
     });
