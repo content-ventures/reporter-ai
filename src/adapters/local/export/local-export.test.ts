@@ -344,7 +344,8 @@ describe('article images in the package', () => {
     assert.equal(coverRow?.status, 'ready');
     assert.equal(coverRow?.mimeType, 'image/png');
     assert.equal(coverRow?.bytes, coverFile.size);
-    assert.ok(coverRow?.href?.startsWith('blob:'), 'the stored file, by its object URL');
+    assert.match(coverRow?.href??'',/^data:image\/png;base64,/);
+    assert.deepEqual(Buffer.from(coverRow!.href!.split(',')[1],'base64'),Buffer.from(await coverFile.arrayBuffer()),'the download contains exactly the bytes hashed in the manifest');
     const md = pkg.files.find((file) => file.format === 'md')?.text ?? '';
     assert.match(md, /^# Da garagem à feira: a virada do Ateliê Sul\n\n!\[Fachada\]\(da-garagem-a-feira-a-virada-do-atelie-sul-destaque\.png\)\n\n\*A fachada\* — Foto: Ana Prado\n/);
     assert.match(md, /!\[\]\(https:\/\/cdn\.exemplo\.com\/colecao\.webp\)\n\nFoto: Bia Lins/);
