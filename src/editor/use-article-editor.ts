@@ -1,4 +1,5 @@
 'use client';
+import {NAVIGATION_DISCARD_EVENT} from '@/domain/workspace-address';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, useEditorState } from '@tiptap/react';
@@ -153,7 +154,7 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
   useEffect(() => {
     if (!editor) return undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let pending = false;
+    let pending = false,discarded=false;
     let revision = 0;
 
     const emit = () => {
@@ -172,6 +173,7 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
       emit();
     };
     const onUpdate = () => {
+      discarded=false;
       revision += 1;
       pending = true;
       schedule();
@@ -181,7 +183,8 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
       if (meta?.type === 'end' && pending) schedule();
     };
     const onPageHide = () => flush();
-    const beforeUnload=(event:BeforeUnloadEvent)=>{if(pending){event.preventDefault();flush();}};
+    const allowDiscard=()=>{discarded=true;};
+    const beforeUnload=(event:BeforeUnloadEvent)=>{if(pending&&!discarded){event.preventDefault();flush();}};
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') flush();
     };
@@ -191,6 +194,7 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
     editor.on('transaction', onTransaction);
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('beforeunload',beforeUnload);
+    window.addEventListener(NAVIGATION_DISCARD_EVENT,allowDiscard);
     window.addEventListener('reporter:prepare-navigation',onPageHide);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
@@ -198,6 +202,7 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
       editor.off('transaction', onTransaction);
       window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('beforeunload',beforeUnload);
+      window.removeEventListener(NAVIGATION_DISCARD_EVENT,allowDiscard);
       window.removeEventListener('reporter:prepare-navigation',onPageHide);
       document.removeEventListener('visibilitychange', onVisibility);
       flush();

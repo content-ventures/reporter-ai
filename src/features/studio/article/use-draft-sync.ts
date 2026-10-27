@@ -5,6 +5,7 @@ import type { ArticleBody, PieceId } from '@/domain';
 import type { SaveState } from '@/ports';
 import { useCommands, useSaveStatus } from '@/state';
 import { isPermissionRefusal } from '@/ui/permission-dialog';
+import {NAVIGATION_DISCARD_EVENT} from '@/domain/workspace-address';
 import { draftSnapshotHash } from './studio-model';
 
 /**
@@ -56,7 +57,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
   const synced = useRef(initial.body);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const queued = useRef<ArticleBody | null>(null);
-  const requested=useRef(initial.body);
+  const requested=useRef(initial.body),discarded=useRef(false);
   const writing = useRef(false);
   const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState(false);
@@ -68,7 +69,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
 
   const save = useCallback(
     (body: ArticleBody) => {
-      requested.current=body;
+      discarded.current=false;requested.current=body;
       queued.current = body;
       setPending(true);
       queue.current = queue.current.then(async () => {
@@ -105,7 +106,7 @@ export function useDraftSync(pieceId: PieceId, initial: { revision: number; body
     [commands, pieceId],
   );
 
-  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(writing.current||queued.current||savedSnapshot.current!==draftSnapshotHash(requested.current))event.preventDefault();};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[]);
+  useEffect(()=>{const allow=()=>{discarded.current=true;};const warn=(event:BeforeUnloadEvent)=>{if(!discarded.current&&(writing.current||queued.current||savedSnapshot.current!==draftSnapshotHash(requested.current)))event.preventDefault();};window.addEventListener('beforeunload',warn);window.addEventListener(NAVIGATION_DISCARD_EVENT,allow);return()=>{window.removeEventListener('beforeunload',warn);window.removeEventListener(NAVIGATION_DISCARD_EVENT,allow);};},[]);
   const settle=useCallback(async()=>{let pending;do{pending=queue.current;await pending;}while(pending!==queue.current);return savedSnapshot.current===draftSnapshotHash(requested.current);},[]);
   const idle = useCallback(() => queue.current, []);
   const busy = useCallback(() => writing.current || queued.current !== null, []);

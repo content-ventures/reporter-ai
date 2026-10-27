@@ -5,6 +5,7 @@ import { toast } from '@content-ventures/design-system/v3';
 import type { CarouselBody, PieceId } from '@/domain';
 import type { DraftView } from '@/ports';
 import { isPermissionRefusal } from '@/ui/permission-dialog';
+import {NAVIGATION_DISCARD_EVENT} from '@/domain/workspace-address';
 import {useNavigationPreparation} from '@/ui/workspace-navigation';
 import { useCommands } from '@/state';
 
@@ -33,6 +34,7 @@ export function useCarouselDraft(draft: DraftView | undefined): CarouselDraft {
   const [local, setLocal] = useState<Local | null>(null);
   const localRef = useRef(local);
   const remoteRevision = useRef(remote?.revision);
+  const discarded=useRef(false);
   const saving = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
@@ -91,6 +93,7 @@ export function useCarouselDraft(draft: DraftView | undefined): CarouselDraft {
   );
 
   const update = useCallback((change: (body: CarouselBody) => CarouselBody) => {
+    discarded.current=false;
     const current = localRef.current;
     if (!current) return;
     // The ref moves at once so a flush right after an edit (accept + send) writes it.
@@ -105,7 +108,7 @@ export function useCarouselDraft(draft: DraftView | undefined): CarouselDraft {
   }, [run]);
 
   useNavigationPreparation(flush);
-  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(localRef.current?.dirty)event.preventDefault();};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[]);
+  useEffect(()=>{const allow=()=>{discarded.current=true;};const warn=(event:BeforeUnloadEvent)=>{if(!discarded.current&&localRef.current?.dirty)event.preventDefault();};window.addEventListener('beforeunload',warn);window.addEventListener(NAVIGATION_DISCARD_EVENT,allow);return()=>{window.removeEventListener('beforeunload',warn);window.removeEventListener(NAVIGATION_DISCARD_EVENT,allow);};},[]);
   const body = local && remote && local.pieceId === remote.pieceId ? local.body : remote?.body;
   return { body, pending: Boolean(local?.dirty), update, flush };
 }
