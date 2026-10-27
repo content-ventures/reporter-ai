@@ -168,14 +168,14 @@ function sameUrl(a: string, b: string): boolean {
  */
 export function HardNewsProvider({children,demo=false}:{children:ReactNode;demo?:boolean}){
   const key=useWorkspaceStorageKey(STORAGE_KEY),{runtime}=useRuntime();
-  return <BoundHardNewsProvider key={key??'pending'} storageKey={key} example={runtime?.mode==='simulated'} demo={demo}>{children}</BoundHardNewsProvider>;
+  return <BoundHardNewsProvider storageKey={key} example={runtime?.mode==='simulated'} demo={demo}>{children}</BoundHardNewsProvider>;
 }
 function BoundHardNewsProvider({children,demo,storageKey,example}:{children:ReactNode;demo:boolean;storageKey?:string;example:boolean}) {
   const commands = useCommands();
   const runtime = useRuntime();
   const session = useSession();
   const actor = session.data?.current?.name ?? 'João';
-  const [store] = useState(()=>createDeskStore({storageKey,example}));
+  const store=useMemo(()=>createDeskStore({storageKey,example}),[storageKey,example]);
   const { state, ready } = useSyncExternalStore(store.subscribe, store.get, store.server);
   const [writing, setWriting] = useState<WritingProgress>();
   const actorRef = useRef(actor);
