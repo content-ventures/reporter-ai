@@ -43,7 +43,7 @@ for(const width of [1440,390]){
       expect(await page.evaluate(async()=> (await indexedDB.databases()).map(db=>db.name))).not.toContain(`reporter-assets:${workspace.id}:00000000-0000-0000-0000-000000000031:view:${id}`);
       const mutation=await request.post(`/api/reporter/w/${workspace.slug}/workspace`,{headers:{...headers,'x-reporter-view':id},data:{method:'createBlank',args:[{}],requestId:randomUUID()}});
       expect(mutation.status()).toBe(403);
-      await page.getByRole('button',{name:'Sair da visualização',exact:true}).click();
+      await page.getByRole('button',{name:/^Sair da visualização de /}).click();
       await expect(page).toHaveURL(new RegExp(`/platform/people\\?person=${person}$`));
       expect((await request.get(`/api/reporter/w/${workspace.slug}/workspace`,{headers:{...headers,'x-reporter-view':id}})).status()).toBe(410);
       expect(await(await request.get(`/api/reporter/w/${workspace.slug}/pipeline`,{headers})).json()).toEqual(before);
