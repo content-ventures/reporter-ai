@@ -4,6 +4,119 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-27
+
+### Documentation
+
+- Record phased plan and pilot baseline.
+- Accept independent editorial configuration.
+- Record navigation phase acceptance.
+- Record accepted administrative inspection.
+- Describe client operations and recovery.
+- Record cross-client acceptance evidence.
+- Accept the complete local regression.
+- Record workspace delivery preflight.
+
+### Added
+
+- Add client lifecycle and preserve pilot identity.
+- Scope memberships and invitations by client.
+- Authorize explicit workspace request contexts.
+- Bind runtime requests and caches to account context.
+- Scope private assets and canonical client pages.
+- Dispatch worker tasks with durable client leases.
+- Preserve job ownership through storage callbacks.
+- Manage independent Drive integration credentials.
+- Bound automatic processing and settle client archival.
+- Add neutral presets and preserve pilot prompts.
+- Store versioned client templates and private brands.
+- Bind editorial rendering to owned client catalogs.
+- Preview and audit selective configuration copies.
+- Capture client policy and export provenance.
+- Expose scoped team administration.
+- Bound directories and filter client activity.
+- Add client setup and team screens.
+- Manage memberships and scoped reports.
+- Bind navigation to the actual account.
+- Replace client state at address boundaries.
+- Add authorized client selection.
+- Add a searchable workspace picker.
+- Fence audited member viewing in the database.
+- Authorize read-only member views over HTTP.
+- Bind browser lifetimes to member views.
+- Project member previews as read-only.
+- Bind support viewing to the verified login.
+- Expose read-only member inspection.
+- Make inspected configuration read only.
+- Complete bounded user inspection reports.
+- Audit immutable editorial configuration changes.
+- Persist audited navigation activation.
+- Enforce activation without disrupting pilot access.
+- Expose staged activation in the console.
+
+### Fixed
+
+- Attribute worker diagnostics to the originating client.
+- Schedule immediate generations on database time.
+- Refresh client catalogs after bootstrap.
+- Retain historical template metadata for editing.
+- Report concurrent template changes as conflicts.
+- Distinguish account identity from memberships.
+- Resolve team photos by account identity.
+- Refresh untouched processing forms.
+- Keep setup actions readable on phones.
+- Recover pages after filtered access changes.
+- Retain archived integration visibility.
+- Isolate browser preferences and desk records.
+- Settle edits and release closed contexts.
+- Guard setup changes and account navigation.
+- Retain client links across editorial stages.
+- Retain client links across news workflows.
+- Retain client links across content catalogs.
+- Retain client links across workspace tools.
+- Retain client links through material intake.
+- Await draft queues before client navigation.
+- Preserve the last explicit client visit.
+- Close private views across account changes.
+- Share preview stores inside their context.
+- Keep client menus above mobile navigation.
+- Preserve shell state during bootstrap.
+- Require choice after unavailable client links.
+- Resolve interrupted saves before leaving.
+- Preserve picker focus return lifecycle.
+- Settle drawer before opening native picker.
+- Coordinate menu and drawer focus handoff.
+- Preserve read-only profiles and replay parity.
+- Allow read-only client administration queries.
+- Keep support-view assets ephemeral.
+- Fit member-view status on narrow screens.
+- Apply workspace voice to carousel writing.
+- Bind exports to the active client screen.
+- Settle image uploads before changing clients.
+- Verify the deployed worker source revision.
+- Recover unavailable contexts without fallback.
+
+### Maintenance
+
+- Accept client processing and integration recovery.
+- Bound rehearsal resources and record M4 progress.
+- Submit a complete event brief in acceptance.
+- Rehearse complete client onboarding.
+- Preserve dirty configuration on refresh.
+- Retain setup across archive and restore.
+- Cover empty and unavailable destinations.
+- Exercise keyboard onboarding and search.
+- Await real invitation and input states.
+- Exclude local credential files from server traces.
+- Isolate legacy browser replay context.
+- Cover support-view timer cleanup.
+- Validate all workspace flows on the production build.
+- Exercise isolated multi-client editor load.
+- Verify upload recovery and exported bytes.
+- Support real browser uploads in rehearsal.
+- Accept workspaces without repeated provider usage.
+- Stabilize workspace staging acceptance.
+
 ## [1.0.0] - 2026-10-22
 
 ### Added

@@ -1,7 +1,413 @@
 {
-  "currentVersion": "1.0.0",
+  "currentVersion": "1.1.0",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.1.0",
+      "roadmapRelease": "R1",
+      "date": "2026-10-27",
+      "title": "R1 feature release",
+      "summary": "Automatic feature release with 99 validated changes: stabilize workspace staging acceptance; accept workspaces without repeated provider usage; record workspace delivery preflight.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Documentation",
+          "description": "Record phased plan and pilot baseline"
+        },
+        {
+          "type": "Added",
+          "description": "Add client lifecycle and preserve pilot identity"
+        },
+        {
+          "type": "Added",
+          "description": "Scope memberships and invitations by client"
+        },
+        {
+          "type": "Added",
+          "description": "Authorize explicit workspace request contexts"
+        },
+        {
+          "type": "Added",
+          "description": "Bind runtime requests and caches to account context"
+        },
+        {
+          "type": "Added",
+          "description": "Scope private assets and canonical client pages"
+        },
+        {
+          "type": "Added",
+          "description": "Dispatch worker tasks with durable client leases"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve job ownership through storage callbacks"
+        },
+        {
+          "type": "Added",
+          "description": "Manage independent Drive integration credentials"
+        },
+        {
+          "type": "Added",
+          "description": "Bound automatic processing and settle client archival"
+        },
+        {
+          "type": "Fixed",
+          "description": "Attribute worker diagnostics to the originating client"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Accept client processing and integration recovery"
+        },
+        {
+          "type": "Fixed",
+          "description": "Schedule immediate generations on database time"
+        },
+        {
+          "type": "Added",
+          "description": "Add neutral presets and preserve pilot prompts"
+        },
+        {
+          "type": "Added",
+          "description": "Store versioned client templates and private brands"
+        },
+        {
+          "type": "Added",
+          "description": "Bind editorial rendering to owned client catalogs"
+        },
+        {
+          "type": "Added",
+          "description": "Preview and audit selective configuration copies"
+        },
+        {
+          "type": "Added",
+          "description": "Capture client policy and export provenance"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Bound rehearsal resources and record M4 progress"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Submit a complete event brief in acceptance"
+        },
+        {
+          "type": "Fixed",
+          "description": "Refresh client catalogs after bootstrap"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain historical template metadata for editing"
+        },
+        {
+          "type": "Fixed",
+          "description": "Report concurrent template changes as conflicts"
+        },
+        {
+          "type": "Documentation",
+          "description": "Accept independent editorial configuration"
+        },
+        {
+          "type": "Added",
+          "description": "Expose scoped team administration"
+        },
+        {
+          "type": "Added",
+          "description": "Bound directories and filter client activity"
+        },
+        {
+          "type": "Added",
+          "description": "Add client setup and team screens"
+        },
+        {
+          "type": "Added",
+          "description": "Manage memberships and scoped reports"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Rehearse complete client onboarding"
+        },
+        {
+          "type": "Fixed",
+          "description": "Distinguish account identity from memberships"
+        },
+        {
+          "type": "Fixed",
+          "description": "Resolve team photos by account identity"
+        },
+        {
+          "type": "Fixed",
+          "description": "Refresh untouched processing forms"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Preserve dirty configuration on refresh"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep setup actions readable on phones"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Retain setup across archive and restore"
+        },
+        {
+          "type": "Fixed",
+          "description": "Recover pages after filtered access changes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain archived integration visibility"
+        },
+        {
+          "type": "Added",
+          "description": "Bind navigation to the actual account"
+        },
+        {
+          "type": "Added",
+          "description": "Replace client state at address boundaries"
+        },
+        {
+          "type": "Added",
+          "description": "Add authorized client selection"
+        },
+        {
+          "type": "Fixed",
+          "description": "Isolate browser preferences and desk records"
+        },
+        {
+          "type": "Fixed",
+          "description": "Settle edits and release closed contexts"
+        },
+        {
+          "type": "Fixed",
+          "description": "Guard setup changes and account navigation"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain client links across editorial stages"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain client links across news workflows"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain client links across content catalogs"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain client links across workspace tools"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain client links through material intake"
+        },
+        {
+          "type": "Fixed",
+          "description": "Await draft queues before client navigation"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve the last explicit client visit"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover empty and unavailable destinations"
+        },
+        {
+          "type": "Fixed",
+          "description": "Close private views across account changes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Share preview stores inside their context"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep client menus above mobile navigation"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve shell state during bootstrap"
+        },
+        {
+          "type": "Fixed",
+          "description": "Require choice after unavailable client links"
+        },
+        {
+          "type": "Fixed",
+          "description": "Resolve interrupted saves before leaving"
+        },
+        {
+          "type": "Added",
+          "description": "Add a searchable workspace picker"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Exercise keyboard onboarding and search"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Await real invitation and input states"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Exclude local credential files from server traces"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Isolate legacy browser replay context"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve picker focus return lifecycle"
+        },
+        {
+          "type": "Fixed",
+          "description": "Settle drawer before opening native picker"
+        },
+        {
+          "type": "Fixed",
+          "description": "Coordinate menu and drawer focus handoff"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record navigation phase acceptance"
+        },
+        {
+          "type": "Added",
+          "description": "Fence audited member viewing in the database"
+        },
+        {
+          "type": "Added",
+          "description": "Authorize read-only member views over HTTP"
+        },
+        {
+          "type": "Added",
+          "description": "Bind browser lifetimes to member views"
+        },
+        {
+          "type": "Added",
+          "description": "Project member previews as read-only"
+        },
+        {
+          "type": "Added",
+          "description": "Bind support viewing to the verified login"
+        },
+        {
+          "type": "Added",
+          "description": "Expose read-only member inspection"
+        },
+        {
+          "type": "Added",
+          "description": "Make inspected configuration read only"
+        },
+        {
+          "type": "Added",
+          "description": "Complete bounded user inspection reports"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve read-only profiles and replay parity"
+        },
+        {
+          "type": "Added",
+          "description": "Audit immutable editorial configuration changes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Allow read-only client administration queries"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep support-view assets ephemeral"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover support-view timer cleanup"
+        },
+        {
+          "type": "Fixed",
+          "description": "Fit member-view status on narrow screens"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record accepted administrative inspection"
+        },
+        {
+          "type": "Added",
+          "description": "Persist audited navigation activation"
+        },
+        {
+          "type": "Added",
+          "description": "Enforce activation without disrupting pilot access"
+        },
+        {
+          "type": "Added",
+          "description": "Expose staged activation in the console"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Validate all workspace flows on the production build"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Exercise isolated multi-client editor load"
+        },
+        {
+          "type": "Fixed",
+          "description": "Apply workspace voice to carousel writing"
+        },
+        {
+          "type": "Fixed",
+          "description": "Bind exports to the active client screen"
+        },
+        {
+          "type": "Fixed",
+          "description": "Settle image uploads before changing clients"
+        },
+        {
+          "type": "Fixed",
+          "description": "Verify the deployed worker source revision"
+        },
+        {
+          "type": "Fixed",
+          "description": "Recover unavailable contexts without fallback"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify upload recovery and exported bytes"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Support real browser uploads in rehearsal"
+        },
+        {
+          "type": "Documentation",
+          "description": "Describe client operations and recovery"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record cross-client acceptance evidence"
+        },
+        {
+          "type": "Documentation",
+          "description": "Accept the complete local regression"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record workspace delivery preflight"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Accept workspaces without repeated provider usage"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Stabilize workspace staging acceptance"
+        }
+      ]
+    },
     {
       "version": "1.0.0",
       "roadmapRelease": "R1",
