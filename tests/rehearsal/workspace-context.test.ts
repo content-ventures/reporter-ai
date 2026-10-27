@@ -175,7 +175,8 @@ test('missing, invalid and disabled contexts fail closed while legacy links reta
   try{
     process.env.REPORTER_WORKSPACES_MODE='admin';
     assert.equal((await api('w/second-context/workspace')).status,403);
-    assert.equal((await api('workspaces')).status,403);
+    const entry=await api<import('../../src/ports/workspace-management.ts').WorkspaceAccessPage>('workspaces');
+    assert.equal(entry.status,200);assert.equal(entry.body.enabled,false);assert.equal(entry.body.legacy?.href,'/');assert.deepEqual(entry.body.items,[]);
     assert.equal((await api('w/second-context/workspace',undefined,OPERATOR)).status,200);
     process.env.REPORTER_WORKSPACES_MODE='off';
     assert.equal((await api('w/second-context/workspace',undefined,OPERATOR)).status,403);

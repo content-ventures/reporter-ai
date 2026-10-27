@@ -70,7 +70,7 @@ export function createReporterTransport(slug?: string, options: { requireAccount
     lifetime.signal.throwIfAborted();
     if([401,403,404,409,410].includes(response.status)){
       const error=await response.clone().json().catch(()=>null) as {error?:string}|null;
-      if(error?.error&&['ACCOUNT_CONTEXT_CHANGED','AUTH_REQUIRED','ACCESS_PENDING','EMAIL_NOT_VERIFIED','WORKSPACE_NOT_FOUND','MEMBER_VIEW_ENDED','MEMBER_VIEW_UNAVAILABLE'].includes(error.error)){
+      if(error?.error&&['ACCOUNT_CONTEXT_CHANGED','AUTH_REQUIRED','ACCESS_PENDING','EMAIL_NOT_VERIFIED','WORKSPACE_NOT_FOUND','WORKSPACES_DISABLED','WORKSPACES_RESTRICTED','MEMBER_VIEW_ENDED','MEMBER_VIEW_UNAVAILABLE'].includes(error.error)){
         options.onInvalidated?.();lifetime.abort();
         if(typeof window!=='undefined'){
           const handled=typeof window.dispatchEvent==='function'&&!window.dispatchEvent(new CustomEvent(CONTEXT_RECOVERY_EVENT,{cancelable:true,detail:{code:error.error}}));

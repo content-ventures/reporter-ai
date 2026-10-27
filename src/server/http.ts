@@ -6,7 +6,8 @@ import { UUID, articleEditSchema, carouselEditSchema, createSchema, revisionSche
 import { assertLocalMode, localContext } from "./config";
 import { command, resolveReporterContext, resolveLocalWorkspaceContext, transaction } from "./database";
 import { workspaceSlug } from '../domain/workspace-address.ts';
-import { workspaceRollout } from './workspace-rollout.ts';
+import { effectiveWorkspaceRollout } from './workspace-activation.ts';
+import {workspaceRollout} from './workspace-rollout.ts';
 import { workspaceDirectory } from './workspace-access.ts';
 import { FlowError, logEvent, safeCode } from "./errors";
 import { mediaOf } from '../domain/reporter.ts';
@@ -59,27 +60,30 @@ function requestedAccount(request: Request, context: ReporterRequestContext): Re
 }
 
 async function guardReporterRequest(request: Request, identify: () => Promise<Identity> = reporterIdentity, slug?: string): Promise<ReporterRequestContext> {
-  const rollout = workspaceRollout();
-  if (slug && rollout === 'off') throw new FlowError('WORKSPACES_DISABLED',403);
+  if (slug && workspaceRollout() === 'off') throw new FlowError('WORKSPACES_DISABLED',403);
   if (reporterDeploymentMode() === 'local') {
     guardLocalRequest(request);
+    const rollout=await effectiveWorkspaceRollout();
+    if(slug&&rollout==='off')throw new FlowError('WORKSPACES_DISABLED',403);
     if (slug) {
       const context = await resolveLocalWorkspaceContext(slug);
       if (!context) throw new FlowError('WORKSPACE_NOT_FOUND',404);
-      return requestedAccount(request,context);
+      return requestedAccount(request,{...context,rollout});
     }
-    return requestedAccount(request,{ ...localContext,roles: [...localContext.roles] });
+    return requestedAccount(request,{ ...localContext,roles: [...localContext.roles],rollout });
   }
   const url = new URL(request.url);
   const origin = request.headers.get('origin');
   if (!['GET','HEAD'].includes(request.method) && (!origin || origin !== url.origin)) throw new FlowError('ORIGIN_DENIED',403);
   const identity = await identify();
   if (!identity) throw new FlowError('AUTH_REQUIRED',401);
+  const rollout=await effectiveWorkspaceRollout();
+  if(slug&&rollout==='off')throw new FlowError('WORKSPACES_DISABLED',403);
   const context = await resolveReporterContext(identity,slug);
   if(!context&&!slug&&identity.emailVerified&&rollout!=='off')throw new FlowError('WORKSPACE_SELECTION_REQUIRED',409);
   if (!context) throw new FlowError(!identity.emailVerified ? 'EMAIL_NOT_VERIFIED' : slug ? 'WORKSPACE_NOT_FOUND' : 'ACCESS_PENDING',slug && identity.emailVerified ? 404 : 403);
   if (slug && rollout === 'admin' && !context.administrative) throw new FlowError('WORKSPACES_RESTRICTED',403);
-  return requestedAccount(request,context);
+  return requestedAccount(request,{...context,rollout});
 }
 
 async function jsonBody(request: Request) {
@@ -238,9 +242,11 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     supportView=Boolean(viewId);
     let viewing:ReporterRequestContext|undefined;
     if(viewId){
-      if(workspaceRollout()==='off')throw new FlowError('WORKSPACES_DISABLED',403);
       if(!selectedWorkspace&&path[0]!=='avatars')throw new FlowError('MEMBER_VIEW_UNAVAILABLE',403);
-      viewing=await resolveMemberView(request,viewId,selectedWorkspace??null,{guardLocal:guardLocalRequest,identify:deps.identify,requestId});
+      const verified=await resolveMemberView(request,viewId,selectedWorkspace??null,{guardLocal:guardLocalRequest,identify:deps.identify,requestId});
+      const rollout=await effectiveWorkspaceRollout();
+      if(rollout==='off')throw new FlowError('WORKSPACES_DISABLED',403);
+      viewing={...verified,rollout};
       if(!['GET','HEAD'].includes(request.method))throw new FlowError('MEMBER_VIEW_READ_ONLY',403);
     }
     // The release probe is public: booleans and versions only, no session and no database.

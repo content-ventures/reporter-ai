@@ -19,6 +19,8 @@ function SelectionView(){
   const query=useWorkspaceDirectoryQuery(port,{search,limit:20,offset:(page-1)*20}),data=query.data,entry=params.get('entry')==='1';
   useEffect(()=>{
     if(!entry||search||page!==1||!data?.account)return;
+    if(data.legacy){window.location.replace(data.legacy.href);return;}
+    if(data.enabled===false)return;
     let live=true;
     async function openPreferred(){
       const account=data!.account!,saved=lastWorkspace(account.id);
@@ -32,13 +34,13 @@ function SelectionView(){
   },[data,entry,page,port,search]);
   const account=data?.account;
   const [collapsed,setCollapsed]=usePersistentFlag(SIDEBAR_COLLAPSED_KEY);
-  const empty=<EmptyState title={search?'Nenhum workspace encontrado':'Nenhum workspace liberado'} actions={search?<Button onClick={()=>{setSearch('');setPage(1);}}>Limpar busca</Button>:<ButtonLink href="/auth/pending">Consultar meu acesso</ButtonLink>}/>;
+  const empty=<EmptyState title={search?'Nenhum workspace encontrado':data?.enabled===false?'Navegação ainda não liberada':'Nenhum workspace liberado'} actions={data?.legacy?<ButtonLink href={data.legacy.href}>Entrar em {data.legacy.name}</ButtonLink>:search?<Button onClick={()=>{setSearch('');setPage(1);}}>Limpar busca</Button>:<ButtonLink href="/auth/pending">Consultar meu acesso</ButtonLink>}/>;
   return<AppShell layout="auto" collapsed={collapsed} sidebar={<Sidebar label="Menu de workspaces" product={<ReporterBrand endorsed/>} groups={[]}
     utilities={data?.administrative?[{id:'platform',label:'Plataforma',icon:Building2,href:'/platform'}]:[]}
     account={account?<SidebarAccount name={account.name} src={account.avatarUrl} detail="Sua conta" sections={[{items:[{label:'Sair',icon:LogOut,onSelect:()=>{router.push('/auth/sign-out');}}]}]}/>:<ButtonLink href="/auth/sign-out">Sair</ButtonLink>}/>}
     topbar={<TopBar breadcrumb={[{label:'Workspaces'}]} onToggleSidebar={()=>setCollapsed(!collapsed)}/> }>
     <PageHeader title="Escolher workspace" actions={<Button disabled={query.loading} onClick={query.retry}>Atualizar acessos</Button>}/>
-    <FilterBar filters={false} search={<SearchField label="Buscar workspace" value={search} placeholder="Cliente ou endereço" onValueChange={value=>{setSearch(value);setPage(1);}}/>}/>
+    {data?.enabled!==false?<FilterBar filters={false} search={<SearchField label="Buscar workspace" value={search} placeholder="Cliente ou endereço" onValueChange={value=>{setSearch(value);setPage(1);}}/>}/>:null}
     <PageStack>
       {params.get('unavailable')==='1'?<Alert tone="warning" title="Workspace indisponível">Escolha um workspace liberado para continuar.</Alert>:null}
       {query.error?<ErrorState heading="h2" title="Workspaces indisponíveis" description={query.error.message} onRetry={query.retry}/>:query.loading?<SkeletonText lines={4}/>:<List label="Workspaces disponíveis" empty={empty}>
