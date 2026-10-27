@@ -230,6 +230,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
   const kick = () => {if(!supportView)defer(() => kickWorker());};
   const heal = (stalled: boolean | undefined) => { if (stalled && shouldHealStall()) kick(); };
   try {
+    request.signal.throwIfAborted();
     let selectedWorkspace: string | undefined;
     if (path[0] === 'w') {
       selectedWorkspace = workspaceSlug(path[1] ?? '');
@@ -422,6 +423,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     });
     return context.view?memberViewResponse(response):response;
   } catch (error) {
+    if(request.signal.aborted)return reply({error:'REQUEST_ABORTED',message:'Requisição encerrada.',request_id:requestId},499);
     // An SQL permission refusal (42501) and an app role refusal are the same FORBIDDEN for the browser.
     const raw = error instanceof z.ZodError ? "INVALID_INPUT" : safeCode(error);
     const code = raw === "42501" ? "FORBIDDEN" : raw;
