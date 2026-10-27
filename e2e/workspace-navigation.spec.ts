@@ -22,12 +22,15 @@ for(const width of [1440,390]){
         if(width===390){const opener=target.getByRole('button',{name:'Abrir menu',exact:true});if(await opener.getAttribute('aria-expanded')!=='true')await opener.click();}
         await trigger.click();return target.getByRole('menu',{name:'Trocar workspace',exact:true});
       }
+      let capturedPicker=false;
       async function choice(item:{name:string},target:Page=page){
         const quick=await menu(target),option=quick.getByRole('menuitemradio',{name:new RegExp(item.name)});
         if(await option.count())return option;
         await quick.getByRole('menuitem',{name:'Ver todos os workspaces',exact:true}).click();
         const picker=target.getByRole('dialog',{name:'Trocar workspace',exact:true});await picker.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(item.name);
-        return picker.getByRole('button',{name:new RegExp(item.name)});
+        const result=picker.getByRole('button',{name:new RegExp(item.name)});
+        if(!capturedPicker){await expect(result).toBeVisible();await target.screenshot({path:`.reporter-local/multi-workspace/m6-picker-${width}.png`,animations:'disabled'});capturedPicker=true;}
+        return result;
       }
       await page.goto('/workspaces');await page.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(a.name);
       const entry=page.getByRole('link',{name:new RegExp(a.name)});await expect(entry).toHaveAttribute('href',`/w/${a.slug}/`);
