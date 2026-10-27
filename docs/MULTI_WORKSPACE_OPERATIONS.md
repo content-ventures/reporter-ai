@@ -1,6 +1,6 @@
 # Multi-workspace operations
 
-This runbook describes the application flows published in v1.1.0 on 2026-10-27. Production initially exposes the new navigation to platform administrators; the real-session pilot and client-team rollout remain separate gates in [the execution ledger](MULTI_WORKSPACE_EXECUTION.md).
+This runbook describes the application flows published in v1.1.0 and its v1.1.1 pilot-compatibility correction on 2026-10-27. Following the real-session pilot, production navigation is enabled for authorized client teams. The synthetic QA workspace is archived with its history retained. Validation scope and release evidence are recorded in [the execution ledger](MULTI_WORKSPACE_EXECUTION.md).
 
 ## Client identity and coverage
 
