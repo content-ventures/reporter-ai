@@ -4,6 +4,16 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-27
+
+### Documentation
+
+- Record production release and pending pilot.
+
+### Fixed
+
+- Accept preserved pilot IDs in configuration copies.
+
 ## [1.1.0] - 2026-10-27
 
 ### Documentation

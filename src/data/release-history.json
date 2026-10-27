@@ -1,7 +1,25 @@
 {
-  "currentVersion": "1.1.0",
+  "currentVersion": "1.1.1",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.1.1",
+      "roadmapRelease": "R1",
+      "date": "2026-10-27",
+      "title": "R1 maintenance release",
+      "summary": "Automatic maintenance release with 2 validated changes: accept preserved pilot ids in configuration copies; record production release and pending pilot.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Documentation",
+          "description": "Record production release and pending pilot"
+        },
+        {
+          "type": "Fixed",
+          "description": "Accept preserved pilot IDs in configuration copies"
+        }
+      ]
+    },
     {
       "version": "1.1.0",
       "roadmapRelease": "R1",
