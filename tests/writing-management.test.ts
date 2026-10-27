@@ -140,7 +140,7 @@ test('quote minimum and research survive save/reload and older clients while exp
     }
     return { rows: [] };
   } };
-  globals.reporterPools = { runtime: { connect: async () => client } as unknown as Pool };
+  globals.reporterPools = { runtime: { connect: async () => client,query:client.query.bind(client) } as unknown as Pool };
   try {
     for (const minimumQuotes of [2, 0, null]) {
       const current = await editorialPipeline();
@@ -184,6 +184,7 @@ test('run details use the queued snapshot, scoped runtime context and admin auth
   const { rows, checkpoint } = fixture(); let commits = 0, lastCommit: EditorialChanges | undefined;
   const scopes: Record<string, unknown>[] = [], contexts: unknown[][] = [];
   const client = { release() {}, async query(sql: string, args: unknown[] = []) {
+    if(sql.includes('reporter_workspace_activation'))return {rows:[{mode:'all'}]};
     if (sql.includes("set_config('app.tenant_id'")) contexts.push(args);
     if (sql.includes('reporter_ed_load')) {
       const scope = JSON.parse(String(args[0])); scopes.push(scope);
@@ -192,7 +193,7 @@ test('run details use the queued snapshot, scoped runtime context and admin auth
     if (sql.includes('reporter_ed_commit')) { commits++; lastCommit = JSON.parse(String(args[0])); return { rows: [{ seq: 2 }] }; }
     return { rows: [] };
   } };
-  globals.reporterPools = { runtime: { connect: async () => client } as unknown as Pool };
+  globals.reporterPools = { runtime: { connect: async () => client,query:client.query.bind(client) } as unknown as Pool };
   try {
     const detail = await editorialWritingRun('run');
     assert.equal(detail.pipeline.revision, 3); assert.equal(detail.pipeline.definition.writing!.systemPrompt, 'Immutable saved instruction.');
