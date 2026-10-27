@@ -17,6 +17,7 @@ for(const width of [1440,390]){
       const created=await request.post(`/api/reporter/w/${a.slug}/workspace`,{headers,data:{method:'createBlank',args:[{title:`Article ${suffix}`,brief:{size:'standard',sections:3}}],requestId:randomUUID()}});
       const production=(await created.json()).value;expect(production.productionId).toBeTruthy();
       async function menu(target:Page=page){
+        await expect(target.locator('[data-part="switcher"]')).toHaveAttribute('aria-label',/Trocar workspace$/);
         const trigger=target.getByRole('button',{name:/Trocar workspace$/});
         if(!await trigger.isVisible())await target.getByRole('button',{name:'Abrir menu',exact:true}).click();
         await trigger.click();return target.getByRole('menu',{name:'Trocar workspace',exact:true});
