@@ -137,3 +137,19 @@ test('archival keeps the operator integration projection readable while every mu
   const edit=await api(`platform/workspaces/${workspace.id}/integrations`,{ownerId:operatorId,enabled:false,revision:binding.body.revision});assert.equal(edit.status,409);
   const unchanged=await api<{enabled:boolean;revision:number}[]>(`platform/workspaces/${workspace.id}/integrations`);assert.equal(unchanged.body[0].enabled,true);assert.equal(unchanged.body[0].revision,1);
 });
+
+test('editorial configuration changes retain immutable before and after revisions under the actual actor',async()=>{
+  let pipeline=(await api<{active:{revision:number;hash:string;definition:Record<string,unknown>}}>('w/reporter-ai/pipeline')).body;
+  const save=async(marker:string)=>{
+    const result=await api<{ok:boolean;value:typeof pipeline}>('w/reporter-ai/workspace',{
+      method:'pipeline.save',args:[{...pipeline.active.definition,systemPrompt:`Audited instructions ${marker}`},pipeline.active.revision],requestId:crypto.randomUUID(),
+    });
+    assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.ok,true);pipeline=result.body.value;
+  };
+  await save('before');const previous=pipeline.active;
+  await save('after');
+  const [entry]=await owner("SELECT user_id,before_data,after_data,correlation_id FROM public.audit_log WHERE action='platform.configuration.changed' ORDER BY created_at DESC LIMIT 1");
+  assert.equal(entry.user_id,operatorId);assert.equal(entry.before_data.hash,previous.hash);assert.equal(entry.after_data.hash,pipeline.active.hash);
+  assert.equal(entry.before_data.revision,previous.revision);assert.equal(entry.after_data.revision,pipeline.active.revision);assert.ok(entry.correlation_id);
+  assert.equal(JSON.stringify(entry).includes('Audited instructions'),false,'the ledger references the immutable configuration rather than duplicating prompt content');
+});
