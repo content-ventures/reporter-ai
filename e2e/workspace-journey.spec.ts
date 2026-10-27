@@ -1,5 +1,5 @@
 import {fork,type ChildProcess} from 'node:child_process';
-import {createHash} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {createWriteStream} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 import {once} from 'node:events';
@@ -106,6 +106,54 @@ test.describe('real multi-client editorial delivery',()=>{
         await context.close();
       }
     }finally{await Promise.all(contexts.map(context=>context.close()));}
+  });
+  test('client administrators and accounts without membership see only their authorized entry',async({browser,baseURL})=>{
+    for(const actor of [journey.administrator,journey.pendingActor]){
+      const context=await actorContext(browser,baseURL!,actor);
+      try{
+        const page=await context.newPage();await page.goto('/workspaces');
+        await expect(page.getByRole('heading',{level:1,name:'Escolher workspace',exact:true})).toBeVisible();
+        await expect(page.getByRole('link',{name:'Plataforma',exact:true})).toHaveCount(0);
+        await expect(page.getByRole('link',{name:new RegExp(journey.clients[1].name)})).toHaveCount(0);
+        if(actor===journey.pendingActor){
+          await expect(page.getByText('Nenhum workspace liberado',{exact:true})).toBeVisible();
+          await expect(page.getByRole('link',{name:new RegExp(journey.clients[0].name)})).toHaveCount(0);
+        }else{
+          await expect(page.getByRole('link',{name:new RegExp(journey.clients[0].name)})).toBeVisible();
+          await page.goto(`/w/${journey.clients[0].slug}/admin/workspace`);
+          await expect(page.getByRole('textbox',{name:'Nome do veículo',exact:true})).toBeEnabled();
+        }
+        expect(await page.evaluate(async()=> (await fetch('/api/reporter/platform/workspaces')).status)).toBe(403);
+      }finally{await context.close();}
+    }
+  });
+  test('an in-progress private upload remains in its client and prevents an unconfirmed unload',async({browser,baseURL})=>{
+    const actor=journey.editors[0],a=journey.clients[0],b=journey.clients[1],context=await actorContext(browser,baseURL!,actor);
+    let release=()=>{};
+    try{
+      const created=await context.request.post(journey.base+`/api/reporter/w/${a.slug}/workspace`,{headers:{origin:baseURL!,'x-reporter-acceptance-session':actor.token,'x-reporter-account':actor.id},data:{method:'createBlank',args:[{title:'Pending upload boundary',brief:{size:'standard',sections:3}}],requestId:randomUUID()}});
+      expect(created.ok()).toBe(true);const productionId=(await created.json()).value.productionId;
+      const page=await context.newPage();await page.goto(`/w/${a.slug}/productions/${productionId}/article`);
+      await page.getByRole('button',{name:'Adicionar imagem de destaque',exact:true}).first().click();
+      const picker=page.getByRole('dialog',{name:'Imagem de destaque',exact:true});await expect(picker).toBeVisible();
+      const image=await sharp({create:{width:40,height:40,channels:3,background:a.color}}).png().toBuffer();
+      await picker.locator('input[type="file"]').setInputFiles({name:'held-upload.png',mimeType:'image/png',buffer:image});
+      await picker.getByRole('textbox',{name:'Crédito',exact:true}).fill('Authorized synthetic upload');
+      await picker.getByRole('switch',{name:'Uso autorizado',exact:true}).check();
+      const held=new Promise<void>(resolve=>{release=resolve;}),arrived=Promise.withResolvers<void>();
+      await page.route(`**/api/reporter/w/${a.slug}/visuals/assets/complete`,async route=>{
+        const response=await route.fetch({url:journey.base+new URL(route.request().url()).pathname,headers:{...route.request().headers(),'x-reporter-acceptance-session':actor.token}});
+        expect(response.ok()).toBe(true);arrived.resolve();await held;await route.fulfill({response});
+      });
+      await picker.getByRole('button',{name:'Definir como destaque',exact:true}).click();await arrived.promise;
+      const dialog=page.waitForEvent('dialog');const navigation=page.goto(`/w/${b.slug}/`).catch(()=>null);
+      const warning=await dialog;expect(warning.type()).toBe('beforeunload');await warning.dismiss();await navigation;
+      await expect(page).toHaveURL(new RegExp(`/w/${a.slug}/`));release();await expect(picker).toBeHidden();
+      await page.getByRole('button',{name:/Trocar workspace$/}).click();await page.getByRole('menuitemradio',{name:new RegExp(b.name)}).click();
+      await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
+      expect(await page.evaluate(async path=>JSON.stringify(await(await fetch(path)).json()),`/api/reporter/w/${b.slug}/workspace`)).not.toContain('held-upload.png');
+      await page.goto(`/w/${a.slug}/productions/${productionId}/article`);await expect(page.getByRole('toolbar',{name:'Imagem de destaque',exact:true})).toContainText('Authorized synthetic upload');
+    }finally{release();await context.close();}
   });
   test('the same signed-in account keeps client roles and colliding private image IDs separate',async({browser,baseURL})=>{
     const context=await actorContext(browser,baseURL!,journey.editors[0]);
