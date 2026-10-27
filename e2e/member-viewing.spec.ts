@@ -55,6 +55,19 @@ for(const width of [1440,390]){
       expect((await request.post(`/api/reporter/platform/workspaces/${workspace.id}/members/${person}`,{headers,data:{revision:member.revision,status:'suspended'}})).ok()).toBe(true);
       await invalidated;await expect(page).toHaveURL(/\/workspaces\?viewing=ended$/);
       await expect(page.getByRole('heading',{name:'Escolher workspace',exact:true})).toBeVisible();
+      const currentTeam=await(await request.get(`/api/reporter/platform/workspaces/${workspace.id}/team`,{headers})).json();
+      const suspended=currentTeam.items.find((entry:{personId:string})=>entry.personId===person);
+      expect((await request.post(`/api/reporter/platform/workspaces/${workspace.id}/members/${person}`,{headers,data:{revision:suspended.revision,status:'active'}})).ok()).toBe(true);
+      const timed=await(await request.post('/api/reporter/platform/member-views',{headers,data:{workspaceId:workspace.id,personId:person}})).json();
+      // The database's five-minute expiry is covered in PostgreSQL; shorten only the browser timer input here.
+      await page.route(`**/api/reporter/w/${workspace.slug}/workspace*`,async route=>{
+        const response=await route.fetch(),snapshot=await response.json();
+        if(snapshot.navigation?.view?.id===timed.id)snapshot.navigation.view.remainingMs=500;
+        await route.fulfill({response,json:snapshot});
+      });
+      await page.goto(`/w/${workspace.slug}/?view=${timed.id}`);
+      await expect(page).toHaveURL(/\/workspaces\?viewing=ended$/);
+      await expect.poll(async()=> (await request.get(`/api/reporter/w/${workspace.slug}/workspace`,{headers:{...headers,'x-reporter-view':timed.id}})).status()).toBe(410);
       expect(errors).toEqual([]);
     });
   });
