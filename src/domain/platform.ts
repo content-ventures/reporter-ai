@@ -181,7 +181,8 @@ export type PlatformAction =
   | 'account.suspended'
   | 'account.restored'
   | 'member_view.started'
-  | 'member_view.ended';
+  | 'member_view.ended'
+  | 'configuration.changed';
 
 export const PLATFORM_ACTION_LABELS: Readonly<Record<PlatformAction, string>> = {
   'invite.created': 'Acesso criado',
@@ -200,6 +201,7 @@ export const PLATFORM_ACTION_LABELS: Readonly<Record<PlatformAction, string>> = 
   'account.restored': 'Conta reativada',
   'member_view.started': 'Visualização de usuário iniciada',
   'member_view.ended': 'Visualização de usuário encerrada',
+  'configuration.changed': 'Configuração editorial alterada',
 };
 
 export type PlatformLogEntry = {

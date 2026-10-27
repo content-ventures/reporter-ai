@@ -35,4 +35,27 @@ END $$;
 ALTER FUNCTION public.reporter_platform_people_labels(uuid[]) OWNER TO CURRENT_USER;
 REVOKE ALL ON FUNCTION public.reporter_platform_people_labels(uuid[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reporter_platform_people_labels(uuid[]) TO reporter_runtime;
+-- Keep immutable revision references and policy version changes without copying prompts into the ledger.
+CREATE OR REPLACE FUNCTION core.reporter_configuration_audit() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+DECLARE previous jsonb; next jsonb;
+BEGIN
+  IF OLD.doc->'pipelineRef' IS NOT DISTINCT FROM NEW.doc->'pipelineRef' OR NEW.doc->'pipelineRef' IS NULL THEN RETURN NULL; END IF;
+  SELECT OLD.doc->'pipelineRef'||jsonb_build_object('mapVersion',doc->'definition'->'editorial'->'map'->'version',
+    'guideVersion',doc->'definition'->'editorial'->'guide'->'version') INTO previous
+    FROM public.reporter_ed_pipelines WHERE portal_id=NEW.portal_id AND hash=OLD.doc->>'pipelineHash';
+  SELECT NEW.doc->'pipelineRef'||jsonb_build_object('mapVersion',doc->'definition'->'editorial'->'map'->'version',
+    'guideVersion',doc->'definition'->'editorial'->'guide'->'version') INTO next
+    FROM public.reporter_ed_pipelines WHERE portal_id=NEW.portal_id AND hash=NEW.doc->>'pipelineHash';
+  INSERT INTO public.audit_log(portal_id,user_id,action,entity_type,entity_id,before_data,after_data,source,request_id,correlation_id)
+    VALUES(NEW.portal_id,core.context_user_id(),'platform.configuration.changed','workspace',NEW.portal_id,
+      coalesce(previous,OLD.doc->'pipelineRef'),coalesce(next,NEW.doc->'pipelineRef'),'platform',
+      nullif(current_setting('app.request_id',true),'')::uuid,nullif(current_setting('app.correlation_id',true),'')::uuid);
+  RETURN NULL;
+END $$;
+ALTER FUNCTION core.reporter_configuration_audit() OWNER TO CURRENT_USER;
+REVOKE ALL ON FUNCTION core.reporter_configuration_audit() FROM PUBLIC;
+DROP TRIGGER IF EXISTS reporter_configuration_audit ON public.reporter_ed_workspace;
+CREATE CONSTRAINT TRIGGER reporter_configuration_audit AFTER UPDATE ON public.reporter_ed_workspace
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION core.reporter_configuration_audit();
 COMMIT;
