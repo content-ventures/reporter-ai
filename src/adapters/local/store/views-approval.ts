@@ -104,8 +104,8 @@ export function pieceApproval(ctx: ReadContext, record: ProductionRecord, piece:
     viewer: {
       canEdit,
       canSend: can(viewer, 'piece.send'),
-      canDecide: hasAnyRole(viewer, gate.roles) && (REQUESTER_MAY_DECIDE || decidesOwnRequest(viewer, pending) || !isRequester),
-      canWithdraw: pending !== undefined && (isRequester || hasAnyRole(viewer, ['admin'])),
+      canDecide: !viewer?.readOnly&&hasAnyRole(viewer, gate.roles) && (REQUESTER_MAY_DECIDE || decidesOwnRequest(viewer, pending) || !isRequester),
+      canWithdraw: !viewer?.readOnly&&pending !== undefined && (isRequester || hasAnyRole(viewer, ['admin'])),
       isRequester,
       isAssignee: pending?.assigneeId !== undefined && pending.assigneeId === viewer?.personId,
     },

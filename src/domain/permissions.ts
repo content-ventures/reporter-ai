@@ -77,7 +77,7 @@ export function roleList(roles: readonly Role[]): string {
   return names.length > 1 ? `${names.slice(0, -1).join(', ')} ou ${names[names.length - 1]}` : (names[0] ?? 'quem tem o papel');
 }
 
-type Holder = Pick<Member, 'roles'> | readonly Role[] | undefined;
+type Holder = Pick<Member, 'roles'|'readOnly'> | readonly Role[] | undefined;
 
 function rolesOf(holder: Holder): readonly Role[] {
   if (!holder) return [];
@@ -86,6 +86,7 @@ function rolesOf(holder: Holder): readonly Role[] {
 
 /** Fails closed: no member, no capability. */
 export function can(holder: Holder, capability: Capability): boolean {
+  if(holder&&!Array.isArray(holder)&&(holder as Pick<Member,'readOnly'>).readOnly&&capability!=='audit.read')return false;
   const roles = rolesOf(holder);
   return roles.some((role) => CAPABILITY_ROLES[capability].includes(role));
 }

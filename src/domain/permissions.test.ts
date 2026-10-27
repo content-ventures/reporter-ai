@@ -35,6 +35,13 @@ describe('permissions', () => {
     assert.equal(can(['approver', 'editor'], 'production.create'), true);
   });
 
+  it('keeps read-only member roles visible without granting edit, approval, profile or export authority',()=>{
+    const member={roles:['admin'] as Role[],readOnly:true as const};
+    for(const capability of Object.keys(MATRIX) as Capability[])assert.equal(can(member,capability),capability==='audit.read',capability);
+    assert.deepEqual(member.roles,['admin']);
+    assert.equal(can({roles:['editor'],readOnly:true},'audit.read'),false);
+  });
+
   it('names who can in one sentence', () => {
     assert.equal(whoCan('production.create'), 'Só editor ou admin cria produções.');
     assert.equal(whoCan('pipeline.edit'), 'Só admin edita os prompts.');

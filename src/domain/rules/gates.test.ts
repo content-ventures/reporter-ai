@@ -42,6 +42,13 @@ const runningRun = (pieceId: string): GenerationRun => ({
 });
 
 describe('canDecide', () => {
+  test('a read-only support view cannot decide even when the member normally approves that version',()=>{
+    const {kit,record,v1,ref}=articleInReview();requestReview(record,kit,v1);
+    assert.equal(canDecide({...record,member:MEMBERS[PEDRO]},{gate:ARTICLE_GATE,subject:ref,decision:'approved'}).ok,true);
+    const result=canDecide({...record,member:{...MEMBERS[PEDRO],readOnly:true}},{gate:ARTICLE_GATE,subject:ref,decision:'approved'});
+    assert.equal(!result.ok&&result.refusal.code,'forbidden_role');
+    assert.equal(record.decisions.length,0);
+  });
   test('never lets the sender decide on their own pending send, unless an admin who kept it (R3)', () => {
     const { kit, record, v1, ref } = articleInReview();
     requestReview(record, kit, v1);

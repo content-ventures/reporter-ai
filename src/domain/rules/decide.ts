@@ -40,6 +40,7 @@ export const REQUESTER_MAY_DECIDE = false;
  * loopback operator of the local pilot.
  */
 export function decidesOwnSends(member: Member | undefined): boolean {
+  if(member?.readOnly)return false;
   return member?.localOperator === true || hasAnyRole(member, ['admin']);
 }
 
@@ -48,6 +49,7 @@ export function decidesOwnSends(member: Member | undefined): boolean {
  * nobody in particular); the loopback operator always. An admin who named someone else waits.
  */
 export function decidesOwnRequest(member: Member | undefined, request: { assigneeId?: string } | undefined): boolean {
+  if(member?.readOnly)return false;
   if (member?.localOperator === true) return true;
   return decidesOwnSends(member) && (request?.assigneeId === undefined || request.assigneeId === member?.personId);
 }
@@ -75,6 +77,7 @@ export function forbiddenRoleMessage(roles: readonly Role[]): string {
 }
 
 export function canDecide(state: DecideState, request: DecisionRequest): Result<true, DecideRefusal> {
+  if(state.member?.readOnly)return refuse('forbidden_role','Esta visualização é somente leitura.');
   if (!hasAnyRole(state.member, request.gate.roles)) {
     return refuse('forbidden_role', forbiddenRoleMessage(request.gate.roles));
   }
