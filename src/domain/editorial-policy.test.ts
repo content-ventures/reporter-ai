@@ -52,7 +52,7 @@ test('metadata edits, optional empty fields and omitted policy cannot erase or r
   assert.equal(current.guide.voice, 'Precise and factual');
 });
 
-test('article policy is deterministic, preserves literal braces and stays out of unrelated tasks', () => {
+test('writing policy is deterministic, preserves literal braces and stays out of unrelated tasks', () => {
   const policy = defaultEditorialPolicy();
   policy.guide.voice = 'Preserve the label {{source}}.';
   policy.guide.examples = [{ id: 'example', title: 'Reference', url: 'https://example.org/article', note: 'Attribute company claims.' }];
@@ -61,7 +61,8 @@ test('article policy is deterministic, preserves literal braces and stays out of
   assert.ok(system.includes('seus links não foram consultados'));
   assert.ok(system.includes('nunca à alteração de citações'));
   assert.equal(system, editorialSystemPrompt('Task contract', structuredClone(policy), 'article'));
-  for (const step of ['material', 'images', 'carousel']) assert.equal(editorialSystemPrompt('Task contract', policy, step), 'Task contract');
+  assert.equal(editorialSystemPrompt('Task contract', policy, 'carousel'), system);
+  for (const step of ['material', 'images']) assert.equal(editorialSystemPrompt('Task contract', policy, step), 'Task contract');
   assert.equal(editorialSystemPrompt('Task contract', undefined, 'article'), 'Task contract');
 });
 

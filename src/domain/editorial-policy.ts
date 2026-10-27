@@ -40,11 +40,11 @@ export function reviseEditorialPolicy(current: EditorialPolicy | undefined, subm
   };
 }
 
-const ARTICLE_STEPS = new Set(['facts', 'outline', 'quotes', 'intro', 'section', 'article', 'assist']);
+const WRITING_STEPS = new Set(['facts', 'outline', 'quotes', 'intro', 'section', 'article', 'assist', 'carousel']);
 
 /** Policy is serialized once as data: braces in user settings are never template substitutions. */
 export function editorialSystemPrompt(systemPrompt: string, policy: EditorialPolicy | undefined, step: string): string {
-  if (!policy || !ARTICLE_STEPS.has(step)) return systemPrompt;
+  if (!policy || !WRITING_STEPS.has(step)) return systemPrompt;
   return `${systemPrompt}\n\nPOLÍTICA EDITORIAL DO VEÍCULO (mapa v${policy.map.version}; guia v${policy.guide.version})
 Use o mapa para público, recorte e prioridades; use o guia para voz, estrutura e apresentação. Estas preferências substituem orientações de estilo conflitantes nos prompts de tarefa.
 Preserve os contratos de saída, o formato de dados, os limites técnicos e as evidências exigidas pela tarefa. Nenhuma preferência autoriza inventar fatos, fontes, números ou citações, alterar falas literais ou ocultar incertezas. Regras de termos se aplicam à prosa, nunca à alteração de citações.
