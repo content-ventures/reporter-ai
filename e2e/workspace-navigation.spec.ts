@@ -19,7 +19,7 @@ for(const width of [1440,390]){
       async function menu(target:Page=page){
         await expect(target.locator('[data-part="switcher"]')).toHaveAttribute('aria-label',/Trocar workspace$/);
         const trigger=target.getByRole('button',{name:/Trocar workspace$/});
-        if(!await trigger.isVisible())await target.getByRole('button',{name:'Abrir menu',exact:true}).click();
+        if(width===390){const opener=target.getByRole('button',{name:'Abrir menu',exact:true});if(await opener.getAttribute('aria-expanded')!=='true')await opener.click();}
         await trigger.click();return target.getByRole('menu',{name:'Trocar workspace',exact:true});
       }
       await page.goto('/workspaces');await page.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(a.name);
@@ -30,6 +30,7 @@ for(const width of [1440,390]){
       const link=page.getByRole('link',{name:'Produções',exact:true});await expect(link).toHaveAttribute('href',`/w/${a.slug}/productions`);
       const copied=await link.getAttribute('href');
       const other=width===1440?(await Promise.all([context.waitForEvent('page'),link.click({modifiers:['ControlOrMeta']})]))[0]:await context.newPage();
+      const dialogs:string[]=[];other.on('dialog',dialog=>{dialogs.push(dialog.type());void dialog.dismiss();});
       if(width===390)await other.goto(copied!);
       await expect(other).toHaveURL(new RegExp(`/w/${a.slug}/productions$`));
       await page.goto(`/w/${a.slug}/productions/${production.productionId}/article`);
@@ -58,8 +59,17 @@ for(const width of [1440,390]){
       await page.goto('/');await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/?$`));
       await menu();await page.screenshot({path:`.reporter-local/multi-workspace/m6-selector-${width}.png`,fullPage:true,animations:'disabled'});await page.keyboard.press('Escape');
       await expectNoHorizontalOverflow(page);
+      const otherErrors=watchErrors(other,[/503.*workspace/]);
+      await other.goto(`/w/${a.slug}/productions/${production.productionId}/article`);
+      await other.route(`**/api/reporter/w/${a.slug}/workspace`,route=>route.request().method()==='POST'?route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'SAVE_UNCONFIRMED',message:'Synthetic interrupted save'})}):route.continue());
+      const failedEditor=other.getByRole('textbox',{name:'Texto do artigo',exact:true});await expect(failedEditor).toBeVisible();await failedEditor.click();await failedEditor.press('ControlOrMeta+End');await failedEditor.pressSequentially(` Unconfirmed text ${suffix}`);
+      await expect(other.getByText('Não foi possível salvar',{exact:true}).first()).toBeVisible();
+      await (await menu(other)).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();
+      const unconfirmed=other.getByRole('dialog',{name:'Sair sem confirmar o salvamento?',exact:true});await expect(unconfirmed).toBeVisible();await unconfirmed.getByRole('button',{name:'Continuar editando',exact:true}).click();await expect(failedEditor).toContainText(`Unconfirmed text ${suffix}`);
+      await (await menu(other)).getByRole('menuitemradio',{name:new RegExp(b.name)}).click();await unconfirmed.getByRole('button',{name:'Sair mesmo assim',exact:true}).click();
+      await expect(other).toHaveURL(new RegExp(`/w/${b.slug}/?$`));await other.unroute(`**/api/reporter/w/${a.slug}/workspace`);await other.goto(`/w/${a.slug}/productions`);expect(otherErrors).toEqual([]);
       const account=page.getByRole('button',{name:/Menu da conta$/});
-      if(!await account.isVisible())await page.getByRole('button',{name:'Abrir menu',exact:true}).click();
+      if(width===390){const opener=page.getByRole('button',{name:'Abrir menu',exact:true});if(await opener.getAttribute('aria-expanded')!=='true')await opener.click();}
       await account.click();await page.getByRole('menuitem',{name:'Administrar workspace',exact:true}).click();
       await expect(page).toHaveURL(new RegExp(`/w/${b.slug}/admin/workspace$`));
       const publication=page.getByRole('textbox',{name:'Nome do veículo',exact:true});await publication.fill(`Unsaved brand ${suffix}`);
@@ -76,10 +86,13 @@ for(const width of [1440,390]){
       await expect(page.getByRole('link',{name:new RegExp(b.name)})).toHaveAttribute('href',`/platform/workspaces/${b.id}`);
       await page.goto(`/w/missing-${suffix}/productions`);await expect(page.getByRole('heading',{name:'Escolher workspace',exact:true})).toBeVisible();
       expect(paths).not.toContain('/api/reporter/workspace');expect(paths.some(path=>path.startsWith('/api/reporter/w/reporter-ai/'))).toBe(false);
+      await other.goto(`/w/${a.slug}/productions/${production.productionId}/article`);
+      const otherEditor=other.getByRole('textbox',{name:'Texto do artigo',exact:true});await expect(otherEditor).toBeVisible();
+      await otherEditor.click();await otherEditor.press('ControlOrMeta+End');await otherEditor.pressSequentially('Pending when account changes');
       await page.evaluate(()=>localStorage.setItem('reporter:account-revision',crypto.randomUUID()));
       await expect(other.locator('[data-part="switcher"]')).toHaveAttribute('aria-label',new RegExp(a.name));
       await expect(other).toHaveURL(new RegExp(`/w/${a.slug}/?$`));
-      await other.close();expect(errors).toEqual([]);
+      expect(dialogs).toEqual([]);expect(otherErrors).toEqual([]);await other.close();expect(errors).toEqual([]);
     });
   });
 }

@@ -28,3 +28,11 @@ export function workspaceHref(slug:string|undefined,href:string):string{
 export function workspaceAccessHref(item:{workspace:{id:string;slug:string};enterable?:boolean;administrative:boolean}):string{
   return item.enterable===false?(item.administrative?`/platform/workspaces/${encodeURIComponent(item.workspace.id)}`:'/workspaces'):workspacePagePath(item.workspace.slug,'/');
 }
+
+export const CONTEXT_RECOVERY_EVENT='reporter:context-invalidated';
+/** Recovery never silently chooses another client's last destination. */
+export function contextRecoveryHref(code:string):string{
+  return code==='AUTH_REQUIRED'?'/auth/sign-in':code==='ACCESS_PENDING'||code==='EMAIL_NOT_VERIFIED'?'/auth/pending':code==='WORKSPACE_NOT_FOUND'?'/workspaces?unavailable=1':'/workspaces';
+}
+
+export const NAVIGATION_DISCARD_EVENT='reporter:discard-navigation';

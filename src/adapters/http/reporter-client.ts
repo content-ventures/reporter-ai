@@ -10,7 +10,7 @@ import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES, MEDIA_EXTENSIONS } from '../../domain
 import type { Transcript } from '../../domain/reporter.ts';
 import { detectTranscriptFormat } from '../../domain/text/transcript-parse.ts';
 import { pipelineModelLabel } from '../../domain/pipeline.ts';
-import { workspaceApiPath } from '../../domain/workspace-address.ts';
+import { CONTEXT_RECOVERY_EVENT,contextRecoveryHref,workspaceApiPath } from '../../domain/workspace-address.ts';
 
 export class ReporterHttpError extends Error {
   readonly code: string;
@@ -64,7 +64,10 @@ export function createReporterTransport(slug?: string, options: { requireAccount
       const error=await response.clone().json().catch(()=>null) as {error?:string}|null;
       if(error?.error&&['ACCOUNT_CONTEXT_CHANGED','AUTH_REQUIRED','ACCESS_PENDING','EMAIL_NOT_VERIFIED','WORKSPACE_NOT_FOUND'].includes(error.error)){
         options.onInvalidated?.();lifetime.abort();
-        if(typeof window!=='undefined')window.location.replace(error.error==='AUTH_REQUIRED'?'/auth/sign-in':error.error==='ACCESS_PENDING'||error.error==='EMAIL_NOT_VERIFIED'?'/auth/pending':error.error==='WORKSPACE_NOT_FOUND'?'/workspaces?unavailable=1':'/workspaces');
+        if(typeof window!=='undefined'){
+          const handled=typeof window.dispatchEvent==='function'&&!window.dispatchEvent(new CustomEvent(CONTEXT_RECOVERY_EVENT,{cancelable:true,detail:{code:error.error}}));
+          if(!handled)window.location.replace(contextRecoveryHref(error.error));
+        }
         throw new ReporterHttpError('O acesso a este contexto mudou. Abra um workspace liberado.',error.error,response.status);
       }
     }

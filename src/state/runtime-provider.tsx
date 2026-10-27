@@ -1,14 +1,14 @@
 'use client';
 
-import { createContext, Suspense, useEffect,useMemo, useState,useSyncExternalStore } from 'react';
+import { createContext, Suspense, useCallback,useEffect,useMemo,useRef, useState,useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { interV3 } from '@content-ventures/design-system/v3';
+import { ConfirmDialog,interV3 } from '@content-ventures/design-system/v3';
 import { createConnectedRuntime } from '../runtime/create-connected-runtime.ts';
 import { createRuntime } from '../runtime/create-runtime.ts';
 import { createRuntimeHolder } from './runtime-holder.ts';
 import type { RuntimeHolder } from './runtime-holder.ts';
-import { workspaceAddress } from '../domain/workspace-address.ts';
+import { NAVIGATION_DISCARD_EVENT,workspaceAddress } from '../domain/workspace-address.ts';
 import {WorkspaceAddressContext} from '../ui/workspace-navigation.ts';
 
 /**
@@ -75,15 +75,20 @@ function RuntimeBoundary({children,workspaceSlug}:{children:ReactNode;workspaceS
     };
   }, [holder]);
 
+  const [discard,setDiscard]=useState(false),active=useRef(false),waiting=useRef<((allowed:boolean)=>void)[]>([]);
+  const confirmDiscard=useCallback(()=>active.current?new Promise<boolean>(resolve=>{waiting.current.push(resolve);setDiscard(true);}):Promise.resolve(false),[]);
+  const answerDiscard=useCallback((allowed:boolean)=>{if(allowed)window.dispatchEvent(new Event(NAVIGATION_DISCARD_EVENT));const pending=waiting.current;waiting.current=[];setDiscard(false);for(const resolve of pending)resolve(allowed);},[]);
+  useEffect(()=>{active.current=true;return()=>{active.current=false;for(const resolve of waiting.current)resolve(false);waiting.current=[];};},[]);
   const [preparations]=useState(()=>new Set<()=>Promise<boolean>>());
-  const address=useMemo(()=>({slug:workspaceSlug,registerPreparation:(prepare:()=>Promise<boolean>)=>{preparations.add(prepare);return()=>{preparations.delete(prepare);};},prepare:async()=>{
+  const address=useMemo(()=>({slug:workspaceSlug,confirmDiscard,registerPreparation:(prepare:()=>Promise<boolean>)=>{preparations.add(prepare);return()=>{preparations.delete(prepare);};},prepare:async()=>{
     window.dispatchEvent(new Event('reporter:prepare-navigation'));
     if(!(await Promise.all([...preparations].map(prepare=>prepare()))).every(Boolean))return false;
     holder.flush();const state=holder.get();return state.status==='ready'?(await state.runtime.settle?.()??true):false;
-  }}),[workspaceSlug,holder,preparations]);
+  }}),[workspaceSlug,holder,preparations,confirmDiscard]);
   return (
     <WorkspaceAddressContext value={address}><RuntimeContext value={holder}>
       {children}
+      <ConfirmDialog open={discard} onClose={()=>answerDiscard(false)} title="Sair sem confirmar o salvamento?" description="As últimas alterações podem não ter sido salvas. Copie o que deseja manter antes de sair." confirmLabel="Sair mesmo assim" cancelLabel="Continuar editando" tone="danger" onConfirm={()=>answerDiscard(true)}/>
       <Suspense fallback={null}>
         <FlushOnRouteChange holder={holder} />
       </Suspense>

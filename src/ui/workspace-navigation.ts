@@ -1,11 +1,10 @@
 'use client';
 import {createContext,use,useCallback,useEffect,useMemo,useRef} from 'react';
 import {usePathname,useRouter} from 'next/navigation';
-import {toast} from '@content-ventures/design-system/v3';
 import {workspaceAddress,workspaceHref} from '../domain/workspace-address.ts';
 
 type Href={ (href:string):string;(href:undefined):undefined;(href:string|undefined):string|undefined;(href:string|null|undefined):string|null|undefined };
-export const WorkspaceAddressContext=createContext<{slug:string|undefined;prepare?:()=>Promise<boolean>;registerPreparation?:(prepare:()=>Promise<boolean>)=>()=>void}|null>(null);
+export const WorkspaceAddressContext=createContext<{slug:string|undefined;prepare?:()=>Promise<boolean>;confirmDiscard?:()=>Promise<boolean>;registerPreparation?:(prepare:()=>Promise<boolean>)=>()=>void}|null>(null);
 /** Real hrefs, including modifier-clicks and copied addresses, retain the current client. */
 export function useWorkspaceHref():Href{
   const bound=use(WorkspaceAddressContext),pathname=usePathname()??'';
@@ -20,7 +19,7 @@ export function useNavigationPreparation(prepare:()=>Promise<boolean>){
 }
 export function useWorkspaceDeparture(){
   const bound=use(WorkspaceAddressContext);
-  return useCallback(async()=>{const allowed=await bound?.prepare?.()??true;if(!allowed)toast('Salve as alterações antes de sair.',{tone:'error'});return allowed;},[bound]);
+  return useCallback(async()=>{try{if(await bound?.prepare?.()??true)return true;}catch{/* Keep the draft visible until the person decides. */}return await bound?.confirmDiscard?.()??false;},[bound]);
 }
 /** Programmatic product navigation follows the same address contract as visible links. */
 export function useWorkspaceRouter():ReturnType<typeof useRouter>{
