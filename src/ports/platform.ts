@@ -18,6 +18,7 @@ export type PlatformDirectory = {
   workspaces: PlatformWorkspace[];
   total?:number;offset?:number;workspaceTotal?:number;counts?:Record<AccessStatus|'all',number>;
 };
+export type PlatformPersonLabel=Pick<PlatformOperator,'id'|'name'|'avatarUrl'>;
 export type PlatformFilter={workspaceId?:string;personId?:string};
 export type DirectorySearch=PlatformFilter&{search?:string;status?:AccessStatus;limit?:number;offset?:number};
 
@@ -34,6 +35,7 @@ export interface PlatformConsole {
   operator(): Promise<PlatformResult<PlatformOperator>>;
   /** Bounded global directory, with independent memberships in every returned person. */
   directory(options?:DirectorySearch): Promise<PlatformResult<PlatformDirectory>>;
+  peopleLabels?(ids:readonly PersonId[]):Promise<PlatformResult<PlatformPersonLabel[]>>;
   usage(period: UsagePeriod,filter?:PlatformFilter): Promise<PlatformResult<UsageReport>>;
   log(limit: number,options?:PlatformFilter&{offset?:number}): Promise<PlatformResult<PlatformLogPage>>;
   accountStatus?(personId:PersonId,suspended:boolean):Promise<PlatformResult<PlatformPerson>>;

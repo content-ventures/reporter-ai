@@ -84,6 +84,10 @@ test('an audited support view retains its actual operator and only the selected 
   assert.deepEqual(resolved.context.roles,['editor'],'the viewed member also has a global platform role, which must not be combined');
   const [audit]=await owner("SELECT user_id,after_data FROM public.audit_log WHERE entity_id=$1 AND action='platform.member_view.started'",[view.id]);
   assert.equal(audit.user_id,operator);assert.equal(audit.after_data.personId,reader);
+  const ledger=await api(`platform/log?workspaceId=${PILOT}&personId=${reader}`);
+  assert.equal(ledger.status,200);
+  const record=ledger.value.items.find((entry:{id:string})=>entry.id===audit.id)||ledger.value.items.find((entry:{action:string})=>entry.action==='member_view.started');
+  assert.equal(record.actor.id,operator);assert.equal(record.target.id,reader);assert.equal(record.workspace.id,PILOT);
 });
 
 test('another account and another client cannot reuse the view, and a wrong address does not revoke its real tab',async()=>{

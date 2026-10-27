@@ -53,6 +53,7 @@ services:
       - ./database/migrations/042-platform-directory.sql:/docker-entrypoint-initdb.d/99-i-platform-directory.sql:ro
       - ./database/migrations/043-workspace-navigation.sql:/docker-entrypoint-initdb.d/99-j-workspace-navigation.sql:ro
       - ./database/migrations/044-member-viewing.sql:/docker-entrypoint-initdb.d/99-k-member-viewing.sql:ro
+      - ./database/migrations/045-console-inspection.sql:/docker-entrypoint-initdb.d/99-l-console-inspection.sql:ro
     networks:
       - reporter
     healthcheck:

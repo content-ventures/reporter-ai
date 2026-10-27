@@ -3,11 +3,11 @@
 import { Suspense,useState } from 'react';
 import { useRouter,useSearchParams } from 'next/navigation';
 import type {PlatformFilter} from '@/ports/platform';
-import { DataTable, EmptyState, ErrorState, formatBytes, Grid, MetaList, PageHeader, PageStack, Section, Segmented, type Column } from '@content-ventures/design-system/v3';
+import { DataTable, EmptyState, ErrorState, formatBytes, Grid, MetaList, PageHeader, PageStack, Section, Segmented,Pagination, type Column } from '@content-ventures/design-system/v3';
 import { ChartNoAxesColumn } from '@content-ventures/design-system/v3/icons';
 import { DEFAULT_USAGE_PERIOD, type ModelUsage, type PersonUsage, type UsagePeriod } from '@/domain';
 import { pipelineModelLabel } from '@/domain/pipeline';
-import { usePlatformDirectory, usePlatformUsage } from '@/state';
+import { usePlatformPeopleLabels, usePlatformUsage } from '@/state';
 import { formatCount } from '@/ui/format';
 import { formatCompact, formatUsd, PEOPLE_HREF, PERIOD_OPTIONS } from './format';
 import { PersonName } from './person-name';
@@ -27,9 +27,11 @@ function UsageView(){
   const [filter,setFilter]=useState<PlatformFilter>({workspaceId:params.get('workspace')??undefined,personId:params.get('person')??undefined});
   const [period, setPeriod] = useState<UsagePeriod>(DEFAULT_USAGE_PERIOD);
   const usage = usePlatformUsage(period,filter);
-  const directory = usePlatformDirectory({workspaceId:filter.workspaceId,personId:filter.personId});
   const report = usage.data;
-  const people = new Map((directory.data?.people ?? []).map((person) => [person.id, person]));
+  const [page,setPage]=useState(1);
+  const rows=(report?.people??[]).slice((page-1)*20,page*20);
+  const labels=usePlatformPeopleLabels(rows.map(entry=>entry.personId));
+  const people = new Map((labels.data ?? []).map((person) => [person.id, person]));
   const loading = usage.status === 'loading';
 
   if (usage.status === 'error' && !report) {
@@ -72,10 +74,10 @@ function UsageView(){
     <>
       <PageHeader
         title="Uso"
-        actions={<Segmented label="Período" size="sm" options={PERIOD_OPTIONS} value={`${period}`} onChange={(value) => setPeriod(Number(value) as UsagePeriod)} />}
+        actions={<Segmented label="Período" size="sm" options={PERIOD_OPTIONS} value={`${period}`} onChange={(value) => {setPeriod(Number(value) as UsagePeriod);setPage(1);}} />}
       />
       <PageStack>
-        <PlatformFilters value={filter} onChange={setFilter}/>
+        <PlatformFilters value={filter} onChange={next=>{setFilter(next);setPage(1);}}/>
         <UsageStrip report={report} period={period} loading={loading} />
         <Grid columns="1:1" collapseBelow={1024}>
           <ActivityChart report={report} period={period} />
@@ -98,7 +100,7 @@ function UsageView(){
         <Section title="Por pessoa" titleAs="h2" variant="panel">
           <DataTable
             label="Uso por pessoa"
-            rows={report?.people ?? []}
+            rows={rows}
             rowKey={(entry) => entry.personId}
             rowLabel={(entry) => people.get(entry.personId)?.name ?? `Consultar pessoa ${entry.personId.slice(0,8)}`}
             columns={personColumns}
@@ -109,6 +111,7 @@ function UsageView(){
             loading={loading}
             loadingRows={5}
             empty={<EmptyState size="inline" title="Ninguém usou no período" />}
+            footer={report&&report.people.length>20?<Pagination page={page} pageSize={20} total={report.people.length} noun="pessoas" onPageChange={setPage}/>:undefined}
           />
         </Section>
         {report ? (

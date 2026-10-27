@@ -3,7 +3,7 @@ import type { InviteLinkRefusal, InvitePreview, IssuedInvite, PasswordRefusal, P
 import type { UsageReport } from '../../domain/platform-usage.ts';
 import { ok, refuse } from '../../domain/result.ts';
 import type { Result } from '../../domain/result.ts';
-import type { InviteAccepted, InviteDesk, PlatformConsole, PlatformDirectory, PlatformLogPage, PlatformOperator, Restored } from '../../ports/platform.ts';
+import type { InviteAccepted, InviteDesk, PlatformConsole, PlatformDirectory, PlatformLogPage, PlatformOperator, PlatformPersonLabel, Restored } from '../../ports/platform.ts';
 import {createReporterTransport} from './reporter-client.ts';
 import {createHttpWorkspaceAdministration} from './workspace-management.ts';
 import {createHttpMemberViewing} from './member-view.ts';
@@ -68,6 +68,7 @@ export function createHttpPlatform() {
     mode: 'connected',
     operator: () => platformCall<PlatformOperator>('operator'),
     directory: options => platformCall<PlatformDirectory>(`directory?${query(options)}`),
+    peopleLabels:ids=>platformCall<PlatformPersonLabel[]>(`people-labels?ids=${encodeURIComponent(ids.join(','))}`),
     usage: (period,filter) => platformCall<UsageReport>(`usage?${query({period,...filter})}`),
     log: (limit,options) => platformCall<PlatformLogPage>(`log?${query({limit,...options})}`),
     accountStatus:(id,suspended)=>write<PlatformPerson>(`${person(id)}/account-status`,{suspended}),

@@ -28,7 +28,7 @@ export { useRun, useRunListener, useRunOutcomes } from './use-runs.ts';
 export { useAudit, useAuditControls, useAuditEvent } from './use-audit.ts';
 export type { AuditControls } from './use-audit.ts';
 export { useCan } from './use-can.ts';
-export { PlatformProvider, useInviteDesk, usePlatform, usePlatformDirectory, usePlatformLog, usePlatformOperator, usePlatformUsage,usePlatformAdministration,usePlatformMemberViewing } from './platform.tsx';
+export { PlatformProvider, useInviteDesk, usePlatform, usePlatformDirectory,usePlatformPeopleLabels, usePlatformLog, usePlatformOperator, usePlatformUsage,usePlatformAdministration,usePlatformMemberViewing } from './platform.tsx';
 export {useWorkspaceAdministration,useAdministrationQuery} from './workspace-administration.ts';
 export type { PlatformQuery } from './platform.tsx';
 export { useVote } from './use-vote.ts';
