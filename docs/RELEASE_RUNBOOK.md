@@ -7,8 +7,8 @@ failure:
 1. **Verify**: the complete quality gate (unit, backend, PostgreSQL, cloud rehearsal, smoke).
 2. **Staging worker**: migrations, worker, upload CORS, readiness, triggers and a drain receipt on
    the staging project.
-3. **Acceptance**: on staging, a 20-second synthetic upload is transcribed by Groq, and one article
-   is generated and then approved by a second user.
+3. **Acceptance**: the default workspace scope uses prepared content, independent clients, separate
+   approvals and actual downloads without AI calls. Explicit `core`/`full` scopes use paid providers.
 4. **Production worker**: the same deployment on production. This stage runs only from `main` and
    is skipped with `validation_only`.
 5. **Release**: version, changelog and history in one `chore(release): vX.Y.Z` commit and tag,

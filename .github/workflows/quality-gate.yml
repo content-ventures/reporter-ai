@@ -140,6 +140,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - uses: ./.github/actions/use-ubuntu-archive
+
       - name: Install FFmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
 
@@ -189,6 +191,8 @@ jobs:
 
       - name: Extract the production build
         run: tar -xzf next-build.tar.gz
+
+      - uses: ./.github/actions/use-ubuntu-archive
 
       # Browsers change only with the Playwright version (pinned in the lockfile).
       - name: Cache Playwright browsers
