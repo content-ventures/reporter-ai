@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS core.reporter_member_views (
   person_id uuid NOT NULL,
   membership_revision bigint NOT NULL CHECK(membership_revision>0),
   roles jsonb NOT NULL CHECK(jsonb_typeof(roles)='array' AND jsonb_array_length(roles) BETWEEN 1 AND 4),
+  session_hash text CHECK(session_hash IS NULL OR session_hash ~ '^[a-f0-9]{64}$'),
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   expires_at timestamptz NOT NULL DEFAULT clock_timestamp()+interval '5 minutes',
   ended_at timestamptz,
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS core.reporter_member_views (
   CHECK(expires_at>created_at AND expires_at<=created_at+interval '5 minutes 1 second'),
   CHECK((ended_at IS NULL)=(end_reason IS NULL))
 );
+ALTER TABLE core.reporter_member_views ADD COLUMN IF NOT EXISTS session_hash text CHECK(session_hash IS NULL OR session_hash ~ '^[a-f0-9]{64}$');
 CREATE INDEX IF NOT EXISTS reporter_member_views_open ON core.reporter_member_views(operator_id,expires_at) WHERE ended_at IS NULL;
 ALTER TABLE core.reporter_member_views ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON core.reporter_member_views FROM PUBLIC,reporter_runtime,reporter_worker,reporter_executor;
@@ -43,6 +45,7 @@ BEGIN
   IF v.ended_at IS NOT NULL THEN RETURN v.end_reason; END IF;
   IF v.expires_at<=clock_timestamp() THEN RETURN 'expired'; END IF;
   IF NOT core.reporter_is_operator(p_operator) THEN RETURN 'operator_revoked'; END IF;
+  IF v.session_hash IS NULL OR v.session_hash IS DISTINCT FROM nullif(current_setting('app.auth_session',true),'') THEN RETURN 'account_changed'; END IF;
   SELECT * INTO p FROM public.portals WHERE id=v.portal_id;
   SELECT * INTO w FROM public.reporter_workspaces WHERE portal_id=v.portal_id;
   IF p.id IS NULL OR w.portal_id IS NULL OR p.deleted_at IS NOT NULL OR p.status NOT IN ('active','draft') OR w.lifecycle NOT IN ('active','draft')
@@ -88,8 +91,9 @@ DECLARE actor uuid:=core.platform_operator(); member public.portal_members; view
 BEGIN
   SELECT * INTO member FROM public.portal_members WHERE portal_id=p_portal AND user_id=p_person FOR SHARE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Member unavailable' USING ERRCODE='42501'; END IF;
-  INSERT INTO core.reporter_member_views(operator_id,portal_id,membership_id,person_id,membership_revision,roles)
-    VALUES(actor,p_portal,member.id,p_person,member.revision,core.platform_roles(p_person,p_portal)) RETURNING id INTO view_id;
+  IF coalesce(current_setting('app.auth_session',true),'') !~ '^[a-f0-9]{64}$' THEN RAISE EXCEPTION 'Login session required' USING ERRCODE='42501'; END IF;
+  INSERT INTO core.reporter_member_views(operator_id,portal_id,membership_id,person_id,membership_revision,roles,session_hash)
+    VALUES(actor,p_portal,member.id,p_person,member.revision,core.platform_roles(p_person,p_portal),current_setting('app.auth_session',true)) RETURNING id INTO view_id;
   reason:=core.reporter_member_view_reason(view_id,actor);
   IF reason IS NOT NULL THEN RAISE EXCEPTION 'Member unavailable' USING ERRCODE='42501'; END IF;
   -- Snapshot reads need no lazy database writes once the support view becomes read-only.
@@ -117,7 +121,8 @@ BEGIN
     RETURN jsonb_build_object('error','MEMBER_VIEW_ENDED','accountId',actor);
   END IF;
   SELECT jsonb_build_object('tenant',p.tenant_id,'portal',p.id,'actor',u.id,'workspaceName',p.name,'workspaceSlug',p.slug,
-    'name',u.name,'email',u.email,'image',u.image,'roles',v.roles,'addressed',true,'administrative',false,'workspaceStatus',w.lifecycle)
+    'name',u.name,'email',u.email,'image',u.image,'roles',v.roles,'addressed',true,'administrative',false,'workspaceStatus',w.lifecycle,
+    'viewSession',current_setting('app.auth_session',true))
     INTO context FROM public.portals p JOIN public.reporter_workspaces w ON w.portal_id=p.id JOIN core.users u ON u.id=v.person_id WHERE p.id=v.portal_id;
   RETURN jsonb_build_object('context',context,'view',core.reporter_member_view_value(p_view),'accountId',actor);
 END $$;

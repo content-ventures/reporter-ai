@@ -21,6 +21,8 @@ export type ReporterRequestContext = {
   workspaceStatus?: WorkspaceStatus;
   /** The actor above is the effective reader. This immutable context retains the actual operator. */
   view?:MemberView;
+  /** Server-only digest of the verified login session; never returned in navigation metadata. */
+  viewSession?:string;
 };
 
 const contexts = new AsyncLocalStorage<ReporterRequestContext>();

@@ -99,7 +99,7 @@ export async function transaction<T>(role: "runtime" | "worker", operation: (cli
       await client.query("SELECT 1 AS applied FROM (SELECT set_config('statement_timeout','10s',true),set_config('app.access_mode',$5,true),set_config('app.module_key','reporter_ai',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true),set_config('app.correlation_id',$4,true)) settings",
         [context.tenant, context.portal, context.actor, requestId, context.administrative ? 'platform_workspace' : 'user']);
       if(context.view){
-        await client.query("SELECT 1 AS applied FROM (SELECT set_config('app.member_view',$1,true),set_config('app.real_user_id',$2,true)) settings",[context.view.id,context.view.operator.id]);
+        await client.query("SELECT 1 AS applied FROM (SELECT set_config('app.member_view',$1,true),set_config('app.real_user_id',$2,true),set_config('app.auth_session',$3,true)) settings",[context.view.id,context.view.operator.id,context.viewSession??'']);
         const valid=(await client.query('SELECT public.reporter_member_view_valid($1,$2,$3,$4) AS valid',
           [context.view.id,context.view.operator.id,context.portal,context.actor])).rows[0]?.valid;
         if(valid!==true)throw new FlowError('MEMBER_VIEW_ENDED',410);

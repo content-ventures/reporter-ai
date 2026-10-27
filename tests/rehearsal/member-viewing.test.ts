@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {after,before,test} from 'node:test';
 import pg,{type Pool} from 'pg';
 import {startRehearsalDatabase} from '../support/rehearsal-db.ts';
@@ -10,18 +10,19 @@ const PILOT='10000000-0000-0000-0000-000000000101';
 const OPERATOR={email:'support-operator@rehearsal.test',subject:'support-operator'};
 const READER={email:'support-reader@rehearsal.test',subject:'support-reader'};
 const OTHER={email:'support-other@rehearsal.test',subject:'support-other'};
+const SESSION_HASH=createHash('sha256').update(`login:${OPERATOR.subject}`).digest('hex');
 let db:Awaited<ReturnType<typeof startRehearsalDatabase>>,operator:string,reader:string,other:string;
 let transaction:typeof import('../../src/server/database.ts').transaction;
 let runWithReporterContext:typeof import('../../src/server/request-context.ts').runWithReporterContext;
 let handle:typeof import('../../src/server/http.ts').handleReporter;
 const APP='http://127.0.0.1:3996';
-async function api(path:string,options:{body?:unknown;view?:string;account?:string;identity?:typeof OPERATOR}={}){
+async function api(path:string,options:{body?:unknown;view?:string;account?:string;identity?:typeof OPERATOR;session?:string}={}){
   const identity=options.identity??OPERATOR,headers=new Headers();
   if(options.view)headers.set('x-reporter-view',options.view);
   if(options.account)headers.set('x-reporter-account',options.account);
   if(options.body!==undefined){headers.set('origin',APP);headers.set('content-type','application/json');}
   const response=await handle(new Request(APP+'/api/reporter/'+path,{headers,...(options.body===undefined?{}:{method:'POST',body:JSON.stringify(options.body)})}),path.split('?')[0].split('/'),
-    {identify:async()=>({...identity,name:identity.email,image:undefined,emailVerified:true}),defer:()=>{throw new Error('Support viewing must not schedule processing');}});
+    {identify:async()=>({...identity,name:identity.email,image:undefined,emailVerified:true,sessionId:options.session??`login:${identity.subject}`}),defer:()=>{throw new Error('Support viewing must not schedule processing');}});
   return{status:response.status,headers:response.headers,value:await response.json()};
 }
 async function owner(sql:string,values:unknown[]=[]){
@@ -33,6 +34,7 @@ async function runtime<T>(actor:string,operation:(client:pg.Client)=>Promise<T>)
   try{
     await client.query('BEGIN');
     await client.query("SELECT set_config('app.access_mode','platform',true),set_config('app.user_id',$1,true),set_config('app.request_id',$2,true),set_config('app.correlation_id',$2,true)",[actor,randomUUID()]);
+    await client.query("SELECT set_config('app.auth_session',$1,true)",[SESSION_HASH]);
     const answer=await operation(client);await client.query('COMMIT');return answer;
   }catch(error){await client.query('ROLLBACK');throw error;}finally{await client.end();}
 }
@@ -148,11 +150,22 @@ test('the HTTP read projection retains the real account and marks its effective 
   assert.equal(snapshot.value.state.sessionPersonId,reader);
   assert.equal(snapshot.value.navigation.accountId,operator);assert.equal(snapshot.value.navigation.view.id,view.id);
   assert.equal(snapshot.value.navigation.view.operator.id,operator);assert.equal(snapshot.value.navigation.view.readOnly,true);
+  assert.equal(snapshot.value.state.members.find((member:{personId:string})=>member.personId===reader).readOnly,true);
+  assert.equal(JSON.stringify(snapshot.value).includes(SESSION_HASH),false,'the login digest is server-only');
   assert.match(snapshot.headers.get('cache-control')??'',/no-store/);
   const idle=await api(`w/reporter-ai/workspace?since=${encodeURIComponent(snapshot.value.syncToken)}`,{view:view.id,account:operator});
   assert.equal(idle.status,200);assert.equal(idle.value.unchanged,true);assert.ok(JSON.stringify(idle.value).length<1000);
   assert.equal((await api('w/reporter-ai/pipeline',{view:view.id,account:reader})).status,409);
   assert.equal((await api('w/reporter-ai/pipeline',{view:'invalid-view',account:operator})).status,403);
+});
+
+test('a new login cannot resume a previous viewing context even when the actual account is unchanged',async()=>{
+  const view=await start();
+  const changed=await api('w/reporter-ai/workspace',{view:view.id,account:operator,session:'new-login-for-the-same-account'});
+  assert.equal(changed.status,410);assert.equal(changed.value.error,'MEMBER_VIEW_ENDED');
+  assert.equal((await resolve(view.id)).error,'MEMBER_VIEW_ENDED');
+  const [row]=await owner('SELECT end_reason FROM core.reporter_member_views WHERE id=$1',[view.id]);
+  assert.equal(row.end_reason,'account_changed');
 });
 
 test('all preview mutations and global or legacy escapes fail before validation, uploads or provider scheduling',async()=>{
