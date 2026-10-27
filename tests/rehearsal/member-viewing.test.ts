@@ -240,3 +240,17 @@ test('private avatar bytes are checked as the member, bypass no warm administrat
     const requests=storage.requests.length;assert.equal((await image(stored[0]+`?_view=${view.id}`)).status,410);assert.equal(storage.requests.length,requests);
   }finally{if(previous===undefined)delete process.env.REPORTER_FUNCTION_RUNTIME;else process.env.REPORTER_FUNCTION_RUNTIME=previous;}
 });
+
+
+test('a viewed workspace administrator can inspect client setup and team without management locks or write authority',async()=>{
+  const page=await api('platform/directory?personId='+other),member=page.value.people[0].memberships.find((entry:{workspace:{id:string}})=>entry.workspace.id===PILOT);
+  const changed=await api(`platform/workspaces/${PILOT}/members/${other}`,{body:{revision:member.revision,roles:['admin']}});
+  assert.equal(changed.status,200);
+  const created=await api('platform/member-views',{body:{workspaceId:PILOT,personId:other}});assert.equal(created.status,201);
+  const options={view:created.value.id,account:operator};
+  assert.equal((await api('w/reporter-ai/team/workspace',options)).status,200);
+  assert.equal((await api('w/reporter-ai/team',options)).status,200);
+  assert.equal((await api('w/reporter-ai/templates',options)).status,200);
+  assert.equal((await api('w/reporter-ai/team/invites',{...options,body:{name:'Denied',email:'denied@example.test',role:'editor'}})).status,403);
+  await api(`member-views/${created.value.id}/end`,{body:{reason:'exit'}});
+});
