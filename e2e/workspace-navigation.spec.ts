@@ -29,7 +29,12 @@ for(const width of [1440,390]){
         await quick.getByRole('menuitem',{name:'Ver todos os workspaces',exact:true}).click();
         const picker=target.getByRole('dialog',{name:'Trocar workspace',exact:true});await picker.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(item.name);
         const result=picker.getByRole('button',{name:new RegExp(item.name)});
-        if(!capturedPicker){await expect(result).toBeVisible();await target.screenshot({path:`.reporter-local/multi-workspace/m6-picker-${width}.png`,animations:'disabled'});capturedPicker=true;}
+        if(!capturedPicker){
+          await expect(result).toBeVisible();await target.screenshot({path:`.reporter-local/multi-workspace/m6-picker-${width}.png`,animations:'disabled'});capturedPicker=true;
+          await target.keyboard.press('Escape');await expect(picker).toHaveCount(0);
+          await expect(target.getByRole('button',{name:width===390?'Abrir menu':/Trocar workspace$/})).toBeFocused();
+          return choice(item,target);
+        }
         return result;
       }
       await page.goto('/workspaces');await page.getByRole('searchbox',{name:'Buscar workspace',exact:true}).fill(a.name);
