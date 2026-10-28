@@ -4,6 +4,7 @@ import { transaction } from './database.ts';
 import { runEditorialJob } from './editorial-worker.ts';
 import { runArticleImageJob } from './article-image-worker.ts';
 import { runFactCheckJob } from './fact-check-worker.ts';
+import { runMemoryJob } from './editorial-memory-worker.ts';
 import { logEvent, safeCode } from './errors.ts';
 import { runNewsSearchJob } from './news-search-worker.ts';
 import { runNewsSource } from './news-reader.ts';
@@ -48,7 +49,7 @@ export const drainServices: DrainServices = {
   run: (owner, signal, deadline) => withWorkspaceWork('any',owner,signal,async scoped => {
     const ran = await runRemoteIngest(owner, scoped)
       || await runReporterJob(owner, scoped, deadline) || await runEditorialJob(owner, scoped) || await runArticleImageJob(owner, scoped)
-      || await runFactCheckJob(owner, scoped, deadline) || await runNewsSource(owner, scoped)
+      || await runFactCheckJob(owner, scoped, deadline) || await runMemoryJob(owner, scoped, deadline) || await runNewsSource(owner, scoped)
       || await runNewsSearchJob(owner, scoped, deadline) || await runNewsTranslationJob(owner, scoped, deadline);
     if (ran && !scoped.aborted) await compactEditorialRows().catch(error => logEvent('worker','compaction_failed',{ error_code: safeCode(error) }));
     return ran || await transaction('worker',async client=>(await client.query('SELECT public.reporter_worker_archive_maintenance() AS value')).rows[0]?.value===true);

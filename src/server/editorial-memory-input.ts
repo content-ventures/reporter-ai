@@ -11,6 +11,7 @@ export const memoryResourceBindingSchema = z.discriminatedUnion('resource', [mem
   z.object({ resource: z.literal('materials'), limit: z.number().int().min(1).max(100) }).strict(),
   z.object({ resource: z.literal('blocks'), jobId: id, limit: z.number().int().min(1).max(100) }).strict()]);
 export const memoryCancelSchema = z.object({ baseRevision: z.number().int().positive() }).strict();
+export const memoryAuthorizationSchema = z.object({ baseRevision: z.number().int().positive(), authorized: z.boolean(), reason: z.string().trim().min(1).max(2000) }).strict();
 export const memoryRetrySchema = z.object({}).strict();
 export function parseMemoryHistoryQuery(params: URLSearchParams) {
   const values: Record<string, unknown> = {};

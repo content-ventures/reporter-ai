@@ -4,12 +4,13 @@ import type { MemoryBlock, MemoryMaterial, MemoryPage } from '../domain/editoria
 import { createMemoryMaterial, memoryBlocks } from '../domain/editorial-memory-import.ts';
 import type { EditorialMemory, MemoryImportInput, MemoryJob, MemoryHistoryQuery } from '../ports/editorial-memory.ts';
 import { decodeMemoryCursor, encodeMemoryCursor } from './editorial-memory-cursor.ts';
-import { memoryCancelSchema, memoryHistoryQuerySchema, memoryIdSchema, memoryImportInputSchema, memoryRetrySchema } from './editorial-memory-input.ts';
+import { memoryAuthorizationSchema, memoryCancelSchema, memoryHistoryQuerySchema, memoryIdSchema, memoryImportInputSchema, memoryRetrySchema } from './editorial-memory-input.ts';
 import { memoryCommand, memoryGet, memoryRead } from './editorial-memory-store.ts';
 import { memoryReadState } from './editorial-memory-detail.ts';
 import { memoryCursorKey } from './editorial-memory-query.ts';
 import { currentReporterContext } from './request-context.ts';
 import { FlowError } from './errors.ts';
+import { generationModel } from './text-generation.ts';
 
 export async function importEditorialMemory(value: MemoryImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }> {
   const input = memoryImportInputSchema.parse(value), context = currentReporterContext();
@@ -19,7 +20,7 @@ export async function importEditorialMemory(value: MemoryImportInput, requestId:
     const now = new Date().toISOString(), created = createMemoryMaterial(input, context.portal, { actorId: context.actor, now, newId: prefix => `${prefix}-${randomUUID()}` });
     const id = `memory-job-${randomUUID()}`, blocks = memoryBlocks(created.material, id, input.text);
     const job: MemoryJob = { id, workspaceId: context.portal, revision: 1, kind: 'extract', materialId: created.material.id, evidenceId: null,
-      sourceVersion: created.material.source.sourceVersion, sourceHash: created.material.source.hash, extractorVersion: 'memory-extract-v1', generation: 1, status: 'queued',
+      sourceVersion: created.material.source.sourceVersion, sourceHash: created.material.source.hash, extractorVersion: 'memory-extract-v1', model: generationModel(), generation: 1, status: 'queued',
       totalBlocks: blocks.length, completedBlocks: 0, failedBlocks: 0, evidenceCount: 0, error: null, createdBy: context.actor, createdAt: now, updatedAt: now };
     return (await client.query('SELECT public.reporter_memory_import($1::jsonb,$2::jsonb,$3::jsonb,$4::jsonb) AS value',
       [JSON.stringify(created.source), JSON.stringify(created.material), JSON.stringify(job), JSON.stringify(blocks)])).rows[0].value;
@@ -61,4 +62,11 @@ export async function actMemoryJob(id: string, action: 'retry' | 'cancel', input
   return memoryCommand(`memory.job.${action}`, { id, input }, requestId, 'library.edit', async client => {
     if (!await memoryGet(client, 'job', id)) throw new FlowError('NOT_FOUND', 404);
   }, async client => (await client.query('SELECT public.reporter_memory_job_action($1,$2,$3) AS value', [id, action, input.baseRevision ?? null])).rows[0].value);
+}
+
+export async function authorizeMemoryMaterial(id: string, value: { baseRevision: number; authorized: boolean; reason: string }, requestId: string): Promise<MemoryMaterial> {
+  memoryIdSchema.parse(id); const input = memoryAuthorizationSchema.parse(value);
+  return memoryCommand('memory.material.authorization', { id, input }, requestId, 'library.edit', async client => {
+    if (!await memoryGet(client, 'material', id)) throw new FlowError('NOT_FOUND', 404);
+  }, async client => (await client.query('SELECT public.reporter_memory_material_rights($1,$2,$3,$4) AS value', [id, input.baseRevision, input.authorized, input.reason])).rows[0].value);
 }

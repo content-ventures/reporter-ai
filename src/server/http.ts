@@ -270,7 +270,11 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     const context = viewing??await guardReporterRequest(request, deps.identify, selectedWorkspace);
     const response=await runWithReporterContext(context, async () => {
     if(path[0]==='team')return handleWorkspaceTeam(request,path.slice(1),{readJson:jsonBody});
-    if(path[0]==='memory')return handleEditorialMemory(request,path.slice(1),jsonBody);
+    if(path[0]==='memory'){
+      const response=await handleEditorialMemory(request,path.slice(1),jsonBody);
+      if(request.method==='POST'&&(path[1]==='materials'&&path.length===2||path[1]==='jobs'&&path[3]==='retry'))kick();
+      return response;
+    }
     if(path[0]==='templates')return handleWorkspaceTemplates(request,path.slice(1),jsonBody);
     if(request.method==='GET'&&path.join('/')==='processing') return reply(await transaction('runtime',async client=>(await client.query('SELECT public.reporter_processing_view($1) AS value',[context.portal])).rows[0].value));
     if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);

@@ -1,5 +1,5 @@
 import 'server-only';
-import { memoryArticleBatchSchema, memoryCancelSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
+import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
@@ -9,7 +9,7 @@ import { lookupMemoryLegacy, readMemoryArticle, reconcileMemoryArticles, resolve
 import { FlowError } from './errors.ts';
 import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
 import { readMemorySelection, selectEditorialMemory } from './editorial-memory-selection.ts';
-import { actMemoryJob, importEditorialMemory, readMemoryBlocks, readMemoryJob, readMemoryMaterial, readMemoryMaterials } from './editorial-memory-materials.ts';
+import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemoryBlocks, readMemoryJob, readMemoryMaterial, readMemoryMaterials } from './editorial-memory-materials.ts';
 
 /** The module stays unavailable until its controlled acceptance enables the server ceiling. */
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
@@ -27,6 +27,7 @@ export async function handleEditorialMemory(request: Request, path: string[], re
     if (request.method === 'POST') {
       if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
       const key = request.headers.get('idempotency-key') ?? '';
+      if (path[0] === 'materials' && path.length === 3 && path[2] === 'authorization') return Response.json(await authorizeMemoryMaterial(path[1], memoryAuthorizationSchema.parse(await readJson(request)), key), noStore);
       if (path[0] === 'materials' && path.length === 1) return Response.json(await importEditorialMemory(memoryImportInputSchema.parse(await readJson(request)), key), noStore);
       if (path[0] === 'jobs' && path.length === 3 && (path[2] === 'retry' || path[2] === 'cancel')) {
         const input = (path[2] === 'cancel' ? memoryCancelSchema : memoryRetrySchema).parse(await readJson(request));
