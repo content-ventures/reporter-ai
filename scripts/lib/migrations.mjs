@@ -51,6 +51,7 @@ export const LOCAL_INIT = Object.freeze([
   ['database/migrations/052-editorial-memory-articles.sql', '99-s-editorial-memory-articles.sql'],
   ['database/migrations/053-editorial-memory-sync.sql', '99-t-editorial-memory-sync.sql'],
   ['database/migrations/054-editorial-memory-duplicates.sql', '99-u-editorial-memory-duplicates.sql'],
+  ['database/migrations/055-editorial-memory-selections.sql', '99-v-editorial-memory-selections.sql'],
 ].map(entry => Object.freeze(entry)));
 
 // Replayed onto an existing local database by `pnpm db:flow`; every file is idempotent.
@@ -98,6 +99,7 @@ export const LOCAL_FLOW = Object.freeze([
   'database/migrations/052-editorial-memory-articles.sql',
   'database/migrations/053-editorial-memory-sync.sql',
   'database/migrations/054-editorial-memory-duplicates.sql',
+  'database/migrations/055-editorial-memory-selections.sql',
 ]);
 
 // Neon. The first three files create the schema once; everything after them is replayable.
@@ -158,6 +160,7 @@ export const CLOUD = Object.freeze([
   'database/migrations/052-editorial-memory-articles.sql',
   'database/migrations/053-editorial-memory-sync.sql',
   'database/migrations/054-editorial-memory-duplicates.sql',
+  'database/migrations/055-editorial-memory-selections.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 

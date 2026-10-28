@@ -126,6 +126,14 @@ A corrected or conflicting projection remains active with `deduplication.state=p
 
 Library queries default to `status=active`; `withdrawn`, `superseded` and `all` are explicit URL selectors. Status filtering uses the same historical snapshot, totals, ordering and cursor binding as every other filter. A retired variant remains accessible by its ID/history and its associated article snapshots. Legacy reconciliation cannot resurrect it or erase a pending duplicate choice.
 
+### Ordered selections
+
+POST `/memory/selections` persists 1–100 ordered, distinct evidence references with `baseRevision` and an optional existing selection ID. Every item must be currently usable. The server captures its applicable decision, check and policy revisions; stale evidence, pending duplicates, missing attribution/rights, hidden checks/reviews and unreviewed revisions are refused atomically. A failed item leaves no partial selection or events. GET `/memory/selections/:id` restores the saved snapshots while rechecking the target production and every material's current visibility. Original snapshots remain readable after later corrections when their scope is still accessible; reading them does not release stale evidence for use.
+
+Creation and updates stamp the real creator, creation time, updating actor and update time in PostgreSQL, with immutable selection history and audit. The target production binding is immutable, including an initially null binding. A pre-production selection may later be referenced as an input to production creation; its original events are not rebound. Updating requires the current selection revision, and concurrent different edits have one winner. Actor-scoped retries recheck resource access before returning the original result.
+
+Only actual `selected` events are created here. Each points to its first selection revision and exact evidence snapshot; reordering or removing/readding that snapshot does not duplicate its event. Distinct target productions and unattached selections occupy separate counting namespaces. Selection does not count as insertion, approval or publication. Writing must revalidate all current source/evidence/check/policy/decision conditions again and record its own actual occurrences in phase 6.
+
 ## Phase 1 verification
 
 `src/domain/editorial-memory.test.ts` covers every workspace role, audit identity, missing/foreign/read-only membership, reason requirements, optimistic revisions, stale acceptance, source withdrawal, unknown authors, fabricated quote text, conservative D10, numeric score bounds and contiguous original anchors. `src/domain/permissions.test.ts` covers the complete role/capability matrix including `library.review`.

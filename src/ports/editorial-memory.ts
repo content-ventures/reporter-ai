@@ -41,6 +41,7 @@ export interface EditorialMemory {
   reviseMaterial(id: string, input: { baseRevision: number; source: MemoryMaterial['source']; text: string; reason: string },
     requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
   select(input: { id?: string; baseRevision: number; productionId: string | null; evidence: MemoryEvidenceRef[] }, requestId: string): Promise<MemorySelection>;
+  selection(id: string): Promise<MemorySelection>;
   policy(): Promise<MemoryPolicy>;
   lookupLegacy(id: string): Promise<{ id: string; materialId: string }[]>;
   originalArticle(id: string, snapshot?: string): Promise<{ origin: MemoryArticleOrigin; doc: Piece | Version; importedBy: string; importedAt: string }>;
