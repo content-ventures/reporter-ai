@@ -16,6 +16,7 @@ test('library commands keep the bound workspace, account and request identity wh
     await library.authorizeMaterial('material/encoded', { baseRevision: 1, authorized: true, reason: 'Confirmed source rights.' }, 'stable-request-id');
     assert.equal(seen[1].url.pathname, '/api/reporter/w/editorial-client/memory/materials/material%2Fencoded/authorization');
     assert.equal(new Headers(seen[1].init.headers).get('x-reporter-account'), 'actual-account');
+    assert.equal(new Headers(seen[1].init.headers).get('x-reporter-client'), 'local');
     assert.equal(new Headers(seen[1].init.headers).get('idempotency-key'), 'stable-request-id');
     assert.deepEqual(JSON.parse(String(seen[1].init.body)), { baseRevision: 1, authorized: true, reason: 'Confirmed source rights.' });
     transport.dispose(); await assert.rejects(library.material('material'));
