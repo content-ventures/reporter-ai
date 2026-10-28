@@ -1,7 +1,7 @@
 import type { MemoryCheck, MemoryDecision, MemoryDecisionInput, MemoryEvidence, MemoryEvidenceRef, MemoryEvidenceView,
-  MemoryArticleOrigin, MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
+  MemoryArticleOrigin, MemoryBlock, MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
 import type { SourceVersionRef } from '../domain/refs.ts';
-import type { TranscriptSegment } from '../domain/source.ts';
+import type { Source, TranscriptSegment } from '../domain/source.ts';
 import type { Piece, Version } from '../domain/piece.ts';
 import type { MemoryArticlePosition, MemoryArticleReport, MemoryLegacyReport } from '../domain/editorial-memory-legacy.ts';
 
@@ -10,10 +10,10 @@ export type MemoryImportInput = {
   primaryOrigin: string | null; originalFileId: string | null;
 };
 export type MemoryJob = {
-  id: string; revision: number; kind: 'extract' | 'check' | 'archive'; materialId: string; evidenceId: string | null;
-  sourceVersion: number; status: MemoryProcessingStatus;
+  id: string; workspaceId: string; revision: number; kind: 'extract' | 'check' | 'archive'; materialId: string; evidenceId: string | null;
+  sourceVersion: number; sourceHash: string; extractorVersion: string; generation: number; status: MemoryProcessingStatus;
   totalBlocks: number; completedBlocks: number; failedBlocks: number; evidenceCount: number;
-  error: string | null; createdAt: string; updatedAt: string;
+  error: string | null; createdBy: string; createdAt: string; updatedAt: string;
 };
 export type MemoryCorrection =
   | { kind: 'citation'; metadata?: Partial<MemoryMetadata>; personId?: string | null; authorConfirmed?: boolean }
@@ -31,8 +31,10 @@ export interface EditorialMemory {
   detail(id: string): Promise<MemoryDetail>;
   history(id: string, kind: MemoryHistoryKind, input: MemoryHistoryQuery): Promise<MemoryPage<MemoryHistoryEntry>>;
   materials(input: { cursor?: string; limit?: number }): Promise<MemoryPage<MemoryMaterial & { job: MemoryJob | null }>>;
+  material(id: string): Promise<{ material: MemoryMaterial; source: Source; job: MemoryJob | null }>;
   import(input: MemoryImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
   job(id: string): Promise<MemoryJob>;
+  blocks(jobId: string, input: MemoryHistoryQuery): Promise<MemoryPage<MemoryBlock>>;
   retry(jobId: string, requestId: string): Promise<MemoryJob>;
   cancel(jobId: string, baseRevision: number, requestId: string): Promise<MemoryJob>;
   review(id: string, input: MemoryDecisionInput, requestId: string): Promise<MemoryDecision>;
@@ -51,3 +53,5 @@ export interface EditorialMemory {
   resolveDuplicate(id: string, input: { expected: MemoryEvidenceRef; canonical: MemoryEvidenceRef; choice: 'keep_variant' | 'use_curated'; reason: string },
     requestId: string): Promise<MemoryEvidenceView>;
 }
+/** Available library operations; processing capabilities join this port when their workers ship. */
+export type MemoryLibrary = Omit<EditorialMemory, 'check' | 'reviseMaterial'>;

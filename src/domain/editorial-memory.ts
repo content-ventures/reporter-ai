@@ -28,8 +28,8 @@ export type MemoryMaterial = {
 export type MemorySpan = { segmentId: string; from: number; to: number };
 export type MemoryAnchor = { source: SourceVersionRef; spans: MemorySpan[]; excerpt: string };
 export type MemoryBlock = {
-  id: string; materialId: string; ordinal: number; anchor: MemoryAnchor;
-  status: 'pending' | 'completed' | 'failed'; attempts: number; error: string | null;
+  id: string; workspaceId: string; materialId: string; jobId: string; ordinal: number; anchor: MemoryAnchor;
+  status: 'pending' | 'completed' | 'failed'; attempts: number; error: string | null; evidenceIds: string[];
 };
 export type MemoryEvidenceBase = {
   id: string; workspaceId: string; materialId: string; revision: number; anchor: MemoryAnchor;

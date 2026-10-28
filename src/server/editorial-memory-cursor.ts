@@ -4,8 +4,8 @@ import { z } from 'zod';
 import type { MemoryQuery } from '../domain/editorial-memory.ts';
 import { stableStringify } from '../domain/text/hash.ts';
 import { FlowError } from './errors.ts';
-import { memoryQuerySchema, memoryHistoryBindingSchema } from './editorial-memory-input.ts';
-type CursorQuery = MemoryQuery | z.infer<typeof memoryHistoryBindingSchema>;
+import { memoryQuerySchema, memoryResourceBindingSchema } from './editorial-memory-input.ts';
+type CursorQuery = MemoryQuery | z.infer<typeof memoryResourceBindingSchema>;
 
 /** Authorization changes invalidate a page sequence instead of silently mixing visibility states. */
 export type MemoryCursorContext = { tenant: string; workspace: string; actor: string; visibility: string };
@@ -23,7 +23,7 @@ function mac(key: string, purpose: string, value: string): Buffer {
   return createHmac('sha256', key).update(`reporter-memory-${purpose}-v1\0${value}`).digest();
 }
 function queryIdentity(query: CursorQuery, key: string): string {
-  if ('resource' in query) return mac(key, 'query', stableStringify(memoryHistoryBindingSchema.parse(query))).toString('hex');
+  if ('resource' in query) return mac(key, 'query', stableStringify(memoryResourceBindingSchema.parse(query))).toString('hex');
   const normalized = memoryQuerySchema.parse(query);
   return mac(key, 'query', stableStringify({ ...normalized, cursor: undefined,
     topics: normalized.topics ? [...new Set(normalized.topics)].sort() : undefined })).toString('hex');
