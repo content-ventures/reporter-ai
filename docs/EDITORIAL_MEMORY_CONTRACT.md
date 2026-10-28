@@ -76,6 +76,7 @@ Selection preserves explicit order and immutable evidence/check/policy snapshots
 - New processing blocks contain at most 1,000 characters; processing covers every block and retains original offsets. Legacy 1,200-character citation records and IDs remain unchanged.
 - Citations and statistics share provenance, metadata and correction history; their payloads are discriminated. A statistic keeps raw/decimal/range/scale, unit, observation period, geography, population, qualifier, issuing institution and declaring person separately.
 - The evidence snapshot hash includes all semantic fields, including attribution and qualifiers, while excluding operational timestamps. A decision uses `{id, revision, hash}`, a check revision, policy revision and preceding decision sequence.
+- A metadata correction preserves literal/source identity and increments the evidence revision. Its database-authored actor/time/reason stamp remains in each historical payload and the audit, while staying outside the semantic hash. No-op changes are refused. Original-word changes require a new source version.
 - No result is distinct from false. Opinions and forecasts remain attributed; factual components in mixed statements remain checkable.
 - Confidence never includes use frequency, query relevance or editorial strength. The initial D10 policy requires human review and has no fabricated calibrated thresholds.
 - Automatic eligibility requires an activated calibration report and thresholds for every claim kind. Disputed, pending or unvalidated factual evidence still requires a decision.
