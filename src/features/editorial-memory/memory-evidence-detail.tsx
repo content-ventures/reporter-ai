@@ -11,9 +11,9 @@ import { useCan, usePeople, useSession } from '@/state';
 export const ELIGIBILITY_LABELS = { ready: 'Disponível para uso', source_unavailable: 'Conferir fonte e autorização', withdrawn: 'Retirada', authorship_pending: 'Confirmar autoria', review_required: 'Aguardando revisão', rejected: 'Rejeitada' };
 const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar', reject: 'Rejeitar', request_revision: 'Solicitar revisão' };
 const HISTORY_LABELS: Record<MemoryHistoryKind, string> = { checks: 'Checagens', decisions: 'Decisões', revisions: 'Revisões', occurrences: 'Ocorrências' };
-export function MemoryEvidenceDrawer({ id, onClose, onChanged, onMaterial }: { id: string; onClose: () => void; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void }) {
-  const load = useCallback((port: MemoryLibrary) => port.detail(id), [id]), resource = useMemoryResource(load);
-  return <Drawer open size="lg" title="Evidência" onClose={onClose}>
+export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial }: { id: string; open: boolean; onClose: () => void; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void }) {
+  const load = useCallback((port: MemoryLibrary) => port.detail(id), [id]), resource = useMemoryResource(load, 0, open);
+  return <Drawer open={open} size="lg" title="Evidência" onClose={onClose}>
     {resource.error ? <ErrorState title="Não foi possível abrir a evidência" description={resource.error} onRetry={resource.reload} /> : !resource.data || !resource.port ? <Spinner label="Carregando evidência" /> :
       <EvidenceContent key={`${id}:${resource.data.evidence.revision}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onChanged={() => { resource.reload(); onChanged(); }} />}
   </Drawer>;
