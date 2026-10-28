@@ -11,7 +11,7 @@ export type MemoryImportInput = {
 };
 export type MemoryJob = {
   id: string; workspaceId: string; revision: number; kind: 'extract' | 'check' | 'archive'; materialId: string; evidenceId: string | null;
-  sourceVersion: number; sourceHash: string; extractorVersion: string; generation: number; status: MemoryProcessingStatus;
+  sourceVersion: number; sourceHash: string; extractorVersion: string; model?: string; generation: number; status: MemoryProcessingStatus;
   totalBlocks: number; completedBlocks: number; failedBlocks: number; evidenceCount: number;
   error: string | null; createdBy: string; createdAt: string; updatedAt: string;
 };
@@ -33,6 +33,7 @@ export interface EditorialMemory {
   materials(input: { cursor?: string; limit?: number }): Promise<MemoryPage<MemoryMaterial & { job: MemoryJob | null }>>;
   material(id: string): Promise<{ material: MemoryMaterial; source: Source; job: MemoryJob | null }>;
   import(input: MemoryImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
+  authorizeMaterial(id: string, input: { baseRevision: number; authorized: boolean; reason: string }, requestId: string): Promise<MemoryMaterial>;
   job(id: string): Promise<MemoryJob>;
   blocks(jobId: string, input: MemoryHistoryQuery): Promise<MemoryPage<MemoryBlock>>;
   retry(jobId: string, requestId: string): Promise<MemoryJob>;

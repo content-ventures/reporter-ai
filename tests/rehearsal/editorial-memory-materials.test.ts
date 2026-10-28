@@ -16,12 +16,12 @@ const text = ' '.repeat(3) + 'Relatório sintético: foram atendidas 240 pessoas
 const input = { title: 'Synthetic intake', kind: 'report', text, authorized: true, metadata, primaryOrigin: null, originalFileId: null };
 async function owner(sql: string, values: unknown[] = []) {
   const client = new pg.Client({ connectionString: db.owner }); await client.connect();
-  try { return (await client.query(sql, values)).rows; } finally { await client.end(); }
+  try { return (await client.query(sql, values)).rows; } catch (error) { throw new Error(`Fixture query failed: ${sql.slice(0, 70)}`, { cause: error }); } finally { await client.end(); }
 }
 async function api(path: string, value?: unknown, key = randomUUID(), identity: typeof identities[number] | null = identities[0], origin = APP) {
   const { handleReporter } = await import('../../src/server/http.ts'), url = new URL(`${APP}/api/reporter/w/reporter-ai/memory/${path}`);
   return handleReporter(new Request(url, value === undefined ? {} : { method: 'POST', headers: { origin, 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify(value) }),
-    ['w', 'reporter-ai', 'memory', ...url.pathname.split('/').slice(6)], { identify: async () => identity });
+    ['w', 'reporter-ai', 'memory', ...url.pathname.split('/').slice(6).filter(Boolean)], { identify: async () => identity });
 }
 before(async () => {
   db = await startRehearsalDatabase(identities.map((identity, index) => ({ email: identity.email, role: index === 0 ? 'editor' : 'approver' })));
@@ -98,4 +98,77 @@ test('cancel and retry retain completed blocks, invalidate generations and audit
   const audits = await owner("SELECT action,user_id FROM public.audit_log WHERE entity_type='memory_job' AND after_data->>'id'=$1 ORDER BY created_at", [job.id]);
   assert.deepEqual(audits.map(audit => audit.action), ['memory.job.cancel', 'memory.job.retry']);
   assert.ok(audits.every(audit => audit.user_id === job.createdBy));
+});
+
+async function isolateQueue() {
+  await owner("UPDATE public.reporter_memory_heads SET doc=(doc-'_lease')||'{\"status\":\"cancelled\"}'::jsonb WHERE kind='job' AND doc->>'status' IN ('queued','running')");
+}
+async function worker(provider: import('../../src/server/editorial-memory-worker.ts').MemoryExtractor) {
+  const { runMemoryJob } = await import('../../src/server/editorial-memory-worker.ts');
+  return runMemoryJob('memory-test-worker', new AbortController().signal, Date.now() + 1000000, provider);
+}
+const providerResult = (claim: import('../../src/server/editorial-memory-worker.ts').MemoryExtractionClaim, value: unknown) => ({ value, model: claim.job.model!, provider: 'synthetic-test', provider_request_id: null, usage_unit: 'tokens' as const, input_units: 0, output_units: 0 });
+test('worker processes every block with bounded adjacent context and preserves unknown attribution without inventing reviews or uses', async () => {
+  await isolateQueue();
+  const excerpt = 'Foram atendidas cerca de 240 pessoas em 2025.', original = 'a'.repeat(990) + excerpt + ' Conteúdo sintético final. '.repeat(60);
+  const { job, material } = await (await api('materials', { ...input, text: original })).json() as { job: MemoryJob; material: MemoryMaterial };
+  const processed: number[] = [];
+  const provider: import('../../src/server/editorial-memory-worker.ts').MemoryExtractor = async claim => {
+    processed.push(claim.block!.ordinal); assert.ok(claim.context.text.length <= 3000);
+    const from = claim.context.text.indexOf(excerpt);
+    return providerResult(claim, { overflow: false, evidence: from < 0 ? [] : [{ kind: 'citation', excerpt, from, kinds: ['declared'] },
+      { kind: 'statistic', excerpt, from, kinds: ['declared'], indicator: 'Pessoas atendidas', raw: '240', unit: 'pessoas', period: '2025', geography: null, population: null, qualifier: 'cerca de', issuingInstitution: null }] });
+  };
+  for (let turn = 0; turn < job.totalBlocks; turn++) assert.equal(await worker(provider), true);
+  assert.equal(await worker(provider), false);
+  assert.deepEqual(processed, Array.from({ length: job.totalBlocks }, (_, index) => index));
+  const complete = await (await api(`jobs/${job.id}`)).json() as MemoryJob;
+  assert.equal(complete.status, 'completed'); assert.equal(complete.completedBlocks, job.totalBlocks); assert.equal(complete.evidenceCount, 2);
+  assert.equal('_lease' in complete, false);
+  const page = await (await api(`?materialId=${material.id}`)).json() as MemoryPage<import('../../src/domain/editorial-memory.ts').MemoryEvidenceView>;
+  assert.equal(page.total, 2); assert.ok(page.items.every(item => !item.eligibility.usable && !item.decision && item.uses.inserted === 0));
+  const citation = page.items.find(item => item.evidence.kind === 'citation')!; assert.equal(citation.eligibility.reason, 'authorship_pending');
+  const audits = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.block.extracted' AND after_data->>'jobId'=$1", [job.id]);
+  assert.equal(audits.length, job.totalBlocks); assert.ok(audits.every(audit => audit.user_id === job.createdBy));
+});
+
+test('cancelled generations cannot commit late provider results; missing rights stop before a provider call', async () => {
+  await isolateQueue();
+  const { job } = await (await api('materials', { ...input, text: 'Um conteúdo sintético com duração suficiente para extrair.' })).json() as { job: MemoryJob };
+  const started = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const running = worker(async claim => { started.resolve(); await release.promise; return providerResult(claim, { overflow: false, evidence: [{ kind: 'citation', excerpt: claim.context.text, from: 0, kinds: ['opinion'] }] }); });
+  await started.promise;
+  const current = await (await api(`jobs/${job.id}`)).json() as MemoryJob;
+  assert.equal((await api(`jobs/${job.id}/cancel`, { baseRevision: current.revision })).status, 200);
+  release.resolve(); await running;
+  const cancelled = await (await api(`jobs/${job.id}`)).json() as MemoryJob;
+  assert.equal(cancelled.status, 'cancelled'); assert.equal(cancelled.evidenceCount, 0);
+  const unauthorized = await (await api('materials', { ...input, authorized: false })).json() as { job: MemoryJob };
+  await worker(async () => { assert.fail('A source without rights must not reach a provider'); });
+  const failed = await (await api(`jobs/${unauthorized.job.id}`)).json() as MemoryJob;
+  assert.equal(failed.status, 'failed'); assert.equal(failed.error, 'MEMORY_SOURCE_NOT_AUTHORIZED');
+  assert.equal((await api(`jobs/${failed.id}/retry`, {})).status, 409);
+});
+
+test('audited rights changes permit explicit resumption; malformed output exhausts bounded retries without creating evidence', async () => {
+  await isolateQueue();
+  const { job, material } = await (await api('materials', { ...input, text: 'Este material sintético possui texto suficiente para um único bloco.', authorized: false })).json() as { job: MemoryJob; material: MemoryMaterial };
+  await worker(async () => { assert.fail('unauthorized provider invocation'); });
+  const key = randomUUID(), authorization = { baseRevision: material.revision, authorized: true, reason: 'Synthetic rights confirmation for QA.' };
+  const authorized = await api(`materials/${material.id}/authorization`, authorization, key);
+  assert.equal(authorized.status, 200, await authorized.clone().text());
+  assert.deepEqual(await authorized.json(), await (await api(`materials/${material.id}/authorization`, authorization, key)).json());
+  assert.equal((await api(`materials/${material.id}/authorization`, authorization)).status, 409);
+  await api(`jobs/${job.id}/retry`, {});
+  for (let attempt = 0; attempt < 3; attempt++) await worker(async claim => providerResult(claim, { overflow: false, evidence: [{ kind: 'citation', excerpt: 'Paraphrase absent from the original.', from: null, kinds: ['opinion'] }] }));
+  const failed = await (await api(`jobs/${job.id}`)).json() as MemoryJob;
+  assert.equal(failed.status, 'failed'); assert.equal(failed.evidenceCount, 0); assert.equal(failed.error, 'MEMORY_EXTRACTION_ANCHOR_INVALID');
+  const blocks = await (await api(`jobs/${job.id}/blocks`)).json() as MemoryPage<MemoryBlock>;
+  assert.equal(blocks.items[0].attempts, 3);
+  assert.equal(await worker(async () => { assert.fail('exhausted block must not invoke provider'); }), false);
+  await api(`jobs/${job.id}/retry`, {});
+  await worker(async claim => providerResult(claim, { overflow: false, evidence: [] }));
+  assert.equal((await (await api(`jobs/${job.id}`)).json()).status, 'completed');
+  const [audit] = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.material.authorization' AND after_data->'material'->>'id'=$1", [material.id]);
+  assert.equal(audit.user_id, job.createdBy); assert.equal(audit.after_data.reason, authorization.reason);
 });

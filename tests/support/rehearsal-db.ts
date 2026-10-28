@@ -37,10 +37,17 @@ export async function startRehearsalDatabase(users: { email: string; role: strin
   try {
     const port = docker(['port', id, '5432/tcp']).split('\n')[0].split(':').at(-1);
     const owner = `postgresql://reporter_owner:${password}@127.0.0.1:${port}/reporter_cloud`;
-    for (let attempt = 0; ; attempt++) {
-      const client = new pg.Client({ connectionString: owner });
+    const startupDeadline = Date.now() + 120_000;
+    for (;;) {
+      const client = new pg.Client({ connectionString: owner, connectionTimeoutMillis: 2000 });
       try { await client.connect(); await client.query('SELECT 1'); break; }
-      catch (error) { if (attempt > 60) throw error; await delay(500); }
+      catch (error) {
+        if (Date.now() >= startupDeadline) {
+          const diagnostic = docker(['logs', '--tail', '35', id]);
+          throw new Error(`Disposable PostgreSQL did not start within 120 seconds. ${diagnostic}`, { cause: error });
+        }
+        await delay(500);
+      }
       finally { await client.end().catch(() => {}); }
     }
     const migrate = () => script(['scripts/reporter-cloud.mjs', 'migrate'], { DATABASE_URL: owner });
