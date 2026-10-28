@@ -42,6 +42,7 @@ import { compactRunPreviews } from '../domain/run-events.ts';
 import { FULL_SCOPE, commitEditorialChanges, loadEditorialRows, loadedScope, type EditorialScope, type StoredReceipt } from './editorial-store.ts';
 import { scopeForRpc } from './editorial-scope.ts';
 import { syncLegacyMemory } from './editorial-memory-legacy.ts';
+import { syncMemoryArticles } from './editorial-memory-articles.ts';
 import { materialPartsSchema, materialTranscriptIds } from './material-parts.ts';
 import { writingRunModel, writingTraceUsage } from '../domain/writing-execution.ts';
 import {workspaceTemplateHash} from '../domain/workspace-templates.ts';
@@ -153,6 +154,7 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
         const stored = options.receipt?.(value, checkpoint);
         if (hasChanges(changes) || stored) revision = await commitEditorialChanges(client, changes, stored);
         await syncLegacyMemory(client, changes.items.filter(item => !item.deleted && ['citation','fact_check'].includes(item.kind)).map(item => item.id), changes.sources.map(source => source.id));
+        await syncMemoryArticles(client, changes);
       }
       return { value, revision, checkpoint };
     } finally { engine.store.dispose(); }
