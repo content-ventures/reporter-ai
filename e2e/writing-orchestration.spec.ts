@@ -67,7 +67,7 @@ for (const viewport of VIEWPORTS) {
     test.use({ viewport: { width: viewport.width, height: viewport.height },
       ...(viewport.width < 768 ? { isMobile: true, hasTouch: true } : {}) });
 
-    test('configures every stage, previews policy composition and preserves changes across a save conflict', async ({ page }) => {
+    test('configures every stage and preserves changes across a save conflict', async ({ page }) => {
       const errors = watchErrors(page);
       const scenario: Scenario = { view: fixture(), details: {}, commands: [], unexpected: [], conflictOnce: true };
       delete scenario.view.active.definition.writing!.minimumQuotes;
@@ -116,29 +116,6 @@ for (const viewport of VIEWPORTS) {
       await limit.press('Tab');
       await page.getByRole('combobox', { name: 'Correção após a revisão' }).click();
       await page.getByRole('option', { name: 'Parar e analisar pendências', exact: true }).click();
-      await page.getByRole('textbox', { name: 'Conteúdo para prévia' }).fill('A cooperativa informou crescimento de 12% na produção.');
-      await page.getByLabel('Data da fonte na prévia', { exact: true }).fill('2026-05-18');
-      await page.getByLabel('Data de execução na prévia', { exact: true }).fill('2026-10-21');
-      await page.getByRole('button', { name: 'Ver instruções efetivas', exact: true }).click();
-      const prompt = page.getByRole('textbox', { name: 'Prévia do prompt de sistema' });
-      await expect(prompt).toHaveValue(/Compradores e produtores de pescado/);
-      await expect(prompt).toHaveValue(/Use voz objetiva e atribua as alegações/);
-      await expect(prompt).toHaveValue(/Priorize o fato novo com evidência identificada/);
-      await expect(prompt).toHaveValue(/Tarefa plan: preserve a origem de cada fato/);
-      await expect(prompt).toHaveValue(/Busque documentação primária sobre os produtos citados/);
-      await page.getByRole('button', { name: 'Ver contrato de saída · Preparar e planejar', exact: true }).click();
-      await expect(page.getByRole('textbox', { name: 'Contrato de saída · Preparar e planejar', exact: true })).toHaveValue(/"research"/);
-      await expect(prompt).toHaveValue(/MÍNIMO DE CITAÇÕES\n\n0: sem quota/);
-      await page.getByRole('combobox', { name: 'Etapa da prévia', exact: true }).click();
-      await page.getByRole('option', { name: 'Revisar artigo', exact: true }).click();
-      for (const key of WRITING_REVIEW_CRITERIA_KEYS) await expect(prompt).toHaveValue(new RegExp(`Critério ${key}: confira fatos e trechos após cada correção`));
-      await page.getByRole('button', { name: 'Ver entrada composta', exact: true }).click();
-      await expect(page.getByRole('textbox', { name: 'Prévia da entrada' })).toHaveValue(/crescimento de 12%/);
-      const previewInput = page.getByRole('textbox', { name: 'Prévia da entrada' });
-      await expect(previewInput).toHaveValue(/"recordedOn":"2026-05-18"/);
-      await expect(previewInput).toHaveValue(/"executionDate":"2026-10-21"/);
-      await page.getByLabel('Data da fonte na prévia', { exact: true }).fill('');
-      await expect(previewInput).toHaveValue(/"recordedOn":null/);
       expect(scenario.commands).toHaveLength(0);
       await expectHeadingOutline(page);
       await expectNoHorizontalOverflow(page);
@@ -159,17 +136,90 @@ for (const viewport of VIEWPORTS) {
       for (const key of WRITING_REVIEW_CRITERIA_KEYS) expect(scenario.view.active.definition.writing?.reviewCriteria?.[key]).toBe(`Critério ${key}: confira fatos e trechos após cada correção.`);
       for (const [index, stage] of WRITING_STAGES.entries()) expect(scenario.view.active.definition.writing?.stages[stage].model).toBe(chosen[index]);
       await page.reload();
+      await Promise.all([
+        expect(page.getByRole('switch', { name: 'Usar planejamento, redação e revisão' })).toBeChecked(),
+        expect(researchEnabled).toBeChecked(),
+        expect(page.getByRole('textbox', { name: 'Orientações para a pesquisa', exact: true })).toHaveValue('Busque documentação primária sobre os produtos citados.'),
+        expect(page.getByRole('textbox', { name: 'Domínios excluídos da pesquisa', exact: true })).toHaveValue('example.com\nexample.org'),
+        expect(page.getByRole('combobox', { name: 'Se a pesquisa falhar', exact: true })).toContainText('Continuar com o conteúdo original'),
+        expect(minimumQuotes).toContainText('Sem mínimo obrigatório (0)'),
+        expect(page.getByRole('textbox', { name: 'Instruções compartilhadas da redação' })).toHaveValue('Priorize o fato novo com evidência identificada.'),
+        expect(page.getByRole('combobox', { name: 'Esforço de raciocínio · Redigir artigo completo', exact: true })).toContainText('Alto'),
+        ...WRITING_REVIEW_CRITERIA_KEYS.map(key => expect(page.getByRole('textbox', { name: `Critério · ${WRITING_REVIEW_CRITERIA_LABELS[key]}`, exact: true })).toHaveValue(`Critério ${key}: confira fatos e trechos após cada correção.`)),
+        ...WRITING_STAGES.map((stage, index) => expect(page.getByRole('combobox', { name: `Modelo · ${WRITING_STAGE_LABELS[stage]}`, exact: true })).toContainText(pipelineModelLabel(chosen[index]))),
+      ]);
+      expect(scenario.commands.map(item => item.method)).toEqual(['pipeline.save', 'pipeline.save']);
+      expect(JSON.stringify(scenario.commands)).not.toContain('temporalContext');
+      expect(scenario.unexpected).toEqual([]);
+      expect(errors).toEqual([]);
+    });
+
+    test('previews saved policy and temporal context without persisting temporary source data', async ({ page }) => {
+      const errors = watchErrors(page), view = fixture(), writing = view.active.definition.writing!;
+      writing.enabled = true; writing.minimumQuotes = 0;
+      writing.systemPrompt = 'Priorize o fato novo com evidência identificada.';
+      for (const stage of WRITING_STAGES) writing.stages[stage].prompt = `Tarefa ${stage}: preserve a origem de cada fato.`;
+      for (const key of WRITING_REVIEW_CRITERIA_KEYS) writing.reviewCriteria![key] = `Critério ${key}: confira fatos e trechos após cada correção.`;
+      writing.research = { ...defaultWritingResearch(), enabled: true, instructions: 'Busque documentação primária sobre os produtos citados.',
+        maxQueries: 3, maxResults: 4, maxSources: 8, timeoutMs: 15000, failureMode: 'continue_original',
+        excludeDomains: ['example.com', 'example.org'], excludeUrls: ['https://example.net/benchmark'] };
+      const scenario: Scenario = { view, details: {}, commands: [], unexpected: [] };
+      await mockReporter(page, scenario);
+      await page.goto('/config?tab=writing');
+      await expect(page.getByRole('heading', { name: 'Redação', level: 1 })).toBeVisible();
+      await page.getByRole('textbox', { name: 'Conteúdo para prévia' }).fill('A cooperativa informou crescimento de 12% na produção.');
+      await page.getByLabel('Data da fonte na prévia', { exact: true }).fill('2026-05-18');
+      await page.getByLabel('Data de execução na prévia', { exact: true }).fill('2026-10-21');
+      await page.getByRole('button', { name: 'Ver instruções efetivas', exact: true }).click();
+      const prompt = page.getByRole('textbox', { name: 'Prévia do prompt de sistema' });
+      await Promise.all([
+        expect(prompt).toHaveValue(/Compradores e produtores de pescado/),
+        expect(prompt).toHaveValue(/Use voz objetiva e atribua as alegações/),
+        expect(prompt).toHaveValue(/Priorize o fato novo com evidência identificada/),
+        expect(prompt).toHaveValue(/Tarefa plan: preserve a origem de cada fato/),
+        expect(prompt).toHaveValue(/Busque documentação primária sobre os produtos citados/),
+      ]);
+      await page.getByRole('button', { name: 'Ver contrato de saída · Preparar e planejar', exact: true }).click();
+      await expect(page.getByRole('textbox', { name: 'Contrato de saída · Preparar e planejar', exact: true })).toHaveValue(/"research"/);
+      await expect(prompt).toHaveValue(/MÍNIMO DE CITAÇÕES\n\n0: sem quota/);
+      await page.getByRole('combobox', { name: 'Etapa da prévia', exact: true }).click();
+      await page.getByRole('option', { name: 'Revisar artigo', exact: true }).click();
+      await Promise.all(WRITING_REVIEW_CRITERIA_KEYS.map(key => expect(prompt).toHaveValue(new RegExp(`Critério ${key}: confira fatos e trechos após cada correção`))));
+      await page.getByRole('button', { name: 'Ver entrada composta', exact: true }).click();
+      const previewInput = page.getByRole('textbox', { name: 'Prévia da entrada' });
+      await Promise.all([
+        expect(previewInput).toHaveValue(/crescimento de 12%/),
+        expect(previewInput).toHaveValue(/"recordedOn":"2026-05-18"/),
+        expect(previewInput).toHaveValue(/"executionDate":"2026-10-21"/),
+      ]);
+      await page.getByLabel('Data da fonte na prévia', { exact: true }).fill('');
+      await expect(previewInput).toHaveValue(/"recordedOn":null/);
+      expect(scenario.commands).toHaveLength(0);
+      await Promise.all([expectHeadingOutline(page), expectNoHorizontalOverflow(page)]);
+      await page.getByLabel('Data da fonte na prévia', { exact: true }).fill('2026-05-18');
+      await page.getByRole('textbox', { name: 'Instruções compartilhadas da redação' }).fill('Instrução salva sem contexto temporário.');
+      await page.getByRole('button', { name: 'Salvar e ativar', exact: true }).click();
+      await expect(page.getByText('Revisão 3 ativa', { exact: true })).toBeVisible();
+      expect(scenario.commands.map(item => item.method)).toEqual(['pipeline.save']);
+      expect(JSON.stringify(scenario.commands)).not.toContain('temporalContext');
+      await page.reload();
       await expect(page.getByLabel('Data da fonte na prévia', { exact: true })).toHaveValue('');
-      await expect(page.getByRole('switch', { name: 'Usar planejamento, redação e revisão' })).toBeChecked();
-      await expect(researchEnabled).toBeChecked();
-      await expect(page.getByRole('textbox', { name: 'Orientações para a pesquisa', exact: true })).toHaveValue('Busque documentação primária sobre os produtos citados.');
-      await expect(page.getByRole('textbox', { name: 'Domínios excluídos da pesquisa', exact: true })).toHaveValue('example.com\nexample.org');
-      await expect(page.getByRole('combobox', { name: 'Se a pesquisa falhar', exact: true })).toContainText('Continuar com o conteúdo original');
-      await expect(minimumQuotes).toContainText('Sem mínimo obrigatório (0)');
-      await expect(page.getByRole('textbox', { name: 'Instruções compartilhadas da redação' })).toHaveValue('Priorize o fato novo com evidência identificada.');
-      await expect(page.getByRole('combobox', { name: 'Esforço de raciocínio · Redigir artigo completo', exact: true })).toContainText('Alto');
-      for (const key of WRITING_REVIEW_CRITERIA_KEYS) await expect(page.getByRole('textbox', { name: `Critério · ${WRITING_REVIEW_CRITERIA_LABELS[key]}`, exact: true })).toHaveValue(`Critério ${key}: confira fatos e trechos após cada correção.`);
-      for (const [index, stage] of WRITING_STAGES.entries()) await expect(page.getByRole('combobox', { name: `Modelo · ${WRITING_STAGE_LABELS[stage]}`, exact: true })).toContainText(pipelineModelLabel(chosen[index]));
+      expect(scenario.unexpected).toEqual([]); expect(errors).toEqual([]);
+    });
+
+    test('restores recommendations, discards drafts and persists format defaults', async ({ page }) => {
+      const errors = watchErrors(page), view = fixture(), definition = structuredClone(view.active.definition);
+      const writing = definition.writing!;
+      writing.enabled = true; writing.minimumQuotes = 0;
+      writing.systemPrompt = 'Priorize o fato novo com evidência identificada.';
+      for (const stage of WRITING_STAGES) writing.stages[stage].prompt = `Tarefa ${stage}: preserve a origem de cada fato.`;
+      for (const key of WRITING_REVIEW_CRITERIA_KEYS) writing.reviewCriteria![key] = `Critério ${key}: confira fatos e trechos após cada correção.`;
+      const scenario: Scenario = { view: { ...view, active: pipelineRevision(definition, 3) }, details: {}, commands: [], unexpected: [] };
+      await mockReporter(page, scenario);
+      await page.goto('/config?tab=writing');
+      await expect(page.getByRole('heading', { name: 'Redação', level: 1 })).toBeVisible();
+      const minimumQuotes = page.getByRole('combobox', { name: 'Mínimo de citações diretas', exact: true });
+      const prompt = page.getByRole('textbox', { name: 'Prévia do prompt de sistema' });
       await page.getByRole('button', { name: 'Usar instrução recomendada · Revisar artigo', exact: true }).click();
       await expect(page.getByRole('textbox', { name: 'Instruções · Revisar artigo', exact: true })).toHaveValue(defaultWritingOrchestration().stages.review.prompt);
       await expect(page.getByRole('textbox', { name: 'Instruções · Redigir artigo completo', exact: true })).toHaveValue('Tarefa write: preserve a origem de cada fato.');
@@ -193,7 +243,7 @@ for (const viewport of VIEWPORTS) {
       await expect(prompt).toHaveValue(/MÍNIMO DE CITAÇÕES\n\nPadrão do formato/);
       await expectNoHorizontalOverflow(page);
       await page.screenshot({ path: test.info().outputPath('writing-settings.png'), fullPage: true, animations: 'disabled' });
-      expect(scenario.commands.map(item => item.method)).toEqual(['pipeline.save', 'pipeline.save', 'pipeline.save']);
+      expect(scenario.commands.map(item => item.method)).toEqual(['pipeline.save']);
       expect(JSON.stringify(scenario.commands)).not.toContain('temporalContext');
       expect(scenario.unexpected).toEqual([]);
       expect(errors).toEqual([]);
