@@ -149,6 +149,60 @@ test('saved selections recover ordered snapshots with private scopes and actor-b
   const other = await (await api('memory/selections?limit=100', undefined, randomUUID(), identities[2])).json() as MemoryPage<MemorySelection>;
   assert.equal(other.items.some(item => item.id === privateSelection.id), false);
 });
+test('existing-pauta attachment preserves draft, brief, frozen versions and old sources without inventing an insertion', async () => {
+  const original = await fixture('statistic'), initial = await selection([original.evidence]);
+  const created = await json<MemoryWritingResult>(`memory/selections/${initial.id}/write`, writingInput);
+  const frozen = await json<{ ok: true; value: { version: { ref: VersionRef } } }>('workspace', { method: 'createVersion', args: [created.pieceId], requestId: randomUUID() });
+  assert.equal(frozen.ok, true);
+  const [beforeProduction] = await owner('SELECT doc FROM public.reporter_ed_productions WHERE production_id=$1', [created.productionId]);
+  const [beforePiece] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [created.pieceId]);
+  const [beforeVersion] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='version' AND part_id=$1", [frozen.value.version.ref.versionId]);
+  const quote = await fixture('citation'), saved = await json<MemorySelection>('memory/selections', { baseRevision: 0, productionId: created.productionId, evidence: [memoryEvidenceRef(quote.evidence)] });
+  const input = { baseRevision: saved.revision, target: { productionId: created.productionId, updatedAt: beforeProduction.doc.updatedAt } }, key = randomUUID();
+  assert.equal((await api(`memory/selections/${saved.id}/write`, { ...input, target: { ...input.target, productionId: 'another-pauta' } })).status, 409);
+  const attached = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, input, key);
+  assert.equal(attached.productionId, created.productionId); assert.equal(attached.pieceId, created.pieceId); assert.notEqual(attached.sourceId, created.sourceId);
+  assert.deepEqual(await json(`memory/selections/${saved.id}/write`, input, key), attached);
+  const [after] = await owner('SELECT doc FROM public.reporter_ed_productions WHERE production_id=$1', [created.productionId]);
+  assert.deepEqual(after.doc.sourceIds, [created.sourceId, attached.sourceId]); assert.deepEqual(after.doc.brief, beforeProduction.doc.brief); assert.equal(after.doc.title, beforeProduction.doc.title);
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [created.pieceId]))[0], beforePiece);
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='version' AND part_id=$1", [frozen.value.version.ref.versionId]))[0], beforeVersion);
+  const detail = await json<MemoryDetail>(`memory/${quote.evidence.id}`); assert.equal(detail.uses.inserted, 0); assert.equal(detail.uses.approved, 0); assert.equal(detail.uses.published, 0);
+  const activities = await owner("SELECT doc FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='activity' AND doc->>'type'='source.added' AND doc->'subject'->>'sourceId'=$2", [PORTAL, attached.sourceId]);
+  assert.equal(activities.length, 1); assert.equal(activities[0].doc.actorId, context.actor);
+});
+test('existing-pauta attachment refuses stale or incompatible destinations and rolls back every effect on a failed audit', async () => {
+  const item = await fixture('statistic', true), saved = await selection([item.evidence]);
+  const blank = await json<{ ok: true; value: { productionId: string } }>('workspace', { method: 'createBlank', args: [{ title: 'Existing synthetic destination', brief: writingInput.brief }], requestId: randomUUID() });
+  assert.equal(blank.ok, true); const productionId = blank.value.productionId;
+  const [target] = await owner('SELECT doc FROM public.reporter_ed_productions WHERE production_id=$1', [productionId]);
+  const input = { baseRevision: saved.revision, target: { productionId, updatedAt: target.doc.updatedAt } };
+  assert.equal((await api(`memory/selections/${saved.id}/write`, input)).status, 409, 'Never broaden private material into a workspace-wide production');
+  await owner("UPDATE public.reporter_ed_productions SET doc=doc||jsonb_build_object('restrictedTo','[]'::jsonb) WHERE production_id=$1", [productionId]);
+  assert.equal((await api(`memory/selections/${saved.id}/write`, { ...input, target: { ...input.target, updatedAt: '2020-01-01T00:00:00Z' } })).status, 409);
+  assert.equal((await api(`memory/selections/${saved.id}/write`, { ...input, target: { ...input.target, personId: context.actor } })).status, 422);
+  assert.equal((await api(`memory/selections/${saved.id}/write`, input, randomUUID(), identities[1])).status, 403);
+  const counts = async () => (await owner('SELECT (SELECT count(*) FROM public.reporter_ed_sources)::int AS sources,(SELECT count(*) FROM public.reporter_memory_receipts)::int AS receipts'))[0];
+  const before = await counts(), key = randomUUID();
+  await owner("CREATE FUNCTION core.fail_attachment_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.kind='activity' AND NEW.doc->>'type'='source.added' THEN RAISE EXCEPTION 'synthetic attachment audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_attachment_audit BEFORE INSERT ON public.reporter_ed_items FOR EACH ROW EXECUTE FUNCTION core.fail_attachment_audit()");
+  try { assert.equal((await api(`memory/selections/${saved.id}/write`, input, key)).status, 500); }
+  finally { await owner('DROP TRIGGER fail_attachment_audit ON public.reporter_ed_items; DROP FUNCTION core.fail_attachment_audit()'); }
+  assert.deepEqual(await counts(), before);
+  assert.deepEqual((await owner('SELECT doc FROM public.reporter_ed_productions WHERE production_id=$1', [productionId]))[0].doc.sourceIds, []);
+  const attached = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, input, key); assert.equal(attached.productionId, productionId);
+  assert.equal((await api(`memory/selections/${saved.id}/write`, input, key, identities[2])).status, 404);
+});
+test('concurrent existing-pauta attachments cannot overwrite each other or reuse a stale destination snapshot', async () => {
+  const blank = await json<{ ok: true; value: { productionId: string } }>('workspace', { method: 'createBlank', args: [{ title: 'Concurrent synthetic destination', brief: writingInput.brief }], requestId: randomUUID() });
+  assert.equal(blank.ok, true); const productionId = blank.value.productionId;
+  const [target] = await owner('SELECT doc FROM public.reporter_ed_productions WHERE production_id=$1', [productionId]);
+  const first = await fixture('statistic'), second = await fixture('citation'), selections = [await selection([first.evidence]), await selection([second.evidence])];
+  const results = await Promise.all(selections.map(saved => api(`memory/selections/${saved.id}/write`, { baseRevision: saved.revision, target: { productionId, updatedAt: target.doc.updatedAt } })));
+  assert.deepEqual(results.map(result => result.status).sort(), [200, 409]);
+  const [stored] = await owner('SELECT doc FROM public.reporter_ed_productions WHERE production_id=$1', [productionId]);
+  assert.equal(stored.doc.sourceIds.length, 1);
+  for (const item of [first, second]) assert.equal((await json<MemoryDetail>(`memory/${item.evidence.id}`)).uses.inserted, 0);
+});
 test('sending, approving and recording delivery revalidate the exact bank evidence and preserve frozen article versions', async () => {
   const item = await fixture('statistic'), saved = await selection([item.evidence]);
   const created = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);

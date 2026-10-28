@@ -6,7 +6,10 @@ import type { Piece, Version } from '../domain/piece.ts';
 import type { MemoryArticlePosition, MemoryArticleReport, MemoryLegacyReport } from '../domain/editorial-memory-legacy.ts';
 import type { BriefInput } from './production-commands.ts';
 
-export type MemoryWritingInput = { baseRevision: number; title: string; brief: BriefInput };
+export type MemoryWritingInput = { baseRevision: number } & (
+  | { title: string; brief: BriefInput }
+  | { target: { productionId: string; updatedAt: string } }
+);
 export type MemoryWritingResult = { productionId: string; pieceId: string; sourceId: string };
 
 export type MemoryImportInput = {

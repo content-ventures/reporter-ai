@@ -26,6 +26,10 @@ test('library commands keep the bound workspace, account and request identity wh
     assert.equal(seen[3].url.pathname, '/api/reporter/w/editorial-client/memory/selections/selection%2Fencoded/write');
     assert.equal(new Headers(seen[3].init.headers).get('idempotency-key'), 'stable-writing-request');
     assert.equal(new Headers(seen[3].init.headers).get('x-reporter-account'), 'actual-account'); assert.deepEqual(JSON.parse(String(seen[3].init.body)), writing);
+    const attachment = { baseRevision: 2, target: { productionId: 'existing-production', updatedAt: '2026-10-28T20:00:00Z' } };
+    await library.writeSelection('selection/encoded', attachment, 'stable-attachment-request');
+    assert.deepEqual(JSON.parse(String(seen[4].init.body)), attachment);
+    assert.equal(new Headers(seen[4].init.headers).get('idempotency-key'), 'stable-attachment-request');
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });

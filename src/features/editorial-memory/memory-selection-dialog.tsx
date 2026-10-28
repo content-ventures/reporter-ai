@@ -1,10 +1,10 @@
 'use client';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, Button, Field, IconButton, Input, List, ListItem, Panel, ResponsiveDialog, Section, Spinner, toast } from '@content-ventures/design-system/v3';
+import { Alert, Button, ButtonGroup, Field, IconButton, Input, List, ListItem, Panel, ResponsiveDialog, SearchField, Section, Select, Spinner, toast } from '@content-ventures/design-system/v3';
 import { X } from '@content-ventures/design-system/v3/icons';
 import { memoryEvidenceRef, sameMemoryEvidence, type MemoryEvidenceRef, type MemorySelection } from '@/domain/editorial-memory';
-import type { MemoryLibrary } from '@/ports/editorial-memory';
-import { useCan, usePeople } from '@/state';
+import type { MemoryLibrary, MemoryWritingInput } from '@/ports/editorial-memory';
+import { useCan, usePeople, useProduction, useProductions } from '@/state';
 import { useMemoryResource } from '@/state/use-memory-library';
 import { useWorkspaceRouter } from '@/ui/workspace-navigation';
 import { pieceHref } from '@/ui/routes';
@@ -13,10 +13,16 @@ import { briefBlocker, EMPTY_DRAFT, MAX_TITLE_LENGTH, type NewProductionDraft } 
 
 type Props = { open: boolean; evidence: MemoryEvidenceRef[]; selection?: MemorySelection; onClose: () => void;
   onChange: (items: MemoryEvidenceRef[]) => void; onSaved: (selection: MemorySelection) => void };
-type Attempt = { signature: string; saveKey: string; writeKey: string; selection?: MemorySelection };
+type Attempt = { signature: string; saveKey: string; writeKey: string; selection?: MemorySelection; input?: MemoryWritingInput };
 export function MemorySelectionDialog({ open, evidence, selection, onClose, onChange, onSaved }: Props) {
   const router = useWorkspaceRouter(), canEdit = useCan('library.edit'), canCreate = useCan('production.create'), people = usePeople();
   const [draft, setDraft] = useState<NewProductionDraft>(() => ({ ...EMPTY_DRAFT, plan: 'article', origin: 'other' }));
+  const [destination, setDestination] = useState<{ selectionId?: string; mode: 'new' | 'existing'; id: string }>();
+  const chosen = destination?.selectionId === selection?.id ? destination : undefined;
+  const mode = chosen?.mode ?? (selection?.productionId ? 'existing' : 'new'), targetId = mode === 'existing' ? chosen?.id ?? selection?.productionId ?? '' : '';
+  const [targetSearch, setTargetSearch] = useState(''), [targetPage, setTargetPage] = useState(1);
+  const targets = useProductions({ search: targetSearch }, { page: targetPage, size: 25 }), target = useProduction(open && targetId ? targetId : undefined);
+  const choose = (nextMode: 'new' | 'existing', id = '') => setDestination({ selectionId: selection?.id, mode: nextMode, id });
   const [busy, setBusy] = useState<'save' | 'write'>(), [error, setError] = useState<string>();
   const titleRef = useRef<HTMLInputElement>(null), attempt = useRef<Attempt>(undefined), pending = useRef(false);
   const idsKey = JSON.stringify(evidence.map(item => item.id).sort());
@@ -29,20 +35,26 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
   const resource = useMemoryResource(load, 0, open), details = resource.data && evidence.map(ref => resource.data!.find(item => item.evidence.id === ref.id)!);
   const changed = details?.some((item, index) => !sameMemoryEvidence(evidence[index], memoryEvidenceRef(item.evidence)));
   const unavailable = details?.some(item => !item.eligibility.usable);
-  const blocker = briefBlocker(draft);
+  const blocker = mode === 'new' ? briefBlocker(draft) : target.status !== 'ready' ? 'Escolha uma pauta disponível.'
+    : target.data.production.archivedAt ? 'A pauta está arquivada.' : target.data.activeRuns.length ? 'Aguarde a geração antes de adicionar fontes.' : undefined;
   async function save(write: boolean) {
     if (!canEdit || !resource.port || pending.current || !details || !evidence.length || changed || unavailable) return;
+    if (mode === 'existing' && blocker) { setError(blocker); return; }
     if (write && blocker) { setError(blocker); titleRef.current?.focus(); return; }
     pending.current = true; setBusy(write ? 'write' : 'save'); setError(undefined);
-    const input = { title: draft.title.trim(), brief: { size: draft.size, sections: draft.sections, angle: draft.angle.trim() || undefined } };
-    const signature = JSON.stringify({ evidence, input, id: selection?.id, revision: selection?.revision });
+    const input: Omit<Extract<MemoryWritingInput, { title: string }>, 'baseRevision'> | Omit<Extract<MemoryWritingInput, { target: unknown }>, 'baseRevision'> = mode === 'existing'
+      ? { target: { productionId: targetId, updatedAt: target.data!.updatedAt } }
+      : { title: draft.title.trim(), brief: { size: draft.size, sections: draft.sections, angle: draft.angle.trim() || undefined } };
+    const signature = JSON.stringify({ evidence, input: 'target' in input ? { target: input.target.productionId } : input, id: selection?.id, revision: selection?.revision });
     if (attempt.current?.signature !== signature) attempt.current = { signature, saveKey: crypto.randomUUID(), writeKey: crypto.randomUUID() };
     const current = attempt.current;
     try {
-      current.selection ??= await resource.port.select({ ...(selection ? { id: selection.id } : {}), baseRevision: selection?.revision ?? 0,
-        productionId: selection?.productionId ?? null, evidence }, current.saveKey);
+      const reusable = selection?.productionId === (targetId || null) ? selection : undefined;
+      current.selection ??= await resource.port.select({ ...(reusable ? { id: reusable.id } : {}), baseRevision: reusable?.revision ?? 0,
+        productionId: targetId || null, evidence }, current.saveKey);
       if (write) {
-        const created = await resource.port.writeSelection(current.selection.id, { ...input, baseRevision: current.selection.revision }, current.writeKey);
+        current.input ??= { ...input, baseRevision: current.selection.revision };
+        const created = await resource.port.writeSelection(current.selection.id, current.input, current.writeKey);
         onSaved(current.selection); onClose(); router.push(pieceHref(created.productionId, 'article'));
       } else { onSaved(current.selection); onClose(); toast('Seleção salva', { description: `${current.selection.items.length} evidências na ordem escolhida.` }); }
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível usar a seleção.'); }
@@ -50,11 +62,11 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
   }
   const locked = Boolean(busy) || !canEdit, blocked = !details || !evidence.length || Boolean(changed || unavailable || resource.error);
   return <ResponsiveDialog open={open} title={canEdit ? 'Escrever com a seleção' : 'Seleção salva'} size="lg" dirty={Boolean(draft.title)} onClose={busy ? () => undefined : onClose}
-    footer={<><Button variant="ghost" disabled={Boolean(busy)} onClick={onClose}>Fechar</Button>{canEdit && <Button variant="secondary" loading={busy === 'save'} disabled={locked || blocked} onClick={() => void save(false)}>Salvar seleção</Button>}
-      {canEdit && canCreate && <Button loading={busy === 'write'} disabled={locked || blocked || Boolean(blocker)} onClick={() => void save(true)}>Criar artigo e abrir editor</Button>}</>}>
+    footer={<><Button variant="ghost" disabled={Boolean(busy)} onClick={onClose}>Fechar</Button>{canEdit && <Button variant="secondary" loading={busy === 'save'} disabled={locked || blocked || mode === 'existing' && Boolean(blocker)} onClick={() => void save(false)}>Salvar seleção</Button>}
+      {canEdit && canCreate && <Button loading={busy === 'write'} disabled={locked || blocked || Boolean(blocker)} onClick={() => void save(true)}>{mode === 'existing' ? 'Adicionar fontes e abrir editor' : 'Criar artigo e abrir editor'}</Button>}</>}>
     <Panel>
       <Section title={`${evidence.length} evidências na seleção`}>
-        {(error || resource.error) && <Alert tone="danger" title={error ?? resource.error} />}
+        {(error || resource.error) && <Alert tone="danger" title={error ?? resource.error} action={mode === 'existing' ? <Button disabled={Boolean(busy)} onClick={() => { attempt.current = undefined; setError(undefined); target.retry(); resource.reload(); }}>Atualizar pauta</Button> : undefined} />}
         {changed && <Alert tone="warning" title="Há evidências com nova revisão" action={<Button disabled={locked} onClick={() => onChange(details!.map(item => memoryEvidenceRef(item.evidence)))}>Atualizar seleção</Button>}>Confira os trechos atuais antes de continuar.</Alert>}
         {unavailable && <Alert tone="warning" title="Conclua a revisão das evidências ou remova os itens pendentes." />}
         {!details ? <Spinner label="Conferindo evidências selecionadas" /> : <List label="Ordem das evidências" maxHeight={280} onReorder={locked ? undefined : (from, to) => {
@@ -66,8 +78,22 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
         </List>}
       </Section>
       {canEdit && <Section>
+        <Field label="Destino da seleção">{({ id }) => <Select id={id} value={mode} disabled={locked || Boolean(selection?.productionId)} options={[{ value: 'new', label: 'Novo artigo' }, { value: 'existing', label: 'Pauta existente' }]} onChange={value => choose(value as 'new' | 'existing')} />}</Field>
+        {mode === 'existing' ? <>
+          <SearchField label="Buscar pauta" value={targetSearch} disabled={locked} onValueChange={value => { setTargetSearch(value); setTargetPage(1); }} />
+          {targets.error && <Alert tone="danger" title={targets.error.message} action={<Button onClick={targets.retry}>Tentar novamente</Button>} />}
+          <Field label="Pauta de destino" required hint={blocker}>{({ id }) => <Select id={id} value={targetId} searchable loading={targets.status === 'loading'} disabled={locked || Boolean(selection?.productionId)}
+            options={[{ value: '', label: 'Escolha uma pauta' }, ...(target.data && !targets.data?.items.some(item => item.id === targetId) ? [{ value: targetId, label: target.data.title }] : []),
+              ...(targets.data?.items ?? []).map(item => ({ value: item.id, label: item.title }))]} onChange={id => choose('existing', id)} />}</Field>
+          {target.error && <Alert tone="danger" title={target.error.message} action={<Button onClick={target.retry}>Atualizar pauta</Button>} />}
+          {targets.data && targets.data.pageCount > 1 && <ButtonGroup label="Páginas de pautas">
+            <Button variant="secondary" disabled={locked || targetPage <= 1} onClick={() => setTargetPage(page => page - 1)}>Pautas anteriores</Button>
+            <Button variant="secondary" disabled={locked || targetPage >= targets.data.pageCount} onClick={() => setTargetPage(page => page + 1)}>Próximas pautas</Button>
+          </ButtonGroup>}
+        </> : <>
         <Field label="Título interno" required>{({ id }) => <Input id={id} ref={titleRef} value={draft.title} maxLength={MAX_TITLE_LENGTH} disabled={locked} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} />}</Field>
         <BriefStep existing draft={draft} update={patch => { if (!locked) setDraft(current => ({ ...current, ...patch })); }} titleRef={titleRef} />
+        </>}
       </Section>}
     </Panel>
   </ResponsiveDialog>;
