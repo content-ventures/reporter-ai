@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MEMORY_TEXT_MAX_BYTES, memoryCorrectionSchema, memoryDecisionInputSchema, memoryImportInputSchema,
-  memorySelectionInputSchema, parseMemoryQuery } from '../src/server/editorial-memory-input.ts';
+  memoryArticleBatchSchema, memorySelectionInputSchema, parseMemoryQuery } from '../src/server/editorial-memory-input.ts';
 
 const metadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: [], originalUrl: null };
 const ref = { id: 'evidence', revision: 0, hash: 'a'.repeat(16) };
 const material = { title: 'Synthetic document', kind: 'report', text: '  Texto sintético com contexto original preservado.\n',
   metadata, authorized: true, primaryOrigin: null, originalFileId: null };
 const decision = { evidence: ref, check: null, policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Conferi a fonte.', supports: [] };
+test('article continuation rejects impossible offsets before PostgreSQL integer conversion and binds partial resumes to a document', () => {
+  const after = { productionId: 'p', kind: 'piece', id: 'article', offset: 1, storageHash: 'a'.repeat(32) };
+  assert.equal(memoryArticleBatchSchema.safeParse({ after }).success, true);
+  for (const offset of [-1, 0.5, 10 ** 12]) assert.equal(memoryArticleBatchSchema.safeParse({ after: { ...after, offset } }).success, false);
+  assert.equal(memoryArticleBatchSchema.safeParse({ after: { ...after, storageHash: null } }).success, false);
+  assert.equal(memoryArticleBatchSchema.safeParse({ after, actor: 'forged' }).success, false);
+});
 
 test('import validation keeps original source whitespace and explicit unknown dates', () => {
   assert.deepEqual(memoryImportInputSchema.parse(material), material);

@@ -70,26 +70,26 @@ export function locateCitation(source: Source, versionNumber: number, text: stri
 export function citationId(ref: SourceRef, text: string) {
   return contentHash({ sourceId: ref.sourceId, version: ref.sourceVersion, text: literalQuoteText(text) });
 }
+/** One referenced quotation, retaining its own segment and speaker even when another voice repeats it. */
+export function citationFromReference(source: Source, ref: SourceRef, text: string, productionId: string, now: string): Citation | undefined {
+  if (!source.rights.authorized || source.id !== ref.sourceId || ref.locator.type !== 'segment') return undefined;
+  const located = locateCitation(source, ref.sourceVersion, text, ref.locator.segmentId);
+  if (!located) return undefined;
+  return { id: citationId(located.ref, located.text), revision: 0, origin: 'article', text: located.text, ref: located.ref, sourceHash: located.hash,
+    productionId, createdAt: now, updatedAt: now, authorConfirmed: Boolean(located.personId),
+    ...(located.personId ? { personId: located.personId } : {}), relevance: '',
+    ...(source.programName ? { podcastName: source.programName } : {}), ...(source.sourceUrl ? { podcastUrl: source.sourceUrl } : {}),
+    ...(source.recordedOn ? { recordedOn: source.recordedOn } : {}), ...(source.location ? { location: source.location } : {}) };
+}
 /** The article pipeline already curated these passages; still pending editorial relevance review. */
 export function citationsFromArticle(body: ArticleBody, sources: readonly Source[], productionId: string, now: string): Citation[] {
   const found = new Map<string, Citation>();
   for (const quote of extractQuotes(body)) {
     for (const ref of quote.sourceRefs) {
       const source = sources.find(source => source.id === ref.sourceId);
-      if (!source?.rights.authorized || ref.locator.type !== 'segment') continue;
-      const segmentId = ref.locator.segmentId;
-      const segment = sourceVersion(source, ref.sourceVersion)?.content.segments.find(segment => segment.id === segmentId);
-      if (!segment || quoteSpelling(literalQuoteText(segment.text), literalQuoteText(quote.text)) === undefined) continue;
-      const located = locateCitation(source,ref.sourceVersion,quote.text,segmentId);
-      if (!located) continue;
-      const id = citationId(located.ref, located.text);
-      found.set(id, { id, revision: 0, origin: 'article', text: located.text, ref: located.ref, sourceHash: located.hash,
-        productionId, createdAt: now, updatedAt: now, authorConfirmed: Boolean(located.personId),
-        ...(located.personId ? { personId: located.personId } : {}), relevance: '',
-        ...(source.programName ? { podcastName: source.programName } : {}),
-        ...(source.sourceUrl ? { podcastUrl: source.sourceUrl } : {}),
-        ...(source.recordedOn ? { recordedOn: source.recordedOn } : {}),
-        ...(source.location ? { location: source.location } : {}) });
+      const citation = source && citationFromReference(source, ref, quote.text, productionId, now);
+      if (!citation) continue;
+      found.set(citation.id, citation);
       break;
     }
   }

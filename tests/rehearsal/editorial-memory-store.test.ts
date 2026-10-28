@@ -676,3 +676,131 @@ test('legacy ID collisions report a conflict without moving an existing evidence
   assert.deepEqual((await read(contexts[1], 'evidence', record.id))!.doc, existing);
   assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='citation' AND item_id=$2", [PILOT, record.id]))[0].doc, record);
 });
+
+let articlePublicId: string, articlePrivateId: string, articleOriginalBody: import('../../src/domain/article.ts').ArticleBody;
+async function seedArticle(productionId: string, id: string, kind: 'piece' | 'version', body: import('../../src/domain/article.ts').ArticleBody, at: string,
+  sourceRef?: import('../../src/domain/refs.ts').SourceVersionRef) {
+  const { articleHash } = await import('../../src/domain/article.ts');
+  const versionSource = sourceRef ?? { kind: 'source-version', sourceId: legacy.ref.sourceId, sourceVersion: 1, hash: legacy.sourceHash };
+  const doc = kind === 'piece' ? { id, productionId, kind: 'article', slug: 'article', createdAt: at, createdBy: contexts[1].actor,
+    draft: { body, revision: 7, inputs: [], sources: [versionSource], updatedAt: at, updatedBy: contexts[1].actor } }
+    : { id, pieceId: 'article-public-piece', number: 1, body, hash: articleHash(body), origin: 'edit', inputs: [], sources: [versionSource], createdAt: at, createdBy: contexts[1].actor };
+  await owner('INSERT INTO public.reporter_ed_parts(portal_id,kind,part_id,production_id,doc,seq) VALUES($1,$2,$3,$4,$5,1)', [PILOT, kind, id, productionId, JSON.stringify(doc)]);
+}
+async function backfillArticles() {
+  const items: import('../../src/domain/editorial-memory-legacy.ts').MemoryArticleReport['items'] = []; let after = null;
+  for (let count = 0; ; count++) {
+    assert.ok(count < 30, 'bounded fixture backfill must finish');
+    const response = await memoryApi('reconcile/articles', { identity: identities[1], requestId: randomUUID(), input: { after, limit: 1 } });
+    assert.equal(response.status, 200, await response.clone().text()); const page = await response.json(); items.push(...page.items); after = page.nextAfter;
+    if (!after) return items;
+  }
+}
+
+test('article-only citations keep stable scoped IDs and old aliases without exposing private curation or losing repeated quotes', async () => {
+  const { articleEvidenceId } = await import('../../src/domain/editorial-memory-legacy.ts');
+  await owner('INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,source_ids,seq) VALUES($1,$2,$3,$4,1)',
+    [PILOT, 'article-public', JSON.stringify({ id: 'article-public', title: 'Public synthetic article', ownerId: contexts[1].actor }), [legacy.ref.sourceId]]);
+  await owner('UPDATE public.reporter_ed_productions SET source_ids=array_append(source_ids,$3) WHERE portal_id=$1 AND production_id=$2', [PILOT, 'private-production', legacy.ref.sourceId]);
+  articleOriginalBody = { type: 'article', title: 'Synthetic original article', blocks: [
+    { id: 'double-quote', type: 'paragraph', inlines: [{ text: `“${legacy.text}” e “${legacy.text}”` }], sourceRefs: [legacy.ref] },
+    { id: 'unmatched', type: 'quote', inlines: [{ text: 'Uma declaração sintética sem referência não pode virar evidência.' }] },
+  ] };
+  await seedArticle('article-public', 'article-public-piece', 'piece', articleOriginalBody, '2025-02-03T12:00:00Z');
+  const single = { ...articleOriginalBody, blocks: [articleOriginalBody.blocks[0]] };
+  await seedArticle('article-public', 'article-public-version', 'version', single, '2024-02-03T12:00:00Z');
+  await seedArticle('private-production', 'article-private-piece', 'piece', single, '2025-02-03T12:00:00Z');
+  await seedArticle('legacy-production', 'article-curated-piece', 'piece', single, '2025-02-03T12:00:00Z');
+  const reports = await backfillArticles();
+  articlePublicId = articleEvidenceId(legacy.id, 'article-public', legacy.ref); articlePrivateId = articleEvidenceId(legacy.id, 'private-production', legacy.ref);
+  assert.notEqual(articlePublicId, articlePrivateId); assert.ok(reports.some(item => item.id === articlePublicId && item.state === 'imported'));
+  assert.ok(reports.some(item => item.state === 'unmatched')); assert.ok(reports.some(item => item.id === legacy.id && item.state === 'unchanged'));
+  assert.equal(reports.find(item => item.state === 'unmatched')?.productionId, 'article-public');
+  const shown = await (await memoryApi(articlePublicId)).json(); assert.equal(shown.evidence.legacyCitationId, legacy.id); assert.equal(shown.evidence.text, legacy.text);
+  assert.equal(shown.evidence.legacy.article.id, 'article-public-piece'); assert.equal(shown.evidence.metadata.recordedOn, null, 'another production curation must not become public metadata');
+  assert.equal(shown.evidence.legacy.citation.relevance, ''); assert.equal(shown.evidence.legacy.citation.podcastName, undefined);
+  assert.equal(shown.check, null); assert.equal(shown.uses.inserted, 0, 'evidence import alone is not an occurrence migration');
+  const aliases = await (await memoryApi(`legacy/${legacy.id}`)).json(); assert.deepEqual(aliases.map((entry: { id: string }) => entry.id).sort(), [articlePublicId, legacy.id].sort());
+  assert.equal((await memoryApi(articlePrivateId)).status, 404); assert.equal((await memoryApi(`${articlePrivateId}/article`)).status, 404);
+  assert.equal((await (await memoryApi(`legacy/${legacy.id}`, { identity: identities[0], slug: 'memory-second' })).json()).length, 0);
+  const before = shown.revisions.total;
+  const again = await backfillArticles(); assert.ok(!again.some(item => item.state === 'imported' || item.state === 'updated'));
+  assert.equal((await (await memoryApi(articlePublicId)).json()).revisions.total, before);
+  await assert.rejects(session(contexts[1], client => client.query('SELECT * FROM public.reporter_memory_articles')), denied);
+  await assert.rejects(session(contexts[1], client => client.query('DELETE FROM public.reporter_memory_articles')), denied);
+});
+
+test('original article snapshots survive overwritten drafts and partial migration refuses a changed resume document', async () => {
+  const first = await memoryApi('reconcile/articles', { identity: identities[1], requestId: randomUUID(), input: { limit: 1 } });
+  assert.equal(first.status, 200); const page = await first.json(); assert.equal(page.nextAfter.offset, 1);
+  const original = await memoryApi(`${articlePublicId}/article`); assert.equal(original.status, 200); const saved = await original.json();
+  assert.deepEqual(saved.doc.draft.body, articleOriginalBody); assert.equal(saved.importedBy, contexts[1].actor); assert.ok(Date.parse(saved.importedAt));
+  const empty = { type: 'article', title: 'Synthetic overwritten draft', blocks: [] };
+  await owner("UPDATE public.reporter_ed_parts SET doc=jsonb_set(doc,'{draft,body}',$3::jsonb) WHERE portal_id=$1 AND kind='piece' AND part_id=$2", [PILOT, 'article-public-piece', JSON.stringify(empty)]);
+  const stale = await memoryApi('reconcile/articles', { identity: identities[1], requestId: randomUUID(), input: { after: page.nextAfter, limit: 1 } }); assert.equal(stale.status, 409);
+  assert.deepEqual((await (await memoryApi(`${articlePublicId}/article`)).json()).doc.draft.body, articleOriginalBody);
+  db.migrate(); assert.deepEqual((await (await memoryApi(`${articlePublicId}/article`)).json()).doc.draft.body, articleOriginalBody);
+});
+
+test('article provenance resolves legacy divergence against its saved original after the draft was replaced', async () => {
+  const original = await (await memoryApi(articlePublicId)).json();
+  const corrected = await memoryApi(`${articlePublicId}/correction`, { identity: identities[1], requestId: randomUUID(), input: {
+    expected: memoryEvidenceRef(original.evidence), reason: 'Synthetic article curation', changes: { kind: 'citation', metadata: { edition: 'Curated edition' } },
+  } }); assert.equal(corrected.status, 200);
+  await owner("UPDATE public.reporter_ed_sources SET doc=jsonb_set(doc,'{recordedOn}',to_jsonb('2019-02-03'::text)) WHERE portal_id=$1 AND source_id=$2", [PILOT, legacy.ref.sourceId]);
+  await backfillArticles(); const conflict = await (await memoryApi(articlePublicId)).json();
+  assert.equal(conflict.evidence.legacy.state, 'conflict'); assert.equal(conflict.evidence.metadata.edition, 'Curated edition');
+  const input = { expected: memoryEvidenceRef(conflict.evidence), legacyHash: conflict.evidence.legacy.hash, choice: 'keep_bank', reason: 'Keep explicitly curated metadata' };
+  const response = await memoryApi(`${articlePublicId}/legacy`, { identity: identities[1], requestId: randomUUID(), input });
+  assert.equal(response.status, 200, await response.clone().text()); const resolved = await response.json(); assert.equal(resolved.evidence.legacy.state, 'synchronized');
+  assert.equal(resolved.evidence.metadata.edition, 'Curated edition'); assert.equal(resolved.eligibility.usable, false);
+  assert.equal((await memoryApi(`${articlePublicId}/legacy`, { requestId: randomUUID(), input })).status, 403);
+});
+
+test('historical article originals remain addressable after a newer observed article replaces the evidence provenance', async () => {
+  const previous = await (await memoryApi(`${articlePublicId}/article`)).json();
+  const next = { ...articleOriginalBody, title: 'New synthetic article snapshot' };
+  await owner("UPDATE public.reporter_ed_parts SET doc=jsonb_set(doc,'{draft}',(doc->'draft')||$3::jsonb) WHERE portal_id=$1 AND kind='piece' AND part_id=$2",
+    [PILOT, 'article-public-piece', JSON.stringify({ body: next, revision: 8, updatedAt: '2026-02-03T12:00:00Z' })]);
+  await backfillArticles();
+  const current = await (await memoryApi(`${articlePublicId}/article`)).json(); assert.equal(current.doc.draft.body.title, next.title);
+  assert.notEqual(current.origin.storageHash, previous.origin.storageHash);
+  const historical = await memoryApi(`${articlePublicId}/article?snapshot=${previous.origin.storageHash}`); assert.equal(historical.status, 200);
+  assert.deepEqual((await historical.json()).doc.draft.body, articleOriginalBody);
+  assert.equal((await memoryApi(`${articlePublicId}/article?snapshot=${'f'.repeat(32)}`)).status, 404);
+  assert.equal((await memoryApi(`${articlePublicId}/article?snapshot=invalid`)).status, 422);
+  assert.equal((await memoryApi(`${articlePublicId}/article?actor=forged`)).status, 422);
+  assert.equal((await memoryApi('reconcile/articles', { identity: identities[1], requestId: randomUUID(), input: {
+    after: { productionId: 'article-public', kind: 'piece', id: 'article-public-piece', offset: 10 ** 12, storageHash: previous.origin.storageHash },
+  } })).status, 422);
+  assert.equal((await memoryApi(`${articlePublicId}/article?snapshot=${previous.origin.storageHash}`, { identity: identities[0], slug: 'memory-second' })).status, 404);
+});
+
+test('same words from two speakers do not inherit the other voice or its curated identity', async () => {
+  const { citationFromReference } = await import('../../src/domain/citation-library.ts');
+  const { articleEvidenceId } = await import('../../src/domain/editorial-memory-legacy.ts');
+  const text = 'As inscrições sintéticas foram abertas para cem participantes do curso.';
+  const original = createTranscriptSource({ workspaceId: PILOT, title: 'Synthetic voices', origin: 'interview', authorized: true,
+    parsed: { format: 'speaker-lines', speakers: ['Ana', 'Bia'], segments: [{ id: 'ana-segment', speaker: 'Ana', text }, { id: 'bia-segment', speaker: 'Bia', text }], warnings: [] },
+    speakerPeople: { Ana: contexts[1].actor, Bia: contexts[0].actor } }, { actorId: contexts[1].actor, now: '2025-01-01T00:00:00Z', newId: () => 'multi-voice-source' });
+  const productionId = 'voice-production';
+  await owner('INSERT INTO public.reporter_ed_sources(portal_id,source_id,doc,seq) VALUES($1,$2,$3,1)', [PILOT, original.id, JSON.stringify(original)]);
+  await owner('INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,source_ids,seq) VALUES($1,$2,$3,$4,1)',
+    [PILOT, productionId, JSON.stringify({ id: productionId, title: 'Synthetic voices', ownerId: contexts[1].actor }), [original.id]]);
+  const refs = ['ana-segment', 'bia-segment'].map(segmentId => ({ kind: 'source' as const, sourceId: original.id, sourceVersion: 1, locator: { type: 'segment' as const, segmentId } }));
+  const body: import('../../src/domain/article.ts').ArticleBody = { type: 'article', title: 'Synthetic voices', blocks: refs.map((ref, index) => ({
+    id: `voice-${index}`, type: 'quote', inlines: [{ text }], sourceRefs: [ref],
+  })) };
+  const curated = citationFromReference(original, refs[1], text, productionId, '2025-01-01T00:00:00Z')!;
+  await owner("INSERT INTO public.reporter_ed_items(portal_id,kind,item_id,production_id,doc,seq) VALUES($1,'citation',$2,$3,$4,1)", [PILOT, curated.id, productionId, JSON.stringify(curated)]);
+  await seedArticle(productionId, 'voices-piece', 'piece', body, '2025-01-01T00:00:00Z', toSourceVersionRef(original));
+  await backfillArticles(); const aId = articleEvidenceId(curated.id, productionId, refs[0]);
+  const a = await (await memoryApi(aId)).json(), b = await (await memoryApi(curated.id)).json();
+  assert.equal(a.evidence.personId, contexts[1].actor); assert.equal(a.evidence.anchor.spans[0].segmentId, 'ana-segment');
+  assert.equal(b.evidence.personId, contexts[0].actor); assert.equal(b.evidence.anchor.spans[0].segmentId, 'bia-segment');
+  const aliases = await (await memoryApi(`legacy/${curated.id}`)).json(); assert.deepEqual(aliases.map((item: { id: string }) => item.id).sort(), [aId, curated.id].sort());
+  const ambiguous: typeof body = { ...body, blocks: [{ ...body.blocks[0], sourceRefs: refs }] };
+  await seedArticle(productionId, 'ambiguous-voices', 'piece', ambiguous, '2026-01-01T00:00:00Z', toSourceVersionRef(original));
+  assert.ok((await backfillArticles()).some(item => item.articleId === 'ambiguous-voices' && item.state === 'ambiguous'));
+  assert.equal((await (await memoryApi(aId)).json()).evidence.personId, contexts[1].actor);
+});

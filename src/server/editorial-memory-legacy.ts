@@ -3,7 +3,8 @@ import type { PoolClient } from 'pg';
 import type { MemoryCitation, MemoryEvidenceRef, MemoryEvidenceView, MemoryMaterial } from '../domain/editorial-memory.ts';
 import { memoryEvidenceRef, sameMemoryEvidence } from '../domain/editorial-memory.ts';
 import type { MemoryLegacyCandidate, MemoryLegacyReport, MemoryLegacyState } from '../domain/editorial-memory-legacy.ts';
-import { mapLegacyCitation } from '../domain/editorial-memory-legacy.ts';
+import { articleCitations, mapLegacyCitation } from '../domain/editorial-memory-legacy.ts';
+import type { Source } from '../domain/source.ts';
 import { contentHash } from '../domain/text/hash.ts';
 import { memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryIdSchema } from './editorial-memory-input.ts';
 import { memoryBundle, memoryReadState } from './editorial-memory-detail.ts';
@@ -18,21 +19,34 @@ type Resolution = { expected: MemoryEvidenceRef; legacyHash: string; choice: 'ke
 async function candidates(client: PoolClient, after: string | null, limit: number, ids?: string[], sources?: string[]): Promise<LegacyBatch> {
   return (await client.query('SELECT public.reporter_memory_legacy_batch($1,$2,$3::text[],$4::text[]) AS value', [after, limit, ids ?? null, sources ?? null])).rows[0].value;
 }
-async function reconcile(client: PoolClient, candidate: MemoryLegacyCandidate, resolution?: Resolution): Promise<MemoryLegacyState> {
+export async function reconcileMemoryCandidate(client: PoolClient, candidate: MemoryLegacyCandidate, resolution?: Resolution): Promise<MemoryLegacyState> {
   const context = currentWorkerContext() ?? currentReporterContext(), now = new Date().toISOString();
   if (!context.actor) throw new FlowError('JOB_CONTEXT_MISMATCH', 422);
   const mapped = mapLegacyCitation(candidate, context.portal, context.actor, now);
   if (typeof mapped === 'string') return mapped;
-  const current = await memoryGet<MemoryCitation>(client, 'evidence', candidate.citation.id);
+  const current = await memoryGet<MemoryCitation>(client, 'evidence', mapped.evidence.id);
   if (current && (current.doc.kind !== 'citation' || current.doc.legacyCitationId !== candidate.citation.id
     || current.origin_production_id !== candidate.citation.productionId || current.source_id !== candidate.citation.ref.sourceId
     || current.parent_id !== mapped.material.id)) return 'id_conflict';
   if (resolution && (!current || !sameMemoryEvidence(resolution.expected, memoryEvidenceRef(current.doc)))) throw new FlowError('MEMORY_CONFLICT', 409);
   const previous = current?.doc, incomingHash = memoryEvidenceRef(mapped.evidence).hash, previousHash = previous ? memoryEvidenceRef(previous).hash : null;
-  const hash = contentHash({ citation: candidate.citation, factCheck: candidate.factCheck, mappedHash: incomingHash });
+  if (!resolution && previous?.legacy?.article && candidate.article) {
+    const before = previous.legacy.article, next = candidate.article;
+    const rank = (value: typeof before) => [Date.parse(value.at), value.kind === 'piece' ? 1 : 0, value.id] as const;
+    const a = rank(before), b = rank(next);
+    if (a[0] > b[0] || a[0] === b[0] && (a[1] > b[1] || a[1] === b[1] && a[2] > b[2])) {
+      const saved = (await client.query('SELECT public.reporter_memory_article_get($1::jsonb) AS value', [JSON.stringify(before)])).rows[0].value;
+      const sources = (await client.query('SELECT public.reporter_memory_article_sources($1::jsonb) AS value', [JSON.stringify(before)])).rows[0].value as Source[];
+      const found = saved && articleCitations(saved.doc.draft?.body ?? saved.doc.body, sources, before).find(item => item && item !== 'ambiguous' && item.citation.id === candidate.citation.id
+        && contentHash(item.citation.ref) === contentHash(previous.legacy!.citation.ref));
+      return found && found !== 'ambiguous' ? reconcileMemoryCandidate(client, { ...found, factCheck: candidate.factCheck }) : previous.legacy.state === 'conflict' ? 'conflict' : 'unchanged';
+    }
+  }
+  const hash = contentHash({ citation: candidate.citation, factCheck: candidate.factCheck, mappedHash: incomingHash, article: candidate.article });
   if (resolution && (resolution.legacyHash !== previous?.legacy?.hash || resolution.legacyHash !== hash)) throw new FlowError('MEMORY_CONFLICT', 409);
   const material = await memoryGet<MemoryMaterial>(client, 'material', mapped.material.id);
-  if (!material || contentHash({ title: material.doc.title, metadata: material.doc.metadata }) !== contentHash({ title: mapped.material.title, metadata: mapped.material.metadata }))
+  if (!material || contentHash({ title: material.doc.title, metadata: material.doc.metadata, primaryOrigin: material.doc.primaryOrigin })
+    !== contentHash({ title: mapped.material.title, metadata: mapped.material.metadata, primaryOrigin: mapped.material.primaryOrigin }))
     await memoryPut(client, { kind: 'material', id: mapped.material.id, expected: material?.storage_revision ?? null,
       doc: { ...mapped.material, revision: (material?.doc.revision ?? 0) + 1, importedAt: material?.doc.importedAt ?? mapped.material.importedAt,
         importedBy: material?.doc.importedBy ?? mapped.material.importedBy }, sourceId: candidate.citation.ref.sourceId, productionId: candidate.citation.productionId });
@@ -47,8 +61,9 @@ async function reconcile(client: PoolClient, candidate: MemoryLegacyCandidate, r
     createdAt: previous?.createdAt ?? payload.createdAt, updatedAt: semanticChange || resolution ? now : previous?.updatedAt ?? payload.updatedAt,
     legacy: { citation: candidate.citation, factCheck: candidate.factCheck, hash, mappedHash: incomingHash,
       state: conflict ? 'conflict' : 'synchronized', importedAt: now, importedBy: context.actor,
-      reason: resolution?.reason ?? 'Reconciliação da citação antiga.', ...(resolution ? { resolution: { choice: resolution.choice, reason: resolution.reason } } : {}) } };
-  await client.query('SELECT public.reporter_memory_legacy_save($1::jsonb,$2)', [JSON.stringify({ kind: 'evidence', id: evidence.id,
+      reason: resolution?.reason ?? 'Reconciliação da citação antiga.', ...(candidate.article ? { article: candidate.article } : {}),
+      ...(resolution ? { resolution: { choice: resolution.choice, reason: resolution.reason } } : {}) } };
+  await client.query(`SELECT public.${candidate.article ? 'reporter_memory_article_save' : 'reporter_memory_legacy_save'}($1::jsonb,$2)`, [JSON.stringify({ kind: 'evidence', id: evidence.id,
     expected: current?.storage_revision ?? null, doc: evidence, fingerprint: memoryEvidenceRef(evidence).hash, parentKind: 'material', parentId: mapped.material.id }), evidence.legacy!.reason]);
   return conflict ? 'conflict' : current ? 'updated' : 'imported';
 }
@@ -58,7 +73,7 @@ export async function reconcileEditorialMemory(value: { after?: string | null; l
     if ((await memoryReadState(client)).visibility !== state.visibility) throw new FlowError('MEMORY_CURSOR_INVALID', 409);
   }, async client => {
     const batch = await candidates(client, input.after, input.limit), items: MemoryLegacyReport['items'] = [];
-    for (const candidate of batch.items) items.push({ id: candidate.citation.id, state: await reconcile(client, candidate) });
+    for (const candidate of batch.items) items.push({ id: candidate.citation.id, state: await reconcileMemoryCandidate(client, candidate) });
     return { items, total: batch.total, nextAfter: batch.nextAfter };
   });
 }
@@ -68,7 +83,7 @@ export async function resolveMemoryLegacy(id: string, value: Resolution, request
     await memoryBundle(client, id, await memoryReadState(client));
     if (!(await candidates(client, null, 1, [id])).items.length) throw new FlowError('NOT_FOUND', 404);
   }, async client => {
-    const candidate = (await candidates(client, null, 1, [id])).items[0], state = await reconcile(client, candidate, input);
+    const candidate = (await candidates(client, null, 1, [id])).items[0], state = await reconcileMemoryCandidate(client, candidate, input);
     if (!['updated', 'unchanged'].includes(state)) throw new FlowError('MEMORY_LEGACY_CONFLICT', 409);
     return memoryView(await memoryBundle(client, id, await memoryReadState(client)));
   });
@@ -80,14 +95,14 @@ export async function syncLegacyMemory(client: PoolClient, ids: string[], source
   const unique = [...new Set(ids)];
   for (let from = 0; from < unique.length; from += 100) {
     const batch = await candidates(client, null, 100, unique.slice(from, from + 100));
-    for (const candidate of batch.items) await reconcile(client, candidate);
+    for (const candidate of batch.items) await reconcileMemoryCandidate(client, candidate);
   }
   const uniqueSources = [...new Set(sources)];
   for (let from = 0; from < uniqueSources.length; from += 100) {
     let after: string | null = null;
     do {
       const batch = await candidates(client, after, 100, undefined, uniqueSources.slice(from, from + 100));
-      for (const candidate of batch.items) await reconcile(client, candidate);
+      for (const candidate of batch.items) await reconcileMemoryCandidate(client, candidate);
       after = batch.nextAfter;
     } while (after);
   }
