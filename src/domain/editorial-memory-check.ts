@@ -11,7 +11,7 @@ export type MemoryAssessment = {
 };
 /** Literal claims and actual source relations determine the verdict, independently of popularity. */
 export function assessMemoryEvidence(evidence: MemoryEvidence, material: MemoryMaterial, policy: MemoryPolicy,
-  previous: MemoryCheck | null, input: MemoryAssessment, ctx: CommandContext): MemoryCheck {
+  previous: Pick<MemoryCheck, 'id' | 'workspaceId' | 'revision'> | null, input: MemoryAssessment, ctx: CommandContext): MemoryCheck {
   if (evidence.materialId !== material.id || evidence.workspaceId !== material.workspaceId || policy.workspaceId !== evidence.workspaceId
     || previous && (previous.id !== evidence.id || previous.workspaceId !== evidence.workspaceId)
     || !input.claims.length || input.claims.length > 6) throw new Error('MEMORY_CHECK_CONTEXT_INVALID');
@@ -27,7 +27,7 @@ export function assessMemoryEvidence(evidence: MemoryEvidence, material: MemoryM
       || !['confirms', 'contradicts', 'related'].includes(support.relation)) throw new Error('MEMORY_CHECK_SUPPORT_INVALID');
     if (support.evidence.kind === 'internal' && support.evidence.evidence.id === evidence.id) continue;
     const literal = structuredClone(support);
-    if (!checkable(input.claims[support.claim].kind) || support.relation === 'confirms' && (support.evidence.primaryOrigin === material.primaryOrigin
+    if (!checkable(input.claims[support.claim].kind) || support.relation === 'confirms' && (support.evidence.originStatus === 'unverified' || support.evidence.primaryOrigin === material.primaryOrigin
       || support.evidence.excerpt.trim() === evidence.anchor.excerpt.trim()
       || support.evidence.kind === 'external' && samePublisher(support.evidence.url, material.metadata.originalUrl))) literal.relation = 'related';
     if (!supports.some(previous => JSON.stringify(previous) === JSON.stringify(literal))) supports.push(literal);

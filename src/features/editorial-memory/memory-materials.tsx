@@ -14,7 +14,7 @@ const JOB_LABELS: Record<MemoryJob['status'], string> = { queued: 'Na fila', run
 const BLANK_METADATA: MemoryMetadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: [], originalUrl: null };
 const blankImport = (): MemoryImportInput => ({ title: '', kind: 'transcript', text: '', authorized: false, metadata: structuredClone(BLANK_METADATA), primaryOrigin: null, originalFileId: null });
 export function JobStatus({ job }: { job: MemoryJob | null }) {
-  return <Badge tone={job?.status === 'completed' ? 'green' : job?.status === 'failed' || job?.status === 'partial' ? 'amber' : 'gray'}>{job ? JOB_LABELS[job.status] : 'Sem extração'}</Badge>;
+  return <Badge tone={job?.status === 'completed' ? 'green' : job?.status === 'failed' || job?.status === 'partial' ? 'amber' : 'gray'}>{job ? job.kind === 'check' && job.status === 'running' ? 'Checando' : JOB_LABELS[job.status] : 'Sem extração'}</Badge>;
 }
 export function MemoryImportDialog({ port, open, onClose, onImported }: { port: MemoryLibrary; open: boolean; onClose: () => void; onImported: (id: string) => void }) {
   const [input, setInput] = useState<MemoryImportInput>(blankImport);

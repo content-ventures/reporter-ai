@@ -24,7 +24,7 @@ relation=confirms exige confirmação direta do mesmo fato, valor, unidade, per�
 Não trate período diferente como contradição. Não valide autoria por encontrar a mesma frase. Não use conhecimento próprio nem invente fontes.`;
 
 /** Only retained, numbered sources can enter the check; no model-generated URL or source reference survives. */
-export async function runMemoryCheck(evidence: MemoryEvidence, material: MemoryMaterial, policy: MemoryPolicy, previous: MemoryCheck | null,
+export async function runMemoryCheck(evidence: MemoryEvidence, material: MemoryMaterial, policy: MemoryPolicy, previous: Pick<MemoryCheck, 'id' | 'workspaceId' | 'revision'> | null,
   model: string, actorId: string, deps: MemoryCheckProviders, signal: AbortSignal): Promise<MemoryCheck> {
   const extracted = await deps.generate(EXTRACT, { excerpt: evidence.anchor.excerpt, metadata: evidence.metadata,
     ...(evidence.kind === 'statistic' ? { value: evidence.value.raw, unit: evidence.unit, qualifier: evidence.qualifier, period: evidence.period,

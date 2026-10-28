@@ -35,6 +35,7 @@ export const memoryMetadataSchema = z.object({
   event: nullableText(240), edition: nullableText(160), topics: z.array(z.string().trim().min(1).max(100)).max(20), originalUrl: safeUrl.nullable(),
 }).strict();
 export const memoryEvidenceRefSchema = z.object({ id, revision: z.number().int().nonnegative(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
+export const memoryCheckInputSchema = z.object({ expected: memoryEvidenceRefSchema }).strict();
 export const memoryLegacyBatchSchema = z.object({ after: id.nullable().default(null), limit: z.number().int().min(1).max(100).default(25) }).strict();
 const articlePosition = z.object({ productionId: id, kind: z.enum(['piece', 'version']), id, offset: z.number().int().min(0).max(1_000_000),
   storageHash: z.string().regex(/^[a-f0-9]{32}$/).nullable() }).strict().refine(value => value.offset === 0 || value.storageHash !== null);
@@ -47,9 +48,9 @@ export const memoryDuplicateResolutionSchema = z.object({ expected: memoryEviden
 export const memoryCheckRefSchema = z.object({ id, revision: z.number().int().positive() }).strict();
 const sourceRef = z.object({ kind: z.literal('source-version'), sourceId: id, sourceVersion: z.number().int().positive(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
 const support = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('internal'), evidence: memoryEvidenceRefSchema, primaryOrigin: z.string().min(1).max(2000), excerpt: z.string().min(1).max(20000) }).strict(),
+  z.object({ kind: z.literal('internal'), evidence: memoryEvidenceRefSchema, primaryOrigin: z.string().min(1).max(2000), excerpt: z.string().min(1).max(20000), originStatus: z.literal('unverified').optional() }).strict(),
   z.object({ kind: z.literal('external'), url: safeUrl, title: z.string().min(1).max(500), excerpt: z.string().min(1).max(20000),
-    retrievedAt: z.iso.datetime({ offset: true }), publishedOn: day.nullable(), primaryOrigin: z.string().min(1).max(2000) }).strict(),
+    retrievedAt: z.iso.datetime({ offset: true }), publishedOn: day.nullable(), primaryOrigin: z.string().min(1).max(2000), originStatus: z.literal('unverified').optional() }).strict(),
 ]);
 export const memoryDecisionInputSchema = z.object({
   evidence: memoryEvidenceRefSchema, check: memoryCheckRefSchema.nullable(), policyRevision: z.number().int().positive(),
