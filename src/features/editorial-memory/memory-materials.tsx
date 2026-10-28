@@ -12,18 +12,19 @@ export const MATERIAL_KINDS = [
 ];
 const JOB_LABELS: Record<MemoryJob['status'], string> = { queued: 'Na fila', running: 'Extraindo', partial: 'Parcial', completed: 'Concluído', failed: 'Falhou', cancelled: 'Cancelado' };
 const BLANK_METADATA: MemoryMetadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: [], originalUrl: null };
+const blankImport = (): MemoryImportInput => ({ title: '', kind: 'transcript', text: '', authorized: false, metadata: structuredClone(BLANK_METADATA), primaryOrigin: null, originalFileId: null });
 export function JobStatus({ job }: { job: MemoryJob | null }) {
   return <Badge tone={job?.status === 'completed' ? 'green' : job?.status === 'failed' || job?.status === 'partial' ? 'amber' : 'gray'}>{job ? JOB_LABELS[job.status] : 'Sem extração'}</Badge>;
 }
-export function MemoryImportDialog({ port, onClose, onImported }: { port: MemoryLibrary; onClose: () => void; onImported: (id: string) => void }) {
-  const [input, setInput] = useState<MemoryImportInput>({ title: '', kind: 'transcript', text: '', authorized: false, metadata: BLANK_METADATA, primaryOrigin: null, originalFileId: null });
+export function MemoryImportDialog({ port, open, onClose, onImported }: { port: MemoryLibrary; open: boolean; onClose: () => void; onImported: (id: string) => void }) {
+  const [input, setInput] = useState<MemoryImportInput>(blankImport);
   const [topicsText, setTopicsText] = useState('');
-  const [busy, setBusy] = useState(false), [error, setError] = useState<string>(), [requestId] = useState(() => crypto.randomUUID());
+  const [busy, setBusy] = useState(false), [error, setError] = useState<string>(), [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const setMetadata = (field: keyof MemoryMetadata, value: string) => setInput(current => ({ ...current, metadata: { ...current.metadata, [field]: field === 'topics' ? value.split(',').map(topic => topic.trim()).filter(Boolean) : value || null } }));
-  return <ResponsiveDialog open title="Importar material" dirty={Boolean(input.title || input.text)} onClose={busy ? () => undefined : onClose}
+  return <ResponsiveDialog open={open} title="Importar material" dirty={Boolean(input.title || input.text)} onClose={busy ? () => undefined : onClose}
     footer={<><Button variant="secondary" disabled={busy} onClick={onClose}>Cancelar</Button><Button loading={busy} disabled={!input.title.trim() || input.text.trim().length < 24} onClick={async () => {
       setBusy(true); setError(undefined);
-      try { const result = await port.import(input, requestId); onImported(result.material.id); }
+      try { const result = await port.import(input, requestId); setInput(blankImport()); setTopicsText(''); setRequestId(crypto.randomUUID()); onImported(result.material.id); }
       catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível importar.'); }
       finally { setBusy(false); }
     }}>Importar</Button></>}>
@@ -63,9 +64,9 @@ export function MemoryMaterials({ onOpen }: { onOpen: (id: string) => void }) {
     footer={<ButtonGroup label="Ações"><Button variant="secondary" disabled={cursors.length === 1} onClick={() => setCursors(current => current.slice(0, -1))}>Anterior</Button>
       <Button variant="secondary" disabled={!resource.data.nextCursor} onClick={() => setCursors(current => [...current, resource.data!.nextCursor!])}>Próxima</Button></ButtonGroup>} />;
 }
-export function MemoryMaterialDrawer({ id, onClose, onEvidence }: { id: string; onClose: () => void; onEvidence: (material: MemoryMaterial) => void }) {
+export function MemoryMaterialDrawer({ id, open, onClose, onEvidence }: { id: string; open: boolean; onClose: () => void; onEvidence: (material: MemoryMaterial) => void }) {
   const session = useSession().data;
-  const load = useCallback((port: MemoryLibrary) => port.material(id), [id]), resource = useMemoryResource(load, 3000), canEdit = useCan('library.edit');
+  const load = useCallback((port: MemoryLibrary) => port.material(id), [id]), resource = useMemoryResource(load, 3000, open), canEdit = useCan('library.edit');
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>(), [rightsReason, setRightsReason] = useState('');
   const detail = resource.data, job = detail?.job;
   const act = async (action: 'retry' | 'cancel') => {
@@ -75,7 +76,7 @@ export function MemoryMaterialDrawer({ id, onClose, onEvidence }: { id: string; 
     catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível atualizar o processamento.'); }
     finally { setBusy(false); }
   };
-  return <Drawer open title={detail?.material.title ?? 'Material'} onClose={onClose} size="lg">
+  return <Drawer open={open} title={detail?.material.title ?? 'Material'} onClose={onClose} size="lg">
     {resource.error ? <ErrorState title="Não foi possível abrir o material" description={resource.error} onRetry={resource.reload} /> : !detail ? <Spinner label="Carregando original" /> : <Panel>
       <Section title="Processamento" meta={<JobStatus job={job ?? null} />}>
         {error && <Alert tone="danger" title={error} />}

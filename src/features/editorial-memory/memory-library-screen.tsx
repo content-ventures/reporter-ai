@@ -17,6 +17,7 @@ export function MemoryLibraryScreen() {
   const [filters, setFilters] = useState<MemoryQuery>({}), [filtersOpen, setFiltersOpen] = useState(false);
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]), cursor = cursors.at(-1);
   const [material, setMaterial] = useState<MemoryMaterial>(), [materialId, setMaterialId] = useState<string>(), [evidenceId, setEvidenceId] = useState<string>(), [importing, setImporting] = useState(false);
+  const [materialOpen, setMaterialOpen] = useState(false), [evidenceOpen, setEvidenceOpen] = useState(false);
   const [selected, setSelected] = useState<MemoryEvidenceRef[]>([]), [saving, setSaving] = useState(false), [error, setError] = useState<string>();
   const people = usePeople(), canEdit = useCan('library.edit');
   const load = useCallback((port: MemoryLibrary) => port.query({ ...filters, ...(tab === 'citation' || tab === 'statistic' ? { kind: tab } : {}), query, sort, materialId: material?.id, cursor, limit: 25 }), [tab, query, sort, material?.id, cursor, filters]);
@@ -28,11 +29,11 @@ export function MemoryLibraryScreen() {
       search={tab !== 'materials' ? <SearchField label="Buscar evidências" value={query} onValueChange={value => { setQuery(value); setCursors([undefined]); }} /> : undefined}
       actions={tab !== 'materials' ? <Select label="Ordenação" value={sort ?? 'newest'} onChange={value => { setSort(value as MemoryQuery['sort']); setCursors([undefined]); }} options={[{ value: 'newest', label: 'Mais recentes' }, { value: 'oldest', label: 'Mais antigas' }, { value: 'relevance', label: 'Relevância' }, { value: 'confidence', label: 'Confiança factual' }, { value: 'usage', label: 'Mais usadas' }]} /> : undefined} />
     {filtersOpen && tab !== 'materials' && <MemoryFilters key={JSON.stringify(filters)} applied={filters} onApply={value => { setFilters(value); setCursors([undefined]); setFiltersOpen(false); }} />}
-    {tab === 'materials' ? <MemoryMaterials key={materialId ?? 'materials'} onOpen={setMaterialId} /> : <>
+    {tab === 'materials' ? <MemoryMaterials key={materialId ?? 'materials'} onOpen={id => { setMaterialId(id); setMaterialOpen(true); }} /> : <>
       {material && <Section title={material.title} action={<Button variant="ghost" onClick={() => { setMaterial(undefined); setCursors([undefined]); }}>Limpar material</Button>} />}
       {error && <Alert tone="danger" title={error} />}
       {resource.error ? <ErrorState title="Não foi possível carregar o banco" description={resource.error} onRetry={resource.reload} /> : !page ? <Spinner label="Carregando evidências" /> : <DataTable
-        label="Evidências" rows={page.items} rowKey={item => item.evidence.id} rowLabel={item => item.evidence.anchor.excerpt.slice(0, 80)} onRowClick={item => setEvidenceId(item.evidence.id)}
+        label="Evidências" rows={page.items} rowKey={item => item.evidence.id} rowLabel={item => item.evidence.anchor.excerpt.slice(0, 80)} onRowClick={item => { setEvidenceId(item.evidence.id); setEvidenceOpen(true); }}
         selectable={canEdit} selected={new Set(selected.map(item => item.id))} onSelectedChange={next => {
           setError(page.items.some(item => next.has(item.evidence.id) && !item.eligibility.usable) ? 'Conclua a revisão e a confirmação de autoria antes de selecionar a evidência.' : undefined);
           setSelected(current => {
@@ -57,8 +58,8 @@ export function MemoryLibraryScreen() {
         catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível salvar a seleção.'); } finally { setSaving(false); }
       }}>Salvar seleção</Button></ButtonGroup>} />}
     </>}
-    {importing && resource.port && <MemoryImportDialog port={resource.port} onClose={() => setImporting(false)} onImported={id => { setImporting(false); setMaterialId(id); setTab('materials'); reset(); }} />}
-    {materialId && <MemoryMaterialDrawer key={materialId} id={materialId} onClose={() => setMaterialId(undefined)} onEvidence={item => { setMaterial(item); setMaterialId(undefined); setTab('all'); setCursors([undefined]); }} />}
-    {evidenceId && <MemoryEvidenceDrawer key={evidenceId} id={evidenceId} onClose={() => setEvidenceId(undefined)} onChanged={resource.reload} onMaterial={item => { setEvidenceId(undefined); setMaterialId(item.id); }} />}
+    {resource.port && <MemoryImportDialog port={resource.port} open={importing} onClose={() => setImporting(false)} onImported={id => { setImporting(false); setMaterialId(id); setTab('materials'); reset(); toast('Material importado'); }} />}
+    {materialId && <MemoryMaterialDrawer key={materialId} id={materialId} open={materialOpen} onClose={() => setMaterialOpen(false)} onEvidence={item => { setMaterial(item); setMaterialOpen(false); setEvidenceOpen(false); setTab('all'); setCursors([undefined]); }} />}
+    {evidenceId && <MemoryEvidenceDrawer key={evidenceId} id={evidenceId} open={evidenceOpen} onClose={() => setEvidenceOpen(false)} onChanged={resource.reload} onMaterial={item => { setMaterialId(item.id); setMaterialOpen(true); }} />}
   </PageStack>;
 }
