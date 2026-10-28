@@ -19,6 +19,13 @@ test('library commands keep the bound workspace, account and request identity wh
     assert.equal(new Headers(seen[1].init.headers).get('x-reporter-client'), 'local');
     assert.equal(new Headers(seen[1].init.headers).get('idempotency-key'), 'stable-request-id');
     assert.deepEqual(JSON.parse(String(seen[1].init.body)), { baseRevision: 1, authorized: true, reason: 'Confirmed source rights.' });
+    await library.selections({ cursor: 'selection+/=cursor', limit: 25 });
+    assert.equal(seen[2].url.pathname, '/api/reporter/w/editorial-client/memory/selections'); assert.equal(seen[2].url.searchParams.get('cursor'), 'selection+/=cursor');
+    const writing = { baseRevision: 2, title: 'Actual selection', brief: { size: 'standard' as const, sections: 3 } };
+    await library.writeSelection('selection/encoded', writing, 'stable-writing-request');
+    assert.equal(seen[3].url.pathname, '/api/reporter/w/editorial-client/memory/selections/selection%2Fencoded/write');
+    assert.equal(new Headers(seen[3].init.headers).get('idempotency-key'), 'stable-writing-request');
+    assert.equal(new Headers(seen[3].init.headers).get('x-reporter-account'), 'actual-account'); assert.deepEqual(JSON.parse(String(seen[3].init.body)), writing);
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });

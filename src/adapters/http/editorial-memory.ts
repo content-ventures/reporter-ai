@@ -25,6 +25,7 @@ export function createHttpMemoryLibrary(http: ReporterTransport): MemoryLibrary 
     check: (evidence, expected, key) => command(`${id(evidence)}/check`, { expected }, key),
     review: (evidence, input, key) => command(`${id(evidence)}/review`, input, key), correct: (evidence, input, key) => command(`${id(evidence)}/correction`, input, key),
     select: (input, key) => command('selections', input, key), selection: selection => http.request(`/memory/selections/${id(selection)}`),
+    selections: input => http.request(`/memory/selections${parameters(input)}`),
     writeSelection: (selection, input, key) => command(`selections/${id(selection)}/write`, input, key),
     policy: () => http.request('/memory/policy'), lookupLegacy: evidence => http.request(`/memory/legacy/${id(evidence)}`),
     originalArticle: (evidence, snapshot) => http.request(`/memory/${id(evidence)}/article${parameters({ snapshot })}`),

@@ -42,7 +42,7 @@ export function MaterialTab() {
   }
   return (
     <TranscriptViewer
-      label="Entrevista"
+      label={source?.source.memory ? 'Seleção do banco' : 'Entrevista'}
       segments={studio.segments}
       query={query}
       onQueryChange={setQuery}

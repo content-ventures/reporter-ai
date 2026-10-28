@@ -1,10 +1,12 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
-import type { MemoryEvidenceRef, MemorySelection } from '../domain/editorial-memory.ts';
+import type { MemoryEvidenceRef, MemoryPage, MemorySelection } from '../domain/editorial-memory.ts';
+import type { MemoryHistoryQuery } from '../ports/editorial-memory.ts';
 import { initialMemoryPolicy, memoryDecisionApplies, memoryEvidenceRef, sameMemoryEvidence } from '../domain/editorial-memory.ts';
-import { memoryIdSchema, memorySelectionInputSchema } from './editorial-memory-input.ts';
+import { memoryHistoryQuerySchema, memoryIdSchema, memorySelectionInputSchema } from './editorial-memory-input.ts';
+import { decodeMemoryCursor, encodeMemoryCursor } from './editorial-memory-cursor.ts';
 import { memoryBundle, memoryReadState } from './editorial-memory-detail.ts';
-import { memoryView } from './editorial-memory-query.ts';
+import { memoryCursorKey, memoryView } from './editorial-memory-query.ts';
 import type { MemoryBundle } from './editorial-memory-query.ts';
 import { memoryCommand, memoryGet, memoryRead } from './editorial-memory-store.ts';
 import { currentReporterContext } from './request-context.ts';
@@ -42,5 +44,15 @@ export async function readMemorySelection(id: string): Promise<MemorySelection> 
     const stored = await memoryGet<MemorySelection>(client, 'selection', id);
     if (!stored) throw new FlowError('NOT_FOUND', 404);
     return stored.doc;
+  });
+}
+export async function readMemorySelections(value: MemoryHistoryQuery): Promise<MemoryPage<MemorySelection>> {
+  const input = memoryHistoryQuerySchema.parse(value), context = currentReporterContext(), key = memoryCursorKey();
+  return memoryRead(async client => {
+    const state = await memoryReadState(client), binding = { tenant: context.tenant, workspace: context.portal, actor: context.actor, visibility: state.visibility };
+    const identity = { resource: 'selections' as const, limit: input.limit }, cursor = input.cursor ? decodeMemoryCursor(input.cursor, identity, binding, key, Date.now()) : null;
+    const result = (await client.query('SELECT public.reporter_memory_selection_page($1::bigint,$2::jsonb,$3,$4) AS value',
+      [cursor?.snapshot ?? state.snapshot, cursor ? JSON.stringify(cursor.position) : null, input.limit, state.visibility])).rows[0].value;
+    return { ...result, next: undefined, nextCursor: result.next ? encodeMemoryCursor({ snapshot: result.snapshot, position: result.next }, identity, binding, key, Date.now()) : null };
   });
 }
