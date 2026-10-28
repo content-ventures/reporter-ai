@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MEMORY_TEXT_MAX_BYTES, memoryCorrectionSchema, memoryDecisionInputSchema, memoryImportInputSchema,
-  memoryArticleBatchSchema, memorySelectionInputSchema, parseMemoryQuery } from '../src/server/editorial-memory-input.ts';
+  memoryArticleBatchSchema, memoryDuplicateResolutionSchema, memorySelectionInputSchema, parseMemoryQuery } from '../src/server/editorial-memory-input.ts';
 
 const metadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: [], originalUrl: null };
 const ref = { id: 'evidence', revision: 0, hash: 'a'.repeat(16) };
@@ -41,11 +41,19 @@ test('review payloads cannot supply actor identity or omit the reason/revision g
 test('URL filters have explicit date semantics, strict booleans, bounded pages and no silent duplicate selectors', () => {
   const query = parseMemoryQuery(new URLSearchParams('kind=statistic&q=volume&topic=Beta&topic=Alfa&topic=Beta&dateField=observation&from=2024-01-01&to=2024-12-31&unused=true&minConfidence=85'));
   assert.deepEqual(query.topics, ['Alfa', 'Beta']); assert.equal(query.query, 'volume'); assert.equal(query.unused, true);
-  assert.equal(query.limit, 25); assert.equal(query.useStage, 'inserted'); assert.equal(query.minConfidence, 85);
+  assert.equal(query.limit, 25); assert.equal(query.useStage, 'inserted'); assert.equal(query.minConfidence, 85); assert.equal(query.status, 'active');
+  assert.equal(parseMemoryQuery(new URLSearchParams('status=superseded')).status, 'superseded');
   for (const invalid of ['limit=101', 'limit=', 'limit=1.5', 'unused=1', 'from=2025-01-01', 'dateField=recorded&from=2025-03-01&to=2024-03-01',
-    'minConfidence=NaN', 'minConfidence=101', 'kind=citation&kind=statistic', 'actor=other', 'q=a&query=b', 'sort=unknown'])
+    'minConfidence=NaN', 'minConfidence=101', 'kind=citation&kind=statistic', 'actor=other', 'q=a&query=b', 'sort=unknown', 'status=unknown', 'status=active&status=all'])
     assert.throws(() => parseMemoryQuery(new URLSearchParams(invalid)), { name: 'ZodError' }, invalid);
   assert.throws(() => parseMemoryQuery(new URLSearchParams(Array(21).fill('topic=Same').join('&'))));
+});
+
+test('duplicate resolution binds both exact evidence snapshots and refuses fabricated actor or an implicit choice', () => {
+  const input = { expected: ref, canonical: { ...ref, id: 'canonical' }, choice: 'keep_variant', reason: 'Preservar a edição revisada.' };
+  assert.deepEqual(memoryDuplicateResolutionSchema.parse(input), input);
+  for (const changed of [{ ...input, actor: 'someone' }, { ...input, reason: ' ' }, { ...input, canonical: ref }, { ...input, choice: 'automatic' },
+    { ...input, canonical: { ...input.canonical, revision: -1 } }]) assert.equal(memoryDuplicateResolutionSchema.safeParse(changed).success, false);
 });
 
 test('corrections are discriminated and decimal ranges retain precision beyond floating point', () => {

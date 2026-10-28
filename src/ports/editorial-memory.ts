@@ -47,4 +47,6 @@ export interface EditorialMemory {
   reconcileLegacy(input: { after?: string | null; limit?: number }, requestId: string): Promise<MemoryLegacyReport>;
   reconcileArticles(input: { after?: MemoryArticlePosition | null; limit?: number }, requestId: string): Promise<MemoryArticleReport>;
   resolveLegacy(id: string, input: { expected: MemoryEvidenceRef; legacyHash: string; choice: 'keep_bank' | 'apply_legacy'; reason: string }, requestId: string): Promise<MemoryEvidenceView>;
+  resolveDuplicate(id: string, input: { expected: MemoryEvidenceRef; canonical: MemoryEvidenceRef; choice: 'keep_variant' | 'use_curated'; reason: string },
+    requestId: string): Promise<MemoryEvidenceView>;
 }
