@@ -239,7 +239,7 @@ function DeliveryRoute({ productionId }: { productionId: ProductionId }) {
     if (ready.length === prepared.length && !alreadyDelivered) setCelebrate(true);
     // Only what the browser was actually handed counts as delivered.
     const saved = await pkg.download(ready);
-    if (!pkg.isCurrent()) return;
+    if (!pkg.isCurrent()) { setExporting(false); setCelebrate(false); return; }
     const outcomes = downloadedOutcomes(prepared, saved);
     const failed = outcomes.filter((outcome) => !outcome.ok).length;
     const result = await commands.production.recordDelivery({ productionId, selection: [...selection], mode: 'download', files: outcomes });

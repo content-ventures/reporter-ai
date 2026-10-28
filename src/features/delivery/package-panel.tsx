@@ -49,10 +49,11 @@ type FileItemProps = {
   progress: FileProgress;
   retrying: boolean;
   anchorRef: PackageController['anchorRef'];
+  onDownloadClick: PackageController['onDownloadClick'];
   onRetry: (file: PackageFile) => void;
 };
 
-function FileItem({ file, progress, retrying, anchorRef, onRetry }: FileItemProps) {
+function FileItem({ file, progress, retrying, anchorRef, onDownloadClick, onRetry }: FileItemProps) {
   const workspaceHrefFor = useWorkspaceHref();
   const icon = fileIcon(file);
   const leading = imageThumb(file, progress);
@@ -116,6 +117,7 @@ function FileItem({ file, progress, retrying, anchorRef, onRetry }: FileItemProp
                 ref={anchorRef(file.fileName)}
                 href={workspaceHrefFor(progress.href)}
                 download={file.fileName}
+                onClick={event => onDownloadClick(file.fileName, event)}
                 aria-label={`Baixar ${file.fileName}`}
                 variant="ghost"
                 size="sm"
@@ -176,6 +178,7 @@ export function PackagePanel({ pkg, onRetry }: PackagePanelProps) {
                     progress={progressOf(file, pkg.progress)}
                     retrying={retrying === file.fileName}
                     anchorRef={pkg.anchorRef}
+                    onDownloadClick={pkg.onDownloadClick}
                     onRetry={retry}
                   />
                 ))}
