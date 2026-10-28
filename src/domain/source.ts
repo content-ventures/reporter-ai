@@ -6,6 +6,7 @@ import { contentHash } from './text/hash.ts';
 import { normalizeSpaces } from './text/normalize.ts';
 import { formatTimestamp, parseTranscript, segmentIdAt, splitTranscriptParts } from './text/transcript-parse.ts';
 import type { ParsedTranscript, TranscriptFormat } from './text/transcript-parse.ts';
+import type { MemorySourceBinding } from './editorial-memory.ts';
 
 /** `transcript` is live in R1; the others are reserved plug points (R2 news … R7 event). */
 export type SourceKind = 'transcript' | 'news' | 'opportunity' | 'media' | 'event';
@@ -67,6 +68,8 @@ export type Source = {
   kind: SourceKind;
   title: string;
   origin: SourceOrigin;
+  /** Server-created, immutable provenance for a collection of reviewed bank excerpts. */
+  memory?: MemorySourceBinding[];
   /** Calendar date of the interview/event (YYYY-MM-DD), when informed. */
   recordedOn?: string;
   programName?: string;
