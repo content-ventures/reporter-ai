@@ -11,7 +11,7 @@ const choices = {
   useStage: ['inserted', 'approved', 'published'], sort: ['newest', 'oldest', 'confidence', 'relevance', 'usage'],
 } as const;
 const lengths = { q: 200, personId: 160, institution: 240, company: 240, event: 240, edition: 160, materialId: 160, cursor: 4096 } as const;
-const owned = ['view', 'kind', 'topic', 'minConfidence', 'unused', 'from', 'to', ...Object.keys(choices), ...Object.keys(lengths)];
+const owned = ['bankView', 'kind', 'topic', 'minConfidence', 'unused', 'from', 'to', ...Object.keys(choices), ...Object.keys(lengths)];
 const invalid = () => refuse('invalid_filters' as const, 'Os filtros do endereço não são válidos. Limpe os filtros para continuar.');
 const validDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`))
   && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
@@ -19,7 +19,7 @@ const validDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.
 /** View-state validation is portable; the API remains authoritative for scopes and query rules. */
 export function readMemoryAddress(params: URLSearchParams): Result<MemoryAddress, 'invalid_filters'> {
   for (const key of owned) if (key !== 'topic' && params.getAll(key).length > 1) return invalid();
-  const kind = params.get('kind'), tab = params.get('view') ?? kind ?? 'all';
+  const kind = params.get('kind'), tab = params.get('bankView') ?? kind ?? 'all';
   if (!tabs.includes(tab) || kind && (!['citation', 'statistic'].includes(kind) || kind !== tab)) return invalid();
   const query: MemoryQuery = {};
   for (const [key, max] of Object.entries(lengths)) {
@@ -55,7 +55,7 @@ export function readMemoryAddress(params: URLSearchParams): Result<MemoryAddress
 export function memoryAddressParams(current: URLSearchParams, state: MemoryAddress): URLSearchParams {
   const params = new URLSearchParams(current);
   for (const key of owned) params.delete(key);
-  if (state.tab !== 'all') params.set('view', state.tab);
+  if (state.tab !== 'all') params.set('bankView', state.tab);
   for (const [key, value] of Object.entries(state.query)) {
     if (value === undefined || value === null || value === '' || key === 'limit' || key === 'kind'
       || key === 'status' && value === 'active' || key === 'useStage' && value === 'inserted' || key === 'sort' && value === 'newest') continue;
