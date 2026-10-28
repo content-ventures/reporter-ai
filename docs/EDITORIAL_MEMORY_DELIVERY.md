@@ -22,7 +22,7 @@ User clarifications on 2026-10-28:
 | --- | --- | --- | --- |
 | 0 | Reproducible baseline, inventory and evaluation rubric | Gates, database/replay and smoke baseline; synthetic corpus validated; unavailable real material recorded | Technical preparation complete; real corpus pending |
 | 1 | UX journeys, data/API contracts and permission matrix | State map, versioned contracts, valid/invalid examples and domain tests | Contract baseline complete; rendered UX acceptance in phase 5 |
-| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: request validation and signed cursor verified; persistence/API binding pending |
+| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: durable scoped storage and review audit verified; query/API binding and legacy reconciliation pending |
 | 3 | Material ingestion and extraction before article | Complete block coverage, resumable jobs, literal evidence, unknown metadata and retry tests | Pending |
 | 4 | Internal/external checks and editorial resolution | Context-aware comparison, distinct confidence, immutable decisions and stale-write tests | Pending |
 | 5 | Complete library UI | Real APIs, URL filters, stable pagination, detail/review flows and accessibility checks | Pending |
@@ -144,3 +144,13 @@ Implemented signed, stateless pagination cursors. They preserve PostgreSQL bigin
 Validation: the backend regression suite passed 352 tests with zero skips/failures. Ten targeted input/cursor tests passed, including tampering, identity/query changes, expiration, malformed URLs/decimals, precise intervals, duplicates, dates and forged actor fields. Typecheck exposed the project's pre-ES2020 compilation target and an assert overload; the BigInt literal was replaced by its constructor and the assertion by a typed Zod error expectation, then targeted tests and typecheck were repeated.
 
 Still required to close phase 2: additive persistence and replay, authenticated real route handlers, atomic request receipts and audit rows, authoritative source/production visibility, indexed historical-snapshot queries, legacy ID/content reconciliation and real PostgreSQL/HTTP contract tests. None of those integrations is represented by a successful placeholder. No phase 3 job or new UI activation has started.
+
+### Durable storage and SQL review boundary
+
+Migration 047 adds workspace-scoped heads, immutable historical snapshots, a change/visibility clock and actor-scoped request receipts. Physical storage revisions remain separate from domain revisions, preserving a legacy citation's revision zero and original ID. Composite foreign keys retain sources and parent ownership within the same workspace. Runtime roles cannot read or mutate the tables directly.
+
+Narrow SQL functions read current/exact historical records, scan a stable snapshot, write with an expected physical revision and preserve a request result atomically. A decision is append-only: the database checks current evidence/check/policy/decision revisions, stamps the actual actor and time, and inserts the audit record in the same transaction. All four workspace roles may review. Unknown/withdrawn authorship and withdrawn source rights cannot be released by an acceptance. Imported source text is checked against contiguous original segments; exact UTF-16 offsets remain an application/domain check.
+
+Source and production visibility is checked on every read/write. A source known only through a private production cannot be promoted by another editor. Selection/use target productions have their own access check. Source changes and production access changes invalidate the cursor visibility epoch. This layer is consumed through the existing authenticated request/transaction context; no remote database or client data was changed.
+
+The eight new disposable-PostgreSQL tests passed: migration replay, exact payload/history preservation, repeated IDs in different clients, private sources and productions, all four review roles with database-authored audit, stale decisions/atomic rollback, withdrawn rights, concurrent edits, immutable snapshot reads and actor-scoped idempotent retries. Typecheck and migration-order tests passed. HTTP consumers, complete query filters, legacy backfill and worker/UI integration remain in progress.

@@ -55,6 +55,7 @@ services:
       - ./database/migrations/044-member-viewing.sql:/docker-entrypoint-initdb.d/99-k-member-viewing.sql:ro
       - ./database/migrations/045-console-inspection.sql:/docker-entrypoint-initdb.d/99-l-console-inspection.sql:ro
       - ./database/migrations/046-workspace-activation.sql:/docker-entrypoint-initdb.d/99-m-workspace-activation.sql:ro
+      - ./database/migrations/047-editorial-memory.sql:/docker-entrypoint-initdb.d/99-n-editorial-memory.sql:ro
     networks:
       - reporter
     healthcheck:
