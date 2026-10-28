@@ -16,7 +16,7 @@ async function owner(sql: string, values: unknown[] = []) {
   const client = new pg.Client({ connectionString: db.owner }); await client.connect();
   try { return (await client.query(sql, values)).rows; } finally { await client.end(); }
 }
-async function api(path: string, value?: unknown, key = randomUUID(), identity: typeof identities[number] | null = identities[0], origin = APP) {
+async function api(path: string, value?: unknown, key: string = randomUUID(), identity: typeof identities[number] | null = identities[0], origin = APP) {
   const { handleReporter } = await import('../../src/server/http.ts'), url = new URL(`${APP}/api/reporter/w/reporter-ai/memory/${path}`);
   return handleReporter(new Request(url, value === undefined ? {} : { method: 'POST', headers: { origin, 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify(value) }),
     ['w', 'reporter-ai', 'memory', ...url.pathname.split('/').slice(6).filter(Boolean)], { identify: async () => identity });
@@ -51,7 +51,7 @@ function result(claim: MemoryCheckClaim, supports: MemoryCheck['supports'] = [])
     { actorId: claim.job.createdBy, now: new Date().toISOString(), newId: (prefix: string) => prefix });
 }
 test('check request is authenticated, idempotent, snapshot-bound and survives reload with an audited actor', async () => {
-  const evidence = await fixture('queue'); const expected = memoryEvidenceRef(evidence), key = randomUUID();
+  const evidence = await fixture('queue'); const expected = memoryEvidenceRef(evidence), key = 'durable-check-request-key';
   const job = await json<MemoryJob>(`${evidence.id}/check`, { expected }, key);
   assert.deepEqual(await json(`${evidence.id}/check`, { expected }, key), job);
   assert.equal((await json<MemoryJob>(`${evidence.id}/check`, { expected })).id, job.id);
