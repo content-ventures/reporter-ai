@@ -17,7 +17,7 @@ export function articleCitations(body: ArticleBody, sources: Source[], origin: M
     const found = new Map<string, MemoryLegacyCandidate>();
     for (const ref of quote.sourceRefs) {
       if (ref.locator.type !== 'segment') continue;
-      const source = sources.find(source => source.id === ref.sourceId);
+      const source = sources.find(source => source.id === ref.sourceId && !source.memory);
       const citation = source && citationFromReference(source, ref, quote.text, origin.productionId, origin.at);
       if (source && citation) found.set(contentHash(citation.ref), { citation, source, factCheck: null, article: origin });
     }
@@ -55,7 +55,7 @@ export function mapLegacyCitation(candidate: MemoryLegacyCandidate, workspaceId:
   { material: MemoryMaterial; evidence: MemoryCitation } | 'source_unavailable' | 'nonliteral' {
   const { citation, source } = candidate;
   const version = source && sourceVersion(source, citation.ref.sourceVersion);
-  if (!source || source.id !== citation.ref.sourceId || !version || version.hash !== citation.sourceHash || citation.ref.locator.type !== 'segment') return 'source_unavailable';
+  if (!source || source.memory || source.id !== citation.ref.sourceId || !version || version.hash !== citation.sourceHash || citation.ref.locator.type !== 'segment') return 'source_unavailable';
   const segmentId = citation.ref.locator.segmentId, segment = version.content.segments.find(segment => segment.id === segmentId);
   if (!segment || !citation.text.trim()) return 'nonliteral';
   const span = originalSpan(segment.text, citation.text);

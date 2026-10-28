@@ -103,6 +103,12 @@ export type MemorySelection = {
   items: { evidence: MemoryEvidenceRef; decisionId: string | null; check: MemoryCheckRef | null; policyRevision: number }[];
   createdBy: string; createdAt: string; updatedBy: string; updatedAt: string;
 };
+/** A writing source exposes selected excerpts, never a private material's complete original. */
+export type MemorySourceBinding = {
+  selection: { id: string; revision: number }; version: { number: number; hash: string };
+  items: { segmentId: string; materialId: string; kind: MemoryEvidence['kind']; anchor: MemoryAnchor;
+    selected: MemorySelection['items'][number]; metadata: MemoryMetadata }[];
+};
 export type MemoryQuery = {
   kind?: MemoryEvidence['kind']; status?: MemoryEvidence['status'] | 'all'; query?: string; topics?: string[]; personId?: string; institution?: string;
   company?: string; event?: string; edition?: string; materialId?: string; materialKind?: MemoryMaterialKind;
