@@ -105,6 +105,7 @@ export type MemoryEvidenceView = {
   uses: Record<MemoryUseStage, number>;
 };
 export type MemoryPage<T> = { items: T[]; nextCursor: string | null; total: number; snapshot: string };
+export type MemoryHistoryKind = 'checks' | 'decisions' | 'revisions' | 'occurrences';
 export type MemoryEligibility = { usable: boolean; reason: 'ready' | 'source_unavailable' | 'withdrawn' | 'authorship_pending' | 'review_required' | 'rejected' };
 
 /** Snapshot all semantic fields, including attribution, qualifiers and metadata. Ignore operational timestamps. */

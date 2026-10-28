@@ -8,7 +8,7 @@ Execution record for Flow 4, based on the [approved phased plan](https://chatgpt
 - Branch: `citation-statistics-bank`.
 - Runtime: Node 24.14.0 and pnpm 10.33.0, installed from the frozen lockfile.
 - Authenticated GitHub author: `fagundesjv`, numeric noreply identity verified through GitHub.
-- Phase 0 technical preparation and phase 1 contract baseline are complete. The user's clarification permits engineering to proceed with synthetic material; real-corpus acceptance remains an explicit final dependency. Authenticated library/policy reads exist behind the disabled server ceiling; the frontend port is not bound and the new product flow is unavailable.
+- Phase 0 technical preparation and phase 1 contract baseline are complete. The user's clarification permits engineering to proceed with synthetic material; real-corpus acceptance remains an explicit final dependency. Authenticated library/detail/history/policy reads and editorial review exist behind the disabled server ceiling; the frontend port is not bound and the new product flow is unavailable.
 - The complete goal includes frontend, backend, UX, QA, historical imports, writing integration and controlled production acceptance.
 
 User clarifications on 2026-10-28:
@@ -22,7 +22,7 @@ User clarifications on 2026-10-28:
 | --- | --- | --- | --- |
 | 0 | Reproducible baseline, inventory and evaluation rubric | Gates, database/replay and smoke baseline; synthetic corpus validated; unavailable real material recorded | Technical preparation complete; real corpus pending |
 | 1 | UX journeys, data/API contracts and permission matrix | State map, versioned contracts, valid/invalid examples and domain tests | Contract baseline complete; rendered UX acceptance in phase 5 |
-| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: storage, audit and authenticated snapshot queries verified; detail/history, write APIs and legacy reconciliation pending |
+| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: storage, queries, detail/history and review API verified; remaining write APIs and legacy reconciliation pending |
 | 3 | Material ingestion and extraction before article | Complete block coverage, resumable jobs, literal evidence, unknown metadata and retry tests | Pending |
 | 4 | Internal/external checks and editorial resolution | Context-aware comparison, distinct confidence, immutable decisions and stale-write tests | Pending |
 | 5 | Complete library UI | Real APIs, URL filters, stable pagination, detail/review flows and accessibility checks | Pending |
@@ -166,3 +166,15 @@ Implemented filters include evidence/material kind, free text, all selected topi
 Final validation on this checkpoint: `pnpm gate` passed 1,756 application tests and production compilation, with only the two baseline lint warnings. `pnpm test:rehearsal` passed 147 of 153 tests with six existing skips and no failures. The 18 memory PostgreSQL/HTTP tests cover replay, tenant/source privacy, all review roles, audit/idempotency, filters, usage counts, immutable pagination, microseconds, stale/private checks, hidden decisions, person-name cursor invalidation and local-profile authorization. The backend suite passed 352 tests. Logs: `/tmp/reporter-memory-query-acceptance-gate.log`, `/tmp/reporter-memory-query-acceptance-rehearsal.log` and `/tmp/reporter-memory-query-backend.log`.
 
 Still pending: paginated detail/history, review/correction/selection handlers, actual old-registry reconciliation, extraction/check workers, runtime adapter, UI and writing integration. Synthetic occurrence fixtures test query semantics; real insertion/approval/publication recording belongs to phase 6.
+
+Query checkpoint: `363fbbe`.
+
+### Evidence detail and editorial review
+
+Migration 049 adds snapshot-consistent detail and independently paginated checks, decisions, evidence revisions and occurrences. Each history page declares its exact total/snapshot and next cursor; no full-history claim or silent 25-item truncation is made. Cursors also bind the evidence ID, history kind and limit, so library/history and different histories cannot exchange tokens. Original context includes only the referenced source segments and actual authorization state. Current private checks/reviews remain withheld without reviving superseded acceptance.
+
+The review POST uses the existing bounded JSON reader, same-origin/authentication boundary and actor-scoped command receipts. All four actual roles can accept, reject or request revision. Internal supporting references resolve to accessible immutable snapshots; forged excerpts/origins are refused. Stale checks require a fresh check; an acceptance cannot replace missing attribution or source rights. Concurrent different decisions have one winner; identical retries return the original database-stamped decision and one audit row.
+
+Validation: all 22 targeted PostgreSQL/HTTP memory tests passed. The complete rehearsal passed 151 of 157 tests, with the same six existing skips and no failures. The backend regression passed all 352 tests. `pnpm gate` passed all 1,756 application tests and the production build. Isolated `db:flow` and `db:test` passed bootstrap, replay, concurrency, intake and rollback checks with migrations 048–049. Targeted lint/types and migration policy passed. Evidence logs use `/tmp/reporter-memory-detail-{test,gate,rehearsal,backend,migration,integration}.log`.
+
+The detail port contract now uses explicit `MemoryPage` history collections and a continuation method. This is a deliberate pre-binding refinement for complete, bounded history. Correction/selection/material handlers, legacy reconciliation and later phases remain pending. The module ceiling stays off.

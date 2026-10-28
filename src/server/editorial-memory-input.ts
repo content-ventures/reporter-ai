@@ -3,6 +3,19 @@ import { z } from 'zod';
 import type { MemoryQuery } from '../domain/editorial-memory.ts';
 
 const id = z.string().trim().min(1).max(128);
+export const memoryIdSchema = id;
+export const memoryHistoryKindSchema = z.enum(['checks', 'decisions', 'revisions', 'occurrences']);
+export const memoryHistoryQuerySchema = z.object({ cursor: z.string().min(1).max(4096).optional(), limit: z.number().int().min(1).max(100).default(25) }).strict();
+export const memoryHistoryBindingSchema = z.object({ resource: z.literal('history'), evidenceId: id, kind: memoryHistoryKindSchema, limit: z.number().int().min(1).max(100) }).strict();
+export function parseMemoryHistoryQuery(params: URLSearchParams) {
+  const values: Record<string, unknown> = {};
+  for (const [key, value] of params) {
+    if (!['cursor', 'limit'].includes(key) || params.getAll(key).length !== 1)
+      throw new z.ZodError([{ code: 'custom', path: [key], message: 'Filtro desconhecido ou repetido.' }]);
+    values[key] = key === 'limit' && /^\d+$/.test(value) ? Number(value) : value;
+  }
+  return memoryHistoryQuerySchema.parse(values);
+}
 const nullableText = (max: number) => z.string().trim().min(1).max(max).nullable();
 const day = z.iso.date();
 const safeUrl = z.url().max(2000).refine(value => {
