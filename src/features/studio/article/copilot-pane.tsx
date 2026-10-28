@@ -283,8 +283,7 @@ function SlotToFill({ use }: { use: ImageSlotUse }) {
 function MissingQuote({ quote }: { quote: QuoteCheck }) {
   const studio = useStudio();
   const closest = useMemo(() => closestExcerpt(quote, studio.sources), [quote, studio.sources]);
-  const ref = quote.sourceRefs[0];
-  const segmentRefFor = closest && ref?.locator.type === 'segment' ? { ...ref, locator: { type: 'segment' as const, segmentId: closest.segmentId, from: closest.from, to: closest.to } } : ref;
+  const segmentRefFor = closest?.ref ?? quote.sourceRefs[0];
   return (
     <Alert
       tone="danger"
@@ -308,7 +307,7 @@ function MissingQuote({ quote }: { quote: QuoteCheck }) {
               sources={studio.sources}
               people={studio.people}
               state="missing"
-              onOpen={closest ? () => studio.actions.showInTranscript(closest.segmentId) : undefined}
+              onOpen={closest ? () => studio.actions.showInTranscript(closest.ref) : undefined}
             />
           ) : null,
         ]}

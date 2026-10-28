@@ -10,6 +10,8 @@ import {
   formatTimestamp,
   groupDigits,
   normalizeArticle,
+  refKey,
+  segmentRef,
   placeLabel,
   segmentPlace,
   shortenToSizeLabel,
@@ -20,6 +22,7 @@ import {
 } from '../../../domain/index.ts';
 import { enforceR1ArticleChecks } from '../../../domain/article-policy.ts';
 import type { ArticlePolicyLimits } from '../../../domain/article-policy.ts';
+import type { SourceDetail } from '../../../ports/production-queries.ts';
 import type {
   ArticleBlock,
   ArticleSize,
@@ -112,6 +115,19 @@ export const EMPTY_FACTS: ArticleFacts = {
   outline: [],
 };
 
+export type SourceScope = Pick<SourceRef, 'sourceId' | 'sourceVersion'>;
+
+/** An explicit historical reference never falls back to another source or its latest version. */
+export function studioSource(details: readonly SourceDetail[] | undefined, scope: SourceScope | null): SourceDetail | undefined {
+  const detail = scope ? details?.find((entry) => entry.source.id === scope.sourceId) : details?.[0];
+  const version = scope ? detail?.source.versions.find((entry) => entry.number === scope.sourceVersion) : detail?.version;
+  return detail && version ? { ...detail, version } : undefined;
+}
+
+export function sourceSegmentIds(refs: readonly SourceRef[] | undefined, scope: SourceScope): string[] {
+  return [...new Set(segmentIdsOf(refs?.filter((ref) => ref.sourceId === scope.sourceId && ref.sourceVersion === scope.sourceVersion)))];
+}
+
 function segmentIdsOf(refs: readonly SourceRef[] | undefined): string[] {
   return (refs ?? []).flatMap((ref) => (ref.locator.type === 'segment' ? [ref.locator.segmentId] : []));
 }
@@ -126,13 +142,14 @@ export function usedSegmentIds(body: ArticleBody): string[] {
 }
 
 /** Segments a verified quotation was found in (the transcript marks only what the text quotes). */
-export function quotedSegmentIds(quotes: readonly QuoteCheck[]): string[] {
-  return [...new Set(quotes.flatMap((quote) => (quote.status === 'verified' && quote.match ? segmentIdsOf([quote.match]) : [])))];
+export function quotedSegmentIds(quotes: readonly QuoteCheck[], scope?: SourceScope): string[] {
+  const refs = quotes.flatMap((quote) => quote.status === 'verified' && quote.match ? [quote.match] : []);
+  return scope ? sourceSegmentIds(refs, scope) : [...new Set(segmentIdsOf(refs))];
 }
 
 /** Blocks that cite a transcript segment (transcript → text highlight). */
-export function blocksCitingSegment(body: ArticleBody, segmentId: string): BlockId[] {
-  return body.blocks.filter((block) => segmentIdsOf(block.sourceRefs).includes(segmentId)).map((block) => block.id);
+export function blocksCitingSegment(body: ArticleBody, segmentId: string, scope: SourceScope): BlockId[] {
+  return body.blocks.filter((block) => sourceSegmentIds(block.sourceRefs, scope).includes(segmentId)).map((block) => block.id);
 }
 
 export function articleOutline(body: ArticleBody): OutlineEntry[] {
@@ -362,29 +379,34 @@ export function suggestionDelta(suggestion: Pick<Suggestion, 'anchorText' | 'pro
  * The transcript line closest to a quotation that does not match it ("Falta"): the sentence of
  * the block's own segments (else of the whole material) sharing most words with the quote.
  */
-export type ClosestExcerpt = { segmentId: string; text: string; from: number; to: number };
+export type ClosestExcerpt = { ref: SourceRef; segmentId: string; text: string; from: number; to: number };
 
 export function closestExcerpt(quote: Pick<QuoteCheck, 'text' | 'sourceRefs'>, sources: readonly Source[]): ClosestExcerpt | undefined {
   const wanted = new Set(words(foldForMatch(quote.text)).filter((word) => word.length >= 3));
   if (wanted.size === 0) return undefined;
-  const own = new Set(segmentIdsOf(quote.sourceRefs));
+  const own = new Set(quote.sourceRefs.flatMap((ref) => ref.locator.type === 'segment' ? [refKey(segmentRef(ref.sourceId, ref.sourceVersion, ref.locator.segmentId))] : []));
   let best: (ClosestExcerpt & { score: number }) | undefined;
   for (const source of sources) {
     if (source.kind !== 'transcript') continue;
-    for (const segment of currentSourceVersion(source).content.segments) {
-      if (own.size > 0 && !own.has(segment.id)) continue;
-      for (const match of segment.text.matchAll(/[^.!?…]+[.!?…]*/g)) {
-        const text = match[0].trim();
-        if (!text) continue;
-        const from = (match.index ?? 0) + (match[0].length - match[0].trimStart().length);
-        const hits = words(foldForMatch(text)).filter((word) => wanted.has(word)).length;
-        const score = hits / Math.max(wanted.size, 1);
-        if (hits >= 2 && (!best || score > best.score)) best = { segmentId: segment.id, text: text.replace(/[.]+$/, ''), from, to: from + text.length, score };
+    for (const version of own.size > 0 ? source.versions : [currentSourceVersion(source)]) {
+      for (const segment of version.content.segments) {
+        const ref = segmentRef(source.id, version.number, segment.id);
+        if (own.size > 0 && !own.has(refKey(ref))) continue;
+        for (const match of segment.text.matchAll(/[^.!?…]+[.!?…]*/g)) {
+          const text = match[0].trim();
+          if (!text) continue;
+          const from = (match.index ?? 0) + (match[0].length - match[0].trimStart().length);
+          const hits = words(foldForMatch(text)).filter((word) => wanted.has(word)).length;
+          const score = hits / Math.max(wanted.size, 1);
+          if (hits >= 2 && (!best || score > best.score)) best = { ref, segmentId: segment.id, text: text.replace(/[.]+$/, ''), from, to: from + text.length, score };
+        }
       }
     }
   }
   if (!best && own.size > 0) return closestExcerpt({ text: quote.text, sourceRefs: [] }, sources);
-  return best ? narrowToClause({ segmentId: best.segmentId, text: best.text, from: best.from, to: best.to }, wanted) : undefined;
+  if (!best) return undefined;
+  const excerpt = narrowToClause({ ref: best.ref, segmentId: best.segmentId, text: best.text, from: best.from, to: best.to }, wanted);
+  return { ...excerpt, ref: segmentRef(excerpt.ref.sourceId, excerpt.ref.sourceVersion, excerpt.segmentId, { from: excerpt.from, to: excerpt.to }) };
 }
 
 const CONNECTOR = /^(?:e|mas|porque|que|então|pois|já|só que)\s+/i;
@@ -410,7 +432,7 @@ function narrowToClause(excerpt: ClosestExcerpt, wanted: ReadonlySet<string>): C
   // Only when one clause holds every quoted word; otherwise the whole sentence is the source.
   if (!best || parts.length < 2 || best.hits < total) return excerpt;
   const text = excerpt.text.slice(best.from, best.to);
-  return { segmentId: excerpt.segmentId, text, from: excerpt.from + best.from, to: excerpt.from + best.to };
+  return { ...excerpt, text, from: excerpt.from + best.from, to: excerpt.from + best.to };
 }
 
 /** "parágrafo 5" for the target block(s) of a suggestion (1-based positions in the current body). */

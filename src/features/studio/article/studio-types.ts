@@ -1,4 +1,4 @@
-import type { GenerationRun, RunId, TextRange } from '../../../domain/index.ts';
+import type { GenerationRun, RunId, SourceRef, TextRange } from '../../../domain/index.ts';
 import type { DraftView, PieceView, ProductionDetail, RunView, SourceDetail } from '../../../ports/index.ts';
 import type { RunState } from '@/state';
 
@@ -9,7 +9,7 @@ import type { RunState } from '@/state';
 
 export type ComposerChip =
   | { id: string; kind: 'selection'; label: string; ranges: TextRange[]; text: string }
-  | { id: string; kind: 'excerpt'; label: string; segmentId: string; text: string }
+  | { id: string; kind: 'excerpt'; label: string; segmentId: string; text: string; ref?: SourceRef }
   | { id: string; kind: 'note'; label: string; text: string };
 
 /** A request made in this tab: the person's turn plus the run that answers it. */
@@ -65,7 +65,7 @@ export type StudioInputs = {
   production: ProductionDetail;
   piece: PieceView;
   draft: DraftView;
-  source: SourceDetail | undefined;
+  sourceDetails: SourceDetail[] | undefined;
   /** The material could not be read: the Material tab shows the error with "Tentar de novo". */
   sourceError?: { code?: string; retry: () => void };
 };

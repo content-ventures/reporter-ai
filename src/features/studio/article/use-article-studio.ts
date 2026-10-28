@@ -2,10 +2,11 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from '@content-ventures/design-system/v3';
-import { firstName, lockedMessage, sendChecklist, type SendItemId, type SendTarget } from '@/domain';
+import { firstName, lockedMessage, sendChecklist, type SendItemId, type SendTarget, type SourceRef } from '@/domain';
 import type { GenerationKind, PersonSummary, PieceApproval } from '@/ports';
 import { useCan, useCommands, usePeople, useSession } from '@/state';
 import { briefChangedSince, READ_ONLY_REASON, studioBadge } from './studio-session-model';
+import { studioSource } from './studio-model';
 import type { GenerationState, StudioInputs } from './studio-types';
 import { useStudioChecks } from './use-studio-checks';
 import { withEvidenceWarning } from '@/features/hard-news/studio/send-items';
@@ -32,12 +33,17 @@ import { useStudioText } from './use-studio-text';
 export type { ComposerChip, GenerationState, PanelTab, SessionTurn, StudioDialog, StudioInputs, SuggestionFocus } from './studio-types';
 export { toolForSuggestion } from './studio-session-model';
 
-export function useArticleStudio({ production, piece, draft, source, sourceError }: StudioInputs) {
+export function useArticleStudio({ production, piece, draft, sourceDetails, sourceError }: StudioInputs) {
   const commands = useCommands();
   const session = useSession();
   const peopleQuery = usePeople();
   const people = useMemo<PersonSummary[]>(() => peopleQuery.data ?? [], [peopleQuery.data]);
-  const sources = useMemo(() => (source ? [source.source] : []), [source]);
+  const sources = useMemo(() => sourceDetails?.map((detail) => detail.source) ?? [], [sourceDetails]);
+  const [sourceSelection, setSourceSelection] = useState<Pick<SourceRef, 'sourceId' | 'sourceVersion'> | null>(null);
+  const source = useMemo(() => studioSource(sourceDetails, sourceSelection), [sourceDetails, sourceSelection]);
+  const showSource = useCallback((ref: Pick<SourceRef, 'sourceId' | 'sourceVersion'>) => {
+    setSourceSelection((current) => current?.sourceId === ref.sourceId && current.sourceVersion === ref.sourceVersion ? current : { sourceId: ref.sourceId, sourceVersion: ref.sourceVersion });
+  }, []);
   const isAdmin = session.data?.current?.roles.includes('admin') ?? false;
 
   // ——— Approval: who may do what, and the lock while the text waits for a decision (D8) ———
@@ -55,7 +61,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
   const bar = useSuggestionBar({ draft, editor: text.editor });
   const showMaterial = useCallback(() => showPanel('material'), [showPanel]);
   const showAssistant = useCallback(() => showPanel('assistant'), [showPanel]);
-  const sourceLink = useStudioSourceLink({ source, people, text, factsBody: checking.factsBody, setView: panes.setView, showMaterial });
+  const sourceLink = useStudioSourceLink({ source, people, text, factsBody: checking.factsBody, setView: panes.setView, showMaterial, showSource });
   const copilot = useStudioCopilot({
     commands,
     production,
@@ -65,6 +71,7 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
     liveOpen: bar.liveOpen,
     setSuggestionFocus: bar.setSuggestionFocus,
     segments: sourceLink.segments,
+    source,
     focusComposer: panes.focusComposer,
     showAssistant,
     copilotHidden: panes.assistantHidden,
@@ -256,6 +263,9 @@ export function useArticleStudio({ production, piece, draft, source, sourceError
     articleStatus: studioBadge(piece, production.status),
     briefChanged,
     source,
+    sourceDetails,
+    sourceSelection,
+    showSource,
     sourceError,
     sources,
     noteUserScroll: text.noteUserScroll,

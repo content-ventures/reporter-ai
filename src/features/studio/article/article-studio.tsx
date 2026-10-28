@@ -14,7 +14,7 @@ import {
 import { FileText } from '@content-ventures/design-system/v3/icons';
 import type { ProductionId, ProductionStatus } from '@/domain';
 import { ProductionHeader, useProductionFrame } from '@/features/production/production-frame';
-import { usePiece, useSource } from '@/state';
+import { usePiece, useProductionSources } from '@/state';
 import type { PieceView } from '@/ports';
 import { materialHref } from '@/ui/routes';
 import { ArticleWorkspace, StudioStatusBadge } from './article-workspace';
@@ -31,8 +31,7 @@ export function ArticleStudio({ productionId }: { productionId: ProductionId }) 
   const production = frame.production.data;
   const piece = production?.pieces.find((entry) => entry.kind === 'article');
   const draft = usePiece(piece?.id);
-  const sourceId = production?.sources[0]?.id;
-  const source = useSource(sourceId);
+  const sources = useProductionSources(production?.id, production?.sources.map((entry) => entry.id) ?? []);
 
   if (frame.production.status === 'ready' && production && !piece) {
     const unauthorized = production.sources.some((entry) => !entry.authorized);
@@ -69,8 +68,8 @@ export function ArticleStudio({ productionId }: { productionId: ProductionId }) 
       production={production}
       piece={piece}
       draft={draft.data}
-      source={source.data}
-      {...(source.status === 'error' ? { sourceError: { ...(source.error?.code ? { code: source.error.code } : {}), retry: source.retry } } : {})}
+      sourceDetails={sources.status === 'ready' ? sources.data : undefined}
+      {...(sources.status === 'error' ? { sourceError: { ...(sources.error?.code ? { code: sources.error.code } : {}), retry: sources.retry } } : {})}
     />
   );
 }

@@ -8,6 +8,7 @@ import { EditorCanvas } from './editor-canvas';
 import { EditorToolbar } from './editor-toolbar';
 import { FloatingBars, LinkDialog } from './floating-bars';
 import { ImagePicker } from './image-picker';
+import { MaterialSourcePicker } from './source-pane';
 import { StudioContext, useStudio } from './studio-context';
 import { StudioDialogs } from './studio-dialogs';
 import { StudioFooter } from './studio-footer';
@@ -50,7 +51,7 @@ export function ArticleWorkspace(inputs: StudioInputs) {
           max: 520,
           collapsed: !panes.panelOpen,
           onCollapsedChange: (collapsed) => panes.setPanelOpen(!collapsed),
-          header: <PanelTabs />,
+          header: <><PanelTabs />{tab === 'material' && !studio.desk ? <MaterialSourcePicker /> : null}</>,
           content: <PanelPane />,
           scroll: !owned,
           flush: owned,

@@ -2,9 +2,9 @@
 
 import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { toast } from '@content-ventures/design-system/v3';
-import { briefMaxChars, type RunId, type Suggestion, type TextRange } from '@/domain';
+import { briefMaxChars, refKey, segmentRef, type RunId, type Suggestion, type TextRange } from '@/domain';
 import { blockEntries, blockTextOf, type Editor } from '@/editor';
-import type { PieceView, ProductionDetail } from '@/ports';
+import type { PieceView, ProductionDetail, SourceDetail } from '@/ports';
 import { copilotTool, type CopilotTool } from '@/registries';
 import type { Commands } from '@/state';
 import { takeArmedSimulation } from '@/ui/shell';
@@ -46,6 +46,7 @@ export function useStudioCopilot({
   liveOpen,
   setSuggestionFocus,
   segments,
+  source,
   focusComposer,
   showAssistant,
   copilotHidden,
@@ -58,6 +59,7 @@ export function useStudioCopilot({
   liveOpen: Suggestion[];
   setSuggestionFocus: Dispatch<SetStateAction<SuggestionFocus>>;
   segments: ViewerSegment[];
+  source: SourceDetail | undefined;
   focusComposer: () => void;
   showAssistant: () => void;
   copilotHidden: () => boolean;
@@ -236,14 +238,16 @@ export function useStudioCopilot({
   }, [currentSelection, addChip, focusComposer]);
 
   const addExcerpt = useCallback(
-    (selected: { segmentId: string; text: string }, askNow = false) => {
+    (selected: { segmentId: string; text: string; start?: number; end?: number }, askNow = false) => {
+      if (!source) return;
       const segment = segments.find((entry) => entry.id === selected.segmentId);
-      const label = excerptLabel(segment);
-      addChip({ id: `exc-${selected.segmentId}-${selected.text.length}`, kind: 'excerpt', label, segmentId: selected.segmentId, text: clip(selected.text, 400) });
+      const ref = segmentRef(source.source.id, source.version.number, selected.segmentId, selected.start !== undefined && selected.end !== undefined ? { from: selected.start, to: selected.end } : undefined);
+      const label = `${excerptLabel(segment)} · ${source.source.title} · v${source.version.number}`;
+      addChip({ id: `exc-${refKey(ref)}-${selected.text.length}`, kind: 'excerpt', ref, label, segmentId: selected.segmentId, text: clip(selected.text, 400) });
       if (askNow) focusComposer();
       else if (copilotHidden()) toast(`${label} no pedido ao Assistente`, { tone: 'info' });
     },
-    [segments, addChip, focusComposer, copilotHidden],
+    [source, segments, addChip, focusComposer, copilotHidden],
   );
 
   // ——— Runs of the thread ———

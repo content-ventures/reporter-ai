@@ -141,6 +141,24 @@ export function sourceQuery(sourceId: SourceId, version?: number): RuntimeQuery<
   };
 }
 
+/** Read every attached source through its scoped port; a refusal never becomes a partial check. */
+export function sourcesQuery(productionId: ProductionId, sourceIds: readonly SourceId[]): RuntimeQuery<SourceDetail[]> {
+  const ids = [...new Set(sourceIds)];
+  return {
+    key: key('production-sources', productionId, ids),
+    affectedBy: touchesProduction(productionId),
+    fetch: async (runtime) => {
+      const results = await Promise.all(ids.map((id) => runtime.queries.source(id)));
+      const details: SourceDetail[] = [];
+      for (const result of results) {
+        if (!result.ok) return result;
+        details.push(result.value);
+      }
+      return ok(details);
+    },
+  };
+}
+
 
 /**
  * Review surface: the version under review by default. Its own production's changes, and any
