@@ -71,6 +71,7 @@ services:
       - ./database/migrations/060-editorial-memory-writing.sql:/docker-entrypoint-initdb.d/99-za-editorial-memory-writing.sql:ro
       - ./database/migrations/061-editorial-memory-selection-pages.sql:/docker-entrypoint-initdb.d/99-zb-editorial-memory-selection-pages.sql:ro
       - ./database/migrations/062-editorial-memory-current-projections.sql:/docker-entrypoint-initdb.d/99-zc-editorial-memory-current-projections.sql:ro
+      - ./database/migrations/063-editorial-memory-approved-uses.sql:/docker-entrypoint-initdb.d/99-zd-editorial-memory-approved-uses.sql:ro
     networks:
       - reporter
     healthcheck:
