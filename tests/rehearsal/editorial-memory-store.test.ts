@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import pg, { type Pool, type Client } from 'pg';
+import { readFile } from 'node:fs/promises';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { createTranscriptSource, toSourceVersionRef } from '../../src/domain/source.ts';
 import { parseTranscript } from '../../src/domain/text/transcript-parse.ts';
@@ -225,6 +226,46 @@ test('SQL query filters, date meanings and snapshot pages remain complete while 
   assert.equal((await query(contexts[2], { kind: 'statistic', dateField: 'observation', from: '2024-01-01', to: '2024-12-31' })).total, 0);
   assert.equal((await query(contexts[2], { kind: 'statistic', dateField: 'recorded', from: '2025-01-01', to: '2025-12-31' })).total, 4);
   assert.equal((await query(contexts[2], { kind: 'statistic', dateField: 'published', from: '2025-01-01', to: '2025-12-31' })).total, 0);
+});
+
+test('chronological key pages equal the complete projection across scopes, metadata, historical snapshots and continuation', async () => {
+  const text = await readFile(new URL('../../database/migrations/062-editorial-memory-current-projections.sql', import.meta.url), 'utf8');
+  const start = text.indexOf('CREATE OR REPLACE FUNCTION public.reporter_memory_query('), end = text.indexOf('CREATE OR REPLACE FUNCTION core.reporter_memory_bundle(', start);
+  const reference = text.slice(start, end).replace('public.reporter_memory_query(', 'core.memory_query_reference(');
+  const client = new pg.Client({ connectionString: db.owner }); await client.connect();
+  const actAs = (context: ReporterRequestContext) => client.query("SELECT set_config('app.module_key','reporter_ai',true),set_config('app.access_mode',$4,true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true)",
+    [context.tenant, context.portal, context.actor, context.administrative ? 'platform_workspace' : 'user']);
+  try {
+    await client.query('BEGIN');
+    await client.query(reference + ' GRANT EXECUTE ON FUNCTION core.memory_query_reference(jsonb,bigint,jsonb,text) TO reporter_runtime;');
+    await client.query('SET LOCAL ROLE reporter_runtime'); await actAs(contexts[1]);
+    for (const [id, index] of [['bounded-list-statistic', 7], ['bounded-list-late', 8]] as const) {
+      const row = statistic(id, index);
+      await put(client, { kind: 'evidence', id: row.id, expected: null, doc: row, fingerprint: memoryEvidenceRef(row).hash, parentKind: 'material', parentId: material.id });
+    }
+    const state = (await client.query('SELECT public.reporter_memory_context() AS value')).rows[0].value;
+    const snapshot = (BigInt(state.snapshot) - BigInt(1)).toString();
+    const filters = [{}, { query: '' }, { query: null }, { sort: 'oldest' }, { kind: 'citation' }, { kind: 'statistic', status: 'all', topics: ['formação'] },
+      { company: 'Empresa Sintética', event: 'Feira Sintética', edition: '2025' }, { materialId: material.id, materialKind: 'transcript' },
+      { personId: contexts[1].actor }, { institution: 'Unknown synthetic institution' }, { status: 'withdrawn' }, { status: 'superseded' },
+      { dateField: 'observation', from: '2025-01-01', to: '2025-12-31' }, { dateField: 'recorded', from: '2025-01-01' }, { dateField: 'published', to: '2026-01-01' }];
+    for (const context of [contexts[1], contexts[2], second]) {
+      await actAs(context); const current = (await client.query('SELECT public.reporter_memory_context() AS value')).rows[0].value;
+      for (const at of [current.snapshot, context.portal === PILOT ? snapshot : current.snapshot]) for (const filter of filters) {
+        const input = JSON.stringify({ ...filter, limit: 2 }); let after: string | null = null;
+        for (let page = 0; page < 2; page++) {
+          const result: { fast: QueryResult; reference: QueryResult } = (await client.query('SELECT public.reporter_memory_query($1::jsonb,$2::bigint,$3::jsonb,$4) AS fast,core.memory_query_reference($1::jsonb,$2::bigint,$3::jsonb,$4) AS reference', [input, at, after, current.visibility])).rows[0];
+          assert.deepEqual(result.fast, result.reference, JSON.stringify({ portal: context.portal, filter, at, page }));
+          if (!result.fast.next) break; after = JSON.stringify(result.fast.next);
+        }
+      }
+    }
+    await actAs(contexts[1]);
+    await assert.rejects(client.query('SELECT core.reporter_memory_recent_page($1,$2::jsonb,1,1,NULL)', [PILOT, '{}']), denied);
+  } finally {
+    // Reference DDL, fixture records and the clock increments share this rollback.
+    await client.query('ROLLBACK'); await client.end();
+  }
 });
 
 test('real authenticated HTTP queries use signed tenant/actor cursors and do not fabricate policy activation', async () => {
