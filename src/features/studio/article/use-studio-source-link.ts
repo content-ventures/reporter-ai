@@ -70,13 +70,23 @@ export function useStudioSourceLink({
     const dom = editor.view.dom;
     let timer: number | undefined;
     let dragging = false;
+    const readCaret = () => {
+      if (editor.isDestroyed) return;
+      const head = editor.state.selection.$head;
+      linkBlock(head.depth >= 1 ? blockIdOf(head.node(1)) : null);
+    };
     const settle = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         if (editor.isDestroyed || dragging || !editor.isFocused) return;
-        const head = editor.state.selection.$head;
-        linkBlock(head.depth >= 1 ? blockIdOf(head.node(1)) : null);
+        readCaret();
       }, 220);
+    };
+    // A narrow pane switch hides the editor before the debounce fires. Finish the actual
+    // caret movement on blur, so opening Material still follows its exact historical source.
+    const onBlur = () => {
+      window.clearTimeout(timer);
+      readCaret();
     };
     const onPointerDown = () => {
       dragging = true;
@@ -88,12 +98,14 @@ export function useStudioSourceLink({
     };
     editor.on('selectionUpdate', settle);
     editor.on('focus', settle);
+    editor.on('blur', onBlur);
     dom.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointerup', onPointerUp);
     return () => {
       window.clearTimeout(timer);
       editor.off('selectionUpdate', settle);
       editor.off('focus', settle);
+      editor.off('blur', onBlur);
       dom.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
     };
