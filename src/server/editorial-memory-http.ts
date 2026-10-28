@@ -1,9 +1,10 @@
 import 'server-only';
-import { memoryCorrectionSchema, memoryDecisionInputSchema, memoryHistoryKindSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
+import { memoryCorrectionSchema, memoryDecisionInputSchema, memoryHistoryKindSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
 import { correctEditorialMemory } from './editorial-memory-correction.ts';
+import { reconcileEditorialMemory, resolveMemoryLegacy } from './editorial-memory-legacy.ts';
 import { FlowError } from './errors.ts';
 
 /** The module stays unavailable until its controlled acceptance enables the server ceiling. */
@@ -21,6 +22,12 @@ export async function handleEditorialMemory(request: Request, path: string[], re
     { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'POST' && path.length === 2 && path[1] === 'correction') return Response.json(
     await correctEditorialMemory(path[0], memoryCorrectionSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),
+    { headers: { 'Cache-Control': 'private, no-store' } });
+  if (request.method === 'POST' && path.join('/') === 'reconcile') return Response.json(
+    await reconcileEditorialMemory(memoryLegacyBatchSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),
+    { headers: { 'Cache-Control': 'private, no-store' } });
+  if (request.method === 'POST' && path.length === 2 && path[1] === 'legacy') return Response.json(
+    await resolveMemoryLegacy(path[0], memoryLegacyResolutionSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),
     { headers: { 'Cache-Control': 'private, no-store' } });
   throw new FlowError('NOT_FOUND', 404);
 }

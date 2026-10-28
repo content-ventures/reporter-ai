@@ -7,6 +7,8 @@ import { sourceVersion } from './source.ts';
 import { contentHash } from './text/hash.ts';
 import { can } from './permissions.ts';
 import type { Member } from './workspace.ts';
+import type { Citation } from './citation-library.ts';
+import type { FactCheck } from './fact-check.ts';
 
 export type MemoryMaterialKind = 'transcript' | 'news' | 'release' | 'report' | 'archive' | 'market_data';
 export type MemoryProcessingStatus = 'queued' | 'running' | 'partial' | 'completed' | 'failed' | 'cancelled';
@@ -40,6 +42,9 @@ export type MemoryCitation = MemoryEvidenceBase & {
   kind: 'citation'; text: string; personId: string | null; authorConfirmed: boolean;
   /** Exact legacy id is retained when importing an existing curated/article citation. */
   legacyCitationId: string | null;
+  /** Original curation/check payloads are retained; their old composite score is not factual confidence. */
+  legacy?: { citation: Citation; factCheck: FactCheck | null; hash: string; mappedHash: string; state: 'synchronized' | 'conflict';
+    importedAt: string; importedBy: string; reason: string; resolution?: { choice: 'keep_bank' | 'apply_legacy'; reason: string } };
 };
 /** Decimal strings avoid loss of precision; normalization is optional and never replaces raw evidence. */
 export type MemoryNumericValue = {
@@ -113,7 +118,8 @@ export type MemoryEligibility = { usable: boolean; reason: 'ready' | 'source_una
 /** Snapshot all semantic fields, including attribution, qualifiers and metadata. Ignore operational timestamps. */
 export function memoryEvidenceRef(evidence: MemoryEvidence): MemoryEvidenceRef {
   return { id: evidence.id, revision: evidence.revision,
-    hash: contentHash({ ...evidence, createdAt: undefined, updatedAt: undefined, revision: undefined, correction: undefined }) };
+    hash: contentHash({ ...evidence, createdAt: undefined, updatedAt: undefined, revision: undefined, correction: undefined,
+      ...(evidence.kind === 'citation' ? { legacy: undefined } : {}) }) };
 }
 export function sameMemoryEvidence(a: MemoryEvidenceRef, b: MemoryEvidenceRef): boolean {
   return a.id === b.id && a.revision === b.revision && a.hash === b.hash;
@@ -167,6 +173,7 @@ export function memoryEligibility(evidence: MemoryEvidence, source: Source, poli
       || evidence.qualifier !== null && !evidence.anchor.excerpt.includes(evidence.qualifier))) return blocked('source_unavailable');
   if (evidence.status !== 'active') return blocked('withdrawn');
   if (evidence.kind === 'citation' && (!evidence.personId || !evidence.authorConfirmed)) return blocked('authorship_pending');
+  if (evidence.kind === 'citation' && evidence.legacy?.state === 'conflict') return blocked('review_required');
   if (memoryDecisionApplies(evidence, policy, check, decision)) {
     return decision!.action === 'accept' ? { usable: true, reason: 'ready' } : blocked(decision!.action === 'reject' ? 'rejected' : 'review_required');
   }
@@ -195,6 +202,8 @@ export function reviewMemoryEvidence(input: MemoryDecisionInput, evidence: Memor
     || input.previousSequence !== (previous?.sequence ?? 0) || previous !== null && (previous.workspaceId !== evidence.workspaceId || previous.evidence.id !== evidence.id)
     || check !== null && !currentCheck(evidence, policy, check)) return refuse('conflict', 'A evidência ou a checagem mudou. Recarregue antes de decidir.');
   const reason = input.reason.trim();
+  if (input.action === 'accept' && evidence.kind === 'citation' && evidence.legacy?.state === 'conflict')
+    return refuse('conflict', 'Resolva a divergência com a citação antiga antes de aceitar.');
   if (!reason || reason.length > 2000 || !['accept', 'reject', 'request_revision'].includes(input.action))
     return refuse('invalid_input', 'Informe o motivo da decisão, com até 2.000 caracteres.');
   // A review can release uncertainty; it cannot create rights, literal words or confirmed authorship.

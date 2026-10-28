@@ -29,6 +29,9 @@ export const memoryMetadataSchema = z.object({
   event: nullableText(240), edition: nullableText(160), topics: z.array(z.string().trim().min(1).max(100)).max(20), originalUrl: safeUrl.nullable(),
 }).strict();
 export const memoryEvidenceRefSchema = z.object({ id, revision: z.number().int().nonnegative(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
+export const memoryLegacyBatchSchema = z.object({ after: id.nullable().default(null), limit: z.number().int().min(1).max(100).default(25) }).strict();
+export const memoryLegacyResolutionSchema = z.object({ expected: memoryEvidenceRefSchema, legacyHash: z.string().regex(/^[a-f0-9]{16}$/),
+  choice: z.enum(['keep_bank', 'apply_legacy']), reason: z.string().trim().min(1).max(2000) }).strict();
 export const memoryCheckRefSchema = z.object({ id, revision: z.number().int().positive() }).strict();
 const sourceRef = z.object({ kind: z.literal('source-version'), sourceId: id, sourceVersion: z.number().int().positive(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
 const support = z.discriminatedUnion('kind', [

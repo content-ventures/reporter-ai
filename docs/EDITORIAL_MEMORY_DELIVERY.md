@@ -8,7 +8,7 @@ Execution record for Flow 4, based on the [approved phased plan](https://chatgpt
 - Branch: `citation-statistics-bank`.
 - Runtime: Node 24.14.0 and pnpm 10.33.0, installed from the frozen lockfile.
 - Authenticated GitHub author: `fagundesjv`, numeric noreply identity verified through GitHub.
-- Phase 0 technical preparation and phase 1 contract baseline are complete. The user's clarification permits engineering to proceed with synthetic material; real-corpus acceptance remains an explicit final dependency. Authenticated library/detail/history/policy reads, editorial review and metadata corrections exist behind the disabled server ceiling; the frontend port is not bound and the new product flow is unavailable.
+- Phase 0 technical preparation and phase 1 contract baseline are complete. The user's clarification permits engineering to proceed with synthetic material; real-corpus acceptance remains an explicit final dependency. Authenticated reads, editorial review, metadata corrections and curated-legacy reconciliation exist behind the disabled server ceiling; the frontend port is not bound and the new product flow is unavailable.
 - The complete goal includes frontend, backend, UX, QA, historical imports, writing integration and controlled production acceptance.
 
 User clarifications on 2026-10-28:
@@ -22,7 +22,7 @@ User clarifications on 2026-10-28:
 | --- | --- | --- | --- |
 | 0 | Reproducible baseline, inventory and evaluation rubric | Gates, database/replay and smoke baseline; synthetic corpus validated; unavailable real material recorded | Technical preparation complete; real corpus pending |
 | 1 | UX journeys, data/API contracts and permission matrix | State map, versioned contracts, valid/invalid examples and domain tests | Contract baseline complete; rendered UX acceptance in phase 5 |
-| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: storage, queries, detail/history, review and correction API verified; remaining write APIs and legacy reconciliation pending |
+| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: storage, read/review/correction APIs and curated-legacy reconciliation verified; article-derived legacy projection and remaining APIs pending |
 | 3 | Material ingestion and extraction before article | Complete block coverage, resumable jobs, literal evidence, unknown metadata and retry tests | Pending |
 | 4 | Internal/external checks and editorial resolution | Context-aware comparison, distinct confidence, immutable decisions and stale-write tests | Pending |
 | 5 | Complete library UI | Real APIs, URL filters, stable pagination, detail/review flows and accessibility checks | Pending |
@@ -190,3 +190,19 @@ Each correction increments the evidence revision and atomically stores a databas
 Validation: all 25 module PostgreSQL/HTTP tests passed, including concurrent different corrections, idempotent retry, actual audit identity, immutable historical payloads, forbidden roles, invalid numeric context and re-review after a correction. The complete rehearsal passed 154 of 160 tests with six existing skips and no failures. `pnpm gate` passed 1,756 application tests and production compilation; lint/types passed with the same baseline warnings. Isolated `db:flow`/`db:test` passed migration replay and the existing integration suite with migration 050. Logs use `/tmp/reporter-memory-correction-{gate,rehearsal,migration,integration}.log`.
 
 Phase 2 remains in progress. Next required work is actual old-registry reconciliation, selection/material/job APIs and complete runtime contracts. Extraction, external/internal checking, rendered UI, writing provenance and real/provider/editorial/pilot acceptance are not complete. No remote database, push, PR or deployment was performed.
+
+Correction checkpoint: `fcd944b`.
+
+### Curated legacy compatibility
+
+Migration 051 adds bounded reconciliation of actual existing `citation`/`fact_check` rows. POST `/memory/reconcile` processes an authorized ID-ordered batch, reports imported/updated/unchanged/conflicting/unavailable/nonliteral records and exposes `nextAfter` for resumption. A complete repeat pass remains necessary after concurrent additions behind a completed checkpoint; this operation does not claim an immutable archive inventory. Invalid original records remain unchanged and are reported rather than fabricated or silently accepted.
+
+Each imported citation keeps its exact ID, original words (including 1,200-character historical segments), revision zero or later, source hash/version and a complete legacy curation/check snapshot. Relevance, podcast/location data, overrides, historic actors and prior checks remain retrievable in immutable history. The old composite score does not become factual confidence or an activated calibration policy. Unknown dates/authorship remain unknown; source publication, recorded date and import time stay distinct. Binary-original resolution remains phase 8 work: a transcript ID is not invented as a storage-object ID.
+
+When the module ceiling is on, existing editorial commits synchronize changed curated citations, checks and source metadata in the same transaction. A failed compatibility write/audit rolls back the original commit too. Source/prod ownership and tenant isolation repeat at the SQL boundary. Source documents with old pilot workspace aliases remain unchanged; authorized read fragments derive the canonical workspace from their actual database row owner. Historical service work without an initiating actor is left for an explicitly attributed backfill rather than inventing a user; modern actor-bound jobs retain their captured context.
+
+A new-bank correction survives later legacy edits. Semantic divergence persists as a conflict and blocks acceptance/use. POST `/memory/:id/legacy` requires the current bank reference, the exact legacy snapshot hash, a keep-bank/apply-legacy choice and a reason. Resolution records the actual actor and increments the bank revision; a fresh editorial acceptance remains necessary. Merely changing legacy curation/old-check history does not overwrite an explicit bank correction or inflate confidence.
+
+Validation: all 30 memory PostgreSQL/HTTP tests passed, including explicit preservation of an ID already associated with a different material. The final complete rehearsal passed 159 of 165 tests with six existing skips and no failures. The backend suite passed 352 tests; the final `pnpm gate` passed 1,756 application tests and production compilation with the same two baseline lint warnings. Isolated `db:flow`/`db:test` passed bootstrap/replay and existing editorial concurrency/rollback checks with migration 051. Final logs: `/tmp/reporter-memory-legacy-final-gate.log`, `/tmp/reporter-memory-legacy-final-rehearsal.log`; backend/migration/integration logs use `/tmp/reporter-memory-legacy-{backend,migration,integration}.log`.
+
+Remaining legacy scope: citations calculated only from article drafts/versions, faithful occurrence reconstruction and conflict-safe handling of the same source words in productions with different visibility. Those original articles are untouched; no fabricated use occurrence or publication was imported. Worker/provider acceptance, the runtime adapter, ingestion, UI and writing integration remain pending. The new module is still off by default and phase 2 is not closed.

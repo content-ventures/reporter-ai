@@ -116,6 +116,7 @@ const messages: Record<string, string> = {
   MEMORY_CURSOR_CONFIGURATION: 'A paginação do banco editorial ainda não está configurada no servidor.',
   MEMORY_REVIEW_RESTRICTED: 'A revisão usa evidências às quais você não tem acesso.',
   MEMORY_CHECK_OUTDATED: 'A checagem está desatualizada. Execute uma nova checagem antes de decidir.',
+  MEMORY_LEGACY_CONFLICT: 'A citação antiga mudou. Recarregue e escolha qual versão preservar.',
   ACCOUNT_CONTEXT_CHANGED: 'A conta conectada mudou. Recarregue para abrir o contexto atual.',
   MEMBER_VIEW_UNAVAILABLE:'Esta visualização não está disponível para sua conta. Abra novamente pela plataforma.',
   MEMBER_VIEW_ENDED:'A visualização foi encerrada. Escolha um workspace para continuar com sua conta.',

@@ -74,6 +74,7 @@ Selection preserves explicit order and immutable evidence/check/policy snapshots
 - Material identifies an existing immutable `SourceVersionRef`. Original files and source rights follow existing private-storage and source contracts.
 - Anchors retain exact UTF-16 segment offsets. Cross-segment excerpts include consecutive context with newline separators. Disjoint passages cannot be stitched into a new quote.
 - New processing blocks contain at most 1,000 characters; processing covers every block and retains original offsets. Legacy 1,200-character citation records and IDs remain unchanged.
+- Curated legacy citation/check payloads stay in the citation's `legacy` snapshot and immutable history, separately from current confidence. Its raw/mapped hashes and actual synchronization actor/time are operational provenance outside the semantic evidence hash. Divergence blocks acceptance/use; resolution guards both the current bank reference and exact legacy hash, records a reason/choice and requires fresh acceptance.
 - Citations and statistics share provenance, metadata and correction history; their payloads are discriminated. A statistic keeps raw/decimal/range/scale, unit, observation period, geography, population, qualifier, issuing institution and declaring person separately.
 - The evidence snapshot hash includes all semantic fields, including attribution and qualifiers, while excluding operational timestamps. A decision uses `{id, revision, hash}`, a check revision, policy revision and preceding decision sequence.
 - A metadata correction preserves literal/source identity and increments the evidence revision. Its database-authored actor/time/reason stamp remains in each historical payload and the audit, while staying outside the semantic hash. No-op changes are refused. Original-word changes require a new source version.
@@ -99,6 +100,7 @@ The route family is `/api/reporter/memory`, within the existing same-origin/auth
 | POST check | Exact current evidence snapshot; enqueue durable check, never promise provider completion synchronously |
 | POST review | Any active workspace member; required reason, evidence/check/policy and preceding decision guards |
 | POST correction/source revision | Required reason and expected revision; old payloads and original source remain retrievable |
+| POST legacy reconciliation/resolution | Bounded authorized curated-row backfill; explicit outcomes and resumption ID; keep-bank/apply-legacy choice guards both snapshots and has actor-stamped audit |
 | POST selection | Ordered evidence snapshots; all source, decision and permission checks repeat atomically on use |
 | GET policy | Active version and calibration status; policy mutation is a separate admin-controlled phase 7 contract |
 
