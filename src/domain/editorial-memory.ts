@@ -33,6 +33,8 @@ export type MemoryEvidenceBase = {
   id: string; workspaceId: string; materialId: string; revision: number; anchor: MemoryAnchor;
   metadata: MemoryMetadata; kinds: ClaimKind[]; status: 'active' | 'withdrawn' | 'superseded';
   createdAt: string; updatedAt: string; supersedes: string | null;
+  /** Authenticated correction provenance; historical snapshots retain each earlier stamp. */
+  correction?: { reason: string; personId: string; at: string };
 };
 export type MemoryCitation = MemoryEvidenceBase & {
   kind: 'citation'; text: string; personId: string | null; authorConfirmed: boolean;
@@ -111,7 +113,7 @@ export type MemoryEligibility = { usable: boolean; reason: 'ready' | 'source_una
 /** Snapshot all semantic fields, including attribution, qualifiers and metadata. Ignore operational timestamps. */
 export function memoryEvidenceRef(evidence: MemoryEvidence): MemoryEvidenceRef {
   return { id: evidence.id, revision: evidence.revision,
-    hash: contentHash({ ...evidence, createdAt: undefined, updatedAt: undefined, revision: undefined }) };
+    hash: contentHash({ ...evidence, createdAt: undefined, updatedAt: undefined, revision: undefined, correction: undefined }) };
 }
 export function sameMemoryEvidence(a: MemoryEvidenceRef, b: MemoryEvidenceRef): boolean {
   return a.id === b.id && a.revision === b.revision && a.hash === b.hash;

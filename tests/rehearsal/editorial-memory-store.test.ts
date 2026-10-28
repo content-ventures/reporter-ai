@@ -481,3 +481,56 @@ test('HTTP review refuses stale/private checks and forged internal supporting te
   assert.equal((await api(target.id, { previousSequence: 1 })).status, 422);
   await owner("UPDATE public.reporter_ed_sources SET doc=jsonb_set(doc,'{rights,authorized}','true') WHERE portal_id=$1 AND source_id=$2", [PILOT, source.id]);
 });
+
+test('metadata correction preserves original words, invalidates acceptance and appends one actual-actor audit per retry', async () => {
+  const target = { ...citation, id: 'correction-target', legacyCitationId: null };
+  await session(contexts[1], client => put(client, evidenceChange(target)));
+  const accepted = await memoryApi(`${target.id}/review`, { requestId: randomUUID(), input: {
+    evidence: memoryEvidenceRef(target), check: null, policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Initial synthetic acceptance', supports: [],
+  } }); assert.equal(accepted.status, 200);
+  const input = { expected: memoryEvidenceRef(target), reason: 'Correct the synthetic edition', changes: { kind: 'citation', metadata: { edition: '2025' } } };
+  const options = { input, requestId: randomUUID(), identity: identities[1] };
+  const response = await memoryApi(`${target.id}/correction`, options); assert.equal(response.status, 200, await response.clone().text());
+  const corrected = await response.json(); assert.equal(corrected.evidence.revision, 1); assert.equal(corrected.eligibility.usable, false);
+  assert.equal(corrected.evidence.text, target.text); assert.deepEqual(corrected.evidence.anchor, target.anchor);
+  assert.equal(corrected.evidence.correction.personId, contexts[1].actor); assert.equal(corrected.evidence.correction.reason, input.reason);
+  assert.ok(Date.parse(corrected.evidence.correction.at)); assert.notEqual(memoryEvidenceRef(corrected.evidence).hash, input.expected.hash);
+  const replay = await memoryApi(`${target.id}/correction`, options); assert.equal(replay.status, 200); assert.deepEqual(await replay.json(), corrected);
+  const rows = await owner("SELECT user_id,before_data,after_data FROM public.audit_log WHERE action='memory.evidence.correct' AND after_data->>'id'=$1", [target.id]);
+  assert.equal(rows.length, 1); assert.equal(rows[0].user_id, contexts[1].actor); assert.deepEqual(rows[0].before_data, target); assert.deepEqual(rows[0].after_data, corrected.evidence);
+  const detail = await (await memoryApi(target.id)).json(); assert.equal(detail.revisions.total, 2); assert.deepEqual(detail.revisions.items[1], target);
+  assert.equal((await memoryApi(`${target.id}/correction`, { ...options, requestId: randomUUID() })).status, 409);
+  for (const identity of [identities[2], identities[3]]) assert.equal((await memoryApi(`${target.id}/correction`, { ...options, identity, requestId: randomUUID() })).status, 403);
+  const reviewed = await memoryApi(`${target.id}/review`, { requestId: randomUUID(), input: {
+    evidence: memoryEvidenceRef(corrected.evidence), check: null, policyRevision: 1, previousSequence: 1, action: 'accept', reason: 'Review corrected edition', supports: [],
+  } }); assert.equal(reviewed.status, 200, await reviewed.clone().text());
+  assert.equal((await (await memoryApi(target.id)).json()).eligibility.usable, true, 'database correction stamps preserve the semantic fingerprint used by the next review');
+});
+
+test('concurrent different corrections have one winner without lost updates or extra audit rows', async () => {
+  const target = { ...citation, id: 'concurrent-correction', legacyCitationId: null };
+  await session(contexts[1], client => put(client, evidenceChange(target)));
+  const results = await Promise.all(['2024', '2025'].map(edition => memoryApi(`${target.id}/correction`, { identity: identities[1], requestId: randomUUID(), input: {
+    expected: memoryEvidenceRef(target), reason: `Synthetic edition ${edition}`, changes: { kind: 'citation', metadata: { edition } },
+  } })));
+  assert.deepEqual(results.map(response => response.status).sort(), [200, 409]);
+  const detail = await (await memoryApi(target.id)).json(); assert.equal(detail.evidence.revision, 1); assert.equal(detail.revisions.total, 2);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.audit_log WHERE action='memory.evidence.correct' AND after_data->>'id'=$1", [target.id]))[0].n, 1);
+});
+
+test('correction rejects fabricated numeric context, missing people, immutable fields and no-op edits', async () => {
+  const target = { ...statistic('numeric-correction', 0), legacyCitationId: undefined };
+  await session(contexts[1], client => put(client, { kind: 'evidence', id: target.id, expected: null, doc: target,
+    fingerprint: memoryEvidenceRef(target).hash, parentKind: 'material', parentId: material.id }));
+  const change = (changes: unknown, extra = {}) => memoryApi(`${target.id}/correction`, { identity: identities[1], requestId: randomUUID(), input: {
+    expected: memoryEvidenceRef(target), reason: 'Synthetic numeric correction', changes, ...extra,
+  } });
+  for (const changes of [{ kind: 'statistic', qualifier: 'invented qualifier' }, { kind: 'statistic', unit: 'invented unit' },
+    { kind: 'statistic', value: { ...target.value, raw: '999999' } }, { kind: 'statistic', declaringPersonId: 'missing-person' },
+    { kind: 'statistic', indicator: target.indicator }, { kind: 'statistic', anchor: target.anchor, indicator: 'Different indicator' }, { kind: 'citation', authorConfirmed: false }])
+    assert.equal((await change(changes)).status, 422, JSON.stringify(changes));
+  assert.equal((await change({ kind: 'statistic', indicator: 'Different indicator' }, { personId: contexts[0].actor })).status, 422);
+  const valid = await change({ kind: 'statistic', indicator: 'Training coverage', geography: 'Synthetic region' });
+  assert.equal(valid.status, 200, await valid.clone().text()); assert.equal((await valid.json()).evidence.revision, target.revision + 1);
+  const detail = await (await memoryApi(target.id)).json(); assert.equal(detail.revisions.total, 2);
+});
