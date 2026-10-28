@@ -266,7 +266,7 @@ test('checks and decisions with private secondary evidence are withheld from use
   await session(contexts[1], client => put(client, { kind: 'check', id: target.id, expected: null, parentKind: 'evidence', parentId: target.id,
     doc: { id: target.id, workspaceId: PILOT, revision: 1, evidence: memoryEvidenceRef(target), policyRevision: 1,
       checkedAt: citation.createdAt, verdict: 'validated', confidence: 99,
-      supports: [{ claim: 0, relation: 'confirms', evidence: { kind: 'internal', evidence: memoryEvidenceRef(privateCitation), primaryOrigin: 'private', excerpt: 'Private editorial annotation' } }],
+      supports: [{ claim: 0, relation: 'confirms', evidence: { kind: 'internal', evidence: memoryEvidenceRef(privateCitation), primaryOrigin: material.primaryOrigin, excerpt: privateCitation.anchor.excerpt } }],
       claims: [], strength: { score: 5, reason: 'Private editorial annotation' }, provider: null, model: null } }));
   assert.equal(await read(contexts[2], 'check', target.id), null);
   assert.ok(await read(contexts[1], 'check', target.id));
@@ -274,6 +274,7 @@ test('checks and decisions with private secondary evidence are withheld from use
   assert.equal(publicView.items.find(item => item.evidence.id === target.id)!.check, null);
   assert.ok(!JSON.stringify(publicView).includes('Private editorial annotation'));
   assert.equal((await query(contexts[2], { kind: 'statistic', minConfidence: 99 })).total, 0);
+  assert.equal((await query(contexts[1], { kind: 'statistic' })).items.find(item => item.evidence.id === target.id)!.checkState, 'current');
   assert.equal((await query(contexts[1], { kind: 'statistic', minConfidence: 99 })).total, 1);
 });
 

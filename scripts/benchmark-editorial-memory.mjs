@@ -52,6 +52,10 @@ try {
   await admin.query('UPDATE public.reporter_memory_clock SET seq=seq+10000 WHERE portal_id=$1',[context.portal]);await admin.query('COMMIT');
   await admin.query('ANALYZE public.reporter_memory_heads');await admin.query('ANALYZE public.reporter_memory_history');
   const { handleReporter }=await import(moduleAt('src/server/http.ts'));
+  // Bulk seeding/module loading can outlive the pool's idle TTL. Reopen the setup connection
+  // before the warm API samples; every measured request still authenticates independently.
+  if(!(await resolveReporterContext(identity,'reporter-ai')))throw new Error('Missing benchmark context after setup');
+  console.log(JSON.stringify({stage:'setup_complete',records:10000,provider_calls:0}));
   const scenarios=[{name:'newest',query:'limit=50'},{name:'search_relevance',query:'limit=50&q=treinou&topic=benchmark&sort=relevance'}];
   for(const scenario of scenarios){
     const samples=[];
@@ -59,6 +63,8 @@ try {
       const start=performance.now();
       const response=await handleReporter(new Request(`http://127.0.0.1:3992/api/reporter/w/reporter-ai/memory?${scenario.query}`),['w','reporter-ai','memory'],{identify:async()=>identity});
       if(response.status!==200){
+        const failure=await response.json().catch(()=>({}));
+        console.log(JSON.stringify({scenario:scenario.name,http_status:response.status,error_code:failure.error??null,request_id:failure.request_id??null}));
         const { runWithReporterContext }=await import(moduleAt('src/server/request-context.ts'));
         const { queryEditorialMemory }=await import(moduleAt('src/server/editorial-memory-query.ts'));
         const { parseMemoryQuery }=await import(moduleAt('src/server/editorial-memory-input.ts'));
