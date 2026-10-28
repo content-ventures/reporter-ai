@@ -8,7 +8,7 @@ Execution record for Flow 4, based on the [approved phased plan](https://chatgpt
 - Branch: `citation-statistics-bank`.
 - Runtime: Node 24.14.0 and pnpm 10.33.0, installed from the frozen lockfile.
 - Authenticated GitHub author: `fagundesjv`, numeric noreply identity verified through GitHub.
-- Phase 0 technical preparation is complete. The user's clarification permits engineering to proceed with synthetic material; real-corpus acceptance remains an explicit final dependency. Later phases are not accepted or enabled by this record.
+- Phase 0 technical preparation and phase 1 contract baseline are complete. The user's clarification permits engineering to proceed with synthetic material; real-corpus acceptance remains an explicit final dependency. The module remains unbound to runtime and unavailable as a new product flow.
 - The complete goal includes frontend, backend, UX, QA, historical imports, writing integration and controlled production acceptance.
 
 User clarifications on 2026-10-28:
@@ -21,7 +21,7 @@ User clarifications on 2026-10-28:
 | Phase | Deliverable | Required exit evidence | State |
 | --- | --- | --- | --- |
 | 0 | Reproducible baseline, inventory and evaluation rubric | Gates, database/replay and smoke baseline; synthetic corpus validated; unavailable real material recorded | Technical preparation complete; real corpus pending |
-| 1 | UX journeys, data/API contracts and permission matrix | State map, versioned contracts, valid/invalid examples and domain tests | Pending |
+| 1 | UX journeys, data/API contracts and permission matrix | State map, versioned contracts, valid/invalid examples and domain tests | Contract baseline complete; rendered UX acceptance in phase 5 |
 | 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | Pending |
 | 3 | Material ingestion and extraction before article | Complete block coverage, resumable jobs, literal evidence, unknown metadata and retry tests | Pending |
 | 4 | Internal/external checks and editorial resolution | Context-aware comparison, distinct confidence, immutable decisions and stale-write tests | Pending |
@@ -126,3 +126,11 @@ Keep a separate held-out real corpus outside the development fixtures. Do not tr
 ## Completion audit
 
 Before declaring the goal complete, verify each phase's authoritative artifacts and runtime behavior, including all 20 QA scenarios in the plan. Missing real material, provider acceptance, editorial UX acceptance, remote approvals or pilot observation remain explicit incomplete requirements. A green local build alone does not close the module.
+
+## Phase 1 execution record
+
+Phase 0 checkpoint: `64fc431`. Phase 1 defines [journeys, wireframes, states, invariants and API contracts](EDITORIAL_MEMORY_CONTRACT.md), the typed domain/application port and the executable review/eligibility rules. The new port has no runtime adapter yet; no successful placeholder implementation or frontend activation was introduced.
+
+Validation: `pnpm gate:quick` passed with 1,756 application tests and the same two baseline lint warnings. The targeted memory/permission suite passed all 12 tests, including exact raw statistic evidence, user identity and revision guards. The separate synthetic corpus integrity suite passed 23 checks. Production compilation and browser regressions remain established at the phase 0 baseline; phase 1 adds no rendered UI.
+
+Next: phase 2 persistence, additive migrations, authenticated server operations, tenant/source visibility, request receipts, immutable review audit, legacy reconciliation and indexed snapshot pagination. Register the phase 1 commit from this document's Git history when recording phase 2. Real corpus and calibrated provider quality remain outstanding final acceptance dependencies.
