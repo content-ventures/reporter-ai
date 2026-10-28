@@ -90,7 +90,7 @@ export type MemoryDecisionInput = Pick<MemoryDecision, 'evidence' | 'check' | 'p
   previousSequence: number;
 };
 export type MemoryUseStage = 'selected' | 'inserted' | 'approved' | 'published';
-type MemoryUseBase = { id: string; workspaceId: string; evidence: MemoryEvidenceRef; at: string; personId: string };
+type MemoryUseBase = { id: string; workspaceId: string; evidence: MemoryEvidenceRef; at: string; personId: string; sourceRange?: { from: number; to: number } };
 type MemoryOccurrence = { productionId: string; blockId: string; from: number; to: number };
 export type MemoryUse = MemoryUseBase & (
   | { stage: 'selected'; selectionId: string; selectionRevision: number; productionId: string | null }

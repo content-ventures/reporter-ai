@@ -1,6 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import type { MemoryQuery } from '../domain/editorial-memory.ts';
+import { EDITORIAL_FORMATS } from '../domain/formats.ts';
 
 const id = z.string().trim().min(1).max(128);
 export const memoryIdSchema = id;
@@ -91,6 +92,11 @@ export const memoryCorrectionSchema = z.object({ expected: memoryEvidenceRefSche
 export const memorySelectionInputSchema = z.object({ id: id.optional(), baseRevision: z.number().int().nonnegative(), productionId: id.nullable(),
   evidence: z.array(memoryEvidenceRefSchema).min(1).max(100) }).strict()
   .refine(value => new Set(value.evidence.map(item => item.id)).size === value.evidence.length, 'Uma evidência só pode aparecer uma vez na seleção.');
+export const memoryWritingInputSchema = z.object({ baseRevision: z.number().int().positive(), title: z.string().trim().min(1).max(120),
+  brief: z.object({ size: z.enum(['short', 'standard']), sections: z.number().int().min(1).max(8), angle: z.string().max(600).optional(),
+    format: z.enum(EDITORIAL_FORMATS).optional(), formatSize: id.optional(), event: z.object({ name: z.string().trim().min(1).max(600), boxTitle: z.string().max(600).optional(),
+      about: z.string().max(600).optional(), dates: z.string().max(600).optional(), hours: z.string().max(600).optional(), venue: z.string().max(600).optional(),
+      address: z.string().max(600).optional(), cta: z.string().max(600).optional() }).strict().optional() }).strict() }).strict();
 export const memoryMaterialRevisionSchema = z.object({ baseRevision: z.number().int().positive(), source: sourceRef,
   text: originalText, reason: z.string().trim().min(1).max(2000) }).strict();
 

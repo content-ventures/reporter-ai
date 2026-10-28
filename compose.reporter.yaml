@@ -68,6 +68,7 @@ services:
       - ./database/migrations/057-editorial-memory-extraction.sql:/docker-entrypoint-initdb.d/99-x-editorial-memory-extraction.sql:ro
       - ./database/migrations/058-editorial-memory-checks.sql:/docker-entrypoint-initdb.d/99-y-editorial-memory-checks.sql:ro
       - ./database/migrations/059-editorial-memory-check-dependencies.sql:/docker-entrypoint-initdb.d/99-z-editorial-memory-check-dependencies.sql:ro
+      - ./database/migrations/060-editorial-memory-writing.sql:/docker-entrypoint-initdb.d/99-za-editorial-memory-writing.sql:ro
     networks:
       - reporter
     healthcheck:
