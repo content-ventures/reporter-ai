@@ -92,7 +92,7 @@ export type MemoryUseStage = 'selected' | 'inserted' | 'approved' | 'published';
 type MemoryUseBase = { id: string; workspaceId: string; evidence: MemoryEvidenceRef; at: string; personId: string };
 type MemoryOccurrence = { productionId: string; blockId: string; from: number; to: number };
 export type MemoryUse = MemoryUseBase & (
-  | { stage: 'selected'; selectionId: string; productionId: string | null }
+  | { stage: 'selected'; selectionId: string; selectionRevision: number; productionId: string | null }
   | MemoryOccurrence & { stage: 'inserted'; pieceId: string; draftRevision: number; articleHash: string }
   | MemoryOccurrence & { stage: 'approved'; article: VersionRef }
   | MemoryOccurrence & { stage: 'published'; article: VersionRef; publicationReceipt: string }
@@ -100,7 +100,7 @@ export type MemoryUse = MemoryUseBase & (
 export type MemorySelection = {
   id: string; workspaceId: string; revision: number; productionId: string | null;
   items: { evidence: MemoryEvidenceRef; decisionId: string | null; check: MemoryCheckRef | null; policyRevision: number }[];
-  createdBy: string; updatedAt: string;
+  createdBy: string; createdAt: string; updatedBy: string; updatedAt: string;
 };
 export type MemoryQuery = {
   kind?: MemoryEvidence['kind']; status?: MemoryEvidence['status'] | 'all'; query?: string; topics?: string[]; personId?: string; institution?: string;

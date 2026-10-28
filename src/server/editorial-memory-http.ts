@@ -1,5 +1,5 @@
 import 'server-only';
-import { memoryArticleBatchSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
+import { memoryArticleBatchSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memorySelectionInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
@@ -8,6 +8,7 @@ import { reconcileEditorialMemory, resolveMemoryLegacy } from './editorial-memor
 import { lookupMemoryLegacy, readMemoryArticle, reconcileMemoryArticles, resolveMemoryArticle } from './editorial-memory-articles.ts';
 import { FlowError } from './errors.ts';
 import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
+import { readMemorySelection, selectEditorialMemory } from './editorial-memory-selection.ts';
 
 /** The module stays unavailable until its controlled acceptance enables the server ceiling. */
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
@@ -17,6 +18,13 @@ export async function handleEditorialMemory(request: Request, path: string[], re
   if (request.method === 'GET' && path.join('/') === 'policy') return Response.json(await readMemoryPolicy(), { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'GET' && path.length === 1) return Response.json(await readMemoryDetail(path[0]), { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'GET' && path.length === 2 && path[0] === 'legacy') return Response.json(await lookupMemoryLegacy(path[1]), { headers: { 'Cache-Control': 'private, no-store' } });
+  if (request.method === 'GET' && path.length === 2 && path[0] === 'selections') {
+    if (new URL(request.url).search) throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await readMemorySelection(path[1]), { headers: { 'Cache-Control': 'private, no-store' } });
+  }
+  if (request.method === 'POST' && path.join('/') === 'selections') return Response.json(
+    await selectEditorialMemory(memorySelectionInputSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),
+    { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'GET' && path.length === 2 && path[1] === 'article') {
     const params = new URL(request.url).searchParams;
     if ([...params.keys()].some(key => key !== 'snapshot') || params.getAll('snapshot').length > 1) throw new FlowError('INVALID_INPUT', 422);

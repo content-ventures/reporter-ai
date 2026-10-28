@@ -1032,3 +1032,149 @@ test('duplicate consolidation cannot merge productions or two speakers sharing t
     assert.deepEqual((await (await memoryApi(id)).json()).evidence, before.evidence);
   }
 });
+
+async function seedSelectable(id: string, kind: 'citation' | 'statistic' = 'citation', productionId: string | null = null) {
+  const original = createTranscriptSource({ workspaceId: PILOT, title: `Synthetic selection ${id}`, origin: 'interview', authorized: true,
+    parsed: parseTranscript('Ana Exemplo: A unidade sintética treinou 240 pessoas no período observado.', { format: 'speaker-lines' }),
+    speakerPeople: { 'Ana Exemplo': contexts[1].actor } }, { actorId: contexts[1].actor, now: '2026-01-01T00:00:00Z', newId: () => `selection-source-${id}` });
+  await owner('INSERT INTO public.reporter_ed_sources(portal_id,source_id,doc,seq) VALUES($1,$2,$3,1)', [PILOT, original.id, JSON.stringify(original)]);
+  if (productionId) await owner('INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,source_ids,seq) VALUES($1,$2,$3,$4,1)',
+    [PILOT, productionId, JSON.stringify({ id: productionId, ownerId: contexts[1].actor, title: 'Synthetic selection origin' }), [original.id]]);
+  const selectedMaterial: MemoryMaterial = { ...material, id: `selection-material-${id}`, source: toSourceVersionRef(original) };
+  const segment = original.versions[0].content.segments[0];
+  const base = { id, workspaceId: PILOT, materialId: selectedMaterial.id, revision: 0, kinds: ['declared'] as const,
+    anchor: { source: selectedMaterial.source, spans: [{ segmentId: segment.id, from: 0, to: segment.text.length }], excerpt: segment.text },
+    metadata, status: 'active' as const, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', supersedes: null };
+  const evidence = kind === 'citation' ? { ...base, kinds: [...base.kinds], kind: 'citation' as const, text: segment.text, personId: contexts[1].actor, authorConfirmed: true, legacyCitationId: null }
+    : { ...statistic(id, 0), ...base, kinds: [...base.kinds], period: null };
+  await session(contexts[1], async client => {
+    await put(client, { kind: 'material', id: selectedMaterial.id, expected: null, doc: selectedMaterial, sourceId: original.id, ...(productionId ? { productionId } : {}) });
+    await put(client, { kind: 'evidence', id, expected: null, doc: evidence, fingerprint: memoryEvidenceRef(evidence).hash, parentKind: 'material', parentId: selectedMaterial.id });
+  });
+  return evidence;
+}
+async function acceptSelectable(id: string) {
+  const detail = await (await memoryApi(id)).json();
+  const response = await memoryApi(`${id}/review`, { identity: identities[1], requestId: randomUUID(), input: { evidence: memoryEvidenceRef(detail.evidence), check: null,
+    policyRevision: 1, previousSequence: detail.decisions.total, action: 'accept', reason: 'Synthetic selection evidence verified', supports: [] } });
+  assert.equal(response.status, 200, await response.clone().text()); return response.json();
+}
+let selectionQuote: Awaited<ReturnType<typeof seedSelectable>>, selectionStatistic: typeof selectionQuote, savedSelection: import('../../src/domain/editorial-memory.ts').MemorySelection;
+
+test('ordered multi-material selection captures exact review snapshots, actual actors and only selected events', async () => {
+  selectionQuote = await seedSelectable('selection-quote'); selectionStatistic = await seedSelectable('selection-statistic', 'statistic');
+  const decisions = await Promise.all([acceptSelectable(selectionQuote.id), acceptSelectable(selectionStatistic.id)]);
+  const input = { baseRevision: 0, productionId: null, evidence: [memoryEvidenceRef(selectionStatistic), memoryEvidenceRef(selectionQuote)] };
+  const options = { identity: identities[1], requestId: randomUUID(), input };
+  const response = await memoryApi('selections', options); assert.equal(response.status, 200, await response.clone().text()); savedSelection = await response.json();
+  assert.deepEqual(savedSelection.items.map(item => item.evidence), input.evidence);
+  assert.deepEqual(savedSelection.items.map(item => item.decisionId), [decisions[1].id, decisions[0].id]);
+  assert.equal(savedSelection.revision, 1); assert.equal(savedSelection.createdBy, contexts[1].actor); assert.equal(savedSelection.updatedBy, contexts[1].actor);
+  assert.equal(savedSelection.createdAt, savedSelection.updatedAt); assert.ok(Date.parse(savedSelection.updatedAt));
+  const replay = await memoryApi('selections', options); assert.equal(replay.status, 200); assert.deepEqual(await replay.json(), savedSelection);
+  const get = await memoryApi(`selections/${savedSelection.id}`); assert.equal(get.status, 200); assert.match(get.headers.get('cache-control')!, /no-store/);
+  assert.deepEqual(await get.json(), savedSelection);
+  const events = await owner("SELECT doc FROM public.reporter_memory_heads WHERE portal_id=$1 AND kind='use' AND doc->>'selectionId'=$2", [PILOT, savedSelection.id]);
+  assert.equal(events.length, 2);
+  for (const { doc } of events) { assert.equal(doc.stage, 'selected'); assert.equal(doc.personId, contexts[1].actor); assert.equal(doc.selectionRevision, 1); }
+  for (const evidence of [selectionQuote, selectionStatistic]) {
+    const detail = await (await memoryApi(evidence.id)).json(); assert.deepEqual(detail.uses, { selected: 1, inserted: 0, approved: 0, published: 0 });
+    assert.equal((await query(contexts[1], { materialId: evidence.materialId, unused: true })).total, 1, 'selection does not consume the inserted-unused filter');
+  }
+  const audits = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.selection.save' AND after_data->>'id'=$1", [savedSelection.id]);
+  assert.equal(audits.length, 1); assert.equal(audits[0].user_id, contexts[1].actor); assert.deepEqual(audits[0].after_data, savedSelection);
+});
+
+test('reordering selection preserves its creator and original events, refuses rebinding and serializes concurrent edits', async () => {
+  const input = { id: savedSelection.id, baseRevision: 1, productionId: null, evidence: savedSelection.items.map(item => item.evidence).reverse() };
+  const response = await memoryApi('selections', { identity: identities[0], requestId: randomUUID(), input }); assert.equal(response.status, 200, await response.clone().text());
+  savedSelection = await response.json(); assert.equal(savedSelection.revision, 2); assert.equal(savedSelection.createdBy, contexts[1].actor); assert.equal(savedSelection.updatedBy, contexts[0].actor);
+  const rebound = await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input: { ...input, baseRevision: 2, productionId: 'private-production' } }); assert.equal(rebound.status, 409);
+  const results = await Promise.all([selectionQuote, selectionStatistic].map(evidence => memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input: {
+    id: savedSelection.id, baseRevision: 2, productionId: null, evidence: [memoryEvidenceRef(evidence)],
+  } })));
+  assert.deepEqual(results.map(result => result.status).sort(), [200, 409]);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_memory_heads WHERE portal_id=$1 AND kind='use' AND doc->>'selectionId'=$2", [PILOT, savedSelection.id]))[0].n, 2);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_memory_history WHERE portal_id=$1 AND kind='selection' AND id=$2", [PILOT, savedSelection.id]))[0].n, 3);
+});
+
+test('selection refuses unreviewed, stale and unauthorized evidence without saving a partial selection or occurrence', async () => {
+  const unreviewed = await seedSelectable('selection-unreviewed');
+  const input = { id: 'selection-atomic-failure', baseRevision: 0, productionId: null, evidence: [memoryEvidenceRef(selectionQuote), memoryEvidenceRef(unreviewed)] };
+  assert.equal((await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input })).status, 409);
+  assert.equal((await memoryApi(`selections/${input.id}`)).status, 404);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_memory_heads WHERE portal_id=$1 AND kind='use' AND doc->>'selectionId'=$2", [PILOT, input.id]))[0].n, 0);
+  const stale = await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input: { ...input, evidence: [{ ...memoryEvidenceRef(selectionQuote), revision: 99 }] } }); assert.equal(stale.status, 409);
+  await owner("UPDATE public.reporter_ed_sources SET doc=jsonb_set(doc,'{rights,authorized}','false') WHERE portal_id=$1 AND source_id=$2", [PILOT, selectionQuote.anchor.source.sourceId]);
+  try {
+    assert.equal((await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input: { ...input, evidence: [memoryEvidenceRef(selectionQuote)] } })).status, 409);
+  } finally { await owner("UPDATE public.reporter_ed_sources SET doc=jsonb_set(doc,'{rights,authorized}','true') WHERE portal_id=$1 AND source_id=$2", [PILOT, selectionQuote.anchor.source.sourceId]); }
+  const correction = await memoryApi(`${selectionQuote.id}/correction`, { identity: identities[1], requestId: randomUUID(), input: { expected: memoryEvidenceRef(selectionQuote), reason: 'Synthetic changed edition',
+    changes: { kind: 'citation', metadata: { edition: 'New edition' } } } }); assert.equal(correction.status, 200);
+  const corrected = await correction.json();
+  assert.equal((await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input: { ...input, evidence: [memoryEvidenceRef(corrected.evidence)] } })).status, 409, 'previous acceptance does not release a new revision');
+});
+
+test('selection reads and receipt replays recheck every material scope after a source production becomes private', async () => {
+  const evidence = await seedSelectable('selection-private-item', 'citation', 'selection-private-origin'); await acceptSelectable(evidence.id);
+  const input = { id: 'selection-privacy', baseRevision: 0, productionId: null, evidence: [memoryEvidenceRef(evidence)] };
+  const options = { identity: identities[1], requestId: randomUUID(), input };
+  const response = await memoryApi('selections', options); assert.equal(response.status, 200, await response.clone().text());
+  await owner("UPDATE public.reporter_ed_productions SET doc=doc||$2::jsonb WHERE portal_id=$1 AND production_id='selection-private-origin'", [PILOT,
+    JSON.stringify({ ownerId: contexts[0].actor, restrictedTo: [] })]);
+  assert.equal((await memoryApi('selections/selection-privacy', { identity: identities[1] })).status, 404);
+  assert.equal((await memoryApi('selections', options)).status, 404);
+  assert.equal((await memoryApi('selections/selection-privacy', { identity: identities[0], slug: 'memory-second' })).status, 404);
+  assert.equal(await read(contexts[1], 'selection', 'selection-privacy'), null, 'the SQL boundary hides references to newly private source productions');
+  const target = await memoryApi('selections', { identity: { role: 'editor', subject: 'memory-other-writer', email: 'other-writer@memory.test', name: 'Other writer', emailVerified: true },
+    requestId: randomUUID(), input: { baseRevision: 0, productionId: 'private-production', evidence: [memoryEvidenceRef(selectionStatistic)] } }); assert.equal(target.status, 403);
+});
+
+test('selection audit failure rolls events and selection history back, and only editors can write with unforgeable metadata', async () => {
+  const input = { id: 'selection-audit-rollback', baseRevision: 0, productionId: null, evidence: [memoryEvidenceRef(selectionStatistic)] };
+  await owner("CREATE FUNCTION public.fail_memory_selection_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='memory.selection.save' THEN RAISE EXCEPTION 'synthetic selection audit failure'; END IF; RETURN NEW; END $$");
+  await owner('CREATE TRIGGER fail_memory_selection_audit BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.fail_memory_selection_audit()');
+  try { assert.equal((await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input })).status, 500); }
+  finally { await owner('DROP TRIGGER fail_memory_selection_audit ON public.audit_log'); await owner('DROP FUNCTION public.fail_memory_selection_audit()'); }
+  assert.equal((await memoryApi(`selections/${input.id}`)).status, 404);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_memory_heads WHERE portal_id=$1 AND kind='use' AND doc->>'selectionId'=$2", [PILOT, input.id]))[0].n, 0);
+  for (const identity of [identities[2], identities[3]]) assert.equal((await memoryApi('selections', { identity, requestId: randomUUID(), input })).status, 403);
+  for (const extra of [{ createdBy: contexts[0].actor }, { at: '2020-01-01T00:00:00Z' }, { workspaceId: second.portal }])
+    assert.equal((await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input: { ...input, ...extra } })).status, 422);
+  assert.equal((await memoryApi('selections', { identity: identities[1], input })).status, 422);
+  const saved = await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input }); assert.equal(saved.status, 200, await saved.clone().text());
+  assert.equal((await memoryApi(`selections/${input.id}?actor=forged`)).status, 422);
+});
+
+test('production-bound selections count distinct productions and current target privacy applies to saved selections and events', async () => {
+  const before = await (await memoryApi(selectionStatistic.id)).json();
+  await owner('INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,source_ids,seq) VALUES($1,$2,$3,$4,1)',
+    [PILOT, 'selection-target', JSON.stringify({ id: 'selection-target', title: 'Synthetic selection target', ownerId: contexts[1].actor }), []]);
+  const input = { baseRevision: 0, productionId: 'selection-target', evidence: [memoryEvidenceRef(selectionStatistic)] };
+  const a = await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input }); assert.equal(a.status, 200, await a.clone().text()); const first = await a.json();
+  const b = await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input }); assert.equal(b.status, 200);
+  const unattached = await memoryApi('selections', { identity: identities[1], requestId: randomUUID(), input: { ...input, id: 'selection-target', productionId: null } });
+  assert.equal(unattached.status, 200, await unattached.clone().text());
+  const after = await (await memoryApi(selectionStatistic.id)).json(); assert.equal(after.uses.selected, before.uses.selected + 2, 'an unattached selection ID never collides with a production ID');
+  assert.equal((await query(contexts[1], { materialId: selectionStatistic.materialId })).items[0].uses.selected, after.uses.selected);
+  assert.equal(after.uses.inserted, 0); assert.equal(after.uses.approved, 0); assert.equal(after.uses.published, 0);
+  await owner("UPDATE public.reporter_ed_productions SET doc=doc||$2::jsonb WHERE portal_id=$1 AND production_id='selection-target'", [PILOT,
+    JSON.stringify({ ownerId: contexts[0].actor, restrictedTo: [] })]);
+  assert.equal((await memoryApi(`selections/${first.id}`, { identity: identities[1] })).status, 404);
+  assert.equal((await memoryApi(`selections/${first.id}`, { identity: identities[0] })).status, 200);
+  assert.equal((await (await memoryApi(selectionStatistic.id)).json()).uses.selected, before.uses.selected + 1);
+});
+
+test('the SQL selection writer cannot fabricate an applicable review or check revision', async () => {
+  const unreviewed = (await read(contexts[1], 'evidence', 'selection-unreviewed'))!;
+  const document = { id: 'selection-sql-bypass', workspaceId: PILOT, revision: 1, productionId: null,
+    items: [{ evidence: memoryEvidenceRef(unreviewed.doc as unknown as MemoryCitation), check: null, decisionId: null, policyRevision: 1 }] };
+  await assert.rejects(session(contexts[1], client => client.query('SELECT public.reporter_memory_selection_save($1::jsonb)',
+    [JSON.stringify({ kind: 'selection', id: document.id, expected: null, doc: document })])), conflict);
+  const wrongCheck = { ...document, items: [{ ...document.items[0], evidence: memoryEvidenceRef(selectionStatistic), check: { id: selectionStatistic.id, revision: 99 } }] };
+  await assert.rejects(session(contexts[1], client => client.query('SELECT public.reporter_memory_selection_save($1::jsonb)',
+    [JSON.stringify({ kind: 'selection', id: document.id, expected: null, doc: wrongCheck })])), conflict);
+  assert.equal(await read(contexts[1], 'selection', document.id), null);
+  await assert.rejects(session(contexts[1], client => client.query('SELECT core.reporter_memory_bundle($1,$2,$3)',
+    [PILOT, selectionStatistic.id, 1])), denied, 'the internal bounded reader is unavailable to runtime credentials');
+});
