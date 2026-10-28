@@ -8,6 +8,8 @@ import type { MemoryDetail, MemoryHistoryEntry, MemoryLibrary } from '@/ports/ed
 import { useMemoryResource } from '@/state/use-memory-library';
 import { useCan, usePeople, useSession } from '@/state';
 import { JobStatus } from './memory-materials';
+import { MemoryUsedVersion } from './memory-used-version';
+import type { MemoryVersionUse } from '@/domain/editorial-memory-reading';
 
 export const ELIGIBILITY_LABELS = { ready: 'Disponível para uso', source_unavailable: 'Conferir fonte e autorização', withdrawn: 'Retirada', authorship_pending: 'Confirmar autoria', review_required: 'Aguardando revisão', rejected: 'Rejeitada' };
 const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar', reject: 'Rejeitar', request_revision: 'Solicitar revisão' };
@@ -117,14 +119,17 @@ function MemoryHistory({ detail, port, kind, personName }: { detail: MemoryDetai
   const [saved, setSaved] = useState({ binding, items: fresh.items as MemoryHistoryEntry[], cursor: fresh.nextCursor });
   const { items, cursor } = saved.binding === binding ? saved : { items: fresh.items, cursor: fresh.nextCursor };
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
+  const [reading, setReading] = useState<MemoryVersionUse>(), [readingOpen, setReadingOpen] = useState(false);
   return <Section title={HISTORY_LABELS[kind]} meta={detail[kind].total}>
     {error && <Alert tone="danger" title={error} />}
     <DescriptionList items={items.map((item, index) => ({ label: `${index + 1}`, value: 'action' in item ? `${REVIEW_LABELS[item.action]} — ${item.reason} · ${personName(item.personId)} · ${new Date(item.at).toLocaleString('pt-BR')}`
-      : 'stage' in item ? [USE_LABELS[item.stage], ...(item.stage === 'approved' ? [item.productionTitle ?? 'Artigo', `versão ${item.article.number}`] : []), personName(item.personId), new Date(item.at).toLocaleString('pt-BR')].join(' · ')
+      : 'stage' in item ? <>{[USE_LABELS[item.stage], ...(item.stage === 'approved' ? [item.productionTitle ?? 'Artigo', `versão ${item.article.number}`] : []), personName(item.personId), new Date(item.at).toLocaleString('pt-BR')].join(' · ')}
+        {(item.stage === 'approved' || item.stage === 'published') && <Button variant="ghost" onClick={() => { setReading(item); setReadingOpen(true); }}>Ler versão {item.article.number}</Button>}</>
         : 'verdict' in item ? `${VERDICT_LABELS[item.verdict]} · ${item.checkedAt}` : `Revisão ${item.revision} · ${item.updatedAt}` }))} />
     {cursor && <Button variant="secondary" loading={busy} onClick={async () => { setBusy(true); setError(undefined);
       try { const next = await port.history(detail.evidence.id, kind, { cursor }); setSaved({ binding, items: [...items, ...next.items], cursor: next.nextCursor }); }
       catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível carregar o histórico.'); } finally { setBusy(false); }
     }}>Carregar mais</Button>}
+    {reading && <MemoryUsedVersion occurrence={reading} open={readingOpen} onClose={() => setReadingOpen(false)} />}
   </Section>;
 }
