@@ -272,7 +272,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     if(path[0]==='team')return handleWorkspaceTeam(request,path.slice(1),{readJson:jsonBody});
     if(path[0]==='memory'){
       const response=await handleEditorialMemory(request,path.slice(1),jsonBody);
-      if(request.method==='POST'&&(path[1]==='materials'&&path.length===2||path[1]==='jobs'&&path[3]==='retry'))kick();
+      if(request.method==='POST'&&(path[1]==='materials'&&path.length===2||path[1]==='jobs'&&path[3]==='retry'||path[2]==='check'))kick();
       return response;
     }
     if(path[0]==='templates')return handleWorkspaceTemplates(request,path.slice(1),jsonBody);

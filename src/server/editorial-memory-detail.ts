@@ -42,6 +42,7 @@ export async function readMemoryDetail(id: string): Promise<MemoryDetail> {
   memoryIdSchema.parse(id);
   return memoryRead(async client => {
     const state = await memoryReadState(client), bundle = await memoryBundle(client, id, state);
+    const checkJob = (await client.query('SELECT public.reporter_memory_check_job($1) AS value', [id])).rows[0].value;
     const checks = await history<MemoryCheck>(client, id, 'checks', {}, state);
     const decisions = await history<MemoryDecision>(client, id, 'decisions', {}, state);
     const revisions = await history<MemoryEvidence>(client, id, 'revisions', {}, state);
@@ -49,6 +50,6 @@ export async function readMemoryDetail(id: string): Promise<MemoryDetail> {
     const version = bundle.source?.versions.find(version => version.number === bundle.evidence.anchor.source.sourceVersion);
     return { ...memoryView(bundle), material: bundle.material, policy: bundle.policy ?? initialMemoryPolicy(currentReporterContext().portal),
       source: { ref: bundle.evidence.anchor.source, authorized: bundle.source?.rights.authorized ?? false, segments: version?.content.segments ?? [] },
-      checks, decisions, revisions, occurrences };
+      checkJob, checks, decisions, revisions, occurrences };
   });
 }

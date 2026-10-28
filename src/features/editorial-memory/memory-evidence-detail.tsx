@@ -3,25 +3,27 @@ import { useCallback, useState } from 'react';
 import { Alert, Badge, Button, ButtonGroup, Checkbox, DescriptionList, Drawer, ErrorState, Field, Input, Panel, Section, Select, Spinner, Textarea, TextLink } from '@content-ventures/design-system/v3';
 import type { MemoryDecisionAction, MemoryHistoryKind, MemoryMaterial } from '@/domain/editorial-memory';
 import { memoryEvidenceRef } from '@/domain/editorial-memory';
-import { VERDICT_LABELS } from '@/domain/fact-check';
+import { CLAIM_KIND_LABELS, CLAIM_VERDICT_LABELS, VERDICT_LABELS } from '@/domain/fact-check';
 import type { MemoryDetail, MemoryHistoryEntry, MemoryLibrary } from '@/ports/editorial-memory';
 import { useMemoryResource } from '@/state/use-memory-library';
 import { useCan, usePeople, useSession } from '@/state';
+import { JobStatus } from './memory-materials';
 
 export const ELIGIBILITY_LABELS = { ready: 'Disponível para uso', source_unavailable: 'Conferir fonte e autorização', withdrawn: 'Retirada', authorship_pending: 'Confirmar autoria', review_required: 'Aguardando revisão', rejected: 'Rejeitada' };
 const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar', reject: 'Rejeitar', request_revision: 'Solicitar revisão' };
 const HISTORY_LABELS: Record<MemoryHistoryKind, string> = { checks: 'Checagens', decisions: 'Decisões', revisions: 'Revisões', occurrences: 'Ocorrências' };
 export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial }: { id: string; open: boolean; onClose: () => void; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void }) {
-  const load = useCallback((port: MemoryLibrary) => port.detail(id), [id]), resource = useMemoryResource(load, 0, open);
+  const load = useCallback((port: MemoryLibrary) => port.detail(id), [id]), resource = useMemoryResource(load, 2500, open);
   return <Drawer open={open} size="lg" title="Evidência" onClose={onClose}>
     {resource.error ? <ErrorState title="Não foi possível abrir a evidência" description={resource.error} onRetry={resource.reload} /> : !resource.data || !resource.port ? <Spinner label="Carregando evidência" /> :
-      <EvidenceContent key={`${id}:${resource.data.evidence.revision}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onChanged={() => { resource.reload(); onChanged(); }} />}
+      <EvidenceContent key={`${id}:${resource.data.evidence.revision}:${resource.data.check?.revision ?? 0}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onChanged={() => { resource.reload(); onChanged(); }} />}
   </Drawer>;
 }
 function EvidenceContent({ detail, port, onChanged, onMaterial }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void }) {
   const session = useSession().data;
   const { evidence, check, decision } = detail, people = usePeople(), canEdit = useCan('library.edit'), canReview = useCan('library.review');
   const outdated = detail.checkState === 'outdated';
+  const job = detail.checkJob, checking = job?.status === 'queued' || job?.status === 'running';
   const [reason, setReason] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   const [personId, setPersonId] = useState(evidence.kind === 'citation' ? evidence.personId ?? '' : ''), [confirmed, setConfirmed] = useState(evidence.kind === 'citation' && evidence.authorConfirmed);
   const [indicator, setIndicator] = useState(evidence.kind === 'statistic' ? evidence.indicator : ''), [unit, setUnit] = useState(evidence.kind === 'statistic' ? evidence.unit : '');
@@ -50,8 +52,22 @@ function EvidenceContent({ detail, port, onChanged, onMaterial }: { detail: Memo
       {evidence.kind === 'statistic' && <DescriptionList items={[{ label: 'Valor original', value: evidence.value.raw }, { label: 'Unidade', value: evidence.unit },
         { label: 'Período', value: evidence.period?.label }, { label: 'População', value: evidence.population }, { label: 'Geografia', value: evidence.geography },
         { label: 'Ressalva', value: evidence.qualifier }, { label: 'Instituição emissora', value: evidence.issuingInstitution }]} />}
-      {check?.supports.map((support, index) => <Section key={index} titleAs="h3" title={support.relation === 'contradicts' ? 'Contraponto' : 'Fonte da checagem'}>
+      {canEdit && <ButtonGroup label="Checagem">
+        <Button variant="secondary" loading={busy} disabled={checking || ['source_unavailable', 'withdrawn'].includes(detail.eligibility.reason)} onClick={() => void execute(() => port.check(evidence.id, memoryEvidenceRef(evidence), crypto.randomUUID()))}>{check ? 'Checar novamente' : 'Checar evidência'}</Button>
+        {checking && <Button variant="secondary" loading={busy} onClick={() => void execute(() => port.cancel(job.id, job.revision, crypto.randomUUID()))}>Cancelar checagem</Button>}
+        {job && ['failed', 'cancelled'].includes(job.status) && job.error !== 'MEMORY_CHECK_STALE' && <Button variant="secondary" loading={busy} onClick={() => void execute(() => port.retry(job.id, crypto.randomUUID()))}>Retomar checagem</Button>}
+      </ButtonGroup>}
+      {job && <DescriptionList items={[{ label: 'Processamento da checagem', value: <JobStatus job={job} /> },
+        ...(job.error ? [{ label: 'Falha', value: job.error === 'MEMORY_CHECK_STALE' ? 'A evidência ou uma fonte mudou. Inicie uma nova checagem.'
+          : job.error === 'TAVILY_KEY_MISSING' ? 'A busca externa precisa ser configurada.' : 'Não foi possível concluir a checagem. Tente novamente.' }] : [])]} />}
+      {check?.claims.map((claim, index) => <Section key={`claim-${index}`} titleAs="h3" title={`Afirmação ${index + 1}`}>
+        <Textarea aria-label={`Afirmação literal ${index + 1}`} readOnly rows={3} value={claim.text} />
+        <DescriptionList items={[{ label: 'Tipo', value: CLAIM_KIND_LABELS[claim.kind] }, { label: 'Resultado', value: claim.verdict ? CLAIM_VERDICT_LABELS[claim.verdict] : 'Não checável' }, { label: 'Motivo', value: claim.reason }]} />
+      </Section>)}
+      {check?.supports.map((support, index) => <Section key={index} titleAs="h3" title={support.relation === 'contradicts' ? 'Contraponto' : support.relation === 'related' ? 'Contexto relacionado' : 'Fonte da checagem'}>
         {support.evidence.kind === 'external' && <TextLink href={support.evidence.url} target="_blank" rel="noreferrer">{support.evidence.title}</TextLink>}
+        {support.evidence.kind === 'internal' && <DescriptionList items={[{ label: 'Origem no acervo', value: support.evidence.primaryOrigin }]} />}
+        {support.evidence.originStatus === 'unverified' && <Badge tone="amber">Origem original não confirmada</Badge>}
         <Textarea aria-label={`Trecho da fonte ${index + 1}`} readOnly rows={3} value={support.evidence.excerpt} />
       </Section>)}
     </Section>

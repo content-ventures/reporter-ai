@@ -1,5 +1,5 @@
 import 'server-only';
-import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
+import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema, memoryCheckInputSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
@@ -8,6 +8,7 @@ import { reconcileEditorialMemory, resolveMemoryLegacy } from './editorial-memor
 import { lookupMemoryLegacy, readMemoryArticle, reconcileMemoryArticles, resolveMemoryArticle } from './editorial-memory-articles.ts';
 import { FlowError } from './errors.ts';
 import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
+import { checkEditorialMemory } from './editorial-memory-check.ts';
 import { readMemorySelection, selectEditorialMemory } from './editorial-memory-selection.ts';
 import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemoryBlocks, readMemoryJob, readMemoryMaterial, readMemoryMaterials } from './editorial-memory-materials.ts';
 
@@ -56,6 +57,10 @@ export async function handleEditorialMemory(request: Request, path: string[], re
   if (request.method === 'GET' && path.length === 3 && path[1] === 'history') return Response.json(
     await readMemoryHistory(path[0], memoryHistoryKindSchema.parse(path[2]), parseMemoryHistoryQuery(new URL(request.url).searchParams)),
     { headers: { 'Cache-Control': 'private, no-store' } });
+  if (request.method === 'POST' && path.length === 2 && path[1] === 'check') {
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await checkEditorialMemory(path[0], memoryCheckInputSchema.parse(await readJson(request)).expected, request.headers.get('idempotency-key') ?? ''), noStore);
+  }
   if (request.method === 'POST' && path.length === 2 && path[1] === 'review') return Response.json(
     await reviewEditorialMemory(path[0], memoryDecisionInputSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),
     { headers: { 'Cache-Control': 'private, no-store' } });

@@ -10,7 +10,7 @@ const now = '2026-10-28T19:00:00Z', ctx = { now, actorId: 'actor', newId: (prefi
 const { material } = createMemoryMaterial({ title: 'Synthetic checker test', kind: 'report', text,
   metadata: { publishedOn: null, recordedOn: null, originalUrl: null, institution: null, company: null, event: null, edition: null, topics: [] },
   authorized: true, primaryOrigin: 'primary-original', originalFileId: null }, 'workspace', ctx);
-const evidence: MemoryCitation = { id: 'quote', kind: 'citation', workspaceId: 'workspace', materialId: material.id, revision: 0,
+const evidence: MemoryCitation = { id: 'quote', kind: 'citation', text, workspaceId: 'workspace', materialId: material.id, revision: 0,
   anchor: { source: material.source, spans: [{ segmentId: 'original', from: 0, to: text.length }], excerpt: text }, metadata: material.metadata,
   kinds: ['fact'], status: 'active', personId: 'person', authorConfirmed: true, legacyCitationId: null, supersedes: null, createdAt: now, updatedAt: now };
 const source = (id: string): MemorySupport => ({ kind: 'external', url: `https://example.test/${id}`, title: id,
@@ -52,4 +52,9 @@ test('provider errors and model drift never produce a successful check', async (
   await assert.rejects(run(failed), /PROVIDER_REFUSED/);
   const drift = providers({ supports: [] }); drift.generate = async () => ({ value: extracted, model: 'changed', provider: 'synthetic' });
   await assert.rejects(run(drift), /PIPELINE_SNAPSHOT_MISSING/);
+});
+test('a search hit with an unidentified original origin cannot create independent confirmation', async () => {
+  const deps = providers({ supports: [{ claim: 0, source: 0, relation: 'confirms' }] });
+  deps.collect = async () => [{ ...source('unverified-web-result'), originStatus: 'unverified' }];
+  const checked = await run(deps); assert.equal(checked.verdict, 'not_validated'); assert.equal(checked.supports[0].relation, 'related');
 });

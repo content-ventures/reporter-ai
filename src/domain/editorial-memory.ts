@@ -64,9 +64,10 @@ export type MemoryStatistic = MemoryEvidenceBase & {
 export type MemoryEvidence = MemoryCitation | MemoryStatistic;
 export type MemoryEvidenceRef = { id: string; revision: number; hash: string };
 export type MemoryCheckRef = { id: string; revision: number };
-export type MemorySupport =
+export type MemorySupport = (
   | { kind: 'internal'; evidence: MemoryEvidenceRef; primaryOrigin: string; excerpt: string }
-  | { kind: 'external'; url: string; title: string; excerpt: string; retrievedAt: string; publishedOn: string | null; primaryOrigin: string };
+  | { kind: 'external'; url: string; title: string; excerpt: string; retrievedAt: string; publishedOn: string | null; primaryOrigin: string }
+) & { originStatus?: 'unverified' };
 export type MemoryCheck = {
   id: string; workspaceId: string; revision: number; evidence: MemoryEvidenceRef; policyRevision: number;
   checkedAt: string; verdict: CitationVerdict; confidence: number | null;

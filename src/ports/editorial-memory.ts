@@ -13,6 +13,7 @@ export type MemoryJob = {
   id: string; workspaceId: string; revision: number; kind: 'extract' | 'check' | 'archive'; materialId: string; evidenceId: string | null;
   sourceVersion: number; sourceHash: string; extractorVersion: string; model?: string; generation: number; status: MemoryProcessingStatus;
   totalBlocks: number; completedBlocks: number; failedBlocks: number; evidenceCount: number;
+  checkInput?: { evidence: MemoryEvidenceRef; policyRevision: number; previousCheckRevision: number }; attempts?: number;
   error: string | null; createdBy: string; createdAt: string; updatedAt: string;
 };
 export type MemoryCorrection =
@@ -24,7 +25,7 @@ export type MemoryHistoryQuery = { cursor?: string; limit?: number };
 export type MemoryHistoryEntry = MemoryCheck | MemoryDecision | MemoryEvidence | MemoryUse;
 export type MemoryDetail = Omit<MemoryEvidenceView, 'material'> & { material: MemoryMaterial; policy: MemoryPolicy;
   source: { ref: SourceVersionRef; authorized: boolean; segments: TranscriptSegment[] };
-  checks: MemoryPage<MemoryCheck>; decisions: MemoryPage<MemoryDecision>; revisions: MemoryPage<MemoryEvidence>; occurrences: MemoryPage<MemoryUse> };
+  checkJob?: MemoryJob | null; checks: MemoryPage<MemoryCheck>; decisions: MemoryPage<MemoryDecision>; revisions: MemoryPage<MemoryEvidence>; occurrences: MemoryPage<MemoryUse> };
 /** Request ids scope idempotency to one workspace and payload; mismatched replay is a conflict. */
 export interface EditorialMemory {
   query(input: MemoryQuery): Promise<MemoryPage<MemoryEvidenceView>>;
@@ -55,4 +56,4 @@ export interface EditorialMemory {
     requestId: string): Promise<MemoryEvidenceView>;
 }
 /** Available library operations; processing capabilities join this port when their workers ship. */
-export type MemoryLibrary = Omit<EditorialMemory, 'check' | 'reviseMaterial'>;
+export type MemoryLibrary = Omit<EditorialMemory, 'reviseMaterial'>;
