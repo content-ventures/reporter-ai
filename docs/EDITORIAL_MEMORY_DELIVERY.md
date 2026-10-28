@@ -8,7 +8,7 @@ Execution record for Flow 4, based on the [approved phased plan](https://chatgpt
 - Branch: `citation-statistics-bank`.
 - Runtime: Node 24.14.0 and pnpm 10.33.0, installed from the frozen lockfile.
 - Authenticated GitHub author: `fagundesjv`, numeric noreply identity verified through GitHub.
-- Phase 0 technical preparation and phase 1 contract baseline are complete. The user's clarification permits engineering to proceed with synthetic material; real-corpus acceptance remains an explicit final dependency. Authenticated reads, reviews/corrections, legacy reconciliation and immutable original articles exist behind the disabled server ceiling; the frontend port is not bound and the new product flow is unavailable.
+- Phases 0–1 have their technical baseline. Persistence, the connected library, full-text intake, complete-block extraction, review/correction and selection persistence operate locally. Durable checks and dependent-source invalidation are implemented at `1bb0913`; five operational HTTP/worker journeys pass against the isolated local database with synthetic providers. Writing consumption, original-file/archive adapters, calibration and final operational acceptance remain incomplete. The module ceiling remains disabled by default.
 - The complete goal includes frontend, backend, UX, QA, historical imports, writing integration and controlled production acceptance.
 
 User clarifications on 2026-10-28:
@@ -22,14 +22,14 @@ User clarifications on 2026-10-28:
 | --- | --- | --- | --- |
 | 0 | Reproducible baseline, inventory and evaluation rubric | Gates, database/replay and smoke baseline; synthetic corpus validated; unavailable real material recorded | Technical preparation complete; real corpus pending |
 | 1 | UX journeys, data/API contracts and permission matrix | State map, versioned contracts, valid/invalid examples and domain tests | Contract baseline complete; rendered UX acceptance in phase 5 |
-| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: storage, read/review/correction/selection APIs, scoped legacy imports/originals, live article synchronization and duplicate consolidation verified; material/job APIs and runtime contracts pending |
-| 3 | Material ingestion and extraction before article | Complete block coverage, resumable jobs, literal evidence, unknown metadata and retry tests | Pending |
-| 4 | Internal/external checks and editorial resolution | Context-aware comparison, distinct confidence, immutable decisions and stale-write tests | Pending |
-| 5 | Complete library UI | Real APIs, URL filters, stable pagination, detail/review flows and accessibility checks | Pending |
+| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | Implemented: scoped storage/read/write/job APIs and the runtime binding; earlier module SQL/HTTP suites and current local operational journeys pass; final broad revalidation pending |
+| 3 | Material ingestion and extraction before article | Complete block coverage, resumable jobs, literal evidence, unknown metadata and retry tests | Plain-text path implemented and technically verified; actual-provider acceptance pending |
+| 4 | Internal/external checks and editorial resolution | Context-aware comparison, distinct confidence, immutable decisions and stale-write tests | In progress: queue/comparison/review/stale guards implemented; real-provider and calibration acceptance pending |
+| 5 | Complete library UI | Real APIs, URL filters, stable pagination, detail/review flows and accessibility checks | Core flows pass at 1440/390 px and keyboard; new check controls, standalone authors, URL filters and selection recovery remain under development/QA |
 | 6 | Writing integration and use provenance | Multi-material article, exact evidence snapshots, server gates and delivered provenance | Pending |
-| 7 | Corrections and policy recalibration | Immutable revisions, audit, impact review, policy evaluation and recovery | Pending |
+| 7 | Corrections and policy recalibration | Immutable revisions, audit, impact review, policy evaluation and recovery | Evidence corrections/audit and internal-support invalidation exist; material revisions, impact review and calibration remain pending |
 | 8 | Archive and market-data adapters | Batch reconciliation, deduplication, original retrieval and actual-document acceptance | Pending |
-| 9 | Integrated acceptance and operation | Complete gates, UX/editorial acceptance, staging, pilot, monitoring and recovery | Pending |
+| 9 | Integrated acceptance and operation | Complete gates, UX/editorial acceptance, staging, pilot, monitoring and recovery | Pending: final broad QA, real providers, staging/pilot and operational acceptance |
 
 No phase is accepted merely because a test passed. Record the exact commit, commands, results and remaining limitations at its exit. The missing real corpus is an explicit acceptance dependency; technical fixture coverage cannot substitute for it.
 
@@ -304,3 +304,16 @@ The library now keeps its dialogs/drawers mounted through `open=false`, preserve
 - Added a framework-free assessment and an injected model/search pipeline for literal claims, independent editorial strength, numbered internal/external supports and contradiction precedence. Unknown source indices and cross-claim citations are discarded; paraphrases, incomplete numeric context and explicit overflow fail before paid searches.
 - Same-origin supports, identical republications and the original publisher cannot confirm their own evidence. Factual confidence remains null until a real calibration report exists; a check never silently replaces human acceptance.
 - Validation: eight focused domain/pipeline tests pass, including source isolation, missing sources, opinions, provider failures and model drift. Durable check scheduling and UI controls are the next integration step.
+
+### Durable checks and dependency freshness
+
+Migration 058 queues one immutable evidence/policy/previous-check snapshot per check, captures the model and actual requesting actor, deduplicates pending requests and bounds retries. The worker uses leases/generation fencing, retains numbered internal/web excerpts and persists a result only if the target and internal supports still match. Cancellation, correction or a replacement result prevents a late commit. Migration 059 marks checks outdated when an internal support changes revision/origin, is withdrawn or loses rights; historical checks remain auditable. The interface exposes enqueue, status, cancellation, retry, literal claims and retained sources.
+
+Search hits retain an unverified-origin flag. A different publisher URL alone does not prove independent origin: such hits, same-origin material and identical republications provide related context rather than automatic independent confirmation. Plain-text imports without an explicit origin receive the same conservative treatment. Factual confidence remains null and manual acceptance remains revision-bound and audited.
+
+Validation evidence at `1bb0913`:
+
+- Thirteen focused assessment/pipeline/transport/migration-manifest tests pass. Scoped lint passes. Type validation passed before the final origin flag; the final full gate follows this checkpoint.
+- Five operational HTTP/worker journeys pass on the guarded local database: idempotent queue/reload/audit, cancellation/replacement, correction before/during processing, bounded failure/retry, internal collection and stale-support rejection. Log: `/tmp/reporter-memory-check-local-final.log`. This local run excludes cloud authentication; the committed disposable suite includes those assertions but has not completed because PostgreSQL initialization exceeded the fixture's startup allowance. No paid provider call occurred.
+- The previous exact build `081e793` passed 1,764 tests and production compilation. Its final import/review/selection/keyboard probes passed at desktop and phone widths without diagnostic headers. The broader legacy smoke was stopped after 69 passes, four failures, one interrupted test and one skip; 14 tests did not run. Failures involved the existing material progress animation, news/pipeline loading and source-rating timeout. They remain unresolved; this is not a clean release smoke. Log: `/tmp/reporter-memory-regression-smoke-serial.log`.
+- New check controls still require the production-build browser probe. Real-provider quality, writing integration, archive adapters and the final acceptance phase remain pending.
