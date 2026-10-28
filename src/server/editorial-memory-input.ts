@@ -30,6 +30,9 @@ export const memoryMetadataSchema = z.object({
 }).strict();
 export const memoryEvidenceRefSchema = z.object({ id, revision: z.number().int().nonnegative(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
 export const memoryLegacyBatchSchema = z.object({ after: id.nullable().default(null), limit: z.number().int().min(1).max(100).default(25) }).strict();
+const articlePosition = z.object({ productionId: id, kind: z.enum(['piece', 'version']), id, offset: z.number().int().min(0).max(1_000_000),
+  storageHash: z.string().regex(/^[a-f0-9]{32}$/).nullable() }).strict().refine(value => value.offset === 0 || value.storageHash !== null);
+export const memoryArticleBatchSchema = z.object({ after: articlePosition.nullable().default(null), limit: z.number().int().min(1).max(100).default(25) }).strict();
 export const memoryLegacyResolutionSchema = z.object({ expected: memoryEvidenceRefSchema, legacyHash: z.string().regex(/^[a-f0-9]{16}$/),
   choice: z.enum(['keep_bank', 'apply_legacy']), reason: z.string().trim().min(1).max(2000) }).strict();
 export const memoryCheckRefSchema = z.object({ id, revision: z.number().int().positive() }).strict();

@@ -1,7 +1,9 @@
 import type { MemoryCheck, MemoryDecision, MemoryDecisionInput, MemoryEvidence, MemoryEvidenceRef, MemoryEvidenceView,
-  MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
+  MemoryArticleOrigin, MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
 import type { SourceVersionRef } from '../domain/refs.ts';
 import type { TranscriptSegment } from '../domain/source.ts';
+import type { Piece, Version } from '../domain/piece.ts';
+import type { MemoryArticlePosition, MemoryArticleReport, MemoryLegacyReport } from '../domain/editorial-memory-legacy.ts';
 
 export type MemoryImportInput = {
   title: string; kind: MemoryMaterial['kind']; text: string; metadata: MemoryMetadata; authorized: boolean;
@@ -40,4 +42,9 @@ export interface EditorialMemory {
     requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
   select(input: { id?: string; baseRevision: number; productionId: string | null; evidence: MemoryEvidenceRef[] }, requestId: string): Promise<MemorySelection>;
   policy(): Promise<MemoryPolicy>;
+  lookupLegacy(id: string): Promise<{ id: string; materialId: string }[]>;
+  originalArticle(id: string, snapshot?: string): Promise<{ origin: MemoryArticleOrigin; doc: Piece | Version; importedBy: string; importedAt: string }>;
+  reconcileLegacy(input: { after?: string | null; limit?: number }, requestId: string): Promise<MemoryLegacyReport>;
+  reconcileArticles(input: { after?: MemoryArticlePosition | null; limit?: number }, requestId: string): Promise<MemoryArticleReport>;
+  resolveLegacy(id: string, input: { expected: MemoryEvidenceRef; legacyHash: string; choice: 'keep_bank' | 'apply_legacy'; reason: string }, requestId: string): Promise<MemoryEvidenceView>;
 }

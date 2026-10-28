@@ -44,8 +44,11 @@ export type MemoryCitation = MemoryEvidenceBase & {
   legacyCitationId: string | null;
   /** Original curation/check payloads are retained; their old composite score is not factual confidence. */
   legacy?: { citation: Citation; factCheck: FactCheck | null; hash: string; mappedHash: string; state: 'synchronized' | 'conflict';
-    importedAt: string; importedBy: string; reason: string; resolution?: { choice: 'keep_bank' | 'apply_legacy'; reason: string } };
+    importedAt: string; importedBy: string; reason: string; article?: MemoryArticleOrigin;
+    resolution?: { choice: 'keep_bank' | 'apply_legacy'; reason: string } };
 };
+/** Exact observed article document; its original part and timestamps remain retrievable. */
+export type MemoryArticleOrigin = { productionId: string; kind: 'piece' | 'version'; id: string; storageHash: string; bodyHash: string; at: string };
 /** Decimal strings avoid loss of precision; normalization is optional and never replaces raw evidence. */
 export type MemoryNumericValue = {
   raw: string; decimal: string | null; lower: string | null; upper: string | null; scale: string | null;
