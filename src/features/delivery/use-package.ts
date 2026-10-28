@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { flushSync } from 'react-dom';
 import type { ProductionId, VersionRef } from '@/domain';
 import type { BuiltFile, ExportPlan } from '@/ports';
@@ -59,6 +59,7 @@ export function usePackage(productionId: ProductionId, selection: readonly Versi
   const jobKey = target.key ? `${target.key}#${round.n}` : null;
   const [job, setJob] = useState<PackageJob>({ key: null, progress: EMPTY });
   const anchors = useRef(new Map<string, HTMLAnchorElement>());
+  const dispatchingDownload = useRef(new Set<string>());
   const prepared = useRef<{ key: string; files: Map<string, BuiltFile>; manifestAttempt: number } | undefined>(undefined);
 
   const patch = useCallback((forKey: string, fileName: string, next: FileProgress) => {
@@ -172,20 +173,40 @@ export function usePackage(productionId: ProductionId, selection: readonly Versi
   const isCurrent = useCallback(() => Boolean(jobKey && prepared.current?.key === jobKey), [jobKey]);
   const download = useCallback(async (fileNames: readonly string[]): Promise<string[]> => {
     const batch = prepared.current;
-    if (!batch || batch.key !== jobKey) return [];
+    const exact = target.selection;
+    if (!batch || batch.key !== jobKey || !exact) return [];
+    const invalidate = (refusal: { code: string; message: string }) => {
+      if (prepared.current !== batch) return;
+      prepared.current = undefined;
+      setJob({ key: jobKey, progress: EMPTY, refusal });
+    };
+    // Ready bytes can outlive an approval, source right or bank decision. Revalidate the
+    // frozen selection at the actual download, including individual prepared-file links.
+    let planned: Awaited<ReturnType<typeof commands.export.plan>>;
+    try { planned = await commands.export.plan({ productionId, selection: [...exact] }); }
+    catch { invalidate({ code: 'download_preflight_failed', message: 'Não foi possível conferir o pacote. Prepare novamente antes de baixar.' }); return []; }
+    if (prepared.current !== batch) return [];
+    if (!planned.ok) { invalidate({ code: planned.refusal.code, message: planned.refusal.message }); return []; }
+    const allowed = new Set(planned.value.files.filter(file => file.available).map(file => file.fileName));
     const saved: string[] = [];
     for (const fileName of fileNames) {
       if (saved.length > 0) await wait(DOWNLOAD_GAP_MS);
       if (prepared.current !== batch) break;
       const anchor = anchors.current.get(fileName);
-      if (!anchor?.isConnected) continue;
-      anchor.click();
-      saved.push(fileName);
+      if (!anchor?.isConnected || !allowed.has(fileName)) continue;
+      dispatchingDownload.current.add(fileName);
+      try { anchor.click(); saved.push(fileName); }
+      finally { dispatchingDownload.current.delete(fileName); }
     }
     return saved;
-  }, [jobKey]);
+  }, [jobKey, target.selection, commands, productionId]);
+  const onDownloadClick = useCallback((fileName: string, event: MouseEvent<HTMLAnchorElement>) => {
+    if (dispatchingDownload.current.has(fileName)) return;
+    event.preventDefault();
+    void download([fileName]);
+  }, [download]);
 
-  return { ...state, selection: target.selection, retry, prepareAgain, anchorRef, download, isCurrent };
+  return { ...state, selection: target.selection, retry, prepareAgain, anchorRef, onDownloadClick, download, isCurrent };
 }
 
 export type PackageController = ReturnType<typeof usePackage>;
