@@ -22,7 +22,7 @@ User clarifications on 2026-10-28:
 | --- | --- | --- | --- |
 | 0 | Reproducible baseline, inventory and evaluation rubric | Gates, database/replay and smoke baseline; synthetic corpus validated; unavailable real material recorded | Technical preparation complete; real corpus pending |
 | 1 | UX journeys, data/API contracts and permission matrix | State map, versioned contracts, valid/invalid examples and domain tests | Contract baseline complete; rendered UX acceptance in phase 5 |
-| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | Pending |
+| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: request validation and signed cursor verified; persistence/API binding pending |
 | 3 | Material ingestion and extraction before article | Complete block coverage, resumable jobs, literal evidence, unknown metadata and retry tests | Pending |
 | 4 | Internal/external checks and editorial resolution | Context-aware comparison, distinct confidence, immutable decisions and stale-write tests | Pending |
 | 5 | Complete library UI | Real APIs, URL filters, stable pagination, detail/review flows and accessibility checks | Pending |
@@ -133,4 +133,14 @@ Phase 0 checkpoint: `64fc431`. Phase 1 defines [journeys, wireframes, states, in
 
 Validation: `pnpm gate:quick` passed with 1,756 application tests and the same two baseline lint warnings. The targeted memory/permission suite passed all 12 tests, including exact raw statistic evidence, user identity and revision guards. The separate synthetic corpus integrity suite passed 23 checks. Production compilation and browser regressions remain established at the phase 0 baseline; phase 1 adds no rendered UI.
 
-Next: phase 2 persistence, additive migrations, authenticated server operations, tenant/source visibility, request receipts, immutable review audit, legacy reconciliation and indexed snapshot pagination. Register the phase 1 commit from this document's Git history when recording phase 2. Real corpus and calibrated provider quality remain outstanding final acceptance dependencies.
+Phase 1 checkpoint: `e3a0e57`. Real corpus and calibrated provider quality remain outstanding final acceptance dependencies.
+
+## Phase 2 execution record
+
+Implemented strict input schemas for import, original-text capacity, decisions, corrections, source revisions, ordered selections and URL queries. Text validation preserves original whitespace and rejects NUL, malformed Unicode and more than 1 MiB of UTF-8. Unknown actor/workspace fields are refused. Decimal ranges are compared with arbitrary-precision integers rather than floating point; invalid or oversized values return validation failures.
+
+Implemented signed, stateless pagination cursors. They preserve PostgreSQL bigint/microsecond precision and bind the normalized complete query to tenant, workspace, actual actor and a server-provided visibility epoch, with a 30-minute expiry. No GET-side snapshot write is required. The eventual query service must derive the epoch from authoritative permission/source visibility state and validate every page's access again; the codec is not an authorization service.
+
+Validation: the backend regression suite passed 352 tests with zero skips/failures. Ten targeted input/cursor tests passed, including tampering, identity/query changes, expiration, malformed URLs/decimals, precise intervals, duplicates, dates and forged actor fields. Typecheck exposed the project's pre-ES2020 compilation target and an assert overload; the BigInt literal was replaced by its constructor and the assertion by a typed Zod error expectation, then targeted tests and typecheck were repeated.
+
+Still required to close phase 2: additive persistence and replay, authenticated real route handlers, atomic request receipts and audit rows, authoritative source/production visibility, indexed historical-snapshot queries, legacy ID/content reconciliation and real PostgreSQL/HTTP contract tests. None of those integrations is represented by a successful placeholder. No phase 3 job or new UI activation has started.
