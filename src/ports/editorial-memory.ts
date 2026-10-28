@@ -1,5 +1,7 @@
 import type { MemoryCheck, MemoryDecision, MemoryDecisionInput, MemoryEvidence, MemoryEvidenceRef, MemoryEvidenceView,
-  MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
+  MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
+import type { SourceVersionRef } from '../domain/refs.ts';
+import type { TranscriptSegment } from '../domain/source.ts';
 
 export type MemoryImportInput = {
   title: string; kind: MemoryMaterial['kind']; text: string; metadata: MemoryMetadata; authorized: boolean;
@@ -16,11 +18,16 @@ export type MemoryCorrection =
   | { kind: 'statistic'; metadata?: Partial<MemoryMetadata>; indicator?: string; value?: MemoryNumericValue; unit?: string;
     period?: MemoryStatistic['period']; geography?: string | null; population?: string | null; qualifier?: string | null;
     issuingInstitution?: string | null; declaringPersonId?: string | null };
-export type MemoryDetail = MemoryEvidenceView & { checks: MemoryCheck[]; decisions: MemoryDecision[]; revisions: MemoryEvidence[]; occurrences: MemoryUse[] };
+export type MemoryHistoryQuery = { cursor?: string; limit?: number };
+export type MemoryHistoryEntry = MemoryCheck | MemoryDecision | MemoryEvidence | MemoryUse;
+export type MemoryDetail = Omit<MemoryEvidenceView, 'material'> & { material: MemoryMaterial; policy: MemoryPolicy;
+  source: { ref: SourceVersionRef; authorized: boolean; segments: TranscriptSegment[] };
+  checks: MemoryPage<MemoryCheck>; decisions: MemoryPage<MemoryDecision>; revisions: MemoryPage<MemoryEvidence>; occurrences: MemoryPage<MemoryUse> };
 /** Request ids scope idempotency to one workspace and payload; mismatched replay is a conflict. */
 export interface EditorialMemory {
   query(input: MemoryQuery): Promise<MemoryPage<MemoryEvidenceView>>;
   detail(id: string): Promise<MemoryDetail>;
+  history(id: string, kind: MemoryHistoryKind, input: MemoryHistoryQuery): Promise<MemoryPage<MemoryHistoryEntry>>;
   materials(input: { cursor?: string; limit?: number }): Promise<MemoryPage<MemoryMaterial & { job: MemoryJob | null }>>;
   import(input: MemoryImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
   job(id: string): Promise<MemoryJob>;

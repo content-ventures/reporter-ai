@@ -4,7 +4,8 @@ import { z } from 'zod';
 import type { MemoryQuery } from '../domain/editorial-memory.ts';
 import { stableStringify } from '../domain/text/hash.ts';
 import { FlowError } from './errors.ts';
-import { memoryQuerySchema } from './editorial-memory-input.ts';
+import { memoryQuerySchema, memoryHistoryBindingSchema } from './editorial-memory-input.ts';
+type CursorQuery = MemoryQuery | z.infer<typeof memoryHistoryBindingSchema>;
 
 /** Authorization changes invalidate a page sequence instead of silently mixing visibility states. */
 export type MemoryCursorContext = { tenant: string; workspace: string; actor: string; visibility: string };
@@ -21,18 +22,19 @@ function mac(key: string, purpose: string, value: string): Buffer {
   if (key.length < 24) throw new FlowError('MEMORY_CURSOR_CONFIGURATION', 503);
   return createHmac('sha256', key).update(`reporter-memory-${purpose}-v1\0${value}`).digest();
 }
-function queryIdentity(query: MemoryQuery, key: string): string {
+function queryIdentity(query: CursorQuery, key: string): string {
+  if ('resource' in query) return mac(key, 'query', stableStringify(memoryHistoryBindingSchema.parse(query))).toString('hex');
   const normalized = memoryQuerySchema.parse(query);
   return mac(key, 'query', stableStringify({ ...normalized, cursor: undefined,
     topics: normalized.topics ? [...new Set(normalized.topics)].sort() : undefined })).toString('hex');
 }
 /** The server provides the key and context; neither can be selected by URL or JSON input. */
-export function encodeMemoryCursor(position: MemoryCursorPosition, query: MemoryQuery, context: MemoryCursorContext, key: string, now: number): string {
+export function encodeMemoryCursor(position: MemoryCursorPosition, query: CursorQuery, context: MemoryCursorContext, key: string, now: number): string {
   const payload = cursorSchema.parse({ ...position, ...context, version: 1, query: queryIdentity(query, key), expiresAt: now + TTL_MS });
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   return `${body}.${mac(key, 'cursor', body).toString('base64url')}`;
 }
-export function decodeMemoryCursor(value: string, query: MemoryQuery, context: MemoryCursorContext, key: string, now: number): MemoryCursorPosition {
+export function decodeMemoryCursor(value: string, query: CursorQuery, context: MemoryCursorContext, key: string, now: number): MemoryCursorPosition {
   const invalid = () => new FlowError('MEMORY_CURSOR_INVALID', 409);
   if (value.length > 4096) throw invalid();
   const [body, signature, ...rest] = value.split('.');

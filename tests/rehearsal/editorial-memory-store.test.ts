@@ -386,3 +386,98 @@ test('the local test-profile branch honors the stored member role instead of the
       async () => {}, async () => { throw new Error('must not execute'); })), (error: unknown) => error instanceof FlowError && error.code === 'FORBIDDEN');
   } finally { process.env.REPORTER_DEPLOYMENT_MODE = previous; }
 });
+async function memoryApi(path: string, options: { input?: unknown; requestId?: string; identity?: typeof identities[number] | null; slug?: string; origin?: string } = {}) {
+  const { handleReporter } = await import('../../src/server/http.ts');
+  const slug = options.slug ?? 'reporter-ai', url = new URL(`${APP}/api/reporter/w/${slug}/memory/${path}`);
+  const identity = options.identity === undefined ? identities[2] : options.identity;
+  return handleReporter(new Request(url, options.input === undefined ? {} : { method: 'POST', headers: {
+    origin: options.origin ?? APP, 'content-type': 'application/json', ...(options.requestId ? { 'idempotency-key': options.requestId } : {}),
+  }, body: JSON.stringify(options.input) }), ['w', slug, 'memory', ...url.pathname.split('/').slice(6)], { identify: async () => identity });
+}
+
+test('detail exposes original context and bounded history with stable cursors over more than one default page', async () => {
+  const target = { ...citation, id: 'detail-target', legacyCitationId: null };
+  await session(contexts[1], client => put(client, evidenceChange(target)));
+  for (let revision = 1; revision <= 30; revision++) {
+    const revised = { ...target, revision, metadata: { ...metadata, edition: `Synthetic ${revision}` } };
+    await session(contexts[1], client => put(client, evidenceChange(revised, revision - 1)));
+  }
+  const response = await memoryApi(target.id); assert.equal(response.status, 200, await response.clone().text());
+  const detail = await response.json(); assert.equal(detail.evidence.revision, 30);
+  assert.equal(detail.source.segments[0].text, target.text); assert.deepEqual(detail.source.ref, target.anchor.source);
+  assert.equal(detail.revisions.total, 31); assert.equal(detail.revisions.items.length, 25); assert.ok(detail.revisions.nextCursor);
+  assert.equal(detail.policy.activatedAt, null); assert.equal(detail.eligibility.usable, false);
+  const rest = await memoryApi(`${target.id}/history/revisions?cursor=${encodeURIComponent(detail.revisions.nextCursor)}`);
+  assert.equal(rest.status, 200); const tail = await rest.json(); assert.equal(tail.items.length, 6);
+  assert.deepEqual([...detail.revisions.items, ...tail.items].map((item: { revision: number }) => item.revision), Array.from({ length: 31 }, (_, index) => 30 - index));
+  const first = await (await memoryApi(`${target.id}/history/revisions?limit=7`)).json(); assert.ok(first.nextCursor);
+  const newest = { ...target, revision: 31 }; await session(contexts[1], client => put(client, evidenceChange(newest, 30)));
+  const seen = first.items.map((item: { revision: number }) => item.revision); let cursor = first.nextCursor;
+  while (cursor) {
+    const page = await (await memoryApi(`${target.id}/history/revisions?limit=7&cursor=${encodeURIComponent(cursor)}`)).json();
+    assert.equal(page.total, 31); assert.equal(page.snapshot, first.snapshot); seen.push(...page.items.map((item: { revision: number }) => item.revision)); cursor = page.nextCursor;
+  }
+  assert.deepEqual(seen, Array.from({ length: 31 }, (_, index) => 30 - index));
+  for (const [path, identity] of [[`${target.id}/history/decisions`, identities[2]], [`${citation.id}/history/revisions`, identities[2]], [`${target.id}/history/revisions`, identities[1]]] as const)
+    assert.equal((await memoryApi(`${path}?limit=7&cursor=${encodeURIComponent(first.nextCursor)}`, { identity })).status, 409);
+  assert.equal((await memoryApi(`${target.id}/history/revisions?limit=7&limit=8`)).status, 422);
+  assert.equal((await memoryApi(target.id, { slug: 'memory-second', identity: identities[0] })).status, 404);
+});
+
+test('detail redacts private secondary history and keeps stale checks explicit', async () => {
+  const hidden = await memoryApi('stat-0'); assert.equal(hidden.status, 200); const detail = await hidden.json();
+  assert.equal(detail.checkState, 'restricted'); assert.equal(detail.check, null); assert.equal(detail.checks.total, 0);
+  assert.ok(!JSON.stringify(detail).includes('Private editorial annotation'));
+  const stale = await (await memoryApi('stat-1')).json(); assert.equal(stale.checkState, 'outdated'); assert.equal(stale.check, null); assert.equal(stale.checks.total, 1);
+  const rejected = await (await memoryApi('decision-shadow')).json(); assert.equal(rejected.reviewRestricted, true); assert.equal(rejected.eligibility.usable, false);
+  assert.ok(!JSON.stringify(rejected).includes('Private rejection rationale'));
+  assert.equal((await memoryApi('private-evidence')).status, 404);
+  assert.equal((await memoryApi('absent')).status, 404);
+});
+
+test('every actual role reviews through HTTP with one actor-stamped audit and receipt per action', async () => {
+  const target = { ...citation, id: 'review-target', legacyCitationId: null };
+  await session(contexts[1], client => put(client, evidenceChange(target)));
+  for (let index = 0; index < identities.length; index++) {
+    const input = { evidence: memoryEvidenceRef(target), check: null, policyRevision: 1, previousSequence: index,
+      action: 'accept', reason: `Synthetic editorial decision ${index}`, supports: [] };
+    const requestId = randomUUID(), options = { input, requestId, identity: identities[index] };
+    const response = await memoryApi(`${target.id}/review`, options); assert.equal(response.status, 200, await response.clone().text());
+    const decision = await response.json(); assert.equal(decision.personId, contexts[index].actor); assert.equal(decision.sequence, index + 1); assert.ok(Date.parse(decision.at));
+    const replay = await memoryApi(`${target.id}/review`, options); assert.equal(replay.status, 200); assert.deepEqual(await replay.json(), decision);
+    assert.equal((await memoryApi(`${target.id}/review`, { ...options, input: { ...input, reason: 'Different request' } })).status, 409);
+    const audits = await owner("SELECT user_id,after_data FROM public.audit_log WHERE entity_type='memory_decision' AND after_data->>'id'=$1", [decision.id]);
+    assert.equal(audits.length, 1); assert.equal(audits[0].user_id, contexts[index].actor); assert.deepEqual(audits[0].after_data, decision);
+  }
+  const detail = await (await memoryApi(target.id)).json(); assert.equal(detail.eligibility.usable, true); assert.equal(detail.decisions.total, 4);
+  const input = { evidence: memoryEvidenceRef(target), check: null, policyRevision: 1, previousSequence: 4, action: 'reject', reason: 'Concurrent review', supports: [] };
+  const results = await Promise.all([0, 1].map(index => memoryApi(`${target.id}/review`, { input, requestId: randomUUID(), identity: identities[index] })));
+  assert.deepEqual(results.map(result => result.status).sort(), [200, 409]);
+  assert.equal((await (await memoryApi(target.id)).json()).eligibility.usable, false);
+  assert.equal((await memoryApi(`${target.id}/review`, { input: { ...input, personId: contexts[0].actor }, requestId: randomUUID() })).status, 422);
+  assert.equal((await memoryApi(`${target.id}/review`, { input, requestId: randomUUID(), identity: null })).status, 401);
+  assert.equal((await memoryApi(`${target.id}/review`, { input, requestId: randomUUID(), origin: 'https://foreign.test' })).status, 403);
+  assert.equal((await memoryApi(`${target.id}/review`, { input })).status, 422);
+});
+
+test('HTTP review refuses stale/private checks and forged internal supporting text without leaving decisions', async () => {
+  const target = { ...citation, id: 'review-support-target', legacyCitationId: null };
+  await session(contexts[1], client => put(client, evidenceChange(target)));
+  const input = { evidence: memoryEvidenceRef(target), check: null, policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Conferência sintética', supports: [] as unknown[] };
+  const privateRef = memoryEvidenceRef({ ...citation, id: 'private-evidence', materialId: 'private-material' });
+  const api = (id: string, changes = {}) => memoryApi(`${id}/review`, { input: { ...input, ...changes }, requestId: randomUUID() });
+  assert.equal((await api(target.id, { supports: [{ kind: 'internal', evidence: memoryEvidenceRef(target), primaryOrigin: material.primaryOrigin, excerpt: 'Invented supporting text' }] })).status, 422);
+  assert.equal((await api(target.id, { supports: [{ kind: 'internal', evidence: privateRef, primaryOrigin: material.primaryOrigin, excerpt: citation.text }] })).status, 403);
+  assert.equal((await api(target.id, { evidence: { ...input.evidence, revision: 99 } })).status, 409);
+  assert.equal((await api('stat-1')).status, 409); assert.equal((await api('stat-0')).status, 403);
+  assert.equal((await api('decision-shadow')).status, 403);
+  const detail = await (await memoryApi(target.id)).json(); assert.equal(detail.decisions.total, 0);
+  const valid = await api(target.id, { supports: [{ kind: 'internal', evidence: memoryEvidenceRef(target), primaryOrigin: material.primaryOrigin, excerpt: citation.text }] });
+  assert.equal(valid.status, 200, await valid.clone().text());
+  const unknown = { ...target, id: 'unknown-author-review', personId: null, authorConfirmed: false };
+  await session(contexts[1], client => put(client, evidenceChange(unknown)));
+  assert.equal((await api(unknown.id, { evidence: memoryEvidenceRef(unknown) })).status, 422);
+  await owner("UPDATE public.reporter_ed_sources SET doc=jsonb_set(doc,'{rights,authorized}','false') WHERE portal_id=$1 AND source_id=$2", [PILOT, source.id]);
+  assert.equal((await api(target.id, { previousSequence: 1 })).status, 422);
+  await owner("UPDATE public.reporter_ed_sources SET doc=jsonb_set(doc,'{rights,authorized}','true') WHERE portal_id=$1 AND source_id=$2", [PILOT, source.id]);
+});

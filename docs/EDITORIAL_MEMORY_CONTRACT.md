@@ -90,7 +90,8 @@ The route family is `/api/reporter/memory`, within the existing same-origin/auth
 | Operation | Contract |
 | --- | --- |
 | GET library | Validated `MemoryQuery`; default limit 25, maximum 100; deterministic sort and opaque cursor |
-| GET detail | Current evidence/material/check/decision, eligibility, full review history, immutable revisions and occurrence history |
+| GET detail | Current evidence/material/check/decision, eligibility, referenced original context and first bounded page of each history |
+| GET evidence history | `/memory/:id/history/:checks\|decisions\|revisions\|occurrences`; immutable pages with exact snapshot/total and signed continuation, default 25/max 100 |
 | GET materials/job | Bounded pages; persisted state and real completed/failed block counts |
 | POST material | Validated original and metadata, explicit rights, server-owned actor/workspace and immutable job context |
 | POST retry/cancel | Current authorized job, base revision for cancel, receipt-protected retry; completed blocks are retained |
@@ -104,7 +105,7 @@ All writes carry a request ID generated once per user action. Scope receipts to 
 
 Cursor encodes an observed snapshot, validated query/sort identity and final stable key. Records added later do not shift an existing page sequence. Changed filters reject an old cursor. Corrections use snapshot revisions consistently or return an explicit expired cursor; never silently mix pages. `total` refers to that same authorized query snapshot. Query date field is explicit (`recorded`, `published`, `observation`); missing dates do not acquire inferred values.
 
-All selected topics must match. Institution matches either the material publisher or the statistic issuer. Observation dates overlap known interval bounds; unknown bounds do not become inferred dates. A default, unactivated policy reports null activation actor/time. Library views expose `checkState` (missing/current/outdated/restricted) and `reviewRestricted`; a hidden latest review or stale check cannot restore eligibility from older visible state. Detail/history and write APIs must preserve these rules before the frontend port is bound.
+All selected topics must match. Institution matches either the material publisher or the statistic issuer. Observation dates overlap known interval bounds; unknown bounds do not become inferred dates. A default, unactivated policy reports null activation actor/time. Library views expose `checkState` (missing/current/outdated/restricted) and `reviewRestricted`; a hidden latest review or stale check cannot restore eligibility from older visible state. Detail/history and review APIs preserve these rules. Review is POST `/memory/:id/review`, with `Idempotency-Key`; stale checks return 409 and inaccessible supporting evidence returns 403. Other write APIs must preserve these rules before the frontend port is bound.
 
 Expected refusals: invalid input 422, missing resource 404, capability/access failure 403, stale snapshot/receipt/cursor 409, explicit processing/capacity limit 422 or 429, provider/configuration failure with a recoverable/terminal code. Return safe product messages and no credentials. Library responses use `Cache-Control: no-store`; no mutation happens on GET.
 
