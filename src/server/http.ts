@@ -20,6 +20,7 @@ import { editorialWorkspace, editorialRpc, editorialPipeline, editorialWritingRu
 import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
+import { handleEditorialMemory } from './editorial-memory-http.ts';
 import { handleFactCheck } from './fact-check';
 import { readNewsSearch, saveNewsSearch, requestNewsSearch } from './news-search.ts';
 import { handleNews, requireNewsEdit } from './news-intake.ts';
@@ -110,6 +111,9 @@ function reply(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 }
 const messages: Record<string, string> = {
+  MEMORY_CONFLICT: 'A evidência ou a decisão mudou. Recarregue antes de tentar novamente.',
+  MEMORY_CURSOR_INVALID: 'A consulta mudou ou expirou. Atualize os resultados.',
+  MEMORY_CURSOR_CONFIGURATION: 'A paginação do banco editorial ainda não está configurada no servidor.',
   ACCOUNT_CONTEXT_CHANGED: 'A conta conectada mudou. Recarregue para abrir o contexto atual.',
   MEMBER_VIEW_UNAVAILABLE:'Esta visualização não está disponível para sua conta. Abra novamente pela plataforma.',
   MEMBER_VIEW_ENDED:'A visualização foi encerrada. Escolha um workspace para continuar com sua conta.',
@@ -263,6 +267,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     const context = viewing??await guardReporterRequest(request, deps.identify, selectedWorkspace);
     const response=await runWithReporterContext(context, async () => {
     if(path[0]==='team')return handleWorkspaceTeam(request,path.slice(1),{readJson:jsonBody});
+    if(path[0]==='memory')return handleEditorialMemory(request,path.slice(1));
     if(path[0]==='templates')return handleWorkspaceTemplates(request,path.slice(1),jsonBody);
     if(request.method==='GET'&&path.join('/')==='processing') return reply(await transaction('runtime',async client=>(await client.query('SELECT public.reporter_processing_view($1) AS value',[context.portal])).rows[0].value));
     if (path[0] === 'citations' && path.length === 3) return await handleFactCheck(request,path.slice(1),jsonBody);
