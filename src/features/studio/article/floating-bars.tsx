@@ -400,7 +400,7 @@ function QuoteBar({ open, quote, onDismiss }: { open: boolean; quote: QuoteCheck
         <>
           <ToolbarSeparator />
           <ToolbarButton label="Usar texto da fonte" icon={TextQuote} showLabel={!narrow} onClick={() => studio.actions.useSourceText(range, closest.text)} />
-          <ToolbarButton label="Ver na transcrição" icon={PanelLeftOpen} showLabel={!narrow} onClick={() => studio.actions.showInTranscript(closest.segmentId)} />
+          <ToolbarButton label="Ver na transcrição" icon={PanelLeftOpen} showLabel={!narrow} onClick={() => studio.actions.showInTranscript(closest.ref)} />
         </>
       ) : null}
     </FloatingToolbar>

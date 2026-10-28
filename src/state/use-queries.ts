@@ -37,6 +37,7 @@ import {
   reviewQuery,
   sessionQuery,
   sourceQuery,
+  sourcesQuery,
   versionQuery,
   templateCatalogQuery,
 } from './query-specs.ts';
@@ -113,6 +114,10 @@ export function useCompare(pieceId: PieceId | Missing, fromVersionId: VersionId 
 
 export function useSource(sourceId: SourceId | Missing, version?: number): QueryState<SourceDetail> {
   return useQuery(when(sourceId, (id) => sourceQuery(id, version)));
+}
+
+export function useProductionSources(productionId: ProductionId | Missing, sourceIds: readonly SourceId[]): QueryState<SourceDetail[]> {
+  return useQuery(when(productionId, (id) => sourcesQuery(id, sourceIds)));
 }
 
 /** Revisão: the version under review by default. */

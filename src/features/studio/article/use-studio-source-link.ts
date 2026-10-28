@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import type { WorkspaceView } from '@content-ventures/design-system/v3';
-import { quoteBlock, segmentRef, type ArticleBody, type BlockId, type TextRange } from '@/domain';
+import { quoteBlock, segmentRef, type ArticleBody, type BlockId, type SourceRef, type TextRange } from '@/domain';
 import { blockIdOf, createBlockIdFactory, findBlockEntry, insertBlocks, setArticleDecorations, textRangeToPositions } from '@/editor';
 import type { PersonSummary, SourceDetail } from '@/ports';
-import { blockSegmentIds, blocksCitingSegment, viewerSegments, type ViewerSegment } from './studio-model';
+import { blocksCitingSegment, viewerSegments, type SourceScope, type ViewerSegment } from './studio-model';
 import type { StudioText } from './use-studio-text';
 
-export type SourceLink = { blockIds: BlockId[]; segmentId: string | null; from: 'text' | 'transcript' };
+export type SourceLink = SourceScope & { blockIds: BlockId[]; segmentId: string; from: 'text' | 'transcript' };
 
 /**
  * The link between the text and its source (PLAN §3.5 "Fonte"): the paragraph under the caret
@@ -23,6 +23,7 @@ export function useStudioSourceLink({
   factsBody,
   setView,
   showMaterial,
+  showSource,
 }: {
   source: SourceDetail | undefined;
   people: PersonSummary[];
@@ -30,6 +31,7 @@ export function useStudioSourceLink({
   factsBody: ArticleBody;
   setView: Dispatch<SetStateAction<WorkspaceView>>;
   showMaterial: () => void;
+  showSource: (scope: SourceScope) => void;
 }) {
   const { editor, scrollToBlock, caretWasPlaced } = text;
   const [quoteIds] = useState(() => createBlockIdFactory({ prefix: 'cit' }));
@@ -38,6 +40,7 @@ export function useStudioSourceLink({
     [source, people],
   );
   const [link, setLink] = useState<SourceLink | null>(null);
+  const visibleLink = source && link?.sourceId === source.source.id && link.sourceVersion === source.version.number ? link : null;
 
   const linkBlock = useCallback(
     (blockId: BlockId | null) => {
@@ -47,14 +50,15 @@ export function useStudioSourceLink({
         return;
       }
       const entry = findBlockEntry(editor.state.doc, blockId);
-      const segmentIds = entry ? blockSegmentIds({ sourceRefs: entry.node.attrs.sourceRefs ?? undefined }) : [];
+      const ref: SourceRef | undefined = entry?.node.attrs.sourceRefs?.find((ref: SourceRef) => ref.locator.type === 'segment');
+      if (ref?.locator.type === 'segment') showSource(ref);
       setLink((current) => {
-        if (segmentIds.length === 0) return current?.from === 'text' ? null : current;
-        if (current?.from === 'text' && current.blockIds[0] === blockId) return current;
-        return { blockIds: [blockId], segmentId: segmentIds[0] ?? null, from: 'text' };
+        if (ref?.locator.type !== 'segment') return current?.from === 'text' ? null : current;
+        if (current?.from === 'text' && current.blockIds[0] === blockId && current.sourceId === ref.sourceId && current.sourceVersion === ref.sourceVersion && current.segmentId === ref.locator.segmentId) return current;
+        return { blockIds: [blockId], sourceId: ref.sourceId, sourceVersion: ref.sourceVersion, segmentId: ref.locator.segmentId, from: 'text' };
       });
     },
-    [editor],
+    [editor, showSource],
   );
 
   // The excerpt follows the caret, not the pointer: placing the caret or selecting text in a
@@ -97,28 +101,33 @@ export function useStudioSourceLink({
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
-    setArticleDecorations(editor.view, { activeSourceBlockIds: link?.blockIds ?? [] });
-  }, [editor, link]);
+    setArticleDecorations(editor.view, { activeSourceBlockIds: visibleLink?.blockIds ?? [] });
+  }, [editor, visibleLink]);
 
   const linkSegment = useCallback(
     (segmentId: string) => {
-      const blockIds = blocksCitingSegment(factsBody, segmentId);
-      setLink({ blockIds, segmentId, from: 'transcript' });
+      if (!source) return;
+      const scope = { sourceId: source.source.id, sourceVersion: source.version.number };
+      const blockIds = blocksCitingSegment(factsBody, segmentId, scope);
+      setLink({ ...scope, blockIds, segmentId, from: 'transcript' });
       if (blockIds[0]) {
         setView('main');
         scrollToBlock(blockIds[0]);
       }
     },
-    [factsBody, scrollToBlock, setView],
+    [source, factsBody, scrollToBlock, setView],
   );
 
   /** "Ver na transcrição": the panel's Material tab on the segment, lit. */
   const showInTranscript = useCallback(
-    (segmentId: string) => {
-      setLink({ blockIds: blocksCitingSegment(factsBody, segmentId), segmentId, from: 'transcript' });
+    (ref: SourceRef) => {
+      if (ref.locator.type !== 'segment') return;
+      const segmentId = ref.locator.segmentId;
+      showSource(ref);
+      setLink({ sourceId: ref.sourceId, sourceVersion: ref.sourceVersion, blockIds: blocksCitingSegment(factsBody, segmentId, ref), segmentId, from: 'transcript' });
       showMaterial();
     },
-    [factsBody, showMaterial],
+    [factsBody, showMaterial, showSource],
   );
 
   /** "Usar texto da fonte": the quotation takes the transcript's words (one undo reverts it). */
@@ -143,7 +152,7 @@ export function useStudioSourceLink({
       const block = quoteBlock(quoteIds(), quoted, {
         sourceRefs: [segmentRef(source.source.id, source.version.number, selected.segmentId, { from: selected.start, to: selected.end })],
       });
-      const citing = blocksCitingSegment(factsBody, selected.segmentId);
+      const citing = blocksCitingSegment(factsBody, selected.segmentId, { sourceId: source.source.id, sourceVersion: source.version.number });
       const after = citing[citing.length - 1];
       const where = caretWasPlaced() && editor.state.selection.$from.depth > 0 ? 'selection' : after ? { after } : 'end';
       insertBlocks(editor, [block], where);
@@ -153,5 +162,5 @@ export function useStudioSourceLink({
     [editor, source, quoteIds, factsBody, caretWasPlaced, setView],
   );
 
-  return { segments, link, linkSegment, showInTranscript, takeSourceText, insertQuote };
+  return { segments, link: visibleLink, linkSegment, showInTranscript, takeSourceText, insertQuote };
 }

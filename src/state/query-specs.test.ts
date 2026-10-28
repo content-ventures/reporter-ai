@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import type { ChangeNotice } from '../ports/common.ts';
-import type { DraftView, ReviewView } from '../ports/production-queries.ts';
+import type { DraftView, ReviewView, SourceDetail } from '../ports/production-queries.ts';
+import { ok, refuse } from '../domain/result.ts';
 import { createRuntime } from '../runtime/create-runtime.ts';
 import type { Runtime } from '../runtime/runtime.ts';
 import { pngFile } from '../ports/contracts/assets.contract.ts';
@@ -20,6 +21,7 @@ import {
   reviewQuery,
   sessionQuery,
   sourceQuery,
+  sourcesQuery,
   templateCatalogQuery,
 } from './query-specs.ts';
 
@@ -33,6 +35,31 @@ it('the catalog waits for bootstrap and refetches when an external workspace con
   await Promise.resolve();assert.equal(settled,false);ready.resolve();
   assert.deepEqual(await pending,{ok:true,value:{templates,retainedIds:[],samplePhoto:'own-preview'}});
   assert.equal(spec.affectedBy(notice({scope:'external'}),undefined),true);assert.equal(spec.affectedBy(notice({scope:'runs'}),undefined),false);
+});
+
+describe('production sources', () => {
+  it('reads every distinct attachment in order and keeps an empty pauta empty', async () => {
+    const calls: string[] = [];
+    const runtime = { queries: { source: async (id: string) => { calls.push(id); return ok({ source: { id } } as SourceDetail); } } } as unknown as Runtime;
+    const result = await sourcesQuery('pauta', ['source-a', 'source-b', 'source-a']).fetch(runtime);
+    assert.ok(result.ok);
+    assert.deepEqual(calls, ['source-a', 'source-b']);
+    assert.deepEqual(result.value.map((detail) => detail.source.id), calls);
+    assert.deepEqual(await sourcesQuery('empty', []).fetch(runtime), ok([]));
+    assert.notEqual(sourcesQuery('pauta', calls).key, sourcesQuery('other', calls).key);
+    assert.notEqual(sourcesQuery('pauta', calls).key, sourcesQuery('pauta', [...calls].reverse()).key);
+  });
+
+  it('refuses partial material and refreshes for either attached source or a scope switch', async () => {
+    const denied = refuse('restricted', 'Material sem acesso.');
+    const runtime = { queries: { source: async (id: string) => id === 'source-b' ? denied : ok({ source: { id } } as SourceDetail) } } as unknown as Runtime;
+    const spec = sourcesQuery('pauta', ['source-a', 'source-b']);
+    assert.deepEqual(await spec.fetch(runtime), denied);
+    for (const scope of ['session', 'reset', 'external'] as const) assert.equal(spec.affectedBy(notice({ scope, productionIds: ['other'] }), []), true);
+    assert.equal(spec.affectedBy(notice({ productionIds: ['pauta'] }), []), true);
+    assert.equal(spec.affectedBy(notice({ productionIds: ['other'] }), []), false);
+    assert.equal(spec.affectedBy(notice(), []), true);
+  });
 });
 
 describe('query specs: keys', () => {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { bodyHash, createTranscriptSource, headingBlock, listBlock, paragraphBlock, parseTranscript, quoteBlock, segmentRef } from '../../../domain/index.ts';
+import { bodyHash, createTranscriptSource, headingBlock, listBlock, paragraphBlock, parseTranscript, quoteBlock, reviseSource, segmentRef, toSourceSummary } from '../../../domain/index.ts';
+import type { SourceDetail } from '../../../ports/production-queries.ts';
 import type { ArticleBody, CheckResult, SendItem, Suggestion } from '../../../domain/index.ts';
 import {
   articleFacts,
@@ -8,6 +9,9 @@ import {
   externalDraftSync,
   articleOutline,
   blocksCitingSegment,
+  quotedSegmentIds,
+  sourceSegmentIds,
+  studioSource,
   checagemGroups,
   clip,
   closestExcerpt,
@@ -138,8 +142,28 @@ describe('studio model', () => {
 
   it('knows which transcript segments the text uses and which blocks cite one', () => {
     assert.deepEqual(usedSegmentIds(body), ['s1', 's2', 's3']);
-    assert.deepEqual(blocksCitingSegment(body, 's2'), ['b1', 'b3']);
-    assert.deepEqual(blocksCitingSegment(body, 'missing'), []);
+    const scope = { sourceId: 'src-1', sourceVersion: 1 };
+    assert.deepEqual(blocksCitingSegment(body, 's2', scope), ['b1', 'b3']);
+    assert.deepEqual(blocksCitingSegment(body, 'missing', scope), []);
+  });
+
+  it('keeps identically named segments separate across sources and immutable versions', () => {
+    const a1 = segmentRef('source-a', 1, 'memory-item-1');
+    const a2 = segmentRef('source-a', 2, 'memory-item-1');
+    const b1 = segmentRef('source-b', 1, 'memory-item-1');
+    const article: ArticleBody = { type: 'article', title: '', blocks: [
+      quoteBlock('old', 'Original evidence remains unchanged.', { sourceRefs: [a1] }),
+      quoteBlock('new', 'Revised evidence has different words.', { sourceRefs: [a2] }),
+      quoteBlock('other', 'Independent evidence from another collection.', { sourceRefs: [b1] }),
+    ] };
+    for (const [ref, id] of [[a1, 'old'], [a2, 'new'], [b1, 'other']] as const) {
+      assert.deepEqual(blocksCitingSegment(article, 'memory-item-1', ref), [id]);
+      assert.deepEqual(sourceSegmentIds([a1, a2, b1], ref), ['memory-item-1']);
+    }
+    const quotes = article.blocks.map((block, index) => ({ blockId: block.id, range: { blockId: block.id, from: 0, to: 4 }, text: 'Test', kind: 'block' as const, sourceRefs: block.sourceRefs ?? [], status: 'verified' as const, match: [a1, a2, b1][index] }));
+    assert.deepEqual(quotedSegmentIds(quotes.slice(0, 1), a1), ['memory-item-1']);
+    assert.deepEqual(quotedSegmentIds(quotes.slice(0, 1), a2), []);
+    assert.deepEqual(quotedSegmentIds(quotes.slice(0, 1), b1), []);
   });
 
   it('builds the outline with 1-based block numbers', () => {
@@ -329,5 +353,28 @@ describe('studio model · suggestions, tools and quotes', () => {
     );
     const found = closestExcerpt({ text: 'Errar no protótipo virou algo barato', sourceRefs: [] }, [source]);
     assert.equal(found?.text, 'errar no protótipo ficou barato');
+  });
+
+  it('opens the referenced historical source and finds its own excerpt before same-id material', () => {
+    const context = { now: '2026-10-28T12:00:00.000Z', newId: (prefix: string) => `${prefix}-a`, actorId: 'editor' };
+    const original = createTranscriptSource({ workspaceId: 'ws', title: 'Historical collection', origin: 'other', parsed: parseTranscript('Helena: Errar no protótipo ficou barato.'), authorized: true }, context);
+    const segment = original.versions[0].content.segments[0];
+    const revised = reviseSource(original, [{ type: 'update', segmentId: segment.id, text: 'As palavras agora são outras.' }], context);
+    assert.ok(revised.ok);
+    const other = createTranscriptSource({ workspaceId: 'ws', title: 'Other collection', origin: 'other', parsed: parseTranscript('Helena: Errar no protótipo ficou muito barato.'), authorized: true }, { ...context, newId: (prefix) => `${prefix}-b` });
+    assert.equal(other.versions[0].content.segments[0].id, segment.id, 'ids intentionally collide');
+    const details = [other, revised.value].map((source): SourceDetail => ({ source, summary: toSourceSummary(source), version: source.versions.at(-1)!, speakers: [], productions: [] }));
+    const ref = segmentRef(original.id, 1, segment.id);
+    const shown = studioSource(details, ref);
+    assert.equal(shown?.source.id, original.id);
+    assert.equal(shown?.version.number, 1);
+    assert.equal(studioSource(details, null)?.source.id, other.id);
+    assert.equal(studioSource(details, { ...ref, sourceVersion: 99 }), undefined);
+    assert.equal(studioSource(details, { ...ref, sourceId: 'missing' }), undefined);
+    const found = closestExcerpt({ text: 'Errar no protótipo virou algo barato', sourceRefs: [ref] }, [other, revised.value]);
+    assert.equal(found?.ref.sourceId, original.id);
+    assert.equal(found?.ref.sourceVersion, 1);
+    assert.equal(found?.text, 'Errar no protótipo ficou barato');
+    assert.equal(articleFacts({ type: 'article', title: '', blocks: [quoteBlock('quote', segment.text, { sourceRefs: [ref] })] }, [other, revised.value]).verifiedQuotes, 1);
   });
 });
