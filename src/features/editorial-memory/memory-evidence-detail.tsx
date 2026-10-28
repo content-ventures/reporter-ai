@@ -6,7 +6,7 @@ import { memoryEvidenceRef } from '@/domain/editorial-memory';
 import { VERDICT_LABELS } from '@/domain/fact-check';
 import type { MemoryDetail, MemoryHistoryEntry, MemoryLibrary } from '@/ports/editorial-memory';
 import { useMemoryResource } from '@/state/use-memory-library';
-import { useCan, usePeople } from '@/state';
+import { useCan, usePeople, useSession } from '@/state';
 
 export const ELIGIBILITY_LABELS = { ready: 'Disponível para uso', source_unavailable: 'Conferir fonte e autorização', withdrawn: 'Retirada', authorship_pending: 'Confirmar autoria', review_required: 'Aguardando revisão', rejected: 'Rejeitada' };
 const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar', reject: 'Rejeitar', request_revision: 'Solicitar revisão' };
@@ -19,7 +19,9 @@ export function MemoryEvidenceDrawer({ id, onClose, onChanged, onMaterial }: { i
   </Drawer>;
 }
 function EvidenceContent({ detail, port, onChanged, onMaterial }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void }) {
+  const session = useSession().data;
   const { evidence, check, decision } = detail, people = usePeople(), canEdit = useCan('library.edit'), canReview = useCan('library.review');
+  const outdated = detail.checkState === 'outdated';
   const [reason, setReason] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   const [personId, setPersonId] = useState(evidence.kind === 'citation' ? evidence.personId ?? '' : ''), [confirmed, setConfirmed] = useState(evidence.kind === 'citation' && evidence.authorConfirmed);
   const [indicator, setIndicator] = useState(evidence.kind === 'statistic' ? evidence.indicator : ''), [unit, setUnit] = useState(evidence.kind === 'statistic' ? evidence.unit : '');
@@ -31,7 +33,8 @@ function EvidenceContent({ detail, port, onChanged, onMaterial }: { detail: Memo
     try { await operation(); onChanged(); } catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível salvar.'); }
     finally { setBusy(false); }
   };
-  const person = (id: string | null) => people.data?.find(item => item.id === id)?.name ?? id ?? 'Não informada';
+  const person = (id: string | null) => people.data?.find(item => item.id === id)?.name
+    ?? (id === session?.current?.id ? session?.current?.name : session?.members.find(member => member.id === id)?.name) ?? id ?? 'Não informada';
   const review = (action: MemoryDecisionAction) => execute(() => port.review(evidence.id, {
     evidence: memoryEvidenceRef(evidence), check: check ? { id: check.id, revision: check.revision } : null, policyRevision: detail.policy.revision,
     previousSequence: decision?.sequence ?? 0, action, reason, supports: [],
@@ -41,8 +44,8 @@ function EvidenceContent({ detail, port, onChanged, onMaterial }: { detail: Memo
       <Textarea aria-label="Trecho literal" readOnly value={evidence.anchor.excerpt} rows={6} />
       <DescriptionList items={[{ label: 'Material', value: <Button variant="ghost" onClick={() => onMaterial(detail.material)}>{detail.material.title}</Button> },
         { label: 'Autoria', value: evidence.kind === 'citation' ? person(evidence.personId) : person(evidence.declaringPersonId) },
-        { label: 'Veredito', value: check ? VERDICT_LABELS[check.verdict] : 'Sem checagem' }, { label: 'Confiança factual', value: check?.confidence === null || check?.confidence === undefined ? 'Não calculada' : `${check.confidence}%` },
-        { label: 'Força editorial', value: check?.strength ? `${check.strength.score} — ${check.strength.reason}` : 'Não calculada' },
+        { label: 'Veredito', value: outdated ? 'Checagem desatualizada' : check ? VERDICT_LABELS[check.verdict] : 'Sem checagem' }, { label: 'Confiança factual', value: outdated ? 'Desatualizada' : check?.confidence === null || check?.confidence === undefined ? 'Não calculada' : `${check.confidence}%` },
+        { label: 'Força editorial', value: outdated ? 'Desatualizada' : check?.strength ? `${check.strength.score} — ${check.strength.reason}` : 'Não calculada' },
         { label: 'Usos em artigos', value: detail.uses.inserted }, { label: 'Usos aprovados', value: detail.uses.approved }, { label: 'Publicações', value: detail.uses.published }]} />
       {evidence.kind === 'statistic' && <DescriptionList items={[{ label: 'Valor original', value: evidence.value.raw }, { label: 'Unidade', value: evidence.unit },
         { label: 'Período', value: evidence.period?.label }, { label: 'População', value: evidence.population }, { label: 'Geografia', value: evidence.geography },
@@ -54,7 +57,7 @@ function EvidenceContent({ detail, port, onChanged, onMaterial }: { detail: Memo
     </Section>
     {(canEdit || canReview) && !detail.reviewRestricted && <Section title="Revisão editorial">
       {error && <Alert tone="danger" title={error} />}
-      <Field label="Motivo da alteração ou decisão" required>{({ id }) => <Textarea id={id} rows={3} maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} />}</Field>
+      <Field label="Motivo da alteração ou decisão" required hint={outdated ? 'A nova decisão exige uma checagem atualizada.' : undefined}>{({ id }) => <Textarea id={id} rows={3} maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} />}</Field>
       {canEdit && <>
         {evidence.kind === 'citation' ? <>
           <Field label="Pessoa que fez a declaração">{({ id }) => <Select id={id} value={personId} searchable options={[{ value: '', label: 'Autoria não identificada' }, ...(people.data ?? []).map(item => ({ value: item.id, label: item.name }))]} onChange={setPersonId} />}</Field>
@@ -86,18 +89,18 @@ function EvidenceContent({ detail, port, onChanged, onMaterial }: { detail: Memo
           return port.resolveDuplicate(evidence.id, { expected: memoryEvidenceRef(evidence), canonical: memoryEvidenceRef(canonical.evidence), choice, reason }, crypto.randomUUID());
         })}>{choice === 'keep_variant' ? 'Preservar correção desta variante' : 'Usar versão já curada'}</Button>)}
       </ButtonGroup>}
-      {canReview && <ButtonGroup label="Ações">{(['accept', 'reject', 'request_revision'] as const).map(action => <Button key={action} variant={action === 'accept' ? 'primary' : 'secondary'} loading={busy} disabled={!reason.trim() || action === 'accept' && ['source_unavailable', 'withdrawn', 'authorship_pending'].includes(detail.eligibility.reason)} onClick={() => void review(action)}>{REVIEW_LABELS[action]}</Button>)}</ButtonGroup>}
+      {canReview && <ButtonGroup label="Ações">{(['accept', 'reject', 'request_revision'] as const).map(action => <Button key={action} variant={action === 'accept' ? 'primary' : 'secondary'} loading={busy} disabled={!reason.trim() || outdated || action === 'accept' && (['source_unavailable', 'withdrawn', 'authorship_pending'].includes(detail.eligibility.reason) || evidence.deduplication?.state === 'pending' || evidence.kind === 'citation' && evidence.legacy?.state === 'conflict')} onClick={() => void review(action)}>{REVIEW_LABELS[action]}</Button>)}</ButtonGroup>}
       {decision && <DescriptionList items={[{ label: 'Última decisão', value: REVIEW_LABELS[decision.action] }, { label: 'Responsável', value: person(decision.personId) }, { label: 'Data', value: new Date(decision.at).toLocaleString('pt-BR') }, { label: 'Motivo', value: decision.reason }]} />}
     </Section>}
-    {(['checks', 'decisions', 'revisions', 'occurrences'] as const).map(kind => <MemoryHistory key={kind} detail={detail} port={port} kind={kind} />)}
+    {(['checks', 'decisions', 'revisions', 'occurrences'] as const).map(kind => <MemoryHistory key={kind} detail={detail} port={port} kind={kind} personName={person} />)}
   </Panel>;
 }
-function MemoryHistory({ detail, port, kind }: { detail: MemoryDetail; port: MemoryLibrary; kind: MemoryHistoryKind }) {
+function MemoryHistory({ detail, port, kind, personName }: { detail: MemoryDetail; port: MemoryLibrary; kind: MemoryHistoryKind; personName: (id: string | null) => string }) {
   const [items, setItems] = useState<MemoryHistoryEntry[]>(detail[kind].items), [cursor, setCursor] = useState(detail[kind].nextCursor), [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   return <Section title={HISTORY_LABELS[kind]} meta={detail[kind].total}>
     {error && <Alert tone="danger" title={error} />}
-    <DescriptionList items={items.map((item, index) => ({ label: `${index + 1}`, value: 'action' in item ? `${REVIEW_LABELS[item.action]} — ${item.reason} · ${item.personId} · ${new Date(item.at).toLocaleString('pt-BR')}`
-      : 'stage' in item ? `${item.stage} · ${item.personId} · ${item.at}` : 'verdict' in item ? `${VERDICT_LABELS[item.verdict]} · ${item.checkedAt}` : `Revisão ${item.revision} · ${item.updatedAt}` }))} />
+    <DescriptionList items={items.map((item, index) => ({ label: `${index + 1}`, value: 'action' in item ? `${REVIEW_LABELS[item.action]} — ${item.reason} · ${personName(item.personId)} · ${new Date(item.at).toLocaleString('pt-BR')}`
+      : 'stage' in item ? `${item.stage} · ${personName(item.personId)} · ${item.at}` : 'verdict' in item ? `${VERDICT_LABELS[item.verdict]} · ${item.checkedAt}` : `Revisão ${item.revision} · ${item.updatedAt}` }))} />
     {cursor && <Button variant="secondary" loading={busy} onClick={async () => { setBusy(true); setError(undefined);
       try { const next = await port.history(detail.evidence.id, kind, { cursor }); setItems(current => [...current, ...next.items]); setCursor(next.nextCursor); }
       catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível carregar o histórico.'); } finally { setBusy(false); }

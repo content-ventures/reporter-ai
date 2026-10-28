@@ -12,7 +12,7 @@ function parameters(input: object): string {
 export function createHttpMemoryLibrary(http: ReporterTransport): MemoryLibrary {
   const id = encodeURIComponent;
   const command = async <T>(path: string, input: unknown, requestId: string): Promise<T> => reporterResponse<T>(await http.fetch(`/memory/${path}`, {
-    method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json', 'idempotency-key': requestId }, body: JSON.stringify(input),
+    method: 'POST', cache: 'no-store', headers: { 'x-reporter-client': 'local', 'content-type': 'application/json', 'idempotency-key': requestId }, body: JSON.stringify(input),
   }));
   return {
     query: input => http.request(`/memory${parameters(input)}`), detail: evidence => http.request(`/memory/${id(evidence)}`),

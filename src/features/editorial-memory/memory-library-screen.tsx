@@ -47,8 +47,8 @@ export function MemoryLibraryScreen() {
           { key: 'author', header: 'Autoria / instituição', render: item => item.evidence.kind === 'statistic' ? item.evidence.issuingInstitution ?? 'Não informada' : people.data?.find(person => person.id === (item.evidence.kind === 'citation' ? item.evidence.personId : null))?.name ?? 'Não identificada' },
           { key: 'material', header: 'Material', render: item => item.material.title },
           { key: 'status', header: 'Estado', render: item => <Badge tone={item.eligibility.usable ? 'green' : 'amber'} wrap>{ELIGIBILITY_LABELS[item.eligibility.reason]}</Badge> },
-          { key: 'confidence', header: 'Confiança factual', render: item => item.check?.confidence === null || item.check?.confidence === undefined ? '—' : `${item.check.confidence}%` },
-          { key: 'uses', header: 'Usos', render: item => item.uses.inserted }]}
+          { key: 'confidence', header: 'Confiança factual', render: item => item.checkState === 'outdated' ? 'Desatualizada' : item.check?.confidence === null || item.check?.confidence === undefined ? '—' : `${item.check.confidence}%` },
+          { key: 'uses', header: 'Artigos', render: item => item.uses.inserted }]}
         empty={<EmptyState title={query || material ? 'Nenhuma evidência encontrada' : 'Nenhuma evidência no banco'} description={query || material ? undefined : 'Importe um material para iniciar a extração.'} />}
         footer={<ButtonGroup label="Ações"><Button variant="secondary" disabled={cursors.length === 1} onClick={() => setCursors(current => current.slice(0, -1))}>Anterior</Button><Button variant="secondary" disabled={!page.nextCursor} onClick={() => setCursors(current => [...current, page.nextCursor!])}>Próxima</Button></ButtonGroup>} />}
       {selected.length > 0 && <Section title={`${selected.length} evidências selecionadas`} action={<ButtonGroup label="Ações"><Button variant="secondary" onClick={() => setSelected([])}>Limpar seleção</Button><Button loading={saving} onClick={async () => {

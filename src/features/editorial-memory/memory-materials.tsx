@@ -4,7 +4,7 @@ import { Alert, Badge, Button, ButtonGroup, Checkbox, DataTable, DescriptionList
 import type { MemoryMaterial, MemoryMetadata } from '@/domain/editorial-memory';
 import type { MemoryLibrary, MemoryImportInput, MemoryJob } from '@/ports/editorial-memory';
 import { useMemoryResource } from '@/state/use-memory-library';
-import { useCan } from '@/state';
+import { useCan, useSession } from '@/state';
 
 export const MATERIAL_KINDS = [
   { value: 'transcript', label: 'Transcrição' }, { value: 'news', label: 'Notícia' }, { value: 'release', label: 'Release' },
@@ -64,6 +64,7 @@ export function MemoryMaterials({ onOpen }: { onOpen: (id: string) => void }) {
       <Button variant="secondary" disabled={!resource.data.nextCursor} onClick={() => setCursors(current => [...current, resource.data!.nextCursor!])}>Próxima</Button></ButtonGroup>} />;
 }
 export function MemoryMaterialDrawer({ id, onClose, onEvidence }: { id: string; onClose: () => void; onEvidence: (material: MemoryMaterial) => void }) {
+  const session = useSession().data;
   const load = useCallback((port: MemoryLibrary) => port.material(id), [id]), resource = useMemoryResource(load, 3000), canEdit = useCan('library.edit');
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>(), [rightsReason, setRightsReason] = useState('');
   const detail = resource.data, job = detail?.job;
@@ -80,7 +81,8 @@ export function MemoryMaterialDrawer({ id, onClose, onEvidence }: { id: string; 
         {error && <Alert tone="danger" title={error} />}
         {job && <Progress value={job.completedBlocks / job.totalBlocks * 100} label={`${job.completedBlocks} de ${job.totalBlocks} blocos concluídos`} />}
         <DescriptionList items={[{ label: 'Evidências', value: job?.evidenceCount ?? 0 }, { label: 'Blocos com falha', value: job?.failedBlocks ?? 0 },
-          { label: 'Falha', value: job?.error ? job.error === 'MEMORY_SOURCE_NOT_AUTHORIZED' ? 'Autorize o uso do material para retomar.' : job.error === 'MEMORY_SOURCE_CHANGED' ? 'A fonte mudou. Importe a versão atual.' : /KEY_MISSING|AUTH_INVALID|QUOTA_EXHAUSTED/.test(job.error) ? 'Confira o acesso e os créditos do provedor de IA.' : 'Não foi possível concluir. Retome a extração.' : undefined }, { label: 'Importado por', value: detail.material.importedBy }]} />
+          ...(job?.error ? [{ label: 'Falha', value: job.error === 'MEMORY_SOURCE_NOT_AUTHORIZED' ? 'Autorize o uso do material para retomar.' : job.error === 'MEMORY_SOURCE_CHANGED' ? 'A fonte mudou. Importe a versão atual.' : /KEY_MISSING|AUTH_INVALID|QUOTA_EXHAUSTED/.test(job.error) ? 'Confira o acesso e os créditos do provedor de IA.' : 'Não foi possível concluir. Retome a extração.' }] : []),
+          { label: 'Importado por', value: session?.current?.id === detail.material.importedBy ? session.current.name : session?.members.find(member => member.id === detail.material.importedBy)?.name ?? detail.material.importedBy }]} />
         <ButtonGroup label="Ações"><Button variant="secondary" onClick={() => onEvidence(detail.material)}>Ver evidências</Button>
           {canEdit && job && ['failed', 'partial', 'cancelled'].includes(job.status) && <Button loading={busy} onClick={() => void act('retry')}>Retomar extração</Button>}
           {canEdit && job && ['queued', 'running'].includes(job.status) && <Button variant="secondary" loading={busy} onClick={() => void act('cancel')}>Cancelar extração</Button>}
