@@ -10,7 +10,7 @@ import { FlowError } from './errors.ts';
 import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
 import { checkEditorialMemory } from './editorial-memory-check.ts';
 import { writeMemorySelection } from './editorial-memory-writing.ts';
-import { readMemorySelection, selectEditorialMemory } from './editorial-memory-selection.ts';
+import { readMemorySelection, readMemorySelections, selectEditorialMemory } from './editorial-memory-selection.ts';
 import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemoryBlocks, readMemoryJob, readMemoryMaterial, readMemoryMaterials } from './editorial-memory-materials.ts';
 
 /** The module stays unavailable until its controlled acceptance enables the server ceiling. */
@@ -41,6 +41,7 @@ export async function handleEditorialMemory(request: Request, path: string[], re
   if (request.method === 'GET' && path.length === 0) return Response.json(await queryEditorialMemory(parseMemoryQuery(new URL(request.url).searchParams)),
     { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'GET' && path.join('/') === 'policy') return Response.json(await readMemoryPolicy(), { headers: { 'Cache-Control': 'private, no-store' } });
+  if (request.method === 'GET' && path.join('/') === 'selections') return Response.json(await readMemorySelections(parseMemoryHistoryQuery(params)), noStore);
   if (request.method === 'GET' && path.length === 1) return Response.json(await readMemoryDetail(path[0]), { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'GET' && path.length === 2 && path[0] === 'legacy') return Response.json(await lookupMemoryLegacy(path[1]), { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'GET' && path.length === 2 && path[0] === 'selections') {

@@ -5,7 +5,7 @@ import pg, { type Client, type Pool } from 'pg';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { createTranscriptSource, toSourceVersionRef } from '../../src/domain/source.ts';
 import { parseTranscript } from '../../src/domain/text/transcript-parse.ts';
-import { memoryEvidenceRef, type MemoryEvidence, type MemoryMaterial, type MemorySelection } from '../../src/domain/editorial-memory.ts';
+import { memoryEvidenceRef, type MemoryEvidence, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
 import type { MemoryDetail, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { ReporterRequestContext } from '../../src/server/request-context.ts';
 
@@ -113,4 +113,18 @@ test('an insertion audit failure rolls back production, source, uses and idempot
   try { assert.equal((await api(`memory/selections/${saved.id}/write`, writingInput, key)).status, 500); } finally { await owner('DROP TRIGGER fail_writing_audit ON public.audit_log; DROP FUNCTION core.fail_writing_audit()'); }
   assert.deepEqual(await count(), before); assert.equal((await json<MemoryDetail>(`memory/${item.evidence.id}`)).uses.inserted, 0);
   const result = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput, key); assert.ok(result.productionId);
+});
+test('saved selections recover ordered snapshots with private scopes and actor-bound stable pages', async () => {
+  const item = await fixture('statistic'), first = await selection([item.evidence]), second = await selection([item.evidence]);
+  const page = await json<MemoryPage<MemorySelection>>('memory/selections?limit=1'); assert.equal(page.items[0].id, second.id); assert.ok(page.nextCursor);
+  const late = await selection([item.evidence]);
+  const next = await json<MemoryPage<MemorySelection>>(`memory/selections?limit=1&cursor=${encodeURIComponent(page.nextCursor!)}`);
+  assert.equal(next.items[0].id, first.id); assert.equal(next.total, page.total); assert.equal(next.snapshot, page.snapshot); assert.notEqual(next.items[0].id, late.id);
+  assert.equal((await api(`memory/selections?limit=1&cursor=${encodeURIComponent(page.nextCursor!)}`, undefined, randomUUID(), identities[2])).status, 409);
+  assert.equal((await api(`memory/selections?limit=2&cursor=${encodeURIComponent(page.nextCursor!)}`)).status, 409);
+  assert.equal((await api('memory/selections?createdBy=forged')).status, 422);
+  const privateItem = await fixture('statistic', true), privateSelection = await selection([privateItem.evidence]);
+  const visible = await json<MemoryPage<MemorySelection>>('memory/selections?limit=100'); assert.ok(visible.items.some(item => item.id === privateSelection.id));
+  const other = await (await api('memory/selections?limit=100', undefined, randomUUID(), identities[2])).json() as MemoryPage<MemorySelection>;
+  assert.equal(other.items.some(item => item.id === privateSelection.id), false);
 });

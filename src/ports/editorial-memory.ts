@@ -50,6 +50,7 @@ export interface EditorialMemory {
     requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
   select(input: { id?: string; baseRevision: number; productionId: string | null; evidence: MemoryEvidenceRef[] }, requestId: string): Promise<MemorySelection>;
   selection(id: string): Promise<MemorySelection>;
+  selections(input: MemoryHistoryQuery): Promise<MemoryPage<MemorySelection>>;
   writeSelection(id: string, input: MemoryWritingInput, requestId: string): Promise<MemoryWritingResult>;
   policy(): Promise<MemoryPolicy>;
   lookupLegacy(id: string): Promise<{ id: string; materialId: string }[]>;

@@ -9,6 +9,7 @@ export const memoryHistoryKindSchema = z.enum(['checks', 'decisions', 'revisions
 export const memoryHistoryQuerySchema = z.object({ cursor: z.string().min(1).max(4096).optional(), limit: z.number().int().min(1).max(100).default(25) }).strict();
 export const memoryHistoryBindingSchema = z.object({ resource: z.literal('history'), evidenceId: id, kind: memoryHistoryKindSchema, limit: z.number().int().min(1).max(100) }).strict();
 export const memoryResourceBindingSchema = z.discriminatedUnion('resource', [memoryHistoryBindingSchema,
+  z.object({ resource: z.literal('selections'), limit: z.number().int().min(1).max(100) }).strict(),
   z.object({ resource: z.literal('materials'), limit: z.number().int().min(1).max(100) }).strict(),
   z.object({ resource: z.literal('blocks'), jobId: id, limit: z.number().int().min(1).max(100) }).strict()]);
 export const memoryCancelSchema = z.object({ baseRevision: z.number().int().positive() }).strict();
