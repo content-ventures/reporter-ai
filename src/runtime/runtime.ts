@@ -16,6 +16,7 @@ import type { PipelineSettings } from '../ports/pipeline-settings.ts';
 import type { VisualLibrary } from '../ports/visual-library.ts';
 import type { ImageGenerator } from '../ports/image-generation.ts';
 import type { CitationLibrary } from '../ports/citation-library.ts';
+import type { MemoryLibrary } from '../ports/editorial-memory.ts';
 import type { Clock, IdGenerator } from '../ports/system.ts';
 import type {WorkspaceAdministration} from '../ports/workspace-management.ts';
 import type {WorkspaceDirectory} from '../ports/workspace-management.ts';
@@ -77,6 +78,7 @@ export type Runtime = {
   readonly pipeline?: PipelineSettings;
   readonly visuals?: VisualLibrary;
   readonly citations?: CitationLibrary;
+  readonly memory?: MemoryLibrary;
   /** F2.1 news sources and queue on the server (connected build only). */
   readonly news?: NewsIntake;
   readonly administration?:WorkspaceAdministration;

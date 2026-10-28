@@ -106,7 +106,7 @@ export async function reporterUpload<T>(path: string, file: Blob): Promise<T> {
   return defaultReporterTransport.upload<T>(path,file);
 }
 
-async function reporterResponse<T>(response: Response, signal?: AbortSignal): Promise<T> {
+export async function reporterResponse<T>(response: Response, signal?: AbortSignal): Promise<T> {
   const value = await responseValue(response);
   signal?.throwIfAborted();
   if (!response.ok) {

@@ -15,6 +15,7 @@ import { isForbidden, ReporterHttpError, createReporterTransport, requestWorkspa
 import { avatarImage } from '../adapters/local/assets/avatar-image.ts';
 import { createHttpImageGenerator, createHttpVisualLibrary } from '../adapters/http/visual-library.ts';
 import { createHttpCitationLibrary } from '../adapters/http/citation-library.ts';
+import { createHttpMemoryLibrary } from '../adapters/http/editorial-memory.ts';
 import { createHttpNewsIntake } from '../adapters/http/news-intake.ts';
 import {createHttpWorkspaceAdministration} from '../adapters/http/workspace-management.ts';
 import {createHttpWorkspaceDirectory} from '../adapters/http/workspace-directory.ts';
@@ -221,6 +222,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     visuals: createHttpVisualLibrary(http),
     imageGeneration: createHttpImageGenerator(http),
     citations: createHttpCitationLibrary(http),
+    memory: createHttpMemoryLibrary(http),
     news: createHttpNewsIntake(http),
     pipeline: { get: () => http.request<PipelineView>('/pipeline'), save: (definition,baseRevision) => rpc('pipeline.save',[definition,baseRevision]),
       getWritingRun: runId => http.request<WritingRunDetails>(`/pipeline/runs/${encodeURIComponent(runId)}`) },
