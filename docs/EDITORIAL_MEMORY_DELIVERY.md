@@ -8,7 +8,7 @@ Execution record for Flow 4, based on the [approved phased plan](https://chatgpt
 - Branch: `citation-statistics-bank`.
 - Runtime: Node 24.14.0 and pnpm 10.33.0, installed from the frozen lockfile.
 - Authenticated GitHub author: `fagundesjv`, numeric noreply identity verified through GitHub.
-- Phase 0 technical preparation and phase 1 contract baseline are complete. The user's clarification permits engineering to proceed with synthetic material; real-corpus acceptance remains an explicit final dependency. The module remains unbound to runtime and unavailable as a new product flow.
+- Phase 0 technical preparation and phase 1 contract baseline are complete. The user's clarification permits engineering to proceed with synthetic material; real-corpus acceptance remains an explicit final dependency. Authenticated library/policy reads exist behind the disabled server ceiling; the frontend port is not bound and the new product flow is unavailable.
 - The complete goal includes frontend, backend, UX, QA, historical imports, writing integration and controlled production acceptance.
 
 User clarifications on 2026-10-28:
@@ -22,7 +22,7 @@ User clarifications on 2026-10-28:
 | --- | --- | --- | --- |
 | 0 | Reproducible baseline, inventory and evaluation rubric | Gates, database/replay and smoke baseline; synthetic corpus validated; unavailable real material recorded | Technical preparation complete; real corpus pending |
 | 1 | UX journeys, data/API contracts and permission matrix | State map, versioned contracts, valid/invalid examples and domain tests | Contract baseline complete; rendered UX acceptance in phase 5 |
-| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: durable scoped storage and review audit verified; query/API binding and legacy reconciliation pending |
+| 2 | Durable persistence and paginated APIs | Empty/existing database migration, legacy reconciliation, contracts, replay and tenant isolation | In progress: storage, audit and authenticated snapshot queries verified; detail/history, write APIs and legacy reconciliation pending |
 | 3 | Material ingestion and extraction before article | Complete block coverage, resumable jobs, literal evidence, unknown metadata and retry tests | Pending |
 | 4 | Internal/external checks and editorial resolution | Context-aware comparison, distinct confidence, immutable decisions and stale-write tests | Pending |
 | 5 | Complete library UI | Real APIs, URL filters, stable pagination, detail/review flows and accessibility checks | Pending |
@@ -143,7 +143,7 @@ Implemented signed, stateless pagination cursors. They preserve PostgreSQL bigin
 
 Validation: the backend regression suite passed 352 tests with zero skips/failures. Ten targeted input/cursor tests passed, including tampering, identity/query changes, expiration, malformed URLs/decimals, precise intervals, duplicates, dates and forged actor fields. Typecheck exposed the project's pre-ES2020 compilation target and an assert overload; the BigInt literal was replaced by its constructor and the assertion by a typed Zod error expectation, then targeted tests and typecheck were repeated.
 
-Still required to close phase 2: additive persistence and replay, authenticated real route handlers, atomic request receipts and audit rows, authoritative source/production visibility, indexed historical-snapshot queries, legacy ID/content reconciliation and real PostgreSQL/HTTP contract tests. None of those integrations is represented by a successful placeholder. No phase 3 job or new UI activation has started.
+The following checkpoints implement storage, replay, request receipts, audit, authoritative visibility and authenticated query handlers. Detail/history and write handlers, actual legacy ID/content reconciliation and their PostgreSQL/HTTP contracts remain required to close phase 2. No phase 3 job or new UI activation has started.
 
 ### Durable storage and SQL review boundary
 
@@ -154,3 +154,15 @@ Narrow SQL functions read current/exact historical records, scan a stable snapsh
 Source and production visibility is checked on every read/write. A source known only through a private production cannot be promoted by another editor. Selection/use target productions have their own access check. Source changes and production access changes invalidate the cursor visibility epoch. This layer is consumed through the existing authenticated request/transaction context; no remote database or client data was changed.
 
 The eight new disposable-PostgreSQL tests passed: migration replay, exact payload/history preservation, repeated IDs in different clients, private sources and productions, all four review roles with database-authored audit, stale decisions/atomic rollback, withdrawn rights, concurrent edits, immutable snapshot reads and actor-scoped idempotent retries. Typecheck and migration-order tests passed. HTTP consumers, complete query filters, legacy backfill and worker/UI integration remain in progress.
+
+Storage checkpoint: `4cf5b94`. The isolated local database also passed `db:flow` and `db:test`, including bootstrap/replay and existing editorial integration checks. The legacy-shaped fixture verifies storage preservation; it does not yet prove reconciliation from the old citation registry.
+
+### Authenticated snapshot queries
+
+Migration 048 and the server query service implement authorized library/policy GETs through the existing authentication boundary. The module requires `REPORTER_MEMORY_MODE=on`; default responses remain 404 and no navigation is activated. Responses are private/no-store. Queries operate over scoped SQL rows and stable historical snapshots, with exact totals, N+1 pagination and signed actor/query/visibility-bound cursors. Timestamp sort keys retain microsecond precision.
+
+Implemented filters include evidence/material kind, free text, all selected topics, person, publisher or issuing institution, company, event, edition, explicit dates/observation overlap, current verdict/confidence and distinct-production use stages. Source fragments stay internal to eligibility evaluation. Private secondary evidence is redacted; a hidden latest rejection never revives an older acceptance. Stale checks provide no current confidence. Default policy activation metadata stays null because no activation happened.
+
+Final validation on this checkpoint: `pnpm gate` passed 1,756 application tests and production compilation, with only the two baseline lint warnings. `pnpm test:rehearsal` passed 147 of 153 tests with six existing skips and no failures. The 18 memory PostgreSQL/HTTP tests cover replay, tenant/source privacy, all review roles, audit/idempotency, filters, usage counts, immutable pagination, microseconds, stale/private checks, hidden decisions, person-name cursor invalidation and local-profile authorization. The backend suite passed 352 tests. Logs: `/tmp/reporter-memory-query-acceptance-gate.log`, `/tmp/reporter-memory-query-acceptance-rehearsal.log` and `/tmp/reporter-memory-query-backend.log`.
+
+Still pending: paginated detail/history, review/correction/selection handlers, actual old-registry reconciliation, extraction/check workers, runtime adapter, UI and writing integration. Synthetic occurrence fixtures test query semantics; real insertion/approval/publication recording belongs to phase 6.

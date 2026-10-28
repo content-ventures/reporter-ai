@@ -64,7 +64,7 @@ export type MemoryCheck = {
 export type MemoryPolicy = {
   id: string; workspaceId: string; revision: number; mode: 'review_required' | 'calibrated';
   thresholds: Record<ClaimKind, number | null>; calibrationReportId: string | null;
-  activatedAt: string; activatedBy: string;
+  activatedAt: string | null; activatedBy: string | null;
 };
 export type MemoryDecisionAction = 'accept' | 'reject' | 'request_revision';
 /** Append-only audit record, independent of evidence and check revisions. */
@@ -100,6 +100,7 @@ export type MemoryQuery = {
 export type MemoryEvidenceView = {
   evidence: MemoryEvidence; material: Pick<MemoryMaterial, 'id' | 'title' | 'kind' | 'primaryOrigin'>;
   check: MemoryCheck | null; decision: MemoryDecision | null; eligibility: MemoryEligibility;
+  checkState?: 'missing' | 'current' | 'outdated' | 'restricted'; reviewRestricted?: boolean;
   relevance: { score: number; reason: string } | null;
   uses: Record<MemoryUseStage, number>;
 };
@@ -136,10 +137,10 @@ export function resolveMemoryAnchor(source: Source, anchor: MemoryAnchor): strin
   return excerpt === anchor.excerpt ? excerpt : undefined;
 }
 
-export function initialMemoryPolicy(workspaceId: string, ctx: CommandContext): MemoryPolicy {
+export function initialMemoryPolicy(workspaceId: string, ctx?: CommandContext): MemoryPolicy {
   return { id: 'editorial-memory', workspaceId, revision: 1, mode: 'review_required',
     thresholds: { fact: null, declared: null, opinion: null, forecast: null }, calibrationReportId: null,
-    activatedAt: ctx.now, activatedBy: ctx.actorId };
+    activatedAt: ctx?.now ?? null, activatedBy: ctx?.actorId ?? null };
 }
 function currentCheck(evidence: MemoryEvidence, policy: MemoryPolicy, check: MemoryCheck | null): boolean {
   return check !== null && check.workspaceId === evidence.workspaceId && sameMemoryEvidence(check.evidence, memoryEvidenceRef(evidence))
