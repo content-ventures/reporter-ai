@@ -8,11 +8,14 @@ import { articleCitations, articleEvidenceId } from '../domain/editorial-memory-
 import type { Piece, Version } from '../domain/piece.ts';
 import type { FactCheck } from '../domain/fact-check.ts';
 import type { Source } from '../domain/source.ts';
+import type { EditorialChanges } from '../ports/editorial-rows.ts';
+import { contentHash } from '../domain/text/hash.ts';
 import { memoryArticleBatchSchema, memoryIdSchema, memoryLegacyResolutionSchema } from './editorial-memory-input.ts';
 import { memoryBundle, memoryReadState } from './editorial-memory-detail.ts';
 import { memoryView } from './editorial-memory-query.ts';
 import { memoryCommand, memoryGet, memoryRead } from './editorial-memory-store.ts';
 import { reconcileMemoryCandidate } from './editorial-memory-legacy.ts';
+import { currentWorkerContext } from './worker-context.ts';
 import { FlowError } from './errors.ts';
 
 type Entry = Pick<MemoryArticleOrigin, 'productionId' | 'kind' | 'id' | 'storageHash'> & { doc: Piece | Version };
@@ -22,6 +25,20 @@ async function sources(client: PoolClient, origin: MemoryArticleOrigin): Promise
 }
 async function context(client: PoolClient, candidate: MemoryLegacyCandidate): Promise<{ curated: MemoryLegacyCandidate | null; factCheck: FactCheck | null }> {
   return (await client.query('SELECT public.reporter_memory_article_context($1::jsonb,$2::jsonb) AS value', [JSON.stringify(candidate.article), JSON.stringify(candidate.citation)])).rows[0].value;
+}
+async function observeArticle(client: PoolClient, entry: Entry): Promise<{ origin: MemoryArticleOrigin; quotes: ReturnType<typeof articleCitations> } | 'invalid_metadata' | 'invalid_body'> {
+  const body = entry.kind === 'piece' ? (entry.doc as Piece).draft.body : (entry.doc as Version).body;
+  const at = entry.kind === 'piece' ? (entry.doc as Piece).draft.updatedAt : (entry.doc as Version).createdAt;
+  if (!at || !Number.isFinite(Date.parse(at))) return 'invalid_metadata';
+  if (body.type !== 'article' || entry.kind === 'version' && (entry.doc as Version).hash !== articleHash(body as ArticleBody)) return 'invalid_body';
+  const origin: MemoryArticleOrigin = { productionId: entry.productionId, kind: entry.kind, id: entry.id, storageHash: entry.storageHash, bodyHash: articleHash(body), at };
+  await client.query('SELECT public.reporter_memory_article_snapshot($1::jsonb)', [JSON.stringify(origin)]);
+  return { origin, quotes: articleCitations(body, await sources(client, origin), origin) };
+}
+async function reconcileArticleCandidate(client: PoolClient, candidate: MemoryLegacyCandidate) {
+  const original = await context(client, candidate), selected = original.curated ?? { ...candidate, factCheck: original.factCheck };
+  const id = original.curated ? selected.citation.id : articleEvidenceId(selected.citation.id, candidate.citation.productionId, selected.citation.ref);
+  return { id, legacyId: selected.citation.id, state: await reconcileMemoryCandidate(client, selected) };
 }
 export async function reconcileMemoryArticles(value: { after?: MemoryArticlePosition | null; limit?: number }, requestId: string): Promise<MemoryArticleReport> {
   const input = memoryArticleBatchSchema.parse(value), observed = await memoryRead(memoryReadState);
@@ -35,25 +52,20 @@ export async function reconcileMemoryArticles(value: { after?: MemoryArticlePosi
       if (after?.offset && (!entry || entry.id !== after.id || entry.kind !== after.kind || entry.productionId !== after.productionId || entry.storageHash !== after.storageHash))
         throw new FlowError('MEMORY_CONFLICT', 409);
       if (!entry) return { items, nextAfter: null, totalArticles, scannedArticles };
-      const body = entry.kind === 'piece' ? (entry.doc as Piece).draft.body : (entry.doc as Version).body;
-      const at = entry.kind === 'piece' ? (entry.doc as Piece).draft.updatedAt : (entry.doc as Version).createdAt;
       const completed = { productionId: entry.productionId, kind: entry.kind, id: entry.id, offset: 0, storageHash: null };
       const identity = { articleId: entry.id, productionId: entry.productionId, articleKind: entry.kind };
       scannedArticles++;
-      if (body.type !== 'article' || entry.kind === 'version' && (entry.doc as Version).hash !== articleHash(body as ArticleBody) || !at || !Number.isFinite(Date.parse(at))) {
-        items.push({ ...identity, id: null, legacyId: null, state: !at || !Number.isFinite(Date.parse(at)) ? 'invalid_metadata' : 'invalid_body' }); after = completed;
+      const observed = await observeArticle(client, entry);
+      if (typeof observed === 'string') {
+        items.push({ ...identity, id: null, legacyId: null, state: observed }); after = completed;
       } else {
-        const origin: MemoryArticleOrigin = { productionId: entry.productionId, kind: entry.kind, id: entry.id, storageHash: entry.storageHash, bodyHash: articleHash(body), at };
-        await client.query('SELECT public.reporter_memory_article_snapshot($1::jsonb)', [JSON.stringify(origin)]);
-        const quotes = articleCitations(body, await sources(client, origin), origin); let offset = after?.offset ?? 0;
+        const { origin, quotes } = observed; let offset = after?.offset ?? 0;
         if (offset > quotes.length) throw new FlowError('MEMORY_CONFLICT', 409);
         while (offset < quotes.length && items.length < input.limit) {
           const candidate = quotes[offset++];
           if (candidate === 'ambiguous') { items.push({ ...identity, id: null, legacyId: null, state: 'ambiguous' }); continue; }
           if (!candidate) { items.push({ ...identity, id: null, legacyId: null, state: 'unmatched' }); continue; }
-          const original = await context(client, candidate), selected = original.curated ?? { ...candidate, factCheck: original.factCheck };
-          const id = original.curated ? selected.citation.id : articleEvidenceId(selected.citation.id, entry.productionId, selected.citation.ref);
-          items.push({ ...identity, id, legacyId: selected.citation.id, state: await reconcileMemoryCandidate(client, selected) });
+          items.push({ ...identity, ...await reconcileArticleCandidate(client, candidate) });
         }
         if (offset < quotes.length) return { items, nextAfter: { ...completed, offset, storageHash: origin.storageHash }, totalArticles, scannedArticles };
         after = completed;
@@ -62,6 +74,38 @@ export async function reconcileMemoryArticles(value: { after?: MemoryArticlePosi
     }
     return { items, nextAfter: after, totalArticles, scannedArticles };
   });
+}
+/** Same transaction and authenticated actor as the editorial write; never starts a nested transaction. */
+export async function syncMemoryArticles(client: PoolClient, changes: EditorialChanges): Promise<void> {
+  const parts = changes.parts.filter(part => !part.deleted && ['piece', 'version'].includes(part.kind));
+  const sourceIds = [...new Set(changes.sources.map(source => source.id))];
+  const checks = [...new Set(changes.items.filter(item => !item.deleted && item.kind === 'fact_check').map(item => item.id))];
+  if (process.env.REPORTER_MEMORY_MODE !== 'on' || !parts.length && !sourceIds.length && !checks.length || currentWorkerContext() && !currentWorkerContext()!.actor) return;
+  await client.query("SELECT public.reporter_memory_authorize('library.edit')");
+  for (const part of parts) {
+    const entry = (await client.query('SELECT public.reporter_memory_article_entry($1,$2,$3) AS value', [part.productionId, part.kind, part.id])).rows[0].value as Entry | null;
+    if (!entry) continue;
+    const observed = await observeArticle(client, entry);
+    if (typeof observed !== 'string') for (const candidate of observed.quotes) if (candidate && candidate !== 'ambiguous') await reconcileArticleCandidate(client, candidate);
+  }
+  // Refresh only saved variants, even after their live draft no longer contains the quote.
+  for (let from = 0; from < Math.max(sourceIds.length, checks.length); from += 100) {
+    let after: string | null = null;
+    do {
+      const page = (await client.query('SELECT public.reporter_memory_article_refresh($1,$2::text[],$3::text[]) AS value',
+        [after, sourceIds.slice(from, from + 100), checks.slice(from, from + 100)])).rows[0].value as {
+          items: { id: string; origin: MemoryArticleOrigin; ref: MemoryLegacyCandidate['citation']['ref'] }[]; nextAfter: string | null };
+      for (const item of page.items) {
+        const saved = (await client.query('SELECT public.reporter_memory_article_get($1::jsonb) AS value', [JSON.stringify(item.origin)])).rows[0].value;
+        if (!saved) continue;
+        const candidate = articleCitations(saved.doc.draft?.body ?? saved.doc.body, await sources(client, item.origin), item.origin)
+          .find(value => value && value !== 'ambiguous' && articleEvidenceId(value.citation.id, item.origin.productionId, value.citation.ref) === item.id
+            && contentHash(value.citation.ref) === contentHash(item.ref));
+        if (candidate && candidate !== 'ambiguous') await reconcileMemoryCandidate(client, { ...candidate, factCheck: (await context(client, candidate)).factCheck });
+      }
+      after = page.nextAfter;
+    } while (after);
+  }
 }
 export async function readMemoryArticle(id: string, snapshot?: string): Promise<{ origin: MemoryArticleOrigin; doc: Piece | Version; importedBy: string; importedAt: string }> {
   memoryIdSchema.parse(id);

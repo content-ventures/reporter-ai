@@ -804,3 +804,100 @@ test('same words from two speakers do not inherit the other voice or its curated
   assert.ok((await backfillArticles()).some(item => item.articleId === 'ambiguous-voices' && item.state === 'ambiguous'));
   assert.equal((await (await memoryApi(aId)).json()).evidence.personId, contexts[1].actor);
 });
+
+let liveCitation: typeof legacy, liveId: string;
+async function saveLiveArticle(title: string, role: 'runtime' | 'worker' = 'runtime') {
+  const { runWithReporterContext } = await import('../../src/server/request-context.ts');
+  const { runWithWorkerContext } = await import('../../src/server/worker-context.ts');
+  const { editorialTransaction } = await import('../../src/server/editorial.ts');
+  const operation = () => editorialTransaction(role, async checkpoint => {
+    const piece = checkpoint.state.productions.find(entry => entry.production.id === 'live-production')!.pieces[0];
+    piece.draft = { ...piece.draft, revision: piece.draft.revision + 1, updatedAt: new Date().toISOString(), body: {
+      type: 'article', title, blocks: [{ id: 'live-quote', type: 'quote', inlines: [{ text: liveCitation.text }], sourceRefs: [liveCitation.ref] }],
+    } };
+  }, true, 'reporter.edit', { productions: ['live-production'], parts: ['piece'], sources: 'none', runs: 'none', pipelines: false });
+  return role === 'runtime' ? runWithReporterContext(contexts[1], operation)
+    : runWithWorkerContext({ tenant: contexts[1].tenant, portal: PILOT, actor: contexts[1].actor }, operation);
+}
+
+test('article writes project new evidence atomically without a manual workspace backfill or invented uses', async () => {
+  const { articleEvidenceId } = await import('../../src/domain/editorial-memory-legacy.ts');
+  liveCitation = await seedLegacyCitation('live-source', 'A instituição sintética abriu trezentas vagas para o curso de formação.', 'live-production');
+  await owner("DELETE FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='citation' AND item_id=$2", [PILOT, liveCitation.id]);
+  await owner("UPDATE public.reporter_ed_productions SET doc=doc||$2::jsonb WHERE portal_id=$1 AND production_id='live-production'", [PILOT,
+    JSON.stringify({ sourceIds: ['live-source'], workspaceId: PILOT, flowId: 'hard-news', brief: { revision: 1, sections: 2, size: 'standard' }, plan: ['article'], relations: [],
+      createdAt: '2026-01-01T00:00:00Z', createdBy: contexts[1].actor, updatedAt: '2026-01-01T00:00:00Z' })]);
+  await seedArticle('live-production', 'live-piece', 'piece', { type: 'article', title: 'Empty synthetic article', blocks: [] }, '2026-01-01T00:00:00Z',
+    { kind: 'source-version', sourceId: liveCitation.ref.sourceId, sourceVersion: 1, hash: liveCitation.sourceHash });
+  liveId = articleEvidenceId(liveCitation.id, 'live-production', liveCitation.ref);
+  assert.equal((await memoryApi(liveId)).status, 404);
+  await saveLiveArticle('Synthetic saved article');
+  const response = await memoryApi(liveId); assert.equal(response.status, 200, await response.clone().text()); const detail = await response.json();
+  assert.equal(detail.evidence.text, liveCitation.text); assert.equal(detail.evidence.legacy.importedBy, contexts[1].actor);
+  assert.equal(detail.revisions.total, 1); assert.equal(detail.uses.inserted, 0); assert.equal(detail.eligibility.usable, false);
+  const original = await (await memoryApi(`${liveId}/article`)).json(); assert.equal(original.doc.draft.body.title, 'Synthetic saved article');
+  assert.equal(original.importedBy, contexts[1].actor); assert.equal((await memoryApi(liveId, { identity: identities[0], slug: 'memory-second' })).status, 404);
+  assert.equal((await session(otherWriter, async client => (await client.query('SELECT public.reporter_memory_article_entry($1,$2,$3) AS value',
+    ['private-production', 'piece', 'article-private-piece'])).rows[0].value)), null);
+});
+
+test('source and legacy check writes refresh saved article variants after their live quote disappears', async () => {
+  const { runWithReporterContext } = await import('../../src/server/request-context.ts');
+  const { editorialTransaction } = await import('../../src/server/editorial.ts');
+  const original = await (await memoryApi(`${liveId}/article`)).json();
+  await owner("UPDATE public.reporter_ed_parts SET doc=jsonb_set(doc,'{draft,body}', $3::jsonb) WHERE portal_id=$1 AND part_id=$2", [PILOT, 'live-piece',
+    JSON.stringify({ type: 'article', title: 'Quote removed from current draft', blocks: [] })]);
+  await runWithReporterContext(contexts[1], () => editorialTransaction('runtime', async checkpoint => {
+    checkpoint.state.sources[0].recordedOn = '2020-02-02'; checkpoint.state.sources[0].title = 'Renamed synthetic live source';
+  }, true, 'reporter.edit', { productions: [], parts: [], sources: ['live-source'], runs: 'none', pipelines: false }));
+  const updated = await (await memoryApi(liveId)).json(); assert.equal(updated.evidence.metadata.recordedOn, '2020-02-02');
+  assert.equal(updated.material.title, 'Renamed synthetic live source'); assert.deepEqual((await (await memoryApi(`${liveId}/article`)).json()).doc, original.doc);
+  const check = { ...legacyCheck, id: liveCitation.id, history: [] };
+  await owner("INSERT INTO public.reporter_ed_items(portal_id,kind,item_id,production_id,doc,seq) VALUES($1,'fact_check',$2,$3,$4,1)", [PILOT, liveCitation.id, 'live-production', JSON.stringify(check)]);
+  await runWithReporterContext(contexts[1], () => editorialTransaction('runtime', async checkpoint => {
+    checkpoint.factChecks![0].history.unshift({ checkedAt: '2022-01-01T00:00:00Z', verdict: 'validated' });
+  }, true, 'reporter.edit', { productions: [], parts: [], sources: 'none', runs: 'none', pipelines: false, items: { fact_check: [liveCitation.id] } }));
+  const checked = await (await memoryApi(liveId)).json(); assert.equal(checked.evidence.legacy.factCheck.history.length, 1);
+  assert.equal(checked.check, null); assert.equal(checked.eligibility.usable, false);
+});
+
+test('a bank audit failure rolls the article, evidence history and original snapshot back together', async () => {
+  const before = await (await memoryApi(liveId)).json();
+  const original = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE portal_id=$1 AND part_id='live-piece'", [PILOT]))[0].doc;
+  const count = (await owner("SELECT count(*)::int AS n FROM public.reporter_memory_articles WHERE portal_id=$1 AND id='live-piece'", [PILOT]))[0].n;
+  await owner("CREATE FUNCTION public.fail_memory_article_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='memory.legacy.article' THEN RAISE EXCEPTION 'synthetic article audit failure'; END IF; RETURN NEW; END $$");
+  await owner('CREATE TRIGGER fail_memory_article_audit BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.fail_memory_article_audit()');
+  try { await assert.rejects(saveLiveArticle('Synthetic rolled back article'), /synthetic article audit failure/); }
+  finally { await owner('DROP TRIGGER fail_memory_article_audit ON public.audit_log'); await owner('DROP FUNCTION public.fail_memory_article_audit()'); }
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE portal_id=$1 AND part_id='live-piece'", [PILOT]))[0].doc, original);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_memory_articles WHERE portal_id=$1 AND id='live-piece'", [PILOT]))[0].n, count);
+  const after = await (await memoryApi(liveId)).json(); assert.deepEqual(after.evidence, before.evidence); assert.equal(after.revisions.total, before.revisions.total);
+});
+
+test('attributed worker article writes use the initiating actor and disabled ceilings leave editorial writes compatible', async () => {
+  await saveLiveArticle('Synthetic worker article', 'worker');
+  const current = await (await memoryApi(`${liveId}/article`)).json(); assert.equal(current.doc.draft.body.title, 'Synthetic worker article');
+  assert.equal(current.importedBy, contexts[1].actor);
+  process.env.REPORTER_MEMORY_MODE = 'off';
+  try { await saveLiveArticle('Synthetic article with memory disabled'); } finally { process.env.REPORTER_MEMORY_MODE = 'on'; }
+  assert.deepEqual(await (await memoryApi(`${liveId}/article`)).json(), current);
+  const stored = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE portal_id=$1 AND part_id='live-piece'", [PILOT]))[0].doc;
+  assert.equal(stored.draft.body.title, 'Synthetic article with memory disabled');
+});
+
+test('automatic article refresh preserves explicit bank corrections and blocks unresolved divergence', async () => {
+  const before = await (await memoryApi(liveId)).json();
+  const correction = await memoryApi(`${liveId}/correction`, { identity: identities[1], requestId: randomUUID(), input: {
+    expected: memoryEvidenceRef(before.evidence), reason: 'Synthetic edition confirmed by an editor', changes: { kind: 'citation', metadata: { edition: 'Editorial edition' } },
+  } }); assert.equal(correction.status, 200, await correction.clone().text());
+  const { runWithReporterContext } = await import('../../src/server/request-context.ts');
+  const { editorialTransaction } = await import('../../src/server/editorial.ts');
+  await runWithReporterContext(contexts[1], () => editorialTransaction('runtime', async checkpoint => {
+    checkpoint.state.sources[0].recordedOn = '2020-03-03';
+  }, true, 'reporter.edit', { productions: [], parts: [], sources: ['live-source'], runs: 'none', pipelines: false }));
+  const after = await (await memoryApi(liveId)).json(); assert.equal(after.evidence.metadata.edition, 'Editorial edition');
+  assert.equal(after.evidence.metadata.recordedOn, '2020-02-02'); assert.equal(after.evidence.legacy.citation.recordedOn, '2020-03-03');
+  assert.equal(after.evidence.legacy.state, 'conflict'); assert.equal(after.eligibility.usable, false);
+  const review = await memoryApi(`${liveId}/review`, { requestId: randomUUID(), input: { evidence: memoryEvidenceRef(after.evidence), check: null,
+    policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Unresolved source change', supports: [] } }); assert.equal(review.status, 409);
+});

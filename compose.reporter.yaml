@@ -61,6 +61,7 @@ services:
       - ./database/migrations/050-editorial-memory-corrections.sql:/docker-entrypoint-initdb.d/99-q-editorial-memory-corrections.sql:ro
       - ./database/migrations/051-editorial-memory-legacy.sql:/docker-entrypoint-initdb.d/99-r-editorial-memory-legacy.sql:ro
       - ./database/migrations/052-editorial-memory-articles.sql:/docker-entrypoint-initdb.d/99-s-editorial-memory-articles.sql:ro
+      - ./database/migrations/053-editorial-memory-sync.sql:/docker-entrypoint-initdb.d/99-t-editorial-memory-sync.sql:ro
     networks:
       - reporter
     healthcheck:
