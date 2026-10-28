@@ -16,6 +16,7 @@ import { laudas } from './sizing.ts';
 import type { ArticleSize } from './sizing.ts';
 import { currentSourceVersion } from './source.ts';
 import type { Source } from './source.ts';
+import { memoryWritingProvenance, type MemoryWritingProvenance } from './editorial-memory-writing.ts';
 import { slugify } from './text/normalize.ts';
 
 /**
@@ -190,6 +191,8 @@ export type DeliveryManifest = {
     approvedAt: IsoDateTime;
     derivedFrom: { pieceId: PieceId; version: number; hash: string }[];
     sourceVersions: { sourceId: SourceId; version: number; hash: string }[];
+    /** Actual bank excerpts in this approved version, including original anchors and review proof. */
+    memory?: MemoryWritingProvenance[];
     runId?: RunId;
     template?:{id:string;hash?:string;renderer?:'workspace-v1'};
     /** Articles: the body's lauda count (characters with spaces, title and captions excluded). */
@@ -331,6 +334,8 @@ export function buildManifest(
     if (item.kind === 'article' && version?.body.type === 'article') {
       entry.characters = articleCharacters(version.body);
       entry.laudas = laudas(entry.characters);
+      const memory = memoryWritingProvenance(version.body, record.sources);
+      if (memory.length) entry.memory = memory;
     }
     return entry;
   });

@@ -17,6 +17,7 @@ import { splitSource } from '../domain/reporter.ts';
 import { isRunActive } from '../domain/run.ts';
 import { draftSizeInstructions } from '../registries/sizing.ts';
 import { editorialTransaction } from './editorial';
+import { guardMemorySources } from './editorial-memory-operation.ts';
 import type { EditorialScope } from './editorial-store';
 import { transaction } from './database';
 import { generateStructured } from './groq';
@@ -108,7 +109,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
   const guarded = async (events: RunEventPayload[],call?: PipelineCall, additions?: { citations: Citation[]; assets: ServerImageAsset[]; researchSources?: Source[]; queueImages?: boolean; provider?: EditorialJob['provider'] }, writingTrace?: WritingTrace) => {
     // Sources and plan are re-read at most once a minute and always before the result settles.
     const full = Boolean(additions) || events.some(event => event.type === 'run.completed') || Date.now()-checkedAt >= 60000;
-    const committed = await editorialTransaction('worker',async (checkpoint,engine) => {
+    const committed = await editorialTransaction('worker',async (checkpoint,engine,client) => {
       const current = checkpoint.jobs[job.meta.runId];
       if (!current?.lease || current.lease.fence !== job.lease?.fence || current.lease.until < Date.now()
         || !isRunActive(engine.store.state.runFolds[job.meta.runId]?.run)) throw new FlowError('LEASE_LOST',409,true);
@@ -116,6 +117,9 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
         const record = engine.records.record(job.meta.productionId);
         const run = engine.store.state.runFolds[job.meta.runId].run;
         if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
+        const refs = run.inputs.filter((ref): ref is import('../domain/refs.ts').SourceVersionRef => ref.kind === 'source-version');
+        const memory = await guardMemorySources(client, record, refs.length ? refs : undefined);
+        if (!memory.ok) throw new FlowError('MEMORY_NOT_READY', 409);
         if (job.contextHash && editorialContextHash(record,job.meta.pieceId,run.inputs) !== job.contextHash) throw new FlowError('PLAN_CHANGED',409);
       }
       current.lease.until = Date.now()+60000;
@@ -184,9 +188,13 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
     if (job.kind === 'article.draft' && requestedOutline) await guarded([{ type: 'outline',title: requestedOutline.title,
       sections: requestedOutline.sections.map(section => ({ blockId: section.blockId,title: section.title })) }]);
     await guarded([{ type: 'step.started',stepId: 'source',meta: 'Preparando a fonte autorizada' }]);
-    const input = (await editorialTransaction('worker',async (checkpoint,engine) => {
+    const input = (await editorialTransaction('worker',async (checkpoint,engine,client) => {
       const record = engine.records.record(job.meta.productionId);
       if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
+      const run = engine.store.state.runFolds[job.meta.runId]?.run;
+      const refs = run?.inputs.filter((ref): ref is import('../domain/refs.ts').SourceVersionRef => ref.kind === 'source-version');
+      const memory = await guardMemorySources(client, record, refs?.length ? refs : undefined);
+      if (!memory.ok) throw new FlowError('MEMORY_NOT_READY', 409);
       if(job.template&&job.template.workspaceId!==checkpoint.state.workspace.id)throw new FlowError('JOB_CONTEXT_MISMATCH',422);
       const config=checkpoint.templateConfiguration;
       if(job.template){

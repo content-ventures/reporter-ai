@@ -250,6 +250,7 @@ export type StartOptions = {
 
 export type StartRefusal =
   | 'provider_unavailable'
+  | 'memory_not_ready'
   | 'unsupported_action'
   | GenerateRefusal
   | 'unknown_production'

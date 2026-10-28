@@ -1,5 +1,6 @@
 import 'server-only';
 import { syncMemoryWriting } from './editorial-memory-usage.ts';
+import { guardMemoryCommand, guardMemorySources } from './editorial-memory-operation.ts';
 // Worker helpers share this server composition boundary with the transactional engine.
 export { appendEditorialEvent, editorialContextHash } from '../runtime/editorial-engine.ts';
 import { randomUUID } from 'node:crypto';
@@ -282,6 +283,8 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   const productionId = identifier.parse(input.productionId), pieceId = identifier.parse(input.pieceId);
   const record = engine.records.record(productionId);
   if (!record) return refuse('unknown_production', 'Produção não encontrada.');
+  const memory = await guardMemorySources(client, record);
+  if (!memory.ok) return refuse('memory_not_ready', memory.refusal.message);
   const piece = record.pieces.find(p => p.id === pieceId);
   if (!piece || piece.kind !== (kind.startsWith('carousel') ? 'carousel' : 'article')) return refuse('unknown_piece', 'Peça não encontrada.');
   if (pendingReview(record,pieceId)) return refuse('locked','Retire o envio para editar antes de gerar.');
@@ -437,10 +440,18 @@ export async function editorialRpc(payload: unknown) {
       const piece = record?.pieces.find(piece => piece.id === args[0]);
       const body = piece?.draft.body;
       if (body?.type === 'article' && record && piece) {
+        const memory = await guardMemoryCommand(client, record, method, args);
+        if (!memory.ok) return refuse('memory_not_ready', memory.refusal.message);
         const limits = articleGateForPiece(record, piece, body);
         const issue = r1ArticleIssue(body, record.sources, limits);
         if (issue) return refuse('send_blocked', articlePolicyMessage(issue, limits));
       }
+    }
+    if (method === 'decide' || method === 'recordDelivery') {
+      const input = args[0] as { pieceId?: string; productionId?: string };
+      const entry = checkpoint.state.productions.find(entry => input.productionId ? entry.production.id === input.productionId : entry.pieces.some(piece => piece.id === input.pieceId));
+      const record = entry ? engine.records.record(entry.production.id) : undefined;
+      if (record) { const memory = await guardMemoryCommand(client, record, method, args); if (!memory.ok) return refuse('memory_not_ready', memory.refusal.message); }
     }
     if (method === 'createFromSource') {
       const input = z.object({ title: z.string().trim().min(1).max(120), material: z.object({

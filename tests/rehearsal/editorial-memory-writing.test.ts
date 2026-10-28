@@ -8,6 +8,13 @@ import { parseTranscript } from '../../src/domain/text/transcript-parse.ts';
 import { memoryEvidenceRef, type MemoryEvidence, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
 import type { MemoryDetail, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { ReporterRequestContext } from '../../src/server/request-context.ts';
+import type { ArticleBody } from '../../src/domain/article.ts';
+import type { VersionRef } from '../../src/domain/refs.ts';
+import type { Piece } from '../../src/domain/piece.ts';
+import { paragraphBlock, quoteBlock } from '../../src/domain/article.ts';
+import { segmentRef } from '../../src/domain/refs.ts';
+import { r1ArticleIssue } from '../../src/domain/article-policy.ts';
+import type { RequestedReview } from '../../src/ports/production-commands.ts';
 
 const PORTAL = '10000000-0000-0000-0000-000000000101', APP = 'http://127.0.0.1:3994';
 const identities = ['editor', 'approver', 'editor'].map((role, index) => ({ subject: `writing-${index}`, email: `${index}@writing.test`, name: role, emailVerified: true }));
@@ -50,9 +57,13 @@ async function fixture(kind: 'citation' | 'statistic', privateOrigin = false) {
   const source = createTranscriptSource({ workspaceId: PORTAL, title: 'Synthetic original', origin: 'other', authorized: true,
     parsed: parseTranscript(`${excerpt}\n\nCONTEÚDO PRIVADO FORA DA SELEÇÃO`, { format: 'plain' }) }, { actorId: context.actor, now: new Date().toISOString(), newId: () => `original-${id}` });
   await owner('INSERT INTO public.reporter_ed_sources(portal_id,source_id,doc,seq) VALUES($1,$2,$3,1)', [PORTAL, source.id, JSON.stringify(source)]);
-  const productionId = privateOrigin ? `private-${id}` : null;
-  if (productionId) await owner('INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,source_ids,seq) VALUES($1,$2,$3,$4,1)',
-    [PORTAL, productionId, JSON.stringify({ id: productionId, title: 'Private synthetic original', ownerId: context.actor, restrictedTo: [] }), [source.id]]);
+  let productionId: string | null = null;
+  if (privateOrigin) {
+    const created = await json<{ ok: true; value: { productionId: string } }>('workspace', { method: 'createBlank', args: [{ title: 'Private synthetic original', brief: writingInput.brief }], requestId: randomUUID() });
+    assert.equal(created.ok, true); productionId = created.value.productionId;
+    await owner("UPDATE public.reporter_ed_productions SET doc=doc||jsonb_build_object('sourceIds',$3::jsonb,'restrictedTo','[]'::jsonb),source_ids=$4 WHERE portal_id=$1 AND production_id=$2",
+      [PORTAL, productionId, JSON.stringify([source.id]), [source.id]]);
+  }
   const metadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: [], originalUrl: null };
   const material: MemoryMaterial = { id: `material-${id}`, workspaceId: PORTAL, revision: 1, title: 'Synthetic material', kind: 'report', source: toSourceVersionRef(source), metadata,
     importedAt: source.createdAt, importedBy: context.actor, primaryOrigin: id, originalFileId: null };
@@ -70,6 +81,16 @@ async function fixture(kind: 'citation' | 'statistic', privateOrigin = false) {
   return { evidence, material, source };
 }
 const selection = (evidence: MemoryEvidence[]) => json<MemorySelection>('memory/selections', { productionId: null, baseRevision: 0, evidence: evidence.map(memoryEvidenceRef) });
+async function gateRecord(productionId: string) {
+  const { runWithReporterContext } = await import('../../src/server/request-context.ts'), { editorialTransaction } = await import('../../src/server/editorial.ts');
+  const { guardMemoryArticle, guardMemorySources } = await import('../../src/server/editorial-memory-operation.ts');
+  return (await runWithReporterContext(context, () => editorialTransaction('runtime', async (_checkpoint, engine, client) => {
+    const record = engine.records.record(productionId)!;
+    const sources = await guardMemorySources(client, record), body = record.pieces[0].draft.body;
+    assert.equal(body.type, 'article');
+    return { sources, article: await guardMemoryArticle(client, body as ArticleBody, record.sources) };
+  }, false, 'reporter.edit', { productions: [productionId], pipelines: false }))).value;
+}
 
 test('writing creates one ordered multi-material article, literal sources and actual inserted uses atomically', async () => {
   const quote = await fixture('citation'), statistic = await fixture('statistic'), saved = await selection([statistic.evidence, quote.evidence]), key = randomUUID();
@@ -127,4 +148,68 @@ test('saved selections recover ordered snapshots with private scopes and actor-b
   const visible = await json<MemoryPage<MemorySelection>>('memory/selections?limit=100'); assert.ok(visible.items.some(item => item.id === privateSelection.id));
   const other = await (await api('memory/selections?limit=100', undefined, randomUUID(), identities[2])).json() as MemoryPage<MemorySelection>;
   assert.equal(other.items.some(item => item.id === privateSelection.id), false);
+});
+test('sending, approving and recording delivery revalidate the exact bank evidence and preserve frozen article versions', async () => {
+  const item = await fixture('statistic'), saved = await selection([item.evidence]);
+  const created = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+  const current = await gateRecord(created.productionId); assert.equal(current.sources.ok, true); assert.equal(current.article.ok, true);
+  const snapshot = await json<{ ok: true; value: { version: { ref: VersionRef } } }>('workspace', { method: 'createVersion', args: [created.pieceId], requestId: randomUUID() });
+  assert.ok(snapshot.ok); const subject = snapshot.value.version.ref;
+  const [original] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='version' AND part_id=$1", [subject.versionId]);
+  await json(`memory/${item.evidence.id}/correction`, { expected: memoryEvidenceRef(item.evidence), reason: 'Synthetic observation metadata changed after writing.', changes: { kind: 'statistic', metadata: { institution: 'Corrected synthetic origin' } } });
+  const outdated = await gateRecord(created.productionId); assert.equal(outdated.sources.ok, false); assert.equal(outdated.article.ok, false);
+  for (const payload of [{ method: 'requestReview', args: [created.pieceId] }, { method: 'recordDelivery', args: [{ productionId: created.productionId, selection: [subject], files: [{ fileName: 'synthetic-v1.md', format: 'md', versionId: subject.versionId, ok: true }] }] }]) {
+    const refused = await json<{ ok: false; refusal: { code: string } }>('workspace', { ...payload, requestId: randomUUID() }); assert.equal(refused.ok, false); assert.equal(refused.refusal.code, 'memory_not_ready');
+  }
+  const response = await api('workspace', { method: 'decide', args: [{ pieceId: created.pieceId, subject, displayedHash: subject.hash, decision: 'approved' }], requestId: randomUUID() }, randomUUID(), identities[1]);
+  assert.equal(response.status, 200, await response.clone().text()); const refused = await response.json(); assert.equal(refused.ok, false); assert.equal(refused.refusal.code, 'memory_not_ready');
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='version' AND part_id=$1", [subject.versionId]))[0], original);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_ed_parts WHERE production_id=$1 AND kind IN ('decision','delivery','review')", [created.productionId]))[0].n, 0);
+});
+test('edited numeric context or withdrawn original rights cannot pass a send gate or inflate use', async () => {
+  for (const mode of ['literal', 'rights']) {
+    const item = await fixture('statistic'), saved = await selection([item.evidence]);
+    const created = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+    if (mode === 'rights') await json(`memory/materials/${item.material.id}/authorization`, { baseRevision: 1, authorized: false, reason: 'Synthetic original rights withdrawn after writing.' });
+    else {
+      const [row] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [created.pieceId]), piece = row.doc as Piece;
+      const body = structuredClone(piece.draft.body) as ArticleBody, block = body.blocks[0]; if (block.type !== 'paragraph') throw new Error('paragraph'); block.inlines[0].text = item.evidence.anchor.excerpt.replace('cerca de ', '');
+      const result = await json<{ ok: boolean }>('workspace', { method: 'saveDraft', args: [created.pieceId, body, piece.draft.revision], requestId: randomUUID() }); assert.equal(result.ok, true);
+    }
+    const refused = await json<{ ok: boolean; refusal: { code: string; message: string } }>('workspace', { method: 'requestReview', args: [created.pieceId], requestId: randomUUID() });
+    assert.equal(refused.ok, false); assert.equal(refused.refusal.code, 'memory_not_ready');
+    if (mode === 'literal') assert.match(refused.refusal.message, /qualificadores/);
+    const detail = await json<MemoryDetail>(`memory/${item.evidence.id}`); assert.equal(detail.uses.inserted, 1); assert.equal(detail.uses.approved, 0); assert.equal(detail.uses.published, 0);
+  }
+});
+
+test('download preparation validates actual approval, exact versions and current bank review without recording publication', async () => {
+  const item = await fixture('citation'), saved = await selection([item.evidence]);
+  const created = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+  const [sourceRow] = await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [created.sourceId]);
+  const original = item.evidence.anchor.excerpt, fragment = original.slice(0, original.indexOf(' com '));
+  const body: ArticleBody = { type: 'article', title: 'Synthetic complete export acceptance', blocks: [
+    quoteBlock('full-bank-quote', original, { sourceRefs: [segmentRef(created.sourceId, 1, 'memory-item-1', { from: 0, to: original.length })] }),
+    paragraphBlock('synthetic-body', 'Este material de teste descreve apenas um cenário sintético sem qualquer aplicação factual no mundo real. '.repeat(32)),
+    quoteBlock('bank-fragment', fragment, { sourceRefs: [segmentRef(created.sourceId, 1, 'memory-item-1', { from: 0, to: fragment.length })] }),
+  ] };
+  assert.equal(r1ArticleIssue(body, [sourceRow.doc]), undefined, 'the positive acceptance must satisfy the actual article contract');
+  const [pieceRow] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [created.pieceId]);
+  const updated = await json<{ ok: boolean }>('workspace', { method: 'saveDraft', args: [created.pieceId, body, pieceRow.doc.draft.revision], requestId: randomUUID() }); assert.equal(updated.ok, true);
+  const sent = await json<{ ok: true; value: RequestedReview }>('workspace', { method: 'requestReview', args: [created.pieceId], requestId: randomUUID() });
+  assert.ok(sent.ok, JSON.stringify(sent)); const subject = sent.value.version.ref, input = { productionId: created.productionId, selection: [subject] };
+  const before = await json<{ ok: boolean; refusal: { code: string } }>('exports/prepare', input); assert.equal(before.ok, false); assert.equal(before.refusal.code, 'not_approved');
+  const approvedResponse = await api('workspace', { method: 'decide', args: [{ pieceId: created.pieceId, subject, displayedHash: subject.hash, decision: 'approved' }], requestId: randomUUID() }, randomUUID(), identities[1]);
+  assert.equal(approvedResponse.status, 200, await approvedResponse.clone().text()); const approved = await approvedResponse.json(); assert.ok(approved.ok, JSON.stringify(approved));
+  const ready = await json<{ ok: boolean; value: VersionRef[] }>('exports/prepare', input); assert.ok(ready.ok); assert.deepEqual(ready.value, [subject]);
+  const forged = await json<{ ok: boolean; refusal: { code: string } }>('exports/prepare', { ...input, selection: [{ ...subject, number: subject.number + 1 }] });
+  assert.equal(forged.ok, false); assert.equal(forged.refusal.code, 'unknown_version');
+  assert.equal((await api('exports/prepare', { ...input, actor: 'forged' })).status, 422);
+  assert.equal((await api('exports/prepare', input, randomUUID(), identities[1])).status, 403);
+  assert.equal((await api('exports/prepare', input, randomUUID(), null)).status, 401);
+  await json(`memory/${item.evidence.id}/review`, { evidence: memoryEvidenceRef(item.evidence), check: null, policyRevision: 1, previousSequence: 1,
+    action: 'accept', reason: 'New synthetic review after preparing the approved article.', supports: [] });
+  const stale = await json<{ ok: boolean; refusal: { code: string } }>('exports/prepare', input); assert.equal(stale.ok, false); assert.equal(stale.refusal.code, 'memory_not_ready');
+  assert.equal((await json<MemoryDetail>(`memory/${item.evidence.id}`)).uses.published, 0);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_ed_parts WHERE production_id=$1 AND kind='delivery'", [created.productionId]))[0].n, 0);
 });

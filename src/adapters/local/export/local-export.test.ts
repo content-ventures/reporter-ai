@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 import { figureBlock, headingBlock, listBlock, paragraphBlock, quoteBlock } from '../../../domain/article.ts';
 import type { ArticleBody } from '../../../domain/article.ts';
 import { toVersionRef } from '../../../domain/piece.ts';
+import { segmentRef } from '../../../domain/refs.ts';
+import { toSourceVersionRef } from '../../../domain/source.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
 import {
   addCarouselPiece,
@@ -90,6 +92,25 @@ exportContract('local export', () => {
     approveAll: async () => sut.approveAll(),
     approveNewerArticle: async () => sut.approveNewerArticle(),
   };
+});
+
+it('standalone article files retain recoverable bank provenance without rendering source metadata as markup', async () => {
+  const { record, kit, exports } = setup(), source = record.sources[0], version = source.versions[0], segment = version.content.segments[0];
+  record.production.plan = ['article'];
+  const metadata = { publishedOn: null, recordedOn: null, institution: null, company: 'Example --> <script>alert(1)</script> & text', event: null, edition: null, topics: [], originalUrl: null };
+  source.memory = [{ selection: { id: 'bank-selection', revision: 2 }, version: { number: version.number, hash: version.hash }, items: [{ segmentId: segment.id,
+    materialId: 'bank-material', kind: 'citation', anchor: { source: toSourceVersionRef(source), spans: [{ segmentId: segment.id, from: 0, to: segment.text.length }], excerpt: segment.text },
+    metadata, selected: { evidence: { id: 'bank-evidence', revision: 3, hash: 'bank-evidence-hash' }, check: { id: 'bank-check', revision: 4 }, decisionId: 'bank-review', policyRevision: 5 } }] }];
+  const body: ArticleBody = { type: 'article', title: 'Approved bank excerpt', blocks: [quoteBlock('bank-block', segment.text, { sourceRefs: [segmentRef(source.id, version.number, segment.id)] })] };
+  const approved = commitVersion(record, kit, 'article', body), decision = recordDecision(record, kit, approved, 'approved');
+  const built = await exports.build({ productionId: record.production.id, selection: [toVersionRef(approved)] }); assert.ok(built.ok);
+  const proof = built.value.manifest.items[0]; assert.equal(proof.decisionId, decision.id); assert.equal(proof.memory?.length, 1);
+  for (const format of ['md', 'html']) {
+    const file: BuiltFile = built.value.files.find(file => file.format === format)!; assert.equal(file.status, 'ready'); assert.ok(file.text);
+    const match = file.text.match(/<!-- reporter\.memory\/v1\n([\s\S]*?)\n-->/); assert.ok(match);
+    const decoded = JSON.parse(match[1]); assert.equal(decoded.article.hash, approved.hash); assert.deepEqual(decoded.occurrences, proof.memory);
+    assert.equal(file.text.includes('--> <script>'), false); assert.equal(decoded.occurrences[0].metadata.company, metadata.company);
+  }
 });
 
 const ARTICLE: ArticleBody = {
