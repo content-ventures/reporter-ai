@@ -21,6 +21,7 @@ import { analyzeMaterial } from './material-analysis';
 import { handleVisualLibrary } from './visual-library';
 import { handleCitationLibrary } from './citation-library';
 import { handleEditorialMemory } from './editorial-memory-http.ts';
+import { prepareEditorialExport } from './editorial-export.ts';
 import { handleFactCheck } from './fact-check';
 import { readNewsSearch, saveNewsSearch, requestNewsSearch } from './news-search.ts';
 import { handleNews, requireNewsEdit } from './news-intake.ts';
@@ -297,6 +298,8 @@ export async function handleReporter(request: Request, path: string[], deps: { d
     if (request.method === 'GET' && path.length === 1 && path[0] === 'pipeline') return reply(await editorialPipeline());
     if (request.method === 'GET' && path.length === 3 && path[0] === 'pipeline' && path[1] === 'runs') return reply(await editorialWritingRun(path[2]));
     if (request.method === 'GET' && path[0] === 'drive' && path[1] === 'received') return await driveReceived(path.slice(2));
+    if (request.method === 'POST' && path.length === 2 && path[0] === 'exports' && path[1] === 'prepare')
+      return reply(await prepareEditorialExport(await jsonBody(request)));
     if (path[0] === 'workspace' && path.length === 1) {
       if (request.method === 'GET') {
         const query = new URL(request.url).searchParams;

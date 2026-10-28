@@ -3,6 +3,7 @@ import { applyWorkspaceDelta } from './editorial-sync.ts';
 import { ASSET_DB_NAME, createIndexedDbAssetStore,createMemoryAssetStore } from '../adapters/local/assets/index.ts';
 import { createLocalAudit } from '../adapters/local/audit/index.ts';
 import { createLocalExportService } from '../adapters/local/export/index.ts';
+import { createHttpExportService } from '../adapters/http/export.ts';
 import { assetCoverLoader, createLocalRenderService, servedCoverLoader,decodeBitmap } from '../adapters/local/render/index.ts';
 import type {CoverLoader} from '../adapters/local/render/index.ts';
 import type {RenderService} from '../ports/render.ts';
@@ -186,7 +187,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
   const commands = Object.fromEntries(Object.keys(ports.commands).map(method => [method,(...args: unknown[]) => rpc(method,args)])) as unknown as ProductionCommands;
   const queries = Object.fromEntries(Object.entries(ports.queries).map(([key,value]) => [key,key === 'subscribe' ? value : async (...args: unknown[]) => { await ready; return (value as (...args: unknown[]) => unknown)(...args); }])) as ProductionQueries;
   const audit = createLocalAudit({ store: ports.store,clock });
-  const exporter = createLocalExportService({ clock,getRecord: id => ports.records.record(id),render,assets });
+  const exporter = createHttpExportService(createLocalExportService({ clock,getRecord: id => ports.records.record(id),render,assets }), http);
   const ready = Promise.all([refresh(),assets.ready()]).then(() => undefined);
   const directory=createHttpWorkspaceDirectory(directoryHttp,()=>ready);
   const memberViewing=createHttpMemberViewing(directoryHttp,()=>ready,()=>current.navigation?.accountId);

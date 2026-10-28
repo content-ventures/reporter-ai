@@ -7,7 +7,8 @@ import type { DeliveryFormat, DeliveryItem } from '../../../domain/delivery.ts';
 import type { AssetId, ProductionId } from '../../../domain/ids.ts';
 import { buildManifest, exportImageSources, MISSING_IMAGE_REASON, plannedExportFiles } from '../../../domain/manifest.ts';
 import type { AssetDigests, ExportFile, FormatSupport } from '../../../domain/manifest.ts';
-import { versionLabel } from '../../../domain/piece.ts';
+import { toVersionRef, versionLabel } from '../../../domain/piece.ts';
+import { memoryWritingProvenance } from '../../../domain/editorial-memory-writing.ts';
 import type { Version } from '../../../domain/piece.ts';
 import { carouselArticleCover, findVersion } from '../../../domain/record.ts';
 import type { ProductionRecord } from '../../../domain/record.ts';
@@ -166,8 +167,13 @@ export function createLocalExportService(deps: LocalExportDeps): ExportService {
     if (version.body.type === 'article') {
       const sources = exportImageSources(plan.files.filter((entry) => entry.versionId === version.id));
       const box = record.production.brief.format ? eventBoxLines(record.production.brief.event) : [];
-      if (file.format === 'md') return textFile(file, articleToMarkdown(version.body, sources, box));
-      if (file.format === 'html') return textFile(file, articleToHtml(version.body, { versionLabel: `Artigo ${label}`, hash: version.hash }, sources, box));
+      const memory = memoryWritingProvenance(version.body, record.sources);
+      // Non-rendered, recoverable metadata accompanies the standalone article files too.
+      // Escaping angle brackets prevents source text from closing the comment.
+      const metadata = memory.length ? '\n<!-- reporter.memory/v1\n' + JSON.stringify({ schema: 'reporter.memory/v1', article: toVersionRef(version), occurrences: memory })
+        .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026') + '\n-->\n' : '';
+      if (file.format === 'md') return textFile(file, articleToMarkdown(version.body, sources, box) + metadata);
+      if (file.format === 'html') return textFile(file, articleToHtml(version.body, { versionLabel: `Artigo ${label}`, hash: version.hash }, sources, box).replace('</body>', metadata + '</body>'));
     }
     if (version.body.type === 'carousel') {
       if (file.format === 'json') return textFile(file, `${JSON.stringify(carouselJson(version, version.body), null, 2)}\n`);

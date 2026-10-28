@@ -4,7 +4,7 @@ import type { MemoryEvidenceView, MemoryPolicy, MemorySelection, MemorySourceBin
 import { memoryEvidenceRef, sameMemoryEvidence } from './editorial-memory.ts';
 import type { Source, TranscriptContent } from './source.ts';
 import { sourceContentHash } from './source.ts';
-import { segmentRef } from './refs.ts';
+import { segmentRef, type SourceVersionRef } from './refs.ts';
 import type { Person } from './workspace.ts';
 import type { CommandContext, Result } from './result.ts';
 import { ok, refuse } from './result.ts';
@@ -76,4 +76,25 @@ export function memoryWritingOccurrences(body: ArticleBody, source: Source): Mem
     }
   }
   return output;
+}
+
+export type MemoryWritingProvenance = Omit<MemorySourceBinding['items'][number], 'segmentId'> & {
+  selection: MemorySourceBinding['selection'];
+  collection: { source: SourceVersionRef; segmentId: string; from: number; to: number };
+  article: { blockId: string; from: number; to: number };
+};
+/** Export the approved body's actual occurrences and their original immutable selection proof. */
+export function memoryWritingProvenance(body: ArticleBody, sources: readonly Source[]): MemoryWritingProvenance[] {
+  const proofs: MemoryWritingProvenance[] = [];
+  for (const source of sources) for (const occurrence of memoryWritingOccurrences(body, source)) {
+    const receipt = source.memory!.find(receipt => receipt.version.number === occurrence.sourceVersion)!;
+    const { segmentId, ...binding } = occurrence.binding;
+    proofs.push({ ...structuredClone(binding), selection: { ...receipt.selection },
+      collection: { source: { kind: 'source-version', sourceId: source.id, sourceVersion: occurrence.sourceVersion, hash: receipt.version.hash },
+        segmentId, from: occurrence.sourceFrom, to: occurrence.sourceTo },
+      article: { blockId: occurrence.blockId, from: occurrence.from, to: occurrence.to } });
+  }
+  const order = new Map(body.blocks.map((block, index) => [block.id, index]));
+  return proofs.sort((a, b) => order.get(a.article.blockId)! - order.get(b.article.blockId)! || a.article.from - b.article.from
+    || a.collection.source.sourceId.localeCompare(b.collection.source.sourceId));
 }

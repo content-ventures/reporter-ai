@@ -149,6 +149,7 @@ export type RequestReviewRefusal =
   | 'suggestion_pending'
   | 'checks_blocking'
   | 'send_blocked'
+  | 'memory_not_ready'
   | 'already_requested'
   | 'already_approved'
   | 'no_gate'
@@ -174,7 +175,7 @@ export type DecideCommand = {
   displayedHash?: string;
 };
 
-export type DecideCommandRefusal = NotFoundRefusal | 'no_gate' | DecideRefusal;
+export type DecideCommandRefusal = NotFoundRefusal | 'no_gate' | 'memory_not_ready' | DecideRefusal;
 
 // ── Carrossel ────────────────────────────────────────────────────────────────────────────
 
@@ -221,7 +222,7 @@ export type RecordDeliveryInput = {
   files: DeliveryFileOutcome[];
 };
 
-export type RecordDeliveryRefusal = NotFoundRefusal | ForbiddenRefusal | ExportRefusal | 'no_files';
+export type RecordDeliveryRefusal = NotFoundRefusal | ForbiddenRefusal | ExportRefusal | 'no_files' | 'memory_not_ready';
 
 export type ArchiveRefusal = NotFoundRefusal | ForbiddenRefusal | 'run_in_progress';
 

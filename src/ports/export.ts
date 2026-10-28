@@ -85,7 +85,7 @@ export type ExportRequest = {
   simulation?: string;
 };
 
-export type ExportServiceRefusal = ExportRefusal | 'unknown_production' | 'unknown_file' | 'file_unavailable' | 'incomplete_package';
+export type ExportServiceRefusal = ExportRefusal | 'unknown_production' | 'unknown_file' | 'file_unavailable' | 'incomplete_package' | 'memory_not_ready';
 
 export interface ExportService {
   /** The file list of the package (Entrega screen), without building contents. */
