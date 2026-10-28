@@ -83,8 +83,10 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
           <SearchField label="Buscar pauta" value={targetSearch} disabled={locked} onValueChange={value => { setTargetSearch(value); setTargetPage(1); }} />
           {targets.error && <Alert tone="danger" title={targets.error.message} action={<Button onClick={targets.retry}>Tentar novamente</Button>} />}
           <Field label="Pauta de destino" required hint={blocker}>{({ id }) => <Select id={id} value={targetId} searchable loading={targets.status === 'loading'} disabled={locked || Boolean(selection?.productionId)}
-            options={[{ value: '', label: 'Escolha uma pauta' }, ...(target.data && !targets.data?.items.some(item => item.id === targetId) ? [{ value: targetId, label: target.data.title }] : []),
-              ...(targets.data?.items ?? []).map(item => ({ value: item.id, label: item.title }))]} onChange={id => choose('existing', id)} />}</Field>
+            options={[{ value: '', label: 'Escolha uma pauta' }, ...(target.data && !targets.data?.items.some(item => item.id === targetId) ? [{ value: targetId, label: target.data.title,
+              description: `${target.data.owner.name} · ${target.data.statusLabel} · ${new Date(target.data.updatedAt).toLocaleString('pt-BR')}` }] : []),
+              ...(targets.data?.items ?? []).map(item => ({ value: item.id, label: item.title,
+                description: `${item.owner.name} · ${item.statusLabel} · ${new Date(item.updatedAt).toLocaleString('pt-BR')}` }))]} onChange={id => choose('existing', id)} />}</Field>
           {target.error && <Alert tone="danger" title={target.error.message} action={<Button onClick={target.retry}>Atualizar pauta</Button>} />}
           {targets.data && targets.data.pageCount > 1 && <ButtonGroup label="Páginas de pautas">
             <Button variant="secondary" disabled={locked || targetPage <= 1} onClick={() => setTargetPage(page => page - 1)}>Pautas anteriores</Button>
