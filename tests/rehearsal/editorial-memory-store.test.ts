@@ -534,3 +534,145 @@ test('correction rejects fabricated numeric context, missing people, immutable f
   assert.equal(valid.status, 200, await valid.clone().text()); assert.equal((await valid.json()).evidence.revision, target.revision + 1);
   const detail = await (await memoryApi(target.id)).json(); assert.equal(detail.revisions.total, 2);
 });
+
+let legacy: import('../../src/domain/citation-library.ts').Citation, legacyPrivate: typeof legacy, legacyCheck: import('../../src/domain/fact-check.ts').FactCheck;
+async function seedLegacyCitation(id: string, text: string, productionId = 'legacy-production') {
+  const { citationId } = await import('../../src/domain/citation-library.ts');
+  const original = createTranscriptSource({ workspaceId: '00000000-0000-0000-0000-000000000101', title: `Synthetic legacy ${id}`, origin: 'podcast', authorized: true,
+    parsed: { format: 'speaker-lines', speakers: ['Ana Exemplo'], segments: [{ id: `segment-${id}`, speaker: 'Ana Exemplo', text }], warnings: [] },
+    speakerPeople: { 'Ana Exemplo': contexts[1].actor } }, { actorId: contexts[1].actor, now: '2020-01-01T12:00:00Z', newId: () => id });
+  await owner('INSERT INTO public.reporter_ed_sources(portal_id,source_id,doc,seq) VALUES($1,$2,$3,1)', [PILOT, id, JSON.stringify(original)]);
+  await owner('INSERT INTO public.reporter_ed_productions(portal_id,production_id,doc,source_ids,seq) VALUES($1,$2,$3,$4,1) ON CONFLICT(portal_id,production_id) DO UPDATE SET source_ids=reporter_ed_productions.source_ids||excluded.source_ids',
+    [PILOT, productionId, JSON.stringify({ id: productionId, ownerId: contexts[1].actor, title: 'Synthetic legacy production' }), [id]]);
+  const ref = { kind: 'source' as const, sourceId: id, sourceVersion: 1, locator: { type: 'segment' as const, segmentId: original.versions[0].content.segments[0].id } };
+  const citation: typeof legacy = { id: citationId(ref, text), revision: 3, text, ref, sourceHash: original.versions[0].hash, productionId,
+    createdAt: '2020-01-01T12:00:00Z', updatedAt: '2020-01-02T12:00:00Z', personId: contexts[1].actor, authorConfirmed: true,
+    relevance: 'Preserve the original editorial relevance.', podcastName: 'Synthetic historical podcast', podcastUrl: 'https://synthetic.test/episode', recordedOn: '2019-12-31', location: 'Synthetic location', origin: 'outline' };
+  await owner("INSERT INTO public.reporter_ed_items(portal_id,kind,item_id,production_id,doc,seq) VALUES($1,'citation',$2,$3,$4,1)", [PILOT, citation.id, productionId, JSON.stringify(citation)]);
+  return citation;
+}
+async function backfillLegacy() {
+  const reports: { id: string; state: string }[] = []; let after: string | null = null;
+  do {
+    const response = await memoryApi('reconcile', { identity: identities[1], requestId: randomUUID(), input: { after, limit: 1 } });
+    assert.equal(response.status, 200, await response.clone().text()); const page = await response.json(); reports.push(...page.items); after = page.nextAfter;
+  } while (after);
+  return reports;
+}
+
+test('legacy backfill retains 1200-character words, IDs, revision zero/three, metadata, overrides and history without converting scores', async () => {
+  const long = 'O mercado sintético mantém a série original para comparação editorial. '.repeat(24).slice(0, 1200);
+  legacy = await seedLegacyCitation('legacy-source', long);
+  legacyPrivate = await seedLegacyCitation('legacy-private-source', 'A fonte privada mantém uma declaração sintética para testar o isolamento.', 'private-production');
+  const zero = { ...await seedLegacyCitation('legacy-zero-source', 'Uma declaração sintética mantém sua autoria e sua data desconhecidas.'), revision: 0, recordedOn: undefined, personId: undefined, authorConfirmed: false };
+  await owner("UPDATE public.reporter_ed_items SET doc=$3 WHERE portal_id=$1 AND kind='citation' AND item_id=$2", [PILOT, zero.id, JSON.stringify(zero)]);
+  legacyCheck = { id: legacy.id, checkedAt: '2021-01-01T12:00:00Z', model: 'synthetic-legacy', claims: [{ text: 'A synthetic historical claim', kind: 'declared', verdict: 'disputed', sources: [] }],
+    strength: { score: 5, reason: 'Original editorial strength' }, overrides: [{ claim: 0, verdict: 'validated', reason: 'Original decision', personId: contexts[0].actor, at: '2021-01-02T12:00:00Z' }],
+    history: [{ checkedAt: '2020-12-31T12:00:00Z', verdict: 'not_validated' }] };
+  await owner("INSERT INTO public.reporter_ed_items(portal_id,kind,item_id,doc,seq) VALUES($1,'fact_check',$2,$3,1)", [PILOT, legacy.id, JSON.stringify(legacyCheck)]);
+  const unsafe = { ...legacy, id: 'legacy-nonliteral', text: 'Palavras inventadas que não estão no material original.' };
+  const missing = { ...legacy, id: 'legacy-missing-source', ref: { ...legacy.ref, sourceId: 'absent-source' } };
+  for (const record of [unsafe, missing]) await owner("INSERT INTO public.reporter_ed_items(portal_id,kind,item_id,production_id,doc,seq) VALUES($1,'citation',$2,$3,$4,1)", [PILOT, record.id, record.productionId, JSON.stringify(record)]);
+  const reports = await backfillLegacy();
+  assert.equal(reports.find(item => item.id === legacy.id)?.state, 'imported'); assert.equal(reports.find(item => item.id === legacyPrivate.id)?.state, 'imported');
+  assert.equal(reports.find(item => item.id === unsafe.id)?.state, 'nonliteral'); assert.equal(reports.find(item => item.id === missing.id)?.state, 'source_unavailable');
+  const response = await memoryApi(legacy.id); assert.equal(response.status, 200); const detail = await response.json();
+  assert.equal(detail.evidence.id, legacy.id); assert.equal(detail.evidence.legacyCitationId, legacy.id); assert.equal(detail.evidence.text.length, 1200);
+  assert.equal(detail.evidence.revision, 3); assert.deepEqual(detail.evidence.legacy.citation, legacy); assert.deepEqual(detail.evidence.legacy.factCheck, legacyCheck);
+  assert.equal(detail.evidence.legacy.importedBy, contexts[1].actor); assert.equal(detail.check, null); assert.equal(detail.eligibility.usable, false);
+  assert.equal(detail.evidence.metadata.recordedOn, legacy.recordedOn); assert.equal(detail.evidence.metadata.publishedOn, null);
+  const unknown = await (await memoryApi(zero.id)).json(); assert.equal(unknown.evidence.revision, 0); assert.equal(unknown.evidence.metadata.recordedOn, null);
+  assert.equal(unknown.evidence.metadata.publishedOn, null); assert.equal(unknown.evidence.personId, null); assert.equal(unknown.eligibility.reason, 'authorship_pending');
+  assert.equal((await memoryApi(legacyPrivate.id)).status, 404); assert.equal((await memoryApi(legacy.id, { identity: identities[0], slug: 'memory-second' })).status, 404);
+  db.migrate(); db.migrate();
+  const retried = await backfillLegacy(); assert.equal(retried.find(item => item.id === legacy.id)?.state, 'unchanged');
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='citation' AND item_id=$2", [PILOT, legacy.id]))[0].doc, legacy);
+  assert.equal((await owner('SELECT doc FROM public.reporter_ed_sources WHERE portal_id=$1 AND source_id=$2', [PILOT, legacy.ref.sourceId]))[0].doc.workspaceId, '00000000-0000-0000-0000-000000000101');
+  assert.equal((await (await memoryApi(legacy.id)).json()).revisions.total, 1);
+  assert.equal((await memoryApi('reconcile', { requestId: randomUUID(), input: {} })).status, 403);
+});
+
+async function updateLegacyCitation(changes: Partial<typeof legacy>) {
+  const { runWithReporterContext } = await import('../../src/server/request-context.ts');
+  const { editorialTransaction } = await import('../../src/server/editorial.ts');
+  return runWithReporterContext(contexts[1], () => editorialTransaction('runtime', async checkpoint => {
+    const record = checkpoint.citations!.find(item => item.id === legacy.id)!;
+    Object.assign(record, changes, { revision: record.revision + 1, updatedAt: new Date().toISOString() });
+  }, true, 'reporter.edit', { productions: [], parts: [], sources: 'none', runs: 'none', pipelines: false, items: { citation: [legacy.id] } }));
+}
+
+test('old curation writes synchronize atomically and a legacy-only fact-check update cannot inflate bank confidence', async () => {
+  await updateLegacyCitation({ recordedOn: '2020-02-02' });
+  const detail = await (await memoryApi(legacy.id)).json(); assert.equal(detail.evidence.metadata.recordedOn, '2020-02-02');
+  assert.equal(detail.evidence.legacy.citation.recordedOn, '2020-02-02'); assert.equal(detail.evidence.revision, 4);
+  assert.equal(detail.check, null); assert.equal(detail.eligibility.usable, false);
+  const before = detail.evidence;
+  await owner("CREATE FUNCTION public.fail_memory_legacy_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='memory.legacy.reconcile' THEN RAISE EXCEPTION 'synthetic audit failure'; END IF; RETURN NEW; END $$");
+  await owner('CREATE TRIGGER fail_memory_legacy_audit BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.fail_memory_legacy_audit()');
+  try { await assert.rejects(updateLegacyCitation({ recordedOn: '2020-03-03' }), /synthetic audit failure/); }
+  finally { await owner('DROP TRIGGER fail_memory_legacy_audit ON public.audit_log'); await owner('DROP FUNCTION public.fail_memory_legacy_audit()'); }
+  assert.equal((await owner("SELECT doc FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='citation' AND item_id=$2", [PILOT, legacy.id]))[0].doc.recordedOn, '2020-02-02');
+  assert.deepEqual((await (await memoryApi(legacy.id)).json()).evidence, before);
+});
+
+test('bank corrections survive legacy updates, conflict resolution guards both snapshots and requires a fresh acceptance', async () => {
+  const initial = await (await memoryApi(legacy.id)).json();
+  const corrected = await memoryApi(`${legacy.id}/correction`, { identity: identities[1], requestId: randomUUID(), input: {
+    expected: memoryEvidenceRef(initial.evidence), reason: 'Correct historical speech date', changes: { kind: 'citation', metadata: { recordedOn: '2019-10-10' } },
+  } }); assert.equal(corrected.status, 200);
+  await updateLegacyCitation({ recordedOn: '2020-04-04' });
+  const pending = await (await memoryApi(legacy.id)).json(); assert.equal(pending.evidence.metadata.recordedOn, '2019-10-10');
+  assert.equal(pending.evidence.legacy.state, 'conflict'); assert.equal(pending.evidence.legacy.citation.recordedOn, '2020-04-04');
+  const review = await memoryApi(`${legacy.id}/review`, { requestId: randomUUID(), input: { evidence: memoryEvidenceRef(pending.evidence), check: null,
+    policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Unresolved legacy change', supports: [] } }); assert.equal(review.status, 409);
+  const input = { expected: memoryEvidenceRef(pending.evidence), legacyHash: pending.evidence.legacy.hash, choice: 'keep_bank', reason: 'Keep the corrected source date' };
+  await updateLegacyCitation({ recordedOn: '2020-05-05' });
+  const stale = await memoryApi(`${legacy.id}/legacy`, { identity: identities[1], requestId: randomUUID(), input }); assert.equal(stale.status, 409);
+  const latest = await (await memoryApi(legacy.id)).json();
+  const resolved = await memoryApi(`${legacy.id}/legacy`, { identity: identities[1], requestId: randomUUID(), input: { ...input, legacyHash: latest.evidence.legacy.hash } });
+  assert.equal(resolved.status, 200, await resolved.clone().text()); const kept = await resolved.json();
+  assert.equal(kept.evidence.metadata.recordedOn, '2019-10-10'); assert.equal(kept.evidence.legacy.state, 'synchronized'); assert.equal(kept.eligibility.usable, false);
+  const revision = kept.evidence.revision;
+  await updateLegacyCitation({ relevance: 'New legacy curation text without changing evidence metadata.' });
+  const refreshed = await (await memoryApi(legacy.id)).json(); assert.equal(refreshed.evidence.metadata.recordedOn, '2019-10-10'); assert.equal(refreshed.evidence.revision, revision);
+  await updateLegacyCitation({ recordedOn: '2020-06-06' });
+  const newConflict = await (await memoryApi(legacy.id)).json(); assert.equal(newConflict.evidence.legacy.state, 'conflict');
+  const applied = await memoryApi(`${legacy.id}/legacy`, { identity: identities[1], requestId: randomUUID(), input: {
+    expected: memoryEvidenceRef(newConflict.evidence), legacyHash: newConflict.evidence.legacy.hash, choice: 'apply_legacy', reason: 'Use newly confirmed historical date',
+  } }); assert.equal(applied.status, 200, await applied.clone().text()); const current = await applied.json(); assert.equal(current.evidence.metadata.recordedOn, '2020-06-06');
+  const acceptance = await memoryApi(`${legacy.id}/review`, { requestId: randomUUID(), input: { evidence: memoryEvidenceRef(current.evidence), check: null,
+    policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Reviewed original and the resolved date', supports: [] } }); assert.equal(acceptance.status, 200, await acceptance.clone().text());
+  assert.equal((await (await memoryApi(legacy.id)).json()).eligibility.usable, true, 'old pilot alias is projected through actual row ownership');
+});
+
+test('fact-check and source commits refresh legacy payloads/material metadata while preserving current confidence boundaries', async () => {
+  const { runWithReporterContext } = await import('../../src/server/request-context.ts');
+  const { editorialTransaction } = await import('../../src/server/editorial.ts');
+  const before = await (await memoryApi(legacy.id)).json();
+  await runWithReporterContext(contexts[1], () => editorialTransaction('runtime', async checkpoint => {
+    checkpoint.factChecks![0].history.unshift({ checkedAt: '2022-01-01T12:00:00Z', verdict: 'validated' });
+  }, true, 'reporter.edit', { productions: [], parts: [], sources: 'none', runs: 'none', pipelines: false, items: { fact_check: [legacy.id] } }));
+  const updated = await (await memoryApi(legacy.id)).json(); assert.equal(updated.evidence.legacy.factCheck.history.length, legacyCheck.history.length + 1);
+  assert.equal(updated.evidence.revision, before.evidence.revision); assert.equal(updated.check, null);
+  await runWithReporterContext(contexts[1], () => editorialTransaction('runtime', async checkpoint => {
+    checkpoint.state.sources[0].title = 'Updated synthetic legacy source';
+  }, true, 'reporter.edit', { productions: [], parts: [], sources: [legacy.ref.sourceId], runs: 'none', pipelines: false }));
+  const renamed = await (await memoryApi(legacy.id)).json(); assert.equal(renamed.material.title, 'Updated synthetic legacy source');
+  assert.equal(renamed.evidence.revision, updated.evidence.revision); assert.deepEqual(renamed.evidence.legacy.citation, updated.evidence.legacy.citation);
+});
+
+test('legacy ID collisions report a conflict without moving an existing evidence to another material or aborting the batch', async () => {
+  const record = await seedLegacyCitation('legacy-collision-source', 'Uma citação sintética já pertence a um material que precisa ser reconciliado explicitamente.');
+  const raw = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE portal_id=$1 AND source_id=$2', [PILOT, record.ref.sourceId]))[0].doc;
+  const ref = { kind: 'source-version' as const, sourceId: record.ref.sourceId, sourceVersion: record.ref.sourceVersion, hash: record.sourceHash };
+  const custom = { ...material, id: 'legacy-custom-material', source: ref };
+  const existing: MemoryCitation = { ...citation, id: record.id, materialId: custom.id, text: record.text, legacyCitationId: record.id,
+    anchor: { source: ref, excerpt: record.text, spans: [{ segmentId: raw.versions[0].content.segments[0].id, from: 0, to: record.text.length }] } };
+  await session(contexts[1], async client => {
+    await put(client, { kind: 'material', id: custom.id, expected: null, doc: custom, sourceId: record.ref.sourceId, productionId: record.productionId });
+    await put(client, { ...evidenceChange(existing), parentId: custom.id });
+  });
+  assert.equal((await backfillLegacy()).find(item => item.id === record.id)?.state, 'id_conflict');
+  assert.deepEqual((await read(contexts[1], 'evidence', record.id))!.doc, existing);
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='citation' AND item_id=$2", [PILOT, record.id]))[0].doc, record);
+});
