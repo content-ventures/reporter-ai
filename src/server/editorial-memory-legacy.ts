@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import type { MemoryCitation, MemoryEvidenceRef, MemoryEvidenceView, MemoryMaterial } from '../domain/editorial-memory.ts';
 import { memoryEvidenceRef, sameMemoryEvidence } from '../domain/editorial-memory.ts';
 import type { MemoryLegacyCandidate, MemoryLegacyReport, MemoryLegacyState } from '../domain/editorial-memory-legacy.ts';
-import { articleCitations, mapLegacyCitation } from '../domain/editorial-memory-legacy.ts';
+import { articleCitations, articleEvidenceId, mapLegacyCitation } from '../domain/editorial-memory-legacy.ts';
 import type { Source } from '../domain/source.ts';
 import { contentHash } from '../domain/text/hash.ts';
 import { memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryIdSchema } from './editorial-memory-input.ts';
@@ -13,6 +13,7 @@ import { memoryCommand, memoryGet, memoryPut, memoryRead } from './editorial-mem
 import { currentReporterContext } from './request-context.ts';
 import { currentWorkerContext } from './worker-context.ts';
 import { FlowError } from './errors.ts';
+import { reconcileMemoryDuplicate } from './editorial-memory-duplicates.ts';
 
 type LegacyBatch = { items: MemoryLegacyCandidate[]; total: number; nextAfter: string | null };
 type Resolution = { expected: MemoryEvidenceRef; legacyHash: string; choice: 'keep_bank' | 'apply_legacy'; reason: string };
@@ -28,6 +29,7 @@ export async function reconcileMemoryCandidate(client: PoolClient, candidate: Me
   if (current && (current.doc.kind !== 'citation' || current.doc.legacyCitationId !== candidate.citation.id
     || current.origin_production_id !== candidate.citation.productionId || current.source_id !== candidate.citation.ref.sourceId
     || current.parent_id !== mapped.material.id)) return 'id_conflict';
+  if (current?.doc.deduplication?.state === 'superseded') return 'unchanged';
   if (resolution && (!current || !sameMemoryEvidence(resolution.expected, memoryEvidenceRef(current.doc)))) throw new FlowError('MEMORY_CONFLICT', 409);
   const previous = current?.doc, incomingHash = memoryEvidenceRef(mapped.evidence).hash, previousHash = previous ? memoryEvidenceRef(previous).hash : null;
   if (!resolution && previous?.legacy?.article && candidate.article) {
@@ -50,12 +52,15 @@ export async function reconcileMemoryCandidate(client: PoolClient, candidate: Me
     await memoryPut(client, { kind: 'material', id: mapped.material.id, expected: material?.storage_revision ?? null,
       doc: { ...mapped.material, revision: (material?.doc.revision ?? 0) + 1, importedAt: material?.doc.importedAt ?? mapped.material.importedAt,
         importedBy: material?.doc.importedBy ?? mapped.material.importedBy }, sourceId: candidate.citation.ref.sourceId, productionId: candidate.citation.productionId });
-  if (!resolution && previous?.legacy?.hash === hash) return previous.legacy.state === 'conflict' ? 'conflict' : 'unchanged';
+  const consolidate = () => !candidate.article ? reconcileMemoryDuplicate(client,
+    articleEvidenceId(candidate.citation.id, candidate.citation.productionId, candidate.citation.ref), candidate.citation.id) : Promise.resolve();
+  if (!resolution && previous?.legacy?.hash === hash) { await consolidate(); return previous.legacy.state === 'conflict' ? 'conflict' : 'unchanged'; }
   const baseline = previous?.legacy?.mappedHash, incomingChanged = incomingHash !== baseline;
   const conflict = !resolution && Boolean(previous && (previous.legacy?.state === 'conflict'
     || incomingChanged && previousHash !== baseline && previousHash !== incomingHash));
   const keep = resolution?.choice === 'keep_bank' || !resolution && (conflict || !incomingChanged);
-  const payload = keep && previous ? previous : mapped.evidence;
+  const chosen = keep && previous ? previous : mapped.evidence;
+  const payload = previous?.deduplication ? { ...chosen, deduplication: previous.deduplication } : chosen;
   const semanticChange = previousHash !== memoryEvidenceRef(payload).hash;
   const evidence: MemoryCitation = { ...payload, revision: previous ? previous.revision + (semanticChange || resolution ? 1 : 0) : payload.revision,
     createdAt: previous?.createdAt ?? payload.createdAt, updatedAt: semanticChange || resolution ? now : previous?.updatedAt ?? payload.updatedAt,
@@ -65,6 +70,7 @@ export async function reconcileMemoryCandidate(client: PoolClient, candidate: Me
       ...(resolution ? { resolution: { choice: resolution.choice, reason: resolution.reason } } : {}) } };
   await client.query(`SELECT public.${candidate.article ? 'reporter_memory_article_save' : 'reporter_memory_legacy_save'}($1::jsonb,$2)`, [JSON.stringify({ kind: 'evidence', id: evidence.id,
     expected: current?.storage_revision ?? null, doc: evidence, fingerprint: memoryEvidenceRef(evidence).hash, parentKind: 'material', parentId: mapped.material.id }), evidence.legacy!.reason]);
+  await consolidate();
   return conflict ? 'conflict' : current ? 'updated' : 'imported';
 }
 export async function reconcileEditorialMemory(value: { after?: string | null; limit?: number }, requestId: string): Promise<MemoryLegacyReport> {

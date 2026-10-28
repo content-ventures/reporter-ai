@@ -37,6 +37,8 @@ export type MemoryEvidenceBase = {
   createdAt: string; updatedAt: string; supersedes: string | null;
   /** Authenticated correction provenance; historical snapshots retain each earlier stamp. */
   correction?: { reason: string; personId: string; at: string };
+  /** A corrected projection requires an explicit choice before consolidation. */
+  deduplication?: { canonicalId: string; canonical: MemoryEvidenceRef; state: 'pending' | 'superseded'; choice: 'pending' | 'automatic' | 'keep_variant' | 'use_curated'; reason: string; personId: string; at: string };
 };
 export type MemoryCitation = MemoryEvidenceBase & {
   kind: 'citation'; text: string; personId: string | null; authorConfirmed: boolean;
@@ -101,7 +103,7 @@ export type MemorySelection = {
   createdBy: string; updatedAt: string;
 };
 export type MemoryQuery = {
-  kind?: MemoryEvidence['kind']; query?: string; topics?: string[]; personId?: string; institution?: string;
+  kind?: MemoryEvidence['kind']; status?: MemoryEvidence['status'] | 'all'; query?: string; topics?: string[]; personId?: string; institution?: string;
   company?: string; event?: string; edition?: string; materialId?: string; materialKind?: MemoryMaterialKind;
   dateField?: 'recorded' | 'published' | 'observation'; from?: string; to?: string;
   verdict?: CitationVerdict; minConfidence?: number; unused?: boolean; useStage?: Exclude<MemoryUseStage, 'selected'>;
@@ -122,6 +124,7 @@ export type MemoryEligibility = { usable: boolean; reason: 'ready' | 'source_una
 export function memoryEvidenceRef(evidence: MemoryEvidence): MemoryEvidenceRef {
   return { id: evidence.id, revision: evidence.revision,
     hash: contentHash({ ...evidence, createdAt: undefined, updatedAt: undefined, revision: undefined, correction: undefined,
+      ...(evidence.deduplication ? { deduplication: { canonicalId: evidence.deduplication.canonicalId, canonical: evidence.deduplication.canonical, state: evidence.deduplication.state } } : {}),
       ...(evidence.kind === 'citation' ? { legacy: undefined } : {}) }) };
 }
 export function sameMemoryEvidence(a: MemoryEvidenceRef, b: MemoryEvidenceRef): boolean {
@@ -175,6 +178,7 @@ export function memoryEligibility(evidence: MemoryEvidence, source: Source, poli
       || !evidence.anchor.excerpt.includes(evidence.value.raw) || !evidence.anchor.excerpt.includes(evidence.unit)
       || evidence.qualifier !== null && !evidence.anchor.excerpt.includes(evidence.qualifier))) return blocked('source_unavailable');
   if (evidence.status !== 'active') return blocked('withdrawn');
+  if (evidence.deduplication?.state === 'pending') return blocked('review_required');
   if (evidence.kind === 'citation' && (!evidence.personId || !evidence.authorConfirmed)) return blocked('authorship_pending');
   if (evidence.kind === 'citation' && evidence.legacy?.state === 'conflict') return blocked('review_required');
   if (memoryDecisionApplies(evidence, policy, check, decision)) {
@@ -205,6 +209,8 @@ export function reviewMemoryEvidence(input: MemoryDecisionInput, evidence: Memor
     || input.previousSequence !== (previous?.sequence ?? 0) || previous !== null && (previous.workspaceId !== evidence.workspaceId || previous.evidence.id !== evidence.id)
     || check !== null && !currentCheck(evidence, policy, check)) return refuse('conflict', 'A evidência ou a checagem mudou. Recarregue antes de decidir.');
   const reason = input.reason.trim();
+  if (input.action === 'accept' && evidence.deduplication?.state === 'pending')
+    return refuse('conflict', 'Resolva a duplicata antes de aceitar.');
   if (input.action === 'accept' && evidence.kind === 'citation' && evidence.legacy?.state === 'conflict')
     return refuse('conflict', 'Resolva a divergência com a citação antiga antes de aceitar.');
   if (!reason || reason.length > 2000 || !['accept', 'reject', 'request_revision'].includes(input.action))

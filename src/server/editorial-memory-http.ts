@@ -1,5 +1,5 @@
 import 'server-only';
-import { memoryArticleBatchSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryHistoryKindSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
+import { memoryArticleBatchSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
@@ -7,6 +7,7 @@ import { correctEditorialMemory } from './editorial-memory-correction.ts';
 import { reconcileEditorialMemory, resolveMemoryLegacy } from './editorial-memory-legacy.ts';
 import { lookupMemoryLegacy, readMemoryArticle, reconcileMemoryArticles, resolveMemoryArticle } from './editorial-memory-articles.ts';
 import { FlowError } from './errors.ts';
+import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
 
 /** The module stays unavailable until its controlled acceptance enables the server ceiling. */
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
@@ -29,6 +30,9 @@ export async function handleEditorialMemory(request: Request, path: string[], re
     { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'POST' && path.length === 2 && path[1] === 'correction') return Response.json(
     await correctEditorialMemory(path[0], memoryCorrectionSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),
+    { headers: { 'Cache-Control': 'private, no-store' } });
+  if (request.method === 'POST' && path.length === 2 && path[1] === 'duplicate') return Response.json(
+    await resolveMemoryDuplicate(path[0], memoryDuplicateResolutionSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),
     { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'POST' && path.join('/') === 'reconcile') return Response.json(
     await reconcileEditorialMemory(memoryLegacyBatchSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),

@@ -901,3 +901,134 @@ test('automatic article refresh preserves explicit bank corrections and blocks u
   const review = await memoryApi(`${liveId}/review`, { requestId: randomUUID(), input: { evidence: memoryEvidenceRef(after.evidence), check: null,
     policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Unresolved source change', supports: [] } }); assert.equal(review.status, 409);
 });
+
+async function seedDuplicate(name: string, corrected = false) {
+  const { articleEvidenceId } = await import('../../src/domain/editorial-memory-legacy.ts');
+  const record = await seedLegacyCitation(`duplicate-source-${name}`, `A unidade sintética ${name} abriu cem vagas para a formação de novos profissionais.`, `duplicate-${name}`);
+  await owner("DELETE FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='citation' AND item_id=$2", [PILOT, record.id]);
+  await seedArticle(record.productionId, `duplicate-piece-${name}`, 'piece', { type: 'article', title: 'Synthetic duplicate origin', blocks: [
+    { id: 'quote', type: 'quote', inlines: [{ text: record.text }], sourceRefs: [record.ref] },
+  ] }, '2025-01-01T00:00:00Z', { kind: 'source-version', sourceId: record.ref.sourceId, sourceVersion: 1, hash: record.sourceHash });
+  await backfillArticles(); const id = articleEvidenceId(record.id, record.productionId, record.ref);
+  if (corrected) {
+    const original = await (await memoryApi(id)).json();
+    const correction = await memoryApi(`${id}/correction`, { identity: identities[1], requestId: randomUUID(), input: { expected: memoryEvidenceRef(original.evidence),
+      reason: 'Synthetic correction before curation', changes: { kind: 'citation', metadata: { edition: 'Corrected bank edition' } } } });
+    assert.equal(correction.status, 200, await correction.clone().text());
+  }
+  return { id, record };
+}
+async function curateDuplicate(record: typeof legacy) {
+  const { runWithReporterContext } = await import('../../src/server/request-context.ts');
+  const { editorialTransaction } = await import('../../src/server/editorial.ts');
+  await runWithReporterContext(contexts[1], () => editorialTransaction('runtime', async checkpoint => {
+    (checkpoint.citations ??= []).push(record);
+  }, true, 'reporter.edit', { productions: [], parts: [], sources: 'none', runs: 'none', pipelines: false, items: { citation: [record.id] } }));
+}
+
+test('later curation retires an unchanged article projection while preserving its original, decisions and snapshot pagination', async () => {
+  const { id, record } = await seedDuplicate('automatic');
+  const before = await (await memoryApi(id)).json(); const filters = { materialId: before.material.id };
+  const snapshot = await query(contexts[1], filters);
+  const accepted = await memoryApi(`${id}/review`, { requestId: randomUUID(), input: { evidence: memoryEvidenceRef(before.evidence), check: null,
+    policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Synthetic original verified', supports: [] } }); assert.equal(accepted.status, 200);
+  await curateDuplicate(record);
+  const retired = await (await memoryApi(id)).json(), canonical = await (await memoryApi(record.id)).json();
+  assert.equal(retired.evidence.status, 'superseded'); assert.equal(retired.evidence.deduplication.canonicalId, record.id);
+  assert.deepEqual(retired.evidence.deduplication.canonical, memoryEvidenceRef(canonical.evidence));
+  assert.equal(retired.evidence.deduplication.choice, 'automatic'); assert.equal(retired.evidence.deduplication.personId, contexts[1].actor);
+  assert.ok(Date.parse(retired.evidence.deduplication.at)); assert.equal(retired.decisions.total, 1); assert.equal(retired.revisions.total, 2);
+  assert.equal(retired.eligibility.usable, false); assert.equal(canonical.eligibility.usable, false); assert.equal(canonical.decisions.total, 0);
+  assert.equal(canonical.uses.approved, 0); assert.equal((await memoryApi(`${id}/article`)).status, 200);
+  assert.deepEqual((await query(contexts[1], filters)).items.map(item => item.evidence.id), [record.id]);
+  assert.deepEqual((await query(contexts[1], { ...filters, status: 'superseded' })).items.map(item => item.evidence.id), [id]);
+  assert.equal((await query(contexts[1], { ...filters, status: 'all' })).total, 2);
+  assert.deepEqual((await query(contexts[1], filters, snapshot.snapshot)).items.map(item => item.evidence.id), [id]);
+  assert.deepEqual((await (await memoryApi(`legacy/${record.id}`)).json()).map((item: { id: string }) => item.id), [record.id]);
+  await backfillArticles(); await backfillLegacy();
+  const repeat = await (await memoryApi(id)).json(); assert.equal(repeat.revisions.total, 2); assert.equal(repeat.evidence.status, 'superseded');
+});
+
+test('corrected duplicates wait for an explicit choice and preserve both originals and the old acceptance', async () => {
+  const { id, record } = await seedDuplicate('corrected', true);
+  const original = await (await memoryApi(id)).json();
+  const accepted = await memoryApi(`${id}/review`, { requestId: randomUUID(), input: { evidence: memoryEvidenceRef(original.evidence), check: null,
+    policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Confirmed corrected metadata', supports: [] } }); assert.equal(accepted.status, 200);
+  await curateDuplicate(record);
+  const pending = await (await memoryApi(id)).json(), canonical = await (await memoryApi(record.id)).json();
+  assert.equal(pending.evidence.status, 'active'); assert.equal(pending.evidence.deduplication.state, 'pending');
+  assert.equal(pending.evidence.metadata.edition, 'Corrected bank edition'); assert.equal(pending.eligibility.usable, false);
+  assert.equal(pending.decisions.total, 1); assert.equal(canonical.evidence.metadata.edition, null);
+  await assert.rejects(session(contexts[1], client => put(client, { kind: 'decision', id: 'cannot-accept-pending-duplicate', expected: null,
+    parentKind: 'evidence', parentId: id, doc: { id: 'cannot-accept-pending-duplicate', workspaceId: PILOT, evidence: memoryEvidenceRef(pending.evidence), check: null,
+      policyRevision: 1, sequence: 2, action: 'accept', reason: 'Cannot bypass duplicate guard in SQL', supports: [] } })), conflict);
+  const stored = await read(contexts[1], 'evidence', id), erased = structuredClone(pending.evidence);
+  delete erased.deduplication; erased.revision++;
+  await assert.rejects(session(contexts[1], client => put(client, { kind: 'evidence', id, expected: stored!.storage_revision, doc: erased,
+    parentKind: 'material', parentId: pending.material.id, fingerprint: memoryEvidenceRef(erased).hash })), conflict);
+  const refused = await memoryApi(`${id}/review`, { requestId: randomUUID(), input: { evidence: memoryEvidenceRef(pending.evidence), check: null,
+    policyRevision: 1, previousSequence: 1, action: 'accept', reason: 'Cannot bypass duplicate resolution', supports: [] } }); assert.equal(refused.status, 409);
+  const input = { expected: memoryEvidenceRef(pending.evidence), canonical: memoryEvidenceRef(canonical.evidence), choice: 'keep_variant', reason: 'Preserve the corrected bank metadata' };
+  for (const identity of [identities[2], identities[3]]) assert.equal((await memoryApi(`${id}/duplicate`, { identity, requestId: randomUUID(), input })).status, 403);
+  assert.equal((await memoryApi(`${id}/duplicate`, { identity: identities[1], requestId: randomUUID(), input: { ...input, personId: 'forged' } })).status, 422);
+  assert.equal((await memoryApi(`${id}/duplicate`, { identity: identities[0], slug: 'memory-second', requestId: randomUUID(), input })).status, 404);
+  const options = { identity: identities[1], requestId: randomUUID(), input };
+  const currentAcceptance = await memoryApi(`${record.id}/review`, { requestId: randomUUID(), input: { evidence: memoryEvidenceRef(canonical.evidence), check: null,
+    policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Synthetic current curation verified', supports: [] } }); assert.equal(currentAcceptance.status, 200);
+  const resolution = await memoryApi(`${id}/duplicate`, options); assert.equal(resolution.status, 200, await resolution.clone().text()); const kept = await resolution.json();
+  assert.equal(kept.evidence.metadata.edition, 'Corrected bank edition'); assert.equal(kept.evidence.correction.personId, contexts[1].actor);
+  assert.equal(kept.evidence.correction.reason, input.reason); assert.equal(kept.eligibility.usable, false);
+  const replay = await memoryApi(`${id}/duplicate`, options); assert.equal(replay.status, 200); assert.deepEqual(await replay.json(), kept);
+  assert.equal((await memoryApi(`${id}/duplicate`, { ...options, input: { ...input, reason: 'Different payload' } })).status, 409);
+  const retired = await (await memoryApi(id)).json(); assert.equal(retired.evidence.metadata.edition, 'Corrected bank edition');
+  assert.equal(retired.evidence.deduplication.choice, 'keep_variant'); assert.equal(retired.evidence.status, 'superseded');
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='citation' AND item_id=$2", [PILOT, record.id]))[0].doc, record);
+  const audits = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.duplicate.supersede' AND after_data->>'id'=$1", [id]);
+  assert.equal(audits.length, 1); assert.equal(audits[0].user_id, contexts[1].actor); assert.equal(audits[0].after_data.deduplication.reason, input.reason);
+});
+
+test('duplicate resolution guards both revisions and concurrent alternatives have exactly one audited winner', async () => {
+  const { id, record } = await seedDuplicate('concurrent', true); await curateDuplicate(record);
+  const pending = await (await memoryApi(id)).json(), canonical = await (await memoryApi(record.id)).json();
+  const input = { expected: memoryEvidenceRef(pending.evidence), canonical: memoryEvidenceRef(canonical.evidence), choice: 'use_curated', reason: 'Use the current curated metadata' };
+  for (const key of ['expected', 'canonical'] as const) {
+    const stale = await memoryApi(`${id}/duplicate`, { identity: identities[1], requestId: randomUUID(), input: { ...input, [key]: { ...input[key], revision: input[key].revision + 1 } } });
+    assert.equal(stale.status, 409);
+  }
+  const results = await Promise.all(['use_curated', 'keep_variant'].map(choice => memoryApi(`${id}/duplicate`, { identity: identities[1], requestId: randomUUID(), input: { ...input, choice } })));
+  assert.deepEqual(results.map(response => response.status).sort(), [200, 409]);
+  const after = await (await memoryApi(id)).json(), target = await (await memoryApi(record.id)).json();
+  assert.equal(after.evidence.status, 'superseded'); assert.equal(after.evidence.metadata.edition, 'Corrected bank edition');
+  assert.equal(target.evidence.metadata.edition, after.evidence.deduplication.choice === 'keep_variant' ? 'Corrected bank edition' : null);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.audit_log WHERE action='memory.duplicate.supersede' AND after_data->>'id'=$1", [id]))[0].n, 1);
+});
+
+test('failed duplicate audit rolls canonical correction back and choosing curation preserves the retired variant history', async () => {
+  const { id, record } = await seedDuplicate('rollback', true); await curateDuplicate(record);
+  const pending = await (await memoryApi(id)).json(), canonical = await (await memoryApi(record.id)).json();
+  const input = { expected: memoryEvidenceRef(pending.evidence), canonical: memoryEvidenceRef(canonical.evidence), choice: 'keep_variant', reason: 'Synthetic resolution audit failure' };
+  await owner("CREATE FUNCTION public.fail_memory_duplicate_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='memory.duplicate.supersede' THEN RAISE EXCEPTION 'synthetic duplicate audit failure'; END IF; RETURN NEW; END $$");
+  await owner('CREATE TRIGGER fail_memory_duplicate_audit BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.fail_memory_duplicate_audit()');
+  try {
+    const failed = await memoryApi(`${id}/duplicate`, { identity: identities[1], requestId: randomUUID(), input }); assert.equal(failed.status, 500);
+  } finally { await owner('DROP TRIGGER fail_memory_duplicate_audit ON public.audit_log'); await owner('DROP FUNCTION public.fail_memory_duplicate_audit()'); }
+  assert.deepEqual((await (await memoryApi(record.id)).json()).evidence, canonical.evidence);
+  assert.deepEqual((await (await memoryApi(id)).json()).evidence, pending.evidence);
+  const result = await memoryApi(`${id}/duplicate`, { identity: identities[1], requestId: randomUUID(), input: { ...input, choice: 'use_curated', reason: 'Keep the existing curated metadata' } });
+  assert.equal(result.status, 200, await result.clone().text()); assert.deepEqual((await result.json()).evidence, canonical.evidence);
+  const retired = await (await memoryApi(id)).json(); assert.equal(retired.evidence.deduplication.choice, 'use_curated');
+  assert.equal(retired.evidence.metadata.edition, 'Corrected bank edition'); assert.equal(retired.revisions.total, pending.revisions.total + 1);
+});
+
+test('duplicate consolidation cannot merge productions or two speakers sharing the same words', async () => {
+  const { articleEvidenceId } = await import('../../src/domain/editorial-memory-legacy.ts');
+  const voice = (await owner("SELECT doc FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='citation' AND production_id='voice-production'", [PILOT]))[0].doc;
+  const voiceVariant = articleEvidenceId(voice.id, 'voice-production', { ...voice.ref, locator: { type: 'segment', segmentId: 'ana-segment' } });
+  for (const [id, target] of [[articlePublicId, legacy.id], [voiceVariant, voice.id]]) {
+    const before = await (await memoryApi(id)).json(), canonical = await (await memoryApi(target)).json();
+    const refused = await memoryApi(`${id}/duplicate`, { identity: identities[1], requestId: randomUUID(), input: {
+      expected: memoryEvidenceRef(before.evidence), canonical: memoryEvidenceRef(canonical.evidence), choice: 'use_curated', reason: 'Invalid consolidation across origins',
+    } }); assert.equal(refused.status, 409);
+    assert.deepEqual((await (await memoryApi(id)).json()).evidence, before.evidence);
+  }
+});

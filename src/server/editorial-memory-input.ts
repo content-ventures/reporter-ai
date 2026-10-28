@@ -35,6 +35,9 @@ const articlePosition = z.object({ productionId: id, kind: z.enum(['piece', 'ver
 export const memoryArticleBatchSchema = z.object({ after: articlePosition.nullable().default(null), limit: z.number().int().min(1).max(100).default(25) }).strict();
 export const memoryLegacyResolutionSchema = z.object({ expected: memoryEvidenceRefSchema, legacyHash: z.string().regex(/^[a-f0-9]{16}$/),
   choice: z.enum(['keep_bank', 'apply_legacy']), reason: z.string().trim().min(1).max(2000) }).strict();
+export const memoryDuplicateResolutionSchema = z.object({ expected: memoryEvidenceRefSchema, canonical: memoryEvidenceRefSchema,
+  choice: z.enum(['keep_variant', 'use_curated']), reason: z.string().trim().min(1).max(2000) }).strict()
+  .refine(value => value.expected.id !== value.canonical.id, 'Escolha registros diferentes.');
 export const memoryCheckRefSchema = z.object({ id, revision: z.number().int().positive() }).strict();
 const sourceRef = z.object({ kind: z.literal('source-version'), sourceId: id, sourceVersion: z.number().int().positive(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
 const support = z.discriminatedUnion('kind', [
@@ -85,7 +88,7 @@ export const memoryMaterialRevisionSchema = z.object({ baseRevision: z.number().
   text: originalText, reason: z.string().trim().min(1).max(2000) }).strict();
 
 export const memoryQuerySchema = z.object({
-  kind: z.enum(['citation', 'statistic']).optional(), query: z.string().trim().max(200).optional(),
+  kind: z.enum(['citation', 'statistic']).optional(), status: z.enum(['active', 'withdrawn', 'superseded', 'all']).default('active'), query: z.string().trim().max(200).optional(),
   topics: z.array(z.string().trim().min(1).max(100)).max(20).optional(), personId: id.optional(), institution: z.string().trim().min(1).max(240).optional(),
   company: z.string().trim().min(1).max(240).optional(), event: z.string().trim().min(1).max(240).optional(), edition: z.string().trim().min(1).max(160).optional(),
   materialId: id.optional(), materialKind: z.enum(['transcript', 'news', 'release', 'report', 'archive', 'market_data']).optional(),
@@ -100,7 +103,7 @@ export const memoryQuerySchema = z.object({
 /** Unknown or duplicate selectors are refused rather than silently changing a saved query. */
 export function parseMemoryQuery(params: URLSearchParams): MemoryQuery {
   const values: Record<string, unknown> = {};
-  const allowed = new Set(['kind', 'q', 'topic', 'personId', 'institution', 'company', 'event', 'edition', 'materialId', 'materialKind',
+  const allowed = new Set(['kind', 'status', 'q', 'topic', 'personId', 'institution', 'company', 'event', 'edition', 'materialId', 'materialKind',
     'dateField', 'from', 'to', 'verdict', 'minConfidence', 'unused', 'useStage', 'sort', 'cursor', 'limit']);
   for (const [key, value] of params) {
     if (!allowed.has(key)) throw new z.ZodError([{ code: 'custom', path: [key], message: 'Filtro desconhecido.' }]);

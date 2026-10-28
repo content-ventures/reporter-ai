@@ -118,6 +118,14 @@ Expected refusals: invalid input 422, missing resource 404, capability/access fa
 
 Examples: an approver accepting a current quotation with a written reason is valid; a read-only support session is refused. Acceptance with `previousSequence=1` conflicts if another review already created sequence 2. A current source with unknown author cannot become ready by submitting an acceptance. A 2024 figure does not conflict automatically with a 2025 figure or another geography. A request asking for unused inserted evidence does not count a mere selection as an insertion.
 
+### Legacy duplicate consolidation
+
+When later curation matches the exact production, source version/hash and literal anchor of an article projection, the canonical curated ID remains authoritative. An unchanged projection becomes `superseded`; its original article, corrections, reviews and occurrences stay attached to the old immutable identity. Acceptance and use events never transfer to the canonical evidence. Different productions or source segments remain separate even when their words match.
+
+A corrected or conflicting projection remains active with `deduplication.state=pending` and cannot be accepted or selected. POST `/memory/:id/duplicate` requires the exact variant and canonical references, a reason and `keep_variant` or `use_curated`. Keeping the variant copies its mutable metadata/attribution into a new audited canonical correction; choosing current curation preserves the canonical payload. Both retire the variant and record the actor/time/choice and exact canonical snapshot. Raw legacy curation and approved article snapshots remain unchanged. Resolve any canonical legacy conflict first. Identical retries reuse one result; concurrent different choices have one winner.
+
+Library queries default to `status=active`; `withdrawn`, `superseded` and `all` are explicit URL selectors. Status filtering uses the same historical snapshot, totals, ordering and cursor binding as every other filter. A retired variant remains accessible by its ID/history and its associated article snapshots. Legacy reconciliation cannot resurrect it or erase a pending duplicate choice.
+
 ## Phase 1 verification
 
 `src/domain/editorial-memory.test.ts` covers every workspace role, audit identity, missing/foreign/read-only membership, reason requirements, optimistic revisions, stale acceptance, source withdrawal, unknown authors, fabricated quote text, conservative D10, numeric score bounds and contiguous original anchors. `src/domain/permissions.test.ts` covers the complete role/capability matrix including `library.review`.
