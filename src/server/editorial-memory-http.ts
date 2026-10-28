@@ -1,5 +1,5 @@
 import 'server-only';
-import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema, memoryCheckInputSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
+import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema, memoryCheckInputSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, memoryWritingInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
@@ -9,6 +9,7 @@ import { lookupMemoryLegacy, readMemoryArticle, reconcileMemoryArticles, resolve
 import { FlowError } from './errors.ts';
 import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
 import { checkEditorialMemory } from './editorial-memory-check.ts';
+import { writeMemorySelection } from './editorial-memory-writing.ts';
 import { readMemorySelection, selectEditorialMemory } from './editorial-memory-selection.ts';
 import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemoryBlocks, readMemoryJob, readMemoryMaterial, readMemoryMaterials } from './editorial-memory-materials.ts';
 
@@ -45,6 +46,10 @@ export async function handleEditorialMemory(request: Request, path: string[], re
   if (request.method === 'GET' && path.length === 2 && path[0] === 'selections') {
     if (new URL(request.url).search) throw new FlowError('INVALID_INPUT', 422);
     return Response.json(await readMemorySelection(path[1]), { headers: { 'Cache-Control': 'private, no-store' } });
+  }
+  if (request.method === 'POST' && path.length === 3 && path[0] === 'selections' && path[2] === 'write') {
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await writeMemorySelection(path[1], memoryWritingInputSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''), noStore);
   }
   if (request.method === 'POST' && path.join('/') === 'selections') return Response.json(
     await selectEditorialMemory(memorySelectionInputSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),

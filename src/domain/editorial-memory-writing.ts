@@ -51,7 +51,7 @@ export function prepareMemoryWriting(selection: MemorySelection, items: MemoryWr
     body: { type: 'article', title: title.trim(), blocks } });
 }
 
-export type MemoryWritingOccurrence = { blockId: string; from: number; to: number; sourceFrom: number; sourceTo: number; binding: MemorySourceBinding['items'][number] };
+export type MemoryWritingOccurrence = { blockId: string; from: number; to: number; sourceFrom: number; sourceTo: number; sourceVersion: number; binding: MemorySourceBinding['items'][number] };
 /** Observe actual referenced words in a saved article; selecting a source alone is never use. */
 export function memoryWritingOccurrences(body: ArticleBody, source: Source): MemoryWritingOccurrence[] {
   const output: MemoryWritingOccurrence[] = [];
@@ -72,7 +72,7 @@ export function memoryWritingOccurrences(body: ArticleBody, source: Source): Mem
     for (let from = text.indexOf(literal); from >= 0; from = text.indexOf(literal, from + literal.length)) {
       const to = from + literal.length;
       if (!output.some(item => item.blockId === block.id && item.from === from && item.to === to && item.binding.selected.evidence.id === binding.selected.evidence.id))
-        output.push({ blockId: block.id, from, to, sourceFrom, sourceTo, binding });
+        output.push({ blockId: block.id, from, to, sourceFrom, sourceTo, sourceVersion: version.number, binding });
     }
   }
   return output;

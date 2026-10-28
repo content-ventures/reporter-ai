@@ -4,6 +4,10 @@ import type { SourceVersionRef } from '../domain/refs.ts';
 import type { Source, TranscriptSegment } from '../domain/source.ts';
 import type { Piece, Version } from '../domain/piece.ts';
 import type { MemoryArticlePosition, MemoryArticleReport, MemoryLegacyReport } from '../domain/editorial-memory-legacy.ts';
+import type { BriefInput } from './production-commands.ts';
+
+export type MemoryWritingInput = { baseRevision: number; title: string; brief: BriefInput };
+export type MemoryWritingResult = { productionId: string; pieceId: string; sourceId: string };
 
 export type MemoryImportInput = {
   title: string; kind: MemoryMaterial['kind']; text: string; metadata: MemoryMetadata; authorized: boolean;
@@ -46,6 +50,7 @@ export interface EditorialMemory {
     requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
   select(input: { id?: string; baseRevision: number; productionId: string | null; evidence: MemoryEvidenceRef[] }, requestId: string): Promise<MemorySelection>;
   selection(id: string): Promise<MemorySelection>;
+  writeSelection(id: string, input: MemoryWritingInput, requestId: string): Promise<MemoryWritingResult>;
   policy(): Promise<MemoryPolicy>;
   lookupLegacy(id: string): Promise<{ id: string; materialId: string }[]>;
   originalArticle(id: string, snapshot?: string): Promise<{ origin: MemoryArticleOrigin; doc: Piece | Version; importedBy: string; importedAt: string }>;

@@ -1,4 +1,5 @@
 import 'server-only';
+import { syncMemoryWriting } from './editorial-memory-usage.ts';
 // Worker helpers share this server composition boundary with the transactional engine.
 export { appendEditorialEvent, editorialContextHash } from '../runtime/editorial-engine.ts';
 import { randomUUID } from 'node:crypto';
@@ -155,6 +156,7 @@ options: { receipt?: ReceiptOf<T> }): Promise<{ value: T; revision: number; chec
         if (hasChanges(changes) || stored) revision = await commitEditorialChanges(client, changes, stored);
         await syncLegacyMemory(client, changes.items.filter(item => !item.deleted && ['citation','fact_check'].includes(item.kind)).map(item => item.id), changes.sources.map(source => source.id));
         await syncMemoryArticles(client, changes);
+        await syncMemoryWriting(client, changes);
       }
       return { value, revision, checkpoint };
     } finally { engine.store.dispose(); }
