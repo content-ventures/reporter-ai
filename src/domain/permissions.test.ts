@@ -15,6 +15,7 @@ const MATRIX: Record<Capability, Role[]> = {
   'pipeline.edit': ['admin'],
   'audit.read': ['admin'],
   'library.edit': ['editor', 'admin'],
+  'library.review': ['editor', 'approver', 'creative_reviewer', 'admin'],
   'profile.edit_self': ['editor', 'approver', 'creative_reviewer', 'admin'],
 };
 

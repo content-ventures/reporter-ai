@@ -27,6 +27,8 @@ export type Capability =
   | 'audit.read'
   /** Visual library, banners and citations. */
   | 'library.edit'
+  /** Editorial acceptance of bank evidence: any authenticated workspace member. */
+  | 'library.review'
   /** Own name, role and organisation. */
   | 'profile.edit_self';
 
@@ -44,6 +46,7 @@ export const CAPABILITY_ROLES: Readonly<Record<Capability, readonly Role[]>> = {
   'pipeline.edit': ADMINS,
   'audit.read': ADMINS,
   'library.edit': WRITERS,
+  'library.review': ['editor', 'approver', 'creative_reviewer', 'admin'],
   'profile.edit_self': ['editor', 'approver', 'creative_reviewer', 'admin'],
 };
 
@@ -68,6 +71,7 @@ const ACTIONS: Readonly<Record<Capability, string>> = {
   'pipeline.edit': 'edita os prompts',
   'audit.read': 'consulta os logs',
   'library.edit': 'edita a biblioteca',
+  'library.review': 'revisa evidências da biblioteca',
   'profile.edit_self': 'edita o perfil',
 };
 
