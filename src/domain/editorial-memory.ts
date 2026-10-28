@@ -95,7 +95,10 @@ type MemoryOccurrence = { productionId: string; blockId: string; from: number; t
 export type MemoryUse = MemoryUseBase & (
   | { stage: 'selected'; selectionId: string; selectionRevision: number; productionId: string | null }
   | MemoryOccurrence & { stage: 'inserted'; pieceId: string; draftRevision: number; articleHash: string }
-  | MemoryOccurrence & { stage: 'approved'; article: VersionRef }
+  | MemoryOccurrence & { stage: 'approved'; article: VersionRef; decisionId?: string; productionTitle?: string;
+      /** Present on the derived approval receipts; older imported use records remain readable. */
+      proof?: { selection: MemorySourceBinding['selection']; selected: MemorySelection['items'][number]; anchor: MemoryAnchor;
+        source: SourceVersionRef; segmentId: string } }
   | MemoryOccurrence & { stage: 'published'; article: VersionRef; publicationReceipt: string }
 );
 export type MemorySelection = {

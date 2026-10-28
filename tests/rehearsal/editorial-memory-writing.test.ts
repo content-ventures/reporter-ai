@@ -23,11 +23,11 @@ async function owner(sql: string, values: unknown[] = []) {
   const client = new pg.Client({ connectionString: db.owner }); await client.connect();
   try { return (await client.query(sql, values)).rows; } finally { await client.end(); }
 }
-async function session<T>(action: (client: Client) => Promise<T>) {
+async function session<T>(action: (client: Client) => Promise<T>, acting: ReporterRequestContext = context) {
   const client = new pg.Client({ connectionString: db.runtime }); await client.connect();
   try {
     await client.query('BEGIN');
-    await client.query("SELECT set_config('app.module_key','reporter_ai',true),set_config('app.access_mode','user',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true)", [context.tenant, context.portal, context.actor, randomUUID()]);
+    await client.query("SELECT set_config('app.module_key','reporter_ai',true),set_config('app.access_mode','user',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true)", [acting.tenant, acting.portal, acting.actor, randomUUID()]);
     const result = await action(client); await client.query('COMMIT'); return result;
   } catch (error) { await client.query('ROLLBACK'); throw error; } finally { await client.end(); }
 }
@@ -183,7 +183,7 @@ test('edited numeric context or withdrawn original rights cannot pass a send gat
   }
 });
 
-test('download preparation validates actual approval, exact versions and current bank review without recording publication', async () => {
+async function sentBankArticle() {
   const item = await fixture('citation'), saved = await selection([item.evidence]);
   const created = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
   const [sourceRow] = await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [created.sourceId]);
@@ -197,10 +197,39 @@ test('download preparation validates actual approval, exact versions and current
   const [pieceRow] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [created.pieceId]);
   const updated = await json<{ ok: boolean }>('workspace', { method: 'saveDraft', args: [created.pieceId, body, pieceRow.doc.draft.revision], requestId: randomUUID() }); assert.equal(updated.ok, true);
   const sent = await json<{ ok: true; value: RequestedReview }>('workspace', { method: 'requestReview', args: [created.pieceId], requestId: randomUUID() });
-  assert.ok(sent.ok, JSON.stringify(sent)); const subject = sent.value.version.ref, input = { productionId: created.productionId, selection: [subject] };
+  assert.ok(sent.ok, JSON.stringify(sent)); const subject = sent.value.version.ref;
+  return { item, saved, created, subject, body };
+}
+
+test('download preparation validates actual approval, exact versions and current bank review without recording publication', async () => {
+  const { item, saved, created, subject } = await sentBankArticle(), input = { productionId: created.productionId, selection: [subject] };
   const before = await json<{ ok: boolean; refusal: { code: string } }>('exports/prepare', input); assert.equal(before.ok, false); assert.equal(before.refusal.code, 'not_approved');
-  const approvedResponse = await api('workspace', { method: 'decide', args: [{ pieceId: created.pieceId, subject, displayedHash: subject.hash, decision: 'approved' }], requestId: randomUUID() }, randomUUID(), identities[1]);
+  const approvalInput = { method: 'decide', args: [{ pieceId: created.pieceId, subject, displayedHash: subject.hash, decision: 'approved' }], requestId: randomUUID() };
+  const approvedResponse = await api('workspace', approvalInput, randomUUID(), identities[1]);
   assert.equal(approvedResponse.status, 200, await approvedResponse.clone().text()); const approved = await approvedResponse.json(); assert.ok(approved.ok, JSON.stringify(approved));
+  assert.notEqual(approved.value.by, context.actor, 'the real article approver differs from its sender');
+  const used = await json<MemoryDetail>(`memory/${item.evidence.id}`), approvedUses = used.occurrences.items.filter(item => item.stage === 'approved');
+  assert.equal(approvedUses.length, 2); assert.equal(used.uses.approved, 1, 'two actual ranges count one distinct approved article');
+  for (const use of approvedUses) {
+    assert.equal(use.stage, 'approved'); if (use.stage !== 'approved') throw new Error('approved use');
+    assert.deepEqual(use.article, subject); assert.equal(use.productionTitle, writingInput.title); assert.equal(use.decisionId, approved.value.id); assert.equal(use.personId, approved.value.by); assert.equal(use.at, approved.value.at);
+    assert.deepEqual(use.proof?.selected, saved.items[0]); assert.deepEqual(use.proof?.anchor, item.evidence.anchor);
+  }
+  const replay = await api('workspace', approvalInput, randomUUID(), identities[1]); assert.equal(replay.status, 200); assert.deepEqual(await replay.json(), approved);
+  assert.equal((await json<MemoryDetail>(`memory/${item.evidence.id}`)).occurrences.items.filter(item => item.stage === 'approved').length, 2);
+  const audits = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.use.approved' AND after_data->>'productionId'=$1", [created.productionId]);
+  assert.equal(audits.length, 2); assert.ok(audits.every(row => row.user_id === approved.value.by && row.after_data.article.hash === subject.hash));
+  const receipt = { productionId: created.productionId, decisionId: approved.value.id, article: subject, blockId: 'full-bank-quote', from: 0, to: item.evidence.anchor.excerpt.length,
+    source: { id: created.sourceId, version: 1, segmentId: 'memory-item-1', from: 0, to: item.evidence.anchor.excerpt.length } };
+  const { resolveReporterContext } = await import('../../src/server/database.ts'), approver = (await resolveReporterContext(identities[1], 'reporter-ai'))!;
+  const derive = (value: unknown) => session(async client => { await client.query("SELECT set_config('app.editorial_permission','reporter.review',true)");
+    return (await client.query('SELECT public.reporter_memory_record_approval($1::jsonb) AS value', [JSON.stringify(value)])).rows[0].value; }, approver);
+  assert.deepEqual(await derive(receipt), approvedUses.find(use => use.blockId === 'full-bank-quote'));
+  for (const forged of [{ ...receipt, article: { ...subject, number: subject.number + 1 } }, { ...receipt, decisionId: randomUUID() }, { ...receipt, from: 1 }])
+    await assert.rejects(derive(forged), (error: unknown) => (error as Error).message === 'MEMORY_CONFLICT');
+  await assert.rejects(derive({ ...receipt, personId: context.actor }), (error: unknown) => (error as { code: string }).code === '22023');
+  await assert.rejects(session(client => client.query('SELECT public.reporter_memory_record_approval($1::jsonb)', [JSON.stringify(receipt)])),
+    (error: unknown) => (error as { code: string }).code === '42501');
   const ready = await json<{ ok: boolean; value: VersionRef[] }>('exports/prepare', input); assert.ok(ready.ok); assert.deepEqual(ready.value, [subject]);
   const forged = await json<{ ok: boolean; refusal: { code: string } }>('exports/prepare', { ...input, selection: [{ ...subject, number: subject.number + 1 }] });
   assert.equal(forged.ok, false); assert.equal(forged.refusal.code, 'unknown_version');
@@ -212,4 +241,20 @@ test('download preparation validates actual approval, exact versions and current
   const stale = await json<{ ok: boolean; refusal: { code: string } }>('exports/prepare', input); assert.equal(stale.ok, false); assert.equal(stale.refusal.code, 'memory_not_ready');
   assert.equal((await json<MemoryDetail>(`memory/${item.evidence.id}`)).uses.published, 0);
   assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_ed_parts WHERE production_id=$1 AND kind='delivery'", [created.productionId]))[0].n, 0);
+});
+
+
+test('an approved-use audit failure rolls the actual article decision and every occurrence back together', async () => {
+  const { item, created, subject } = await sentBankArticle();
+  const approval = { method: 'decide', args: [{ pieceId: created.pieceId, subject, displayedHash: subject.hash, decision: 'approved' }], requestId: randomUUID() };
+  await owner(`CREATE FUNCTION public.fail_approved_use_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+    IF NEW.action='memory.use.approved' THEN RAISE EXCEPTION 'synthetic approval audit failure'; END IF; RETURN NEW; END $$;
+    CREATE TRIGGER fail_approved_use_audit BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.fail_approved_use_audit()`);
+  try { assert.equal((await api('workspace', approval, randomUUID(), identities[1])).status, 500); }
+  finally { await owner('DROP TRIGGER fail_approved_use_audit ON public.audit_log; DROP FUNCTION public.fail_approved_use_audit()'); }
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_ed_parts WHERE production_id=$1 AND kind='decision'", [created.productionId]))[0].n, 0);
+  assert.equal((await json<MemoryDetail>(`memory/${item.evidence.id}`)).uses.approved, 0);
+  const retried = await api('workspace', approval, randomUUID(), identities[1]); assert.equal(retried.status, 200); const result = await retried.json(); assert.ok(result.ok, JSON.stringify(result));
+  const after = await json<MemoryDetail>(`memory/${item.evidence.id}`); assert.equal(after.uses.approved, 1); assert.equal(after.uses.published, 0);
+  assert.equal(after.occurrences.items.filter(item => item.stage === 'approved').length, 2);
 });

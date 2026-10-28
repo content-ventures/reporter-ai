@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useState } from 'react';
 import { Alert, Badge, Button, ButtonGroup, Checkbox, DescriptionList, Drawer, ErrorState, Field, Input, Panel, Section, Select, Spinner, Textarea, TextLink } from '@content-ventures/design-system/v3';
-import type { MemoryDecisionAction, MemoryHistoryKind, MemoryMaterial } from '@/domain/editorial-memory';
+import type { MemoryDecisionAction, MemoryHistoryKind, MemoryMaterial, MemoryUseStage } from '@/domain/editorial-memory';
 import { memoryEvidenceRef } from '@/domain/editorial-memory';
 import { CLAIM_KIND_LABELS, CLAIM_VERDICT_LABELS, VERDICT_LABELS } from '@/domain/fact-check';
 import type { MemoryDetail, MemoryHistoryEntry, MemoryLibrary } from '@/ports/editorial-memory';
@@ -12,6 +12,7 @@ import { JobStatus } from './memory-materials';
 export const ELIGIBILITY_LABELS = { ready: 'Disponível para uso', source_unavailable: 'Conferir fonte e autorização', withdrawn: 'Retirada', authorship_pending: 'Confirmar autoria', review_required: 'Aguardando revisão', rejected: 'Rejeitada' };
 const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar', reject: 'Rejeitar', request_revision: 'Solicitar revisão' };
 const HISTORY_LABELS: Record<MemoryHistoryKind, string> = { checks: 'Checagens', decisions: 'Decisões', revisions: 'Revisões', occurrences: 'Ocorrências' };
+const USE_LABELS: Record<MemoryUseStage, string> = { selected: 'Selecionada', inserted: 'Inserida no rascunho', approved: 'Aprovada', published: 'Publicada' };
 export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial }: { id: string; open: boolean; onClose: () => void; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void }) {
   const load = useCallback((port: MemoryLibrary) => port.detail(id), [id]), resource = useMemoryResource(load, 2500, open);
   return <Drawer open={open} size="lg" title="Evidência" onClose={onClose}>
@@ -112,13 +113,17 @@ function EvidenceContent({ detail, port, onChanged, onMaterial }: { detail: Memo
   </Panel>;
 }
 function MemoryHistory({ detail, port, kind, personName }: { detail: MemoryDetail; port: MemoryLibrary; kind: MemoryHistoryKind; personName: (id: string | null) => string }) {
-  const [items, setItems] = useState<MemoryHistoryEntry[]>(detail[kind].items), [cursor, setCursor] = useState(detail[kind].nextCursor), [busy, setBusy] = useState(false), [error, setError] = useState<string>();
+  const fresh = detail[kind], binding = JSON.stringify({ items: fresh.items, total: fresh.total });
+  const [saved, setSaved] = useState({ binding, items: fresh.items as MemoryHistoryEntry[], cursor: fresh.nextCursor });
+  const { items, cursor } = saved.binding === binding ? saved : { items: fresh.items, cursor: fresh.nextCursor };
+  const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   return <Section title={HISTORY_LABELS[kind]} meta={detail[kind].total}>
     {error && <Alert tone="danger" title={error} />}
     <DescriptionList items={items.map((item, index) => ({ label: `${index + 1}`, value: 'action' in item ? `${REVIEW_LABELS[item.action]} — ${item.reason} · ${personName(item.personId)} · ${new Date(item.at).toLocaleString('pt-BR')}`
-      : 'stage' in item ? `${item.stage} · ${personName(item.personId)} · ${item.at}` : 'verdict' in item ? `${VERDICT_LABELS[item.verdict]} · ${item.checkedAt}` : `Revisão ${item.revision} · ${item.updatedAt}` }))} />
+      : 'stage' in item ? [USE_LABELS[item.stage], ...(item.stage === 'approved' ? [item.productionTitle ?? 'Artigo', `versão ${item.article.number}`] : []), personName(item.personId), new Date(item.at).toLocaleString('pt-BR')].join(' · ')
+        : 'verdict' in item ? `${VERDICT_LABELS[item.verdict]} · ${item.checkedAt}` : `Revisão ${item.revision} · ${item.updatedAt}` }))} />
     {cursor && <Button variant="secondary" loading={busy} onClick={async () => { setBusy(true); setError(undefined);
-      try { const next = await port.history(detail.evidence.id, kind, { cursor }); setItems(current => [...current, ...next.items]); setCursor(next.nextCursor); }
+      try { const next = await port.history(detail.evidence.id, kind, { cursor }); setSaved({ binding, items: [...items, ...next.items], cursor: next.nextCursor }); }
       catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível carregar o histórico.'); } finally { setBusy(false); }
     }}>Carregar mais</Button>}
   </Section>;
