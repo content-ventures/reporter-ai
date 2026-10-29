@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, ButtonGroup, Checkbox, DataTable, DescriptionList, Drawer, EmptyState, ErrorState, Field, FieldGroup, Input, Panel, Progress, ResponsiveDialog, Section, Select, Spinner, Textarea, toast } from '@content-ventures/design-system/v3';
 import type { MemoryMaterial, MemoryMetadata } from '@/domain/editorial-memory';
 import type { MemoryLibrary, MemoryImportInput, MemoryJob } from '@/ports/editorial-memory';
@@ -54,7 +54,8 @@ export function MemoryMaterials({ onOpen, cursor, onCursor, refresh }: { onOpen:
   const load = useCallback((port: MemoryLibrary) => port.materials({ limit: 25, cursor }), [cursor]);
   const resource = useMemoryResource(load, 5000);
   const { reload } = resource;
-  useEffect(() => { reload(); }, [refresh, reload]);
+  const previousRefresh = useRef(refresh);
+  useEffect(() => { if (previousRefresh.current !== refresh) { previousRefresh.current = refresh; reload(); } }, [refresh, reload]);
   if (resource.error) return <ErrorState title="Não foi possível carregar os materiais" description={resource.error} onRetry={cursor ? undefined : reload}
     actions={cursor ? <Button onClick={() => onCursor(undefined)}>Atualizar materiais</Button> : undefined} />;
   if (!resource.data) return <Spinner label="Carregando materiais" />;

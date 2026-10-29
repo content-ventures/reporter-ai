@@ -31,8 +31,14 @@ export async function inspectMemoryCollectionPages(page: Page, base: string, kin
   await audit(page, `${kind}-recovered-page`);
   await read(null, () => page.getByRole('group', { name: pages, exact: true }).getByRole('button', { name: 'Primeira página', exact: true }).click());
   await page.waitForURL(url => !url.searchParams.has('cursor'));
+  const invalidRequests: string[] = [];
+  const trackInvalid = (request: import('@playwright/test').Request) => {
+    const url = new URL(request.url()); if (url.pathname.endsWith(`/memory/${kind}`) && url.searchParams.get('cursor') === 'invalid-collection-cursor') invalidRequests.push(request.url());
+  };
+  page.on('request', trackInvalid);
   await page.goto(`${base}/w/reporter-ai/quotes?bankView=${kind}&cursor=invalid-collection-cursor`);
   const recover = page.getByRole('button', { name: kind === 'materials' ? 'Atualizar materiais' : 'Atualizar seleções', exact: true });
   await expect(recover).toBeVisible(); await read(null, () => recover.click());
-  await page.waitForURL(url => !url.searchParams.has('cursor')); await audit(page, `${kind}-invalid-page-recovered`);
+  await page.waitForURL(url => !url.searchParams.has('cursor')); assert.equal(invalidRequests.length, 1, 'opening a collection must not trigger a redundant initial refresh');
+  page.off('request', trackInvalid); await audit(page, `${kind}-invalid-page-recovered`);
 }
