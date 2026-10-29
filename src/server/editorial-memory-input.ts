@@ -7,8 +7,11 @@ const id = z.string().trim().min(1).max(128);
 export const memoryIdSchema = id;
 export const memoryHistoryKindSchema = z.enum(['checks', 'decisions', 'revisions', 'occurrences']);
 export const memoryHistoryQuerySchema = z.object({ cursor: z.string().min(1).max(4096).optional(), limit: z.number().int().min(1).max(100).default(25) }).strict();
+const feedbackKind = z.enum(['correction', 'rejection', 'conflict_resolution', 'relevance']);
+export const memoryFeedbackQuerySchema = memoryHistoryQuerySchema.extend({ kind: feedbackKind.optional(), evidenceId: id.optional(), materialId: id.optional() });
 export const memoryHistoryBindingSchema = z.object({ resource: z.literal('history'), evidenceId: id, kind: memoryHistoryKindSchema, limit: z.number().int().min(1).max(100) }).strict();
 export const memoryResourceBindingSchema = z.discriminatedUnion('resource', [memoryHistoryBindingSchema,
+  z.object({ resource: z.literal('feedback'), kind: feedbackKind.optional(), evidenceId: id.optional(), materialId: id.optional(), limit: z.number().int().min(1).max(100) }).strict(),
   z.object({ resource: z.literal('correction-impact'), kind: z.enum(['material', 'evidence']), id, limit: z.number().int().min(1).max(100) }).strict(),
   z.object({ resource: z.literal('selections'), limit: z.number().int().min(1).max(100) }).strict(),
   z.object({ resource: z.literal('materials'), limit: z.number().int().min(1).max(100) }).strict(),
@@ -25,6 +28,15 @@ export function parseMemoryHistoryQuery(params: URLSearchParams) {
   }
   return memoryHistoryQuerySchema.parse(values);
 }
+export function parseMemoryFeedbackQuery(params: URLSearchParams) {
+  const values: Record<string, unknown> = {};
+  for (const [key, value] of params) {
+    if (!['kind', 'evidenceId', 'materialId', 'cursor', 'limit'].includes(key) || params.getAll(key).length !== 1)
+      throw new z.ZodError([{ code: 'custom', path: [key], message: 'Filtro desconhecido ou repetido.' }]);
+    values[key] = key === 'limit' && /^\d+$/.test(value) ? Number(value) : value;
+  }
+  return memoryFeedbackQuerySchema.parse(values);
+}
 const nullableText = (max: number) => z.string().trim().min(1).max(max).nullable();
 const day = z.iso.date();
 const safeUrl = z.url().max(2000).refine(value => {
@@ -38,6 +50,16 @@ export const memoryMetadataSchema = z.object({
   event: nullableText(240), edition: nullableText(160), topics: z.array(z.string().trim().min(1).max(100)).max(20), originalUrl: safeUrl.nullable(),
 }).strict();
 export const memoryEvidenceRefSchema = z.object({ id, revision: z.number().int().nonnegative(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
+export const memoryRelevanceSchema = z.object({ selection: z.object({ id, revision: z.number().int().positive() }).strict(), evidence: memoryEvidenceRefSchema,
+  rating: z.enum(['useful', 'not_useful']), reason: z.string().trim().min(1).max(2000) }).strict();
+export const memoryRelevanceContextSchema = memoryRelevanceSchema.pick({ selection: true, evidence: true });
+export function parseMemoryRelevanceContext(params: URLSearchParams) {
+  const values = z.object({ selectionId: id, selectionRevision: z.string().regex(/^[1-9]\d{0,8}$/), evidenceId: id,
+    evidenceRevision: z.string().regex(/^(?:0|[1-9]\d{0,8})$/), evidenceHash: z.string().regex(/^[a-f0-9]{16}$/) }).strict().parse(Object.fromEntries(params));
+  if ([...params.keys()].some(key => params.getAll(key).length !== 1)) throw new z.ZodError([{ code: 'custom', path: [], message: 'Filtro repetido.' }]);
+  return memoryRelevanceContextSchema.parse({ selection: { id: values.selectionId, revision: Number(values.selectionRevision) },
+    evidence: { id: values.evidenceId, revision: Number(values.evidenceRevision), hash: values.evidenceHash } });
+}
 export const memoryCheckInputSchema = z.object({ expected: memoryEvidenceRefSchema }).strict();
 export const memoryReplacementSchema = z.object({ expected: memoryEvidenceRefSchema, replacement: memoryEvidenceRefSchema, reason: z.string().trim().min(1).max(2000) }).strict()
   .refine(value => value.expected.id !== value.replacement.id, 'Escolha registros diferentes.');

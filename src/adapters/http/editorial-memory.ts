@@ -41,6 +41,8 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     writingStatus: production => http.request(`/memory/productions/${id(production)}/writing-status`),
     selectedContext: (production, input) => http.request(`/memory/productions/${id(production)}/sources/${id(input.sourceId)}/context${parameters({ sourceVersion: input.sourceVersion, segmentId: input.segmentId })}`),
     policy: () => http.request('/memory/policy'), lookupLegacy: evidence => http.request(`/memory/legacy/${id(evidence)}`),
+    feedback: input => http.request(`/memory/feedback${parameters(input)}`), rateRelevance: (input, key) => command('feedback/relevance', input, key),
+    relevanceContext: input => http.request(`/memory/feedback/relevance-context${parameters({ selectionId: input.selection.id, selectionRevision: input.selection.revision, evidenceId: input.evidence.id, evidenceRevision: input.evidence.revision, evidenceHash: input.evidence.hash })}`),
     originalArticle: (evidence, snapshot) => http.request(`/memory/${id(evidence)}/article${parameters({ snapshot })}`),
     reconcileLegacy: (input, key) => command('reconcile', input, key), reconcileArticles: (input, key) => command('reconcile/articles', input, key),
     resolveLegacy: (evidence, input, key) => command(`${id(evidence)}/legacy`, input, key), resolveDuplicate: (evidence, input, key) => command(`${id(evidence)}/duplicate`, input, key),

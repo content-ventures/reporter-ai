@@ -64,6 +64,16 @@ test('library commands keep the bound workspace, account and request identity wh
     assert.equal(new Headers(seen[12].init.headers).get('x-reporter-account'), 'actual-account');
     assert.equal(new Headers(seen[12].init.headers).get('idempotency-key'), 'stable-replacement-key'); assert.deepEqual(JSON.parse(String(seen[12].init.body)), replacement);
     await library.replacement('relation/encoded'); assert.equal(seen[13].url.pathname, '/api/reporter/w/editorial-client/memory/replacements/relation%2Fencoded');
+    await library.feedback({ kind: 'correction', evidenceId: 'evidence/encoded', cursor: 'feedback+/=cursor', limit: 9 });
+    assert.equal(seen[14].url.pathname, '/api/reporter/w/editorial-client/memory/feedback'); assert.equal(seen[14].url.searchParams.get('cursor'), 'feedback+/=cursor');
+    assert.equal(seen[14].url.searchParams.get('evidenceId'), 'evidence/encoded'); assert.equal(seen[14].url.searchParams.get('kind'), 'correction');
+    const relevance = { selection: { id: 'selection', revision: 1 }, evidence: replacement.expected, rating: 'not_useful' as const, reason: 'Different editorial angle.' };
+    await library.rateRelevance(relevance, 'stable-feedback-key'); assert.equal(seen[15].url.pathname, '/api/reporter/w/editorial-client/memory/feedback/relevance');
+    assert.equal(new Headers(seen[15].init.headers).get('x-reporter-account'), 'actual-account'); assert.equal(new Headers(seen[15].init.headers).get('idempotency-key'), 'stable-feedback-key');
+    assert.deepEqual(JSON.parse(String(seen[15].init.body)), relevance);
+    await library.relevanceContext({ selection: relevance.selection, evidence: relevance.evidence });
+    assert.equal(seen[16].url.pathname, '/api/reporter/w/editorial-client/memory/feedback/relevance-context'); assert.equal(seen[16].url.searchParams.get('selectionRevision'), '1');
+    assert.equal(seen[16].url.searchParams.get('evidenceHash'), relevance.evidence.hash); assert.equal(seen[16].init.method ?? 'GET', 'GET');
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });
