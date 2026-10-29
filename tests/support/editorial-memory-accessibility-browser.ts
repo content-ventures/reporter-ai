@@ -10,7 +10,10 @@ export async function auditMemoryAccessibility(page: Page, width: number, label:
   assert.deepEqual(result.violations.map(rule => ({ id: rule.id, impact: rule.impact, nodes: rule.nodes.map(node => ({ target: node.target, failure: node.failureSummary })) })), [], `accessibility: ${label}`);
 }
 
-const animating = (dialog: Locator) => dialog.evaluate(element => element.getAnimations({ subtree: true }).some(animation => animation.playState === 'running' || animation.pending));
+const entering = (select: Locator) => select.evaluate(element => element.closest('dialog')?.getAnimations({ subtree: true }).some(animation => {
+  const target = (animation.effect as KeyframeEffect | null)?.target;
+  return animation instanceof CSSAnimation && target instanceof Element && target.contains(element) && (animation.playState === 'running' || animation.pending);
+}) ?? false);
 
 /** Exercise real pointer/touch and keyboard input while the native entry animation is active. */
 export async function probeMemoryImportEntry(page: Page, base: string, width: number, audit: (page: Page, label: string) => Promise<void>) {
@@ -23,14 +26,15 @@ export async function probeMemoryImportEntry(page: Page, base: string, width: nu
   for (let index = 0; index < 12; index++) {
     await trigger.focus(); await page.keyboard.press('Enter'); await expect(dialog).toBeVisible();
     if (index % 2 === 0) {
+      await expect(select).toBeInViewport({ ratio: 1 });
       const box = await select.boundingBox(); assert.ok(box);
       // The measured target is clicked immediately: actionability stability would wait out the very animation under test.
       if (width === 390) await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
       else await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-      await expect(select).toHaveAttribute('aria-expanded', 'true'); if (await animating(dialog)) earlyPointer++;
+      await expect(select).toHaveAttribute('aria-expanded', 'true'); if (await entering(select)) earlyPointer++;
     } else {
       await select.focus(); await page.keyboard.press('ArrowDown');
-      await expect(select).toHaveAttribute('aria-expanded', 'true'); if (await animating(dialog)) earlyKeyboard++;
+      await expect(select).toHaveAttribute('aria-expanded', 'true'); if (await entering(select)) earlyKeyboard++;
     }
     const kind = kinds[index % kinds.length]; await page.getByRole('option', { name: kind, exact: true }).click();
     await expect(select).toContainText(kind); await expect(select).toHaveAttribute('aria-expanded', 'false');
@@ -41,7 +45,14 @@ export async function probeMemoryImportEntry(page: Page, base: string, width: nu
   try {
     await trigger.focus(); await page.keyboard.press('Enter'); await expect(dialog).toBeVisible();
     await select.focus(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Home'); await page.keyboard.press('Enter');
-    await expect(select).toContainText('Transcrição'); assert.equal(await animating(dialog), false, 'reduced-motion import must not animate');
+    await expect(select).toContainText('Transcrição');
+    const reduced = await dialog.evaluate(element => element.getAnimations({ subtree: true }).filter(animation => animation.playState === 'running' || animation.pending).map(animation => {
+      const timing = animation.effect?.getComputedTiming();
+      return { name: animation instanceof CSSAnimation ? animation.animationName : animation instanceof CSSTransition ? animation.transitionProperty : 'script', endTime: timing?.endTime, delay: timing?.delay, iterations: timing?.iterations };
+    }));
+    await writeFile(`/tmp/reporter-memory-a11y-${width}-reduced-motion.json`, JSON.stringify(reduced, null, 2));
+    // The DS uses 0.01ms to retain native lifecycle events without visible motion.
+    assert.deepEqual(reduced.filter(animation => typeof animation.endTime !== 'number' || !Number.isFinite(animation.endTime) || animation.endTime > 0.01 || animation.delay !== 0 || animation.iterations !== 1), [], 'reduced motion must use the DS near-zero duration without delay or repetition');
     const close = dialog.getByRole('button', { name: 'Fechar', exact: true }); await close.focus(); await page.keyboard.press('Shift+Tab');
     await expect(dialog.getByRole('button', { name: 'Cancelar', exact: true })).toBeFocused(); await page.keyboard.press('Tab'); await expect(close).toBeFocused();
     const title = dialog.getByRole('textbox', { name: 'Título', exact: true }); await title.focus(); await page.keyboard.press('Tab'); await expect(select).toBeFocused();
