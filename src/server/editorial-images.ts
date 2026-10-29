@@ -5,12 +5,19 @@ import { dedupeRefs } from '../domain/refs.ts';
 import { imagePlanOutput } from './pipeline-output';
 import { FlowError } from './errors';
 
-/** Only real prose blocks can motivate a suggestion; no image URL or license is fabricated. */
-export function planArticleImages(body: ArticleBody, value: unknown) {
+/** Bank receipts authorize textual reuse, not a portrait or scene from the original publication. */
+export function imagePlanningBody(body: ArticleBody, bankSourceIds: readonly string[]): ArticleBody {
+  const bank = new Set(bankSourceIds);
+  return { ...body, ...(bank.size ? { title: '', dek: undefined } : {}),
+    blocks: body.blocks.filter(block => !(block.sourceRefs ?? []).some(ref => bank.has(ref.sourceId))) };
+}
+/** Only eligible prose motivates a suggestion; textual receipts stay untouched on their blocks. */
+export function planArticleImages(body: ArticleBody, value: unknown, bankSourceIds: readonly string[]) {
   const plan = imagePlanOutput.parse(value);
   const prose = new Map(body.blocks.filter(block => block.type === 'paragraph').map(block => [block.id, block]));
+  const eligible = new Set(imagePlanningBody(body, bankSourceIds).blocks.filter(block => block.type === 'paragraph').map(block => block.id));
   const suggestions = [...(plan.cover ? [plan.cover] : []), ...plan.figures];
-  if (suggestions.some(item => item.sourceBlockIds.some(id => !prose.has(id)))
+  if (suggestions.some(item => item.sourceBlockIds.some(id => !eligible.has(id)))
     || plan.figures.some(item => !prose.has(item.afterBlockId))
     || new Set(plan.figures.map(item => item.afterBlockId)).size !== plan.figures.length)
     throw new FlowError('INVALID_IMAGE_EVIDENCE', 502);

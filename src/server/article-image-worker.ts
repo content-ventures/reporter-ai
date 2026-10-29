@@ -12,7 +12,7 @@ import { articleImageTargetMatches } from './article-image-task.ts';
 import { illustrateArticle } from './article-illustration.ts';
 import { transaction } from './database.ts';
 import { appendEditorialEvent, editorialContextHash, editorialTransaction } from './editorial';
-import { planArticleImages } from './editorial-images';
+import { imagePlanningBody, planArticleImages } from './editorial-images';
 import { FlowError, safeCode } from './errors';
 import { executePipelineStep } from './pipeline-runner';
 import { workDirectory } from './storage';
@@ -66,12 +66,19 @@ async function runScoped(owner: string,signal: AbortSignal,dependencies: Depende
         return undefined;
       }
       const body = record.pieces.find(piece => piece.id === job.meta.pieceId)!.draft.body as ArticleBody;
+      const bankSourceIds = record.sources.filter(source => source.memory).map(source => source.id), planning = imagePlanningBody(body, bankSourceIds);
+      if (!planning.blocks.some(block => block.type === 'paragraph')) {
+        job.images!.status = 'skipped'; delete job.lease;
+        appendEditorialEvent(engine,job,{ type: 'step.skipped',stepId: 'images' });
+        appendEditorialEvent(engine,job,{ type: 'step.progress',stepId: 'images',meta: 'Não há material visual autorizado para sugerir imagens.' });
+        return undefined;
+      }
       appendEditorialEvent(engine,job,{ type: 'step.started',stepId: 'images',meta: 'Gerando imagens em segundo plano' });
-      return { job: structuredClone(job),body,identity: { portal: record.production.workspaceId,
+      return { job: structuredClone(job),body,planning,bankSourceIds,identity: { portal: record.production.workspaceId,
         actor: engine.store.state.runFolds[claim.runId].run.createdBy } };
     })).value;
     if (!input) return true;
-    const { job,body,identity } = input;
+    const { job,body,planning,bankSourceIds,identity } = input;
     if (!job.pipeline) throw new FlowError('PIPELINE_SNAPSHOT_MISSING',422);
     const trace = async (call: PipelineCall) => {
       await guarded(async checkpoint => {
@@ -81,10 +88,10 @@ async function runScoped(owner: string,signal: AbortSignal,dependencies: Depende
       });
     };
     const response = await dependencies.plan({ pipeline: job.pipeline,key: 'images',schema: PIPELINE_SCHEMAS.images,
-      variables: { history: JSON.stringify(body),source: '',brief: '',sizing: '',outline: '',section: '',futureSections: '',layouts: '',approvedArticle: '', event: '', people: '' },
+      variables: { history: JSON.stringify(planning),source: '',brief: '',sizing: '',outline: '',section: '',futureSections: '',layouts: '',approvedArticle: '', event: '', people: '' },
       directory: await workDirectory(claim.runId),signal: AbortSignal.any([combined,AbortSignal.timeout(30000)]),trace,
-      validateOutput: value => { try { planArticleImages(body,value); return true; } catch { return false; } } });
-    const planned = { ...body,...planArticleImages(body,response.value) };
+      validateOutput: value => { try { planArticleImages(body,value,bankSourceIds); return true; } catch { return false; } } });
+    const planned = { ...body,...planArticleImages(body,response.value,bankSourceIds) };
     if (body.cover) delete planned.coverSlot;
     // Recheck before spending image requests if an editor changed the draft during planning.
     const stillCurrent = (await guarded(async (checkpoint,engine) => {
