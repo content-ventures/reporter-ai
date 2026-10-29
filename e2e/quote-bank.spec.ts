@@ -10,6 +10,7 @@ import { toSourceVersionRef } from '../src/domain/source.ts';
 import { contentHash } from '../src/domain/text/hash.ts';
 import type { MemorySelectedContext } from '../src/ports/editorial-memory.ts';
 import { defaultPipelineDefinition, pipelineRevision } from '../src/domain/pipeline.ts';
+import { captureMemoryChoice } from '../src/domain/editorial-memory-discovery.ts';
 import { VIEWPORTS, expectHeadingOutline, expectNoHorizontalOverflow, watchErrors } from './support';
 
 /**
@@ -55,6 +56,8 @@ for (const viewport of VIEWPORTS) {
       const f = memoryWritingFixture('statistic', literal, ctx, checkpoint.state.workspace.id), source = f.source;
       const checked = { id: f.item.view.evidence.id, revision: 1 };
       source.memory[0].items[0].selected.check = checked; f.selection.items[0].check = checked; f.item.view.decision!.check = checked;
+      const discovery = captureMemoryChoice(f.item.view.evidence, { query: 'Busca sintética original', kind: 'statistic', minConfidence: 0, unused: false }, '1').discovery!;
+      source.memory[0].items[0].selected.discovery = discovery; f.selection.items[0].discovery = discovery;
       const made = await engine.commands.createBlank({ title: 'QA sintético de origem', brief: { size: 'standard', sections: 3 } });
       expect(made.ok).toBe(true); if (!made.ok) return;
       const { productionId, pieceId } = made.value, body = { type: 'article' as const, title: 'QA sintético de origem',
@@ -91,6 +94,8 @@ for (const viewport of VIEWPORTS) {
       await expect(reader.getByRole('textbox', { name: 'Trecho original selecionado', exact: true })).toHaveValue(literal);
       await expect(reader.getByText('87.5%', { exact: true })).toBeVisible();
       await expect(reader.getByText('4 — Força sintética separada da confiança.', { exact: true })).toBeVisible();
+      await expect(reader.getByText('Busca sintética original', { exact: true })).toBeVisible();
+      await expect(reader.getByText('0%', { exact: true })).toBeVisible(); await expect(reader.getByText('Com uso', { exact: true })).toBeVisible();
       await expectNoHorizontalOverflow(page); await page.keyboard.press('Escape'); await expect(reader).not.toBeVisible(); await expect(trigger).toBeFocused();
       origin.check!.confidence = null; await trigger.click(); await expect(reader.getByText('Não calibrada', { exact: true })).toBeVisible();
       await expect(reader.getByText('87.5%', { exact: true })).toHaveCount(0); await page.keyboard.press('Escape'); await expect(trigger).toBeFocused();
