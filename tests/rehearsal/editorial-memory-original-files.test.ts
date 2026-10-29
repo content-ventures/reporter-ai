@@ -3,14 +3,15 @@ import { randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import pg, { type Pool } from 'pg';
 import type { MemoryOriginalFile } from '../../src/domain/editorial-memory-original-file.ts';
-import type { MemoryMaterial } from '../../src/domain/editorial-memory.ts';
+import { memoryEvidenceRef, type MemoryEvidence, type MemoryEvidenceView, type MemoryMaterial, type MemoryPage } from '../../src/domain/editorial-memory.ts';
 import type { MemoryJob } from '../../src/ports/editorial-memory.ts';
 import type { Source } from '../../src/domain/source.ts';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { startFakeS3 } from '../support/fake-s3.ts';
 import { startWorkerHost } from '../support/worker-host.ts';
+import { exerciseMemoryLocationBrowser } from '../support/editorial-memory-location-browser.ts';
 
-const APP = 'http://127.0.0.1:3998', PORTAL = '10000000-0000-0000-0000-000000000101';
+const APP = process.env.REPORTER_MEMORY_LOCATION_UI_BASE ?? 'http://127.0.0.1:3998', PORTAL = '10000000-0000-0000-0000-000000000101';
 const identities = ['editor', 'peer', 'approver', 'admin'].map(role => ({ subject: `original-${role}`, email: `${role}@originals.test`, name: role, emailVerified: true }));
 const bytes = Buffer.from('\ufeffinstituição;indicador;valor;unidade;período\r\nÓrgão sintético;Visitantes;1.234,56;pessoas;2025\r\n');
 const upload = { name: 'Acervo — março.csv', bytes: bytes.toString('base64'), delimiter: ';' };
@@ -19,6 +20,7 @@ const intake = (id: string) => ({ title: 'Synthetic original file', kind: 'archi
 let db: Awaited<ReturnType<typeof startRehearsalDatabase>>, storage: Awaited<ReturnType<typeof startFakeS3>>, host: Awaited<ReturnType<typeof startWorkerHost>>;
 let handle: typeof import('../../src/server/http.ts').handleReporter, refuseStorage = false, otherWorkspace: string;
 let original: MemoryOriginalFile, imported: { material: MemoryMaterial; job: MemoryJob };
+let anchored: MemoryEvidence;
 async function owner(sql: string, values: unknown[] = []) {
   const client = new pg.Client({ connectionString: db.owner }); await client.connect();
   try { return (await client.query(sql, values)).rows; } finally { await client.end(); }
@@ -98,6 +100,34 @@ test('file import creates complete original-bound source blocks and refuses clie
   assert.deepEqual(await owner('SELECT (SELECT count(*) FROM public.reporter_ed_sources) AS sources,(SELECT count(*) FROM public.reporter_memory_heads) AS heads'), before);
 });
 
+test('evidence locates exact authorized original lines and table columns without returning file contents', async () => {
+  const excerpt = 'Órgão sintético;Visitantes;1.234,56;pessoas;2025';
+  const { runMemoryJob } = await import('../../src/server/editorial-memory-worker.ts');
+  assert.equal(await runMemoryJob('original-location-test', new AbortController().signal, Date.now() + 1000000, async claim => ({
+    value: { overflow: false, evidence: [{ kind: 'citation', excerpt, from: null, kinds: ['fact'] }] }, model: claim.job.model!, provider: 'synthetic',
+    provider_request_id: null, usage_unit: 'tokens', input_units: 0, output_units: 0 })), true);
+  const page = await (await api(`?materialId=${encodeURIComponent(imported.material.id)}`)).json() as MemoryPage<MemoryEvidenceView>;
+  assert.equal(page.items.length, 1); anchored = page.items[0].evidence; const proof = memoryEvidenceRef(anchored);
+  const path = `${anchored.id}/original-location?revision=${proof.revision}&hash=${proof.hash}`;
+  for (const actor of [0, 1, 2]) {
+    const response = await api(path, undefined, actor); assert.equal(response.status, 200, await response.clone().text());
+    assert.equal(response.headers.get('cache-control'), 'private, no-store'); const location = await response.json();
+    assert.deepEqual([location.firstLine, location.lastLine], [2, 2]); assert.deepEqual(location.records, [{ record: 2, columns: [1, 2, 3, 4, 5] }]);
+    assert.equal(location.fileName, upload.name); assert.equal(location.originalFileId, original.id); assert.equal(JSON.stringify(location).includes(excerpt), false);
+  }
+  const before = storage.requests.length;
+  assert.equal((await api(`${anchored.id}/original-location?revision=0&hash=0000000000000000`)).status, 409);
+  assert.equal((await api(`${path}&extra=1`)).status, 422);
+  assert.equal((await api(`${path}&hash=${proof.hash}`)).status, 422);
+  assert.equal(storage.requests.length, before, 'invalid proofs must be refused before the private object read');
+});
+
+test('original evidence location is accessible and reset on close in the browser', { skip: !process.env.REPORTER_MEMORY_LOCATION_UI_BASE }, async () => {
+  assert.ok(['127.0.0.1', 'localhost'].includes(new URL(APP).hostname));
+  await exerciseMemoryLocationBrowser(APP, Number(process.env.REPORTER_MEMORY_LOCATION_UI_WIDTH ?? 1440), anchored.anchor.excerpt, request =>
+    handle(request, new URL(request.url).pathname.split('/').slice(3), { identify: async () => identities[0], defer: () => {} }));
+});
+
 test('storage failures retain a pending original that retries without duplicate metadata or audit', async () => {
   const key = randomUUID(), value = { name: 'Pending.txt', bytes: Buffer.from('Synthetic pending original with sufficient literal content.').toString('base64') };
   refuseStorage = true;
@@ -136,6 +166,8 @@ test('current private source ancestry is checked before original metadata or sto
   try {
     const count = storage.requests.length;
     for (const actor of [1, 2]) for (const suffix of ['', '/file']) assert.equal((await api(`originals/${original.id}${suffix}`, undefined, actor)).status, 404);
+    const proof = memoryEvidenceRef(anchored), location = `${anchored.id}/original-location?revision=${proof.revision}&hash=${proof.hash}`;
+    for (const actor of [1, 2]) assert.equal((await api(location, undefined, actor)).status, 404);
     assert.equal(storage.requests.length, count);
     assert.equal((await api(`originals/${original.id}/file`)).status, 200, 'the uploader still owns the retained original');
   } finally { await owner("UPDATE public.reporter_memory_heads SET origin_production_id=NULL WHERE portal_id=$2 AND kind='material' AND id=$1", [imported.material.id, PORTAL]); }
@@ -162,6 +194,12 @@ test('a source correction preserves the immutable uploaded file and refuses reas
     text: 'A synthetic corrected logical source retains the exact earlier uploaded file in its history.', reason: 'Synthetic correction contract.' });
   assert.equal(response.status, 200, await response.clone().text()); const revised = await response.json();
   assert.equal(revised.material.originalFileId, original.id); assert.equal(revised.material.source.sourceVersion, 2);
+  const proof = memoryEvidenceRef(anchored);
+  assert.equal((await api(`${anchored.id}/original-location?revision=${proof.revision}&hash=${proof.hash}`)).status, 409);
+  const refreshed = await (await api(anchored.id)).json(), current = memoryEvidenceRef(refreshed.evidence);
+  assert.notDeepEqual(current, proof);
+  const location = await api(`${anchored.id}/original-location?revision=${current.revision}&hash=${current.hash}`);
+  assert.equal(location.status, 200, await location.clone().text()); assert.equal((await location.json()).firstLine, 2);
   assert.deepEqual(Buffer.from(await (await api(`originals/${original.id}/file`)).arrayBuffer()), bytes);
   await assert.rejects(owner("UPDATE public.reporter_memory_heads SET doc=jsonb_set(doc,'{originalFileId}',to_jsonb($2::text)) WHERE portal_id=$3 AND kind='material' AND id=$1",
     [imported.material.id, randomUUID(), PORTAL]), /INVALID_INPUT/);

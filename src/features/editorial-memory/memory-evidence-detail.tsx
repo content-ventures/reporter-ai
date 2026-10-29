@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Badge, Button, ButtonGroup, Checkbox, DescriptionList, Drawer, ErrorState, Field, Input, LiveRegion, Panel, Section, Select, Spinner, Textarea, TextLink, toast } from '@content-ventures/design-system/v3';
 import type { MemoryDecisionAction, MemoryHistoryKind, MemoryMaterial, MemoryUseStage } from '@/domain/editorial-memory';
 import { memoryEvidenceRef } from '@/domain/editorial-memory';
@@ -13,6 +13,7 @@ import type { MemoryVersionUse } from '@/domain/editorial-memory-reading';
 import { MemoryReplacementDialog, MemoryReplacementReader, type MemoryReplacementBasis } from './memory-replacement-dialog';
 import { MemoryCalibrationDialog, type MemoryCalibrationBasis } from './memory-calibration-dialog';
 import { MemoryReassessmentDialog, type MemoryReassessmentBasis } from './memory-reassessment-dialog';
+import { MemoryEvidenceLocation } from './memory-evidence-location';
 
 export const ELIGIBILITY_LABELS = { ready: 'Disponível para uso', source_unavailable: 'Conferir fonte e autorização', withdrawn: 'Retirada', authorship_pending: 'Confirmar autoria', review_required: 'Aguardando revisão', rejected: 'Rejeitada' };
 const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar', reject: 'Rejeitar', request_revision: 'Solicitar revisão' };
@@ -42,7 +43,7 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
   </ButtonGroup>} onClose={() => { setReadingOpen(false); setReplacingOpen(false); setRelationOpen(false); setCalibrationOpen(false); setReassessmentOpen(false); onClose(); }}>
     <LiveRegion message={open && resource.data?.checkJob ? `Checagem: ${memoryJobLabel(resource.data.checkJob)}.` : ''} />
     {resource.error ? <ErrorState title="Não foi possível abrir a evidência" description={resource.error} onRetry={resource.reload} /> : !resource.data || !resource.port ? <Spinner label="Carregando evidência" /> :
-      <EvidenceContent key={`${viewedId}:${resource.data.evidence.revision}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onReadVersion={readVersion} onReplacement={readRelation} onReassessment={() => {
+      <EvidenceContent key={`${viewedId}:${resource.data.evidence.revision}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} locationActive={open} onMaterial={onMaterial} onReadVersion={readVersion} onReplacement={readRelation} onReassessment={() => {
         if (!resource.data || !resource.port) return; const detail = resource.data, port = resource.port;
         setReassessment(current => current?.port === port && current.detail.evidence.id === detail.evidence.id && current.detail.evidence.revision === detail.evidence.revision && current.detail.check?.revision === detail.check?.revision && current.detail.policy.revision === detail.policy.revision ? current : { key: crypto.randomUUID(), detail, port }); setReassessmentOpen(true);
       }} onCalibration={() => {
@@ -58,9 +59,11 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
     {reassessment && <MemoryReassessmentDialog key={reassessment.key} basis={reassessment} open={open && reassessmentOpen} onClose={() => setReassessmentOpen(false)} onSaved={() => { setReassessmentOpen(false); resource.reload(); onChanged(); toast('Política reaplicada'); }} />}
   </>;
 }
-function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, onReplacement, onCalibration, onReassessment }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onReadVersion: (occurrence: MemoryVersionUse) => void; onReplacement: (id: string) => void; onCalibration: () => void; onReassessment: () => void }) {
+function EvidenceContent({ detail, port, locationActive, onChanged, onMaterial, onReadVersion, onReplacement, onCalibration, onReassessment }: { detail: MemoryDetail; port: MemoryLibrary; locationActive: boolean; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onReadVersion: (occurrence: MemoryVersionUse) => void; onReplacement: (id: string) => void; onCalibration: () => void; onReassessment: () => void }) {
   const session = useSession().data;
   const { evidence, check, decision } = detail, people = usePeople(), canEdit = useCan('library.edit'), canReview = useCan('library.review');
+  const locationHash = memoryEvidenceRef(evidence).hash;
+  const locationBinding = useMemo(() => ({ key: crypto.randomUUID(), expected: { id: evidence.id, revision: evidence.revision, hash: locationHash } }), [port, evidence.id, evidence.revision, locationHash]);
   const outdated = detail.checkState === 'outdated';
   const job = detail.checkJob, checking = job?.status === 'queued' || job?.status === 'running';
   const [reason, setReason] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState<string>();
@@ -83,6 +86,7 @@ function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, o
   return <Panel>
     <Section title={evidence.kind === 'citation' ? 'Citação literal' : evidence.indicator} meta={<Badge tone={detail.eligibility.usable ? 'green' : 'amber'}>{ELIGIBILITY_LABELS[detail.eligibility.reason]}</Badge>}>
       <Textarea aria-label="Trecho literal" readOnly value={evidence.anchor.excerpt} rows={6} />
+      {locationActive && detail.material.originalFileId && <MemoryEvidenceLocation key={locationBinding.key} load={() => port.originalLocation(locationBinding.expected)} />}
       {detail.replacements?.previous && <Button variant="secondary" onClick={() => onReplacement(detail.replacements!.previous!.id)}>Ver registro anterior</Button>}
       <DescriptionList items={[{ label: 'Material', value: <Button variant="ghost" onClick={() => onMaterial(detail.material)}>{detail.material.title}</Button> },
         { label: 'Autoria', value: evidence.kind === 'citation' ? person(evidence.personId) : person(evidence.declaringPersonId) },

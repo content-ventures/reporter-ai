@@ -3,6 +3,7 @@ import { createMemoryBatch, readMemoryBatch, readMemoryBatches, updateMemoryBatc
 import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema, memoryCheckInputSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, memoryWritingInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
+import { readMemoryDocumentLocation } from './editorial-memory-document-location.ts';
 import { readMemoryCorrectionImpact } from './editorial-memory-impact.ts';
 import { readMemoryReplacement, replaceEditorialMemory } from './editorial-memory-replacement.ts';
 import { memoryReplacementSchema } from './editorial-memory-input.ts';
@@ -81,6 +82,12 @@ export async function handleEditorialMemory(request: Request, path: string[], re
   if (request.method === 'GET' && path.length === 2 && path[0] === 'replacements') {
     if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
     return Response.json(await readMemoryReplacement(path[1]), noStore);
+  }
+  if (request.method === 'GET' && path.length === 2 && path[1] === 'original-location') {
+    if ([...params.keys()].some(key => !['revision', 'hash'].includes(key)) || params.getAll('revision').length !== 1
+      || params.getAll('hash').length !== 1 || !/^(0|[1-9]\d{0,8})$/.test(params.get('revision') ?? '') || !/^[a-f0-9]{16}$/.test(params.get('hash') ?? ''))
+      throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await readMemoryDocumentLocation({ id: path[0], revision: Number(params.get('revision')), hash: params.get('hash')! }), noStore);
   }
   if (request.method === 'POST' && path.length === 2 && path[1] === 'replacement') {
     if ([...params].length) throw new FlowError('INVALID_INPUT', 422);

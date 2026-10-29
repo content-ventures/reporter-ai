@@ -87,6 +87,7 @@ export type MemoryDetail = Omit<MemoryEvidenceView, 'material'> & { material: Me
 export interface EditorialMemory extends MemoryBatchLibrary {
   query(input: MemoryQuery): Promise<MemoryPage<MemoryEvidenceView>>;
   detail(id: string): Promise<MemoryDetail>;
+  originalLocation(expected: MemoryEvidenceRef): Promise<import('../domain/editorial-memory-document-location.ts').MemoryDocumentEvidenceLocation | null>;
   history(id: string, kind: MemoryHistoryKind, input: MemoryHistoryQuery): Promise<MemoryPage<MemoryHistoryEntry>>;
   materials(input: { cursor?: string; limit?: number }): Promise<MemoryPage<MemoryMaterial & { job: MemoryJob | null }>>;
   material(id: string, revision?: number): Promise<{ material: MemoryMaterial; source: Source; job: MemoryJob | null }>;
