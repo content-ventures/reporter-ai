@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readMemoryDocument } from './editorial-memory-document.ts';
-import { mapMemoryMarketRows, memoryMarketWritingText, memoryStatisticMarketContext, type MemoryMarketMapping } from './editorial-memory-market.ts';
+import { mapMemoryMarketRows, memoryMarketHeaderValues, memoryMarketWritingText, memoryStatisticMarketContext, type MemoryMarketMapping } from './editorial-memory-market.ts';
 import { prepareMemoryMarketRows } from './editorial-memory-market-import.ts';
 import { createMemoryMaterial } from './editorial-memory-import.ts';
 import { memoryMarketContext, verifyMemoryMarketProof } from './editorial-memory-market-proof.ts';
@@ -58,6 +58,8 @@ test('market evidence keeps literal rows and refuses absent or nonliteral contex
     assert.equal(check.verdict, 'not_validated');
     const corrected = { ...headerEvidence.evidence, unit: 'pessoas' }, context = memoryStatisticMarketContext(corrected);
     assert.deepEqual(context, {}); assert.equal(memoryMarketWritingText(corrected.market, corrected.anchor.excerpt, context), corrected.anchor.excerpt);
+    const coincidental = structuredClone(headerEvidence.evidence); coincidental.market!.fields.unit!.value = 'pessoas';
+    assert.deepEqual(memoryMarketHeaderValues(coincidental.market, coincidental.anchor.excerpt), [{ field: 'unit', value: 'pessoas' }]);
   }
   const preview = mapMemoryMarketRows(doc.value, { ...mapping, unit: { record: 'header', column: 3 } }); assert.ok(preview.ok);
   if (first.status === 'ready') {

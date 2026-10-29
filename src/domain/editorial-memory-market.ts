@@ -20,9 +20,10 @@ export type MemoryMarketImportReport = { rows: ({ record: number; status: 'creat
 /** Header cells remain explicitly identified as context, separate from the literal row. */
 export function memoryMarketHeaderValues(market: import('./editorial-memory.ts').MemoryStatistic['market'], excerpt: string,
   selected?: Partial<Record<MemoryMarketField, string>>): { field: MemoryMarketField; value: string }[] {
+  void excerpt;
   if (!market?.mapping) return [];
   return (Object.entries(market.fields) as [MemoryMarketField, MemoryMarketCell | undefined][]).flatMap(([field, cell]) =>
-    cell?.record === 1 && market.mapping?.[field]?.record === 'header' && cell.value.trim() && !excerpt.includes(cell.value)
+    cell?.record === 1 && market.mapping?.[field]?.record === 'header' && cell.value.trim()
       && (!selected || selected[field] === cell.value) ? [{ field, value: cell.value }] : []);
 }
 export function memoryMarketWritingText(market: import('./editorial-memory.ts').MemoryStatistic['market'], excerpt: string,
