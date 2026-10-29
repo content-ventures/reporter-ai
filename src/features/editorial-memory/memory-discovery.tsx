@@ -5,7 +5,7 @@ import { VERDICT_LABELS } from '@/domain/fact-check';
 import { usePeople } from '@/state';
 
 /** Discovery describes the original choice; it is independent of current evidence eligibility. */
-export function MemoryDiscoveryDetails({ discovery, material }: { discovery: MemoryDiscovery; material?: { id: string; title: string } }) {
+export function MemoryDiscoveryDetails({ discovery, material }: { discovery: Pick<MemoryDiscovery, 'query' | 'evidence'>; material?: { id: string; title: string } }) {
   const people = usePeople(), q = discovery.query;
   return <DescriptionList items={[
     { label: 'Texto buscado', value: q.query?.trim() || 'Sem termo de busca' },

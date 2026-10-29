@@ -12,12 +12,14 @@ import { pieceHref } from '@/ui/routes';
 import { BriefStep } from '@/features/new-production/brief-sections';
 import { briefBlocker, EMPTY_DRAFT, MAX_TITLE_LENGTH, type NewProductionDraft } from '@/features/new-production/form';
 import { MemoryDiscoveryDetails } from './memory-discovery';
+import { MemoryRelevanceDialog, type MemoryRelevanceBasis } from './memory-relevance-dialog';
 
 type Props = { open: boolean; evidence: MemoryEvidenceChoice[]; selection?: MemorySelection; onClose: () => void;
   onChange: (items: MemoryEvidenceChoice[]) => void; onSaved: (selection: MemorySelection) => void };
 type Attempt = { signature: string; saveKey: string; writeKey: string; selection?: MemorySelection; input?: MemoryWritingInput };
 export function MemorySelectionDialog({ open, evidence, selection, onClose, onChange, onSaved }: Props) {
-  const router = useWorkspaceRouter(), canEdit = useCan('library.edit'), canCreate = useCan('production.create'), people = usePeople();
+  const router = useWorkspaceRouter(), canEdit = useCan('library.edit'), canCreate = useCan('production.create'), canReview = useCan('library.review'), people = usePeople();
+  const [rating, setRating] = useState<MemoryRelevanceBasis>(), [ratingOpen, setRatingOpen] = useState(false);
   const [draft, setDraft] = useState<NewProductionDraft>(() => ({ ...EMPTY_DRAFT, plan: 'article', origin: 'other' }));
   const [destination, setDestination] = useState<{ selectionId?: string; mode: 'new' | 'existing'; id: string }>();
   const chosen = destination?.selectionId === selection?.id ? destination : undefined;
@@ -65,7 +67,7 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
     finally { pending.current = false; setBusy(undefined); }
   }
   const locked = Boolean(busy) || !canEdit, blocked = !details || !evidence.length || Boolean(changed || unavailable || resource.error);
-  return <ResponsiveDialog open={open} title={canEdit ? 'Escrever com a seleção' : 'Seleção salva'} size="lg" dirty={Boolean(draft.title)} onClose={busy ? () => undefined : onClose}
+  return <><ResponsiveDialog open={open} title={canEdit ? 'Escrever com a seleção' : 'Seleção salva'} size="lg" dirty={Boolean(draft.title)} onClose={busy ? () => undefined : () => { setRatingOpen(false); onClose(); }}
     footer={<><Button variant="ghost" disabled={Boolean(busy)} onClick={onClose}>Fechar</Button>{canEdit && <Button variant="secondary" loading={busy === 'save'} disabled={locked || blocked || mode === 'existing' && Boolean(blocker)} onClick={() => void save(false)}>Salvar seleção</Button>}
       {canEdit && canCreate && <Button loading={busy === 'write'} disabled={locked || blocked || Boolean(blocker)} onClick={() => void save(true)}>{mode === 'existing' ? 'Adicionar fontes e abrir editor' : 'Criar artigo e abrir editor'}</Button>}</>}>
     <Panel>
@@ -79,6 +81,10 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
           {details.map((item, index) => <ListItem key={item.evidence.id} draggable={!locked} title={`${index + 1}. ${item.evidence.anchor.excerpt}`} titleLines={2}
             description={`${item.material.title} · ${item.evidence.kind === 'statistic' ? item.evidence.issuingInstitution ?? 'Instituição não informada' : people.data?.find(person => person.id === (item.evidence.kind === 'citation' ? item.evidence.personId : null))?.name ?? 'Autoria não identificada'}`}
             actions={<ButtonGroup label={`Ações da evidência ${index + 1}`}>
+              {canReview && selection && resource.port && selection.items.some(saved => saved.evidence.id === item.evidence.id) && <Button size="sm" variant="ghost" disabled={Boolean(busy)} aria-label={`Avaliar relevância da evidência ${index + 1}`} onClick={() => {
+                const port = resource.port!, input = { selection: { id: selection.id, revision: selection.revision }, evidence: selection.items.find(saved => saved.evidence.id === item.evidence.id)!.evidence };
+                setRating(current => current?.port === port && JSON.stringify(current.input) === JSON.stringify(input) ? current : { key: crypto.randomUUID(), input, port }); setRatingOpen(true);
+              }}>Avaliar relevância</Button>}
               {evidence[index].discovery && <Button size="sm" variant="ghost" aria-label={`Ver busca da evidência ${index + 1}`} aria-expanded={inspected === item.evidence.id}
                 onClick={() => setInspected(inspected === item.evidence.id ? undefined : item.evidence.id)}>Ver busca</Button>}
               <IconButton label={`Remover evidência ${index + 1}`} icon={X} disabled={locked} onClick={() => onChange(evidence.filter(ref => ref.id !== item.evidence.id))} />
@@ -107,5 +113,7 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
         </>}
       </Section>}
     </Panel>
-  </ResponsiveDialog>;
+  </ResponsiveDialog>
+    {rating && <MemoryRelevanceDialog key={rating.key} basis={rating} open={open && ratingOpen} onClose={() => setRatingOpen(false)} onSaved={() => { setRatingOpen(false); toast('Feedback registrado'); }} />}
+  </>;
 }
