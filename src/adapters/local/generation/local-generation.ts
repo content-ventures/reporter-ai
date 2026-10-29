@@ -18,7 +18,7 @@ import { canGenerate } from '../../../domain/rules/generate.ts';
 import { briefHash } from '../../../domain/production.ts';
 import { contentHash } from '../../../domain/text/hash.ts';
 import { mainOrganization } from '../../../domain/text/kicker.ts';
-import { currentSourceVersion, writingSources } from '../../../domain/source.ts';
+import { currentSourceVersion, sourceVersionSpeakers, writingSources } from '../../../domain/source.ts';
 import type { Unsubscribe } from '../../../ports/common.ts';
 import { GENERATION_LABELS, REWRITE_TONE_LABELS, RUN_KIND_OF, SLIDE_ASSIST_LABELS } from '../../../ports/generation.ts';
 import type {
@@ -202,7 +202,7 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
     const people = deps.people?.() ?? [];
     const info: Record<string, SpeakerInfo> = {};
     for (const source of record.sources) {
-      for (const speaker of source.speakers) {
+      for (const speaker of sourceVersionSpeakers(source)) {
         const person = speaker.personId ? people.find((candidate) => candidate.id === speaker.personId) : undefined;
         const line = person ? personLine(person) : undefined;
         if (person) info[speaker.label] = line ? { name: person.name, title: line } : { name: person.name };
@@ -230,7 +230,7 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
     return mainOrganization(
       record.sources.flatMap((source) => {
         const segments = currentSourceVersion(source).content.segments;
-        return source.speakers.map((speaker) => ({
+        return sourceVersionSpeakers(source).map((speaker) => ({
           organization: people.find((person) => person.id === speaker.personId)?.organization,
           weight: segments.filter((segment) => segment.speaker === speaker.label).length,
         }));
