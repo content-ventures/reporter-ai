@@ -63,7 +63,7 @@ function EvidenceContent({ detail, port, locationActive, onChanged, onMaterial, 
   const session = useSession().data;
   const { evidence, check, decision } = detail, people = usePeople(), canEdit = useCan('library.edit'), canReview = useCan('library.review');
   const locationHash = memoryEvidenceRef(evidence).hash;
-  const locationBinding = useMemo(() => ({ key: crypto.randomUUID(), expected: { id: evidence.id, revision: evidence.revision, hash: locationHash } }), [port, evidence.id, evidence.revision, locationHash]);
+  const locationBinding = useMemo(() => ({ port, key: crypto.randomUUID(), expected: { id: evidence.id, revision: evidence.revision, hash: locationHash } }), [port, evidence.id, evidence.revision, locationHash]);
   const outdated = detail.checkState === 'outdated';
   const job = detail.checkJob, checking = job?.status === 'queued' || job?.status === 'running';
   const [reason, setReason] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState<string>();

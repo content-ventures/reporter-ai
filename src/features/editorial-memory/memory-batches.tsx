@@ -13,7 +13,7 @@ import { batchFailureMessage, describeBatchFile } from './memory-batch-files';
 
 const labels: Record<MemoryBatchItem['status'], string> = { needs_file: 'Selecionar arquivo', uploading: 'Envio pendente', ready: 'Pronto para importar', failed: 'Falha recuperável', refused: 'Recusado', included: 'Incluído', existing: 'Já existente', pending_review: 'Revisar correspondência' };
 export function MemoryBatchManager(props: { port: MemoryLibrary; open: boolean; initialBatchId?: string; onClose: () => void; onMaterial: (id: string) => void }) {
-  const binding = useMemo(() => ({ port: props.port, key: crypto.randomUUID() }), [props.port, props.initialBatchId]);
+  const binding = useMemo(() => ({ port: props.port, batchId: props.initialBatchId, key: crypto.randomUUID() }), [props.port, props.initialBatchId]);
   return <BatchManager key={binding.key} {...props} />;
 }
 function BatchManager({ port, open, initialBatchId, onClose, onMaterial }: { port: MemoryLibrary; open: boolean; initialBatchId?: string; onClose: () => void; onMaterial: (id: string) => void }) {
