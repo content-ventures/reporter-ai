@@ -193,3 +193,26 @@ test('optional image-provider failure preserves the completed text and does not 
   assert.equal(row.attempts,1); assert.equal(row.images.status,'failed');
   assert.equal(row.images.attempts,1);
 });
+test('no eligible visual prose skips the image job without provider calls, new assets or a replacement version', async () => {
+  const f = await fixture(), body: ArticleBody = { ...f.body, blocks: f.body.blocks.filter(block => block.type !== 'paragraph') };
+  await rpc('saveDraft', [f.pieceId, body, f.draft.revision]);
+  const { articleImageTarget } = await import('../../src/server/article-image-task.ts');
+  const { editorialContextHash } = await import('../../src/server/editorial.ts');
+  await withPilotWorker(() => editorial('worker', async (checkpoint, engine) => {
+    const record = engine.records.record(f.productionId)!, job = checkpoint.jobs[f.runId];
+    job.images = articleImageTarget(record, f.pieceId)!;
+    job.contextHash = editorialContextHash(record, f.pieceId, engine.store.state.runFolds[f.runId].run.inputs);
+  }));
+  let plans = 0, illustrations = 0;
+  assert.equal(await imageWorker('rehearsal-no-prose', signal(), {
+    plan: async () => { plans++; throw new Error('unexpected paid planning'); },
+    illustrate: async () => { illustrations++; throw new Error('unexpected paid illustration'); },
+  }), true);
+  const snapshot = await workspace(), record = snapshot.state.productions.find(record => record.production.id === f.productionId)!;
+  assert.equal(plans, 0); assert.equal(illustrations, 0); assert.deepEqual(record.pieces[0].draft.body, body);
+  assert.equal(record.versions.length, 1); assert.deepEqual(record.versions[0], f.version);
+  assert.equal(snapshot.imageAssets?.filter(asset => asset.productionId === f.productionId).length ?? 0, 0);
+  assert.equal(snapshot.state.runFolds[f.runId].run.status, 'completed');
+  const row = (await admin.query("SELECT job->'images' AS images FROM public.reporter_ed_runs WHERE run_id=$1", [f.runId])).rows[0];
+  assert.equal(row.images.status, 'skipped');
+});
