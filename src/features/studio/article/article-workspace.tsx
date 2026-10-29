@@ -9,6 +9,7 @@ import { EditorToolbar } from './editor-toolbar';
 import { FloatingBars, LinkDialog } from './floating-bars';
 import { ImagePicker } from './image-picker';
 import { MaterialSourcePicker } from './source-pane';
+import { MemorySourceRefreshDialog, type MemoryRefreshBasis } from '@/features/editorial-memory/memory-source-refresh-dialog';
 import { StudioContext, useStudio } from './studio-context';
 import { StudioDialogs } from './studio-dialogs';
 import { StudioFooter } from './studio-footer';
@@ -28,6 +29,7 @@ export function ArticleWorkspace(inputs: StudioInputs) {
   const studio = useArticleStudio(inputs);
   const { panes } = studio;
   const [linking, setLinking] = useState(false);
+  const [refresh, setRefresh] = useState<MemoryRefreshBasis>();
   const tab = panes.panelTab;
   // The interview and the conversation own their scroll (and touch the pane's edges).
   const owned = tab === 'material' || tab === 'assistant' || (tab === 'comments' && Boolean(studio.reviewNote));
@@ -51,7 +53,7 @@ export function ArticleWorkspace(inputs: StudioInputs) {
           max: 520,
           collapsed: !panes.panelOpen,
           onCollapsedChange: (collapsed) => panes.setPanelOpen(!collapsed),
-          header: <><PanelTabs />{tab === 'material' && !studio.desk ? <MaterialSourcePicker /> : null}</>,
+          header: <><PanelTabs />{tab === 'material' && !studio.desk ? <MaterialSourcePicker onRefresh={setRefresh} /> : null}</>,
           content: <PanelPane />,
           scroll: !owned,
           flush: owned,
@@ -64,6 +66,8 @@ export function ArticleWorkspace(inputs: StudioInputs) {
         <FloatingBars onLink={() => setLinking(true)} />
       </WorkspaceLayout>
       <StudioDialogs />
+      {refresh && <MemorySourceRefreshDialog basis={refresh} writable={!studio.readOnly && !studio.locked && studio.production.activeRuns.length === 0}
+        onClose={() => setRefresh(undefined)} onDone={result => { setRefresh(undefined); studio.showSource(result.source); studio.bankReadiness.retry(); }} />}
       <LinkDialog open={linking} onClose={() => setLinking(false)} />
       <ImagePicker
         request={studio.images.picker}
