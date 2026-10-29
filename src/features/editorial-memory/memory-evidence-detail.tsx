@@ -91,8 +91,8 @@ function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, o
       {evidence.kind === 'statistic' && <DescriptionList items={[{ label: 'Valor original', value: evidence.value.raw }, { label: 'Unidade', value: evidence.unit },
         { label: 'Período', value: evidence.period?.label }, { label: 'População', value: evidence.population }, { label: 'Geografia', value: evidence.geography },
         { label: 'Ressalva', value: evidence.qualifier }, { label: 'Instituição emissora', value: evidence.issuingInstitution }]} />}
+      {canEdit && (detail.policyReassessment || check?.policyEvaluation) && <Button variant="secondary" onClick={onReassessment}>{detail.policyReassessment ? 'Reaplicar política' : 'Ver reaplicação'}</Button>}
       {(canEdit || canReview) && <ButtonGroup label="Checagem">
-        {canEdit && (detail.policyReassessment || check?.policyEvaluation) && <Button variant="secondary" onClick={onReassessment}>{detail.policyReassessment ? 'Reaplicar política' : 'Ver reaplicação'}</Button>}
         {canReview && <Button variant="secondary" disabled={!check || outdated || checking || detail.reviewRestricted || evidence.status !== 'active' || !evidence.kinds.some(kind => kind === 'fact' || kind === 'declared') || detail.eligibility.reason === 'source_unavailable'} onClick={onCalibration}>Avaliar para calibração</Button>}
         {canEdit && <>
         <Button variant="secondary" loading={busy} disabled={checking || ['source_unavailable', 'withdrawn'].includes(detail.eligibility.reason)} onClick={() => void execute(() => port.check(evidence.id, memoryEvidenceRef(evidence), crypto.randomUUID()))}>{check ? 'Checar novamente' : 'Checar evidência'}</Button>
