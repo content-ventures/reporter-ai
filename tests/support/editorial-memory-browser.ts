@@ -56,7 +56,7 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
       const row = editor.getByRole('row', { name: material.title, exact: true }); await row.focus(); await editor.keyboard.press('Enter');
       const drawer = editor.getByRole('dialog', { name: material.title, exact: true });
       const announcement = drawer.getByRole('status').filter({ hasText: /^Extração de / }); await expect(announcement).toContainText('Na fila');
-      await expect(announcement).toHaveAttribute('aria-live', 'polite'); const close = drawer.getByRole('button', { name: 'Fechar', exact: true }); await close.focus();
+      await expect(announcement).toHaveAttribute('aria-live', 'polite'); const close = drawer.getByRole('button', { name: 'Fechar painel', exact: true }); await close.focus();
       await extract(); await expect(announcement).toContainText('Concluído'); await expect(announcement).toContainText(`${job.totalBlocks} de ${job.totalBlocks} blocos concluídos`);
       await expect(drawer.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100'); await expect(close).toBeFocused(); await audit(editor, 'extraction-announced');
       await editor.keyboard.press('Escape'); await expect(drawer).toBeHidden(); await expect(row).toBeFocused();
@@ -369,6 +369,9 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
         await expect(reading).toContainText(title); await expect(reading).toContainText(passage.text, { useInnerText: true });
         await expect(reading).not.toContainText('Origem e contexto no texto do ensaio');
         await expect(version.locator('[contenteditable="true"]')).toHaveCount(0);
+        const text = version.getByRole('textbox', { name: `Artigo na versão ${number}`, exact: true });
+        await expect(text).toHaveAttribute('aria-readonly', 'true');
+        await version.getByRole('button', { name: 'Fechar painel', exact: true }).focus(); await editor.keyboard.press('Tab'); await expect(text).toBeFocused();
         await audit(editor, `used-${passage.kind}`); await editor.keyboard.press('Escape');
         // A repeated Escape during the reader's exit still belongs to that topmost layer.
         await editor.keyboard.press('Escape'); await expect(version).toBeHidden();

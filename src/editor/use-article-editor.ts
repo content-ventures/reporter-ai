@@ -217,6 +217,8 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
 
 export type UseArticleReaderOptions = {
   body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>;
+  /** Accessible name of the keyboard-readable, immutable text. */
+  label?: string;
   /** What the figures show per asset (keep it memoised). */
   figureSources?: FigureSources;
   /** Leave the open image slots out (the publishable text, as the exports show it). */
@@ -266,7 +268,7 @@ function useFigureSources(editor: Editor | null, figureSources: FigureSources | 
  * Read-only article (review, material and version previews) with the same schema and `data-*`
  * hooks, figures included. A new `body` object replaces the content outside any history.
  */
-export function useArticleReader({ body, figureSources, hideImageSlots = false }: UseArticleReaderOptions): Editor | null {
+export function useArticleReader({ body, label = 'Texto do artigo', figureSources, hideImageSlots = false }: UseArticleReaderOptions): Editor | null {
   const [setup] = useState(() => ({
     extensions: articleExtensions({ placeholder: false }),
     content: articleToDoc(hideImageSlots ? publishableView(body) : body, { figureSources }),
@@ -278,7 +280,7 @@ export function useArticleReader({ body, figureSources, hideImageSlots = false }
     editable: false,
     extensions: setup.extensions,
     content: setup.content,
-    editorProps: { attributes: { lang: 'pt-BR', 'aria-readonly': 'true' } },
+    editorProps: { attributes: { role: 'textbox', 'aria-label': label, 'aria-multiline': 'true', lang: 'pt-BR', 'aria-readonly': 'true', tabindex: '0' } },
   });
   useEffect(() => {
     if (!editor || shown.current === body) return;
