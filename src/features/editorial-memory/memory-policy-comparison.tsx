@@ -4,7 +4,7 @@ import { Alert, Badge, Button, DataTable, DescriptionList, ErrorState, Field, Pa
 import type { MemoryPolicy } from '@/domain/editorial-memory';
 import type { MemoryPolicyProposal } from '@/domain/editorial-memory-policy';
 import type { MemoryLibrary } from '@/ports/editorial-memory';
-import { useCan } from '@/state';
+import { useCan, useSession } from '@/state';
 import { useMemoryResource } from '@/state/use-memory-library';
 import { useMemoryPolicyCommand } from './use-memory-policy-command';
 
@@ -19,6 +19,7 @@ const percentage = (value: number | null) => value === null ? 'Não medida' : `$
 export type MemoryPolicyReading = { key: string; port: MemoryLibrary } & ({ kind: 'proposal'; id: string } | { kind: 'version'; version: MemoryPolicy });
 export function useMemoryPolicyReading({ basis, current, open, onClose, onChanged, onProposal }: { basis?: MemoryPolicyReading; current?: MemoryPolicy; open: boolean; onClose: () => void; onChanged: () => void; onProposal: (proposal: MemoryPolicyProposal) => void }) {
   const allowed = useCan('pipeline.edit'), command = useMemoryPolicyCommand(basis?.port, open && allowed), [reasons, setReasons] = useState<Record<string, string>>({});
+  const session = useSession().data, person = (id: string | null) => (id === session?.current?.id ? session?.current?.name : session?.members.find(member => member.id === id)?.name) ?? id ?? 'Política inicial';
   const reasonKey = basis?.kind === 'proposal' ? basis.id : basis?.kind === 'version' ? `version-${basis.version.revision}` : '', reason = reasons[reasonKey] ?? '';
   const setReason = (value: string) => setReasons(current => ({ ...current, [reasonKey]: value }));
   const load = useCallback((port: MemoryLibrary) => basis?.kind === 'proposal' ? port.policyProposal(basis.id) : Promise.resolve(undefined), [basis]);
@@ -39,7 +40,7 @@ export function useMemoryPolicyReading({ basis, current, open, onClose, onChange
     body: !basis || !command.bound || !allowed ? <ErrorState title="Acesso alterado" description="Abra a política novamente na conta atual." /> : <Panel>
       {command.error && <Section><Alert tone="danger" title={command.error} /></Section>}
       {basis.kind === 'version' ? <Section>
-        <DescriptionList items={[{ label: 'Modo', value: POLICY_MODES[basis.version.mode] }, { label: 'Responsável', value: basis.version.activatedBy ?? 'Política inicial' },
+        <DescriptionList items={[{ label: 'Modo', value: POLICY_MODES[basis.version.mode] }, { label: 'Responsável', value: person(basis.version.activatedBy) },
           { label: 'Ativada em', value: basis.version.activatedAt ? new Date(basis.version.activatedAt).toLocaleString('pt-BR') : 'Padrão inicial' }, { label: 'Motivo', value: basis.version.change?.reason },
           { label: 'Confiança mínima para fatos', value: basis.version.thresholds.fact === null ? 'Revisão humana' : percentage(basis.version.thresholds.fact) },
           { label: 'Confiança mínima para declarações', value: basis.version.thresholds.declared === null ? 'Revisão humana' : percentage(basis.version.thresholds.declared) }]} />
@@ -47,7 +48,7 @@ export function useMemoryPolicyReading({ basis, current, open, onClose, onChange
         <Section title="Alterações propostas" titleAs="h3" meta={<Badge tone={proposal.evaluation.activatable ? 'green' : 'amber'}>{proposal.evaluation.activatable ? 'Critérios atendidos' : 'Ativação impedida'}</Badge>}>
           {outdated && <Alert tone="warning" title="A política ativa mudou">Crie uma nova proposta usando a versão atual.</Alert>}
           <DescriptionList items={[{ label: 'Referência', value: `Versão ${proposal.baseRevision} · ${POLICY_MODES[proposal.baseline.mode]}` }, { label: 'Proposta', value: POLICY_MODES[proposal.settings.mode] },
-            { label: 'Proposta por', value: proposal.createdBy }, { label: 'Criada em', value: new Date(proposal.createdAt).toLocaleString('pt-BR') },
+            { label: 'Proposta por', value: person(proposal.createdBy) }, { label: 'Criada em', value: new Date(proposal.createdAt).toLocaleString('pt-BR') },
             ...(proposal.restoredFrom ? [{ label: 'Restaurar configuração', value: `Versão ${proposal.restoredFrom}` }] : [])]} />
           <Textarea aria-label="Motivo registrado da proposta" readOnly rows={3} value={proposal.reason} />
           <DataTable label="Comparação dos limites" rows={Object.keys(KINDS) as (keyof typeof KINDS)[]} rowKey={kind => kind} columns={[

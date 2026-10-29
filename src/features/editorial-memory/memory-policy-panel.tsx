@@ -24,7 +24,7 @@ export function MemoryPolicyPanel() {
       ]} />}
     </Section>
       <Section title="Propostas avaliadas"><PolicyList refresh={epoch} kind="proposals" onProposal={item => { if (resource.port) { setOpening({ key: crypto.randomUUID(), port: resource.port, kind: 'proposal', id: item.id }); setOpen(true); } }} /></Section>
-      <Section title="Histórico de políticas"><PolicyList refresh={epoch} kind="versions" onVersion={version => { if (resource.port) { setOpening({ key: crypto.randomUUID(), port: resource.port, kind: 'version', version }); setOpen(true); } }} /></Section>
+      <Section title="Histórico de políticas"><PolicyList refresh={epoch} currentRevision={resource.data?.revision} kind="versions" onVersion={version => { if (resource.port) { setOpening({ key: crypto.randomUUID(), port: resource.port, kind: 'version', version }); setOpen(true); } }} /></Section>
     </Panel>
     {opening && <MemoryPolicyDialog key={opening.key} basis={opening} open={open} current={resource.data} onClose={() => { setOpen(false); setEpoch(value => value + 1); }} onChanged={changed} onPrepared={() => setPrepared(opening.key)} />}
   </>;
@@ -38,7 +38,7 @@ function MemoryPolicyDialog({ basis, current, open, onClose, onChanged, onPrepar
   const content = creating ? form : comparison;
   return <><ResponsiveDialog open={open} title={content.title} footer={content.footer} size="lg" dirty={content.dirty} onClose={content.busy ? () => undefined : onClose}>{content.body}</ResponsiveDialog>{form.preview}</>;
 }
-function PolicyList({ kind, refresh, onProposal, onVersion }: { kind: 'proposals' | 'versions'; refresh: number; onProposal?: (item: MemoryPolicyProposal) => void; onVersion?: (item: MemoryPolicy) => void }) {
+function PolicyList({ kind, refresh, currentRevision, onProposal, onVersion }: { kind: 'proposals' | 'versions'; refresh: number; currentRevision?: number; onProposal?: (item: MemoryPolicyProposal) => void; onVersion?: (item: MemoryPolicy) => void }) {
   const [cursor, setCursor] = useState<string>(), [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const load = useCallback((port: MemoryLibrary): Promise<MemoryPage<MemoryPolicyProposal | MemoryPolicy>> => kind === 'proposals' ? port.policyProposals({ cursor, limit: 25 }) : port.policyVersions({ cursor, limit: 25 }), [kind, cursor]);
   const resource = useMemoryResource(load), page = resource.data, session = useSession().data;
@@ -51,7 +51,7 @@ function PolicyList({ kind, refresh, onProposal, onVersion }: { kind: 'proposals
       { key: 'reason', header: 'Motivo', pinned: true, render: item => 'evaluation' in item ? item.reason : item.change?.reason ?? 'Política inicial' },
       { key: 'actor', header: 'Responsável', render: item => person('evaluation' in item ? item.createdBy : item.activatedBy) },
       { key: 'date', header: 'Data', render: item => { const value = 'evaluation' in item ? item.createdAt : item.activatedAt; return value ? new Date(value).toLocaleString('pt-BR') : 'Inicial'; } },
-      { key: 'state', header: 'Avaliação', render: item => 'evaluation' in item ? <Badge tone={item.evaluation.activatable ? 'green' : 'amber'}>{item.evaluation.activatable ? 'Critérios atendidos' : 'Impedida'}</Badge> : 'Histórica' },
+      { key: 'state', header: kind === 'proposals' ? 'Avaliação' : 'Estado', render: item => 'evaluation' in item ? <Badge tone={item.evaluation.activatable ? 'green' : 'amber'}>{item.evaluation.activatable ? 'Critérios atendidos' : 'Impedida'}</Badge> : item.revision === currentRevision ? <Badge tone="green">Ativa</Badge> : 'Anterior' },
     ]} empty={<EmptyState title="Nenhuma proposta avaliada" />} footer={<ButtonGroup label={`Páginas de ${kind === 'proposals' ? 'propostas' : 'versões'}`}>
       <Button variant="secondary" disabled={!cursor} onClick={() => setCursor(cursors.indexOf(cursor) > 0 ? cursors[cursors.indexOf(cursor) - 1] : undefined)}>Anterior</Button>
       <Button variant="secondary" disabled={!page.nextCursor} onClick={() => { setCursors(current => [...current.slice(0, current.indexOf(cursor) + 1), page.nextCursor!]); setCursor(page.nextCursor!); }}>Próxima</Button>

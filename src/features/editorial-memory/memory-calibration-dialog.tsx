@@ -4,7 +4,7 @@ import { Alert, Button, DescriptionList, ErrorState, Field, ResponsiveDialog, Se
 import { memoryEvidenceRef } from '@/domain/editorial-memory';
 import type { MemoryCalibrationCase, MemoryCalibrationCaseInput } from '@/domain/editorial-memory-calibration';
 import type { MemoryDetail, MemoryLibrary } from '@/ports/editorial-memory';
-import { useCan } from '@/state';
+import { useCan, useSession } from '@/state';
 import { useMemoryPolicyCommand } from './use-memory-policy-command';
 
 export const CALIBRATION_OUTCOMES = { confirmed: 'Confirmada', contradicted: 'Contradita', insufficient: 'Evidência insuficiente' };
@@ -33,11 +33,12 @@ export function MemoryCalibrationDialog({ basis, open, onClose, onSaved }: { bas
   </ResponsiveDialog>;
 }
 export function MemoryCalibrationReader({ item, open, onClose }: { item?: MemoryCalibrationCase; open: boolean; onClose: () => void }) {
+  const session = useSession().data, person = item && ((item.personId === session?.current?.id ? session.current.name : session?.members.find(member => member.id === item.personId)?.name) ?? item.personId);
   return <ResponsiveDialog open={open} title="Amostra factual" size="lg" onClose={onClose} footer={<Button variant="ghost" onClick={onClose}>Fechar</Button>}>
     {item && <Section><Textarea aria-label="Trecho original da amostra" readOnly rows={6} value={item.excerpt} />
       <DescriptionList items={[{ label: 'Material', value: item.materialTitle }, { label: 'Resultado', value: CALIBRATION_OUTCOMES[item.outcome] }, { label: 'Finalidade', value: item.purpose === 'editorial' ? 'Avaliação editorial' : 'Teste técnico' },
         { label: 'Versão do original', value: item.source.sourceVersion }, { label: 'Revisão da evidência', value: item.evidence.revision }, { label: 'Revisão da checagem', value: item.check.revision }, { label: 'Política avaliada', value: item.policyRevision },
-        { label: 'Responsável', value: item.personId }, { label: 'Data', value: new Date(item.at).toLocaleString('pt-BR') }]} />
+        { label: 'Responsável', value: person }, { label: 'Data', value: new Date(item.at).toLocaleString('pt-BR') }]} />
       <Textarea aria-label="Justificativa registrada" readOnly rows={4} value={item.reason} />
     </Section>}
   </ResponsiveDialog>;

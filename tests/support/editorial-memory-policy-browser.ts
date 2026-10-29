@@ -5,7 +5,7 @@ import type { MemoryPolicyProposal } from '../../src/domain/editorial-memory-pol
 import type { MemoryPolicy } from '../../src/domain/editorial-memory.ts';
 const response = (page: Page, path: string) => page.waitForResponse(reply => reply.url().endsWith(`/memory/policy/${path}`) && reply.request().method() === 'POST');
 async function result<T>(pending: ReturnType<typeof response>): Promise<T> { const reply = await pending; assert.equal(reply.status(), 200, await reply.text()); return reply.json() as Promise<T>; }
-const settle = async (page: Page, name: string) => page.getByRole('dialog', { name, exact: true }).evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)).then(() => undefined));
+const settle = async (page: Page, name: string) => expect.poll(() => page.getByRole('dialog', { name, exact: true }).evaluate(element => element.getAnimations({ subtree: true }).filter(animation => animation.playState === 'running' || animation.pending).length)).toBe(0);
 async function choose(page: Page, field: string, option: string) { await page.getByRole('combobox', { name: field, exact: true }).click(); await page.getByRole('option', { name: option, exact: true }).click(); }
 export async function annotateMemoryPolicyCase(page: Page, base: string, excerpt: string, audit: (page: Page, label: string) => Promise<void>) {
   await page.goto(`${base}/w/reporter-ai/quotes?q=${encodeURIComponent(excerpt.slice(0, 70))}`);
@@ -20,7 +20,9 @@ export async function annotateMemoryPolicyCase(page: Page, base: string, excerpt
   await form.getByRole('button', { name: 'Fechar', exact: true }).filter({ hasText: /^Fechar$/ }).click(); await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); await trigger.click();
   await expect(form.getByRole('textbox', { name: 'Justificativa da amostra', exact: true })).toHaveValue(reason); await audit(page, 'calibration-form');
   const pending = response(page, 'cases'); await submit.click(); const item = await result<MemoryCalibrationCase>(pending);
-  await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); assert.equal(item.purpose, 'technical'); assert.equal(item.outcome, 'confirmed'); return item;
+  await expect(form).toBeHidden(); await expect(trigger).toBeFocused();
+  const title = await drawer.getByRole('heading', { name: 'Evidência', exact: true }).boundingBox(); assert.ok(title && title.height <= 60, 'the short drawer title must not collapse into a vertical column');
+  await audit(page, 'calibration-recorded'); assert.equal(item.purpose, 'technical'); assert.equal(item.outcome, 'confirmed'); return item;
 }
 export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, base: string, item: MemoryCalibrationCase, audit: (page: Page, label: string) => Promise<void>) {
   await editor.goto(`${base}/w/reporter-ai/quotes?bankView=policy`);
@@ -28,6 +30,7 @@ export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, ba
   await expect(editor.getByRole('tab', { name: 'Política', exact: true })).toHaveCount(0);
   await admin.goto(`${base}/w/reporter-ai/quotes?bankView=policy`);
   await expect(admin.getByRole('tab', { name: 'Política', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(admin.getByRole('button', { name: 'Filtros', exact: true })).toHaveCount(0);
   const create = admin.getByRole('button', { name: 'Criar proposta', exact: true }); await expect(create).toBeEnabled(); await create.click();
   const form = admin.getByRole('dialog', { name: 'Criar proposta de política', exact: true }); await settle(admin, 'Criar proposta de política');
   await expect(form.getByRole('button', { name: 'Avaliar proposta', exact: true })).toBeDisabled();
@@ -44,6 +47,7 @@ export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, ba
   assert.ok(blocked.evaluation.blockers.includes('EDITORIAL_CORPUS_REQUIRED'));
   const comparison = admin.getByRole('dialog', { name: 'Comparar proposta de política', exact: true }); await expect(comparison).toBeVisible(); await expect(form).toBeHidden();
   await expect(comparison.locator(':focus')).toHaveCount(1);
+  await expect(comparison.getByText('admin', { exact: true })).toBeVisible();
   await expect(comparison.getByText('A proposta exige amostras editoriais reais.', { exact: true })).toBeVisible();
   await comparison.getByRole('textbox', { name: 'Motivo da ativação', exact: true }).fill('Synthetic samples cannot authorize automatic use.');
   await expect(comparison.getByRole('button', { name: 'Ativar proposta', exact: true })).toBeDisabled(); await settle(admin, 'Comparar proposta de política'); await audit(admin, 'policy-blocked');
@@ -67,6 +71,6 @@ export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, ba
   pending = response(admin, `proposals/${restoredProposal.id}/activate`); await comparison.getByRole('button', { name: 'Ativar proposta', exact: true }).click(); const restored = await result<MemoryPolicy>(pending);
   await expect(comparison).toBeHidden(); assert.equal(restored.revision, active.revision + 1); assert.equal(restored.change!.restoredFrom, 1);
   await admin.reload(); await expect(admin.getByRole('tab', { name: 'Política', exact: true })).toHaveAttribute('aria-selected', 'true');
-  await expect(history.getByRole('row', { name: `Versão ${restored.revision}`, exact: true })).toBeVisible(); await expect(history.getByRole('row', { name: `Versão ${active.revision}`, exact: true })).toBeVisible(); await expect(baseline).toBeVisible();
+  await expect(history.getByRole('row', { name: `Versão ${restored.revision}`, exact: true }).getByText('Ativa', { exact: true })).toBeVisible(); await expect(history.getByRole('row', { name: `Versão ${active.revision}`, exact: true })).toBeVisible(); await expect(baseline).toBeVisible();
   await audit(admin, 'policy-restored'); return restored;
 }
