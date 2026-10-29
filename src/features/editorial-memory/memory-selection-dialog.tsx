@@ -43,7 +43,7 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
     if (write && blocker) { setError(blocker); titleRef.current?.focus(); return; }
     pending.current = true; setBusy(write ? 'write' : 'save'); setError(undefined);
     const input: Omit<Extract<MemoryWritingInput, { title: string }>, 'baseRevision'> | Omit<Extract<MemoryWritingInput, { target: unknown }>, 'baseRevision'> = mode === 'existing'
-      ? { target: { productionId: targetId, updatedAt: target.data!.updatedAt } }
+      ? { target: { productionId: targetId, updatedAt: target.data!.production.updatedAt } }
       : { title: draft.title.trim(), brief: { size: draft.size, sections: draft.sections, angle: draft.angle.trim() || undefined } };
     const signature = JSON.stringify({ evidence, input: 'target' in input ? { target: input.target.productionId } : input, id: selection?.id, revision: selection?.revision });
     if (attempt.current?.signature !== signature) attempt.current = { signature, saveKey: crypto.randomUUID(), writeKey: crypto.randomUUID() };
