@@ -1,7 +1,589 @@
 {
-  "currentVersion": "1.1.1",
+  "currentVersion": "1.2.0",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.2.0",
+      "roadmapRelease": "R1",
+      "date": "2026-10-29",
+      "title": "R1 feature release",
+      "summary": "Automatic feature release with 143 validated changes: accept bank workflow in staging; align delivery status with current work; wake worker after file imports.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Maintenance",
+          "description": "Establish the delivery baseline and evaluation corpus"
+        },
+        {
+          "type": "Added",
+          "description": "Define evidence contracts and auditable editorial review"
+        },
+        {
+          "type": "Added",
+          "description": "Validate library commands and sign pagination cursors"
+        },
+        {
+          "type": "Added",
+          "description": "Persist isolated evidence revisions and review audits"
+        },
+        {
+          "type": "Added",
+          "description": "Expose authorized snapshot queries through the API"
+        },
+        {
+          "type": "Added",
+          "description": "Expose paginated evidence history and editorial reviews"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve evidence history through audited corrections"
+        },
+        {
+          "type": "Added",
+          "description": "Reconcile curated citations and preserve corrections"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve scoped article citations and originals"
+        },
+        {
+          "type": "Added",
+          "description": "Synchronize article citations in editorial writes"
+        },
+        {
+          "type": "Added",
+          "description": "Consolidate duplicate citations without losing curation"
+        },
+        {
+          "type": "Added",
+          "description": "Persist ordered evidence selections"
+        },
+        {
+          "type": "Added",
+          "description": "Import complete materials with durable job controls"
+        },
+        {
+          "type": "Added",
+          "description": "Extract complete materials through fenced worker jobs"
+        },
+        {
+          "type": "Added",
+          "description": "Connect library import and editorial review screens"
+        },
+        {
+          "type": "Fixed",
+          "description": "Align bootstrap mounts with migration manifests"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve client identity in library mutations"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve overlay focus and fresh scoped queries"
+        },
+        {
+          "type": "Added",
+          "description": "Assess literal claims against scoped source evidence"
+        },
+        {
+          "type": "Added",
+          "description": "Queue checks with fenced results and source invalidation"
+        },
+        {
+          "type": "Documentation",
+          "description": "Reconcile delivery gates with verified functional paths"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Accept opaque check request identifiers"
+        },
+        {
+          "type": "Added",
+          "description": "Prepare ordered writing sources with original provenance"
+        },
+        {
+          "type": "Added",
+          "description": "Create articles from selected evidence atomically"
+        },
+        {
+          "type": "Added",
+          "description": "Recover selections and open the writing studio"
+        },
+        {
+          "type": "Added",
+          "description": "Validate use and preserve export provenance"
+        },
+        {
+          "type": "Added",
+          "description": "Restore library filters and pages from URLs"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve scoped query selectors and freshness"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Separate configuration acceptance scenarios"
+        },
+        {
+          "type": "Added",
+          "description": "Record actual approved article occurrences"
+        },
+        {
+          "type": "Fixed",
+          "description": "Isolate bank tabs from member inspection"
+        },
+        {
+          "type": "Added",
+          "description": "Open exact article versions from use history"
+        },
+        {
+          "type": "Added",
+          "description": "Attach selected sources to an existing pauta"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain evidence when closing a used version"
+        },
+        {
+          "type": "Fixed",
+          "description": "Revalidate prepared files before download"
+        },
+        {
+          "type": "Fixed",
+          "description": "Distinguish same-title pauta destinations"
+        },
+        {
+          "type": "Improved",
+          "description": "Page chronological keys before enrichment"
+        },
+        {
+          "type": "Added",
+          "description": "Navigate all attached source versions"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain caret source across narrow pane changes"
+        },
+        {
+          "type": "Added",
+          "description": "Expose source readiness before writing"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve writing gates after draft edits"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve proof across collection refreshes"
+        },
+        {
+          "type": "Added",
+          "description": "Persist audited collection refreshes"
+        },
+        {
+          "type": "Fixed",
+          "description": "Exclude retired sources from future writing"
+        },
+        {
+          "type": "Added",
+          "description": "Expose explicit collection refresh commands"
+        },
+        {
+          "type": "Fixed",
+          "description": "Bind writing attribution to source versions"
+        },
+        {
+          "type": "Fixed",
+          "description": "Reconcile workspace after bank commands"
+        },
+        {
+          "type": "Added",
+          "description": "Manage collection revisions in the studio"
+        },
+        {
+          "type": "Fixed",
+          "description": "Mount source refresh outside the clipped pane"
+        },
+        {
+          "type": "Fixed",
+          "description": "Adopt workspace deltas without production changes"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve evidence kind and context in studio insertion"
+        },
+        {
+          "type": "Added",
+          "description": "Enforce evidence context in article orchestration"
+        },
+        {
+          "type": "Added",
+          "description": "Read complete bank evidence in extractive writing"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve evidence context in article assistance"
+        },
+        {
+          "type": "Added",
+          "description": "Validate bank context in legacy writing pipelines"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain source accounting in ordinary assistance"
+        },
+        {
+          "type": "Added",
+          "description": "Recover bank quotations with exact source receipts"
+        },
+        {
+          "type": "Added",
+          "description": "Read original context from exact selected evidence"
+        },
+        {
+          "type": "Added",
+          "description": "Inspect selected original and editorial proof in studio"
+        },
+        {
+          "type": "Fixed",
+          "description": "Include selected context in database bootstrap"
+        },
+        {
+          "type": "Fixed",
+          "description": "Restore origin reader focus after closing"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record writing and selected origin delivery evidence"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain recorded confidence percentage in origin reader"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover selected origin confidence and keyboard recovery"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Complete origin reader fixtures and acceptance"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve discovery filters for each selected evidence"
+        },
+        {
+          "type": "Documentation",
+          "description": "Correct focused input test count"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep bank text out of automatic image evidence"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify discovery filters in the studio origin reader"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep selection excerpts readable on phones"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cover the complete multi-material writing journey"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify browser approval and delivered evidence"
+        },
+        {
+          "type": "Fixed",
+          "description": "Isolate historical reader dismissal"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record accepted writing and history validation"
+        },
+        {
+          "type": "Added",
+          "description": "Version corrected original materials"
+        },
+        {
+          "type": "Added",
+          "description": "Compare and revise original materials"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep original comparisons readable on phones"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Record responsive original revision acceptance"
+        },
+        {
+          "type": "Added",
+          "description": "Expose correction impact on current work"
+        },
+        {
+          "type": "Added",
+          "description": "Inspect correction impact in the library"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record accepted correction impact validation"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve explicit evidence replacements"
+        },
+        {
+          "type": "Added",
+          "description": "Compare and replace bank evidence"
+        },
+        {
+          "type": "Fixed",
+          "description": "Align replacement comparison columns"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify visible replacement history"
+        },
+        {
+          "type": "Added",
+          "description": "Retain editorial feedback for evaluation"
+        },
+        {
+          "type": "Added",
+          "description": "Review feedback and rate pauta relevance"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record accepted feedback validation"
+        },
+        {
+          "type": "Added",
+          "description": "Evaluate measured policy candidates"
+        },
+        {
+          "type": "Added",
+          "description": "Administer evaluated policy versions"
+        },
+        {
+          "type": "Added",
+          "description": "Compare and restore policy in the bank"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain focus across policy transitions"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep evidence actions readable on phones"
+        },
+        {
+          "type": "Fixed",
+          "description": "Reveal the active policy tab after reload"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record local policy lifecycle acceptance"
+        },
+        {
+          "type": "Added",
+          "description": "Reassess saved checks after policy changes"
+        },
+        {
+          "type": "Added",
+          "description": "Reapply policy through saved evidence"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep policy and check controls visible on phones"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record saved-check reassessment acceptance"
+        },
+        {
+          "type": "Fixed",
+          "description": "Recover collection pages through browser history"
+        },
+        {
+          "type": "Fixed",
+          "description": "Avoid redundant collection refresh on opening"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record collection page recovery acceptance"
+        },
+        {
+          "type": "Added",
+          "description": "Announce processing and audit bank accessibility"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify entry and reduced motion contracts"
+        },
+        {
+          "type": "Fixed",
+          "description": "Name and focus immutable article readers"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve text and table document locations"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Require a visible immutable reader focus ring"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Measure tab contrast alongside axe review"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Capture native entry input and mobile focus"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record accessibility preview and original reader progress"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve scoped private original objects"
+        },
+        {
+          "type": "Added",
+          "description": "Bind resumable original uploads to material intake"
+        },
+        {
+          "type": "Added",
+          "description": "Import and retrieve private originals in the library"
+        },
+        {
+          "type": "Fixed",
+          "description": "Announce file refusals and preserve accessible intake"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record original intake and published accessibility fixes"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Pin design system v0.4.2"
+        },
+        {
+          "type": "Documentation",
+          "description": "Accept frozen original file intake milestone"
+        },
+        {
+          "type": "Added",
+          "description": "Persist scoped import batches and reconciliation"
+        },
+        {
+          "type": "Added",
+          "description": "Process and reconcile document batches"
+        },
+        {
+          "type": "Added",
+          "description": "Manage document import batches"
+        },
+        {
+          "type": "Added",
+          "description": "Locate evidence in original files"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record batch and location progress"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record original location acceptance"
+        },
+        {
+          "type": "Added",
+          "description": "Reconcile individual file imports"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Clarify scoped UI bindings"
+        },
+        {
+          "type": "Fixed",
+          "description": "Clarify duplicate review comparisons"
+        },
+        {
+          "type": "Improved",
+          "description": "Bound duplicate comparison reads"
+        },
+        {
+          "type": "Fixed",
+          "description": "Compare the actual proposed origin"
+        },
+        {
+          "type": "Improved",
+          "description": "Reduce repeated impact visibility checks"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve historical document context"
+        },
+        {
+          "type": "Documentation",
+          "description": "Record local validation and open issues"
+        },
+        {
+          "type": "Added",
+          "description": "Save market table mappings"
+        },
+        {
+          "type": "Fixed",
+          "description": "Bind market mapping to previewed source"
+        },
+        {
+          "type": "Added",
+          "description": "Import literal market observations"
+        },
+        {
+          "type": "Added",
+          "description": "Retain market cell provenance"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve separate market header context"
+        },
+        {
+          "type": "Fixed",
+          "description": "Retain explicit header mappings"
+        },
+        {
+          "type": "Added",
+          "description": "Retain mapped market cell context"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Isolate market import fixture"
+        },
+        {
+          "type": "Fixed",
+          "description": "Configure deployed worker activation"
+        },
+        {
+          "type": "Fixed",
+          "description": "Wake worker after file imports"
+        },
+        {
+          "type": "Documentation",
+          "description": "Align delivery status with current work"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Accept bank workflow in staging"
+        }
+      ]
+    },
     {
       "version": "1.1.1",
       "roadmapRelease": "R1",

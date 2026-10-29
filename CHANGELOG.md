@@ -4,6 +4,166 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-29
+
+### Maintenance
+
+- Establish the delivery baseline and evaluation corpus.
+- Accept opaque check request identifiers.
+- Separate configuration acceptance scenarios.
+- Cover selected origin confidence and keyboard recovery.
+- Complete origin reader fixtures and acceptance.
+- Verify discovery filters in the studio origin reader.
+- Cover the complete multi-material writing journey.
+- Verify browser approval and delivered evidence.
+- Record responsive original revision acceptance.
+- Verify visible replacement history.
+- Verify entry and reduced motion contracts.
+- Require a visible immutable reader focus ring.
+- Measure tab contrast alongside axe review.
+- Capture native entry input and mobile focus.
+- Pin design system v0.4.2.
+- Clarify scoped UI bindings.
+- Isolate market import fixture.
+- Accept bank workflow in staging.
+
+### Added
+
+- Define evidence contracts and auditable editorial review.
+- Validate library commands and sign pagination cursors.
+- Persist isolated evidence revisions and review audits.
+- Expose authorized snapshot queries through the API.
+- Expose paginated evidence history and editorial reviews.
+- Preserve evidence history through audited corrections.
+- Reconcile curated citations and preserve corrections.
+- Preserve scoped article citations and originals.
+- Synchronize article citations in editorial writes.
+- Consolidate duplicate citations without losing curation.
+- Persist ordered evidence selections.
+- Import complete materials with durable job controls.
+- Extract complete materials through fenced worker jobs.
+- Connect library import and editorial review screens.
+- Assess literal claims against scoped source evidence.
+- Queue checks with fenced results and source invalidation.
+- Prepare ordered writing sources with original provenance.
+- Create articles from selected evidence atomically.
+- Recover selections and open the writing studio.
+- Validate use and preserve export provenance.
+- Restore library filters and pages from URLs.
+- Record actual approved article occurrences.
+- Open exact article versions from use history.
+- Attach selected sources to an existing pauta.
+- Navigate all attached source versions.
+- Expose source readiness before writing.
+- Preserve proof across collection refreshes.
+- Persist audited collection refreshes.
+- Expose explicit collection refresh commands.
+- Manage collection revisions in the studio.
+- Preserve evidence kind and context in studio insertion.
+- Enforce evidence context in article orchestration.
+- Read complete bank evidence in extractive writing.
+- Preserve evidence context in article assistance.
+- Validate bank context in legacy writing pipelines.
+- Recover bank quotations with exact source receipts.
+- Read original context from exact selected evidence.
+- Inspect selected original and editorial proof in studio.
+- Preserve discovery filters for each selected evidence.
+- Version corrected original materials.
+- Compare and revise original materials.
+- Expose correction impact on current work.
+- Inspect correction impact in the library.
+- Preserve explicit evidence replacements.
+- Compare and replace bank evidence.
+- Retain editorial feedback for evaluation.
+- Review feedback and rate pauta relevance.
+- Evaluate measured policy candidates.
+- Administer evaluated policy versions.
+- Compare and restore policy in the bank.
+- Reassess saved checks after policy changes.
+- Reapply policy through saved evidence.
+- Announce processing and audit bank accessibility.
+- Preserve text and table document locations.
+- Preserve scoped private original objects.
+- Bind resumable original uploads to material intake.
+- Import and retrieve private originals in the library.
+- Persist scoped import batches and reconciliation.
+- Process and reconcile document batches.
+- Manage document import batches.
+- Locate evidence in original files.
+- Reconcile individual file imports.
+- Preserve historical document context.
+- Save market table mappings.
+- Import literal market observations.
+- Retain market cell provenance.
+- Preserve separate market header context.
+- Retain mapped market cell context.
+
+### Fixed
+
+- Align bootstrap mounts with migration manifests.
+- Preserve client identity in library mutations.
+- Preserve overlay focus and fresh scoped queries.
+- Preserve scoped query selectors and freshness.
+- Isolate bank tabs from member inspection.
+- Retain evidence when closing a used version.
+- Revalidate prepared files before download.
+- Distinguish same-title pauta destinations.
+- Retain caret source across narrow pane changes.
+- Preserve writing gates after draft edits.
+- Exclude retired sources from future writing.
+- Bind writing attribution to source versions.
+- Reconcile workspace after bank commands.
+- Mount source refresh outside the clipped pane.
+- Adopt workspace deltas without production changes.
+- Retain source accounting in ordinary assistance.
+- Include selected context in database bootstrap.
+- Restore origin reader focus after closing.
+- Retain recorded confidence percentage in origin reader.
+- Keep bank text out of automatic image evidence.
+- Keep selection excerpts readable on phones.
+- Isolate historical reader dismissal.
+- Keep original comparisons readable on phones.
+- Align replacement comparison columns.
+- Retain focus across policy transitions.
+- Keep evidence actions readable on phones.
+- Reveal the active policy tab after reload.
+- Keep policy and check controls visible on phones.
+- Recover collection pages through browser history.
+- Avoid redundant collection refresh on opening.
+- Name and focus immutable article readers.
+- Announce file refusals and preserve accessible intake.
+- Clarify duplicate review comparisons.
+- Compare the actual proposed origin.
+- Bind market mapping to previewed source.
+- Retain explicit header mappings.
+- Configure deployed worker activation.
+- Wake worker after file imports.
+
+### Documentation
+
+- Reconcile delivery gates with verified functional paths.
+- Record writing and selected origin delivery evidence.
+- Correct focused input test count.
+- Record accepted writing and history validation.
+- Record accepted correction impact validation.
+- Record accepted feedback validation.
+- Record local policy lifecycle acceptance.
+- Record saved-check reassessment acceptance.
+- Record collection page recovery acceptance.
+- Record accessibility preview and original reader progress.
+- Record original intake and published accessibility fixes.
+- Accept frozen original file intake milestone.
+- Record batch and location progress.
+- Record original location acceptance.
+- Record local validation and open issues.
+- Align delivery status with current work.
+
+### Improved
+
+- Page chronological keys before enrichment.
+- Bound duplicate comparison reads.
+- Reduce repeated impact visibility checks.
+
 ## [1.1.1] - 2026-10-27
 
 ### Documentation
