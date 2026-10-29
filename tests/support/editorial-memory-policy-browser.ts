@@ -17,7 +17,7 @@ export async function annotateMemoryPolicyCase(page: Page, base: string, excerpt
   await choose(page, 'Finalidade da amostra', 'Teste técnico com conteúdo sintético'); await choose(page, 'Resultado factual conferido', 'Confirmada');
   const reason = 'Synthetic browser case; not representative factual-quality acceptance.';
   await form.getByRole('textbox', { name: 'Justificativa da amostra', exact: true }).fill(reason);
-  await form.getByRole('button', { name: 'Fechar', exact: true }).click(); await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); await trigger.click();
+  await form.getByRole('button', { name: 'Fechar', exact: true }).filter({ hasText: /^Fechar$/ }).click(); await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); await trigger.click();
   await expect(form.getByRole('textbox', { name: 'Justificativa da amostra', exact: true })).toHaveValue(reason); await audit(page, 'calibration-form');
   const pending = response(page, 'cases'); await submit.click(); const item = await result<MemoryCalibrationCase>(pending);
   await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); assert.equal(item.purpose, 'technical'); assert.equal(item.outcome, 'confirmed'); return item;
@@ -43,10 +43,11 @@ export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, ba
   let pending = response(admin, 'proposals'); await form.getByRole('button', { name: 'Avaliar proposta', exact: true }).click(); const blocked = await result<MemoryPolicyProposal>(pending);
   assert.ok(blocked.evaluation.blockers.includes('EDITORIAL_CORPUS_REQUIRED'));
   const comparison = admin.getByRole('dialog', { name: 'Comparar proposta de política', exact: true }); await expect(comparison).toBeVisible(); await expect(form).toBeHidden();
+  await expect(comparison.locator(':focus')).toHaveCount(1);
   await expect(comparison.getByText('A proposta exige amostras editoriais reais.', { exact: true })).toBeVisible();
   await comparison.getByRole('textbox', { name: 'Motivo da ativação', exact: true }).fill('Synthetic samples cannot authorize automatic use.');
   await expect(comparison.getByRole('button', { name: 'Ativar proposta', exact: true })).toBeDisabled(); await settle(admin, 'Comparar proposta de política'); await audit(admin, 'policy-blocked');
-  await comparison.getByRole('button', { name: 'Fechar', exact: true }).click(); await expect(comparison).toBeHidden(); await create.click(); await settle(admin, 'Criar proposta de política');
+  await comparison.getByRole('button', { name: 'Fechar', exact: true }).filter({ hasText: /^Fechar$/ }).click(); await expect(comparison).toBeHidden(); await expect(create).toBeFocused(); await create.click(); await settle(admin, 'Criar proposta de política');
   await choose(admin, 'Modo da proposta', 'Exigir revisão humana');
   await form.getByRole('textbox', { name: 'Motivo da proposta', exact: true }).fill('Synthetic explicit manual policy proposal.');
   pending = response(admin, 'proposals'); await form.getByRole('button', { name: 'Avaliar proposta', exact: true }).click(); const proposal = await result<MemoryPolicyProposal>(pending);
@@ -55,7 +56,7 @@ export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, ba
   await comparison.getByRole('textbox', { name: 'Motivo da ativação', exact: true }).fill('Synthetic manual policy activation preserves approved articles.');
   await settle(admin, 'Comparar proposta de política'); await audit(admin, 'policy-comparison');
   pending = response(admin, `proposals/${proposal.id}/activate`); await comparison.getByRole('button', { name: 'Ativar proposta', exact: true }).click(); const active = await result<MemoryPolicy>(pending);
-  await expect(comparison).toBeHidden(); assert.equal(active.revision, proposal.baseRevision + 1); assert.equal(active.mode, 'review_required');
+  await expect(comparison).toBeHidden(); await expect(create).toBeFocused(); assert.equal(active.revision, proposal.baseRevision + 1); assert.equal(active.mode, 'review_required');
   const history = admin.getByRole('table', { name: 'Versões de política', exact: true }), baseline = history.getByRole('row', { name: 'Versão 1', exact: true });
   await baseline.focus(); await admin.keyboard.press('Enter');
   const version = admin.getByRole('dialog', { name: 'Política versão 1', exact: true }); await expect(version).toBeVisible();

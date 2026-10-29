@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useState } from 'react';
-import { Alert, Badge, Button, DataTable, DescriptionList, ErrorState, Field, Panel, ResponsiveDialog, Section, Spinner, Textarea } from '@content-ventures/design-system/v3';
+import { Alert, Badge, Button, DataTable, DescriptionList, ErrorState, Field, Panel, Section, Spinner, Textarea } from '@content-ventures/design-system/v3';
 import type { MemoryPolicy } from '@/domain/editorial-memory';
 import type { MemoryPolicyProposal } from '@/domain/editorial-memory-policy';
 import type { MemoryLibrary } from '@/ports/editorial-memory';
@@ -17,13 +17,15 @@ const BLOCKERS: Record<string, string> = { EDITORIAL_CORPUS_REQUIRED: 'A propost
   QUALITY_FACT_NOT_MET: 'Os fatos não atendem aos critérios de qualidade.', QUALITY_DECLARED_NOT_MET: 'As declarações factuais não atendem aos critérios de qualidade.' };
 const percentage = (value: number | null) => value === null ? 'Não medida' : `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
 export type MemoryPolicyReading = { key: string; port: MemoryLibrary } & ({ kind: 'proposal'; id: string } | { kind: 'version'; version: MemoryPolicy });
-export function MemoryPolicyComparison({ basis, current, open, onClose, onChanged, onProposal }: { basis: MemoryPolicyReading; current?: MemoryPolicy; open: boolean; onClose: () => void; onChanged: () => void; onProposal: (proposal: MemoryPolicyProposal) => void }) {
-  const allowed = useCan('pipeline.edit'), command = useMemoryPolicyCommand(basis.port, open && allowed), [reason, setReason] = useState('');
-  const load = useCallback((port: MemoryLibrary) => basis.kind === 'proposal' ? port.policyProposal(basis.id) : Promise.resolve(undefined), [basis]);
-  const resource = useMemoryResource(load, 0, open && command.bound && allowed && basis.kind === 'proposal'), proposal = resource.data;
+export function useMemoryPolicyReading({ basis, current, open, onClose, onChanged, onProposal }: { basis?: MemoryPolicyReading; current?: MemoryPolicy; open: boolean; onClose: () => void; onChanged: () => void; onProposal: (proposal: MemoryPolicyProposal) => void }) {
+  const allowed = useCan('pipeline.edit'), command = useMemoryPolicyCommand(basis?.port, open && allowed), [reasons, setReasons] = useState<Record<string, string>>({});
+  const reasonKey = basis?.kind === 'proposal' ? basis.id : basis?.kind === 'version' ? `version-${basis.version.revision}` : '', reason = reasons[reasonKey] ?? '';
+  const setReason = (value: string) => setReasons(current => ({ ...current, [reasonKey]: value }));
+  const load = useCallback((port: MemoryLibrary) => basis?.kind === 'proposal' ? port.policyProposal(basis.id) : Promise.resolve(undefined), [basis]);
+  const resource = useMemoryResource(load, 0, open && command.bound && allowed && basis?.kind === 'proposal'), proposal = resource.data;
   const outdated = proposal && current?.revision !== proposal.baseRevision, locked = command.busy || !command.bound || !allowed || !current || !reason.trim();
   function save() {
-    if (!current || locked) return;
+    if (!basis || !current || locked) return;
     const input = { baseRevision: current.revision, reason: reason.trim() };
     if (basis.kind === 'version') {
       const payload = { ...input, targetRevision: basis.version.revision };
@@ -32,9 +34,9 @@ export function MemoryPolicyComparison({ basis, current, open, onClose, onChange
       void command.execute({ id: proposal.id, ...input }, key => basis.port.activatePolicy(proposal.id, input, key), () => { onChanged(); onClose(); });
     }
   }
-  return <ResponsiveDialog open={open} title={basis.kind === 'version' ? `Política versão ${basis.version.revision}` : 'Comparar proposta de política'} size="lg" dirty={Boolean(reason)} onClose={command.busy ? () => undefined : onClose}
-    footer={<><Button variant="ghost" disabled={command.busy} onClick={onClose}>Fechar</Button><Button loading={command.busy} disabled={locked || basis.kind === 'proposal' && (!proposal?.evaluation.activatable || Boolean(outdated) || Boolean(resource.error))} onClick={save}>{basis.kind === 'version' ? 'Preparar restauração' : 'Ativar proposta'}</Button></>}>
-    {!command.bound || !allowed ? <ErrorState title="Acesso alterado" description="Abra a política novamente na conta atual." /> : <Panel>
+  return { title: basis?.kind === 'version' ? `Política versão ${basis.version.revision}` : 'Comparar proposta de política', busy: command.busy, dirty: Boolean(reason),
+    footer: <><Button key={reasonKey} autoFocus variant="ghost" disabled={command.busy} onClick={onClose}>Fechar</Button><Button loading={command.busy} disabled={locked || basis?.kind === 'proposal' && (!proposal?.evaluation.activatable || Boolean(outdated) || Boolean(resource.error))} onClick={save}>{basis?.kind === 'version' ? 'Preparar restauração' : 'Ativar proposta'}</Button></>,
+    body: !basis || !command.bound || !allowed ? <ErrorState title="Acesso alterado" description="Abra a política novamente na conta atual." /> : <Panel>
       {command.error && <Section><Alert tone="danger" title={command.error} /></Section>}
       {basis.kind === 'version' ? <Section>
         <DescriptionList items={[{ label: 'Modo', value: POLICY_MODES[basis.version.mode] }, { label: 'Responsável', value: basis.version.activatedBy ?? 'Política inicial' },
@@ -71,6 +73,5 @@ export function MemoryPolicyComparison({ basis, current, open, onClose, onChange
         {proposal.evaluation.blockers.length > 0 && <Section title="Impedimentos" titleAs="h3"><DescriptionList items={proposal.evaluation.blockers.map((code, index) => ({ label: `${index + 1}`, value: BLOCKERS[code] ?? code }))} /></Section>}
       </>}
       <Section><Field label={basis.kind === 'version' ? 'Motivo da restauração' : 'Motivo da ativação'} required hint={basis.kind === 'version' ? 'Cria outra proposta para avaliação e ativação; preserva os dados novos.' : 'Checagens e decisões anteriores ficam desatualizadas. Artigos e versões já produzidos são preservados.'}>{({ id, describedBy }) => <Textarea id={id} aria-describedby={describedBy} disabled={command.busy} maxLength={2000} rows={3} value={reason} onChange={event => setReason(event.target.value)} />}</Field></Section>
-    </Panel>}
-  </ResponsiveDialog>;
+    </Panel> };
 }

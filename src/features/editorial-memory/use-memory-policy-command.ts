@@ -5,8 +5,8 @@ import type { MemoryLibrary } from '@/ports/editorial-memory';
 import { useMemoryLibrary } from '@/state/use-memory-library';
 
 /** A retained form owns its account and idempotent attempt, including late command replies. */
-export function useMemoryPolicyCommand(basis: MemoryLibrary, enabled: boolean) {
-  const port = useMemoryLibrary(), bound = port === basis, live = useRef(false), pending = useRef(false);
+export function useMemoryPolicyCommand(basis: MemoryLibrary | undefined, enabled: boolean) {
+  const port = useMemoryLibrary(), bound = Boolean(basis && port === basis), live = useRef(false), pending = useRef(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   const attempt = useRef<{ signature: string; key: string }>(undefined);
   useLayoutEffect(() => { live.current = enabled && bound; return () => { live.current = false; }; }, [enabled, bound]);
