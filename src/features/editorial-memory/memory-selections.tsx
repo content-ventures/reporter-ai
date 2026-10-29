@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, ButtonGroup, DataTable, EmptyState, ErrorState, Spinner } from '@content-ventures/design-system/v3';
 import type { MemorySelection } from '@/domain/editorial-memory';
 import type { MemoryLibrary } from '@/ports/editorial-memory';
@@ -10,7 +10,8 @@ export function MemorySelections({ onOpen, refresh, cursor, onCursor }: { onOpen
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]), people = usePeople();
   const load = useCallback((port: MemoryLibrary) => port.selections({ cursor, limit: 25 }), [cursor]), resource = useMemoryResource(load);
   const { reload } = resource;
-  useEffect(() => { reload(); }, [refresh, reload]);
+  const previousRefresh = useRef(refresh);
+  useEffect(() => { if (previousRefresh.current !== refresh) { previousRefresh.current = refresh; reload(); } }, [refresh, reload]);
   if (resource.error) return <ErrorState title="Não foi possível recuperar as seleções" description={resource.error} onRetry={cursor ? undefined : resource.reload}
     actions={cursor ? <Button onClick={() => onCursor(undefined)}>Atualizar seleções</Button> : undefined} />;
   if (!resource.data) return <Spinner label="Carregando seleções" />;
