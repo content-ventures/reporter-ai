@@ -3,6 +3,8 @@ import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
 import { readMemoryCorrectionImpact } from './editorial-memory-impact.ts';
+import { readMemoryReplacement, replaceEditorialMemory } from './editorial-memory-replacement.ts';
+import { memoryReplacementSchema } from './editorial-memory-input.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
 import { correctEditorialMemory } from './editorial-memory-correction.ts';
 import { reviseEditorialMemoryMaterial } from './editorial-memory-material-revision.ts';
@@ -24,6 +26,14 @@ import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemor
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
   if (process.env.REPORTER_MEMORY_MODE !== 'on') throw new FlowError('NOT_FOUND', 404);
   const noStore = { headers: { 'Cache-Control': 'private, no-store' } }, params = new URL(request.url).searchParams;
+  if (request.method === 'GET' && path.length === 2 && path[0] === 'replacements') {
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await readMemoryReplacement(path[1]), noStore);
+  }
+  if (request.method === 'POST' && path.length === 2 && path[1] === 'replacement') {
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await replaceEditorialMemory(path[0], memoryReplacementSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''), noStore);
+  }
   if (request.method === 'GET' && (path.length === 3 && path[0] === 'materials' && path[2] === 'impact' || path.length === 2 && path[1] === 'impact')) {
     return Response.json(await readMemoryCorrectionImpact({ kind: path.length === 3 ? 'material' : 'evidence', id: path.length === 3 ? path[1] : path[0] }, parseMemoryHistoryQuery(params)), noStore);
   }

@@ -1,5 +1,5 @@
 import type { MemoryCheck, MemoryDecision, MemoryDecisionInput, MemoryEvidence, MemoryEvidenceRef, MemoryEvidenceView,
-  MemoryArticleOrigin, MemoryBlock, MemoryEvidenceChoice, MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemorySourceBinding, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
+  MemoryArticleOrigin, MemoryBlock, MemoryEvidenceChoice, MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemoryReplacement, MemorySelection, MemorySourceBinding, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
 import type { SourceVersionRef } from '../domain/refs.ts';
 import type { Source, TranscriptSegment } from '../domain/source.ts';
 import type { Piece, Version } from '../domain/piece.ts';
@@ -63,9 +63,13 @@ export type MemoryCorrection =
     period?: MemoryStatistic['period']; geography?: string | null; population?: string | null; qualifier?: string | null;
     issuingInstitution?: string | null; declaringPersonId?: string | null };
 export type MemoryHistoryQuery = { cursor?: string; limit?: number };
+export type MemoryReplacementInput = { expected: MemoryEvidenceRef; replacement: MemoryEvidenceRef; reason: string };
+export type MemoryReplacementResult = { previous: MemoryEvidenceView; current: MemoryEvidenceView; relation: MemoryReplacement };
+export type MemoryReplacementComparison = { relation: MemoryReplacement; previous: MemoryEvidence; current: MemoryEvidence; materials: { previous: string; current: string } };
 export type MemoryHistoryEntry = MemoryCheck | MemoryDecision | MemoryEvidence | MemoryUse;
 export type MemoryDetail = Omit<MemoryEvidenceView, 'material'> & { material: MemoryMaterial; policy: MemoryPolicy;
   source: { ref: SourceVersionRef; authorized: boolean; segments: TranscriptSegment[] };
+  replacements?: { previous: MemoryReplacement | null; next: MemoryReplacement | null };
   checkJob?: MemoryJob | null; checks: MemoryPage<MemoryCheck>; decisions: MemoryPage<MemoryDecision>; revisions: MemoryPage<MemoryEvidence>; occurrences: MemoryPage<MemoryUse> };
 /** Request ids scope idempotency to one workspace and payload; mismatched replay is a conflict. */
 export interface EditorialMemory {
@@ -85,6 +89,8 @@ export interface EditorialMemory {
   correct(id: string, input: { expected: MemoryEvidenceRef; reason: string; changes: MemoryCorrection }, requestId: string): Promise<MemoryEvidenceView>;
   reviseMaterial(id: string, input: MemoryMaterialRevisionInput, requestId: string): Promise<MemoryMaterialRevisionResult>;
   correctionImpact(scope: MemoryImpactScope, input: MemoryHistoryQuery): Promise<MemoryCorrectionImpact>;
+  replace(id: string, input: MemoryReplacementInput, requestId: string): Promise<MemoryReplacementResult>;
+  replacement(id: string): Promise<MemoryReplacementComparison>;
   select(input: { id?: string; baseRevision: number; productionId: string | null; evidence: MemoryEvidenceChoice[] }, requestId: string): Promise<MemorySelection>;
   selection(id: string): Promise<MemorySelection>;
   selections(input: MemoryHistoryQuery): Promise<MemoryPage<MemorySelection>>;
