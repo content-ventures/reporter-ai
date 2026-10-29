@@ -18,7 +18,7 @@ const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar',
 const HISTORY_LABELS: Record<MemoryHistoryKind, string> = { checks: 'Checagens', decisions: 'Decisões', revisions: 'Revisões', occurrences: 'Ocorrências' };
 const USE_LABELS: Record<MemoryUseStage, string> = { selected: 'Selecionada', inserted: 'Inserida no rascunho', approved: 'Aprovada', published: 'Publicada' };
 export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial, onImpact }: { id: string; open: boolean; onClose: () => void; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onImpact: (id: string) => void }) {
-  const [viewedId, setViewedId] = useState(id), canEdit = useCan('library.edit'), canReview = useCan('library.review');
+  const [viewedId, setViewedId] = useState(id), canEdit = useCan('library.edit');
   const load = useCallback((port: MemoryLibrary) => port.detail(viewedId), [viewedId]), resource = useMemoryResource(load, 2500, open);
   const [reading, setReading] = useState<MemoryVersionUse>(), [readingOpen, setReadingOpen] = useState(false);
   const [replacing, setReplacing] = useState<MemoryReplacementBasis>(), [replacingOpen, setReplacingOpen] = useState(false);
@@ -35,15 +35,14 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
     setReplacingOpen(true);
   }
   return <><Drawer open={open} size="lg" title="Evidência" actions={<ButtonGroup label="Ações da evidência">
-    {canReview && <Button variant="secondary" size="sm" disabled={!resource.data?.check || resource.data.checkState !== 'current' || resource.data.reviewRestricted || resource.data.evidence.status !== 'active' || !resource.data.evidence.kinds.some(kind => kind === 'fact' || kind === 'declared') || resource.data.eligibility.reason === 'source_unavailable'} onClick={() => {
-      if (!resource.data || !resource.port) return; const detail = resource.data, port = resource.port;
-      setCalibration(current => current?.port === port && current.detail.evidence.id === detail.evidence.id && current.detail.evidence.revision === detail.evidence.revision && current.detail.check?.revision === detail.check?.revision && current.detail.policy.revision === detail.policy.revision ? current : { key: crypto.randomUUID(), detail, port }); setCalibrationOpen(true);
-    }}>Avaliar para calibração</Button>}
     {(canEdit || next) && <Button variant="secondary" size="sm" disabled={!resource.data || !next && resource.data.evidence.status !== 'active'} onClick={replace}>{next ? 'Ver substituição' : 'Substituir'}</Button>}
     <Button variant="secondary" size="sm" onClick={() => onImpact(viewedId)}>Ver impacto</Button>
   </ButtonGroup>} onClose={() => { setReadingOpen(false); setReplacingOpen(false); setRelationOpen(false); setCalibrationOpen(false); onClose(); }}>
     {resource.error ? <ErrorState title="Não foi possível abrir a evidência" description={resource.error} onRetry={resource.reload} /> : !resource.data || !resource.port ? <Spinner label="Carregando evidência" /> :
-      <EvidenceContent key={`${viewedId}:${resource.data.evidence.revision}:${resource.data.check?.revision ?? 0}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onReadVersion={readVersion} onReplacement={readRelation} onChanged={() => { resource.reload(); onChanged(); }} />}
+      <EvidenceContent key={`${viewedId}:${resource.data.evidence.revision}:${resource.data.check?.revision ?? 0}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onReadVersion={readVersion} onReplacement={readRelation} onCalibration={() => {
+        if (!resource.data || !resource.port) return; const detail = resource.data, port = resource.port;
+        setCalibration(current => current?.port === port && current.detail.evidence.id === detail.evidence.id && current.detail.evidence.revision === detail.evidence.revision && current.detail.check?.revision === detail.check?.revision && current.detail.policy.revision === detail.policy.revision ? current : { key: crypto.randomUUID(), detail, port }); setCalibrationOpen(true);
+      }} onChanged={() => { resource.reload(); onChanged(); }} />}
   </Drawer>
     {/* Modal siblings keep the reader's Escape and native close events out of the evidence drawer. */}
     {reading && <MemoryUsedVersion occurrence={reading} open={open && readingOpen} onClose={() => setReadingOpen(false)} />}
@@ -52,7 +51,7 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
     {calibration && <MemoryCalibrationDialog key={calibration.key} basis={calibration} open={open && calibrationOpen} onClose={() => setCalibrationOpen(false)} onSaved={() => { setCalibrationOpen(false); resource.reload(); onChanged(); toast('Amostra factual registrada'); }} />}
   </>;
 }
-function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, onReplacement }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onReadVersion: (occurrence: MemoryVersionUse) => void; onReplacement: (id: string) => void }) {
+function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, onReplacement, onCalibration }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onReadVersion: (occurrence: MemoryVersionUse) => void; onReplacement: (id: string) => void; onCalibration: () => void }) {
   const session = useSession().data;
   const { evidence, check, decision } = detail, people = usePeople(), canEdit = useCan('library.edit'), canReview = useCan('library.review');
   const outdated = detail.checkState === 'outdated';
@@ -86,10 +85,13 @@ function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, o
       {evidence.kind === 'statistic' && <DescriptionList items={[{ label: 'Valor original', value: evidence.value.raw }, { label: 'Unidade', value: evidence.unit },
         { label: 'Período', value: evidence.period?.label }, { label: 'População', value: evidence.population }, { label: 'Geografia', value: evidence.geography },
         { label: 'Ressalva', value: evidence.qualifier }, { label: 'Instituição emissora', value: evidence.issuingInstitution }]} />}
-      {canEdit && <ButtonGroup label="Checagem">
+      {(canEdit || canReview) && <ButtonGroup label="Checagem">
+        {canReview && <Button variant="secondary" disabled={!check || outdated || checking || detail.reviewRestricted || evidence.status !== 'active' || !evidence.kinds.some(kind => kind === 'fact' || kind === 'declared') || detail.eligibility.reason === 'source_unavailable'} onClick={onCalibration}>Avaliar para calibração</Button>}
+        {canEdit && <>
         <Button variant="secondary" loading={busy} disabled={checking || ['source_unavailable', 'withdrawn'].includes(detail.eligibility.reason)} onClick={() => void execute(() => port.check(evidence.id, memoryEvidenceRef(evidence), crypto.randomUUID()))}>{check ? 'Checar novamente' : 'Checar evidência'}</Button>
         {checking && <Button variant="secondary" loading={busy} onClick={() => void execute(() => port.cancel(job.id, job.revision, crypto.randomUUID()))}>Cancelar checagem</Button>}
         {job && ['failed', 'cancelled'].includes(job.status) && job.error !== 'MEMORY_CHECK_STALE' && <Button variant="secondary" loading={busy} onClick={() => void execute(() => port.retry(job.id, crypto.randomUUID()))}>Retomar checagem</Button>}
+        </>}
       </ButtonGroup>}
       {job && <DescriptionList items={[{ label: 'Processamento da checagem', value: <JobStatus job={job} /> },
         ...(job.error ? [{ label: 'Falha', value: job.error === 'MEMORY_CHECK_STALE' ? 'A evidência ou uma fonte mudou. Inicie uma nova checagem.'

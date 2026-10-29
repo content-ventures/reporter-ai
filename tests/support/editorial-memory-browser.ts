@@ -208,7 +208,8 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
         await dialog.getByRole('button', { name: 'Atualizar comparação', exact: true }).click();
         await expect(comparison).toHaveValue(competing.text); await expect(revision).toHaveValue(corrected); await expect(why).toHaveValue(reason);
       }
-      const beforeBox = await comparison.boundingBox(), afterBox = await revision.boundingBox(); assert.ok(beforeBox && afterBox);
+      // Read both rectangles in the same browser frame, including during the sheet's entrance.
+      const [beforeBox, afterBox] = await comparison.or(revision).evaluateAll(nodes => nodes.map(node => { const { x, y, width, height } = node.getBoundingClientRect(); return { x, y, width, height }; })); assert.ok(beforeBox && afterBox);
       if (width === 390) { assert.ok(beforeBox.width >= 300 && afterBox.width >= 300); assert.ok(afterBox.y >= beforeBox.y + beforeBox.height); }
       else { assert.ok(Math.abs(beforeBox.y - afterBox.y) < 2); assert.ok(afterBox.x >= beforeBox.x + beforeBox.width); }
       await audit(editor, competing ? 'revision-conflict' : 'revision-comparison');
