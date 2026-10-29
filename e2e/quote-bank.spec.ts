@@ -9,6 +9,7 @@ import { segmentRef } from '../src/domain/refs.ts';
 import { toSourceVersionRef } from '../src/domain/source.ts';
 import { contentHash } from '../src/domain/text/hash.ts';
 import type { MemorySelectedContext } from '../src/ports/editorial-memory.ts';
+import { defaultPipelineDefinition, pipelineRevision } from '../src/domain/pipeline.ts';
 import { VIEWPORTS, expectHeadingOutline, expectNoHorizontalOverflow, watchErrors } from './support';
 
 /**
@@ -76,6 +77,9 @@ for (const viewport of VIEWPORTS) {
         if (request.method() === 'GET' && path.endsWith('/writing-status')) return route.fulfill({ json: { productionId, updatedAt: record.production.updatedAt,
           checkedAt: ctx.now, sources: [toSourceVersionRef(source)], issues: [], draft: { pieceId, revision: piece.draft.revision, hash: contentHash(body) }, draftIssues: [] } });
         if (request.method() === 'GET' && path.endsWith('/context')) return route.fulfill({ json: origin });
+        if (request.method() === 'GET' && path.endsWith('/citations')) return route.fulfill({ json: { items: [], sources: [] } });
+        if (request.method() === 'GET' && path.endsWith('/pipeline')) return route.fulfill({ json: { active: pipelineRevision(defaultPipelineDefinition()),
+          history: [], runs: [], providers: { openai: false, groq: false, anthropic: false, gemini: false } } });
         unexpected.push(`${request.method()} ${path}`); return route.fulfill({ status: 500, json: { error: 'UNEXPECTED_SYNTHETIC_REQUEST' } });
       });
       await page.goto(`/productions/${productionId}/article`);
