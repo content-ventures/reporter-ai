@@ -5,7 +5,7 @@ import type { MemoryLibrary } from '@/ports/editorial-memory';
 import { useMemoryResource } from '@/state/use-memory-library';
 import { MATERIAL_KINDS } from './memory-material-kinds';
 
-export function MemoryFileReconciliation({ port, batchId, itemId, reason, onReason, onDone, onOpenBatch }: { port: MemoryLibrary; batchId: string; itemId: string; reason: string; onReason: (value: string) => void; onDone: (id: string) => void; onOpenBatch: (id: string) => void }) {
+export function MemoryFileReconciliation({ port, batchId, itemId, contentOrigin, contentFileId, reason, onReason, onDone, onOpenBatch }: { port: MemoryLibrary; batchId: string; itemId: string; contentOrigin: string; contentFileId?: string; reason: string; onReason: (value: string) => void; onDone: (id: string) => void; onOpenBatch: (id: string) => void }) {
   const load = useCallback(async (library: MemoryLibrary) => {
     const batch = await library.batch(batchId), item = batch.items.find(value => value.id === itemId);
     if (!item) throw new Error('Documento indisponível.');
@@ -44,6 +44,7 @@ export function MemoryFileReconciliation({ port, batchId, itemId, reason, onReas
   const format = (fileName: string) => ({ txt: 'text', md: 'markdown', srt: 'srt', vtt: 'vtt', csv: 'csv', tsv: 'tsv' } as Record<string, string>)[fileName.split('.').at(-1)?.toLowerCase() ?? ''];
   const displayFormat = (value: string | undefined) => value === 'text' ? 'TXT' : value === 'markdown' ? 'MD' : value?.toUpperCase() ?? 'Não informado';
   const newOrigin = item.input.primaryOrigin ?? item.input.metadata.originalUrl;
+  const proposedOrigin = newOrigin ?? (contentFileId && item.original?.id === contentFileId ? contentOrigin : undefined);
   const oldOrigin = candidate.material.primaryOrigin;
   const currentSource = candidate.material.source, basis = item.candidate.source;
   const stale = candidate.material.revision !== item.candidate.revision || currentSource.kind !== basis.kind || currentSource.sourceId !== basis.sourceId
@@ -59,7 +60,7 @@ export function MemoryFileReconciliation({ port, batchId, itemId, reason, onReas
     { label: 'Temas', proposed: item.input.metadata.topics.join(', ') || null, current: candidate.material.metadata.topics.join(', ') || null,
       differs: JSON.stringify(item.input.metadata.topics) !== JSON.stringify(candidate.material.metadata.topics) },
     { label: 'URL', proposed: item.input.metadata.originalUrl, current: candidate.material.metadata.originalUrl },
-    { label: 'Origem', proposed: newOrigin ?? 'Automática pelo conteúdo', current: oldOrigin },
+    { label: 'Origem', proposed: newOrigin ?? (proposedOrigin ? 'Automática pelo conteúdo' : 'Automática, a conferir'), current: oldOrigin, differs: proposedOrigin !== oldOrigin },
     { label: 'Autorização', proposed: item.input.authorized ? 'Autorizada' : 'Não confirmada', current: candidate.authorized ? 'Autorizada' : 'Não confirmada' },
     { label: 'Formato', proposed: displayFormat(format(item.file.name)), current: displayFormat(original?.format) },
     { label: 'Separador', proposed: separator(item.file.delimiter), current: separator(original?.delimiter ?? null) },

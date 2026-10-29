@@ -29,6 +29,7 @@ export async function exerciseMemorySingleFileBrowser(base: string, width: numbe
     await form.getByRole('button', { name: 'Importar', exact: true }).click();
     const review = page.getByRole('dialog', { name: 'Revisar correspondência', exact: true }); await expect(review).toBeVisible();
     await expect(review.getByText('Synthetic original file', { exact: true })).toBeVisible(); await expect(review.getByText('Edição sintética', { exact: true })).toBeVisible();
+    await expect(review.getByText('Origem no envio', { exact: true })).toHaveCount(0);
     const choice = width === 390 ? 'Registrar material distinto' : 'Usar material existente';
     const accept = review.getByRole('button', { name: choice, exact: true }); await expect(accept).toBeDisabled();
     const reason = 'A equipe confirmou que é a mesma publicação.';

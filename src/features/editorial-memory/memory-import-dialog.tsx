@@ -4,6 +4,7 @@ import { Alert, Button, Checkbox, Dropzone, Field, FieldGroup, FileRow, Input, L
 import { readMemoryDocument, type MemoryDocumentDelimiter } from '@/domain/editorial-memory-document';
 import { MAX_TEXT_BYTES } from '@/domain/reporter';
 import type { MemoryMetadata } from '@/domain/editorial-memory';
+import { contentHash } from '@/domain/text/hash';
 import type { MemoryLibrary, MemoryImportInput } from '@/ports/editorial-memory';
 import { MemoryFileReconciliation } from './memory-file-reconciliation';
 import { MATERIAL_KINDS } from './memory-material-kinds';
@@ -26,7 +27,7 @@ function MemoryImportForm({ port, open, onClose, onImported, onReviewBatch }: Pr
   const [delimiter, setDelimiter] = useState<MemoryDocumentDelimiter>(','), [error, setError] = useState<string>();
   const [stored, setStored] = useState<{ file: Original; delimiter: MemoryDocumentDelimiter }>();
   const [phase, setPhase] = useState('');
-  const [pending, setPending] = useState<{ batchId: string; itemId: string }>();
+  const [pending, setPending] = useState<{ batchId: string; itemId: string; contentFileId?: string }>();
   const [decisionReason, setDecisionReason] = useState('');
   const live = useRef(true), running = useRef(false);
   const upload = useRef<{ file: Original; delimiter: MemoryDocumentDelimiter; key: string; id?: string }>(undefined);
@@ -67,7 +68,7 @@ function MemoryImportForm({ port, open, onClose, onImported, onReviewBatch }: Pr
       if (submission.current?.payload !== payload) submission.current = { payload, key: crypto.randomUUID() };
       const result = originalFileId ? await port.importFile({ ...fields, originalFileId }, submission.current.key) : await port.import(input, submission.current.key);
       if (!live.current) return;
-      if ('pending' in result) { setPending(result.pending); return; }
+      if ('pending' in result) { setPending({ ...result.pending, contentFileId: originalFileId }); return; }
       setInput(blankImport()); setTopicsText(''); setFile(undefined); upload.current = undefined; submission.current = undefined;
       onImported(result.material.id);
     } catch (failure) { if (live.current) setError(failure instanceof Error ? failure.message : 'Não foi possível importar. Tente novamente.'); }
@@ -77,7 +78,7 @@ function MemoryImportForm({ port, open, onClose, onImported, onReviewBatch }: Pr
   const leavePending = () => { setPending(undefined); setDecisionReason(''); setInput(blankImport()); setTopicsText(''); setFile(undefined); upload.current = undefined; submission.current = undefined; onClose(); };
   return <ResponsiveDialog open={open} title={pending ? 'Revisar correspondência' : 'Importar material'} dirty={Boolean(input.title || input.text || file)} onClose={onClose}
     footer={pending ? <Button variant="secondary" onClick={leavePending}>Continuar depois</Button> : <><Button variant="secondary" disabled={busy} onClick={onClose}>Cancelar</Button><Button loading={busy} disabled={!input.title.trim() || originalText.trim().length < 24} onClick={() => void submit()}>{phase || 'Importar'}</Button></>}>
-    {pending && open ? <MemoryFileReconciliation port={port} {...pending} reason={decisionReason} onReason={setDecisionReason} onDone={completed} onOpenBatch={onReviewBatch} /> : !pending && <Section>
+    {pending && open ? <MemoryFileReconciliation port={port} {...pending} contentOrigin={`text:${contentHash(originalText)}`} reason={decisionReason} onReason={setDecisionReason} onDone={completed} onOpenBatch={onReviewBatch} /> : !pending && <Section>
       <LiveRegion message={phase || (mode === 'file' && parsed && !parsed.ok ? parsed.refusal.message : '')} />
       {error && <Alert tone="danger" title={error} />}
       <RadioGroup legend="Formato de entrada" orientation="horizontal">
