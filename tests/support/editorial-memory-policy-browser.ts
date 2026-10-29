@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { expect, type Page } from '@playwright/test';
 import type { MemoryCalibrationCase } from '../../src/domain/editorial-memory-calibration.ts';
 import type { MemoryPolicyProposal } from '../../src/domain/editorial-memory-policy.ts';
-import type { MemoryPolicy } from '../../src/domain/editorial-memory.ts';
+import type { MemoryCheck, MemoryEvidence, MemoryPolicy } from '../../src/domain/editorial-memory.ts';
 const response = (page: Page, path: string) => page.waitForResponse(reply => reply.url().endsWith(`/memory/policy/${path}`) && reply.request().method() === 'POST');
 async function result<T>(pending: ReturnType<typeof response>): Promise<T> { const reply = await pending; assert.equal(reply.status(), 200, await reply.text()); return reply.json() as Promise<T>; }
 const settle = async (page: Page, name: string) => expect.poll(() => page.getByRole('dialog', { name, exact: true }).evaluate(element => element.getAnimations({ subtree: true }).filter(animation => animation.playState === 'running' || animation.pending).length)).toBe(0);
@@ -75,4 +75,26 @@ export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, ba
   await expect(admin.getByRole('tab', { name: 'Política', exact: true })).toBeInViewport({ ratio: 1 });
   await expect(history.getByRole('row', { name: `Versão ${restored.revision}`, exact: true }).getByText('Ativa', { exact: true })).toBeVisible(); await expect(history.getByRole('row', { name: `Versão ${active.revision}`, exact: true })).toBeVisible(); await expect(baseline).toBeVisible();
   await audit(admin, 'policy-restored'); return restored;
+}
+export async function reapplyMemoryPolicy(page: Page, base: string, evidence: MemoryEvidence, checkedAt: string, audit: (page: Page, label: string) => Promise<void>, compete: () => Promise<MemoryPolicy>) {
+  await page.goto(`${base}/w/reporter-ai/quotes?q=${encodeURIComponent(evidence.anchor.excerpt.slice(0, 70))}`);
+  const row = page.getByRole('row', { name: evidence.anchor.excerpt.slice(0, 80), exact: true }); await row.focus(); await page.keyboard.press('Enter');
+  const drawer = page.getByRole('dialog', { name: 'Evidência', exact: true }), trigger = drawer.getByRole('button', { name: 'Reaplicar política', exact: true });
+  await expect(trigger).toBeEnabled(); await trigger.click(); const form = page.getByRole('dialog', { name: 'Reaplicar política', exact: true }); await settle(page, 'Reaplicar política');
+  const submit = form.getByRole('button', { name: 'Reaplicar política', exact: true }), why = form.getByRole('textbox', { name: 'Motivo da reaplicação', exact: true }), reason = 'Synthetic explicit policy recalculation keeps the saved factual proof.';
+  await expect(form.getByRole('textbox', { name: 'Trecho com política reaplicada', exact: true })).toHaveValue(evidence.anchor.excerpt); await expect(submit).toBeDisabled();
+  await expect(form.getByText(new Date(checkedAt).toLocaleString('pt-BR'), { exact: true })).toBeVisible(); await why.fill(reason);
+  await form.getByRole('button', { name: 'Fechar', exact: true }).filter({ hasText: /^Fechar$/ }).click(); await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); await trigger.click(); await expect(why).toHaveValue(reason);
+  const policy = await compete(), path = `/memory/${encodeURIComponent(evidence.id)}/reassess-policy`;
+  let pending = page.waitForResponse(reply => reply.url().endsWith(path) && reply.request().method() === 'POST'); await submit.click(); assert.equal((await pending).status(), 409);
+  await expect(why).toHaveValue(reason); await form.getByRole('button', { name: 'Atualizar contexto', exact: true }).click(); await expect(submit).toBeEnabled(); await expect(why).toHaveValue(reason); await expect(why).toBeFocused();
+  await expect(form.getByText(String(policy.revision), { exact: true })).toBeVisible(); await settle(page, 'Reaplicar política'); await audit(page, 'reassessment-form');
+  pending = page.waitForResponse(reply => reply.url().endsWith(path) && reply.request().method() === 'POST'); await submit.click(); const reply = await pending; assert.equal(reply.status(), 200, await reply.text()); const saved = await reply.json() as MemoryCheck;
+  assert.equal(saved.policyRevision, policy.revision); assert.equal(saved.checkedAt, checkedAt); assert.equal(saved.policyEvaluation!.reason, reason);
+  await expect(form).toBeHidden(); const reading = drawer.getByRole('button', { name: 'Ver reaplicação', exact: true }); await expect(reading).toBeFocused(); await reading.click();
+  const registered = page.getByRole('dialog', { name: 'Reaplicação registrada', exact: true });
+  await expect(registered.getByRole('textbox', { name: 'Motivo registrado da reaplicação', exact: true })).toHaveValue(reason);
+  await expect(registered.getByText('editor', { exact: true })).toBeVisible(); await expect(registered.getByText(new Date(checkedAt).toLocaleString('pt-BR'), { exact: true })).toBeVisible();
+  await expect(registered.getByRole('button', { name: 'Reaplicar política', exact: true })).toHaveCount(0); await settle(page, 'Reaplicação registrada'); await audit(page, 'reassessment-recorded');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await expect(registered).toBeHidden(); await expect(drawer).toBeVisible(); await expect(reading).toBeFocused(); return saved;
 }

@@ -10,13 +10,17 @@ export function useMemoryPolicyCommand(basis: MemoryLibrary | undefined, enabled
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   const attempt = useRef<{ signature: string; key: string }>(undefined);
   useLayoutEffect(() => { live.current = enabled && bound; return () => { live.current = false; }; }, [enabled, bound]);
-  async function execute<T>(input: unknown, operation: (key: string) => Promise<T>, saved: (value: T) => void) {
+  async function read<T>(operation: () => Promise<T>, saved: (value: T) => void) {
     if (!live.current || pending.current) return;
-    const signature = contentHash(input); if (attempt.current?.signature !== signature) attempt.current = { signature, key: crypto.randomUUID() };
     pending.current = true; setBusy(true); setError(undefined);
-    try { const value = await operation(attempt.current.key); if (live.current) saved(value); }
+    try { const value = await operation(); if (live.current) saved(value); }
     catch (failure) { if (live.current) setError(failure instanceof Error ? failure.message : 'Não foi possível registrar a alteração.'); }
     finally { pending.current = false; setBusy(false); }
   }
-  return { bound, busy, error, execute };
+  async function execute<T>(input: unknown, operation: (key: string) => Promise<T>, saved: (value: T) => void) {
+    if (!live.current || pending.current) return;
+    const signature = contentHash(input); if (attempt.current?.signature !== signature) attempt.current = { signature, key: crypto.randomUUID() };
+    const key = attempt.current.key; return read(() => operation(key), saved);
+  }
+  return { bound, busy, error, execute, read };
 }

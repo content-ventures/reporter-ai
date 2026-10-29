@@ -12,6 +12,7 @@ import { MemoryUsedVersion } from './memory-used-version';
 import type { MemoryVersionUse } from '@/domain/editorial-memory-reading';
 import { MemoryReplacementDialog, MemoryReplacementReader, type MemoryReplacementBasis } from './memory-replacement-dialog';
 import { MemoryCalibrationDialog, type MemoryCalibrationBasis } from './memory-calibration-dialog';
+import { MemoryReassessmentDialog, type MemoryReassessmentBasis } from './memory-reassessment-dialog';
 
 export const ELIGIBILITY_LABELS = { ready: 'Disponível para uso', source_unavailable: 'Conferir fonte e autorização', withdrawn: 'Retirada', authorship_pending: 'Confirmar autoria', review_required: 'Aguardando revisão', rejected: 'Rejeitada' };
 const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar', reject: 'Rejeitar', request_revision: 'Solicitar revisão' };
@@ -24,6 +25,7 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
   const [replacing, setReplacing] = useState<MemoryReplacementBasis>(), [replacingOpen, setReplacingOpen] = useState(false);
   const [relation, setRelation] = useState<string>(), [relationOpen, setRelationOpen] = useState(false);
   const [calibration, setCalibration] = useState<MemoryCalibrationBasis>(), [calibrationOpen, setCalibrationOpen] = useState(false);
+  const [reassessment, setReassessment] = useState<MemoryReassessmentBasis>(), [reassessmentOpen, setReassessmentOpen] = useState(false);
   const readVersion = useCallback((occurrence: MemoryVersionUse) => { setReading(occurrence); setReadingOpen(true); }, []);
   const readRelation = (relationId: string) => { setRelation(relationId); setRelationOpen(true); };
   const next = resource.data?.replacements?.next;
@@ -37,9 +39,12 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
   return <><Drawer open={open} size="lg" title="Evidência" actions={<ButtonGroup label="Ações da evidência">
     {(canEdit || next) && <Button variant="secondary" size="sm" disabled={!resource.data || !next && resource.data.evidence.status !== 'active'} onClick={replace}>{next ? 'Ver substituição' : 'Substituir'}</Button>}
     <Button variant="secondary" size="sm" onClick={() => onImpact(viewedId)}>Ver impacto</Button>
-  </ButtonGroup>} onClose={() => { setReadingOpen(false); setReplacingOpen(false); setRelationOpen(false); setCalibrationOpen(false); onClose(); }}>
+  </ButtonGroup>} onClose={() => { setReadingOpen(false); setReplacingOpen(false); setRelationOpen(false); setCalibrationOpen(false); setReassessmentOpen(false); onClose(); }}>
     {resource.error ? <ErrorState title="Não foi possível abrir a evidência" description={resource.error} onRetry={resource.reload} /> : !resource.data || !resource.port ? <Spinner label="Carregando evidência" /> :
-      <EvidenceContent key={`${viewedId}:${resource.data.evidence.revision}:${resource.data.check?.revision ?? 0}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onReadVersion={readVersion} onReplacement={readRelation} onCalibration={() => {
+      <EvidenceContent key={`${viewedId}:${resource.data.evidence.revision}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onReadVersion={readVersion} onReplacement={readRelation} onReassessment={() => {
+        if (!resource.data || !resource.port) return; const detail = resource.data, port = resource.port;
+        setReassessment(current => current?.port === port && current.detail.evidence.id === detail.evidence.id && current.detail.evidence.revision === detail.evidence.revision && current.detail.check?.revision === detail.check?.revision && current.detail.policy.revision === detail.policy.revision ? current : { key: crypto.randomUUID(), detail, port }); setReassessmentOpen(true);
+      }} onCalibration={() => {
         if (!resource.data || !resource.port) return; const detail = resource.data, port = resource.port;
         setCalibration(current => current?.port === port && current.detail.evidence.id === detail.evidence.id && current.detail.evidence.revision === detail.evidence.revision && current.detail.check?.revision === detail.check?.revision && current.detail.policy.revision === detail.policy.revision ? current : { key: crypto.randomUUID(), detail, port }); setCalibrationOpen(true);
       }} onChanged={() => { resource.reload(); onChanged(); }} />}
@@ -49,9 +54,10 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
     {replacing && <MemoryReplacementDialog key={replacing.key} basis={replacing} open={open && replacingOpen} onClose={() => setReplacingOpen(false)} onSaved={() => { setReplacingOpen(false); resource.reload(); onChanged(); toast('Substituição registrada'); }} />}
     {relation && <MemoryReplacementReader key={relation} id={relation} open={open && relationOpen} onClose={() => setRelationOpen(false)} onEvidence={current => { setViewedId(current); setRelationOpen(false); }} />}
     {calibration && <MemoryCalibrationDialog key={calibration.key} basis={calibration} open={open && calibrationOpen} onClose={() => setCalibrationOpen(false)} onSaved={() => { setCalibrationOpen(false); resource.reload(); onChanged(); toast('Amostra factual registrada'); }} />}
+    {reassessment && <MemoryReassessmentDialog key={reassessment.key} basis={reassessment} open={open && reassessmentOpen} onClose={() => setReassessmentOpen(false)} onSaved={() => { setReassessmentOpen(false); resource.reload(); onChanged(); toast('Política reaplicada'); }} />}
   </>;
 }
-function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, onReplacement, onCalibration }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onReadVersion: (occurrence: MemoryVersionUse) => void; onReplacement: (id: string) => void; onCalibration: () => void }) {
+function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, onReplacement, onCalibration, onReassessment }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onReadVersion: (occurrence: MemoryVersionUse) => void; onReplacement: (id: string) => void; onCalibration: () => void; onReassessment: () => void }) {
   const session = useSession().data;
   const { evidence, check, decision } = detail, people = usePeople(), canEdit = useCan('library.edit'), canReview = useCan('library.review');
   const outdated = detail.checkState === 'outdated';
@@ -86,6 +92,7 @@ function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, o
         { label: 'Período', value: evidence.period?.label }, { label: 'População', value: evidence.population }, { label: 'Geografia', value: evidence.geography },
         { label: 'Ressalva', value: evidence.qualifier }, { label: 'Instituição emissora', value: evidence.issuingInstitution }]} />}
       {(canEdit || canReview) && <ButtonGroup label="Checagem">
+        {canEdit && (detail.policyReassessment || check?.policyEvaluation) && <Button variant="secondary" onClick={onReassessment}>{detail.policyReassessment ? 'Reaplicar política' : 'Ver reaplicação'}</Button>}
         {canReview && <Button variant="secondary" disabled={!check || outdated || checking || detail.reviewRestricted || evidence.status !== 'active' || !evidence.kinds.some(kind => kind === 'fact' || kind === 'declared') || detail.eligibility.reason === 'source_unavailable'} onClick={onCalibration}>Avaliar para calibração</Button>}
         {canEdit && <>
         <Button variant="secondary" loading={busy} disabled={checking || ['source_unavailable', 'withdrawn'].includes(detail.eligibility.reason)} onClick={() => void execute(() => port.check(evidence.id, memoryEvidenceRef(evidence), crypto.randomUUID()))}>{check ? 'Checar novamente' : 'Checar evidência'}</Button>
@@ -157,7 +164,7 @@ function MemoryHistory({ detail, port, kind, personName, onReadVersion }: { deta
     <DescriptionList items={items.map((item, index) => ({ label: `${index + 1}`, value: 'action' in item ? `${REVIEW_LABELS[item.action]} — ${item.reason} · ${personName(item.personId)} · ${new Date(item.at).toLocaleString('pt-BR')}`
       : 'stage' in item ? <>{[USE_LABELS[item.stage], ...(item.stage === 'approved' ? [item.productionTitle ?? 'Artigo', `versão ${item.article.number}`] : []), personName(item.personId), new Date(item.at).toLocaleString('pt-BR')].join(' · ')}
         {(item.stage === 'approved' || item.stage === 'published') && <Button variant="ghost" onClick={() => onReadVersion(item)}>Ler versão {item.article.number}</Button>}</>
-        : 'verdict' in item ? `${VERDICT_LABELS[item.verdict]} · ${item.checkedAt}` : `Revisão ${item.revision} · ${item.updatedAt}` }))} />
+        : 'verdict' in item ? `${VERDICT_LABELS[item.verdict]} · ${item.checkedAt}${item.policyEvaluation ? ` · política ${item.policyRevision} reaplicada por ${personName(item.policyEvaluation.personId)} em ${new Date(item.policyEvaluation.at).toLocaleString('pt-BR')} · ${item.policyEvaluation.reason}` : ''}` : `Revisão ${item.revision} · ${item.updatedAt}` }))} />
     {cursor && <Button variant="secondary" loading={busy} onClick={async () => { setBusy(true); setError(undefined);
       try { const next = await port.history(detail.evidence.id, kind, { cursor }); setSaved({ binding, items: [...items, ...next.items], cursor: next.nextCursor }); }
       catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível carregar o histórico.'); } finally { setBusy(false); }
