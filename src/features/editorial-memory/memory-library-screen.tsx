@@ -15,11 +15,13 @@ import { MemoryImportDialog, MemoryMaterialDrawer, MemoryMaterials } from './mem
 import { MemorySelectionDialog } from './memory-selection-dialog';
 import { MemorySelections } from './memory-selections';
 import { MemoryImpactDrawer } from './memory-impact-drawer';
+import { MemoryFeedbackPanel } from './memory-feedback';
 
 export function MemoryLibraryScreen() {
   const search = useSearchParams().toString();
   const address = useMemo(() => readMemoryAddress(new URLSearchParams(search)), [search]);
   const route = useMemo<MemoryAddress>(() => address.ok ? address.value : { tab: 'all', query: {} }, [address]);
+  const feedbackQuery = useMemo(() => route.feedback ?? {}, [route.feedback]);
   const { tab, query: input } = route, query = input.query ?? '', sort = input.sort ?? 'newest', cursor = input.cursor;
   const filters = useMemo(() => Object.fromEntries(Object.entries(input).filter(([key]) => !['query', 'sort', 'cursor'].includes(key))) as MemoryQuery, [input]);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -35,17 +37,20 @@ export function MemoryLibraryScreen() {
   const openImpact = (scope: MemoryImpactScope) => { setImpact(scope); setImpactOpen(true); };
   const [selected, setSelected] = useState<MemoryEvidenceChoice[]>([]), [selection, setSelection] = useState<MemorySelection>(), [selectionOpen, setSelectionOpen] = useState(false), [error, setError] = useState<string>();
   const [selectionsRefresh, setSelectionsRefresh] = useState(0);
-  const people = usePeople(), canEdit = useCan('library.edit'), browsing = tab !== 'materials' && tab !== 'selections';
+  const [feedbackRefresh, setFeedbackRefresh] = useState(0);
+  const people = usePeople(), canEdit = useCan('library.edit'), browsing = tab !== 'materials' && tab !== 'selections' && tab !== 'feedback';
   const load = useCallback((port: MemoryLibrary) => port.query({ ...input, ...(tab === 'citation' || tab === 'statistic' ? { kind: tab } : {}), limit: 25 }), [tab, input]);
   const resource = useMemoryResource(load, 0, browsing && address.ok), page = resource.data;
-  const reset = () => { changeQuery({}); resource.reload(); setSelectionsRefresh(value => value + 1); };
+  const reset = () => { changeQuery({}); resource.reload(); setSelectionsRefresh(value => value + 1); setFeedbackRefresh(value => value + 1); };
   return <PageStack>
     <PageHeader title="Banco de citações e estatísticas" actions={<>{canEdit && <Button icon={Plus} onClick={() => setImporting(true)}>Importar material</Button>}<Button variant="secondary" icon={RotateCw} onClick={reset}>Atualizar</Button></>} />
-    <FilterBar filtersOpen={filtersOpen && browsing} onFiltersOpenChange={setFiltersOpen} filterCount={Object.values(filters).filter(value => value !== undefined).length} tabs={<Tabs label="Conteúdo do banco" value={tab} onChange={value => { changeQuery({}, value as MemoryTab); }} items={[{ value: 'all', label: 'Todas' }, { value: 'citation', label: 'Citações' }, { value: 'statistic', label: 'Estatísticas' }, { value: 'materials', label: 'Materiais' }, { value: 'selections', label: 'Seleções' }]} />}
+    <FilterBar filtersOpen={filtersOpen && browsing} onFiltersOpenChange={setFiltersOpen} filterCount={Object.values(filters).filter(value => value !== undefined).length} tabs={<Tabs label="Conteúdo do banco" value={tab} onChange={value => { if (value === 'feedback') navigate({ tab: 'feedback', query: {} }); else changeQuery({}, value as MemoryTab); }} items={[{ value: 'all', label: 'Todas' }, { value: 'citation', label: 'Citações' }, { value: 'statistic', label: 'Estatísticas' }, { value: 'materials', label: 'Materiais' }, { value: 'selections', label: 'Seleções' }, { value: 'feedback', label: 'Feedback' }]} />}
       search={browsing ? <SearchField label="Buscar evidências" value={query} onValueChange={value => { changeQuery({ query: value }); }} /> : undefined}
       actions={browsing ? <Select label="Ordenação" value={sort ?? 'newest'} onChange={value => { changeQuery({ sort: value as MemoryQuery['sort'] }); }} options={[{ value: 'newest', label: 'Mais recentes' }, { value: 'oldest', label: 'Mais antigas' }, { value: 'relevance', label: 'Relevância' }, { value: 'confidence', label: 'Confiança factual' }, { value: 'usage', label: 'Mais usadas' }]} /> : undefined} />
     {filtersOpen && browsing && <MemoryFilters key={JSON.stringify(filters)} applied={filters} onApply={value => { setCursors([undefined]); navigate({ tab, query: { ...value, query, sort } }); setFiltersOpen(false); }} />}
-    {tab === 'materials' ? <MemoryMaterials key={materialId ?? 'materials'} onOpen={id => { setMaterialId(id); setMaterialOpen(true); }} /> : tab === 'selections' ? <MemorySelections refresh={selectionsRefresh} onOpen={item => { setSelection(item); setSelected(item.items.map(memoryChoiceFromItem)); setSelectionOpen(true); }} /> : <>
+    {tab === 'feedback' ? <MemoryFeedbackPanel key={feedbackRefresh} query={feedbackQuery} onQuery={feedback => navigate({ tab: 'feedback', query: {}, feedback }, true)} onTarget={target => {
+      if (target.kind === 'material') { setMaterialId(target.id); setMaterialOpen(true); } else { setEvidenceId(target.id); setEvidenceOpen(true); }
+    }} /> : tab === 'materials' ? <MemoryMaterials key={materialId ?? 'materials'} onOpen={id => { setMaterialId(id); setMaterialOpen(true); }} /> : tab === 'selections' ? <MemorySelections refresh={selectionsRefresh} onOpen={item => { setSelection(item); setSelected(item.items.map(memoryChoiceFromItem)); setSelectionOpen(true); }} /> : <>
       {input.materialId && <Section title={material?.id === input.materialId ? material.title : page?.items.find(item => item.material.id === input.materialId)?.material.title ?? 'Material selecionado'} action={<Button variant="ghost" onClick={() => { setMaterial(undefined); changeQuery({ materialId: undefined }); }}>Limpar material</Button>} />}
       {error && <Alert tone="danger" title={error} />}
       {!address.ok ? <ErrorState title="Filtros inválidos" description={address.refusal.message} actions={<Button onClick={() => { setCursors([undefined]); navigate({ tab: 'all', query: {} }); }}>Limpar filtros</Button>} /> : resource.error ? <ErrorState title="Não foi possível carregar o banco" description={resource.error} onRetry={cursor ? undefined : resource.reload} actions={cursor ? <Button onClick={reset}>Atualizar consulta</Button> : undefined} /> : !page ? <Spinner label="Carregando evidências" /> : <DataTable

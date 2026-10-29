@@ -30,10 +30,19 @@ test('malformed, repeated or contradictory library selectors produce an explicit
 test('bank tab changes never create, replace or remove the actual member-inspection selector', () => {
   for (const view of ['', 'view=inspection-session']) {
     let params = new URLSearchParams(view);
-    for (const tab of ['statistic', 'materials', 'selections', 'citation', 'all'] as const) {
+    for (const tab of ['statistic', 'materials', 'selections', 'feedback', 'citation', 'all'] as const) {
       params = memoryAddressParams(params, { tab, query: {} });
       assert.equal(params.get('view'), view ? 'inspection-session' : null);
       assert.deepEqual(readMemoryAddress(params), { ok: true, value: { tab, query: {} } });
     }
   }
+});
+
+test('feedback deep links preserve their own kind, target and signed page cursor without changing member inspection', () => {
+  const state: MemoryAddress = { tab: 'feedback', query: {}, feedback: { kind: 'relevance', evidenceId: 'evidence', materialId: 'material', cursor: 'opaque+/=feedback' } };
+  const params = memoryAddressParams(new URLSearchParams('view=actual-inspection&bankView=statistic&q=old'), state);
+  assert.equal(params.get('view'), 'actual-inspection'); assert.deepEqual(readMemoryAddress(params), { ok: true, value: state });
+  for (const query of ['bankView=feedback&feedbackKind=truth', 'feedbackKind=relevance', 'bankView=feedback&feedbackEvidence=%20', 'bankView=feedback&feedbackKind=relevance&feedbackKind=correction', `bankView=feedback&feedbackCursor=${'x'.repeat(4097)}`])
+    assert.equal(readMemoryAddress(new URLSearchParams(query)).ok, false);
+  const cleared = memoryAddressParams(params, { tab: 'all', query: {} }); assert.equal(cleared.toString(), 'view=actual-inspection');
 });

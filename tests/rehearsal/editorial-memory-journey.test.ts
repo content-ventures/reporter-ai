@@ -23,6 +23,7 @@ import { createLocalExportService } from '../../src/adapters/local/export/local-
 import { createLocalRenderService } from '../../src/adapters/local/render/local-render.ts';
 import type { ConnectedWorkspace } from '../../src/ports/connected-workspace.ts';
 import type { MemoryCorrectionImpact, MemoryDetail, MemoryJob, MemoryMaterialRevisionResult, MemoryReplacementComparison, MemoryReplacementResult, MemorySelectedContext, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
+import type { MemoryFeedback } from '../../src/domain/editorial-memory-feedback.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import type { BuiltFile, ExportPackage } from '../../src/ports/export.ts';
 import type { WritingRunDetails } from '../../src/ports/pipeline-settings.ts';
@@ -227,6 +228,11 @@ test('two imported materials reach orchestrated writing, separate approval and a
     await ui.used(orderedPassages, approvedVersion.number, (approvedVersion.body as ArticleBody).title);
     assert.deepEqual((await record(made.productionId)).pieces[0].draft, beforeReading, 'reading frozen occurrences never edits the current draft');
   }
+  const feedbackReason = 'Synthetic pauta feedback without changing the factual acceptance.', ratingSelection = await api<MemorySelection>(`memory/selections/${selected.id}`);
+  const ratingBefore = await record(made.productionId), ratingInput = { selection: { id: ratingSelection.id, revision: ratingSelection.revision }, evidence: ratingSelection.items[0].evidence, rating: 'not_useful' as const, reason: feedbackReason };
+  const rated = ui ? await ui.rateSelection(ratingSelection, orderedPassages[0].text, feedbackReason) : await api<MemoryFeedback>('memory/feedback/relevance', ratingInput);
+  assert.equal(rated.rating, 'not_useful'); assert.deepEqual(rated.selection, ratingInput.selection); assert.deepEqual(rated.query, ratingSelection.items[0].discovery!.query);
+  assert.deepEqual(await record(made.productionId), ratingBefore, 'pauta feedback never edits sources, draft or frozen article versions');
   for (const item of selected.items) {
     const detail = await api<MemoryDetail>(`memory/${item.evidence.id}`); assert.deepEqual(detail.uses, { selected: 1, inserted: 1, approved: 1, published: 0 });
     const approved = detail.occurrences.items.filter(use => use.stage === 'approved'); assert.equal(approved.length, 1);
@@ -304,5 +310,7 @@ test('two imported materials reach orchestrated writing, separate approval and a
     assert.deepEqual((await record(made.productionId)).versions, frozen); assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
     const competingVersion = await api<{ source: { versions: { createdBy: string }[] } }>(`memory/materials/${quotation.material.id}?revision=2`);
     assert.equal(competingVersion.source.versions[0].createdBy, (await api<ConnectedWorkspace>('workspace', undefined, 2)).state.sessionPersonId);
+    await ui.inspectFeedback(feedbackReason, replacementReason);
+    assert.deepEqual((await record(made.productionId)).versions, frozen); assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
   }
 });

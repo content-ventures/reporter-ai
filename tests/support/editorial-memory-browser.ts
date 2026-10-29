@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { chromium, expect, type BrowserContext, type Page } from '@playwright/test';
 import type { MemoryImportInput, MemoryJob, MemoryMaterialRevisionResult, MemoryReplacementResult, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { MemoryEvidence, MemoryMaterial, MemorySelection } from '../../src/domain/editorial-memory.ts';
+import type { MemoryFeedback } from '../../src/domain/editorial-memory-feedback.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import { blockText, type ArticleBody } from '../../src/domain/article.ts';
 
@@ -44,6 +45,49 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
   }
   const editor = await pageFor(0);
   return {
+    async rateSelection(selection: MemorySelection, excerpt: string, reason: string): Promise<MemoryFeedback> {
+      console.info('memory UI pauta feedback', width);
+      await editor.goto(`${base}/w/reporter-ai/quotes?bankView=selections`);
+      const row = editor.getByRole('row', { name: `Seleção de ${selection.items.length} evidências`, exact: true });
+      await expect(row.getByRole('cell').nth(3)).toHaveText(String(selection.revision)); await row.click();
+      const saved = editor.getByRole('dialog', { name: 'Escrever com a seleção', exact: true });
+      const trigger = saved.getByRole('button', { name: 'Avaliar relevância da evidência 1', exact: true }); await trigger.click();
+      const form = editor.getByRole('dialog', { name: 'Avaliar relevância', exact: true }), submit = form.getByRole('button', { name: 'Registrar avaliação', exact: true });
+      await expect(form.getByRole('textbox', { name: 'Trecho avaliado na seleção', exact: true })).toHaveValue(excerpt); await expect(submit).toBeDisabled();
+      await form.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)).then(() => undefined));
+      const rating = form.getByRole('combobox', { name: 'Utilidade para a pauta', exact: true });
+      await rating.click(); await editor.getByRole('option', { name: 'Não foi útil para a pauta', exact: true }).click();
+      const why = form.getByRole('textbox', { name: 'Motivo da avaliação', exact: true }); await why.fill(reason);
+      await form.getByRole('button', { name: 'Fechar', exact: true }).filter({ hasText: /^Fechar$/ }).click();
+      await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); await trigger.click();
+      await expect(why).toHaveValue(reason); await expect(rating).toContainText('Não foi útil para a pauta');
+      await form.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)).then(() => undefined));
+      await audit(editor, 'relevance-form');
+      const response = editor.waitForResponse(reply => reply.url().endsWith('/memory/feedback/relevance') && reply.request().method() === 'POST');
+      await submit.click(); const recorded = await response; assert.equal(recorded.status(), 200, await recorded.text()); const result = await recorded.json() as MemoryFeedback;
+      await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); await expect(saved).toBeVisible();
+      return result;
+    },
+    async inspectFeedback(reason: string, replacementReason: string) {
+      console.info('memory UI feedback dataset', width);
+      await editor.goto(`${base}/w/reporter-ai/quotes?bankView=feedback&feedbackKind=relevance`);
+      const table = editor.getByRole('table', { name: 'Feedback editorial', exact: true }), row = table.getByRole('row', { name: reason.slice(0, 100), exact: true });
+      await row.focus(); await editor.keyboard.press('Enter');
+      const detail = editor.getByRole('dialog', { name: 'Feedback registrado', exact: true });
+      await expect(detail.getByRole('textbox', { name: 'Motivo do feedback', exact: true })).toHaveValue(reason);
+      await expect(detail.getByText('Não foi útil para a pauta', { exact: true })).toBeVisible();
+      await detail.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)).then(() => undefined));
+      await audit(editor, 'feedback-relevance');
+      await editor.keyboard.press('Escape'); await expect(detail).toBeHidden(); await expect(row).toBeFocused();
+      const kind = editor.getByRole('combobox', { name: 'Tipo de feedback', exact: true }); await kind.click(); await editor.getByRole('option', { name: 'Correção', exact: true }).click();
+      await editor.waitForURL(url => url.searchParams.get('feedbackKind') === 'correction'); await editor.reload(); await expect(kind).toContainText('Correção');
+      const replacement = table.getByRole('row', { name: replacementReason.slice(0, 100), exact: true }); await replacement.click();
+      await expect(detail.getByRole('textbox', { name: 'Motivo do feedback', exact: true })).toHaveValue(replacementReason);
+      await detail.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)).then(() => undefined));
+      await audit(editor, 'feedback-correction');
+      await detail.getByRole('button', { name: 'Ver evidência', exact: true }).click();
+      await expect(editor.getByRole('dialog', { name: 'Evidência', exact: true })).toBeVisible();
+    },
     async replaceObservation(previous: MemoryEvidence, current: MemoryEvidence, reason: string, competing?: () => Promise<unknown>): Promise<MemoryReplacementResult> {
       console.info('memory UI evidence replacement', width);
       await editor.goto(`${base}/w/reporter-ai/quotes?bankView=statistic&q=240`);
