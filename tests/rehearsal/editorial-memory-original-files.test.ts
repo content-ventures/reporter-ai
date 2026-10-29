@@ -311,7 +311,8 @@ test('metadata and exact original bindings survive official migration replay', a
 });
 
 test('market mappings save explicit column choices with source binding and reviewer access limits', async () => {
-  const fileResponse = await api('originals', { ...upload, name: 'Mercado sintético.csv' });
+  const marketBytes = Buffer.from(bytes.toString('utf8').replace('Órgão sintético', 'Instituto de mercado sintético'));
+  const fileResponse = await api('originals', { ...upload, name: 'Mercado sintético.csv', bytes: marketBytes.toString('base64') });
   assert.equal(fileResponse.status, 200, await fileResponse.clone().text()); const file = await fileResponse.json() as MemoryOriginalFile;
   const created = await api('materials/from-file', { ...intake(file.id), kind: 'market_data', title: 'Mercado sintético' });
   assert.equal(created.status, 200, await created.clone().text()); const { material } = await created.json() as { material: MemoryMaterial };
