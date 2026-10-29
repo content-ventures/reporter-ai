@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg, { type Pool } from 'pg';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
+import { startFakeS3 } from '../support/fake-s3.ts';
+import { startWorkerHost } from '../support/worker-host.ts';
+import type { MemoryOriginalFile } from '../../src/domain/editorial-memory-original-file.ts';
 import { MEMORY_JOURNEY_PASSAGES as passages } from '../fixtures/editorial-memory-journey.ts';
 import { createMemoryJourneyBrowser } from '../support/editorial-memory-browser.ts';
 import { articleStats, blockText, markTextReviewed, type ArticleBody } from '../../src/domain/article.ts';
@@ -36,6 +39,7 @@ const identities = ['editor', 'approver', 'admin'].map(role => ({ subject: `memo
 const metadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: ['synthetic-journey'], originalUrl: null };
 let db: Awaited<ReturnType<typeof startRehearsalDatabase>>, handle: typeof import('../../src/server/http.ts').handleReporter, outputDirectory: string;
 let ui: Awaited<ReturnType<typeof createMemoryJourneyBrowser>> | undefined;
+let storage: Awaited<ReturnType<typeof startFakeS3>>, host: Awaited<ReturnType<typeof startWorkerHost>>;
 const originalFetch = globalThis.fetch, runIds: string[] = [];
 async function owner(sql: string, values: unknown[] = []) {
   const client = new pg.Client({ connectionString: db.owner }); await client.connect();
@@ -63,6 +67,10 @@ before(async () => {
   Object.assign(process.env, { REPORTER_DEPLOYMENT_MODE: 'cloud', REPORTER_DATABASE_URL: db.runtime, REPORTER_WORKER_DATABASE_URL: db.worker,
     REPORTER_WORKER_PASSWORD: db.workerPassword, REPORTER_DEFAULT_PORTAL_ID: PORTAL, REPORTER_WORKSPACES_MODE: 'all', REPORTER_APP_ORIGINS: APP,
     REPORTER_MEMORY_MODE: 'on', GROQ_API_KEY: 'synthetic-no-network' });
+  storage = await startFakeS3({ bucket: 'reporter-source-media', corsOrigins: [] });
+  Object.assign(process.env, { AWS_ENDPOINT_URL_S3: storage.endpoint, AWS_REGION: 'us-east-1', AWS_ACCESS_KEY_ID: 'synthetic-access-key', AWS_SECRET_ACCESS_KEY: 'synthetic-secret-key' });
+  const { createReporterWorker } = await import('../../functions/reporter-worker.ts');
+  host = await startWorkerHost(createReporterWorker()); process.env.REPORTER_WORKER_URL = host.url;
   ({ handleReporter: handle } = await import('../../src/server/http.ts'));
   outputDirectory = await mkdtemp(join(tmpdir(), 'reporter-memory-journey-files-'));
   if (browserBase) {
@@ -72,7 +80,7 @@ before(async () => {
   }
 }, { timeout: 180000 });
 after(async () => {
-  try { await ui?.close(); }
+  try { await ui?.close(); await host?.stop(); await storage?.stop(); }
   finally {
     globalThis.fetch = originalFetch;
     const pools = (globalThis as typeof globalThis & { reporterPools?: Partial<Record<string, Pool>> }).reporterPools ?? {};
@@ -96,7 +104,17 @@ test('two imported materials reach orchestrated writing, separate approval and a
     const text = passages.filter(passage => passage.kind === kind).map(passage => passage.text).join('\n\n') + '\n\nPRIVATE_UNSELECTED_ARCHIVE_SENTINEL';
     const input = { title: `Synthetic ${kind} journalistic journey`, kind: kind === 'citation' ? 'transcript' as const : 'report' as const,
       text, metadata, authorized: true, primaryOrigin: `synthetic-journey:${kind}`, originalFileId: null };
-    const imported = ui ? await ui.import(input) : await api<{ material: MemoryMaterial; job: MemoryJob }>('memory/materials', input); materials.push({ ...imported, text, kind });
+    const original = kind === 'statistic' ? { name: 'Relatório — sintético.txt', bytes: Buffer.from(text) } : undefined;
+    const file = !ui && original ? await api<MemoryOriginalFile>('memory/originals', { ...original, bytes: original.bytes.toString('base64') }) : undefined;
+    const { text: ignored, originalFileId: unused, ...fields } = input; void ignored; void unused;
+    const imported = ui ? await ui.import(input, original) : file ? await api<{ material: MemoryMaterial; job: MemoryJob }>('memory/materials/from-file', { ...fields, originalFileId: file.id })
+      : await api<{ material: MemoryMaterial; job: MemoryJob }>('memory/materials', input);
+    if (original) {
+      assert.ok(imported.material.originalFileId); const downloaded = await request(`memory/originals/${imported.material.originalFileId}/file`);
+      assert.equal(downloaded.status, 200); assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), original.bytes);
+      await ui?.downloadOriginal(imported.material, original);
+    }
+    materials.push({ ...imported, text, kind });
   }
   let extractionCalls = 0;
   const extract = async () => {

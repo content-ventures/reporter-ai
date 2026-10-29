@@ -1,6 +1,8 @@
 import type { MemoryLibrary } from '../../ports/editorial-memory.ts';
 import { reporterResponse, ReporterHttpError, type ReporterTransport } from './reporter-client.ts';
 import { committedCommand } from './committed-command.ts';
+import type { MemoryOriginalFile } from '../../domain/editorial-memory-original-file.ts';
+import { base64, dataUrl } from '../local/render/encoding.ts';
 
 function parameters(input: object): string {
   const params = new URLSearchParams();
@@ -12,10 +14,10 @@ function parameters(input: object): string {
 }
 export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () => Promise<void> = async () => {}): MemoryLibrary {
   const id = encodeURIComponent;
-  const command = <T>(path: string, input: unknown, requestId: string): Promise<T> => committedCommand(async () => reporterResponse<T>(await http.fetch(`/memory/${path}`, {
+  const command = <T>(path: string, input: unknown, requestId: string, refresh = true): Promise<T> => committedCommand(async () => reporterResponse<T>(await http.fetch(`/memory/${path}`, {
     method: 'POST', cache: 'no-store', headers: { 'x-reporter-client': 'local', 'content-type': 'application/json', 'idempotency-key': requestId }, body: JSON.stringify(input),
-  })), afterWrite).catch(async error => {
-    if (error instanceof ReporterHttpError && error.code === 'MEMORY_CONFLICT') {
+  })), refresh ? afterWrite : async () => {}).catch(async error => {
+    if (refresh && error instanceof ReporterHttpError && error.code === 'MEMORY_CONFLICT') {
       try { await afterWrite(); } catch { /* Preserve the original conflict; normal polling can recover the projection. */ }
     }
     throw error;
@@ -29,6 +31,16 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     replace: (evidence, input, key) => command(`${id(evidence)}/replacement`, input, key),
     replacement: relation => http.request(`/memory/replacements/${id(relation)}`),
     import: (input, key) => command('materials', input, key), job: job => http.request(`/memory/jobs/${id(job)}`),
+    uploadOriginal: (input, key) => command('originals', { ...input, bytes: base64(input.bytes) }, key, false),
+    importFile: (input, key) => command('materials/from-file', input, key),
+    async downloadOriginal(original) {
+      const file = await http.request<MemoryOriginalFile>(`/memory/originals/${id(original)}`);
+      const response = await http.fetch(`/memory/originals/${id(original)}/file`, { cache: 'no-store', headers: { 'x-reporter-client': 'local' } });
+      if (!response.ok) await reporterResponse(response);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.length !== file.size) throw new Error('O arquivo recebido está incompleto. Tente baixar novamente.');
+      return { name: file.name, href: dataUrl('application/octet-stream', bytes) };
+    },
     blocks: (job, input) => http.request(`/memory/jobs/${id(job)}/blocks${parameters(input)}`),
     authorizeMaterial: (material, input, key) => command(`materials/${id(material)}/authorization`, input, key),
     retry: (job, key) => command(`jobs/${id(job)}/retry`, {}, key), cancel: (job, baseRevision, key) => command(`jobs/${id(job)}/cancel`, { baseRevision }, key),
