@@ -3,6 +3,29 @@ import { test } from 'node:test';
 import { createHttpMemoryLibrary } from './editorial-memory.ts';
 import { createReporterTransport } from './reporter-client.ts';
 
+test('batch transfers retain scoped account, exact bytes, request keys and cursor identity without projection resubmission', async () => {
+  const previous = globalThis.fetch, calls: { path: URL; init: RequestInit }[] = [];
+  globalThis.fetch = async (url, init = {}) => { calls.push({ path: new URL(String(url), 'http://localhost'), init }); return Response.json({ id: 'batch', items: [] }); };
+  const http = createReporterTransport('batch-client', { requireAccount: true }); http.bindAccount('actual-editor');
+  const library = createHttpMemoryLibrary(http, async () => { throw new Error('Batch-only state does not need an editorial projection.'); });
+  const metadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: [], originalUrl: null };
+  const input = { id: 'item', file: { name: 'original.txt', size: 3, checksum: 'a'.repeat(64), delimiter: null }, input: { title: 'Original', kind: 'archive' as const, metadata, primaryOrigin: null, authorized: true } };
+  try {
+    await library.createBatch({ title: 'Batch', items: [input] }, 'stable-create-key');
+    await library.uploadBatchItem('batch/encoded', 'item/encoded', { revision: 1, bytes: new Uint8Array([239, 187, 191]) }, 'stable-upload-key');
+    await library.processBatchItem('batch/encoded', 'item/encoded', { revision: 1 }, 'stable-process-key');
+    await library.updateBatchItem('batch/encoded', 'item/encoded', { file: input.file, input: input.input, revision: 1, reason: 'Corrected metadata.' }, 'stable-revision-key');
+    await library.batches({ limit: 25, cursor: 'opaque+/=batch' }); await library.batch('batch/encoded');
+    assert.deepEqual(calls.map(call => call.path.pathname.split('/memory/')[1]), ['batches', 'batches/batch%2Fencoded/items/item%2Fencoded/upload', 'batches/batch%2Fencoded/items/item%2Fencoded/process', 'batches/batch%2Fencoded/items/item%2Fencoded/revision', 'batches', 'batches/batch%2Fencoded']);
+    assert.equal(calls[4].path.searchParams.get('cursor'), 'opaque+/=batch');
+    assert.deepEqual(JSON.parse(String(calls[1].init.body)), { revision: 1, bytes: '77u/' });
+    assert.deepEqual(JSON.parse(String(calls[3].init.body)), { file: input.file, input: input.input, revision: 1, reason: 'Corrected metadata.' });
+    assert.ok(calls.every(call => new Headers(call.init.headers).get('x-reporter-account') === 'actual-editor'));
+    assert.deepEqual(calls.slice(0, 4).map(call => new Headers(call.init.headers).get('idempotency-key')), ['stable-create-key', 'stable-upload-key', 'stable-process-key', 'stable-revision-key']);
+    http.dispose(); const before = calls.length; await assert.rejects(library.batch('batch')); assert.equal(calls.length, before);
+  } finally { http.dispose(); globalThis.fetch = previous; }
+});
+
 test('original uploads retain exact bytes and independent receipts; downloads reauthorize before exposing any file', async () => {
   const previous = globalThis.fetch, bytes = Buffer.from('\ufeffÓrgão;valor\r\nSintético;1.234,56\r\n');
   const calls: { path: string; init: RequestInit }[] = [];

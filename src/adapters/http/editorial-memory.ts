@@ -23,6 +23,11 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     throw error;
   });
   return {
+    batches: input => http.request(`/memory/batches${parameters(input)}`), batch: batch => http.request(`/memory/batches/${id(batch)}`),
+    createBatch: (input, key) => command('batches', input, key, false),
+    updateBatchItem: (batch, item, input, key) => command(`batches/${id(batch)}/items/${id(item)}/revision`, input, key, false),
+    uploadBatchItem: (batch, item, input, key) => command(`batches/${id(batch)}/items/${id(item)}/upload`, { ...input, bytes: base64(input.bytes) }, key, false),
+    processBatchItem: (batch, item, input, key) => command(`batches/${id(batch)}/items/${id(item)}/process`, input, key, false),
     query: input => http.request(`/memory${parameters(input)}`), detail: evidence => http.request(`/memory/${id(evidence)}`),
     history: (evidence, kind, input) => http.request(`/memory/${id(evidence)}/history/${kind}${parameters(input)}`),
     materials: input => http.request(`/memory/materials${parameters(input)}`), material: (material, revision) => http.request(`/memory/materials/${id(material)}${parameters({ revision })}`),

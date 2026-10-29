@@ -13,6 +13,7 @@ import type { MemoryPolicyProposal, MemoryPolicyProposalInput } from '../domain/
 import type { MemoryPolicyReassessment, MemoryPolicyReassessmentInput } from '../domain/editorial-memory-reassessment.ts';
 import type { MemoryOriginalFile } from '../domain/editorial-memory-original-file.ts';
 import type { MemoryDocumentDelimiter } from '../domain/editorial-memory-document.ts';
+import type { MemoryBatchLibrary } from './editorial-memory-batch.ts';
 
 export type MemoryWritingInput = { baseRevision: number } & (
   | { title: string; brief: BriefInput }
@@ -83,7 +84,7 @@ export type MemoryDetail = Omit<MemoryEvidenceView, 'material'> & { material: Me
   policyReassessment?: MemoryPolicyReassessment | null;
   checkJob?: MemoryJob | null; checks: MemoryPage<MemoryCheck>; decisions: MemoryPage<MemoryDecision>; revisions: MemoryPage<MemoryEvidence>; occurrences: MemoryPage<MemoryUse> };
 /** Request ids scope idempotency to one workspace and payload; mismatched replay is a conflict. */
-export interface EditorialMemory {
+export interface EditorialMemory extends MemoryBatchLibrary {
   query(input: MemoryQuery): Promise<MemoryPage<MemoryEvidenceView>>;
   detail(id: string): Promise<MemoryDetail>;
   history(id: string, kind: MemoryHistoryKind, input: MemoryHistoryQuery): Promise<MemoryPage<MemoryHistoryEntry>>;
