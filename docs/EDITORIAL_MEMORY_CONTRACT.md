@@ -10,7 +10,7 @@ Original registration and the batch-item binding commit together before external
 
 Batch intake compares exact file hashes only among currently visible materials. An unchanged visible document/context is reused. A different edition, origin, rights, parser dialect or revised original requires an explicit current-candidate choice and reason. Reuse preserves the new occurrence's proposed metadata and filename; a deliberately distinct document records its relation to the reviewed candidate. Candidate IDs disappear when their source becomes private. Canonical materials, earlier source versions and approvals are never silently rewritten.
 
-Batch listing uses signed actor/workspace/visibility-bound cursors and a stable creation-order ceiling. Live item progress may change without moving batches between pages. Browser reloads can recover server manifests and stored originals; files that never reached storage must be selected again. General single-file reimport integration, the batch UI and complete rendered acceptance remain required until recorded in the delivery log.
+Batch listing uses signed actor/workspace/visibility-bound cursors and a stable creation-order ceiling. Live item progress may change without moving batches between pages. Browser reloads can recover server manifests and stored originals; files that never reached storage must be selected again. The batch interface exposes per-document progress, correction and reconciliation. General single-file reimport integration and full editorial acceptance remain required.
 
 Phase 1 contract for Flow 4. Domain: `src/domain/editorial-memory.ts`. Application port: `src/ports/editorial-memory.ts`. Changes to these contracts require a recorded reason, updated consumers and rerun contract tests.
 
