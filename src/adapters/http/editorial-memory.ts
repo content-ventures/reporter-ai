@@ -33,6 +33,8 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     originalLocation: expected => http.request(`/memory/${id(expected.id)}/original-location${parameters({ revision: expected.revision, hash: expected.hash })}`),
     history: (evidence, kind, input) => http.request(`/memory/${id(evidence)}/history/${kind}${parameters(input)}`),
     materials: input => http.request(`/memory/materials${parameters(input)}`), material: (material, revision) => http.request(`/memory/materials/${id(material)}${parameters({ revision })}`),
+    previewMarket: (material, input) => command(`materials/${id(material)}/market-preview`, input, crypto.randomUUID(), false),
+    saveMarketMapping: (material, input, key) => command(`materials/${id(material)}/market-mapping`, input, key, false),
     reviseMaterial: (material, input, key) => command(`materials/${id(material)}/revision`, input, key),
     correctionImpact: (scope, input) => http.request(`/memory/${scope.kind === 'material' ? 'materials/' : ''}${id(scope.id)}/impact${parameters(input)}`),
     replace: (evidence, input, key) => command(`${id(evidence)}/replacement`, input, key),
