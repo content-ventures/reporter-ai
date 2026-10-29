@@ -16,6 +16,20 @@ import { RUN_KIND_OF } from '../src/ports/generation.ts';
 import type { GenerationKind } from '../src/ports/generation.ts';
 import type { EditorialJob } from '../src/ports/connected-workspace.ts';
 import { sourceContentHash } from '../src/domain/source.ts';
+import { memoryWritingFixture } from '../src/domain/testing/editorial-memory.ts';
+import { validateMemoryArticle } from '../src/domain/editorial-memory-guard.ts';
+
+const datum = 'Foram atendidas cerca de 240 pessoas em 2025. A observação inclui apenas participantes do projeto piloto.';
+function withBank(f: Awaited<ReturnType<typeof fixture>>, kind: 'statistic' | 'citation', text: string, attach = true) {
+  const bank = memoryWritingFixture(kind, text, { now: '2026-10-28T20:00:00Z', actorId: 'actor', newId: prefix => prefix + '-bank-' + (++sequence) }, f.record.production.workspaceId);
+  const body = structuredClone(f.body), source = bank.source, version = source.versions.at(-1)!, ref = segmentRef(source.id, version.number, version.content.segments[0].id);
+  if (attach && body.blocks[0].type === 'paragraph') {
+    body.blocks[0].inlines = [{ text: blockText(body.blocks[0]) + ' ' + text }]; body.blocks[0].sourceRefs!.push(ref);
+  }
+  const record = { ...f.record, sources: [...f.record.sources, source] }, input = { ...f.input, body,
+    target: [{ blockId: 'p1', from: 0, to: blockText(body.blocks[0]).length }] };
+  return { ...bank, body, record, input, ref };
+}
 
 let sequence = 0;
 async function fixture() {
@@ -65,6 +79,76 @@ test('assistant evidence excludes retired historical references while retaining 
     assert.ok(context.evidence.every(item => item.ref.sourceId !== retired.id));
     assert.equal(JSON.stringify(context.evidence).includes('RETIRED_'), false);
     assert.equal(retired.versions[0].content.segments[0].text.includes('RETIRED_EVIDENCE_SENTINEL'), true);
+  } finally { f.engine.store.dispose(); }
+});
+
+test('assistant restores complete numeric context and carries the immutable selected decision', async () => {
+  const f = await fixture();
+  try {
+    const b = withBank(f, 'statistic', datum), ref = b.ref;
+    if (ref.locator.type === 'segment') b.body.blocks[0].sourceRefs![1] = { ...ref, locator: { ...ref.locator, from: 23, to: 26 } };
+    const context = articleAssistContext(b.record, { kind: 'article.rewrite', input: b.input });
+    const evidence = context.evidence.find(item => item.memory)!;
+    assert.equal(evidence.text, datum); assert.equal(evidence.speaker, undefined);
+    assert.deepEqual(evidence.memory!.selected, b.selection.items[0]);
+    assert.equal(JSON.stringify(evidence).includes('PRIVATE'), false);
+    assert.deepEqual(evidence.ref.locator, { type: 'segment', segmentId: b.source.memory![0].items[0].segmentId, from: 0, to: datum.length });
+    evidence.memory!.selected.policyRevision = 999;
+    assert.equal(b.source.memory![0].items[0].selected.policyRevision, 1);
+  } finally { f.engine.store.dispose(); }
+});
+test('assistant maps bank attribution to a known person and never emits internal labels as names', async () => {
+  const f = await fixture();
+  try {
+    const b = withBank(f, 'citation', 'Queremos ouvir todas as pessoas neste exemplo sintético.', false), job = { kind: 'article.ask' as const, input: { ...b.input, prompt: 'pessoas exemplo sintético' } };
+    const unmapped = articleAssistContext(b.record, job).evidence.find(item => item.memory)!;
+    assert.equal(unmapped.speaker, undefined);
+    const mapped = articleAssistContext(b.record, job, [{ id: 'author', name: 'Pessoa Fictícia' }]).evidence.find(item => item.memory)!;
+    assert.equal(mapped.speaker, 'Pessoa Fictícia');
+  } finally { f.engine.store.dispose(); }
+});
+test('inline rewriting rejects lost qualifiers, changed units/periods and numeric speech even without new evidence ids', async () => {
+  const f = await fixture();
+  try {
+    const b = withBank(f, 'statistic', datum), context = articleAssistContext(b.record, { kind: 'article.rewrite', input: b.input });
+    const original = blockText(b.body.blocks[0]);
+    const ordinary = context.evidence.filter(item => !item.memory).map(item => item.id), bank = context.evidence.find(item => item.memory)!.id;
+    for (const value of [original.replace('cerca de ', ''), original.replace('240 pessoas', '240 empresas'), original.replace('em 2025', 'em 2026'),
+      original.replace(datum, '“' + datum + '”'), original.replace(' A observação inclui apenas participantes do projeto piloto.', '')])
+      assert.throws(() => articleAssistSuggestions({ reply: '', changes: [change(value, value.includes('“' + datum) ? [...ordinary, bank] : ordinary)] }, context, b.record, 'run'), /ASSIST_MEMORY_CONTEXT_CHANGED/);
+    const proposal = original.replace('avalia novos dados', 'examina todos os novos dados');
+    const suggestion = articleAssistSuggestions({ reply: '', changes: [change(proposal, ordinary)] }, context, b.record, 'run')[0];
+    const applied = applySuggestion(b.body, suggestion); assert.ok(applied.ok);
+    assert.equal(validateMemoryArticle(applied.value, b.record.sources, [b.item]).ok, true);
+  } finally { f.engine.store.dispose(); }
+});
+test('list suggestions preserve an entire observation in one item and refuse splitting its context', async () => {
+  const f = await fixture();
+  try {
+    const b = withBank(f, 'statistic', datum), context = articleAssistContext(b.record, { kind: 'article.to-list', input: b.input });
+    const ordinary = context.evidence.filter(item => !item.memory).map(item => item.id);
+    const value = { ...change('', ordinary), kind: 'list', items: [f.first.slice(0, 1000), f.first.slice(1000), datum] };
+    const suggestion = articleAssistSuggestions({ reply: '', changes: [value] }, context, b.record, 'run')[0];
+    const applied = applySuggestion(b.body, suggestion); assert.ok(applied.ok);
+    assert.equal(validateMemoryArticle(applied.value, b.record.sources, [b.item]).ok, true);
+    assert.throws(() => articleAssistSuggestions({ reply: '', changes: [{ ...value, items: [...value.items.slice(0, 2), datum.slice(0, 44), datum.slice(44)] }] }, context, b.record, 'run'), /ASSIST_MEMORY_CONTEXT_CHANGED/);
+  } finally { f.engine.store.dispose(); }
+});
+test('a new literal citation fragment gets an exact receipt and cannot overwrite edits outside a partial target', async () => {
+  const f = await fixture();
+  try {
+    const text = 'Queremos  ouvir\n todas as pessoas neste exemplo sintético.', b = withBank(f, 'citation', text, false), fragment = text.slice(9, -1);
+    const input = { ...b.input, prompt: 'pessoas exemplo sintético', target: [{ blockId: 'p1', from: 0, to: 12 }] };
+    const context = articleAssistContext(b.record, { kind: 'article.ask', input }), evidence = context.evidence.find(item => item.memory)!;
+    const suggestion = articleAssistSuggestions({ reply: '', changes: [change(f.first.slice(0,12) + ' “' + fragment + '”', [evidence.id])] }, context, b.record, 'run')[0];
+    assert.equal(suggestion.proposal.kind, 'replace-blocks');
+    const applied = applySuggestion(b.body, suggestion); assert.ok(applied.ok);
+    const receipt = applied.value.blocks[0].sourceRefs!.find(ref => ref.sourceId === b.source.id)!;
+    assert.deepEqual(receipt.locator, { type: 'segment', segmentId: b.source.memory![0].items[0].segmentId, from: 9, to: text.length - 1 });
+    assert.equal(validateMemoryArticle(applied.value, b.record.sources, [b.item]).ok, true);
+    const changed = structuredClone(b.body); if (changed.blocks[0].type === 'paragraph') changed.blocks[0].inlines[0].text += ' Later human edit.';
+    assert.equal(applySuggestion(changed, suggestion).ok, false);
+    assert.equal(contentHash(b.body), contentHash(f.body), 'a suggestion never mutates the original document');
   } finally { f.engine.store.dispose(); }
 });
 
@@ -182,6 +266,41 @@ test('an immutable pipeline extension preserves every existing editorial prompt 
   assert.equal(next.steps.assist.model,'openai/gpt-6-astra');
   assert.equal(next.steps.assist.maxTokens,8192);
   for (const key of Object.keys(legacy.steps) as (keyof typeof legacy.steps)[]) assert.deepEqual(next.steps[key],legacy.steps[key]);
+});
+
+test('assistant provider context includes bank kind/proof and a new editorial decision invalidates its cache', async () => {
+  const f = await fixture(), b = withBank(f, 'statistic', datum), directory = await mkdtemp(join(tmpdir(), 'reporter-memory-assist-'));
+  const previousFetch = globalThis.fetch, previousKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = 'synthetic-test-key';
+  const requests: Record<string, unknown>[] = [], events: unknown[] = [];
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(String(init?.body)));
+    const output = JSON.stringify({ reply: 'Contexto sintético recebido para revisão.', changes: [] });
+    const delta = 'data: ' + JSON.stringify({ type: 'response.output_text.delta', delta: output, item_id: 'item', output_index: 0, content_index: 0 }) + '\n\n';
+    return new Response(delta + 'data: ' + JSON.stringify({ type: 'response.completed', response: { status: 'completed',
+      output: [{ type: 'message', content: [{ type: 'output_text', text: output }] }], usage: { input_tokens: 5, output_tokens: 8 } } }) + '\n\n',
+      { headers: { 'content-type': 'text/event-stream' } });
+  };
+  const kind = 'article.ask' as const, input = { ...b.input, prompt: 'Confira o contexto completo das pessoas atendidas.' };
+  const pipeline = pipelineRevision(defaultPipelineDefinition('openai/gpt-4.1'));
+  const job: EditorialJob = { kind, input, pipeline, events: [], attempts: 1, availableAt: 0,
+    meta: { runId: 'synthetic-memory-assist', productionId: b.record.production.id, pieceId: f.pieceId, label: 'Perguntar à IA', request: { kind, input } } };
+  try {
+    const run = () => runArticleAssist(job, b.record, new AbortController().signal, async payloads => { events.push(...payloads); }, directory);
+    await run(); assert.equal(requests.length, 1);
+    const prompt = JSON.stringify(requests[0]);
+    assert.ok(prompt.includes('statistic')); assert.ok(prompt.includes(datum)); assert.ok(prompt.includes('bankEvidenceRules'));
+    assert.ok(prompt.includes(b.selection.items[0].decisionId!)); assert.ok(!prompt.includes('PRIVATE HEADER'));
+    await run(); assert.equal(requests.length, 1, 'identical selected proof reuses the validated cache');
+    b.source.memory![0].items[0].selected.decisionId = 'synthetic-new-editorial-decision';
+    await run(); assert.equal(requests.length, 2, 'same words with a new decision require a new request');
+    assert.ok(JSON.stringify(requests[1]).includes('synthetic-new-editorial-decision'));
+    assert.ok(JSON.stringify(events).includes('run.completed'));
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
+    f.engine.store.dispose(); await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('real orchestration consumes the exact saved assistant prompt and provider deltas without mutating a draft', async () => {

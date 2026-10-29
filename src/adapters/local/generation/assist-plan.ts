@@ -1,7 +1,11 @@
 import { articleCharacters, blockText, findBlock, listBlock, paragraphBlock, sliceText } from '../../../domain/article.ts';
 import type { ArticleBlock, ArticleBody } from '../../../domain/article.ts';
 import { extractQuotes } from '../../../domain/quotes.ts';
-import { segmentRef } from '../../../domain/refs.ts';
+import { dedupeRefs, segmentRef } from '../../../domain/refs.ts';
+import { memorySourceSegment } from '../../../domain/editorial-memory-excerpt.ts';
+import { memoryArticleContentIssues } from '../../../domain/editorial-memory-article.ts';
+import { prepareMemorySuggestion } from '../../../domain/editorial-memory-suggestion.ts';
+import { applySuggestion } from '../../../domain/suggestion.ts';
 import type { SourceRef, TextRange } from '../../../domain/refs.ts';
 import { ok, refuse } from '../../../domain/result.ts';
 import type { Result } from '../../../domain/result.ts';
@@ -18,6 +22,7 @@ import { trimDangling } from '../../../domain/text/slide-text.ts';
 import { keywords, readMaterial } from './material.ts';
 import { cutWords, sentenceSpans, withoutFinalPeriod } from './sentences.ts';
 import { rewrite, sameText, shorten, toListItems } from './transforms.ts';
+import type { SpeakerInfo } from './editorial.ts';
 
 /**
  * Output of an inline action, computed before streaming: the copilot reply, the suggestions to
@@ -44,7 +49,25 @@ export type AssistPlan = {
 
 type NewId = (prefix: string) => string;
 
-export type AssistContext = { sources: readonly Source[]; scripts?: ScriptBook; newId: NewId };
+export type AssistContext = { sources: readonly Source[]; scripts?: ScriptBook; newId: NewId; speakers?: Readonly<Record<string, SpeakerInfo>> };
+
+/** The local assistant shares the same content/receipt boundary as provider-backed editing. */
+export function validateMemoryAssistPlan(body: ArticleBody, plan: AssistPlan, context: AssistContext): Result<AssistPlan, StartRefusal> {
+  const replyIssue = memoryArticleContentIssues({ type: 'article', title: '', blocks: plan.reply }, context.sources)[0];
+  if (replyIssue) return refuse('no_change', replyIssue.message);
+  const suggestions: PlannedSuggestion[] = [];
+  let combined = body;
+  for (const planned of plan.suggestions) {
+    const prepared = prepareMemorySuggestion(body, context.sources, { ...planned, anchorText: planned.target.map(range => sliceText(body, range) ?? '') });
+    if (!prepared.ok) return refuse(prepared.refusal.code === 'memory_source_changed' ? 'memory_not_ready' : 'no_change', prepared.refusal.message);
+    const applied = applySuggestion(combined, { ...prepared.value, state: 'ready' });
+    if (!applied.ok) return refuse('no_change', applied.refusal.message);
+    combined = applied.value;
+    suggestions.push({ ...planned, target: prepared.value.target, proposal: prepared.value.proposal });
+  }
+  return ok({ ...plan, suggestions, sourcesUsed: dedupeRefs([...plan.sourcesUsed, ...suggestions.flatMap(suggestion =>
+    suggestion.proposal.kind === 'replace-blocks' ? suggestion.proposal.blocks.flatMap(block => block.sourceRefs ?? []) : [])]) });
+}
 
 type Located = { block: ArticleBlock; range: TextRange; text: string; wholeBlock: boolean };
 
@@ -157,7 +180,22 @@ export function planToList(body: ArticleBody, target: readonly TextRange[], cont
   if (!located.ok) return located;
   const { block } = located.value;
   if (block.type !== 'paragraph') return refuse('invalid_target', 'Só parágrafos viram lista.');
-  const items = toListItems(located.value.text);
+  const text = located.value.text;
+  const ranges = (block.sourceRefs ?? []).flatMap(ref => {
+    const source = context.sources.find(source => source.id === ref.sourceId);
+    const binding = source && ref.locator.type === 'segment' ? memorySourceSegment(source, ref.sourceVersion, ref.locator.segmentId) : undefined;
+    const from = binding?.kind === 'statistic' ? text.indexOf(binding.anchor.excerpt) : -1;
+    return from < 0 || !binding ? [] : [{ from, to: from + binding.anchor.excerpt.length }];
+  }).sort((a, b) => a.from - b.from);
+  const merged: { from: number; to: number }[] = [];
+  for (const range of ranges) {
+    const previous = merged.at(-1);
+    if (previous && range.from <= previous.to) previous.to = Math.max(previous.to, range.to);
+    else merged.push({ ...range });
+  }
+  const items: string[] = []; let from = 0;
+  for (const range of merged) { items.push(...toListItems(text.slice(from, range.from)), text.slice(range.from, range.to)); from = range.to; }
+  items.push(...toListItems(text.slice(from)));
   if (items.length < 2) return refuse('no_change', 'Precisa de pelo menos duas frases para virar lista.');
   const id = context.newId('sug');
   const list = listBlock(block.id, items, false, { ai: 'unreviewed', ...(block.sourceRefs ? { sourceRefs: block.sourceRefs } : {}) });
@@ -200,6 +238,20 @@ export function planExpand(body: ArticleBody, target: readonly TextRange[], cont
     const source = context.sources.find((candidate) => candidate.id === ref.sourceId);
     const segment = source ? findSegment(source, ref.sourceVersion, ref.locator.segmentId) : undefined;
     if (!source || !segment) continue;
+    const binding = source.memory ? memorySourceSegment(source, ref.sourceVersion, segment.id) : undefined;
+    if (source.memory) {
+      if (!binding) return refuse('memory_not_ready', 'Confira o trecho selecionado no banco.');
+      if (blockText(block).includes(segment.text)) continue;
+      const evidenceRef = segmentRef(source.id, ref.sourceVersion, segment.id, { from: 0, to: segment.text.length });
+      const speaker = segment.speaker ? context.speakers?.[segment.speaker]?.name : undefined;
+      const text = binding.kind === 'statistic' ? segment.text : `“${segment.text}”${speaker ? `, diz ${speaker}.` : ''}`;
+      const addition = paragraphBlock(binding.kind === 'statistic' ? block.id : context.newId('blk'), text, { ai: 'unreviewed', sourceRefs: [evidenceRef] });
+      if (binding.kind === 'statistic' && blockText(block).trim() !== resolveSourceRef([source], ref)?.excerpt.trim())
+        return refuse('no_change', 'Mantenha o dado completo no mesmo parágrafo. Confira o trecho antes de expandir.');
+      return ok({ reply: [], suggestions: [{ preview: { ...addition, id: context.newId('sug') }, target: [located.value.range],
+        proposal: { kind: 'replace-blocks', blocks: binding.kind === 'statistic' ? [addition] : [block, addition] }, label: GENERATION_LABELS['article.expand-from-source'] }],
+        sourcesUsed: [evidenceRef], meta: binding.kind === 'statistic' ? 'Dado completo' : 'Trecho do banco' });
+    }
     const after = ref.locator.to ?? 0;
     const fresh = sentenceSpans(segment.text).filter(
       (sentence) => !sentence.text.includes('?') && sentence.words >= 4 && !present.includes(foldForMatch(sentence.text)),
@@ -362,6 +414,11 @@ export function planAsk(body: ArticleBody, prompt: string, target: readonly Text
       .sort((a, b) => b.score - a.score)[0];
     const sentence = best?.span ?? line.sentences[0];
     const ref = segmentRef(line.sourceId, line.sourceVersion, line.segmentId, { from: sentence.from, to: sentence.to });
+    if (line.memory?.kind === 'statistic') return replyBlock(context.newId, sentence.text, [ref]);
+    if (line.memory) {
+      const name = line.speaker ? context.speakers?.[line.speaker]?.name : undefined;
+      return replyBlock(context.newId, `“${sentence.text}”${name ? `, diz ${name}.` : ''}`, [ref]);
+    }
     const who = line.speaker ? `, diz ${line.speaker}` : '';
     return replyBlock(context.newId, `“${withoutFinalPeriod(sentence.text)}”${who}.`, [ref]);
   });

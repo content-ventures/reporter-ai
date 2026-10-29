@@ -60,11 +60,16 @@ export function isSuggestionPending(suggestion: Pick<Suggestion, 'state'>): bool
  * anchor text is searched in the same block and must occur exactly once. Returns `undefined`
  * when any target was edited or removed (the suggestion is stale: "Trecho mudou · Reaplicar").
  */
-export function locateTargets(body: ArticleBody, suggestion: Pick<Suggestion, 'target' | 'anchorText'>): TextRange[] | undefined {
+export function locateTargets(body: ArticleBody, suggestion: Pick<Suggestion, 'target' | 'anchorText'> & Partial<Pick<Suggestion, 'proposal'>>): TextRange[] | undefined {
   const located: TextRange[] = [];
   for (const [index, range] of suggestion.target.entries()) {
     const expected = suggestion.anchorText[index];
     if (expected === undefined) return undefined;
+    // Replacing a block must not discard text added outside the original anchor range.
+    if (suggestion.proposal?.kind === 'replace-blocks') {
+      const block = findBlock(body, range.blockId);
+      if (!block || blockText(block) !== expected) return undefined;
+    }
     if (sliceText(body, range) === expected) {
       located.push(range);
       continue;
@@ -87,7 +92,7 @@ export function isSuggestionStale(body: ArticleBody, suggestion: Suggestion): bo
 export type ApplySuggestionRefusal = 'stale' | 'not_pending' | 'unsupported' | 'invalid_target';
 
 /** Applies an article suggestion as one change; the AI text it brings is unreviewed (the whole-text review reopens). */
-export function applySuggestion(body: ArticleBody, suggestion: Suggestion): Result<ArticleBody, ApplySuggestionRefusal> {
+export function applySuggestion(body: ArticleBody, suggestion: Pick<Suggestion, 'state' | 'proposal' | 'target' | 'anchorText'>): Result<ArticleBody, ApplySuggestionRefusal> {
   if (suggestion.state !== 'ready') return refuse('not_pending', 'Esta sugestão não está mais disponível.');
   const { proposal } = suggestion;
   if (proposal.kind === 'title') return ok({ ...body, title: proposal.text.trim() });

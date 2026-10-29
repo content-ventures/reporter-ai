@@ -206,7 +206,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
     },false,'reporter.edit',{...scope,templates:true})).value;
     if (ARTICLE_ASSIST_KINDS.has(job.kind)) {
       lastStepId = 'assist';
-      const response = await runArticleAssist(job,input.record,combined,guarded);
+      const response = await runArticleAssist(job,input.record,combined,guarded,undefined,input.people);
       await editorialTransaction('worker',async checkpoint => {
         const current = checkpoint.jobs[job.meta.runId];
         if (current?.lease?.fence === job.lease?.fence) current.provider = { name: response.provider,model: response.model,requestId: response.provider_request_id };

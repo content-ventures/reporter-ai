@@ -9,13 +9,17 @@ import { applySuggestion } from '../domain/suggestion.ts';
 import type { Suggestion, SuggestionProposal } from '../domain/suggestion.ts';
 import { dedupeRefs, refKey, segmentRef } from '../domain/refs.ts';
 import type { SourceRef, TextRange } from '../domain/refs.ts';
-import { resolveSourceRef, currentSourceVersion, writingSources } from '../domain/source.ts';
+import { resolveSourceRef, currentSourceVersion, sourceVersionSpeakers, writingSources } from '../domain/source.ts';
+import type { Person } from '../domain/workspace.ts';
 import type { ProductionRecord } from '../domain/record.ts';
 import type { EditorialJob } from '../ports/connected-workspace.ts';
 import { GENERATION_LABELS, REWRITE_TONE_LABELS } from '../ports/generation.ts';
 import type { GenerationKind } from '../ports/generation.ts';
 import type { RunEventPayload } from '../domain/run-events.ts';
 import { contentHash } from '../domain/text/hash.ts';
+import { memorySourceSegment } from '../domain/editorial-memory-excerpt.ts';
+import { prepareMemorySuggestion } from '../domain/editorial-memory-suggestion.ts';
+import { writingMemoryContext, type WritingMemoryContext } from '../domain/writing-source.ts';
 import { ok, refuse } from '../domain/result.ts';
 import { PIPELINE_SCHEMAS } from '../domain/pipeline.ts';
 import { partialJsonStrings } from './article-preview';
@@ -58,10 +62,10 @@ export function validateArticleAssistInput(record: ProductionRecord, pieceId: st
   return ok(true as const);
 }
 
-type Evidence = { id: string; text: string; ref: SourceRef; speaker?: string };
+type Evidence = { id: string; text: string; ref: SourceRef; speaker?: string; memory?: WritingMemoryContext };
 export type AssistContext = { kind: GenerationKind; body: ArticleBody; targets: TextRange[]; evidence: Evidence[]; prompt: string; tone?: string; targetCharacters?: number };
 /** Relevant literal excerpts only: no expensive whole-podcast rewrite for an inline request. */
-export function articleAssistContext(record: ProductionRecord, job: Pick<EditorialJob, 'kind' | 'input'>): AssistContext {
+export function articleAssistContext(record: ProductionRecord, job: Pick<EditorialJob, 'kind' | 'input'>, people: readonly Person[] = []): AssistContext {
   const input = job.input as { body: ArticleBody; target?: TextRange[]; anchors?: TextRange[]; prompt?: string; note?: string; tone?: string; targetCharacters?: number };
   const sources = writingSources(record.sources);
   const body = input.body, explicit = input.target ?? input.anchors;
@@ -71,9 +75,22 @@ export function articleAssistContext(record: ProductionRecord, job: Pick<Editori
   const targetIds = new Set(targets.map(target => target.blockId)), evidence: Evidence[] = [], seen = new Set<string>();
   let size = 0;
   const add = (text: string, ref: SourceRef, speaker?: string) => {
-    if (seen.has(refKey(ref)) || size + text.length > 22000 || evidence.length >= 100) return;
-    seen.add(refKey(ref)); size += text.length;
-    evidence.push({ id: String(evidence.length), text, ref, ...(speaker ? { speaker } : {}) });
+    const source = sources.find(source => source.id === ref.sourceId);
+    const binding = source?.memory && ref.locator.type === 'segment' ? memorySourceSegment(source, ref.sourceVersion, ref.locator.segmentId) : undefined;
+    if (source?.memory && (!binding || !source.rights.authorized)) return;
+    if (binding && source) {
+      const label = sourceVersionSpeakers(source, source.versions.find(version => version.number === ref.sourceVersion)).find(item => item.label === speaker);
+      speaker = people.find(person => person.id === label?.personId)?.name;
+    }
+    if (binding?.kind === 'statistic' && ref.locator.type === 'segment') {
+      text = binding.anchor.excerpt; speaker = undefined;
+      ref = segmentRef(ref.sourceId, ref.sourceVersion, ref.locator.segmentId, { from: 0, to: text.length });
+    }
+    const memory = binding ? writingMemoryContext(binding) : undefined;
+    const cost = text.length + (memory ? JSON.stringify({ memory, ref }).length : 0);
+    if (seen.has(refKey(ref)) || size + cost > 22000 || evidence.length >= 100) return;
+    seen.add(refKey(ref)); size += cost;
+    evidence.push({ id: String(evidence.length), text, ref, ...(speaker ? { speaker } : {}), ...(memory ? { memory } : {}) });
   };
   // Existing exact refs first preserve quotations spanning several transcript sentences.
   for (const block of body.blocks.filter(block => targetIds.has(block.id))) for (const ref of block.sourceRefs ?? []) {
@@ -149,8 +166,11 @@ export function articleAssistSuggestions(value: unknown, context: AssistContext,
     const proposedText = change.kind === 'list' ? change.items.join('\n') : change.text;
     if (articleQuotationIssue([{ text: proposedText, evidenceIds: change.evidenceIds }],literalEvidence))
       throw new FlowError('UNSUPPORTED_ARTICLE_QUOTE',502,true,5);
-    const suggestion: Suggestion = { id: runId+':suggestion:'+index, runId, pieceId: '', baseRevision: 0, target,
+    const candidate: Suggestion = { id: runId+':suggestion:'+index, runId, pieceId: '', baseRevision: 0, target,
       anchorText: target.map(range => sliceText(context.body,range)!), proposal, state: 'ready', label, createdAt: new Date().toISOString() };
+    const prepared = prepareMemorySuggestion(context.body, record.sources, candidate);
+    if (!prepared.ok) throw new FlowError(prepared.refusal.code === 'invalid_target' ? 'INVALID_PROVIDER_OUTPUT' : 'ASSIST_MEMORY_CONTEXT_CHANGED',502,true,5);
+    const suggestion = prepared.value;
     const applied = applySuggestion(context.body,suggestion);
     if (!applied.ok) throw new FlowError('INVALID_PROVIDER_OUTPUT',502,true,5);
     if (proposal.kind !== 'title') {
@@ -166,8 +186,8 @@ export function articleAssistSuggestions(value: unknown, context: AssistContext,
 }
 
 export async function runArticleAssist(job: EditorialJob, record: ProductionRecord, signal: AbortSignal,
-  guarded: (events: RunEventPayload[], call?: import('../domain/pipeline.ts').PipelineCall) => Promise<unknown>, directory?: string) {
-  const context = articleAssistContext(record,job), pipeline = job.pipeline;
+  guarded: (events: RunEventPayload[], call?: import('../domain/pipeline.ts').PipelineCall) => Promise<unknown>, directory?: string, people: readonly Person[] = []) {
+  const context = articleAssistContext(record,job,people), pipeline = job.pipeline;
   if (!pipeline?.definition.steps.assist) throw new FlowError('PIPELINE_STAGE_MISSING',503);
   if (!context.body.blocks.length && job.kind !== 'article.ask') throw new FlowError('EMPTY_ARTICLE',422);
   await guarded([{ type: 'assist.preview',reply: '',proposals: [] }, { type: 'step.completed',stepId: 'source' },
@@ -188,11 +208,14 @@ export async function runArticleAssist(job: EditorialJob, record: ProductionReco
   };
   const result = await executePipelineStep({ pipeline,key: 'assist',schema: PIPELINE_SCHEMAS.assist,
     directory: directory ?? await workDirectory(job.meta.runId), signal, trace: call => guarded([],call).then(() => undefined), onText,
-    variables: { source: JSON.stringify(context.evidence.map(({ id,text,speaker }) => ({ id,text,...(speaker ? { speaker } : {}) }))),
+    variables: { source: JSON.stringify(context.evidence.map(({ id,text,speaker,memory,ref }) => ({ id,text,...(speaker ? { speaker } : {}), ...(memory ? { memory, ref } : {}) }))),
       brief: JSON.stringify(record.production.brief), history: JSON.stringify({ title: context.body.title, blocks: context.body.blocks
         .filter(block => ['paragraph','heading','quote','list'].includes(block.type)).map(block => ({ id: block.id,type: block.type,text: blockText(block) })) }),
       sizing: JSON.stringify({ ...articleContractForPiece(record, record.pieces.find(piece => piece.id === job.meta.pieceId)!, context.body), current: articleStats(context.body), targetCharacters: context.targetCharacters,
-        sourceCoverage: 'selected-literal-excerpts' }), section: JSON.stringify({ action: context.kind,prompt: context.prompt,tone: context.tone,
+        sourceCoverage: 'selected-literal-excerpts', ...(context.evidence.some(item => item.memory) ? { bankEvidenceRules: {
+          statistic: 'Preserve the entire selected observation in one paragraph or list item, including number, unit, period, population, geography and qualifiers. Never present it as speech.',
+          citation: 'Use only a contiguous literal excerpt, preserving its whitespace and exact immutable source/version receipt.',
+        } } : {}) }), section: JSON.stringify({ action: context.kind,prompt: context.prompt,tone: context.tone,
         targets: context.targets.map((range,index) => ({ index, ...range,text: sliceText(context.body,range),blockType: findBlock(context.body,range.blockId)?.type })) }),
       outline: '', futureSections: '', layouts: '', approvedArticle: '', event: '', people: '' },
     validateOutput: value => { try { articleAssistSuggestions(value,context,record,job.meta.runId); return true; } catch { return false; } },

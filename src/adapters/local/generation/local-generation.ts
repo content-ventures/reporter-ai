@@ -37,7 +37,7 @@ import type { ScriptBook } from '../../../ports/script-book.ts';
 import type { Clock, IdGenerator } from '../../../ports/system.ts';
 import { planCarouselAssist } from './carousel-assist.ts';
 import type { SlotMeasure } from './carousel-assist.ts';
-import { planApplyNote, planAsk, planExpand, planRewrite, planShorten, planSubheadings, planTitles, planToList } from './assist-plan.ts';
+import { planApplyNote, planAsk, planExpand, planRewrite, planShorten, planSubheadings, planTitles, planToList, validateMemoryAssistPlan } from './assist-plan.ts';
 import type { AssistContext, AssistPlan } from './assist-plan.ts';
 import { extractiveCarouselPlan, planFromCarouselScript } from './carousel-plan.ts';
 import type { CarouselPlan } from './carousel-plan.ts';
@@ -156,6 +156,7 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
   const assistContext = (record: ProductionRecord): AssistContext => ({
     sources: record.sources,
     newId,
+    speakers: speakerInfo(record),
     ...(deps.scripts ? { scripts: deps.scripts } : {}),
   });
 
@@ -426,10 +427,13 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
 
     const inputs = generationInputs(record, 'article');
     if (!inputs.ok) return inputs;
+    if (readMaterial(record.sources).unavailableMemory) return refuse('memory_not_ready', 'Confira os trechos e a autorização da fonte do banco antes de escrever.');
     const assist = planAssist(record, request, request.input.body);
     if (!assist.ok) return assist;
+    const checked = validateMemoryAssistPlan(request.input.body, assist.value, assistContext(record));
+    if (!checked.ok) return checked;
     const steps = recipeSteps(request.kind);
-    const plan = assist.value;
+    const plan = checked.value;
     return ok({
       plan,
       steps,

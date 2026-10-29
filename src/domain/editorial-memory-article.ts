@@ -34,6 +34,7 @@ export function memoryStatisticIssue(block: ArticleBlock, original: string): str
   const parts = block.type === 'list' ? block.items.map(inlinesText) : [blockText(block)];
   if (!original || !parts.some(text => text.includes(original))) return 'O dado usado perdeu parte do contexto original. Confira número, unidade, período e qualificadores.';
   if (block.type === 'quote') return 'Um dado estatístico não pode ser apresentado como fala. Mantenha o dado completo em um parágrafo ou item de lista.';
+  if (block.type !== 'paragraph' && block.type !== 'list') return 'Mantenha o dado completo em um parágrafo ou item de lista.';
   const quotes = extractQuotes({ type: 'article', title: '', blocks: [block] });
   const text = blockText(block);
   for (let from = text.indexOf(original); from >= 0; from = text.indexOf(original, from + original.length)) {

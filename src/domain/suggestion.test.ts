@@ -41,6 +41,16 @@ describe('suggestion targets', () => {
     const doubled: ArticleBody = { ...body(), blocks: [paragraphBlock('p1', 'X feira e outra feira.')] };
     assert.equal(locateTargets(doubled, suggestion({ kind: 'replace-text', text: 'y' }, [{ blockId: 'p1', from: 30, to: 35 }])), undefined);
   });
+  test('a whole-block proposal becomes stale when a later edit only appends or prepends text', () => {
+    const original = body(), text = blockText(original.blocks[0]);
+    const pending = suggestion({ kind: 'replace-blocks', blocks: [paragraphBlock('p1', 'Proposed replacement.')] },
+      [{ blockId: 'p1', from: 0, to: text.length }], [text]);
+    for (const changed of [text + ' New human sentence.', 'New human introduction. ' + text]) {
+      const edited = { ...original, blocks: [paragraphBlock('p1', changed), ...original.blocks.slice(1)] };
+      assert.equal(isSuggestionStale(edited, pending), true);
+      const result = applySuggestion(edited, pending); assert.ok(!result.ok); assert.equal(result.refusal.code, 'stale');
+    }
+  });
 });
 
 describe('applying suggestions', () => {
