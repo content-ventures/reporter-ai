@@ -7,6 +7,7 @@ import { checkMediaTools } from '../src/server/media.ts';
 import { pool,transaction } from '../src/server/database.ts';
 import { FlowError,logEvent,safeCode } from '../src/server/errors.ts';
 import { workerImageObject } from '../src/server/image-storage.ts';
+import { workerMemoryOriginalObject } from '../src/server/editorial-memory-original-storage.ts';
 import { workerMediaDiagnostics } from '../src/server/worker-media.ts';
 import { appOrigins } from '../src/server/worker-config.ts';
 import { chainDrain,createDrainScheduler,drainQueue,type DrainResult } from '../src/server/worker-drain.ts';
@@ -128,6 +129,19 @@ export function createReporterWorker(services: WorkerDependencies = dependencies
 
   return { async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/memory-objects') {
+      if (request.method !== 'POST' || !matchesWorkerSecret(request.headers.get('x-reporter-worker-key')?.trim())) return new Response('Unauthorized', { status: 401 });
+      try {
+        if (!request.body) throw new FlowError('INVALID_INPUT', 422);
+        const reader = request.body.getReader(), chunks: Uint8Array[] = []; let size = 0;
+        try {
+          for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.length;
+            if (size > 2 * 1024 ** 2) { await reader.cancel(); throw new FlowError('PAYLOAD_TOO_LARGE', 413); } chunks.push(value); }
+        } finally { reader.releaseLock(); }
+        const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        return Response.json(await workerMemoryOriginalObject(input), { headers: { 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' } });
+      } catch (error) { return Response.json({ error: safeCode(error) }, { status: error instanceof FlowError ? error.status : error instanceof z.ZodError || error instanceof SyntaxError ? 422 : 503 }); }
+    }
     if (url.pathname === '/objects') {
       if (request.method !== 'POST' || !await hasWorkerSecret(request)) return new Response('Unauthorized',{status:401});
       try {
