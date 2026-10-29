@@ -52,7 +52,7 @@ export type ArticleReadingProps = {
 export function ArticleReading({ body, label, anchors, recorded = [], litBlockIds = NO_BLOCKS, focus, canPoint, onPoint, onReturnWith }: ArticleReadingProps) {
   const assetIds = useMemo(() => articleAssetIds(body), [body]);
   const images = useImageSources(assetIds);
-  const editor = useArticleReader({ body, figureSources: images.figures });
+  const editor = useArticleReader({ body, label, figureSources: images.figures });
   const selection = useSelectionInfo(editor);
   const anchor = useSelectionAnchor(editor);
   const [dismissed, setDismissed] = useState<string | null>(null);

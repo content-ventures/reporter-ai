@@ -53,7 +53,7 @@ export function ArticleFinal({ item, onOpenPackage }: { item: DeliveryItemView; 
 function FinalText({ body, label }: { body: ArticleBody; label: string }) {
   const assetIds = useMemo(() => articleAssetIds(body), [body]);
   const images = useImageSources(assetIds);
-  const editor = useArticleReader({ body, figureSources: images.figures, hideImageSlots: true });
+  const editor = useArticleReader({ body, label, figureSources: images.figures, hideImageSlots: true });
   return (
     <Prose
       variant="read"
