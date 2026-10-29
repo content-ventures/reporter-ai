@@ -87,6 +87,7 @@ services:
       - ./database/migrations/076-editorial-memory-original-rebinding.sql:/docker-entrypoint-initdb.d/99-zq-editorial-memory-original-rebinding.sql:ro
       - ./database/migrations/077-editorial-memory-batch-comparison.sql:/docker-entrypoint-initdb.d/99-zr-editorial-memory-batch-comparison.sql:ro
       - ./database/migrations/078-editorial-memory-impact-performance.sql:/docker-entrypoint-initdb.d/99-zs-editorial-memory-impact-performance.sql:ro
+      - ./database/migrations/079-editorial-memory-market-mappings.sql:/docker-entrypoint-initdb.d/99-zt-editorial-memory-market-mappings.sql:ro
     networks:
       - reporter
     healthcheck:

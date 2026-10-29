@@ -309,3 +309,27 @@ test('metadata and exact original bindings survive official migration replay', a
   assert.deepEqual(Buffer.from(await (await api(`originals/${original.id}/file`)).arrayBuffer()), bytes);
   assert.equal((await api('materials', { ...intake(original.id), text: 'A changed literal original must still be refused after replay.' })).status, 422);
 });
+
+test('market mappings save explicit column choices with source binding and reviewer access limits', async () => {
+  const fileResponse = await api('originals', { ...upload, name: 'Mercado sintético.csv' });
+  assert.equal(fileResponse.status, 200, await fileResponse.clone().text()); const file = await fileResponse.json() as MemoryOriginalFile;
+  const created = await api('materials/from-file', { ...intake(file.id), kind: 'market_data', title: 'Mercado sintético' });
+  assert.equal(created.status, 200, await created.clone().text()); const { material } = await created.json() as { material: MemoryMaterial };
+  const root = `materials/${material.id}`;
+  const choices = { institution: { record: 'row', column: 0 }, indicator: { record: 'row', column: 1 }, value: { record: 'row', column: 2 },
+    unit: { record: 'row', column: 3 }, period: { record: 'row', column: 4 } };
+  const preview = await api(`${root}/market-preview`, { mapping: choices }); assert.equal(preview.status, 200, await preview.clone().text());
+  const shown = await preview.json(); assert.equal(shown.preview.rows[0].fields.value.value, '1.234,56');
+  assert.equal(shown.preview.rows[0].fields.value.record, 2); assert.equal(shown.mapping, null);
+  assert.equal((await api(`${root}/market-preview`, { mapping: choices }, 2)).status, 403);
+  const input = { mapping: choices, revision: 0, materialRevision: material.revision }, key = randomUUID();
+  const saved = await api(`${root}/market-mapping`, input, 0, key); assert.equal(saved.status, 200, await saved.clone().text());
+  const plan = await saved.json(); assert.equal(plan.revision, 1); assert.equal(plan.originalFileId, file.id);
+  assert.deepEqual(plan.mapping, choices); assert.deepEqual(await (await api(`${root}/market-mapping`, input, 0, key)).json(), plan);
+  assert.equal((await api(`${root}/market-mapping`, input)).status, 409);
+  assert.equal((await api(`${root}/market-mapping`, { ...input, revision: 1 }, 2)).status, 403);
+  const peer = await api(`${root}/market-preview`, { mapping: choices }, 1); assert.equal(peer.status, 200, await peer.clone().text());
+  assert.equal((await peer.json()).mapping.revision, 1);
+  const [audit] = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.market.mapping' AND after_data->>'materialId'=$1", [material.id]);
+  assert.equal(audit.user_id, plan.updatedBy); assert.deepEqual(audit.after_data, plan);
+});

@@ -7,6 +7,7 @@ import { useMemoryResource } from '@/state/use-memory-library';
 import { useCan, useSession } from '@/state';
 import { MemoryMaterialRevisionDialog, type MaterialRevisionBasis } from './memory-material-revision-dialog';
 import { MemoryOriginalDownload } from './memory-original-download';
+import { MemoryMarketMappingDialog } from './memory-market-mapping';
 
 import { MATERIAL_KINDS } from './memory-import-dialog';
 export { MemoryImportDialog, MATERIAL_KINDS } from './memory-import-dialog';
@@ -42,6 +43,7 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence, onImpact }
   const session = useSession().data;
   const [historical, setHistorical] = useState<number>(), [latestKnown, setLatestKnown] = useState<number>();
   const [editing, setEditing] = useState<MaterialRevisionBasis>(), [editingOpen, setEditingOpen] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
   const load = useCallback((port: MemoryLibrary) => port.material(id, historical), [id, historical]), resource = useMemoryResource(load, 3000, open), canEdit = useCan('library.edit');
   const editable = canEdit && historical === undefined;
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>(), [rightsReason, setRightsReason] = useState('');
@@ -85,6 +87,7 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence, onImpact }
           ...(detail.source.versions[0].note ? [{ label: 'Motivo da versão', value: detail.source.versions[0].note }] : [])]} />
         <Textarea aria-label="Texto original preservado" readOnly rows={18} value={detail.source.versions[0]?.content.segments.map(segment => segment.text).join('\n') ?? ''} />
         {resource.port && detail.material.originalFileId && <MemoryOriginalDownload port={resource.port} id={detail.material.originalFileId} />}
+        {editable && resource.port && detail.material.kind === 'market_data' && detail.material.originalFileId && <Button variant="secondary" onClick={() => setMappingOpen(true)}>Mapear dados de mercado</Button>}
         <ButtonGroup label="Histórico do material">
           <Button variant="secondary" onClick={onImpact}>Ver impacto da correção</Button>
           <Button variant="secondary" disabled={busy || detail.material.revision <= 1} onClick={() => { if (historical === undefined) setLatestKnown(detail.material.revision); setHistorical(detail.material.revision - 1); }}>Versão anterior</Button>
@@ -101,5 +104,6 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence, onImpact }
     {editing && <MemoryMaterialRevisionDialog key={editing.key} basis={editing} open={open && editingOpen} onClose={() => setEditingOpen(false)} onSaved={result => {
       setEditingOpen(false); setHistorical(undefined); resource.reload(); toast('Original revisado', { description: `${result.affectedEvidence} evidências precisam de nova revisão editorial.` });
     }} />}
+    {resource.port && <MemoryMarketMappingDialog key={`${id}:${mappingOpen}`} port={resource.port} materialId={id} open={open && mappingOpen} onClose={() => setMappingOpen(false)} />}
   </>;
 }

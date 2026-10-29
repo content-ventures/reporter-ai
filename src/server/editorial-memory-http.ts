@@ -4,6 +4,7 @@ import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
 import { readMemoryDocumentLocation } from './editorial-memory-document-location.ts';
+import { previewMemoryMarket, saveMemoryMarketMapping } from './editorial-memory-market.ts';
 import { readMemoryCorrectionImpact } from './editorial-memory-impact.ts';
 import { readMemoryReplacement, replaceEditorialMemory } from './editorial-memory-replacement.ts';
 import { memoryReplacementSchema } from './editorial-memory-input.ts';
@@ -126,6 +127,8 @@ export async function handleEditorialMemory(request: Request, path: string[], re
     if (request.method === 'POST') {
       if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
       const key = request.headers.get('idempotency-key') ?? '';
+      if (path[0] === 'materials' && path.length === 3 && path[2] === 'market-preview') return Response.json(await previewMemoryMarket(path[1], await readJson(request)), noStore);
+      if (path[0] === 'materials' && path.length === 3 && path[2] === 'market-mapping') return Response.json(await saveMemoryMarketMapping(path[1], await readJson(request), key), noStore);
       if (path[0] === 'materials' && path.length === 3 && path[2] === 'revision') return Response.json(await reviseEditorialMemoryMaterial(path[1], memoryMaterialRevisionSchema.parse(await readJson(request)), key), noStore);
       if (path[0] === 'materials' && path.length === 3 && path[2] === 'authorization') return Response.json(await authorizeMemoryMaterial(path[1], memoryAuthorizationSchema.parse(await readJson(request)), key), noStore);
       if (path[0] === 'materials' && path.length === 1) return Response.json(await importEditorialMemory(memoryImportInputSchema.parse(await readJson(request)), key), noStore);
