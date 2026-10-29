@@ -18,7 +18,7 @@ export function memoryWritingFixture(kind: 'citation' | 'statistic', text: strin
   if (evidence.kind === 'citation') { evidence.personId = 'author'; evidence.authorConfirmed = true; }
   const decision = reviewMemoryEvidence({ evidence: memoryEvidenceRef(evidence), check: null, policyRevision: 1,
     previousSequence: 0, action: 'accept', reason: 'Synthetic technical review', supports: [] }, evidence, source, policy, null, null,
-    { personId: 'actor', workspaceId: workspace, roles: ['editor'] }, ctx);
+    { personId: ctx.actorId, workspaceId: workspace, roles: ['editor'] }, ctx);
   if (!decision.ok) throw new Error(decision.refusal.message);
   const item: MemoryWritingItem = { policy, ...(kind === 'citation' ? { author: { id: 'author', name: 'Pessoa Fictícia', title: 'Porta-voz', organization: 'Organização sintética' } } : {}),
     view: { evidence, material: { id: material.id, title: material.title, kind: material.kind, primaryOrigin: material.primaryOrigin },
@@ -26,7 +26,7 @@ export function memoryWritingFixture(kind: 'citation' | 'statistic', text: strin
       relevance: null, uses: { selected: 0, inserted: 0, approved: 0, published: 0 } } };
   const selection: MemorySelection = { id: ctx.newId('selection'), workspaceId: workspace, revision: 1, productionId: null,
     items: [{ evidence: memoryEvidenceRef(evidence), check: null, decisionId: decision.value.id, policyRevision: 1 }],
-    createdBy: 'actor', updatedBy: 'actor', createdAt: ctx.now, updatedAt: ctx.now };
+    createdBy: ctx.actorId, updatedBy: ctx.actorId, createdAt: ctx.now, updatedAt: ctx.now };
   const prepared = prepareMemoryWriting(selection, [item], 'Pauta sintética', ctx);
   if (!prepared.ok) throw new Error(prepared.refusal.message);
   return { source: prepared.value.source, item, selection };

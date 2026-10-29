@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { citationId, locateCitation } from './citation-library.ts';
 import type { Citation } from './citation-library.ts';
-import { CURATED_CHARS, curatedEvidence, explainedHints, isCuratedCitation, planningSource, quotableShortlist, writingSource } from './evidence-hints.ts';
+import { CURATED_CHARS, curatedEvidence, explainedHints, isCuratedCitation, planningSource, quotableShortlist, withMemoryPlanningEvidence, writingSource } from './evidence-hints.ts';
 import type { EvidenceCandidate } from './evidence-hints.ts';
 import { EDITORIAL_FORMATS } from './formats.ts';
 import { defaultPipelineDefinition, formatPipelineDefinition } from './pipeline.ts';
@@ -11,6 +11,9 @@ import type { PipelineDefinition } from './pipeline.ts';
 import { createTranscriptSource } from './source.ts';
 import type { Source } from './source.ts';
 import { parseTranscript } from './text/transcript-parse.ts';
+import { memoryWritingFixture } from './testing/editorial-memory.ts';
+import { writingSourceCandidates } from './writing-source.ts';
+import { quotableIds, quotableSpeaker } from './quote-plan.ts';
 
 const now = '2026-10-21T12:00:00Z';
 const ctx = { now, actorId: 'editor', newId: () => 'source' };
@@ -127,6 +130,23 @@ test('the writing source is unchanged without curated lines and marks the curate
     { id: '1', text: MARKET, speaker: 'Ana Costa', curated: true },
     { id: '2', text: EXPORT, speaker: 'Ana Costa', curated: true },
   ]);
+});
+test('bank planning/writing keep selected proof and never promote statistics to curated speech', () => {
+  let n = 0;
+  const bank = memoryWritingFixture('statistic', 'Foram atendidas cerca de 240 pessoas em 2025. Apenas participantes do piloto foram incluídos.', { ...ctx, newId: prefix => prefix + '-bank-' + (++n) });
+  const candidate = { ...writingSourceCandidates([bank.source])[0], speaker: 'Ana Costa' };
+  const planning = JSON.parse(withMemoryPlanningEvidence('Reduced context', [candidate]));
+  assert.equal(planning.bankEvidence[0].text, candidate.text);
+  assert.deepEqual(planning.bankEvidence[0].memory.selected, bank.selection.items[0]);
+  assert.equal(planning.bankEvidence[0].speaker, undefined); assert.equal(JSON.stringify(planning).includes('PRIVATE'), false);
+  const source = JSON.parse(writingSource('Context', [candidate], new Set([candidate.key]), new Map([[candidate.key, { citationId: 'curated' }]])));
+  assert.equal(source.literalEvidence[0].text, candidate.text); assert.deepEqual(source.literalEvidence[0].ref, candidate.ref);
+  assert.equal(source.literalEvidence[0].curated, undefined); assert.equal(source.literalEvidence[0].speaker, undefined);
+  assert.ok(source.bankEvidenceRules.statistic.includes('Never present it as speech'));
+  assert.equal(withMemoryPlanningEvidence('Original context', []), 'Original context');
+  assert.equal(quotableSpeaker({ linked: new Set(['Ana Costa']), people: [{ name: 'Ana Costa' }], unlabeledAnswers: true })(candidate), false);
+  assert.deepEqual(quotableIds([candidate.key], new Map([[candidate.key, candidate]]), () => true), []);
+  assert.deepEqual(quotableShortlist([candidate], () => true, new Set()), []);
 });
 
 test('hints reach only the prompts that explain them: revision 1 keeps its exact source', () => {

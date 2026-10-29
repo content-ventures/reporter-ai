@@ -7,7 +7,7 @@ import type { PipelineRevision, PipelineStepKey, PipelineVariables, PipelineCall
 import { cacheRead, cacheWrite } from './storage';
 import { generateStructured } from './groq';
 import { FlowError, safeCode } from './errors';
-import { restoreLiteralQuoteCase, validPipelineOutput, exceedsParagraphBudget, exceedsArticleBudget, writingContractIssue, writtenArticleText } from './pipeline-output';
+import { memoryWritingIssue, restoreLiteralQuoteCase, validPipelineOutput, exceedsParagraphBudget, exceedsArticleBudget, writingContractIssue, writtenArticleText } from './pipeline-output';
 import type { WritingContract } from './pipeline-output';
 import { withoutOpeningRepeats } from './editorial-validation';
 import { countCharacters, countWords, textStats } from '../domain/text/stats.ts';
@@ -97,20 +97,26 @@ function optionalAttemptFailed(error: unknown) {
 
 /** One bounded refinement toward the upper target, using measured data in the SAVED template. */
 export async function writeCompleteArticle(outline: Outline, variables: PipelineVariables, sizing: WritingSize,
-  call: (key: PipelineStepKey, schema: object, variables: PipelineVariables, index?: number) => Promise<unknown>) {
+  call: (key: PipelineStepKey, schema: object, variables: PipelineVariables, index?: number) => Promise<unknown>, memory?: WritingContract['memory']) {
   const schema = completeArticleSchema(outline, sizing);
   const first = await call('article', schema, variables, 0);
   const shape = first as Parameters<typeof writtenArticleText>[0];
   const stats = textStats(writtenArticleText(shape, sizing.headings ?? true));
-  const issue = articleLengthIssue(stats,sizing);
+  const issue = memoryWritingIssue([...shape.intro, ...shape.sections.flatMap(section => section.paragraphs)], memory) ?? articleLengthIssue(stats,sizing);
   if (!issue && (!sizing.targetChars || stats.characters >= sizing.targetChars * 0.93)) return first;
   // This is data interpolation, not an additional hidden editorial prompt. The
   // active article template explains how to use it; the same hard rules still hold.
-  try { return await call('article', schema, { ...variables, sizing: JSON.stringify({ ...sizing, revisionFeedback: {
+  try {
+    const revised = await call('article', schema, { ...variables, sizing: JSON.stringify({ ...sizing, revisionFeedback: {
     actualCharacters: stats.characters, actualWords: stats.words, preferredMinimumChars: Math.ceil((sizing.targetChars ?? sizing.maxChars ?? stats.characters) * 0.93),
     ...(issue ? { violation: issue } : {}),
     previousDraft: first,
-  } }) }, 1); }
+    } }) }, 1);
+    const value = revised as typeof shape;
+    const unresolved = memoryWritingIssue([...value.intro, ...value.sections.flatMap(section => section.paragraphs)], memory);
+    if (unresolved) throw new FlowError(unresolved,502);
+    return revised;
+  }
   catch (error) {
     // An optional attempt toward the upper target cannot destroy an already valid draft.
     // A first draft below/above a hard limit is NEVER a fallback. Lease/cancel/refusal errors propagate.
@@ -125,13 +131,14 @@ export async function writeCompleteArticle(outline: Outline, variables: Pipeline
  * to the first one it `keeps`. A paragraph left whole keeps its exact text.
  */
 function cutToBudget<P extends { text: string }>(paragraphs: readonly P[], budget: number,
-  protect?: { at: number; keeps: (sentence: string) => boolean }): P[] {
+  protect?: { at: number; keeps: (sentence: string) => boolean }, atomic?: (paragraph: P) => boolean): P[] {
   const parts=paragraphs.map((paragraph,at)=>({paragraph,at,sentences:articleSentences(paragraph.text),trimmed:false}));
   const text=(part:typeof parts[number])=>part.trimmed?part.sentences.join(' '):part.paragraph.text;
   const size=()=>parts.reduce((sum,part)=>sum+countCharacters(text(part)),0);
   for(let place=parts.length-1;place>0&&size()>budget;place--)if(parts[place].at!==protect?.at)parts.splice(place,1);
   for(let place=parts.length-1;place>=0&&size()>budget;place--){
     const part=parts[place];
+    if(atomic?.(part.paragraph))continue;
     const held=part.at===protect?.at?part.sentences.findIndex(protect.keeps)+1:0;
     const floor=Math.max(held,part.at===0?1:0);
     while(part.sentences.length>floor&&size()>budget){part.sentences.pop();part.trimmed=true;}
@@ -157,7 +164,9 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
   /** Event formats: the confirmed speakers' names, introduced once and then named by the surname. */
   people:readonly string[]=[],
   /** Given only when both writing prompts explain SECTION_QUOTE_REQUIRED; asked once per part, never fatal. */
-  soft?:SoftRevisions) {
+  soft?:SoftRevisions, memory?:WritingContract['memory']) {
+  const bankSources = new Set(memory?.sources.filter(source => source.memory).map(source => source.id));
+  const bankParagraph = (paragraph: { evidenceIds: string[] }) => paragraph.evidenceIds.some(id => bankSources.has(memory?.references.get(id)?.sourceId ?? ''));
   const budgets = articleWritingBudgets(outline, sizing);
   const floors = articlePartFloors(outline, sizing, budgets);
   const introSchema = articlePartSchema('intro', budgets.intro);
@@ -210,10 +219,10 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
     const partText=(value:unknown)=>paragraphsOf(value).map(p=>p.text).join('\n');
     const restated=(value:unknown)=>grounding?repeatedSentences(partText(value),values.history??''):[];
     const reintroduced=(value:unknown)=>grounding?reintroducedPeople(partText(value),values.history??'',people):[];
-    const hard=(value:unknown)=>exceedsParagraphBudget(key,value,budget)?'ARTICLE_PART_SIZE_EXCEEDED'
+    const hard=(value:unknown)=>memoryWritingIssue(paragraphsOf(value),memory)??(exceedsParagraphBudget(key,value,budget)?'ARTICLE_PART_SIZE_EXCEEDED'
       :(evidence?articleQuotationIssue(paragraphsOf(value),evidence,0,evidencePassages):undefined)
         ??(ungrounded(value).length?'UNGROUNDED_FACT':repeated(value).length?'REPEATED_QUOTE'
-          :restated(value).length?'REPEATED_FACT':reintroduced(value).length?'REINTRODUCED_PERSON':undefined);
+          :restated(value).length?'REPEATED_FACT':reintroduced(value).length?'REINTRODUCED_PERSON':undefined));
     const short=(value:unknown)=>{if(!floor)return false;const size=measured(paragraphsOf(value));return size.chars<floor.chars||size.words<floor.words;};
     // A part asked for a quotation meets it with that many new quotations of four words or more.
     const required=quotes?.plan.required??0,essential=quotes?.essential??0;
@@ -230,11 +239,12 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
       .map(candidate=>({id:candidate.key,text:excerpt(candidate.text),...(candidate.speaker?{speaker:candidate.speaker}:{})}));
     const repair=(draft:unknown)=>{
       let paragraphs=paragraphsOf(draft).map(p=>({...p}));
-      if(evidence)paragraphs=unquoteUnsupported(paragraphs,evidence,evidencePassages);
+      if(evidence)paragraphs=paragraphs.flatMap(p=>bankParagraph(p)?[p]:unquoteUnsupported([p],evidence,evidencePassages));
       // An invented number or name is never kept, nor a quotation used twice: the sentence goes, nothing is rewritten.
       if(grounding){
         const used=new Set<string>();
         paragraphs=paragraphs.flatMap(p=>{
+          if(bankParagraph(p))return [p];
           const kept=articleSentences(p.text).filter(sentence=>{
             const quotes=directQuotes(sentence).map(literalQuoteText);
             if(grounding(sentence).length||quotes.some(quote=>used.has(quoteKey(quote))||hasQuote(written,quote))
@@ -255,8 +265,8 @@ export async function writeSequentialArticle(outline: Outline,variables: Pipelin
         // before it, which name who speaks; when that cannot fit, the quotation goes like any sentence.
         const quoted=(sentence:string)=>directQuotes(sentence).some(newQuote);
         const protect=soft&&required>0?paragraphs.findIndex(p=>articleSentences(p.text).some(quoted)):-1;
-        const cut=protect>=0?cutToBudget(paragraphs,budget,{at:protect,keeps:quoted}):undefined;
-        paragraphs=cut&&measured(cut).chars<=budget?cut:cutToBudget(paragraphs,budget);
+        const cut=protect>=0?cutToBudget(paragraphs,budget,{at:protect,keeps:quoted},bankParagraph):undefined;
+        paragraphs=cut&&measured(cut).chars<=budget?cut:cutToBudget(paragraphs,budget,undefined,bankParagraph);
       }
       return {...(draft as object),paragraphs};
     };
@@ -379,7 +389,7 @@ export async function executePipelineStep(input: {
   const hash = contentHash({ key: input.key,index: input.index,systemPrompt,userPrompt,
     schema: input.schema,model: step.model,temperature: step.temperature,maxTokens: step.maxTokens,
     ...(pipelineModelEffortOptions(step.model).length ? { effort: step.effort ?? pipelineDefaultEffort(step.model) } : {}),
-    ...(['article', 'intro', 'section'].includes(input.key) ? { validation: 'r1-length-and-literal-quotes-v1' }
+    ...(['article', 'intro', 'section'].includes(input.key) ? { validation: 'r1-length-literal-quotes-and-memory-v2' }
       : input.key === 'assist' ? { validation: 'article-assist-scope-quotes-size-and-memory-v2' } : {}) });
   const cacheKey = 'pipeline-'+hash;
   const sizing = JSON.parse(input.variables.sizing || '{}');
@@ -413,15 +423,20 @@ export async function executePipelineStep(input: {
   let needsRevision = false;
   if (!result) {
     result = await generateStructured('', '',input.schema,input.signal,{ ...step,systemPrompt,userPrompt,...(input.onText ? { onText: input.onText } : {}) });
-    if(input.writingContract)result.value=restoreLiteralQuoteCase(input.key,result.value,input.writingContract.evidence,input.writingContract.evidencePassages);
+    if(input.writingContract){
+      const memory=input.writingContract.memory, bankSources=new Set(memory?.sources.filter(source=>source.memory).map(source=>source.id));
+      const preserve=memory?new Set([...memory.references].filter(([,ref])=>bankSources.has(ref.sourceId)).map(([id])=>id)):undefined;
+      result.value=restoreLiteralQuoteCase(input.key,result.value,input.writingContract.evidence,input.writingContract.evidencePassages,preserve);
+    }
     // The plan that is validated, cached and shown in Estrutura is the one without the opening's ids in a section.
     result.value = withoutOpeningRepeats(input.key,result.value);
     if (!valid(result.value)) {
       const literalIssue=writingContractIssue(input.key,result.value,input.writingContract ? {...input.writingContract,limits:{}}:undefined,sizing.headings);
       const repairableQuote=['intro','section'].includes(input.key)&&literalIssue==='UNSUPPORTED_ARTICLE_QUOTE';
-      needsRevision = Boolean(input.deferWritingRevision && (input.key === 'article'||exceedsParagraphBudget(input.key,result.value,budget)||repairableQuote)
+      const repairableMemory=literalIssue==='MEMORY_LITERAL_CHANGED';
+      needsRevision = Boolean(input.deferWritingRevision && (input.key === 'article'||exceedsParagraphBudget(input.key,result.value,budget)||repairableQuote||repairableMemory)
         && validPipelineOutput(input.key,result.value,input.schema,undefined,sizing.headings)
-        && (!literalIssue||repairableQuote) && (input.validateOutput?.(result.value) ?? true));
+        && (!literalIssue||repairableQuote||repairableMemory) && (input.validateOutput?.(result.value) ?? true));
       if (!needsRevision) throw new FlowError(writingContractIssue(input.key, result.value, input.writingContract, sizing.headings)
       ?? (exceedsParagraphBudget(input.key,result.value,budget)
       ? 'ARTICLE_PART_SIZE_EXCEEDED' : input.key === 'article' && exceedsArticleBudget(result.value,budget,sizing.headings)
