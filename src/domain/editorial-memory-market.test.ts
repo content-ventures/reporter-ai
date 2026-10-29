@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readMemoryDocument } from './editorial-memory-document.ts';
-import { mapMemoryMarketRows, type MemoryMarketMapping } from './editorial-memory-market.ts';
+import { mapMemoryMarketRows, memoryMarketWritingText, memoryStatisticMarketContext, type MemoryMarketMapping } from './editorial-memory-market.ts';
 import { prepareMemoryMarketRows } from './editorial-memory-market-import.ts';
 import { createMemoryMaterial } from './editorial-memory-import.ts';
 import { memoryMarketContext, verifyMemoryMarketProof } from './editorial-memory-market-proof.ts';
+import { initialMemoryPolicy, memoryEligibility } from './editorial-memory.ts';
+import { memoryStatisticIssue } from './editorial-memory-article.ts';
+import { paragraphBlock } from './article.ts';
+import { assessMemoryEvidence } from './editorial-memory-check.ts';
 
 test('market mapping retains each literal CSV cell and reports missing values without inventing data', () => {
   const text = 'Instituição;Indicador;Valor;Unidade;Período\r\nÓrgão;"Índice ""A""";"1.234,56";%;2025\r\nÓrgão;Índice B;;%;2026\r\n';
@@ -42,7 +46,19 @@ test('market evidence keeps literal rows and refuses absent or nonliteral contex
   }
   assert.deepEqual(result.value.rows[1], { record: 3, status: 'refused', reason: 'missing', fields: ['value'] });
   const header = prepareMemoryMarketRows(made.material, made.source, doc.value, { ...plan, mapping: { ...mapping, unit: { record: 'header', column: 3 } } }, 1, ctx);
-  assert.ok(header.ok); assert.equal(header.value.rows[0].status, 'refused');
+  assert.ok(header.ok); assert.equal(header.value.rows[0].status, 'ready');
+  const headerEvidence = header.value.rows[0];
+  if (headerEvidence.status === 'ready') {
+    assert.equal(memoryEligibility(headerEvidence.evidence, made.source, initialMemoryPolicy('workspace'), null, null).reason, 'review_required');
+    const withContext = memoryMarketWritingText(headerEvidence.evidence.market, headerEvidence.evidence.anchor.excerpt);
+    assert.ok(withContext.includes('Unidade: unidade')); assert.equal(memoryStatisticIssue(paragraphBlock('a', withContext), headerEvidence.evidence.anchor.excerpt, ['unidade']), undefined);
+    assert.ok(memoryStatisticIssue(paragraphBlock('b', headerEvidence.evidence.anchor.excerpt), headerEvidence.evidence.anchor.excerpt, ['unidade']));
+    const check = assessMemoryEvidence(headerEvidence.evidence, made.material, initialMemoryPolicy('workspace'), null,
+      { claims: [{ text: headerEvidence.evidence.anchor.excerpt, kind: 'declared', query: 'Vendas 2025' }], supports: [], strength: null, provider: 'synthetic', model: 'synthetic' }, ctx);
+    assert.equal(check.verdict, 'not_validated');
+    const corrected = { ...headerEvidence.evidence, unit: 'pessoas' }, context = memoryStatisticMarketContext(corrected);
+    assert.deepEqual(context, {}); assert.equal(memoryMarketWritingText(corrected.market, corrected.anchor.excerpt, context), corrected.anchor.excerpt);
+  }
   const preview = mapMemoryMarketRows(doc.value, { ...mapping, unit: { record: 'header', column: 3 } }); assert.ok(preview.ok);
   if (first.status === 'ready') {
     const evidence = structuredClone(first.evidence); evidence.market!.mapping = { ...mapping, unit: { record: 'header', column: 3 } };

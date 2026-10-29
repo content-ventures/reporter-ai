@@ -76,7 +76,7 @@ export function MemoryMarketMappingDialog({ port, materialId, open, onClose, onV
       {error && <Alert tone="danger" title={error} />}
       {stale && <Alert tone="warning" title="O arquivo ou a versão do material mudou">Selecione novamente as colunas para esta versão.</Alert>}
       {!data ? !error && <Spinner label="Carregando tabela" /> : <>
-        <DescriptionList items={[{ label: 'Importação', value: 'Registros completos e literais entram para revisão. Campos fora da linha são informados como pendência.' }]} />
+        <DescriptionList items={[{ label: 'Importação', value: 'Registros completos entram para revisão. Células do cabeçalho ficam como contexto separado.' }]} />
         <FieldGroup label="Colunas da tabela" columns={2}>
           {fields.map(field => <Field key={field.key} label={field.label} required={field.required} optional={!field.required}>{({ id }) => {
             const selected = draft[field.key];

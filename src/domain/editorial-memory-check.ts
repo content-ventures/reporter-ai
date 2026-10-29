@@ -19,7 +19,10 @@ export function assessMemoryEvidence(evidence: MemoryEvidence, material: MemoryM
   if (input.claims.some(claim => !claim.text.trim() || !evidence.anchor.excerpt.includes(claim.text)
     || claim.text.length > 2000 || !['fact', 'declared', 'opinion', 'forecast'].includes(claim.kind))) throw new Error('MEMORY_CHECK_CLAIM_NOT_LITERAL');
   if (evidence.kind === 'statistic' && !input.claims.some(claim => checkable(claim.kind)
-    && [evidence.value.raw, evidence.unit, evidence.qualifier, evidence.period?.label ?? null, evidence.population, evidence.geography].every(value => value === null || claim.text.includes(value))))
+    && claim.text.includes(evidence.value.raw)
+    && ([['unit', evidence.unit], ['qualifier', evidence.qualifier], ['period', evidence.period?.label ?? null], ['population', evidence.population], ['geography', evidence.geography]] as const)
+      .every(([field, value]) => value === null || claim.text.includes(value) || evidence.market?.mapping?.[field]?.record === 'header'
+        && evidence.market.fields[field]?.record === 1 && evidence.market.fields[field]?.value === value)))
     throw new Error('MEMORY_CHECK_STATISTIC_CONTEXT_MISSING');
   if (input.strength && (!Number.isInteger(input.strength.score) || input.strength.score < 1 || input.strength.score > 5 || !input.strength.reason.trim())) throw new Error('MEMORY_CHECK_STRENGTH_INVALID');
   const supports: MemoryCheck['supports'] = [];

@@ -2,6 +2,7 @@ import type { ArticleBody, ArticleBlock } from './article.ts';
 import { blockText, paragraphBlock, quoteBlock } from './article.ts';
 import type { MemoryEvidenceView, MemoryPolicy, MemorySelection, MemorySourceBinding } from './editorial-memory.ts';
 import { memoryEvidenceRef, sameMemoryEvidence } from './editorial-memory.ts';
+import { memoryMarketWritingText, memoryStatisticMarketContext } from './editorial-memory-market.ts';
 import type { Source, TranscriptContent } from './source.ts';
 import { sourceContentHash } from './source.ts';
 import { segmentRef, type SourceVersionRef } from './refs.ts';
@@ -33,14 +34,17 @@ export function prepareMemoryWriting(selection: MemorySelection, items: MemoryWr
     if (evidence.kind === 'citation' && (!author || author.id !== evidence.personId || !author.name.trim()))
       return refuse('author_missing', 'Confira o nome de quem fez a declaração.');
     const segmentId = `memory-item-${index + 1}`, text = evidence.anchor.excerpt;
+    const marketContext = evidence.kind === 'statistic' ? memoryStatisticMarketContext(evidence) : {};
     const label = evidence.kind === 'citation' ? `memory-person-${author!.id}` : undefined;
     if (label && !speakers.some(speaker => speaker.label === label)) speakers.push({ label, personId: author!.id });
     content.segments.push({ id: segmentId, text, ...(label ? { speaker: label } : {}) });
     bindings.push({ segmentId, materialId: evidence.materialId, kind: evidence.kind, anchor: structuredClone(evidence.anchor),
       metadata: structuredClone(evidence.metadata), selected: structuredClone(selected),
-      ...(evidence.kind === 'statistic' && evidence.market ? { market: structuredClone(evidence.market) } : {}) });
+      ...(evidence.kind === 'statistic' && evidence.market ? { market: structuredClone(evidence.market) } : {}),
+      ...(Object.keys(marketContext).length ? { marketContext } : {}) });
     const sourceRefs = [segmentRef(sourceId, 1, segmentId, { from: 0, to: text.length })];
-    blocks.push(evidence.kind === 'citation' ? quoteBlock(ctx.newId('memory-quote'), text, { sourceRefs }) : paragraphBlock(ctx.newId('memory-statistic'), text, { sourceRefs }));
+    blocks.push(evidence.kind === 'citation' ? quoteBlock(ctx.newId('memory-quote'), text, { sourceRefs })
+      : paragraphBlock(ctx.newId('memory-statistic'), memoryMarketWritingText(evidence.market, text, marketContext), { sourceRefs }));
     if (evidence.kind === 'citation' && author) blocks.push(paragraphBlock(ctx.newId('memory-attribution'),
       `— ${[author.name, author.title, author.organization].filter(Boolean).join(', ')}`));
   }
