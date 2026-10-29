@@ -6,12 +6,12 @@ import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { createTranscriptSource, toSourceVersionRef } from '../../src/domain/source.ts';
 import { parseTranscript } from '../../src/domain/text/transcript-parse.ts';
 import { memoryEvidenceRef, type MemoryEvidence, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
-import type { MemoryDetail, MemoryWritingResult, MemoryWritingStatus } from '../../src/ports/editorial-memory.ts';
+import type { MemoryDetail, MemorySourceRefreshInput, MemorySourceRefreshResult, MemoryWritingResult, MemoryWritingStatus } from '../../src/ports/editorial-memory.ts';
 import type { ReporterRequestContext } from '../../src/server/request-context.ts';
 import type { ArticleBody } from '../../src/domain/article.ts';
 import type { VersionRef } from '../../src/domain/refs.ts';
 import type { Piece } from '../../src/domain/piece.ts';
-import { paragraphBlock, quoteBlock } from '../../src/domain/article.ts';
+import { articleHash, paragraphBlock, quoteBlock } from '../../src/domain/article.ts';
 import { segmentRef } from '../../src/domain/refs.ts';
 import { r1ArticleIssue } from '../../src/domain/article-policy.ts';
 import { refreshMemoryWriting } from '../../src/domain/editorial-memory-refresh.ts';
@@ -440,4 +440,94 @@ test('an approved-use audit failure rolls the actual article decision and every 
   const retried = await api('workspace', approval, randomUUID(), identities[1]); assert.equal(retried.status, 200); const result = await retried.json(); assert.ok(result.ok, JSON.stringify(result));
   const after = await json<MemoryDetail>(`memory/${item.evidence.id}`); assert.equal(after.uses.approved, 1); assert.equal(after.uses.published, 0);
   assert.equal(after.occurrences.items.filter(item => item.stage === 'approved').length, 2);
+});
+
+async function refreshInput(made: MemoryWritingResult, selected: MemorySelection | null = null, updateDraftReferences = true): Promise<MemorySourceRefreshInput> {
+  const production = (await owner('SELECT doc FROM public.reporter_ed_productions WHERE production_id=$1', [made.productionId]))[0].doc;
+  const piece = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc as Piece;
+  const source = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc as Source;
+  return { target: { productionId: made.productionId, updatedAt: production.updatedAt, draftRevision: piece.draft.revision }, expected: toSourceVersionRef(source),
+    selection: selected ? { id: selected.id, revision: selected.revision } : null, updateDraftReferences, reason: 'Synthetic explicit refresh through the authenticated API.' };
+}
+
+test('refresh HTTP atomically rebases unchanged proof, preserves frozen words and versions and replays without duplicate effects', async () => {
+  const item = await fixture('statistic'), first = await selection([item.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${first.id}/write`, writingInput), path = `memory/sources/${made.sourceId}/refresh`;
+  const frozen = await json<{ ok: true; value: { version: { ref: VersionRef } } }>('workspace', { method: 'createVersion', args: [made.pieceId], requestId: randomUUID() }); assert.ok(frozen.ok);
+  const oldVersion = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='version' AND part_id=$1", [frozen.value.version.ref.versionId]))[0].doc;
+  await json(`memory/${item.evidence.id}/review`, { evidence: memoryEvidenceRef(item.evidence), check: null, policyRevision: 1, previousSequence: 1, action: 'accept', reason: 'Synthetic subsequent review.', supports: [] });
+  const chosen = await json<MemorySelection>('memory/selections', { productionId: made.productionId, baseRevision: 0, evidence: [memoryEvidenceRef(item.evidence)] });
+  const input = await refreshInput(made, chosen), key = randomUUID();
+  const beforeSource = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc as Source;
+  const beforePiece = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc as Piece;
+  const receipts = async () => (await owner('SELECT count(*)::int AS count FROM public.reporter_memory_receipts'))[0].count;
+  const beforeReceipts = await receipts();
+  await owner("CREATE FUNCTION core.fail_refresh_http_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='memory.source.refresh' THEN RAISE EXCEPTION 'synthetic HTTP audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_refresh_http_audit BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION core.fail_refresh_http_audit()");
+  try { assert.equal((await api(path, input, key)).status, 500); }
+  finally { await owner('DROP TRIGGER fail_refresh_http_audit ON public.audit_log; DROP FUNCTION core.fail_refresh_http_audit()'); }
+  assert.equal(await receipts(), beforeReceipts);
+  assert.deepEqual((await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc, beforeSource);
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc, beforePiece);
+  const result = await json<MemorySourceRefreshResult>(path, input, key);
+  assert.equal(result.source.sourceVersion, 2); assert.equal(result.updatedReferences, 1); assert.equal(result.draftRevision, beforePiece.draft.revision + 1);
+  assert.equal(result.retired, false); assert.deepEqual(result.concerns, []);
+  assert.deepEqual(await json(path, input, key), result); assert.equal(await receipts(), beforeReceipts + 1);
+  assert.equal((await api(path, { ...input, reason: 'Changed replay' }, key)).status, 409);
+  assert.equal((await api(path, input)).status, 409);
+  const after = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc as Piece;
+  assert.equal(articleHash(after.draft.body as ArticleBody), articleHash(beforePiece.draft.body as ArticleBody));
+  assert.deepEqual(after.draft.sources, [result.source]); assert.equal((after.draft.body as ArticleBody).blocks[0].sourceRefs![0].sourceVersion, 2);
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='version' AND part_id=$1", [oldVersion.id]))[0].doc, oldVersion);
+  const saved = await json<{ ok: true; value: { version: { ref: VersionRef } } }>('workspace', { method: 'createVersion', args: [made.pieceId], requestId: randomUUID() });
+  assert.ok(saved.ok); assert.notEqual(saved.value.version.ref.versionId, frozen.value.version.ref.versionId); assert.equal(saved.value.version.ref.hash, frozen.value.version.ref.hash);
+  assert.equal((await owner("SELECT count(*)::int AS count FROM public.audit_log WHERE action='memory.source.refresh' AND after_data->>'sourceId'=$1", [made.sourceId]))[0].count, 1);
+  assert.equal((await json<MemoryDetail>(`memory/${item.evidence.id}`)).uses.published, 0);
+});
+
+test('refresh HTTP preserves private scope, permissions, conflicts and recovery after original rights withdrawal', async () => {
+  const item = await fixture('statistic', true), first = await selection([item.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${first.id}/write`, writingInput), path = `memory/sources/${made.sourceId}/refresh`;
+  const input = await refreshInput(made);
+  assert.equal((await api(path, input, randomUUID(), identities[2])).status, 404);
+  assert.equal((await api(path, input, randomUUID(), identities[1])).status, 403);
+  assert.equal((await api(path, input, randomUUID(), null)).status, 401);
+  assert.equal((await api(path, input, randomUUID(), identities[0], 'https://foreign.invalid')).status, 403);
+  for (const bad of [{ ...input, personId: context.actor }, { ...input, reason: '' }, { ...input, expected: { ...input.expected, sourceId: 'foreign-source' } }])
+    assert.equal((await api(path, bad)).status, 422);
+  assert.equal((await api(`${path}?unexpected=1`, input)).status, 422); assert.equal((await api(path, input, '')).status, 422);
+  assert.equal((await api(path, { ...input, target: { ...input.target, draftRevision: 999 } })).status, 409);
+  assert.equal((await api(path, { ...input, expected: { ...input.expected, sourceVersion: 999 } })).status, 409);
+  assert.equal((await api(path, { ...input, expected: { ...input.expected, hash: '0000000000000000' } })).status, 409);
+  assert.equal((await api(path, { ...input, selection: { id: first.id, revision: first.revision } })).status, 409, 'replacement must explicitly belong to this pauta');
+  await json(`memory/materials/${item.material.id}/authorization`, { baseRevision: 1, authorized: false, reason: 'Synthetic original authorization withdrawn.' });
+  const before = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc;
+  const retireKey = randomUUID(), retired = await json<MemorySourceRefreshResult>(path, input, retireKey); assert.equal(retired.retired, true); assert.equal(retired.updatedReferences, 0);
+  assert.ok(retired.concerns.every(concern => concern.reason === 'removed'));
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc, before);
+  assert.equal((await gateRecord(made.productionId)).sources.ok, true); assert.equal((await gateRecord(made.productionId)).article.ok, false);
+  assert.equal((await api(path, input, retireKey, identities[2])).status, 404, 'a cached successful result still requires current pauta access');
+  const another = await fixture('statistic'), replacement = await json<MemorySelection>('memory/selections', { productionId: made.productionId, baseRevision: 0, evidence: [memoryEvidenceRef(another.evidence)] });
+  const restored = await json<MemorySourceRefreshResult>(path, await refreshInput(made, replacement));
+  assert.equal(restored.source.sourceVersion, 3); assert.equal(restored.retired, false); assert.equal(restored.updatedReferences, 0);
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc, before);
+  assert.equal((await gateRecord(made.productionId)).sources.ok, true); assert.equal((await gateRecord(made.productionId)).article.ok, false);
+});
+
+test('refresh HTTP refuses review and active-run locks and serializes competing collection updates', async () => {
+  const sent = await sentBankArticle(), made = sent.created, path = `memory/sources/${made.sourceId}/refresh`;
+  assert.equal((await api(path, await refreshInput(made))).status, 409);
+  const withdrawn = await json<{ ok: boolean }>('workspace', { method: 'withdrawReview', args: [made.pieceId], requestId: randomUUID() }); assert.ok(withdrawn.ok);
+  const selected = await json<MemorySelection>('memory/selections', { productionId: made.productionId, baseRevision: 0, evidence: [memoryEvidenceRef(sent.item.evidence)] });
+  const input = await refreshInput(made, selected), replies = await Promise.all([api(path, input), api(path, input)]);
+  assert.deepEqual(replies.map(reply => reply.status).sort(), [200, 409]);
+  const source = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc as Source;
+  assert.equal(source.versions.length, 2);
+  const runId = randomUUID();
+  // A trusted pending-run fixture proves the API lock without queuing or calling a provider.
+  await owner("INSERT INTO public.reporter_ed_parts(portal_id,production_id,kind,part_id,doc,seq) VALUES($1,$2,'run',$3,$4,1)", [PORTAL, made.productionId, runId, JSON.stringify({
+    id: runId, kind: 'article.generate', productionId: made.productionId, pieceId: made.pieceId, status: 'queued', inputs: [toSourceVersionRef(source)], steps: [],
+    prompt: { key: 'synthetic', version: '1', hash: 'synthetic' }, model: { alias: 'synthetic', label: 'Synthetic fixture', engine: 'simulated' }, createdBy: context.actor, createdAt: new Date().toISOString(),
+  })]);
+  assert.equal((await api(path, await refreshInput(made))).status, 409);
+  assert.equal((await owner("SELECT count(*)::int AS count FROM public.audit_log WHERE action='memory.source.refresh' AND after_data->>'sourceId'=$1", [made.sourceId]))[0].count, 1);
 });

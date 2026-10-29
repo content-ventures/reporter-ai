@@ -6,12 +6,21 @@ import type { Piece, Version } from '../domain/piece.ts';
 import type { MemoryArticlePosition, MemoryArticleReport, MemoryLegacyReport } from '../domain/editorial-memory-legacy.ts';
 import type { BriefInput } from './production-commands.ts';
 import type { MemoryWritingIssueCode } from '../domain/editorial-memory-guard.ts';
+import type { MemoryRefreshConcern } from '../domain/editorial-memory-refresh.ts';
 
 export type MemoryWritingInput = { baseRevision: number } & (
   | { title: string; brief: BriefInput }
   | { target: { productionId: string; updatedAt: string } }
 );
 export type MemoryWritingResult = { productionId: string; pieceId: string; sourceId: string };
+export type MemorySourceRefreshInput = {
+  target: { productionId: string; updatedAt: string; draftRevision: number }; expected: SourceVersionRef;
+  selection: { id: string; revision: number } | null; updateDraftReferences: boolean; reason: string;
+};
+export type MemorySourceRefreshResult = {
+  productionId: string; pieceId: string; source: SourceVersionRef; selection: { id: string; revision: number } | null;
+  draftRevision: number; updatedReferences: number; concerns: MemoryRefreshConcern[]; retired: boolean;
+};
 /** Advisory read of current bank gates; generation still rechecks inside its own transaction. */
 export type MemoryWritingStatus = {
   productionId: string; updatedAt: string; checkedAt: string; sources: SourceVersionRef[];
@@ -61,6 +70,7 @@ export interface EditorialMemory {
   selection(id: string): Promise<MemorySelection>;
   selections(input: MemoryHistoryQuery): Promise<MemoryPage<MemorySelection>>;
   writeSelection(id: string, input: MemoryWritingInput, requestId: string): Promise<MemoryWritingResult>;
+  refreshSource(id: string, input: MemorySourceRefreshInput, requestId: string): Promise<MemorySourceRefreshResult>;
   writingStatus(productionId: string): Promise<MemoryWritingStatus>;
   policy(): Promise<MemoryPolicy>;
   lookupLegacy(id: string): Promise<{ id: string; materialId: string }[]>;
