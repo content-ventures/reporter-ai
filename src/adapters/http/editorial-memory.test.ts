@@ -3,6 +3,20 @@ import { test } from 'node:test';
 import { createHttpMemoryLibrary } from './editorial-memory.ts';
 import { createReporterTransport } from './reporter-client.ts';
 
+test('original-location reads bind the evidence revision, fingerprint and current account', async () => {
+  const previous = globalThis.fetch, calls: { url: URL; init: RequestInit }[] = [];
+  globalThis.fetch = async (url, init = {}) => { calls.push({ url: new URL(String(url), 'http://localhost'), init }); return Response.json(null); };
+  const http = createReporterTransport('location-client', { requireAccount: true }); http.bindAccount('reviewer');
+  try {
+    const library = createHttpMemoryLibrary(http), proof = { id: 'evidence/encoded', revision: 0, hash: '0123456789abcdef' };
+    assert.equal(await library.originalLocation(proof), null); assert.equal(calls.length, 1);
+    assert.equal(calls[0].url.pathname, '/api/reporter/w/location-client/memory/evidence%2Fencoded/original-location');
+    assert.equal(calls[0].url.searchParams.get('revision'), '0'); assert.equal(calls[0].url.searchParams.get('hash'), proof.hash);
+    assert.equal(new Headers(calls[0].init.headers).get('x-reporter-account'), 'reviewer');
+    http.dispose(); await assert.rejects(library.originalLocation(proof)); assert.equal(calls.length, 1);
+  } finally { http.dispose(); globalThis.fetch = previous; }
+});
+
 test('batch transfers retain scoped account, exact bytes, request keys and cursor identity without projection resubmission', async () => {
   const previous = globalThis.fetch, calls: { path: URL; init: RequestInit }[] = [];
   globalThis.fetch = async (url, init = {}) => { calls.push({ path: new URL(String(url), 'http://localhost'), init }); return Response.json({ id: 'batch', items: [] }); };

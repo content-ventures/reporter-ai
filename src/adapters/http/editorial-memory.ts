@@ -29,6 +29,7 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     uploadBatchItem: (batch, item, input, key) => command(`batches/${id(batch)}/items/${id(item)}/upload`, { ...input, bytes: base64(input.bytes) }, key, false),
     processBatchItem: (batch, item, input, key) => command(`batches/${id(batch)}/items/${id(item)}/process`, input, key, false),
     query: input => http.request(`/memory${parameters(input)}`), detail: evidence => http.request(`/memory/${id(evidence)}`),
+    originalLocation: expected => http.request(`/memory/${id(expected.id)}/original-location${parameters({ revision: expected.revision, hash: expected.hash })}`),
     history: (evidence, kind, input) => http.request(`/memory/${id(evidence)}/history/${kind}${parameters(input)}`),
     materials: input => http.request(`/memory/materials${parameters(input)}`), material: (material, revision) => http.request(`/memory/materials/${id(material)}${parameters({ revision })}`),
     reviseMaterial: (material, input, key) => command(`materials/${id(material)}/revision`, input, key),
