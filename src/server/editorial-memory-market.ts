@@ -13,7 +13,9 @@ const column = z.object({ record: z.enum(['header', 'row']), column: z.number().
 const mapping = z.object({ institution: column, indicator: column, value: column, unit: column, period: column,
   geography: column.optional(), population: column.optional(), qualifier: column.optional() }).strict();
 const previewInput = z.object({ mapping: mapping.optional(), start: z.number().int().min(1).max(10000).default(1) }).strict();
-const saveInput = z.object({ mapping, revision: z.number().int().nonnegative(), materialRevision: z.number().int().positive() }).strict();
+const saveInput = z.object({ mapping, revision: z.number().int().nonnegative(), materialRevision: z.number().int().positive(),
+  source: z.object({ kind: z.literal('source-version'), sourceId: z.string().min(1).max(160), sourceVersion: z.number().int().positive(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict(),
+  originalFileId: z.guid(), checksum: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 const sameSource = (a: MemoryMaterial['source'], b: MemoryMaterial['source']) => a.kind === b.kind && a.sourceId === b.sourceId
   && a.sourceVersion === b.sourceVersion && a.hash === b.hash;
 
@@ -53,7 +55,8 @@ export async function previewMemoryMarket(id: string, value: unknown) {
 }
 export async function saveMemoryMarketMapping(id: string, value: unknown, key: string): Promise<MemoryMarketPlan> {
   const input = saveInput.parse(value), { material, file, document } = await documentFor(id);
-  if (input.materialRevision !== material.revision) throw new FlowError('MEMORY_CONFLICT', 409);
+  if (input.materialRevision !== material.revision || input.originalFileId !== file.id || input.checksum !== file.checksum
+    || !sameSource(input.source, material.source)) throw new FlowError('MEMORY_CONFLICT', 409);
   const mapped = mapMemoryMarketRows(document, input.mapping as MemoryMarketMapping);
   if (!mapped.ok) { const error = new FlowError('INVALID_INPUT', 422); error.reason = mapped.refusal.message; throw error; }
   const proof = { source: material.source, originalFileId: file.id, checksum: file.checksum, mapping: input.mapping };

@@ -322,7 +322,8 @@ test('market mappings save explicit column choices with source binding and revie
   const shown = await preview.json(); assert.equal(shown.preview.rows[0].fields.value.value, '1.234,56');
   assert.equal(shown.preview.rows[0].fields.value.record, 2); assert.equal(shown.mapping, null);
   assert.equal((await api(`${root}/market-preview`, { mapping: choices }, 2)).status, 403);
-  const input = { mapping: choices, revision: 0, materialRevision: material.revision }, key = randomUUID();
+  const input = { mapping: choices, revision: 0, materialRevision: material.revision, source: material.source, originalFileId: file.id, checksum: file.checksum }, key = randomUUID();
+  assert.equal((await api(`${root}/market-mapping`, { ...input, checksum: '0'.repeat(64) })).status, 409);
   const saved = await api(`${root}/market-mapping`, input, 0, key); assert.equal(saved.status, 200, await saved.clone().text());
   const plan = await saved.json(); assert.equal(plan.revision, 1); assert.equal(plan.originalFileId, file.id);
   assert.deepEqual(plan.mapping, choices); assert.deepEqual(await (await api(`${root}/market-mapping`, input, 0, key)).json(), plan);
