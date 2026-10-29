@@ -84,6 +84,8 @@ export type MemoryCheck = {
   checkedAt: string; verdict: CitationVerdict; confidence: number | null;
   claims: FactClaim[]; supports: { claim: number; relation: 'confirms' | 'contradicts' | 'related'; evidence: MemorySupport }[];
   strength: { score: number; reason: string } | null; provider: string | null; model: string | null;
+  /** Reapplying a policy never changes when the saved factual search took place. */
+  policyEvaluation?: { check: MemoryCheckRef; previousPolicyRevision: number; personId: string; at: string; reason: string };
 };
 export type MemoryPolicy = {
   id: string; workspaceId: string; revision: number; mode: 'review_required' | 'calibrated';

@@ -10,6 +10,7 @@ import type { MemoryRefreshConcern } from '../domain/editorial-memory-refresh.ts
 import type { MemoryFeedback, MemoryFeedbackQuery, MemoryRelevanceInput } from '../domain/editorial-memory-feedback.ts';
 import type { MemoryCalibrationCase, MemoryCalibrationCaseInput } from '../domain/editorial-memory-calibration.ts';
 import type { MemoryPolicyProposal, MemoryPolicyProposalInput } from '../domain/editorial-memory-policy.ts';
+import type { MemoryPolicyReassessment, MemoryPolicyReassessmentInput } from '../domain/editorial-memory-reassessment.ts';
 
 export type MemoryWritingInput = { baseRevision: number } & (
   | { title: string; brief: BriefInput }
@@ -75,6 +76,7 @@ export type MemoryHistoryEntry = MemoryCheck | MemoryDecision | MemoryEvidence |
 export type MemoryDetail = Omit<MemoryEvidenceView, 'material'> & { material: MemoryMaterial; policy: MemoryPolicy;
   source: { ref: SourceVersionRef; authorized: boolean; segments: TranscriptSegment[] };
   replacements?: { previous: MemoryReplacement | null; next: MemoryReplacement | null };
+  policyReassessment?: MemoryPolicyReassessment | null;
   checkJob?: MemoryJob | null; checks: MemoryPage<MemoryCheck>; decisions: MemoryPage<MemoryDecision>; revisions: MemoryPage<MemoryEvidence>; occurrences: MemoryPage<MemoryUse> };
 /** Request ids scope idempotency to one workspace and payload; mismatched replay is a conflict. */
 export interface EditorialMemory {
@@ -91,6 +93,7 @@ export interface EditorialMemory {
   cancel(jobId: string, baseRevision: number, requestId: string): Promise<MemoryJob>;
   review(id: string, input: MemoryDecisionInput, requestId: string): Promise<MemoryDecision>;
   check(id: string, expected: MemoryEvidenceRef, requestId: string): Promise<MemoryJob>;
+  reassessPolicy(id: string, input: MemoryPolicyReassessmentInput, requestId: string): Promise<MemoryCheck>;
   correct(id: string, input: { expected: MemoryEvidenceRef; reason: string; changes: MemoryCorrection }, requestId: string): Promise<MemoryEvidenceView>;
   reviseMaterial(id: string, input: MemoryMaterialRevisionInput, requestId: string): Promise<MemoryMaterialRevisionResult>;
   correctionImpact(scope: MemoryImpactScope, input: MemoryHistoryQuery): Promise<MemoryCorrectionImpact>;

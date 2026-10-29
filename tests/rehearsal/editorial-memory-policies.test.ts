@@ -5,24 +5,26 @@ import pg, { type Client, type Pool } from 'pg';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { createMemoryMaterial } from '../../src/domain/editorial-memory-import.ts';
 import { assessMemoryEvidence } from '../../src/domain/editorial-memory-check.ts';
-import { initialMemoryPolicy, memoryEvidenceRef, type MemoryPage, type MemoryPolicy, type MemorySelection, type MemoryStatistic } from '../../src/domain/editorial-memory.ts';
+import { initialMemoryPolicy, memoryEvidenceRef, type MemoryCheck, type MemoryPage, type MemoryPolicy, type MemorySelection, type MemoryStatistic } from '../../src/domain/editorial-memory.ts';
+import type { MemoryPolicyReassessmentInput } from '../../src/domain/editorial-memory-reassessment.ts';
 import type { MemoryCalibrationCase } from '../../src/domain/editorial-memory-calibration.ts';
 import type { MemoryPolicyProposal, MemoryPolicyProposalInput } from '../../src/domain/editorial-memory-policy.ts';
 import type { MemoryDetail, MemoryJob, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { ReporterRequestContext } from '../../src/server/request-context.ts';
 const PORTAL = '10000000-0000-0000-0000-000000000101', APP = 'http://127.0.0.1:3996';
 const identities = ['admin', 'editor', 'approver'].map(role => ({ subject: `policy-${role}`, email: `${role}@policy.test`, name: role, emailVerified: true }));
+identities.push({ subject: 'policy-other-editor', email: 'other-editor@policy.test', name: 'editor', emailVerified: true });
 let db: Awaited<ReturnType<typeof startRehearsalDatabase>>, contexts: ReporterRequestContext[];
 async function owner(sql: string, values: unknown[] = []) { const client = new pg.Client({ connectionString: db.owner }); await client.connect(); try { return (await client.query(sql, values)).rows; } finally { await client.end(); } }
-async function session<T>(run: (client: Client) => Promise<T>, actor = 0) {
-  const client = new pg.Client({ connectionString: db.runtime }), context = contexts[actor]; await client.connect();
-  try { await client.query('BEGIN'); await client.query("SELECT set_config('app.module_key','reporter_ai',true),set_config('app.access_mode','user',true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true)", [context.tenant, context.portal, context.actor, randomUUID()]); const value = await run(client); await client.query('COMMIT'); return value; }
+async function session<T>(run: (client: Client) => Promise<T>, actor = 0, context = contexts[actor]) {
+  const client = new pg.Client({ connectionString: db.runtime }); await client.connect();
+  try { await client.query('BEGIN'); await client.query("SELECT set_config('app.module_key','reporter_ai',true),set_config('app.access_mode',$5,true),set_config('app.tenant_id',$1,true),set_config('app.portal_id',$2,true),set_config('app.user_id',$3,true),set_config('app.request_id',$4,true)", [context.tenant, context.portal, context.actor, randomUUID(), context.administrative ? 'platform_workspace' : 'user']); const value = await run(client); await client.query('COMMIT'); return value; }
   catch (error) { await client.query('ROLLBACK'); throw error; } finally { await client.end(); }
 }
-async function api(path: string, input?: unknown, actor: number | null = 0, key: string = randomUUID()) {
-  const { handleReporter } = await import('../../src/server/http.ts'), url = new URL(`${APP}/api/reporter/w/reporter-ai/${path}`);
+async function api(path: string, input?: unknown, actor: number | null = 0, key: string = randomUUID(), slug = 'reporter-ai') {
+  const { handleReporter } = await import('../../src/server/http.ts'), url = new URL(`${APP}/api/reporter/w/${slug}/${path}`);
   return handleReporter(new Request(url, input === undefined ? {} : { method: 'POST', headers: { origin: APP, 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify(input) }),
-    ['w', 'reporter-ai', ...url.pathname.split('/').slice(5)], { identify: async () => actor === null ? null : identities[actor], defer: () => {} });
+    ['w', slug, ...url.pathname.split('/').slice(5)], { identify: async () => actor === null ? null : identities[actor], defer: () => {} });
 }
 async function json<T>(path: string, input?: unknown, actor = 0, key?: string): Promise<T> { const result = await api(path, input, actor, key); assert.equal(result.status, 200, await result.clone().text()); return result.json() as Promise<T>; }
 const current = () => json<MemoryPolicy>('memory/policy');
@@ -122,10 +124,24 @@ test('calibrated activation requires a passed editorial-purpose report and curre
   await json(`memory/materials/${items[0].material.id}/authorization`, { baseRevision: 1, authorized: false, reason: 'Withdraw an evaluated original.' });
   assert.equal((await api(`memory/policy/proposals/${measured.id}/activate`, { baseRevision: base.revision, reason: 'Withdrawn corpus refused.' })).status, 403);
   await json(`memory/materials/${items[0].material.id}/authorization`, { baseRevision: 2, authorized: true, reason: 'Restore original rights.' });
-  const active = await activate(measured); assert.equal(active.calibration!.bins[0].confidence, 91);
+  const existing = await fixture(false, 999), active = await activate(measured); assert.equal(active.calibration!.bins[0].confidence, 91);
+  const evaluated = await json<MemoryCheck>(`memory/${existing.evidence.id}/reassess-policy`, reassessmentInput((await json<MemoryDetail>(`memory/${existing.evidence.id}`))), 1);
+  assert.equal(evaluated.confidence, 91); assert.equal(evaluated.checkedAt, existing.check.checkedAt); assert.deepEqual(evaluated.supports, existing.check.supports);
   const publicPolicy = await json<MemoryPolicy>('memory/policy', undefined, 1); assert.equal(publicPolicy.calibration, undefined);
   const fresh = await fixture(), detail = await json<MemoryDetail>(`memory/${fresh.evidence.id}`, undefined, 1);
   assert.equal(detail.check!.confidence, 91); assert.equal(detail.eligibility.usable, true); assert.equal(detail.policy.calibration, undefined);
+  await json(`memory/${fresh.evidence.id}/check`, { expected: memoryEvidenceRef(fresh.evidence) });
+  const { runMemoryCheckJob } = await import('../../src/server/editorial-memory-check-worker.ts');
+  assert.equal(await runMemoryCheckJob('calibrated-policy-check', new AbortController().signal, undefined, async claim => assessMemoryEvidence(claim.evidence, claim.material, claim.policy!, claim.previous,
+    { claims: [{ text: claim.evidence.anchor.excerpt, kind: 'declared' }], supports: fresh.check.supports, strength: null, provider: 'synthetic', model: claim.job.model! },
+    { actorId: claim.job.createdBy, now: new Date().toISOString(), newId: () => claim.evidence.id })), true);
+  const persisted = await json<MemoryDetail>(`memory/${fresh.evidence.id}`); assert.equal(persisted.check!.confidence, 91); assert.equal(persisted.check!.revision, fresh.check.revision + 1);
+  const invalidJob = await json<MemoryJob>(`memory/${fresh.evidence.id}/check`, { expected: memoryEvidenceRef(fresh.evidence) });
+  await assert.rejects(runMemoryCheckJob('invented-policy-score', new AbortController().signal, undefined, async claim => ({ ...assessMemoryEvidence(claim.evidence, claim.material, claim.policy!, claim.previous,
+    { claims: [{ text: claim.evidence.anchor.excerpt, kind: 'declared' }], supports: fresh.check.supports, strength: null, provider: 'synthetic', model: claim.job.model! },
+    { actorId: claim.job.createdBy, now: new Date().toISOString(), newId: () => claim.evidence.id }), confidence: 100 })), /MEMORY_CONFLICT/);
+  const invalid = await json<MemoryJob>(`memory/jobs/${invalidJob.id}`); await json(`memory/jobs/${invalid.id}/cancel`, { baseRevision: invalid.revision });
+  assert.deepEqual((await json<MemoryDetail>(`memory/${fresh.evidence.id}`)).check, persisted.check);
   await activate(await json<MemoryPolicyProposal>('memory/policy/restore', { baseRevision: active.revision, targetRevision: 1, reason: 'Return rehearsal to manual review.' }));
 });
 test('annotation replay and case pages hide private originals after current access is removed', async () => {
@@ -162,4 +178,93 @@ test('policy pages bind their resource, actor, size and snapshot; reads create n
   assert.deepEqual(await counts(), before);
   const first = await json<MemoryPage<MemoryCalibrationCase>>('memory/policy/cases?limit=1'); await annotate(await fixture());
   assert.equal((await api(`memory/policy/cases?limit=1&cursor=${encodeURIComponent(first.nextCursor!)}`)).status, 409);
+});
+function reassessmentInput(detail: MemoryDetail): MemoryPolicyReassessmentInput {
+  const proof = detail.policyReassessment; assert.ok(proof);
+  return { evidence: proof.evidence, check: proof.check, policyRevision: proof.policyRevision, reason: 'Explicit synthetic reevaluation of the saved proof.' };
+}
+test('reapplying a policy preserves saved factual proof/date and decisions, audits the real editor and makes no provider call', async () => {
+  const item = await fixture(), policy = await current();
+  await json(`memory/${item.evidence.id}/review`, { evidence: memoryEvidenceRef(item.evidence), check: { id: item.check.id, revision: 1 }, policyRevision: policy.revision, previousSequence: 0, action: 'accept', reason: 'Synthetic original review.', supports: [] }, 2);
+  await activate(await manual());
+  const detail = await json<MemoryDetail>(`memory/${item.evidence.id}`), input = reassessmentInput(detail), key = randomUUID(); assert.equal(detail.checkState, 'outdated');
+  const before = await owner('SELECT (SELECT seq FROM reporter_memory_clock WHERE portal_id=$1) AS clock,(SELECT count(*) FROM audit_log WHERE portal_id=$1) AS audits,(SELECT count(*) FROM reporter_memory_receipts WHERE portal_id=$1) AS receipts', [PORTAL]);
+  await json(`memory/${item.evidence.id}`);
+  assert.deepEqual(await owner('SELECT (SELECT seq FROM reporter_memory_clock WHERE portal_id=$1) AS clock,(SELECT count(*) FROM audit_log WHERE portal_id=$1) AS audits,(SELECT count(*) FROM reporter_memory_receipts WHERE portal_id=$1) AS receipts', [PORTAL]), before);
+  const fetch = globalThis.fetch; let calls = 0, result: MemoryCheck;
+  globalThis.fetch = async () => { calls++; throw new Error('Reassessment must not call any provider.'); };
+  try { result = await json<MemoryCheck>(`memory/${item.evidence.id}/reassess-policy`, input, 1, key); assert.deepEqual(await json(`memory/${item.evidence.id}/reassess-policy`, input, 1, key), result); }
+  finally { globalThis.fetch = fetch; }
+  assert.equal(calls, 0); assert.equal(result.policyEvaluation!.personId, contexts[1].actor); assert.equal(result.checkedAt, item.check.checkedAt); assert.equal(result.confidence, null);
+  assert.deepEqual(result.claims, item.check.claims); assert.deepEqual(result.supports, item.check.supports); assert.equal(result.provider, item.check.provider);
+  const after = await json<MemoryDetail>(`memory/${item.evidence.id}`); assert.equal(after.checkState, 'current'); assert.equal(after.policyReassessment, null); assert.equal(after.eligibility.usable, false);
+  assert.deepEqual(after.decision, detail.decision); assert.deepEqual(after.evidence, detail.evidence); assert.deepEqual(after.uses, detail.uses); assert.equal(after.checks.total, 2);
+  const audit = await owner("SELECT user_id,after_data FROM audit_log WHERE portal_id=$1 AND action='memory.check.reassess' AND after_data->>'id'=$2", [PORTAL, item.evidence.id]);
+  assert.equal(audit.length, 1); assert.equal(audit[0].user_id, contexts[1].actor);
+  assert.equal((await api(`memory/${item.evidence.id}/review`, { evidence: input.evidence, check: input.check, policyRevision: input.policyRevision, previousSequence: 1, action: 'accept', reason: 'Old check cannot authorize a new review.', supports: [] }, 2)).status, 409);
+  assert.equal((await api(`memory/${item.evidence.id}/reassess-policy`, { ...input, confidence: 100 })).status, 422);
+  assert.equal((await api(`memory/${item.evidence.id}/reassess-policy`, input, 2)).status, 403);
+});
+test('concurrent reevaluations settle one revision; a fresh check job and a newer policy refuse the captured proof', async () => {
+  const item = await fixture(); await activate(await manual()); const input = reassessmentInput(await json<MemoryDetail>(`memory/${item.evidence.id}`));
+  const replies = await Promise.all([api(`memory/${item.evidence.id}/reassess-policy`, input, 1), api(`memory/${item.evidence.id}/reassess-policy`, input)]);
+  assert.deepEqual(replies.map(reply => reply.status).sort(), [200, 409]);
+  const another = await fixture(); await activate(await manual()); const proof = reassessmentInput(await json<MemoryDetail>(`memory/${another.evidence.id}`));
+  const job = await json<MemoryJob>(`memory/${another.evidence.id}/check`, { expected: memoryEvidenceRef(another.evidence) });
+  assert.equal((await json<MemoryDetail>(`memory/${another.evidence.id}`)).policyReassessment, null);
+  assert.equal((await api(`memory/${another.evidence.id}/reassess-policy`, proof)).status, 409); assert.equal((await json<MemoryJob>(`memory/jobs/${job.id}`)).status, 'queued');
+  await json(`memory/jobs/${job.id}/cancel`, { baseRevision: job.revision }); await activate(await manual());
+  assert.equal((await api(`memory/${another.evidence.id}/reassess-policy`, proof)).status, 409);
+});
+test('changed original/evidence/support and withdrawn authorization never become reusable through policy reevaluation', async () => {
+  const items = await Promise.all([fixture(false, 301), fixture(false, 302), fixture(false, 303), fixture(false, 304)]), supporting = await fixture(false, 305), target = items[3];
+  const check = assessMemoryEvidence(target.evidence, target.material, await current(), target.check, { claims: [{ text: target.evidence.anchor.excerpt, kind: 'declared' }], supports: [{ claim: 0, relation: 'confirms', evidence: { kind: 'internal', evidence: memoryEvidenceRef(supporting.evidence), primaryOrigin: supporting.material.primaryOrigin, excerpt: supporting.evidence.anchor.excerpt } }], strength: null, provider: 'synthetic', model: 'synthetic' }, { actorId: contexts[0].actor, now: new Date().toISOString(), newId: () => target.check.id });
+  await session(client => client.query('SELECT public.reporter_memory_put($1::jsonb)', [JSON.stringify({ kind: 'check', id: target.check.id, expected: 0, parentKind: 'evidence', parentId: target.evidence.id, doc: check })]));
+  await activate(await manual()); const inputs = await Promise.all(items.map(async item => reassessmentInput(await json<MemoryDetail>(`memory/${item.evidence.id}`))));
+  await json(`memory/${items[0].evidence.id}/correction`, { expected: inputs[0].evidence, reason: 'Synthetic changed context.', changes: { kind: 'statistic', metadata: { event: 'Changed context' } } });
+  await json(`memory/materials/${items[1].material.id}/revision`, { baseRevision: 1, source: items[1].material.source, text: items[1].evidence.anchor.excerpt + '\nSynthetic corrected original.', reason: 'Changed original.' });
+  await json(`memory/materials/${items[2].material.id}/authorization`, { baseRevision: 1, authorized: false, reason: 'Withdrawn source.' });
+  await json(`memory/${supporting.evidence.id}/correction`, { expected: memoryEvidenceRef(supporting.evidence), reason: 'Changed supporting context.', changes: { kind: 'statistic', metadata: { event: 'Support changed' } } });
+  for (const [index, item] of items.entries()) { assert.equal((await json<MemoryDetail>(`memory/${item.evidence.id}`)).policyReassessment, null); assert.equal((await api(`memory/${item.evidence.id}/reassess-policy`, inputs[index])).status, index === 2 ? 404 : 409); }
+});
+test('private-proof receipt replay is denied after access is removed, and reassessment audit failure rolls everything back', async () => {
+  const item = await fixture(true); await owner("UPDATE reporter_ed_productions SET doc=doc||jsonb_build_object('restrictedTo',jsonb_build_array($2::text)) WHERE production_id=$1", [item.productionId, contexts[3].actor]);
+  await activate(await manual()); const input = reassessmentInput(await json<MemoryDetail>(`memory/${item.evidence.id}`)), key = randomUUID();
+  await json(`memory/${item.evidence.id}/reassess-policy`, input, 3, key);
+  await owner("UPDATE reporter_ed_productions SET doc=doc||jsonb_build_object('restrictedTo','[]'::jsonb) WHERE production_id=$1", [item.productionId]);
+  assert.equal((await api(`memory/${item.evidence.id}/reassess-policy`, input, 3, key)).status, 404);
+  const another = await fixture(); await activate(await manual()); const proof = reassessmentInput(await json<MemoryDetail>(`memory/${another.evidence.id}`)), retryKey = randomUUID();
+  const before = await json<MemoryDetail>(`memory/${another.evidence.id}`), clock = (await owner('SELECT seq FROM reporter_memory_clock WHERE portal_id=$1', [PORTAL]))[0].seq;
+  await owner("CREATE FUNCTION public.fail_reassessment_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='memory.check.reassess' THEN RAISE EXCEPTION 'SYNTHETIC_REASSESSMENT_AUDIT_FAILURE'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_reassessment_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION public.fail_reassessment_audit()");
+  try { assert.equal((await api(`memory/${another.evidence.id}/reassess-policy`, proof, 1, retryKey)).status, 500); }
+  finally { await owner('DROP TRIGGER fail_reassessment_audit ON audit_log; DROP FUNCTION public.fail_reassessment_audit()'); }
+  assert.deepEqual((await json<MemoryDetail>(`memory/${another.evidence.id}`)).checks, before.checks); assert.equal((await owner('SELECT seq FROM reporter_memory_clock WHERE portal_id=$1', [PORTAL]))[0].seq, clock);
+  assert.equal((await owner('SELECT count(*)::int AS n FROM reporter_memory_receipts WHERE request_id=$1', [retryKey]))[0].n, 0);
+  assert.equal((await json<MemoryCheck>(`memory/${another.evidence.id}/reassess-policy`, proof, 1, retryKey)).revision, another.check.revision + 1);
+});
+test('matching record IDs and request keys in another workspace never mix proofs; member inspection remains read-only in PostgreSQL', async () => {
+  const item = await fixture(); await activate(await manual()); const input = reassessmentInput(await json<MemoryDetail>(`memory/${item.evidence.id}`));
+  await assert.rejects(session(async client => { await client.query("SELECT set_config('app.member_view',$1,true)", [randomUUID()]); await client.query('SELECT public.reporter_memory_reassess($1,$2::jsonb,$3::jsonb,$4,$5::jsonb,$6)', [item.evidence.id, JSON.stringify(input.evidence), JSON.stringify(input.check), input.policyRevision, JSON.stringify(item.check), input.reason]); }), error => (error as { code: string }).code === '42501');
+  await owner("INSERT INTO public.user_roles(user_id,role) VALUES($1,'platform_admin') ON CONFLICT DO NOTHING", [contexts[0].actor]);
+  const { handleReporter } = await import('../../src/server/http.ts'), { resolveReporterContext } = await import('../../src/server/database.ts');
+  const created = await handleReporter(new Request(`${APP}/api/reporter/platform/workspaces`, { method: 'POST', headers: { origin: APP, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Synthetic policy isolation', slug: 'policy-isolation' }) }), ['platform', 'workspaces'], { identify: async () => identities[0] });
+  assert.equal(created.status, 201, await created.clone().text()); const other = (await resolveReporterContext(identities[0], 'policy-isolation'))!; assert.ok(other);
+  await owner("INSERT INTO core.tenant_members(tenant_id,user_id,role,status) VALUES($1,$2,'admin','active') ON CONFLICT(tenant_id,user_id) DO NOTHING", [other.tenant, contexts[0].actor]);
+  await owner("INSERT INTO public.portal_members(tenant_id,portal_id,user_id,status) VALUES($1,$2,$3,'active') ON CONFLICT(portal_id,user_id) DO NOTHING", [other.tenant, other.portal, contexts[0].actor]);
+  await owner("SELECT core.platform_set_roles($1,$2,$3,ARRAY['admin'])", [contexts[0].actor, other.tenant, other.portal]);
+  const evidence = { ...item.evidence, workspaceId: other.portal, metadata: { ...item.evidence.metadata, event: 'Different workspace context' } }, check = { ...item.check, workspaceId: other.portal, evidence: memoryEvidenceRef(evidence) };
+  await owner('INSERT INTO reporter_ed_sources(portal_id,source_id,doc,seq) VALUES($1,$2,$3,1)', [other.portal, item.source.id, { ...item.source, workspaceId: other.portal }]);
+  await session(async client => {
+    for (const value of [{ kind: 'material', id: item.material.id, expected: null, sourceId: item.source.id, doc: { ...item.material, workspaceId: other.portal } },
+      { kind: 'evidence', id: evidence.id, expected: null, parentKind: 'material', parentId: item.material.id, fingerprint: memoryEvidenceRef(evidence).hash, doc: evidence },
+      { kind: 'check', id: check.id, expected: null, parentKind: 'evidence', parentId: evidence.id, doc: check },
+      { kind: 'policy', id: 'editorial-memory', expected: null, doc: { ...initialMemoryPolicy(other.portal), revision: check.policyRevision + 1 } }]) await client.query('SELECT public.reporter_memory_put($1::jsonb)', [JSON.stringify(value)]);
+  }, 0, other);
+  const path = `memory/${evidence.id}/reassess-policy`, key = randomUUID();
+  assert.equal((await api(path, input, 0, key, 'policy-isolation')).status, 404);
+  const response = await api(`memory/${evidence.id}`, undefined, 0, randomUUID(), 'policy-isolation'); assert.equal(response.status, 200); const detail = await response.json() as MemoryDetail;
+  assert.equal(detail.evidence.metadata.event, 'Different workspace context'); assert.notEqual(detail.policyReassessment!.evidence.hash, input.evidence.hash);
+  const saved = await api(path, reassessmentInput(detail), 0, key, 'policy-isolation'); assert.equal(saved.status, 200, await saved.clone().text());
+  const original = await json<MemoryDetail>(`memory/${item.evidence.id}`); assert.equal(original.checks.total, 1); assert.ok(original.policyReassessment);
+  assert.equal((await json<MemoryCheck>(path, input, 0, key)).workspaceId, PORTAL);
 });

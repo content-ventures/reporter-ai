@@ -86,6 +86,10 @@ test('library commands keep the bound workspace, account and request identity wh
     await library.activatePolicy('proposal/encoded', { baseRevision: 2, reason: 'Activate reviewed comparison.' }, 'stable-activation-key');
     assert.equal(seen[23].url.pathname, '/api/reporter/w/editorial-client/memory/policy/proposals/proposal%2Fencoded/activate'); assert.equal(new Headers(seen[23].init.headers).get('idempotency-key'), 'stable-activation-key');
     await library.policyVersions({ cursor: 'version+/=cursor' }); assert.equal(seen[24].url.pathname, '/api/reporter/w/editorial-client/memory/policy/versions'); assert.equal(seen[24].url.searchParams.get('cursor'), 'version+/=cursor');
+    const reassessment = { evidence: replacement.expected, check: { id: 'evidence/encoded', revision: 2 }, policyRevision: 3, reason: 'Reapply an explicitly activated policy.' };
+    await library.reassessPolicy('evidence/encoded', reassessment, 'stable-reassessment-key');
+    assert.equal(seen[25].url.pathname, '/api/reporter/w/editorial-client/memory/evidence%2Fencoded/reassess-policy'); assert.deepEqual(JSON.parse(String(seen[25].init.body)), reassessment);
+    assert.equal(new Headers(seen[25].init.headers).get('x-reporter-account'), 'actual-account'); assert.equal(new Headers(seen[25].init.headers).get('idempotency-key'), 'stable-reassessment-key');
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });
