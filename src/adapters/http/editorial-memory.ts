@@ -25,6 +25,7 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     history: (evidence, kind, input) => http.request(`/memory/${id(evidence)}/history/${kind}${parameters(input)}`),
     materials: input => http.request(`/memory/materials${parameters(input)}`), material: (material, revision) => http.request(`/memory/materials/${id(material)}${parameters({ revision })}`),
     reviseMaterial: (material, input, key) => command(`materials/${id(material)}/revision`, input, key),
+    correctionImpact: (scope, input) => http.request(`/memory/${scope.kind === 'material' ? 'materials/' : ''}${id(scope.id)}/impact${parameters(input)}`),
     import: (input, key) => command('materials', input, key), job: job => http.request(`/memory/jobs/${id(job)}`),
     blocks: (job, input) => http.request(`/memory/jobs/${id(job)}/blocks${parameters(input)}`),
     authorizeMaterial: (material, input, key) => command(`materials/${id(material)}/authorization`, input, key),

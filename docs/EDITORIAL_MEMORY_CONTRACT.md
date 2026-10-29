@@ -142,6 +142,12 @@ Active observations from the material gain a context revision and correction sta
 
 GET `/memory/materials/:id?revision=N` retrieves one exact historical material/source snapshot while applying current source rights and visibility. It returns one source version, not the entire accumulated original history. Revision writes recheck current visibility before replaying a receipt. Competing alternatives have one winner; source, context revisions, jobs, audit and receipt roll back together on failure. Approved article snapshots, drafts and persistent use counts never change as a side effect.
 
+## Correction impact read contract
+
+GET `/memory/materials/:id/impact` and `/memory/:evidenceId/impact` return the currently visible saved selections and non-archived productions that still reference an earlier evidence revision/hash or a withdrawn/superseded record. Selection rows count distinct changed evidence. Production rows distinguish stale items in the latest attached collection from stale items actually referenced by current article-draft segments, including earlier collection versions. Refreshing a collection alone therefore cannot hide a remaining old draft reference. Immutable article versions and historical-use totals are not treated as editable impact targets.
+
+These are advisory reads, not a statement that every other writing/check/policy gate is satisfied. They return only target metadata/counts, never entire originals or article bodies, and create no use, receipt, decision or provider work. Current material/evidence and production visibility apply before pagination. Default/max page size is 25/100. Signed cursors bind actor, tenant, workspace, scope, size and visibility; any bank-clock or editorial-clock change invalidates the continuation instead of mixing current drafts across snapshots. A changed semantic proof remains flagged until explicit editor recovery; updating unchanged references cannot automatically accept a different proof.
+
 ## Phase 1 verification
 
 `src/domain/editorial-memory.test.ts` covers every workspace role, audit identity, missing/foreign/read-only membership, reason requirements, optimistic revisions, stale acceptance, source withdrawal, unknown authors, fabricated quote text, conservative D10, numeric score bounds and contiguous original anchors. `src/domain/permissions.test.ts` covers the complete role/capability matrix including `library.review`.

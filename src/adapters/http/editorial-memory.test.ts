@@ -52,6 +52,12 @@ test('library commands keep the bound workspace, account and request identity wh
     await library.material('material/encoded', 1);
     assert.equal(seen[9].url.pathname, '/api/reporter/w/editorial-client/memory/materials/material%2Fencoded');
     assert.equal(seen[9].url.searchParams.get('revision'), '1'); assert.equal(seen[9].init.method ?? 'GET', 'GET');
+    await library.correctionImpact({ kind: 'material', id: 'material/encoded' }, { cursor: 'impact+/=cursor', limit: 7 });
+    assert.equal(seen[10].url.pathname, '/api/reporter/w/editorial-client/memory/materials/material%2Fencoded/impact');
+    assert.equal(seen[10].url.searchParams.get('cursor'), 'impact+/=cursor'); assert.equal(seen[10].url.searchParams.get('limit'), '7');
+    assert.equal(new Headers(seen[10].init.headers).get('x-reporter-account'), 'actual-account'); assert.equal(seen[10].init.method ?? 'GET', 'GET');
+    await library.correctionImpact({ kind: 'evidence', id: 'evidence/encoded' }, {});
+    assert.equal(seen[11].url.pathname, '/api/reporter/w/editorial-client/memory/evidence%2Fencoded/impact');
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });
