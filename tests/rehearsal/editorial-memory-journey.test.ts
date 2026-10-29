@@ -80,8 +80,9 @@ before(async () => {
   }
 }, { timeout: 180000 });
 after(async () => {
-  try { await ui?.close(); await host?.stop(); await storage?.stop(); }
+  try { await ui?.close(); }
   finally {
+    await Promise.all([host?.stop(), storage?.stop()]);
     globalThis.fetch = originalFetch;
     const pools = (globalThis as typeof globalThis & { reporterPools?: Partial<Record<string, Pool>> }).reporterPools ?? {};
     await Promise.all(Object.values(pools).map(pool => pool?.end())); db?.stop();

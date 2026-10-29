@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, Dropzone, Field, FieldGroup, FileRow, Input, LiveRegion, ResponsiveDialog, Section, Segmented, Select, Textarea } from '@content-ventures/design-system/v3';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Alert, Button, Checkbox, Dropzone, Field, FieldGroup, FileRow, Input, LiveRegion, Radio, RadioGroup, ResponsiveDialog, Section, Select, Textarea } from '@content-ventures/design-system/v3';
 import { readMemoryDocument, type MemoryDocumentDelimiter } from '@/domain/editorial-memory-document';
 import { MAX_TEXT_BYTES } from '@/domain/reporter';
 import type { MemoryMetadata } from '@/domain/editorial-memory';
@@ -21,6 +21,7 @@ export function MemoryImportDialog(props: Props) {
   return <MemoryImportForm key={binding.key} {...props} />;
 }
 function MemoryImportForm({ port, open, onClose, onImported }: Props) {
+  const modeName = useId();
   const [input, setInput] = useState<MemoryImportInput>(blankImport), [topicsText, setTopicsText] = useState('');
   const [mode, setMode] = useState<'text' | 'file'>('text'), [file, setFile] = useState<Original>();
   const [delimiter, setDelimiter] = useState<MemoryDocumentDelimiter>(','), [error, setError] = useState<string>();
@@ -73,9 +74,12 @@ function MemoryImportForm({ port, open, onClose, onImported }: Props) {
   return <ResponsiveDialog open={open} title="Importar material" dirty={Boolean(input.title || input.text || file)} onClose={onClose}
     footer={<><Button variant="secondary" disabled={busy} onClick={onClose}>Cancelar</Button><Button loading={busy} disabled={!input.title.trim() || originalText.trim().length < 24} onClick={() => void submit()}>{phase || 'Importar'}</Button></>}>
     <Section>
-      <LiveRegion message={phase} />
+      <LiveRegion message={phase || (mode === 'file' && parsed && !parsed.ok ? parsed.refusal.message : '')} />
       {error && <Alert tone="danger" title={error} />}
-      <Segmented label="Formato de entrada" value={mode} onChange={setMode} disabled={busy} options={[{ value: 'text', label: 'Colar texto' }, { value: 'file', label: 'Enviar arquivo' }]} />
+      <RadioGroup legend="Formato de entrada" orientation="horizontal">
+        <Radio name={modeName} value="text" label="Colar texto" checked={mode === 'text'} disabled={busy} onChange={() => setMode('text')} />
+        <Radio name={modeName} value="file" label="Enviar arquivo" checked={mode === 'file'} disabled={busy} onChange={() => setMode('file')} />
+      </RadioGroup>
       <Field label="Título" required>{({ id }) => <Input id={id} value={input.title} disabled={busy} maxLength={160} onChange={event => setInput({ ...input, title: event.target.value })} />}</Field>
       <Field label="Tipo">{({ id }) => <Select id={id} value={input.kind} disabled={busy} options={MATERIAL_KINDS} onChange={kind => setInput({ ...input, kind: kind as MemoryImportInput['kind'] })} />}</Field>
       {mode === 'file' && <>
