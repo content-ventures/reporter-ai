@@ -30,6 +30,7 @@ export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, ba
   await expect(editor.getByRole('tab', { name: 'Política', exact: true })).toHaveCount(0);
   await admin.goto(`${base}/w/reporter-ai/quotes?bankView=policy`);
   await expect(admin.getByRole('tab', { name: 'Política', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(admin.getByRole('tab', { name: 'Política', exact: true })).toBeInViewport({ ratio: 1 });
   await expect(admin.getByRole('button', { name: 'Filtros', exact: true })).toHaveCount(0);
   const create = admin.getByRole('button', { name: 'Criar proposta', exact: true }); await expect(create).toBeEnabled(); await create.click();
   const form = admin.getByRole('dialog', { name: 'Criar proposta de política', exact: true }); await settle(admin, 'Criar proposta de política');
@@ -71,6 +72,7 @@ export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, ba
   pending = response(admin, `proposals/${restoredProposal.id}/activate`); await comparison.getByRole('button', { name: 'Ativar proposta', exact: true }).click(); const restored = await result<MemoryPolicy>(pending);
   await expect(comparison).toBeHidden(); assert.equal(restored.revision, active.revision + 1); assert.equal(restored.change!.restoredFrom, 1);
   await admin.reload(); await expect(admin.getByRole('tab', { name: 'Política', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(admin.getByRole('tab', { name: 'Política', exact: true })).toBeInViewport({ ratio: 1 });
   await expect(history.getByRole('row', { name: `Versão ${restored.revision}`, exact: true }).getByText('Ativa', { exact: true })).toBeVisible(); await expect(history.getByRole('row', { name: `Versão ${active.revision}`, exact: true })).toBeVisible(); await expect(baseline).toBeVisible();
   await audit(admin, 'policy-restored'); return restored;
 }
