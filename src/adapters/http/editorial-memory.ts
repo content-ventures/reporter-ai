@@ -35,6 +35,7 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     materials: input => http.request(`/memory/materials${parameters(input)}`), material: (material, revision) => http.request(`/memory/materials/${id(material)}${parameters({ revision })}`),
     previewMarket: (material, input) => command(`materials/${id(material)}/market-preview`, input, crypto.randomUUID(), false),
     saveMarketMapping: (material, input, key) => command(`materials/${id(material)}/market-mapping`, input, key, false),
+    importMarketRows: (material, input, key) => command(`materials/${id(material)}/market-import`, input, key),
     reviseMaterial: (material, input, key) => command(`materials/${id(material)}/revision`, input, key),
     correctionImpact: (scope, input) => http.request(`/memory/${scope.kind === 'material' ? 'materials/' : ''}${id(scope.id)}/impact${parameters(input)}`),
     replace: (evidence, input, key) => command(`${id(evidence)}/replacement`, input, key),

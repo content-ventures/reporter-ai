@@ -97,6 +97,8 @@ export interface EditorialMemory extends MemoryBatchLibrary {
   previewMarket(material: string, input: { mapping?: import('../domain/editorial-memory-market.ts').MemoryMarketMapping; start?: number }): Promise<import('../domain/editorial-memory-market.ts').MemoryMarketPreview>;
   saveMarketMapping(material: string, input: { mapping: import('../domain/editorial-memory-market.ts').MemoryMarketMapping; revision: number; materialRevision: number;
     source: SourceVersionRef; originalFileId: string; checksum: string }, requestId: string): Promise<import('../domain/editorial-memory-market.ts').MemoryMarketPlan>;
+  importMarketRows(material: string, input: { revision: number; materialRevision: number; source: SourceVersionRef; originalFileId: string;
+    checksum: string; start: number }, requestId: string): Promise<import('../domain/editorial-memory-market.ts').MemoryMarketImportReport>;
   import(input: MemoryImportInput, requestId: string): Promise<MemoryImportResult>;
   uploadOriginal(input: MemoryOriginalUploadInput, requestId: string): Promise<MemoryOriginalFile>;
   importFile(input: MemoryFileImportInput, requestId: string): Promise<MemoryImportResult>;
