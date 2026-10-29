@@ -355,4 +355,20 @@ test('market mappings save explicit column choices with source binding and revie
   assert.equal((await api(`${root}/market-import`, command, 2)).status, 403);
   const importAudit = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.market.import' AND after_data->>'materialId'=$1 ORDER BY created_at", [material.id]);
   assert.equal(importAudit.length, 2); assert.equal(importAudit[0].user_id, plan.updatedBy); assert.equal(importAudit[0].after_data.created, 1);
+  const headerChoices = { ...choices, unit: { record: 'header', column: 3 } };
+  const remap = await api(`${root}/market-mapping`, { ...input, revision: 1, mapping: headerChoices }); assert.equal(remap.status, 200, await remap.clone().text());
+  const headerCommand = { ...command, revision: 2 };
+  const headerImport = await api(`${root}/market-import`, headerCommand); assert.equal(headerImport.status, 200, await headerImport.clone().text());
+  const headerReport = await headerImport.json(); assert.equal(headerReport.rows[0].status, 'created');
+  const headerDetail = await (await api(headerReport.rows[0].id)).json(); assert.equal(headerDetail.evidence.unit, 'unidade');
+  assert.equal(headerDetail.evidence.market.fields.unit.record, 1); assert.equal(headerDetail.eligibility.reason, 'review_required');
+  const headerProof = memoryEvidenceRef(headerDetail.evidence);
+  const headerReview = await api(`${headerReport.rows[0].id}/review`, { evidence: headerProof, check: null, policyRevision: 1, previousSequence: 0,
+    action: 'accept', reason: 'Conferido o cabeçalho e a linha.', supports: [] }); assert.equal(headerReview.status, 200, await headerReview.clone().text());
+  const headerSelection = await api('selections', { baseRevision: 0, productionId: null, evidence: [headerProof] }); assert.equal(headerSelection.status, 200, await headerSelection.clone().text());
+  const headerChosen = await headerSelection.json();
+  const headerWriting = await api(`selections/${headerChosen.id}/write`, { baseRevision: 1, title: 'Mercado com cabeçalho', brief: { size: 'standard', sections: 3 } });
+  assert.equal(headerWriting.status, 200, await headerWriting.clone().text()); const headerDraft = await headerWriting.json();
+  const [piece] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE portal_id=$1 AND kind='piece' AND part_id=$2", [PORTAL, headerDraft.pieceId]);
+  assert.ok(JSON.stringify(piece.doc.draft.body).includes('Unidade: unidade'));
 });

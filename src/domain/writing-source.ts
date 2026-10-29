@@ -7,12 +7,13 @@ import { memorySourceSegment } from './editorial-memory-excerpt.ts';
 import type { MemorySourceBinding } from './editorial-memory.ts';
 
 type BoundItem = MemorySourceBinding['items'][number];
-export type WritingMemoryContext = Pick<BoundItem, 'kind' | 'materialId' | 'selected' | 'metadata' | 'market'> & { origin: Omit<BoundItem['anchor'], 'excerpt'> };
+export type WritingMemoryContext = Pick<BoundItem, 'kind' | 'materialId' | 'selected' | 'metadata' | 'market' | 'marketContext'> & { origin: Omit<BoundItem['anchor'], 'excerpt'> };
 export type WritingSourceCandidate = { key: string; text: string; speaker?: string; ref: SourceRef; memory?: WritingMemoryContext };
 
 export function writingMemoryContext(binding: BoundItem): WritingMemoryContext {
   return { kind: binding.kind, materialId: binding.materialId, selected: structuredClone(binding.selected), metadata: structuredClone(binding.metadata),
     ...(binding.market ? { market: structuredClone(binding.market) } : {}),
+    ...(binding.marketContext ? { marketContext: structuredClone(binding.marketContext) } : {}),
     origin: { source: { ...binding.anchor.source }, spans: structuredClone(binding.anchor.spans) } };
 }
 

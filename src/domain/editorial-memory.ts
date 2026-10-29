@@ -6,6 +6,7 @@ import type { Source } from './source.ts';
 import { sourceVersion } from './source.ts';
 import { contentHash } from './text/hash.ts';
 import { can } from './permissions.ts';
+import { verifyMemoryMarketProof } from './editorial-memory-market-proof.ts';
 import type { Member } from './workspace.ts';
 import type { Citation } from './citation-library.ts';
 import type { FactCheck } from './fact-check.ts';
@@ -133,7 +134,8 @@ export type MemorySourceBinding = {
   /** An explicit empty latest version excludes this collection from future writing only. */
   retired?: true;
   items: { segmentId: string; materialId: string; kind: MemoryEvidence['kind']; anchor: MemoryAnchor;
-    selected: MemorySelection['items'][number]; metadata: MemoryMetadata; market?: MemoryStatistic['market'] }[];
+    selected: MemorySelection['items'][number]; metadata: MemoryMetadata; market?: MemoryStatistic['market'];
+    marketContext?: Partial<Record<import('./editorial-memory-market.ts').MemoryMarketField, string>> }[];
 };
 export type MemoryQuery = {
   kind?: MemoryEvidence['kind']; status?: MemoryEvidence['status'] | 'all'; query?: string; topics?: string[]; personId?: string; institution?: string;
@@ -204,12 +206,21 @@ export function memoryDecisionApplies(evidence: MemoryEvidence, policy: MemoryPo
 export function memoryEligibility(evidence: MemoryEvidence, source: Source, policy: MemoryPolicy,
   check: MemoryCheck | null, decision: MemoryDecision | null): MemoryEligibility {
   const blocked = (reason: MemoryEligibility['reason']): MemoryEligibility => ({ usable: false, reason });
+  let checkedMarketProof: boolean | undefined;
+  const headerSupports = (field: 'unit' | 'qualifier', value: string) => {
+    if (evidence.kind !== 'statistic' || evidence.market?.mapping?.[field]?.record !== 'header'
+      || evidence.market.fields[field]?.record !== 1 || evidence.market.fields[field]?.value !== value) return false;
+    checkedMarketProof ??= verifyMemoryMarketProof(evidence, source, evidence.market.originalFileId);
+    return checkedMarketProof;
+  };
   if (source.workspaceId !== evidence.workspaceId || policy.workspaceId !== evidence.workspaceId || !source.rights.authorized
     || resolveMemoryAnchor(source, evidence.anchor) === undefined
     || evidence.kind === 'citation' && evidence.text !== evidence.anchor.excerpt
     || evidence.kind === 'statistic' && (!evidence.value.raw.trim() || !evidence.unit.trim()
-      || !evidence.anchor.excerpt.includes(evidence.value.raw) || !evidence.anchor.excerpt.includes(evidence.unit)
-      || evidence.qualifier !== null && !evidence.anchor.excerpt.includes(evidence.qualifier))) return blocked('source_unavailable');
+      || !evidence.anchor.excerpt.includes(evidence.value.raw)
+      || !evidence.anchor.excerpt.includes(evidence.unit) && !headerSupports('unit', evidence.unit)
+      || evidence.qualifier !== null && !evidence.anchor.excerpt.includes(evidence.qualifier)
+        && !headerSupports('qualifier', evidence.qualifier))) return blocked('source_unavailable');
   if (evidence.status !== 'active') return blocked('withdrawn');
   if (evidence.deduplication?.state === 'pending') return blocked('review_required');
   if (evidence.kind === 'citation' && (!evidence.personId || !evidence.authorConfirmed)) return blocked('authorship_pending');

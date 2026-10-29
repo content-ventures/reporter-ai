@@ -36,3 +36,9 @@ export function memoryMarketContext(evidence: MemoryStatistic, source: Source, o
       return resolveMemoryAnchor(source, anchor) === cell.original ? [{ field, value: cell.value, record: cell.record, column: cell.column, anchor }] : [];
     });
 }
+
+export function memoryMarketHeaderSupports(evidence: MemoryStatistic, source: Source, field: MemoryMarketField, value: string): boolean {
+  const cell = evidence.market?.fields[field];
+  return Boolean(cell && cell.record === 1 && cell.value === value && evidence.market?.mapping?.[field]?.record === 'header'
+    && verifyMemoryMarketProof(evidence, source, evidence.market.originalFileId));
+}

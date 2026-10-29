@@ -4,13 +4,14 @@ import { materializeMemoryCandidates } from './editorial-memory-extraction.ts';
 import { mapMemoryMarketRows, type MemoryMarketField, type MemoryMarketPlan } from './editorial-memory-market.ts';
 import type { Source } from './source.ts';
 import { sourceContentHash, sourceVersion } from './source.ts';
+import { contentHash } from './text/hash.ts';
 import type { CommandContext, Result } from './result.ts';
 import { ok, refuse } from './result.ts';
 
 export type MemoryMarketPrepared = { record: number } & ({ status: 'ready'; evidence: MemoryStatistic }
   | { status: 'refused'; reason: 'missing' | 'nonliteral' | 'too_long'; fields: MemoryMarketField[] });
 
-/** Create only literal row evidence; report rows requiring separate header/cell proofs for later review. */
+/** Build observations from a row and independently retained header cells, without joining them into a quote. */
 export function prepareMemoryMarketRows(material: MemoryMaterial, source: Source, document: MemoryDocument, plan: MemoryMarketPlan,
   start: number, ctx: CommandContext): Result<{ rows: MemoryMarketPrepared[]; next: number | null; total: number }, 'invalid_market_mapping' | 'source_changed'> {
   const sourceRef = material.source, version = sourceVersion(source, sourceRef.sourceVersion);
@@ -26,7 +27,7 @@ export function prepareMemoryMarketRows(material: MemoryMaterial, source: Source
   for (const row of mapped.value.rows) {
     if (row.missing.length) { output.push({ record: row.record, status: 'refused', reason: 'missing', fields: row.missing }); continue; }
     const entries = Object.entries(row.fields) as [MemoryMarketField, NonNullable<typeof row.fields[MemoryMarketField]>][];
-    const nonliteral = entries.filter(([, cell]) => cell.value && !row.excerpt.includes(cell.value)).map(([field]) => field);
+    const nonliteral = entries.filter(([field, cell]) => cell.value && !row.excerpt.includes(cell.value) && (field === 'value' || cell.record !== 1)).map(([field]) => field);
     if (nonliteral.length) { output.push({ record: row.record, status: 'refused', reason: 'nonliteral', fields: nonliteral }); continue; }
     const values = row.fields;
     if (row.excerpt.length > 2000 || values.indicator!.value.length > 240 || values.value!.value.length > 240
@@ -36,10 +37,20 @@ export function prepareMemoryMarketRows(material: MemoryMaterial, source: Source
     const anchor = { source: sourceRef, spans: [{ segmentId: 'original', from: row.from, to: row.to }], excerpt: row.excerpt };
     const block: MemoryBlock = { id: 'market-preview', workspaceId: material.workspaceId, materialId: material.id, jobId: 'market-preview', ordinal: row.record - 1,
       anchor, status: 'pending', attempts: 0, error: null, evidenceIds: [] };
-    const [evidence] = materializeMemoryCandidates([{ kind: 'statistic', excerpt: row.excerpt, from: 0, kinds: ['declared'],
+    const candidate = { kind: 'statistic' as const, excerpt: row.excerpt, from: 0, kinds: ['declared' as const],
       indicator: values.indicator!.value, raw: values.value!.value, unit: values.unit!.value, period: values.period!.value,
       geography: values.geography?.value || null, population: values.population?.value || null, qualifier: values.qualifier?.value || null,
-      issuingInstitution: values.institution!.value }], block, material, { from: row.from, text: row.excerpt }, ctx);
+      issuingInstitution: values.institution!.value };
+    const allLiteral = [candidate.raw, candidate.unit, candidate.period, candidate.geography, candidate.population, candidate.qualifier, candidate.issuingInstitution]
+      .every(value => value === null || row.excerpt.includes(value));
+    const evidence = allLiteral ? materializeMemoryCandidates([candidate], block, material, { from: row.from, text: row.excerpt }, ctx)[0] : {
+      id: `memory-statistic-${contentHash({ materialId: material.id, anchor, indicator: candidate.indicator, raw: candidate.raw, unit: candidate.unit })}`,
+      workspaceId: material.workspaceId, materialId: material.id, revision: 0, anchor, metadata: structuredClone(material.metadata), kinds: ['declared' as const],
+      status: 'active' as const, createdAt: ctx.now, updatedAt: ctx.now, supersedes: null, kind: 'statistic' as const, indicator: candidate.indicator,
+      value: { raw: candidate.raw, decimal: null, lower: null, upper: null, scale: null }, unit: candidate.unit,
+      period: { label: candidate.period, from: null, to: null }, geography: candidate.geography, population: candidate.population,
+      qualifier: candidate.qualifier, issuingInstitution: candidate.issuingInstitution, declaringPersonId: null,
+    };
     if (!evidence || evidence.kind !== 'statistic') throw new Error('MEMORY_MARKET_EVIDENCE_INVALID');
     output.push({ record: row.record, status: 'ready', evidence: { ...evidence, market: { originalFileId: plan.originalFileId,
       checksum: plan.checksum, mappingRevision: plan.revision, record: row.record, fileName: document.fileName,

@@ -4,6 +4,7 @@ import { memoryWritingOccurrences } from './editorial-memory-writing.ts';
 import { extractQuotes } from './quotes.ts';
 import { dedupeRefs, segmentRef, type SourceRef } from './refs.ts';
 import type { Source } from './source.ts';
+import { memoryMarketHeaderValues } from './editorial-memory-market.ts';
 
 /** Derive literal bank-citation spans from emitted words, never from another collection or version. */
 export function memoryArticleReferences(block: ArticleBlock, refs: SourceRef[], sources: readonly Source[]): SourceRef[] {
@@ -30,9 +31,9 @@ export function memoryArticleReferences(block: ArticleBlock, refs: SourceRef[], 
 
 export type MemoryArticleContentIssue = { blockId: string; source: SourceRef; code: 'memory_source_changed' | 'memory_literal_changed'; message: string };
 /** A complete observation belongs in one paragraph/list item and cannot become somebody's speech. */
-export function memoryStatisticIssue(block: ArticleBlock, original: string): string | undefined {
+export function memoryStatisticIssue(block: ArticleBlock, original: string, context: readonly string[] = []): string | undefined {
   const parts = block.type === 'list' ? block.items.map(inlinesText) : [blockText(block)];
-  if (!original || !parts.some(text => text.includes(original))) return 'O dado usado perdeu parte do contexto original. Confira número, unidade, período e qualificadores.';
+  if (!original || !parts.some(text => text.includes(original) && context.every(value => text.includes(value)))) return 'O dado usado perdeu parte do contexto original. Confira número, unidade, período e qualificadores.';
   if (block.type === 'quote') return 'Um dado estatístico não pode ser apresentado como fala. Mantenha o dado completo em um parágrafo ou item de lista.';
   if (block.type !== 'paragraph' && block.type !== 'list') return 'Mantenha o dado completo em um parágrafo ou item de lista.';
   const quotes = extractQuotes({ type: 'article', title: '', blocks: [block] });
@@ -62,7 +63,7 @@ export function memoryArticleContentIssues(body: ArticleBody, sources: readonly 
           && (binding.kind === 'statistic' || item.sourceFrom === from && item.sourceTo === to));
         if (!matching.length) message = binding.kind === 'statistic' ? 'O dado usado perdeu parte do contexto original. Confira número, unidade, período e qualificadores.'
           : 'A citação usada não corresponde mais ao trecho original. Confira a referência.';
-        else if (binding.kind === 'statistic') message = memoryStatisticIssue(block, binding.anchor.excerpt);
+        else if (binding.kind === 'statistic') message = memoryStatisticIssue(block, binding.anchor.excerpt, memoryMarketHeaderValues(binding.market, binding.anchor.excerpt, binding.marketContext ?? {}).map(item => item.value));
       }
       if (message && !issues.some(issue => issue.blockId === block.id && issue.source.sourceId === ref.sourceId && issue.source.sourceVersion === ref.sourceVersion
         && issue.source.locator.type === 'segment' && ref.locator.type === 'segment' && issue.source.locator.segmentId === ref.locator.segmentId))

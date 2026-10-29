@@ -1,4 +1,5 @@
 import type { MemorySourceBinding } from './editorial-memory.ts';
+import { memoryMarketWritingText } from './editorial-memory-market.ts';
 import { segmentRef, type SourceRef } from './refs.ts';
 import { currentSourceVersion, sourceContentHash, type Source } from './source.ts';
 
@@ -24,6 +25,6 @@ export function memoryWritingExcerpt(source: Source, number: number, selected: S
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > text.length
     || text.slice(start, end) !== selected.text || !selected.text.trim()) return undefined;
   const from = binding.kind === 'statistic' ? 0 : start, to = binding.kind === 'statistic' ? text.length : end;
-  return { kind: binding.kind, segmentId: selected.segmentId, start: from, end: to, text: text.slice(from, to),
+  return { kind: binding.kind, segmentId: selected.segmentId, start: from, end: to, text: binding.kind === 'statistic' ? memoryMarketWritingText(binding.market, text.slice(from, to), binding.marketContext ?? {}) : text.slice(from, to),
     ref: segmentRef(source.id, number, selected.segmentId, { from, to }) };
 }
