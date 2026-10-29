@@ -8,6 +8,8 @@ import type { BriefInput } from './production-commands.ts';
 import type { MemoryWritingIssueCode } from '../domain/editorial-memory-guard.ts';
 import type { MemoryRefreshConcern } from '../domain/editorial-memory-refresh.ts';
 import type { MemoryFeedback, MemoryFeedbackQuery, MemoryRelevanceInput } from '../domain/editorial-memory-feedback.ts';
+import type { MemoryCalibrationCase, MemoryCalibrationCaseInput } from '../domain/editorial-memory-calibration.ts';
+import type { MemoryPolicyProposal, MemoryPolicyProposalInput } from '../domain/editorial-memory-policy.ts';
 
 export type MemoryWritingInput = { baseRevision: number } & (
   | { title: string; brief: BriefInput }
@@ -102,6 +104,14 @@ export interface EditorialMemory {
   writingStatus(productionId: string): Promise<MemoryWritingStatus>;
   selectedContext(productionId: string, input: MemorySelectedContextInput): Promise<MemorySelectedContext>;
   policy(): Promise<MemoryPolicy>;
+  calibrationCases(input: MemoryHistoryQuery): Promise<MemoryPage<MemoryCalibrationCase>>;
+  annotateCalibration(input: MemoryCalibrationCaseInput, requestId: string): Promise<MemoryCalibrationCase>;
+  policyProposals(input: MemoryHistoryQuery): Promise<MemoryPage<MemoryPolicyProposal>>;
+  policyProposal(id: string): Promise<MemoryPolicyProposal>;
+  proposePolicy(input: MemoryPolicyProposalInput, requestId: string): Promise<MemoryPolicyProposal>;
+  restorePolicy(input: { baseRevision: number; targetRevision: number; reason: string }, requestId: string): Promise<MemoryPolicyProposal>;
+  activatePolicy(id: string, input: { baseRevision: number; reason: string }, requestId: string): Promise<MemoryPolicy>;
+  policyVersions(input: MemoryHistoryQuery): Promise<MemoryPage<MemoryPolicy>>;
   feedback(input: MemoryFeedbackQuery): Promise<MemoryPage<MemoryFeedback>>;
   rateRelevance(input: MemoryRelevanceInput, requestId: string): Promise<MemoryFeedback>;
   relevanceContext(input: Pick<MemoryRelevanceInput, 'selection' | 'evidence'>): Promise<MemoryRelevanceContext>;

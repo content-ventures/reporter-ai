@@ -13,6 +13,7 @@ import { memoryIdSchema } from './editorial-memory-input.ts';
 import { memoryView } from './editorial-memory-query.ts';
 import { memoryError } from './editorial-memory-store.ts';
 import { FlowError } from './errors.ts';
+import { memoryPolicyView } from './editorial-memory-policy-view.ts';
 
 export const memorySelectedContextSchema = z.object({ sourceId: memoryIdSchema,
   sourceVersion: z.number().int().positive(), segmentId: memoryIdSchema }).strict();
@@ -41,7 +42,7 @@ export async function readMemorySelectedContext(productionId: string, value: Mem
       return { productionId, collection: toSourceVersionRef(collection, collection.versions.find(version => version.number === input.sourceVersion)!),
         segmentId: input.segmentId, binding: stored.binding, snapshot: stored.snapshot,
         selection: { id: selection.id, revision: selection.revision, createdAt: selection.createdAt, createdBy: selection.createdBy, updatedAt: selection.updatedAt, updatedBy: selection.updatedBy },
-        evidence: stored.evidence, material: stored.material, policy: selectedPolicy, check: stored.check, decision: stored.decision,
+        evidence: stored.evidence, material: stored.material, policy: memoryPolicyView(selectedPolicy), check: stored.check, decision: stored.decision,
         checkRestricted: stored.checkRestricted, decisionRestricted: stored.decisionRestricted,
         original: { ref: binding.anchor.source, authorized: stored.source.rights.authorized, ...original },
         current: { evidence: memoryEvidenceRef(current.evidence), usable: view.eligibility.usable, matchesSelection },

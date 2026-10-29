@@ -7,6 +7,8 @@ import { readMemoryReplacement, replaceEditorialMemory } from './editorial-memor
 import { memoryReplacementSchema } from './editorial-memory-input.ts';
 import { memoryRelevanceSchema, parseMemoryFeedbackQuery, parseMemoryRelevanceContext } from './editorial-memory-input.ts';
 import { readMemoryFeedback, readMemoryRelevanceContext, recordMemoryRelevance } from './editorial-memory-feedback.ts';
+import { activateEditorialMemoryPolicy, annotateMemoryCalibration, proposeEditorialMemoryPolicy, readMemoryPolicyProposal, readMemoryPolicyRecords } from './editorial-memory-policies.ts';
+import { memoryCalibrationCaseSchema, memoryPolicyActivationSchema, memoryPolicyProposalSchema, memoryPolicyRestoreSchema } from './editorial-memory-input.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
 import { correctEditorialMemory } from './editorial-memory-correction.ts';
 import { reviseEditorialMemoryMaterial } from './editorial-memory-material-revision.ts';
@@ -28,6 +30,20 @@ import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemor
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
   if (process.env.REPORTER_MEMORY_MODE !== 'on') throw new FlowError('NOT_FOUND', 404);
   const noStore = { headers: { 'Cache-Control': 'private, no-store' } }, params = new URL(request.url).searchParams;
+  if (path[0] === 'policy' && path.length > 1) {
+    if (request.method === 'GET' && path.length === 2 && ['cases', 'proposals', 'versions'].includes(path[1])) return Response.json(
+      await readMemoryPolicyRecords(path[1] === 'cases' ? 'case' : path[1] === 'proposals' ? 'proposal' : 'version', parseMemoryHistoryQuery(params)), noStore);
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    if (request.method === 'GET' && path.length === 3 && path[1] === 'proposals') return Response.json(await readMemoryPolicyProposal(path[2]), noStore);
+    if (request.method === 'POST') {
+      const key = request.headers.get('idempotency-key') ?? '';
+      if (path.length === 2 && path[1] === 'cases') return Response.json(await annotateMemoryCalibration(memoryCalibrationCaseSchema.parse(await readJson(request)), key), noStore);
+      if (path.length === 2 && path[1] === 'proposals') return Response.json(await proposeEditorialMemoryPolicy(memoryPolicyProposalSchema.parse(await readJson(request)), key), noStore);
+      if (path.length === 2 && path[1] === 'restore') return Response.json(await proposeEditorialMemoryPolicy(memoryPolicyRestoreSchema.parse(await readJson(request)), key, true), noStore);
+      if (path.length === 4 && path[1] === 'proposals' && path[3] === 'activate') return Response.json(await activateEditorialMemoryPolicy(path[2], memoryPolicyActivationSchema.parse(await readJson(request)), key), noStore);
+    }
+    throw new FlowError('NOT_FOUND', 404);
+  }
   if (request.method === 'GET' && path.join('/') === 'feedback') return Response.json(await readMemoryFeedback(parseMemoryFeedbackQuery(params)), noStore);
   if (request.method === 'GET' && path.join('/') === 'feedback/relevance-context') return Response.json(await readMemoryRelevanceContext(parseMemoryRelevanceContext(params)), noStore);
   if (request.method === 'POST' && path.join('/') === 'feedback/relevance') {
@@ -86,7 +102,7 @@ export async function handleEditorialMemory(request: Request, path: string[], re
   }
   if (request.method === 'GET' && path.length === 0) return Response.json(await queryEditorialMemory(parseMemoryQuery(new URL(request.url).searchParams)),
     { headers: { 'Cache-Control': 'private, no-store' } });
-  if (request.method === 'GET' && path.join('/') === 'policy') return Response.json(await readMemoryPolicy(), { headers: { 'Cache-Control': 'private, no-store' } });
+  if (request.method === 'GET' && path.join('/') === 'policy') { if ([...params].length) throw new FlowError('INVALID_INPUT', 422); return Response.json(await readMemoryPolicy(), noStore); }
   if (request.method === 'GET' && path.join('/') === 'selections') return Response.json(await readMemorySelections(parseMemoryHistoryQuery(params)), noStore);
   if (request.method === 'GET' && path.length === 1) return Response.json(await readMemoryDetail(path[0]), { headers: { 'Cache-Control': 'private, no-store' } });
   if (request.method === 'GET' && path.length === 2 && path[0] === 'legacy') return Response.json(await lookupMemoryLegacy(path[1]), { headers: { 'Cache-Control': 'private, no-store' } });
