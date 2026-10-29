@@ -1,5 +1,17 @@
 # Editorial memory contract
 
+## Durable import batches
+
+The batch manifest is independent of articles and contains at most 100 per-document entries. Each entry retains the proposed title/type/metadata/rights/origin, original filename, byte size, SHA-256 and explicit delimiter. Unsupported, empty and oversized files remain visible as refused entries. File contents still obey the original reader's 1 MiB bound.
+
+Batch reports distinguish missing files, interrupted uploads, stored originals ready for intake, recoverable failures, refusals, included materials, existing materials and occurrences requiring review. The owner and administrators may resume a batch; peers cannot inspect another user's unfinished manifests. Every mutation retains the actual actor, time and before/after audit. Revision checks refuse stale file or metadata replacement; editing accepted entries uses the material's existing correction flow.
+
+Original registration and the batch-item binding commit together before external storage. Storage holds no database transaction. Completion clears the pending item atomically. An administrator and the batch owner can resume the same bound original without allocating a second file. Material/source/job creation and the item's reconciliation result commit in one transaction; an audit failure rolls them all back.
+
+Batch intake compares exact file hashes only among currently visible materials. An unchanged visible document/context is reused. A different edition, origin, rights, parser dialect or revised original requires an explicit current-candidate choice and reason. Reuse preserves the new occurrence's proposed metadata and filename; a deliberately distinct document records its relation to the reviewed candidate. Candidate IDs disappear when their source becomes private. Canonical materials, earlier source versions and approvals are never silently rewritten.
+
+Batch listing uses signed actor/workspace/visibility-bound cursors and a stable creation-order ceiling. Live item progress may change without moving batches between pages. Browser reloads can recover server manifests and stored originals; files that never reached storage must be selected again. General single-file reimport integration, the batch UI and complete rendered acceptance remain required until recorded in the delivery log.
+
 Phase 1 contract for Flow 4. Domain: `src/domain/editorial-memory.ts`. Application port: `src/ports/editorial-memory.ts`. Changes to these contracts require a recorded reason, updated consumers and rerun contract tests.
 
 ## User journeys and wireframes
