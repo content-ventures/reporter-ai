@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, Button, ButtonGroup, DataTable, DescriptionList, EmptyState, ErrorState, Field, Grid, ResponsiveDialog, SearchField, Section, Spinner, Textarea } from '@content-ventures/design-system/v3';
+import { Alert, Button, ButtonGroup, DataTable, DescriptionList, EmptyState, ErrorState, Field, Grid, GridItem, ResponsiveDialog, SearchField, Section, Spinner, Textarea } from '@content-ventures/design-system/v3';
 import { memoryEvidenceRef, type MemoryEvidence } from '@/domain/editorial-memory';
 import { contentHash } from '@/domain/text/hash';
 import type { MemoryDetail, MemoryLibrary, MemoryReplacementResult } from '@/ports/editorial-memory';
@@ -14,14 +14,14 @@ function compatible(previous: MemoryEvidence, current: MemoryEvidence) {
     && (previous.kind !== 'citation' || previous.anchor.source.sourceId === current.anchor.source.sourceId && previous.anchor.source.sourceVersion < current.anchor.source.sourceVersion);
 }
 function Observation({ evidence, title, material }: { evidence: MemoryEvidence; title: string; material: string }) {
-  return <Section title={title} titleAs="h3">
+  return <GridItem><Section title={title} titleAs="h3">
     <Textarea aria-label={`Trecho ${title.toLocaleLowerCase('pt-BR')}`} readOnly value={evidence.anchor.excerpt} rows={6} />
     <DescriptionList items={[{ label: 'Material', value: material }, { label: 'Versão do original', value: evidence.anchor.source.sourceVersion },
       { label: 'Revisão da evidência', value: evidence.revision },
       ...(evidence.kind === 'statistic' ? [{ label: 'Valor', value: evidence.value.raw }, { label: 'Unidade', value: evidence.unit }, { label: 'Período', value: evidence.period?.label ?? 'Não informado' },
         ...(evidence.qualifier ? [{ label: 'Ressalva', value: evidence.qualifier }] : []), ...(evidence.geography ? [{ label: 'Geografia', value: evidence.geography }] : []),
         ...(evidence.population ? [{ label: 'População', value: evidence.population }] : [])] : [])]} />
-  </Section>;
+  </Section></GridItem>;
 }
 export function MemoryReplacementDialog({ basis, open, onClose, onSaved }: { basis: MemoryReplacementBasis; open: boolean; onClose: () => void; onSaved: (result: MemoryReplacementResult) => void }) {
   const port = useMemoryLibrary(), allowed = useCan('library.edit'), bound = port === basis.port;
