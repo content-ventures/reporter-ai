@@ -100,6 +100,7 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
       await editor.goto(`${base}/w/reporter-ai/quotes`);
       await editor.getByRole('button', { name: 'Importar material', exact: true }).click();
       const dialog = editor.getByRole('dialog', { name: 'Importar material', exact: true });
+      await dialog.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)).then(() => undefined));
       await dialog.getByRole('textbox', { name: 'Título', exact: true }).fill(input.title);
       const kind = input.kind === 'report' ? 'Relatório' : 'Transcrição', select = dialog.getByRole('combobox', { name: 'Tipo', exact: true });
       if (!(await select.textContent())?.includes(kind)) {
