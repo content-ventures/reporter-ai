@@ -16,7 +16,7 @@ const descriptor = (body = bytes, name = 'Original — sintético.txt'): MemoryB
   file: { name, size: body.length, checksum: createHash('sha256').update(body).digest('hex'), delimiter: null },
   input: { title: 'Synthetic batch document', kind: 'archive', metadata, primaryOrigin: 'synthetic:batch', authorized: true } });
 let db: Awaited<ReturnType<typeof startRehearsalDatabase>>, storage: Awaited<ReturnType<typeof startFakeS3>>, host: Awaited<ReturnType<typeof startWorkerHost>>;
-let handle: typeof import('../../src/server/http.ts').handleReporter, refuseStorage = false;
+let handle: typeof import('../../src/server/http.ts').handleReporter, refuseStorage = false, wakeups = 0;
 async function owner(sql: string, values: unknown[] = []) {
   const client = new pg.Client({ connectionString: db.owner }); await client.connect();
   try { return (await client.query(sql, values)).rows; } finally { await client.end(); }
@@ -24,7 +24,7 @@ async function owner(sql: string, values: unknown[] = []) {
 async function api(path: string, input?: unknown, actor = 0, key: string = randomUUID(), slug = 'reporter-ai') {
   return handle(new Request(`${APP}/api/reporter/w/${slug}/memory/${path}`, input === undefined ? {} : { method: 'POST',
     headers: { origin: APP, 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify(input) }),
-  ['w', slug, 'memory', ...path.split('?')[0].split('/')], { identify: async () => identities[actor], defer: () => {} });
+  ['w', slug, 'memory', ...path.split('?')[0].split('/')], { identify: async () => identities[actor], defer: () => { wakeups++; } });
 }
 async function ok<T>(path: string, input?: unknown, actor = 0, key?: string, slug?: string): Promise<T> {
   const response = await api(path, input, actor, key, slug); assert.equal(response.status, 200, await response.clone().text()); return response.json() as Promise<T>;
@@ -71,7 +71,9 @@ test('a resumed upload and import keep one original/material/job across lost rep
   let batch = await create([descriptor()]); const key = randomUUID();
   batch = await upload(batch, 0, bytes, 0, key); assert.equal(batch.items[0].status, 'ready'); const original = batch.items[0].original!;
   batch = await upload(batch, 0, bytes, 0, key); assert.equal(batch.items[0].original!.id, original.id);
+  const beforeWake = wakeups;
   batch = await processItem(batch); assert.equal(batch.items[0].status, 'included'); const material = batch.items[0].materialId, job = batch.items[0].job!.id;
+  assert.equal(wakeups, beforeWake + 1, 'committed batch item wakes the worker');
   batch = await processItem(batch); assert.equal(batch.items[0].materialId, material); assert.equal(batch.items[0].job!.id, job);
   const download = await api(`originals/${original.id}/file`); assert.deepEqual(Buffer.from(await download.arrayBuffer()), bytes);
   assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_memory_heads WHERE portal_id=$1 AND kind='material' AND doc->>'originalFileId'=$2", [PORTAL, original.id]))[0].n, 1);

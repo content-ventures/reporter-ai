@@ -22,7 +22,7 @@ const intake = (id: string) => ({ title: 'Synthetic original file', kind: 'archi
 let db: Awaited<ReturnType<typeof startRehearsalDatabase>>, storage: Awaited<ReturnType<typeof startFakeS3>>, host: Awaited<ReturnType<typeof startWorkerHost>>;
 let handle: typeof import('../../src/server/http.ts').handleReporter, refuseStorage = false, otherWorkspace: string;
 let original: MemoryOriginalFile, imported: { material: MemoryMaterial; job: MemoryJob };
-let anchored: MemoryEvidence;
+let anchored: MemoryEvidence, wakeups = 0;
 async function owner(sql: string, values: unknown[] = []) {
   const client = new pg.Client({ connectionString: db.owner }); await client.connect();
   try { return (await client.query(sql, values)).rows; } finally { await client.end(); }
@@ -30,7 +30,7 @@ async function owner(sql: string, values: unknown[] = []) {
 async function api(path: string, input?: unknown, actor = 0, key: string = randomUUID(), slug = 'reporter-ai') {
   return handle(new Request(`${APP}/api/reporter/w/${slug}/memory/${path}`, input === undefined ? {} : { method: 'POST',
     headers: { origin: APP, 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify(input) }),
-  ['w', slug, 'memory', ...path.split('?')[0].split('/').filter(Boolean)], { identify: async () => identities[actor], defer: () => {} });
+  ['w', slug, 'memory', ...path.split('?')[0].split('/').filter(Boolean)], { identify: async () => identities[actor], defer: () => { wakeups++; } });
 }
 before(async () => {
   db = await startRehearsalDatabase(identities.map((identity, index) => ({ email: identity.email, role: ['editor', 'editor', 'approver', 'admin'][index] })));
@@ -314,8 +314,10 @@ test('market mappings save explicit column choices with source binding and revie
   const marketBytes = Buffer.from(bytes.toString('utf8').replace('Órgão sintético', 'Instituto de mercado sintético'));
   const fileResponse = await api('originals', { ...upload, name: 'Mercado sintético.csv', bytes: marketBytes.toString('base64') });
   assert.equal(fileResponse.status, 200, await fileResponse.clone().text()); const file = await fileResponse.json() as MemoryOriginalFile;
+  const beforeWake = wakeups;
   const created = await api('materials/from-file', { ...intake(file.id), kind: 'market_data', title: 'Mercado sintético' });
   assert.equal(created.status, 200, await created.clone().text()); const { material } = await created.json() as { material: MemoryMaterial };
+  assert.equal(wakeups, beforeWake + 1, 'committed file import wakes the worker');
   const root = `materials/${material.id}`;
   const choices = { institution: { record: 'row', column: 0 }, indicator: { record: 'row', column: 1 }, value: { record: 'row', column: 2 },
     unit: { record: 'row', column: 3 }, period: { record: 'row', column: 4 } };
