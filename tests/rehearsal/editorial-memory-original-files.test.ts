@@ -371,4 +371,32 @@ test('market mappings save explicit column choices with source binding and revie
   assert.equal(headerWriting.status, 200, await headerWriting.clone().text()); const headerDraft = await headerWriting.json();
   const [piece] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE portal_id=$1 AND kind='piece' AND part_id=$2", [PORTAL, headerDraft.pieceId]);
   assert.ok(JSON.stringify(piece.doc.draft.body).includes('Unidade: unidade'));
+  const valueChoices = { ...headerChoices, value: { record: 'header', column: 2 } };
+  const valueRemap = await api(`${root}/market-mapping`, { ...input, revision: 2, mapping: valueChoices }); assert.equal(valueRemap.status, 200, await valueRemap.clone().text());
+  const valueImport = await api(`${root}/market-import`, { ...command, revision: 3 }); assert.equal(valueImport.status, 200, await valueImport.clone().text());
+  const valueReport = await valueImport.json(); assert.equal(valueReport.rows[0].status, 'created');
+  const valueDetail = await (await api(valueReport.rows[0].id)).json(); assert.equal(valueDetail.evidence.value.raw, 'valor');
+  assert.equal(valueDetail.evidence.market.fields.value.record, 1); assert.equal(valueDetail.eligibility.reason, 'review_required');
+  const escapedBytes = Buffer.from('instituição;indicador;valor;unidade;período\n"Órgão ""A""";Vendas;240;pessoas;2025\n');
+  const escapedFile = await (await api('originals', { name: 'Células.csv', bytes: escapedBytes.toString('base64'), delimiter: ';' })).json() as MemoryOriginalFile;
+  const escapedImport = await api('materials/from-file', { ...intake(escapedFile.id), kind: 'market_data', title: 'Mercado com aspas' });
+  assert.equal(escapedImport.status, 200, await escapedImport.clone().text()); const escapedMaterial = (await escapedImport.json()).material as MemoryMaterial;
+  const escapedRoot = `materials/${escapedMaterial.id}`, escapedInput = { mapping: choices, revision: 0, materialRevision: escapedMaterial.revision,
+    source: escapedMaterial.source, originalFileId: escapedFile.id, checksum: escapedFile.checksum };
+  const escapedMapping = await api(`${escapedRoot}/market-mapping`, escapedInput); assert.equal(escapedMapping.status, 200, await escapedMapping.clone().text());
+  const escapedRows = await api(`${escapedRoot}/market-import`, { ...escapedInput, mapping: undefined, revision: 1, start: 1 });
+  assert.equal(escapedRows.status, 200, await escapedRows.clone().text()); const escapedReport = await escapedRows.json();
+  assert.equal(escapedReport.rows[0].status, 'created');
+  const escapedDetail = await (await api(escapedReport.rows[0].id)).json(); assert.equal(escapedDetail.evidence.issuingInstitution, 'Órgão "A"');
+  assert.equal(escapedDetail.evidence.market.fields.institution.original, '"Órgão ""A"""');
+  const escapedProof = memoryEvidenceRef(escapedDetail.evidence);
+  const escapedReview = await api(`${escapedReport.rows[0].id}/review`, { evidence: escapedProof, check: null, policyRevision: 1, previousSequence: 0,
+    action: 'accept', reason: 'Conferida a célula original.', supports: [] }); assert.equal(escapedReview.status, 200, await escapedReview.clone().text());
+  const escapedSelection = await api('selections', { baseRevision: 0, productionId: null, evidence: [escapedProof] });
+  assert.equal(escapedSelection.status, 200, await escapedSelection.clone().text()); const escapedChosen = await escapedSelection.json();
+  const escapedWriting = await api(`selections/${escapedChosen.id}/write`, { baseRevision: 1, title: 'Mercado com célula decodificada', brief: { size: 'standard', sections: 3 } });
+  assert.equal(escapedWriting.status, 200, await escapedWriting.clone().text()); const escapedDraft = await escapedWriting.json();
+  const [escapedPiece] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE portal_id=$1 AND kind='piece' AND part_id=$2", [PORTAL, escapedDraft.pieceId]);
+  const escapedText = escapedPiece.doc.draft.body.blocks[0].inlines[0].text;
+  assert.ok(escapedText.includes('Instituição: Órgão "A"')); assert.ok(escapedText.includes('"Órgão ""A""";Vendas;240;pessoas;2025'));
 });

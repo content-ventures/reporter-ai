@@ -207,9 +207,10 @@ export function memoryEligibility(evidence: MemoryEvidence, source: Source, poli
   check: MemoryCheck | null, decision: MemoryDecision | null): MemoryEligibility {
   const blocked = (reason: MemoryEligibility['reason']): MemoryEligibility => ({ usable: false, reason });
   let checkedMarketProof: boolean | undefined;
-  const headerSupports = (field: 'unit' | 'qualifier', value: string) => {
-    if (evidence.kind !== 'statistic' || evidence.market?.mapping?.[field]?.record !== 'header'
-      || evidence.market.fields[field]?.record !== 1 || evidence.market.fields[field]?.value !== value) return false;
+  const cellSupports = (field: 'value' | 'unit' | 'qualifier', value: string) => {
+    if (evidence.kind !== 'statistic' || !evidence.market?.mapping) return false;
+    const cell = evidence.market.fields[field], record = evidence.market.mapping[field]?.record;
+    if (!cell || cell.value !== value || !(record === 'header' && cell.record === 1 || record === 'row' && cell.record === evidence.market.record)) return false;
     checkedMarketProof ??= verifyMemoryMarketProof(evidence, source, evidence.market.originalFileId);
     return checkedMarketProof;
   };
@@ -217,10 +218,10 @@ export function memoryEligibility(evidence: MemoryEvidence, source: Source, poli
     || resolveMemoryAnchor(source, evidence.anchor) === undefined
     || evidence.kind === 'citation' && evidence.text !== evidence.anchor.excerpt
     || evidence.kind === 'statistic' && (!evidence.value.raw.trim() || !evidence.unit.trim()
-      || !evidence.anchor.excerpt.includes(evidence.value.raw)
-      || !evidence.anchor.excerpt.includes(evidence.unit) && !headerSupports('unit', evidence.unit)
+      || !evidence.anchor.excerpt.includes(evidence.value.raw) && !cellSupports('value', evidence.value.raw)
+      || !evidence.anchor.excerpt.includes(evidence.unit) && !cellSupports('unit', evidence.unit)
       || evidence.qualifier !== null && !evidence.anchor.excerpt.includes(evidence.qualifier)
-        && !headerSupports('qualifier', evidence.qualifier))) return blocked('source_unavailable');
+        && !cellSupports('qualifier', evidence.qualifier))) return blocked('source_unavailable');
   if (evidence.status !== 'active') return blocked('withdrawn');
   if (evidence.deduplication?.state === 'pending') return blocked('review_required');
   if (evidence.kind === 'citation' && (!evidence.personId || !evidence.authorConfirmed)) return blocked('authorship_pending');

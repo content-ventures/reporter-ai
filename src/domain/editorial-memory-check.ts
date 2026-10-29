@@ -18,11 +18,16 @@ export function assessMemoryEvidence(evidence: MemoryEvidence, material: MemoryM
     || !input.claims.length || input.claims.length > 6) throw new Error('MEMORY_CHECK_CONTEXT_INVALID');
   if (input.claims.some(claim => !claim.text.trim() || !evidence.anchor.excerpt.includes(claim.text)
     || claim.text.length > 2000 || !['fact', 'declared', 'opinion', 'forecast'].includes(claim.kind))) throw new Error('MEMORY_CHECK_CLAIM_NOT_LITERAL');
+  const mappedContext = (field: import('./editorial-memory-market.ts').MemoryMarketField, value: string) => {
+    if (evidence.kind !== 'statistic' || !evidence.market?.mapping) return false;
+    const cell = evidence.market.fields[field], record = evidence.market.mapping[field]?.record;
+    return Boolean(cell && cell.value === value && (record === 'header' && cell.record === 1 || record === 'row' && cell.record === evidence.market.record));
+  };
   if (evidence.kind === 'statistic' && !input.claims.some(claim => checkable(claim.kind)
-    && claim.text.includes(evidence.value.raw)
+    && (claim.text.includes(evidence.value.raw) || mappedContext('value', evidence.value.raw)
+      && claim.text.trimEnd() === evidence.anchor.excerpt.trimEnd())
     && ([['unit', evidence.unit], ['qualifier', evidence.qualifier], ['period', evidence.period?.label ?? null], ['population', evidence.population], ['geography', evidence.geography]] as const)
-      .every(([field, value]) => value === null || claim.text.includes(value) || evidence.market?.mapping?.[field]?.record === 'header'
-        && evidence.market.fields[field]?.record === 1 && evidence.market.fields[field]?.value === value)))
+      .every(([field, value]) => value === null || claim.text.includes(value) || mappedContext(field, value))))
     throw new Error('MEMORY_CHECK_STATISTIC_CONTEXT_MISSING');
   if (input.strength && (!Number.isInteger(input.strength.score) || input.strength.score < 1 || input.strength.score > 5 || !input.strength.reason.trim())) throw new Error('MEMORY_CHECK_STRENGTH_INVALID');
   const supports: MemoryCheck['supports'] = [];

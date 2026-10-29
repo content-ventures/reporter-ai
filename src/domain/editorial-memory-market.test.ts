@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readMemoryDocument } from './editorial-memory-document.ts';
-import { mapMemoryMarketRows, memoryMarketHeaderValues, memoryMarketWritingText, memoryStatisticMarketContext, type MemoryMarketMapping } from './editorial-memory-market.ts';
+import { mapMemoryMarketRows, memoryMarketContextValues, memoryMarketWritingText, memoryStatisticMarketContext, type MemoryMarketMapping } from './editorial-memory-market.ts';
 import { prepareMemoryMarketRows } from './editorial-memory-market-import.ts';
 import { createMemoryMaterial } from './editorial-memory-import.ts';
 import { memoryMarketContext, verifyMemoryMarketProof } from './editorial-memory-market-proof.ts';
@@ -24,6 +24,16 @@ test('market mapping retains each literal CSV cell and reports missing values wi
   const second = mapMemoryMarketRows(parsed.value, mapping, 2, 1); assert.ok(second.ok);
   assert.deepEqual(second.value.rows[0].missing, ['value']); assert.equal(second.value.next, null);
   assert.equal(mapMemoryMarketRows(parsed.value, { ...mapping, value: { record: 'row', column: 5 } }).ok, false);
+  const ctx = { actorId: 'editor', now: '2026-10-29T12:00:00Z', newId: (prefix: string) => prefix };
+  const metadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: [], originalUrl: null };
+  const made = createMemoryMaterial({ title: 'Mercado', kind: 'market_data', text, metadata, authorized: true, primaryOrigin: null, originalFileId: 'file' }, 'workspace', ctx);
+  const plan = { materialId: made.material.id, revision: 1, source: made.material.source, originalFileId: 'file', checksum: 'a'.repeat(64), mapping, updatedBy: 'editor', updatedAt: ctx.now };
+  const prepared = prepareMemoryMarketRows(made.material, made.source, parsed.value, plan, 1, ctx); assert.ok(prepared.ok);
+  const observation = prepared.value.rows[0]; assert.equal(observation.status, 'ready');
+  if (observation.status === 'ready') {
+    assert.equal(observation.evidence.indicator, 'Índice "A"'); assert.equal(verifyMemoryMarketProof(observation.evidence, made.source, 'file'), true);
+    assert.match(memoryMarketWritingText(observation.evidence.market, observation.evidence.anchor.excerpt), /Indicador: Índice "A"/);
+  }
 });
 
 test('market evidence keeps literal rows and refuses absent or nonliteral context', () => {
@@ -59,7 +69,19 @@ test('market evidence keeps literal rows and refuses absent or nonliteral contex
     const corrected = { ...headerEvidence.evidence, unit: 'pessoas' }, context = memoryStatisticMarketContext(corrected);
     assert.deepEqual(context, {}); assert.equal(memoryMarketWritingText(corrected.market, corrected.anchor.excerpt, context), corrected.anchor.excerpt);
     const coincidental = structuredClone(headerEvidence.evidence); coincidental.market!.fields.unit!.value = 'pessoas';
-    assert.deepEqual(memoryMarketHeaderValues(coincidental.market, coincidental.anchor.excerpt), [{ field: 'unit', value: 'pessoas' }]);
+    assert.deepEqual(memoryMarketContextValues(coincidental.market, coincidental.anchor.excerpt), [{ field: 'unit', value: 'pessoas' }]);
+  }
+  const headerValue = prepareMemoryMarketRows(made.material, made.source, doc.value,
+    { ...plan, mapping: { ...mapping, value: { record: 'header', column: 2 } } }, 1, ctx);
+  assert.ok(headerValue.ok); assert.equal(headerValue.value.rows[0].status, 'ready');
+  if (headerValue.value.rows[0].status === 'ready') {
+    const evidence = headerValue.value.rows[0].evidence;
+    assert.equal(evidence.value.raw, 'valor');
+    assert.equal(memoryEligibility(evidence, made.source, initialMemoryPolicy('workspace'), null, null).reason, 'review_required');
+    const assessment = { claims: [{ text: 'Vendas', kind: 'declared' as const, query: 'Vendas' }], supports: [], strength: null, provider: 'synthetic', model: 'synthetic' };
+    assert.throws(() => assessMemoryEvidence(evidence, made.material, initialMemoryPolicy('workspace'), null, assessment, ctx), /STATISTIC_CONTEXT_MISSING/);
+    assessment.claims[0].text = evidence.anchor.excerpt;
+    assert.equal(assessMemoryEvidence(evidence, made.material, initialMemoryPolicy('workspace'), null, assessment, ctx).verdict, 'not_validated');
   }
   const preview = mapMemoryMarketRows(doc.value, { ...mapping, unit: { record: 'header', column: 3 } }); assert.ok(preview.ok);
   if (first.status === 'ready') {

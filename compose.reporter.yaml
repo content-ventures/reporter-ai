@@ -92,6 +92,8 @@ services:
       - ./database/migrations/081-editorial-memory-market-provenance.sql:/docker-entrypoint-initdb.d/99-zv-editorial-memory-market-provenance.sql:ro
       - ./database/migrations/082-editorial-memory-market-header.sql:/docker-entrypoint-initdb.d/99-zw-editorial-memory-market-header.sql:ro
       - ./database/migrations/083-editorial-memory-market-context.sql:/docker-entrypoint-initdb.d/99-zx-editorial-memory-market-context.sql:ro
+      - ./database/migrations/084-editorial-memory-market-header-value.sql:/docker-entrypoint-initdb.d/99-zy-editorial-memory-market-header-value.sql:ro
+      - ./database/migrations/085-editorial-memory-market-cell-context.sql:/docker-entrypoint-initdb.d/99-zz-editorial-memory-market-cell-context.sql:ro
     networks:
       - reporter
     healthcheck:
