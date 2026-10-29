@@ -40,6 +40,10 @@ test('library commands keep the bound workspace, account and request identity wh
     assert.equal(seen[6].url.pathname, '/api/reporter/w/editorial-client/memory/sources/source%2Fencoded/refresh');
     assert.equal(new Headers(seen[6].init.headers).get('x-reporter-account'), 'actual-account');
     assert.equal(new Headers(seen[6].init.headers).get('idempotency-key'), 'stable-refresh-request'); assert.deepEqual(JSON.parse(String(seen[6].init.body)), refresh);
+    await library.selectedContext('production/encoded', { sourceId: 'source/encoded', sourceVersion: 2, segmentId: 'segment & literal' });
+    assert.equal(seen[7].url.pathname, '/api/reporter/w/editorial-client/memory/productions/production%2Fencoded/sources/source%2Fencoded/context');
+    assert.equal(seen[7].url.searchParams.get('sourceVersion'), '2'); assert.equal(seen[7].url.searchParams.get('segmentId'), 'segment & literal');
+    assert.equal(seen[7].init.method ?? 'GET', 'GET'); assert.equal(new Headers(seen[7].init.headers).get('x-reporter-account'), 'actual-account');
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });

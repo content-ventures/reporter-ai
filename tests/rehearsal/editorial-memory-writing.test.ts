@@ -5,8 +5,8 @@ import pg, { type Client, type Pool } from 'pg';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { createTranscriptSource, toSourceVersionRef } from '../../src/domain/source.ts';
 import { parseTranscript } from '../../src/domain/text/transcript-parse.ts';
-import { memoryEvidenceRef, type MemoryEvidence, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
-import type { MemoryDetail, MemorySourceRefreshInput, MemorySourceRefreshResult, MemoryWritingResult, MemoryWritingStatus } from '../../src/ports/editorial-memory.ts';
+import { memoryEvidenceRef, type MemoryCheck, type MemoryEvidence, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
+import type { MemoryDetail, MemorySelectedContext, MemorySourceRefreshInput, MemorySourceRefreshResult, MemoryWritingResult, MemoryWritingStatus } from '../../src/ports/editorial-memory.ts';
 import type { ReporterRequestContext } from '../../src/server/request-context.ts';
 import type { ArticleBody } from '../../src/domain/article.ts';
 import type { VersionRef } from '../../src/domain/refs.ts';
@@ -249,6 +249,81 @@ test('writing status preserves private production scope, authentication and the 
   process.env.REPORTER_MEMORY_MODE = 'off';
   try { assert.equal((await api(path)).status, 404); }
   finally { process.env.REPORTER_MEMORY_MODE = 'on'; }
+});
+
+test('selected context preserves the exact reviewed revision after corrections and collection refresh without mutating uses or drafts', async () => {
+  const item = await fixture('citation'), saved = await selection([item.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+  const source = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc as Source;
+  const segmentId = source.memory![0].items[0].segmentId;
+  const path = `memory/productions/${made.productionId}/sources/${made.sourceId}/context?sourceVersion=1&segmentId=${segmentId}`;
+  const before = await owner("SELECT doc,seq FROM public.reporter_ed_parts WHERE production_id=$1 AND kind='piece'", [made.productionId]);
+  const uses = await owner("SELECT doc,seq FROM public.reporter_memory_heads WHERE kind='use' AND doc->>'productionId'=$1 ORDER BY id", [made.productionId]);
+  const response = await api(path); assert.equal(response.status, 200, await response.clone().text()); assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  const original = await response.json() as MemorySelectedContext;
+  assert.deepEqual(original.evidence, item.evidence); assert.deepEqual(original.binding.selected, saved.items[0]);
+  assert.equal(original.selection.updatedBy, context.actor); assert.equal(original.decision!.personId, context.actor);
+  assert.equal(original.policy.revision, 1); assert.equal(original.readOnly, false); assert.equal(original.current.matchesSelection, true);
+  assert.equal(original.original.excerpt, item.evidence.anchor.excerpt); assert.ok(original.original.after.includes('CONTEÚDO PRIVADO FORA DA SELEÇÃO'));
+  assert.ok(original.original.before.length <= 1000 && original.original.after.length <= 1000); assert.equal('source' in original, false);
+  assert.equal((await api(path, undefined, randomUUID(), identities[1])).status, 200, 'a reader/approver can inspect immutable proof');
+  assert.deepEqual(await owner("SELECT doc,seq FROM public.reporter_memory_heads WHERE kind='use' AND doc->>'productionId'=$1 ORDER BY id", [made.productionId]), uses);
+  await json(`memory/${item.evidence.id}/correction`, { expected: memoryEvidenceRef(item.evidence), reason: 'Synthetic topic correction.', changes: { kind: 'citation', metadata: { topics: ['new-topic'] } } });
+  const corrected = await json<MemoryDetail>(`memory/${item.evidence.id}`), historical = await json<MemorySelectedContext>(path);
+  assert.deepEqual(historical.evidence, original.evidence); assert.deepEqual(historical.decision, original.decision); assert.deepEqual(historical.original, original.original);
+  assert.deepEqual(historical.current.evidence, memoryEvidenceRef(corrected.evidence)); assert.equal(historical.current.matchesSelection, false); assert.equal(historical.readOnly, true);
+  await json(`memory/${item.evidence.id}/review`, { evidence: memoryEvidenceRef(corrected.evidence), check: null, policyRevision: 1,
+    previousSequence: 1, action: 'accept', reason: 'Synthetic corrected metadata reviewed.', supports: [] });
+  const next = await json<MemorySelection>('memory/selections', { productionId: made.productionId, baseRevision: 0, evidence: [memoryEvidenceRef(corrected.evidence)] });
+  await json(`memory/sources/${made.sourceId}/refresh`, await refreshInput(made, next, false));
+  const refreshedUses = await owner("SELECT doc,seq FROM public.reporter_memory_heads WHERE kind='use' AND doc->>'productionId'=$1 ORDER BY id", [made.productionId]);
+  const retained = await json<MemorySelectedContext>(path); assert.deepEqual(retained.evidence, item.evidence); assert.equal(retained.readOnly, true);
+  const current = await json<MemorySelectedContext>(path.replace('sourceVersion=1', 'sourceVersion=2'));
+  assert.deepEqual(current.evidence.metadata.topics, ['new-topic']); assert.equal(current.readOnly, false); assert.deepEqual(current.original, original.original);
+  assert.deepEqual(await owner("SELECT doc,seq FROM public.reporter_ed_parts WHERE production_id=$1 AND kind='piece'", [made.productionId]), before);
+  assert.deepEqual(await owner("SELECT doc,seq FROM public.reporter_memory_heads WHERE kind='use' AND doc->>'productionId'=$1 ORDER BY id", [made.productionId]), refreshedUses);
+});
+test('selected original reads enforce current production/origin access, exact versions, authentication and the module ceiling', async () => {
+  const item = await fixture('statistic', true), saved = await selection([item.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+  const path = `memory/productions/${made.productionId}/sources/${made.sourceId}/context?sourceVersion=1&segmentId=memory-item-1`;
+  assert.equal((await api(path)).status, 200);
+  assert.equal((await api(path, undefined, randomUUID(), identities[2])).status, 404);
+  assert.equal((await api(path, undefined, randomUUID(), null)).status, 401);
+  assert.equal((await api(path.replace('sourceVersion=1', 'sourceVersion=99'))).status, 404);
+  assert.equal((await api(path.replace('memory-item-1', 'missing'))).status, 404);
+  assert.equal((await api(path + '&sourceVersion=2')).status, 422); assert.equal((await api(path + '&unexpected=1')).status, 422);
+  await owner("UPDATE public.reporter_ed_productions SET doc=doc||jsonb_build_object('restrictedTo',NULL) WHERE production_id=$1", [made.productionId]);
+  assert.equal((await api(path, undefined, randomUUID(), identities[2])).status, 404, 'a public destination cannot expose a private original');
+  await json(`memory/materials/${item.material.id}/authorization`, { baseRevision: 1, authorized: false, reason: 'Synthetic original rights withdrawn.' });
+  const withdrawn = await json<MemorySelectedContext>(path); assert.equal(withdrawn.original.authorized, false); assert.equal(withdrawn.readOnly, true);
+  process.env.REPORTER_MEMORY_MODE = 'off';
+  try { assert.equal((await api(path)).status, 404); } finally { process.env.REPORTER_MEMORY_MODE = 'on'; }
+});
+test('selected checks are historical snapshots and private support never leaks through original-context reads', async () => {
+  const item = await fixture('citation'), support = await fixture('statistic', true);
+  const checked: MemoryCheck = { id: item.evidence.id, workspaceId: PORTAL, revision: 1, evidence: memoryEvidenceRef(item.evidence), policyRevision: 1,
+    checkedAt: new Date().toISOString(), verdict: 'not_validated', confidence: null,
+    claims: [{ text: item.evidence.anchor.excerpt, kind: 'declared', sources: [] }], supports: [{ claim: 0, relation: 'related', evidence: {
+      kind: 'internal', evidence: memoryEvidenceRef(support.evidence), primaryOrigin: support.material.primaryOrigin, excerpt: support.evidence.anchor.excerpt } }],
+    strength: null, provider: 'SYNTHETIC_PRIVATE_CHECK', model: 'synthetic' };
+  await session(client => client.query('SELECT public.reporter_memory_put($1::jsonb)', [JSON.stringify({ kind: 'check', id: checked.id, expected: null, doc: checked, parentKind: 'evidence', parentId: item.evidence.id })]));
+  await json(`memory/${item.evidence.id}/review`, { evidence: memoryEvidenceRef(item.evidence), check: { id: checked.id, revision: 1 }, policyRevision: 1,
+    previousSequence: 1, action: 'accept', reason: 'Synthetic selected check reviewed.', supports: [] });
+  const saved = await selection([item.evidence]), made = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+  const path = `memory/productions/${made.productionId}/sources/${made.sourceId}/context?sourceVersion=1&segmentId=memory-item-1`;
+  const selected = await json<MemorySelectedContext>(path); assert.deepEqual(selected.check, checked); assert.equal(selected.checkRestricted, false);
+  const next = { ...checked, revision: 2, provider: 'SYNTHETIC_NEW_CHECK' };
+  await session(async client => {
+    const current = (await client.query("SELECT public.reporter_memory_get('check',$1) AS value", [checked.id])).rows[0].value;
+    await client.query('SELECT public.reporter_memory_put($1::jsonb)', [JSON.stringify({ kind: 'check', id: checked.id, expected: current.storage_revision, doc: next, parentKind: 'evidence', parentId: item.evidence.id })]);
+  });
+  const historical = await json<MemorySelectedContext>(path); assert.deepEqual(historical.check, checked); assert.equal(historical.current.matchesSelection, false);
+  await owner("UPDATE public.reporter_ed_productions SET doc=doc||jsonb_build_object('restrictedTo',NULL) WHERE production_id=$1", [made.productionId]);
+  const hidden = await api(path, undefined, randomUUID(), identities[2]); assert.equal(hidden.status, 200, await hidden.clone().text());
+  const redacted = await hidden.json() as MemorySelectedContext;
+  assert.equal(redacted.check, null); assert.equal(redacted.checkRestricted, true); assert.equal(JSON.stringify(redacted).includes('SYNTHETIC_PRIVATE_CHECK'), false);
+  assert.equal(JSON.stringify(redacted).includes(support.evidence.anchor.excerpt), false); assert.equal(redacted.readOnly, true);
 });
 test('creation and receipt replay preserve inherited private scope and actual role boundaries', async () => {
   const item = await fixture('statistic', true), saved = await selection([item.evidence]), key = randomUUID();

@@ -35,6 +35,7 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     writeSelection: (selection, input, key) => command(`selections/${id(selection)}/write`, input, key),
     refreshSource: (source, input, key) => command(`sources/${id(source)}/refresh`, input, key),
     writingStatus: production => http.request(`/memory/productions/${id(production)}/writing-status`),
+    selectedContext: (production, input) => http.request(`/memory/productions/${id(production)}/sources/${id(input.sourceId)}/context${parameters({ sourceVersion: input.sourceVersion, segmentId: input.segmentId })}`),
     policy: () => http.request('/memory/policy'), lookupLegacy: evidence => http.request(`/memory/legacy/${id(evidence)}`),
     originalArticle: (evidence, snapshot) => http.request(`/memory/${id(evidence)}/article${parameters({ snapshot })}`),
     reconcileLegacy: (input, key) => command('reconcile', input, key), reconcileArticles: (input, key) => command('reconcile/articles', input, key),
