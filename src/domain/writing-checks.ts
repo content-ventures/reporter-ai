@@ -10,6 +10,8 @@ import type { Source } from './source.ts';
 import type { SourceRef } from './refs.ts';
 import { sourceAttributionGroundingText } from './source-attribution-grounding.ts';
 import type { WritingReview } from './writing-orchestration.ts';
+import { memoryArticleContentIssues } from './editorial-memory-article.ts';
+import { contentHash } from './text/hash.ts';
 
 /** Collect every objective failure before spending the one permitted correction. */
 export function writingArticleChecks(body: ArticleBody, sources: readonly Source[], brief: FormatBrief, extraCorpus: readonly string[] = [],
@@ -36,6 +38,10 @@ export function writingArticleChecks(body: ArticleBody, sources: readonly Source
       message: `Confira termos sem correspondência no conteúdo ou nos dados confirmados: ${missing.slice(0, 20).map(term => term.slice(0, 80)).join(', ')}${missing.length > 20 ? ` e mais ${missing.length - 20}` : ''}.`,
       suggestion: 'Confira nomes e números no material original. Use somente dados sustentados ou sinalize necessidade de apuração; não substitua por novos dados inventados.' });
   }
+  issues.push(...memoryArticleContentIssues(body, sources).map(issue => ({ id: `contract-memory-${contentHash({ sourceId: issue.source.sourceId,
+    version: issue.source.sourceVersion, locator: issue.source.locator.type === 'segment' ? issue.source.locator.segmentId : issue.source.locator, blockId: issue.blockId })}`,
+    severity: 'critical' as const, code: issue.code.toUpperCase(), blockId: issue.blockId, evidenceIds: [], message: issue.message,
+    suggestion: 'Use a evidência selecionada com sua versão exata: dados completos sem aspas de fala; citações somente literais e contíguas.' })));
   return issues;
 }
 

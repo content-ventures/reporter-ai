@@ -14,6 +14,10 @@ import { baseRecord, commitVersion, createKit, recordDecision } from './testing/
 import { memorySourceSegment, memoryWritingExcerpt } from './editorial-memory-excerpt.ts';
 import { sourceContentHash } from './source.ts';
 import { paragraphBlock, quoteBlock } from './article.ts';
+import { listBlock } from './article.ts';
+import { writingArticleBody } from './writing-article.ts';
+import { writingSourceCandidates } from './writing-source.ts';
+import { memoryArticleContentIssues } from './editorial-memory-article.ts';
 
 let n = 0;
 const ctx = { now: '2026-10-28T20:00:00Z', actorId: 'actor', newId: (prefix: string) => `${prefix}-${++n}` };
@@ -42,6 +46,40 @@ function prepared() {
   const result = prepareMemoryWriting(selection, items, 'Artigo sintético', ctx);
   if (!result.ok) throw new Error(result.refusal.message); return result.value;
 }
+test('writer candidates carry immutable selected proof and original metadata without unselected source content', () => {
+  const { source } = prepared(), candidates = writingSourceCandidates([source]);
+  assert.deepEqual(candidates.map(candidate => candidate.memory?.kind), ['statistic', 'citation']);
+  assert.equal(candidates[0].speaker, undefined); assert.equal(candidates[1].speaker, source.speakers[0].label);
+  assert.deepEqual(candidates.map(candidate => candidate.memory?.selected), selection.items);
+  assert.deepEqual(candidates.map(candidate => candidate.memory?.origin), items.map(item => ({ source: item.view.evidence.anchor.source, spans: item.view.evidence.anchor.spans })));
+  assert.ok(!JSON.stringify(candidates).includes('PRIVATE UNUSED'));
+  candidates[0].memory!.selected.policyRevision = 999;
+  assert.equal(source.memory[0].items[0].selected.policyRevision, 1, 'prompt preparation cannot mutate the collection snapshot');
+  const malformed = structuredClone(source); malformed.memory[0].items.pop();
+  assert.equal(validateMemoryWritingSources([malformed], items).ok, false, 'an incomplete binding cannot silently omit a selected item');
+});
+test('generated citation fragments acquire exact collection spans and preserve the selected decision', () => {
+  const { source } = prepared(), text = items[1].view.evidence.anchor.excerpt, fragment = text.slice(8, -1);
+  const candidate = writingSourceCandidates([source])[1];
+  const article = { title: 'Synthetic fragment', dek: '', titleEvidenceIds: [candidate.key], dekEvidenceIds: [],
+    blocks: [{ id: 'quote', type: 'quote' as const, level: 2 as const, text: fragment, items: [], evidenceIds: [candidate.key] }] };
+  const body = writingArticleBody(article, 'run', () => [candidate.ref], [source]);
+  assert.deepEqual(body.blocks[0].sourceRefs![0].locator, { type: 'segment', segmentId: 'memory-item-2', from: 8, to: text.length - 1 });
+  assert.equal(validateMemoryArticle(body, [source], items).ok, true);
+  assert.deepEqual(memoryWritingProvenance(body, [source])[0].selected, selection.items[1]);
+  article.blocks[0].text = 'Words outside the selected original.';
+  const invalid = writingArticleBody(article, 'run', () => [candidate.ref], [source]);
+  assert.deepEqual(invalid.blocks[0].sourceRefs, [candidate.ref], 'invalid output retains its unresolved reference for review');
+  assert.ok(memoryArticleContentIssues(invalid, [source]).length);
+});
+test('a complete numeric observation still cannot be turned into a direct quotation', () => {
+  const { source, body } = prepared(), original = body.blocks[0], text = blockText(original);
+  for (const block of [quoteBlock('spoken', text, { sourceRefs: original.sourceRefs }), paragraphBlock('inline-spoken', `“${text}”`, { sourceRefs: original.sourceRefs })]) {
+    const result = validateMemoryArticle({ ...body, blocks: [block] }, [source], items);
+    assert.ok(!result.ok); assert.equal(result.refusal.code, 'memory_literal_changed'); assert.ok(result.refusal.message.includes('fala'));
+  }
+  assert.equal(validateMemoryArticle({ ...body, blocks: [listBlock('complete', [text], false, { sourceRefs: original.sourceRefs })] }, [source], items).ok, true);
+});
 test('selecting a numeric fragment inserts its complete datum with exact usable provenance', () => {
   const { source, body } = prepared(), text = source.versions[0].content.segments[0].text, start = text.indexOf('240');
   const selected = memoryWritingExcerpt(source, 1, { segmentId: 'memory-item-1', start, end: start + 3, text: '240' });

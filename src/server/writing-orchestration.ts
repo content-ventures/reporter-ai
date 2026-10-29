@@ -14,6 +14,7 @@ import { effectiveWritingResearch } from '../domain/writing-research.ts';
 import type { WritingExternalSource, WritingResearchSettings, WritingResearchSnapshot } from '../domain/writing-research.ts';
 import { runWritingResearch } from './writing-research';
 import type { searchWebEvidence } from './tavily';
+import { writingMemoryChecks } from '../domain/writing-memory.ts';
 
 const id = z.string().min(1).max(128);
 const ids = z.array(id).max(100);
@@ -55,7 +56,7 @@ function checkQuotes(texts: { text: string; evidenceIds: string[] }[], evidence:
 }
 
 type ReviewContext = { plan?: WritingPlan; review?: WritingReview; previousArticle?: WritingArticle;
-  researchSettings?: WritingResearchSettings; quotationEvidence?: ReadonlyMap<string, string> };
+  researchSettings?: WritingResearchSettings; quotationEvidence?: ReadonlyMap<string, string>; statisticEvidence?: ReadonlySet<string> };
 
 function exactCoverage(actual: readonly string[], expected: readonly string[], reason: string) {
   if (!unique(actual) || actual.length !== expected.length || actual.some(key => !expected.includes(key)))
@@ -144,7 +145,10 @@ export function validateWritingOutput(stage: WritingStage, value: unknown, evide
       || plan.essentialFactIds.some(key => !plan.facts.some(fact => fact.id === key))) fail('WRITING_INVALID_OUTPUT', 'O planejamento não identificou corretamente os fatos essenciais.');
     for (const fact of plan.facts) {
       checkIds(fact.evidenceIds, evidence);
-      checkQuotes([{ text: fact.kind === 'quote' ? `“${fact.text}”` : fact.text, evidenceIds: fact.evidenceIds }], evidence);
+      if (fact.kind === 'quote' && fact.evidenceIds.some(id => context.statisticEvidence?.has(id)))
+        fail('WRITING_INVALID_OUTPUT', 'O plano apresentou um dado estatístico como fala. Confira o tipo da evidência.');
+      const allowed = new Map([...evidence].filter(([id]) => !context.statisticEvidence?.has(id)));
+      checkQuotes([{ text: fact.kind === 'quote' ? `“${fact.text}”` : fact.text, evidenceIds: fact.evidenceIds.filter(id => allowed.has(id)) }], allowed);
     }
     if (plan.decision === 'ready' && (!plan.angle.trim() || !plan.facts.length || !plan.essentialFactIds.length || !plan.outline.length))
       fail('WRITING_INVALID_OUTPUT', 'O planejamento marcou o conteúdo como pronto sem fornecer ângulo, fatos essenciais e progressão.');
@@ -218,9 +222,11 @@ export async function runWritingOrchestration(input: WritingRunInput): Promise<{
   if (!configuration.enabled) fail('WRITING_DISABLED', 'Ative a orquestração antes de iniciar esta execução.');
   if (!input.source.length || input.source.some(source => !source.id || !source.text.trim()) || !unique(input.source.map(source => source.id)))
     fail('EMPTY_EDITORIAL_SOURCE', 'O conteúdo precisa de trechos identificados antes da redação.');
-  const size = input.source.reduce((sum, source) => sum + source.text.length + (source.speaker?.length ?? 0) + source.id.length, 0);
+  const size = input.source.reduce((sum, source) => sum + source.text.length + (source.speaker?.length ?? 0) + source.id.length
+    + (source.memory ? stableStringify(source.memory).length : 0), 0);
   if (size > configuration.maxSourceCharacters) fail('WRITING_SOURCE_TOO_LARGE', `O conteúdo tem ${size} caracteres e excede o limite de ${configuration.maxSourceCharacters}. Ajuste o limite ou selecione o conteúdo; nenhum trecho foi descartado.`);
   const originalEvidence = new Map(input.source.map(source => [source.id, source.text]));
+  const statisticEvidence = new Set(input.source.filter(source => source.memory?.kind === 'statistic').map(source => source.id));
   const evidence = new Map(originalEvidence);
   const researchSettings = effectiveWritingResearch(configuration);
   let research: WritingResearchSnapshot | undefined, researchContext: WritingResearchSnapshot | undefined;
@@ -234,7 +240,7 @@ export async function runWritingOrchestration(input: WritingRunInput): Promise<{
     const prompt = composeWritingPrompt(configuration, input.policy, stage, { source: input.source, brief: input.brief, ...context,
       ...(researchContext ? { research: researchContext } : {}) });
     const schema = writingOutputSchema(configuration, stage);
-    const validationContext = { ...context, researchSettings, quotationEvidence: originalEvidence };
+    const validationContext = { ...context, researchSettings, quotationEvidence: originalEvidence, statisticEvidence };
     const hash = contentHash({ compiler: WRITING_COMPILER_VERSION, stage, prompt, schema, model: step.model, parameters });
     const base: WritingTrace = { id: `${stage}-${attempt}`, stage, attempt, status: 'running', startedAt: new Date().toISOString(), model: step.model, hash, prompt, parameters };
     await input.trace(base);
@@ -304,12 +310,17 @@ export async function runWritingOrchestration(input: WritingRunInput): Promise<{
     }
   }
   let article = await call('write', 1, { plan }) as WritingArticle;
-  let review = await call('review', 1, { plan, article, deterministicChecks: input.validateArticle?.(article, externalSources) }) as WritingReview;
+  const checks = (article: WritingArticle) => {
+    const memory = writingMemoryChecks(article, input.source), provided = input.validateArticle?.(article, externalSources);
+    if (!memory.length) return provided ?? (statisticEvidence.size ? [] : undefined);
+    return [...memory, ...(provided ?? []).filter(issue => !memory.some(item => item.code === issue.code && item.blockId === issue.blockId))];
+  };
+  let review = await call('review', 1, { plan, article, deterministicChecks: checks(article) }) as WritingReview;
   if (review.decision === 'needs_reporting') fail('WRITING_NEEDS_REPORTING', 'A revisão identificou falta de apuração. O artigo permanece no registro da execução para análise.');
   if (review.decision === 'revise' && configuration.maxCorrections > 0) {
     const previousArticle = article;
     article = await call('correct', 1, { plan, article, review }) as WritingArticle;
-    review = await call('review', 2, { plan, article, previousArticle, review, deterministicChecks: input.validateArticle?.(article, externalSources) }) as WritingReview;
+    review = await call('review', 2, { plan, article, previousArticle, review, deterministicChecks: checks(article) }) as WritingReview;
   }
   if (review.decision !== 'ready_for_human') fail(review.decision === 'needs_reporting' ? 'WRITING_NEEDS_REPORTING' : 'WRITING_REVIEW_UNRESOLVED',
     'A revisão ainda tem pendências. Confira o artigo e os problemas da execução; nenhuma versão foi marcada como pronta.');
