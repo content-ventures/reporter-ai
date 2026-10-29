@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { toast } from '@content-ventures/design-system/v3';
 import { isRunActive, type ArticleBody, type GenerationRun, type RunId } from '@/domain';
 import type { PieceView, ProductionDetail, RunView } from '@/ports';
 import { useRun, type Commands } from '@/state';
@@ -42,6 +43,7 @@ export function useGenerationActions({
   generation,
   prepare,
   setLocalTitle,
+  blockedReason,
 }: {
   commands: Commands;
   productionId: ProductionDetail['id'];
@@ -49,10 +51,12 @@ export function useGenerationActions({
   generation: StudioGeneration;
   prepare: () => Promise<{ body: ArticleBody; baseRevision: number } | null>;
   setLocalTitle: Dispatch<SetStateAction<string | null>>;
+  blockedReason: string | null;
 }) {
   const { runId, streamMode, live, setStarted } = generation;
 
   const generate = useCallback(async () => {
+    if (blockedReason) { toast('Confira as fontes antes de escrever', { tone: 'info', description: blockedReason }); return; }
     const prepared = await prepare();
     const hasText = prepared ? !isBlankBody(prepared.body) : false;
     setLocalTitle(null);
@@ -63,10 +67,11 @@ export function useGenerationActions({
       return;
     }
     setStarted({ runId: result.value.runId, mode: hasText ? 'replace' : 'append' });
-  }, [prepare, commands, productionId, pieceId, setLocalTitle, setStarted]);
+  }, [blockedReason, prepare, commands, productionId, pieceId, setLocalTitle, setStarted]);
 
   const retryGeneration = useCallback(
     async (stepId?: string) => {
+      if (blockedReason) { toast('Confira as fontes antes de continuar', { tone: 'info', description: blockedReason }); return; }
       if (!runId) return;
       const result = await commands.generation.retry(runId, stepId);
       if (!result.ok) {
@@ -75,7 +80,7 @@ export function useGenerationActions({
       }
       setStarted({ runId: result.value.runId, mode: continuationMode(streamMode, live?.fold.blocks.length ?? 0) });
     },
-    [commands, runId, streamMode, live, setStarted],
+    [blockedReason, commands, runId, streamMode, live, setStarted],
   );
 
   return { generate, retryGeneration };

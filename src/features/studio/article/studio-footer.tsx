@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, type ReactNode } from 'react';
-import { ActionBar, Badge, Button, ConfirmDialog, LinkButton, MetaList, SaveIndicator, Tooltip } from '@content-ventures/design-system/v3';
+import { ActionBar, Alert, Badge, Button, ConfirmDialog, LinkButton, MetaList, SaveIndicator, Tooltip } from '@content-ventures/design-system/v3';
 import { Check } from '@content-ventures/design-system/v3/icons';
 import { briefCharactersAbove, briefSizeProgress } from '@/domain';
 import { formatCharacters, plural } from '@/ui/format';
@@ -23,7 +23,7 @@ export function RewriteDialog({ open, onClose }: { open: boolean; onClose: () =>
   const studio = useStudio();
   const unmapped = useSpeakersWithoutPerson();
   const notes = [
-    'A IA escreve um texto novo a partir da entrevista. O texto atual fica no histórico de versões.',
+    'A IA escreve um texto novo a partir das fontes. O texto atual fica no histórico de versões.',
     studio.briefChanged ? 'A IA escreve com a pauta nova.' : null,
     unmapped > 0 ? `${plural(unmapped, 'falante sem pessoa', 'falantes sem pessoa')}: as falas deles saem sem nome.` : null,
   ].filter(Boolean);
@@ -35,7 +35,11 @@ export function RewriteDialog({ open, onClose }: { open: boolean; onClose: () =>
       description={notes.join(' ')}
       confirmLabel="Reescrever"
       cancelLabel="Cancelar"
-      onConfirm={() => studio.actions.generate()}
+      extra={studio.bankReadiness.reason ? <Alert tone="warning" title={studio.bankReadiness.reason} /> : undefined}
+      onConfirm={async () => {
+        if (studio.bankReadiness.reason) throw new Error(studio.bankReadiness.reason);
+        await studio.actions.generate();
+      }}
     />
   );
 }

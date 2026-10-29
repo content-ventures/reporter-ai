@@ -7,6 +7,8 @@ import type { MemoryWritingItem } from '../domain/editorial-memory-writing.ts';
 import type { ProductionRecord } from '../domain/record.ts';
 import type { SourceVersionRef } from '../domain/refs.ts';
 import type { Source } from '../domain/source.ts';
+import { toSourceVersionRef } from '../domain/source.ts';
+import type { MemoryWritingStatus } from '../ports/editorial-memory.ts';
 import { ok } from '../domain/result.ts';
 import { memoryBundle, memoryReadState } from './editorial-memory-detail.ts';
 import { memoryView } from './editorial-memory-query.ts';
@@ -36,6 +38,17 @@ export async function guardMemorySources(client: PoolClient, record: ProductionR
   if (!sources.length) return ok(undefined);
   const versions = refs ?? sources.map(source => ({ sourceId: source.id, sourceVersion: source.versions.at(-1)!.number }));
   return validateMemoryWritingSources(sources, await currentItems(client, sources, versions), refs);
+}
+
+/** The same current-proof check, grouped by visible attached source for pre-generation UX. */
+export async function inspectMemorySources(client: PoolClient, record: ProductionRecord): Promise<Pick<MemoryWritingStatus, 'sources' | 'issues'>> {
+  const sources = record.sources.filter(source => source.memory), refs = sources.map(source => toSourceVersionRef(source));
+  const items = sources.length ? await currentItems(client, sources, refs) : [], issues: MemoryWritingStatus['issues'] = [];
+  for (const [index, source] of sources.entries()) {
+    const result = validateMemoryWritingSources([source], items);
+    if (!result.ok) issues.push({ source: refs[index], code: result.refusal.code, message: result.refusal.message });
+  }
+  return { sources: refs, issues };
 }
 export async function guardMemoryArticle(client: PoolClient, body: ArticleBody, sources: Source[]) {
   const memory = sources.filter(source => source.memory && body.blocks.some(block => block.sourceRefs?.some(ref => ref.sourceId === source.id)));

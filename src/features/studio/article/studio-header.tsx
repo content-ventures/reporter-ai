@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { MenuSection } from '@content-ventures/design-system/v3';
+import { Alert, Button } from '@content-ventures/design-system/v3';
 import { ClipboardList, History as HistoryIcon, ListTree, RotateCcw, Send, Sparkles, Undo2 } from '@content-ventures/design-system/v3/icons';
 import { ProductionHeader, ProductionPrimaryBar, type HeaderPrimary } from '@/features/production/production-frame';
 import { ApprovalBanner, GenerationBanner, StatusBadge, StatusBanner, useWithdrawReview } from '@/ui';
@@ -55,9 +56,11 @@ export function useStudioPrimary(): HeaderPrimary | undefined {
       return { kind: 'link', label: primary.label, href: pieceHref(production.id, 'carousel') };
     case 'delivery':
       return { kind: 'link', label: primary.label, href: deliveryHref(production.id) };
-    case 'generate':
+    case 'generate': {
+      const blocked = studio.refusal ?? studio.bankReadiness.reason;
       return { kind: 'button', label: primary.label, icon: Sparkles, onClick: () => void studio.actions.generate(),
-        ...(studio.refusal ? { blockedReason: studio.refusal } : {}) };
+        ...(blocked ? { blockedReason: blocked } : {}) };
+    }
   }
 }
 
@@ -69,7 +72,7 @@ function useStudioMenu(): MenuSection[] {
     approval ?? { pieceId: studio.piece.id, kind: 'article', state: 'none', viewer: { canEdit: false, canSend: false, canDecide: false, canWithdraw: false, isRequester: false, isAssignee: false } },
   );
   const writable = studio.canEdit && !studio.refusal;
-  const rewriteReason = generation.active ? 'Aguarde a IA terminar.' : (studio.refusal ?? undefined);
+  const rewriteReason = generation.active ? 'Aguarde a IA terminar.' : (studio.refusal ?? studio.bankReadiness.reason ?? undefined);
   const items: MenuSection['items'] = [
     ...(studio.canEdit
       ? [{ label: 'Editar pauta', icon: ClipboardList, disabled: generation.active, ...(generation.active ? { description: 'Aguarde a IA terminar.' } : {}), onSelect: () => panes.openDialog('brief') }]
@@ -82,7 +85,7 @@ function useStudioMenu(): MenuSection[] {
           {
             label: 'Reescrever o artigo do zero…',
             icon: RotateCcw,
-            disabled: !writable || generation.active,
+            disabled: !writable || Boolean(rewriteReason),
             ...(rewriteReason ? { description: rewriteReason } : {}),
             onSelect: () => panes.openDialog('rewrite'),
           },
@@ -101,6 +104,9 @@ function useStudioNotice(): ReactNode {
   const studio = useStudio();
   const { generation, approval, production, panes, actions } = studio;
   const run = generation.run;
+  const { issue, error, retry } = studio.bankReadiness;
+  if (issue || error) return <Alert tone="warning" title={issue?.message ?? error}
+    action={<Button size="sm" variant="secondary" onClick={issue ? () => { studio.showSource(issue.source); panes.showPanel('material'); } : retry}>{issue ? 'Conferir fonte' : 'Tentar novamente'}</Button>} />;
   if (run?.status === 'failed') {
     return (
       <GenerationBanner
