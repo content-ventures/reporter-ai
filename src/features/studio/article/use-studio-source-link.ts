@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
-import type { WorkspaceView } from '@content-ventures/design-system/v3';
-import { quoteBlock, segmentRef, type ArticleBody, type BlockId, type SourceRef, type TextRange } from '@/domain';
+import { toast, type WorkspaceView } from '@content-ventures/design-system/v3';
+import { paragraphBlock, quoteBlock, type ArticleBody, type BlockId, type SourceRef, type TextRange } from '@/domain';
 import { blockIdOf, createBlockIdFactory, findBlockEntry, insertBlocks, setArticleDecorations, textRangeToPositions } from '@/editor';
 import type { PersonSummary, SourceDetail } from '@/ports';
 import { blocksCitingSegment, viewerSegments, type SourceScope, type ViewerSegment } from './studio-model';
 import type { StudioText } from './use-studio-text';
+import { studioSourceExcerpt, type StudioExcerptSelection } from './studio-source-excerpt';
 
 export type SourceLink = SourceScope & { blockIds: BlockId[]; segmentId: string; from: 'text' | 'transcript' };
 
@@ -18,6 +19,8 @@ export type SourceLink = SourceScope & { blockIds: BlockId[]; segmentId: string;
  */
 export function useStudioSourceLink({
   source,
+  sourceDetails,
+  blockedReason,
   people,
   text,
   factsBody,
@@ -26,6 +29,8 @@ export function useStudioSourceLink({
   showSource,
 }: {
   source: SourceDetail | undefined;
+  sourceDetails: SourceDetail[] | undefined;
+  blockedReason: string | null;
   people: PersonSummary[];
   text: StudioText;
   factsBody: ArticleBody;
@@ -157,21 +162,23 @@ export function useStudioSourceLink({
 
   /** "Inserir como citação": at the caret once placed, else after the last paragraph citing the line. */
   const insertQuote = useCallback(
-    (selected: { segmentId: string; start: number; end: number; text: string }) => {
-      if (!editor || editor.isDestroyed || !source) return;
-      const quoted = selected.text.replace(/\s+/g, ' ').trim();
-      if (!quoted) return;
-      const block = quoteBlock(quoteIds(), quoted, {
-        sourceRefs: [segmentRef(source.source.id, source.version.number, selected.segmentId, { from: selected.start, to: selected.end })],
-      });
-      const citing = blocksCitingSegment(factsBody, selected.segmentId, { sourceId: source.source.id, sourceVersion: source.version.number });
+    (selected: StudioExcerptSelection) => {
+      if (!editor || editor.isDestroyed) return;
+      const excerpt = studioSourceExcerpt(sourceDetails, source, selected);
+      if (!excerpt) { toast('Confira a fonte e selecione o trecho novamente.'); return; }
+      if (blockedReason && sourceDetails?.some(detail => detail.source.id === excerpt.sourceId && detail.source.memory)) {
+        toast('Confira as evidências antes de inserir', { description: blockedReason }); return;
+      }
+      const makeBlock = excerpt.kind === 'statistic' ? paragraphBlock : quoteBlock;
+      const block = makeBlock(quoteIds(), excerpt.text, { sourceRefs: [excerpt.ref] });
+      const citing = blocksCitingSegment(factsBody, selected.segmentId, excerpt);
       const after = citing[citing.length - 1];
       const where = caretWasPlaced() && editor.state.selection.$from.depth > 0 ? 'selection' : after ? { after } : 'end';
       insertBlocks(editor, [block], where);
       setView('main');
       editor.commands.focus();
     },
-    [editor, source, quoteIds, factsBody, caretWasPlaced, setView],
+    [editor, source, sourceDetails, blockedReason, quoteIds, factsBody, caretWasPlaced, setView],
   );
 
   return { segments, link: visibleLink, linkSegment, showInTranscript, takeSourceText, insertQuote };

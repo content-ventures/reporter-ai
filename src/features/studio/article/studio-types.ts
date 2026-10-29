@@ -9,7 +9,7 @@ import type { RunState } from '@/state';
 
 export type ComposerChip =
   | { id: string; kind: 'selection'; label: string; ranges: TextRange[]; text: string }
-  | { id: string; kind: 'excerpt'; label: string; segmentId: string; text: string; ref?: SourceRef }
+  | { id: string; kind: 'excerpt'; label: string; segmentId: string; text: string; ref?: SourceRef; evidenceKind?: 'citation' | 'statistic' }
   | { id: string; kind: 'note'; label: string; text: string };
 
 /** A request made in this tab: the person's turn plus the run that answers it. */

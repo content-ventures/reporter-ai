@@ -1,13 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Button, EmptyState, ErrorState, FieldGroup, Section, Select, TranscriptViewer, toast, type TranscriptAction } from '@content-ventures/design-system/v3';
-import { MessageSquareText, Quote } from '@content-ventures/design-system/v3/icons';
+import { Button, EmptyState, ErrorState, FieldGroup, Section, Select, ToolbarButton, TranscriptViewer, toast, type TranscriptSelectionActions } from '@content-ventures/design-system/v3';
+import { MessageSquareText, Quote, Sigma } from '@content-ventures/design-system/v3/icons';
 import { useStudio } from './studio-context';
 import { quotedSegmentIds, sourceSegmentIds } from './studio-model';
 import type { MemoryRefreshBasis } from '@/features/editorial-memory/memory-source-refresh-dialog';
 import { useCan } from '@/state';
 import { useMemoryLibrary } from '@/state/use-memory-library';
+import { memoryWritingOccurrences } from '@/domain/editorial-memory-writing';
+import { studioSourceExcerpt } from './studio-source-excerpt';
 
 /** The pane header owns the controls, leaving the transcript its remaining scroll height. */
 export function MaterialSourcePicker({ onRefresh }: { onRefresh: (basis: MemoryRefreshBasis) => void }) {
@@ -55,19 +57,23 @@ export function MaterialTab() {
     [fold?.sourcesUsed, source],
   );
   const selecting = fold?.run.steps.some((step) => step.id === 'select' && step.state === 'current') ?? false;
-  const usedIds = useMemo(() => source ? [...new Set([...quotedSegmentIds(studio.facts.quotes, { sourceId: source.source.id, sourceVersion: source.version.number }), ...picked])] : [], [studio.facts.quotes, picked, source]);
+  const usedIds = useMemo(() => source ? [...new Set([...(source.source.memory
+    ? memoryWritingOccurrences(studio.body, source.source).filter(item => item.sourceVersion === source.version.number).map(item => item.binding.segmentId)
+    : quotedSegmentIds(studio.facts.quotes, { sourceId: source.source.id, sourceVersion: source.version.number })), ...picked])] : [], [studio.body, studio.facts.quotes, picked, source]);
   const linked = source && studio.link?.sourceId === source.source.id && studio.link.sourceVersion === source.version.number ? studio.link.segmentId : null;
   const active = linked ?? (selecting ? (picked[picked.length - 1] ?? null) : null);
   const { insertQuote, addExcerpt } = studio.actions;
-  const canEdit = studio.canEdit && Boolean(source?.source.rights.authorized)
-    && (!source?.source.memory || source.version.number === source.summary.version && !source.summary.retired);
-  const actions = useMemo<TranscriptAction[]>(
-    () => canEdit ? [
-      { id: 'quote', label: 'Inserir citação', icon: Quote, onSelect: (selection) => insertQuote(selection) },
-      { id: 'ask', label: 'Pedir à IA', icon: MessageSquareText, onSelect: (selection) => addExcerpt(selection, true) },
-    ] : [],
-    [canEdit, insertQuote, addExcerpt],
-  );
+  const canEdit = studio.canEdit && !studio.readOnly && !studio.locked && !generation.active && Boolean(source?.source.rights.authorized)
+    && (!source?.source.memory || source.version.number === source.summary.version && !source.summary.retired && !studio.bankReadiness.reason);
+  const actions = useMemo<TranscriptSelectionActions>(() => canEdit ? (selection, api) => {
+    const excerpt = studioSourceExcerpt(studio.sourceDetails, source, selection);
+    if (!excerpt) return null;
+    const statistic = excerpt.kind === 'statistic';
+    return <>
+      <ToolbarButton label={statistic ? 'Inserir dado completo' : 'Inserir citação'} icon={statistic ? Sigma : Quote} showLabel onClick={() => { api.close(); insertQuote(excerpt); }} />
+      <ToolbarButton label="Pedir à IA" icon={MessageSquareText} showLabel onClick={() => { api.close(); addExcerpt(excerpt, true); }} />
+    </>;
+  } : [], [canEdit, studio.sourceDetails, source, insertQuote, addExcerpt]);
   if (studio.sourceError) {
     return <ErrorState size="panel" title="Não foi possível abrir o material" onRetry={studio.sourceError.retry} />;
   }

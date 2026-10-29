@@ -11,6 +11,9 @@ import { initialMemoryPolicy, memoryEvidenceRef, memoryEligibility, reviewMemory
 import { buildManifest } from './manifest.ts';
 import { toVersionRef } from './piece.ts';
 import { baseRecord, commitVersion, createKit, recordDecision } from './testing/scenario.ts';
+import { memorySourceSegment, memoryWritingExcerpt } from './editorial-memory-excerpt.ts';
+import { sourceContentHash } from './source.ts';
+import { paragraphBlock, quoteBlock } from './article.ts';
 
 let n = 0;
 const ctx = { now: '2026-10-28T20:00:00Z', actorId: 'actor', newId: (prefix: string) => `${prefix}-${++n}` };
@@ -39,6 +42,44 @@ function prepared() {
   const result = prepareMemoryWriting(selection, items, 'Artigo sintético', ctx);
   if (!result.ok) throw new Error(result.refusal.message); return result.value;
 }
+test('selecting a numeric fragment inserts its complete datum with exact usable provenance', () => {
+  const { source, body } = prepared(), text = source.versions[0].content.segments[0].text, start = text.indexOf('240');
+  const selected = memoryWritingExcerpt(source, 1, { segmentId: 'memory-item-1', start, end: start + 3, text: '240' });
+  assert.ok(selected); assert.equal(selected.kind, 'statistic'); assert.equal(selected.text, text);
+  assert.equal(selected.start, 0); assert.equal(selected.end, text.length);
+  const inserted = { ...body, blocks: [paragraphBlock('manual-datum', selected.text, { sourceRefs: [selected.ref] })] };
+  assert.equal(validateMemoryArticle(inserted, [source], items).ok, true);
+  const occurrences = memoryWritingOccurrences(inserted, source);
+  assert.equal(occurrences.length, 1); assert.equal(occurrences[0].sourceFrom, 0); assert.equal(occurrences[0].sourceTo, text.length);
+  const partial = { ...body, blocks: [paragraphBlock('partial', '240', { sourceRefs: [selected.ref] })] };
+  assert.equal(validateMemoryArticle(partial, [source], items).ok, false, 'a bare number cannot replace the datum');
+});
+test('bank citation insertion preserves whitespace and exact fragment offsets rather than normalizing the original', () => {
+  const one = item('citation', 'Queremos  ouvir\ntodas as pessoas neste exemplo sintético.'), chosen = { ...selection, items: [{ evidence: memoryEvidenceRef(one.view.evidence), check: null, decisionId: one.view.decision!.id, policyRevision: 1 }] };
+  const built = prepareMemoryWriting(chosen, [one], 'Literal whitespace', ctx); assert.ok(built.ok);
+  const { source, body } = built.value, text = one.view.evidence.anchor.excerpt, start = 9, end = text.length - 1;
+  const selected = memoryWritingExcerpt(source, 1, { segmentId: 'memory-item-1', start, end, text: text.slice(start, end) });
+  assert.ok(selected); assert.equal(selected.kind, 'citation'); assert.equal(selected.text, text.slice(start, end));
+  assert.ok(selected.text.includes('\n')); assert.deepEqual(selected.ref.locator, { type: 'segment', segmentId: 'memory-item-1', from: start, to: end });
+  assert.equal(validateMemoryArticle({ ...body, blocks: [quoteBlock('manual-quote', selected.text, { sourceRefs: [selected.ref] })] }, [source], [one]).ok, true);
+});
+test('stale, forged, withdrawn and retired bank selections never become insertable excerpts', () => {
+  const { source } = prepared(), selected = { segmentId: 'memory-item-1', start: 0, end: 5, text: 'Foram' };
+  assert.ok(memoryWritingExcerpt(source, 1, selected));
+  for (const change of [{ start: -1 }, { start: 0.5 }, { end: 0 }, { end: 9999 }, { text: 'False' }, { segmentId: 'missing' }])
+    assert.equal(memoryWritingExcerpt(source, 1, { ...selected, ...change }), undefined);
+  assert.equal(memoryWritingExcerpt({ ...source, rights: { authorized: false } }, 1, selected), undefined);
+  const later = structuredClone(source); later.versions.push({ ...later.versions[0], number: 2 });
+  assert.ok(memorySourceSegment(later, 1, selected.segmentId)); assert.equal(memoryWritingExcerpt(later, 1, selected), undefined);
+  assert.equal(memorySourceSegment(later, 99, selected.segmentId), undefined);
+  const changed = structuredClone(source); changed.versions[0].content.segments[0].text += ' Changed.';
+  assert.equal(memorySourceSegment(changed, 1, selected.segmentId), undefined);
+  changed.versions[0].hash = sourceContentHash(changed.versions[0].content);
+  changed.memory![0].version.hash = changed.versions[0].hash;
+  assert.equal(memorySourceSegment(changed, 1, selected.segmentId), undefined, 'a changed payload cannot inherit an old literal binding');
+  const retired = structuredClone(source); retired.memory![0].retired = true;
+  assert.equal(memoryWritingExcerpt(retired, 1, selected), undefined);
+});
 test('multi-material writing preserves order, original anchors, literal context and known authors without copying private originals', () => {
   const { source, body } = prepared();
   assert.deepEqual(body.blocks.map(block => block.type), ['paragraph', 'quote', 'paragraph']);

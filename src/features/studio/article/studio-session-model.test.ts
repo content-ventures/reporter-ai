@@ -136,6 +136,17 @@ describe('studio session model', () => {
     assert.equal(askQuestion('Está claro?', []), 'Está claro?');
   });
 
+  it('sends full statistical context with its source version separately from a literal quotation', () => {
+    const text = 'Contexto sintético. '.repeat(30) + 'Foram atendidas cerca de 240 pessoas em 2025.';
+    const chips: ComposerChip[] = [{ id: 'datum', kind: 'excerpt', evidenceKind: 'statistic', label: 'Dado', segmentId: 'memory-item-1', text,
+      ref: { kind: 'source', sourceId: 'collection-b', sourceVersion: 3, locator: { type: 'segment', segmentId: 'memory-item-1', from: 0, to: text.length } } },
+      { id: 'quote', kind: 'excerpt', evidenceKind: 'citation', label: 'Autora', segmentId: 'memory-item-1', text: 'Uma  fala\nliteral.' }];
+    const prompt = askQuestion('Compare os trechos.', chips);
+    assert.ok(prompt.includes(`Dado estatístico completo (collection-b · versão 3):\n${text}`));
+    assert.ok(prompt.includes('Citação literal (Autora):\n“Uma  fala\nliteral.”'));
+    assert.ok(!prompt.includes(`“${text}”`), 'a numeric observation is not presented as somebody\'s speech');
+  });
+
   it('points the bar at the chosen card or at the run of an inline action', () => {
     const open = [
       suggestion('title', { runId: 'run-t', proposal: { kind: 'title', text: 'Outro título' }, target: [] }),

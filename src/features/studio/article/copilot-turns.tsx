@@ -14,7 +14,7 @@ import {
   SuggestionGroup,
   type DiffBlock as DsDiffBlock,
 } from '@content-ventures/design-system/v3';
-import { MessageSquareText, Quote, RotateCcw, Sparkles, Type } from '@content-ventures/design-system/v3/icons';
+import { MessageSquareText, Quote, RotateCcw, Sigma, Sparkles, Type } from '@content-ventures/design-system/v3/icons';
 import {
   isRunActive,
   resolveSourceRef,
@@ -38,6 +38,7 @@ import { useGenerationFeedback } from '@/ui/use-generation-feedback';
 import { useStudio } from './studio-context';
 import { clip, isOpenSuggestion, proposalText, suggestionHunks, targetLabel } from './studio-model';
 import type { ComposerChip, SessionTurn } from './use-article-studio';
+import { studioSourceExcerpt } from './studio-source-excerpt';
 
 /**
  * Assistant turns (CONTRACT §3.8, tab "Assistente"): the reviewer's note after "Ajustes solicitados" (tab "Comentários"), the
@@ -59,7 +60,7 @@ function modelMeta(run: TraceRun | undefined): string | undefined {
 function uniqueSegments(refs: readonly SourceRef[]): SourceRef[] {
   const seen = new Set<string>();
   return refs.filter((ref) => {
-    const key = ref.locator.type === 'segment' ? `${ref.sourceId}:${ref.locator.segmentId}` : JSON.stringify(ref.locator);
+    const key = ref.locator.type === 'segment' ? `${ref.sourceId}:${ref.sourceVersion}:${ref.locator.segmentId}` : JSON.stringify(ref);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -76,7 +77,7 @@ export function ContextChips({ chips, onRemove }: { chips: readonly ComposerChip
           key={chip.id}
           size="sm"
           variant="neutral"
-          icon={CHIP_ICON[chip.kind]}
+          icon={chip.kind === 'excerpt' && chip.evidenceKind === 'statistic' ? Sigma : CHIP_ICON[chip.kind]}
           title={chip.text}
           {...(onRemove ? { onRemove: () => onRemove(chip.id), removeLabel: `Remover ${chip.label}` } : {})}
         >
@@ -209,7 +210,7 @@ export function GenerationTurn() {
                   sources={studio.sources}
                   people={studio.people}
                   show="excerpt"
-                  onOpen={() => ref.locator.type === 'segment' && studio.linkSegment(ref.locator.segmentId)}
+                  onOpen={() => studio.actions.showInTranscript(ref)}
                 />
               ))}
               {sourcesUsed.length > 4 ? (
@@ -374,8 +375,12 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
     const resolved = resolveSourceRef(studio.sources, ref);
     if (!resolved?.segment) return [];
     const start = ref.locator.from ?? 0;
-    return [{ segmentId: ref.locator.segmentId, start, end: ref.locator.to ?? resolved.segment.text.length, text: resolved.excerpt }];
+    const excerpt = studioSourceExcerpt(studio.sourceDetails, studio.source, { sourceId: ref.sourceId, sourceVersion: ref.sourceVersion,
+      segmentId: ref.locator.segmentId, start, end: ref.locator.to ?? resolved.segment.text.length, text: resolved.excerpt });
+    return excerpt ? [excerpt] : [];
   });
+  const dataOnly = quotable.length > 0 && quotable.every(excerpt => excerpt.kind === 'statistic');
+  const citationsOnly = quotable.every(excerpt => excerpt.kind === 'citation');
   const active = run ? isRunActive(run) : Boolean(turn.runId);
   const preview = active ? fold?.assistPreview : undefined;
   const failed = run?.status === 'failed';
@@ -401,9 +406,9 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
         }
         onContinue={runId && cancelled ? () => void (fold ? studio.actions.retryRun(runId) : studio.actions.repeatTurn(recovered)) : undefined}
         actions={
-          !active && quotable.length > 0 ? (
-            <Button size="sm" variant="ghost" icon={Quote} onClick={() => quotable.forEach((excerpt) => studio.actions.insertQuote(excerpt))}>
-              {quotable.length === 1 ? 'Inserir citação' : 'Inserir citações'}
+          !active && quotable.length > 0 && studio.canEdit && !studio.readOnly && !studio.locked && !studio.bankReadiness.reason ? (
+            <Button size="sm" variant="ghost" icon={dataOnly ? Sigma : Quote} onClick={() => quotable.forEach((excerpt) => studio.actions.insertQuote(excerpt))}>
+              {dataOnly ? quotable.length === 1 ? 'Inserir dado completo' : 'Inserir dados completos' : citationsOnly ? quotable.length === 1 ? 'Inserir citação' : 'Inserir citações' : 'Inserir evidências'}
             </Button>
           ) : undefined
         }
@@ -430,7 +435,7 @@ export function RequestTurn({ turn }: { turn: SessionTurn }) {
                 people={studio.people}
                 index={index + 1}
                 variant="inline"
-                onOpen={() => ref.locator.type === 'segment' && studio.linkSegment(ref.locator.segmentId)}
+                onOpen={() => studio.actions.showInTranscript(ref)}
               />
             ))}
           />

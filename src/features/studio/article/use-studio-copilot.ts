@@ -13,6 +13,7 @@ import { askQuestion, assistTurnsOf, selectionTarget, toolForSuggestion, unpinne
 import type { ComposerChip, SessionTurn, SuggestionFocus } from './studio-types';
 import type { StudioText } from './use-studio-text';
 import { notifyRefusal } from '@/ui/permission-dialog';
+import { memoryWritingExcerpt } from '@/domain/editorial-memory-excerpt';
 
 type ToolOptions = { target?: TextRange[]; prompt?: string; chips?: ComposerChip[]; question?: string };
 
@@ -245,10 +246,15 @@ export function useStudioCopilot({
   const addExcerpt = useCallback(
     (selected: { segmentId: string; text: string; start?: number; end?: number }, askNow = false) => {
       if (!source) return;
+      const bank = source.source.memory ? memoryWritingExcerpt(source.source, source.version.number, {
+        ...selected, start: selected.start ?? 0, end: selected.end ?? selected.text.length,
+      }) : undefined;
+      if (source.source.memory && !bank) { toast('Confira a fonte e selecione o trecho novamente.'); return; }
       const segment = segments.find((entry) => entry.id === selected.segmentId);
-      const ref = segmentRef(source.source.id, source.version.number, selected.segmentId, selected.start !== undefined && selected.end !== undefined ? { from: selected.start, to: selected.end } : undefined);
-      const label = `${excerptLabel(segment)} · ${source.source.title} · v${source.version.number}`;
-      addChip({ id: `exc-${refKey(ref)}-${selected.text.length}`, kind: 'excerpt', ref, label, segmentId: selected.segmentId, text: clip(selected.text, 400) });
+      const ref = bank?.ref ?? segmentRef(source.source.id, source.version.number, selected.segmentId, selected.start !== undefined && selected.end !== undefined ? { from: selected.start, to: selected.end } : undefined);
+      const label = `${bank?.kind === 'statistic' ? 'Dado estatístico' : excerptLabel(segment)} · ${source.source.title} · v${source.version.number}`;
+      addChip({ id: `exc-${refKey(ref)}-${selected.text.length}`, kind: 'excerpt', ref, label, segmentId: selected.segmentId,
+        text: bank?.text ?? clip(selected.text, 400), ...(bank ? { evidenceKind: bank.kind } : {}) });
       if (askNow) focusComposer();
       else if (copilotHidden()) toast(`${label} no pedido ao Assistente`, { tone: 'info' });
     },

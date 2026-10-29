@@ -80,7 +80,8 @@ export function MemorySourceRefreshDialog({ basis, writable, onClose, onDone }: 
       }
       const result = await basis.port.refreshSource(source.id, current.input, current.refreshKey);
       if (binding.current !== basis.port) return;
-      toast(result.retired ? 'Fonte retirada das novas gerações' : 'Fonte atualizada', { description: result.concerns.length ? `${new Set(result.concerns.map(item => item.blockId)).size} trechos mantidos para revisão.` : undefined });
+      const concerns = new Set(result.concerns.map(item => item.blockId)).size;
+      toast(result.retired ? 'Fonte retirada das novas gerações' : 'Fonte atualizada', { description: concerns ? `${concerns} ${concerns === 1 ? 'trecho mantido' : 'trechos mantidos'} para revisão.` : undefined });
       onDone(result);
     } catch (failure) { if (binding.current === basis.port) { setError(errorText(failure, 'Não foi possível confirmar a atualização. Tente novamente.')); setStaleContext((failure as { code?: string })?.code === 'MEMORY_CONFLICT'); } }
     finally { pending.current = false; if (binding.current === basis.port) { setBusy(false); setWriting(false); } }

@@ -79,7 +79,11 @@ export function selectionTarget(chips: readonly ComposerChip[]): TextRange[] | u
 
 /** What the model reads for a typed question: the text, then each excerpt or note in quotes. */
 export function askQuestion(text: string, chips: readonly ComposerChip[]): string {
-  const excerpts = chips.filter((chip) => chip.kind === 'excerpt' || chip.kind === 'note').map((chip) => `“${chip.text}”`);
+  const excerpts = chips.filter((chip) => chip.kind === 'excerpt' || chip.kind === 'note').map((chip) => {
+    if (chip.kind !== 'excerpt' || !chip.evidenceKind) return `“${chip.text}”`;
+    const origin = chip.ref ? `${chip.ref.sourceId} · versão ${chip.ref.sourceVersion}` : chip.label;
+    return `${chip.evidenceKind === 'statistic' ? 'Dado estatístico completo' : 'Citação literal'} (${origin}):\n${chip.evidenceKind === 'statistic' ? chip.text : `“${chip.text}”`}`;
+  });
   return [text, ...excerpts].join('\n\n');
 }
 

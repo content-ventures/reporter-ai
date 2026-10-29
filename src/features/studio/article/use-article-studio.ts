@@ -63,7 +63,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
   const bar = useSuggestionBar({ draft, editor: text.editor });
   const showMaterial = useCallback(() => showPanel('material'), [showPanel]);
   const showAssistant = useCallback(() => showPanel('assistant'), [showPanel]);
-  const sourceLink = useStudioSourceLink({ source, people, text, factsBody: checking.factsBody, setView: panes.setView, showMaterial, showSource });
+  const sourceLink = useStudioSourceLink({ source, sourceDetails, blockedReason: bankReadiness.reason, people, text, factsBody: checking.factsBody, setView: panes.setView, showMaterial, showSource });
   const copilot = useStudioCopilot({
     commands,
     production,
