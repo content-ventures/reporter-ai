@@ -6,18 +6,24 @@ import { MessageSquareText, Quote, Sigma } from '@content-ventures/design-system
 import { useStudio } from './studio-context';
 import { quotedSegmentIds, sourceSegmentIds } from './studio-model';
 import type { MemoryRefreshBasis } from '@/features/editorial-memory/memory-source-refresh-dialog';
+import type { MemoryContextBasis } from '@/features/editorial-memory/memory-selected-context';
+import type { MemorySelectedContextInput } from '@/ports/editorial-memory';
 import { useCan } from '@/state';
 import { useMemoryLibrary } from '@/state/use-memory-library';
 import { memoryWritingOccurrences } from '@/domain/editorial-memory-writing';
 import { studioSourceExcerpt } from './studio-source-excerpt';
 
 /** The pane header owns the controls, leaving the transcript its remaining scroll height. */
-export function MaterialSourcePicker({ onRefresh }: { onRefresh: (basis: MemoryRefreshBasis) => void }) {
+export function MaterialSourcePicker({ onRefresh, onContext }: { onRefresh: (basis: MemoryRefreshBasis) => void; onContext: (basis: MemoryContextBasis) => void }) {
   const studio = useStudio(), { production, source, sourceDetails, sourceSelection, showSource } = studio;
   const port = useMemoryLibrary(), canEdit = useCan('library.edit'), [preparing, setPreparing] = useState(false);
+  const [inspected, setInspected] = useState<MemorySelectedContextInput>();
   if (!production.sources.length) return null;
   if (production.sources.length === 1 && source && source.source.versions.length === 1 && !source.source.memory) return null;
   const selected = source?.source.id ?? sourceSelection?.sourceId ?? production.sources[0]?.id ?? '';
+  const receipt = source?.source.memory?.find(item => item.version.number === source.version.number);
+  const sameVersion = (input: { sourceId: string; sourceVersion: number } | null | undefined) => input?.sourceId === source?.source.id && input?.sourceVersion === source?.version.number;
+  const contextSegment = receipt?.items.find(item => item.segmentId === (sameVersion(inspected) ? inspected?.segmentId : sameVersion(studio.link) ? studio.link?.segmentId : undefined))?.segmentId ?? receipt?.items[0]?.segmentId;
   return (
     <Section variant="band">
       <FieldGroup label="Material">
@@ -27,6 +33,11 @@ export function MaterialSourcePicker({ onRefresh }: { onRefresh: (basis: MemoryR
         {source && source.source.versions.length > 1 ? <Select label="Versão do material" value={String(source.version.number)} disabled={preparing}
           options={source.source.versions.map((version) => ({ value: String(version.number), label: `Versão ${version.number}${version.number === source.summary.version ? source.summary.retired ? ' · retirada' : '' : ' · histórica'}`, description: version.number === source.summary.version ? 'Atual' : new Date(version.createdAt).toLocaleString('pt-BR') }))}
           onChange={(number) => showSource({ sourceId: source.source.id, sourceVersion: Number(number) })} /> : null}
+        {receipt && receipt.items.length > 1 && <Select label="Evidência da seleção" value={contextSegment ?? ''} disabled={preparing}
+          options={receipt.items.map((item, index) => ({ value: item.segmentId, label: `${index + 1}. ${item.kind === 'citation' ? 'Citação' : 'Estatística'}`, description: item.anchor.excerpt.slice(0, 100) }))}
+          onChange={segmentId => setInspected({ sourceId: source!.source.id, sourceVersion: source!.version.number, segmentId })} />}
+        {contextSegment && source && port && <Button variant="secondary" disabled={preparing} onClick={() => onContext({ productionId: production.id, port,
+          input: { sourceId: source.source.id, sourceVersion: source.version.number, segmentId: contextSegment } })}>Ver origem da evidência</Button>}
         {source?.source.memory && canEdit && studio.canEdit && !studio.readOnly && !studio.locked && <Button variant="secondary" loading={preparing} disabled={preparing || production.activeRuns.length > 0 || !port} onClick={async () => {
           if (source.version.number !== source.summary.version) { showSource({ sourceId: source.source.id, sourceVersion: source.summary.version }); return; }
           setPreparing(true);
