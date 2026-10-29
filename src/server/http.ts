@@ -116,6 +116,7 @@ const messages: Record<string, string> = {
   MEMORY_CURSOR_INVALID: 'A consulta mudou ou expirou. Atualize os resultados.',
   MEMORY_ORIGINAL_UNAVAILABLE: 'O arquivo original não está disponível. Recarregue e tente novamente.',
   MEMORY_ORIGINAL_CHANGED: 'O arquivo não corresponde ao original preservado. Confira a integridade da cópia antes de continuar.',
+  MEMORY_BATCH_FILE_CHANGED: 'Escolha o mesmo arquivo registrado no lote ou revise o documento antes de reenviar.',
   MEMORY_ORIGINAL_PENDING: 'O envio do original não foi concluído. Retome o envio antes de importar ou baixar.',
   MEMORY_CURSOR_CONFIGURATION: 'A paginação do banco editorial ainda não está configurada no servidor.',
   MEMORY_REVIEW_RESTRICTED: 'A revisão usa evidências às quais você não tem acesso.',
