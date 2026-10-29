@@ -243,8 +243,9 @@ test('two imported materials reach orchestrated writing, separate approval and a
   assert.equal(revised.material.source.sourceVersion, 2); assert.equal(revised.affectedEvidence, 2);
   const affected = await api<MemoryCorrectionImpact>(`memory/materials/${original.material.id}/impact`); assert.equal(affected.total, 2);
   assert.equal(affected.currentRevision, revised.material.revision);
-  assert.ok(affected.items.some(item => item.kind === 'selection' && item.id === selected.id && item.changedEvidence === 2));
+  const impactedSelection = affected.items.find(item => item.kind === 'selection' && item.id === selected.id); assert.ok(impactedSelection?.kind === 'selection'); assert.equal(impactedSelection.changedEvidence, 2);
   assert.ok(affected.items.some(item => item.kind === 'production' && item.id === made.productionId && item.selectedEvidence === 2 && item.draftEvidence === 2));
+  if (ui) await ui.inspectImpact(original.material, passages[0].text, made.productionId, initial.production.title, 2, impactedSelection.revision);
   assert.deepEqual((await record(made.productionId)).versions, frozen, 'original corrections never rewrite frozen approved/generated articles');
   assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
   const originalContext = await api<MemorySelectedContext>(`memory/productions/${made.productionId}/sources/${made.sourceId}/context?sourceVersion=1&segmentId=${encodeURIComponent(initialProof.items[0].segmentId)}`);
