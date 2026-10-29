@@ -569,3 +569,11 @@ REPORTER_MEMORY_JOURNEY_UI_BASE=http://127.0.0.1:3006 REPORTER_MEMORY_JOURNEY_UI
 ```
 
 Without `REPORTER_MEMORY_JOURNEY_UI_BASE`, the normal rehearsal suite runs the complete HTTP/worker/export-adapter case without launching a browser. The 21st review CLI is unavailable; its automated review is not claimed as passed. No push, Preview, deployment or remote database mutation occurred. Committed-harness clean-build revalidation follows this local milestone; phases 5, 7, 8 and 9 retain their outstanding requirements.
+
+### Historical reader close isolation
+
+The exact `92b7483` clean gate/build and regression smoke pass (1,852 tests; 94 smoke passes and one existing skip). Its complete phone writing/download/history case passes, but the desktop case exposes an intermittent loss of the parent evidence drawer while the historical reader exits. Repeating Escape during that exit reproduces the failure on the same unchanged product build: the evidence drawer disappears instead of retaining the invoking button. Records: `/tmp/reporter-memory-journey-browser-1440-92b7483.log` and `/tmp/reporter-memory-journey-escape-before-fix.log`. The earlier passing case did not establish correct dismissal behavior under this interaction.
+
+The reader now composes as a sibling of the evidence drawer, following the existing quote-bank modal composition. Its state belongs to the evidence-level component, while history rows only request a read. Escape/native-close events no longer traverse the evidence drawer, and the reader remains mounted for the public DS exit/focus lifecycle. This removes the timing-dependent nested-open guard without changing any source, evidence, occurrence or article state. The complete journey retains the parent-visible/focus-return assertions and now presses Escape twice during exit. Types and scoped lint pass; exact clean-build browser revalidation follows.
+
+The concurrent `92b7483` PostgreSQL suite reports 217 passes, six existing skips and one 500 in the thousand-production transfer test while both writing-browser cases and regression smoke were active. It is not counted as a passing suite. The existing 10-second database statement limit and transfer assertions are unchanged; the failed file is being checked in isolation before final broad revalidation. Record: `/tmp/reporter-memory-journey-rehearsal-92b7483.log`.

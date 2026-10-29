@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, Badge, Button, ButtonGroup, Checkbox, DescriptionList, Drawer, ErrorState, Field, Input, Panel, Section, Select, Spinner, Textarea, TextLink } from '@content-ventures/design-system/v3';
 import type { MemoryDecisionAction, MemoryHistoryKind, MemoryMaterial, MemoryUseStage } from '@/domain/editorial-memory';
 import { memoryEvidenceRef } from '@/domain/editorial-memory';
@@ -17,13 +17,17 @@ const HISTORY_LABELS: Record<MemoryHistoryKind, string> = { checks: 'Checagens',
 const USE_LABELS: Record<MemoryUseStage, string> = { selected: 'Selecionada', inserted: 'Inserida no rascunho', approved: 'Aprovada', published: 'Publicada' };
 export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial }: { id: string; open: boolean; onClose: () => void; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void }) {
   const load = useCallback((port: MemoryLibrary) => port.detail(id), [id]), resource = useMemoryResource(load, 2500, open);
-  const [nestedOpen, setNestedOpen] = useState(false);
-  return <Drawer open={open} size="lg" title="Evidência" onClose={() => { if (!nestedOpen) onClose(); }}>
+  const [reading, setReading] = useState<MemoryVersionUse>(), [readingOpen, setReadingOpen] = useState(false);
+  const readVersion = useCallback((occurrence: MemoryVersionUse) => { setReading(occurrence); setReadingOpen(true); }, []);
+  return <><Drawer open={open} size="lg" title="Evidência" onClose={() => { setReadingOpen(false); onClose(); }}>
     {resource.error ? <ErrorState title="Não foi possível abrir a evidência" description={resource.error} onRetry={resource.reload} /> : !resource.data || !resource.port ? <Spinner label="Carregando evidência" /> :
-      <EvidenceContent key={`${id}:${resource.data.evidence.revision}:${resource.data.check?.revision ?? 0}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onNestedChange={setNestedOpen} onChanged={() => { resource.reload(); onChanged(); }} />}
-  </Drawer>;
+      <EvidenceContent key={`${id}:${resource.data.evidence.revision}:${resource.data.check?.revision ?? 0}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onReadVersion={readVersion} onChanged={() => { resource.reload(); onChanged(); }} />}
+  </Drawer>
+    {/* Modal siblings keep the reader's Escape and native close events out of the evidence drawer. */}
+    {reading && <MemoryUsedVersion occurrence={reading} open={open && readingOpen} onClose={() => setReadingOpen(false)} />}
+  </>;
 }
-function EvidenceContent({ detail, port, onChanged, onMaterial, onNestedChange }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onNestedChange: (open: boolean) => void }) {
+function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onReadVersion: (occurrence: MemoryVersionUse) => void }) {
   const session = useSession().data;
   const { evidence, check, decision } = detail, people = usePeople(), canEdit = useCan('library.edit'), canReview = useCan('library.review');
   const outdated = detail.checkState === 'outdated';
@@ -112,26 +116,23 @@ function EvidenceContent({ detail, port, onChanged, onMaterial, onNestedChange }
       {canReview && <ButtonGroup label="Ações">{(['accept', 'reject', 'request_revision'] as const).map(action => <Button key={action} variant={action === 'accept' ? 'primary' : 'secondary'} loading={busy} disabled={!reason.trim() || outdated || action === 'accept' && (['source_unavailable', 'withdrawn', 'authorship_pending'].includes(detail.eligibility.reason) || evidence.deduplication?.state === 'pending' || evidence.kind === 'citation' && evidence.legacy?.state === 'conflict')} onClick={() => void review(action)}>{REVIEW_LABELS[action]}</Button>)}</ButtonGroup>}
       {decision && <DescriptionList items={[{ label: 'Última decisão', value: REVIEW_LABELS[decision.action] }, { label: 'Responsável', value: person(decision.personId) }, { label: 'Data', value: new Date(decision.at).toLocaleString('pt-BR') }, { label: 'Motivo', value: decision.reason }]} />}
     </Section>}
-    {(['checks', 'decisions', 'revisions', 'occurrences'] as const).map(kind => <MemoryHistory key={kind} detail={detail} port={port} kind={kind} personName={person} onNestedChange={onNestedChange} />)}
+    {(['checks', 'decisions', 'revisions', 'occurrences'] as const).map(kind => <MemoryHistory key={kind} detail={detail} port={port} kind={kind} personName={person} onReadVersion={onReadVersion} />)}
   </Panel>;
 }
-function MemoryHistory({ detail, port, kind, personName, onNestedChange }: { detail: MemoryDetail; port: MemoryLibrary; kind: MemoryHistoryKind; personName: (id: string | null) => string; onNestedChange: (open: boolean) => void }) {
+function MemoryHistory({ detail, port, kind, personName, onReadVersion }: { detail: MemoryDetail; port: MemoryLibrary; kind: MemoryHistoryKind; personName: (id: string | null) => string; onReadVersion: (occurrence: MemoryVersionUse) => void }) {
   const fresh = detail[kind], binding = JSON.stringify({ items: fresh.items, total: fresh.total });
   const [saved, setSaved] = useState({ binding, items: fresh.items as MemoryHistoryEntry[], cursor: fresh.nextCursor });
   const { items, cursor } = saved.binding === binding ? saved : { items: fresh.items, cursor: fresh.nextCursor };
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
-  const [reading, setReading] = useState<MemoryVersionUse>(), [readingOpen, setReadingOpen] = useState(false);
-  useEffect(() => () => onNestedChange(false), [onNestedChange]);
   return <Section title={HISTORY_LABELS[kind]} meta={detail[kind].total}>
     {error && <Alert tone="danger" title={error} />}
     <DescriptionList items={items.map((item, index) => ({ label: `${index + 1}`, value: 'action' in item ? `${REVIEW_LABELS[item.action]} — ${item.reason} · ${personName(item.personId)} · ${new Date(item.at).toLocaleString('pt-BR')}`
       : 'stage' in item ? <>{[USE_LABELS[item.stage], ...(item.stage === 'approved' ? [item.productionTitle ?? 'Artigo', `versão ${item.article.number}`] : []), personName(item.personId), new Date(item.at).toLocaleString('pt-BR')].join(' · ')}
-        {(item.stage === 'approved' || item.stage === 'published') && <Button variant="ghost" onClick={() => { setReading(item); setReadingOpen(true); onNestedChange(true); }}>Ler versão {item.article.number}</Button>}</>
+        {(item.stage === 'approved' || item.stage === 'published') && <Button variant="ghost" onClick={() => onReadVersion(item)}>Ler versão {item.article.number}</Button>}</>
         : 'verdict' in item ? `${VERDICT_LABELS[item.verdict]} · ${item.checkedAt}` : `Revisão ${item.revision} · ${item.updatedAt}` }))} />
     {cursor && <Button variant="secondary" loading={busy} onClick={async () => { setBusy(true); setError(undefined);
       try { const next = await port.history(detail.evidence.id, kind, { cursor }); setSaved({ binding, items: [...items, ...next.items], cursor: next.nextCursor }); }
       catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível carregar o histórico.'); } finally { setBusy(false); }
     }}>Carregar mais</Button>}
-    {reading && <MemoryUsedVersion occurrence={reading} open={readingOpen} onClose={() => { setReadingOpen(false); onNestedChange(false); }} />}
   </Section>;
 }

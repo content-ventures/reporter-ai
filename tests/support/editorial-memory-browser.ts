@@ -151,7 +151,9 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
         await expect(reading).not.toContainText('Origem e contexto no texto do ensaio');
         await expect(version.locator('[contenteditable="true"]')).toHaveCount(0);
         await audit(editor, `used-${passage.kind}`); await editor.keyboard.press('Escape');
-        await expect(version).toBeHidden(); await expect(evidence).toBeVisible(); await expect(trigger).toBeFocused();
+        // A repeated Escape during the reader's exit still belongs to that topmost layer.
+        await editor.keyboard.press('Escape'); await expect(version).toBeHidden();
+        await expect(evidence).toBeVisible(); await expect(trigger).toBeFocused();
       }
     },
     async close() {
