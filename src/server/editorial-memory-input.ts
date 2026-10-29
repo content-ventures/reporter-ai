@@ -74,6 +74,7 @@ export const memoryDuplicateResolutionSchema = z.object({ expected: memoryEviden
   choice: z.enum(['keep_variant', 'use_curated']), reason: z.string().trim().min(1).max(2000) }).strict()
   .refine(value => value.expected.id !== value.canonical.id, 'Escolha registros diferentes.');
 export const memoryCheckRefSchema = z.object({ id, revision: z.number().int().positive() }).strict();
+export const memoryPolicyReassessmentSchema = z.object({ evidence: memoryEvidenceRefSchema, check: memoryCheckRefSchema, policyRevision: z.number().int().positive(), reason: z.string().trim().min(1).max(2000) }).strict();
 export const memoryCalibrationCaseSchema = z.object({ evidence: memoryEvidenceRefSchema, check: memoryCheckRefSchema, purpose: z.enum(['technical', 'editorial']),
   outcome: z.enum(['confirmed', 'contradicted', 'insufficient']), reason: z.string().trim().min(1).max(2000) }).strict();
 const threshold = z.number().min(0).max(100).nullable();

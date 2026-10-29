@@ -18,6 +18,8 @@ import { lookupMemoryLegacy, readMemoryArticle, reconcileMemoryArticles, resolve
 import { FlowError } from './errors.ts';
 import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
 import { checkEditorialMemory } from './editorial-memory-check.ts';
+import { reassessEditorialMemory } from './editorial-memory-reassessment.ts';
+import { memoryPolicyReassessmentSchema } from './editorial-memory-input.ts';
 import { writeMemorySelection } from './editorial-memory-writing.ts';
 import { readMemoryWritingStatus } from './editorial-memory-writing-status.ts';
 import { readMemorySelectedContext } from './editorial-memory-selected-context.ts';
@@ -128,6 +130,10 @@ export async function handleEditorialMemory(request: Request, path: string[], re
   if (request.method === 'POST' && path.length === 2 && path[1] === 'check') {
     if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
     return Response.json(await checkEditorialMemory(path[0], memoryCheckInputSchema.parse(await readJson(request)).expected, request.headers.get('idempotency-key') ?? ''), noStore);
+  }
+  if (request.method === 'POST' && path.length === 2 && path[1] === 'reassess-policy') {
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await reassessEditorialMemory(path[0], memoryPolicyReassessmentSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''), noStore);
   }
   if (request.method === 'POST' && path.length === 2 && path[1] === 'review') return Response.json(
     await reviewEditorialMemory(path[0], memoryDecisionInputSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''),

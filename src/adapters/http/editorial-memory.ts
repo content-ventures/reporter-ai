@@ -33,6 +33,7 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     authorizeMaterial: (material, input, key) => command(`materials/${id(material)}/authorization`, input, key),
     retry: (job, key) => command(`jobs/${id(job)}/retry`, {}, key), cancel: (job, baseRevision, key) => command(`jobs/${id(job)}/cancel`, { baseRevision }, key),
     check: (evidence, expected, key) => command(`${id(evidence)}/check`, { expected }, key),
+    reassessPolicy: (evidence, input, key) => command(`${id(evidence)}/reassess-policy`, input, key),
     review: (evidence, input, key) => command(`${id(evidence)}/review`, input, key), correct: (evidence, input, key) => command(`${id(evidence)}/correction`, input, key),
     select: (input, key) => command('selections', input, key), selection: selection => http.request(`/memory/selections/${id(selection)}`),
     selections: input => http.request(`/memory/selections${parameters(input)}`),
