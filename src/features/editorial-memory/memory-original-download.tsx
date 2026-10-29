@@ -26,7 +26,7 @@ function OriginalDownload({ port, id }: { port: MemoryLibrary; id: string }) {
       } catch (failure) { if (live.current) setError(failure instanceof Error ? failure.message : 'Não foi possível baixar. Tente novamente.'); }
       finally { running.current = false; if (live.current) setBusy(false); }
     }}>{busy ? 'Baixando original…' : 'Baixar arquivo enviado'}</ButtonLink>
-    <LiveRegion message={busy ? 'Preparando download do arquivo enviado.' : error ?? ''} />
+    <LiveRegion message={busy ? 'Preparando download do arquivo enviado.' : ''} />
     {error && <Alert tone="danger" title={error} />}
   </>;
 }

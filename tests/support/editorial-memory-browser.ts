@@ -285,13 +285,17 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
       if (original) {
         await dialog.getByRole('radio', { name: 'Enviar arquivo', exact: true }).click();
         const choose = async (name: string, buffer: Buffer) => {
-          const waiting = editor.waitForEvent('filechooser'); await dialog.getByRole('button', { name: 'Escolher arquivo original', exact: true }).click();
+          const waiting = editor.waitForEvent('filechooser'); await dialog.getByRole('button', { name: /^Escolher arquivo original/ }).click();
           await (await waiting).setFiles({ name, mimeType: 'application/octet-stream', buffer });
         };
         await choose('unsupported.pdf', Buffer.from('Synthetic unsupported file'));
         await expect(dialog.getByRole('alert')).toContainText('Escolha um arquivo TXT'); await expect(dialog.getByRole('button', { name: 'Importar', exact: true })).toBeDisabled();
+        await choose('oversized.txt', Buffer.alloc(1024 * 1024 + 1, 65));
+        await expect(dialog.getByRole('alert')).toContainText('Divida o documento em arquivos de até 1 MiB.');
+        await expect(dialog.getByRole('button', { name: 'Importar', exact: true })).toBeDisabled();
         await choose('invalid.txt', Buffer.from([255]));
-        await expect(dialog.getByText('Salve o arquivo em UTF-8 e tente novamente.', { exact: true })).toBeVisible();
+        await expect(dialog.locator('[data-status="error"]')).toContainText('Salve o arquivo em UTF-8 e tente novamente.');
+        await expect(dialog.getByRole('status').filter({ hasText: 'Salve o arquivo em UTF-8 e tente novamente.' })).toHaveAttribute('aria-live', 'polite');
         await expect(dialog.getByRole('button', { name: 'Importar', exact: true })).toBeDisabled();
         await choose('dialect.csv', Buffer.from('institution;value\r\n"Synthetic; institution";1.234,56\r\n'));
         const dialect = dialog.getByRole('combobox', { name: 'Separador do CSV', exact: true });

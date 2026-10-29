@@ -1,5 +1,9 @@
 # Editorial memory Design System dependency review
 
+Publication update (October 29, 2026): João explicitly approved the DS-only publication. [PR #7](https://github.com/content-ventures/design-system/pull/7) passed CI and was merged by rebase by `fagundesjv`. Annotated tag `v0.4.1` points to `ccc227c0e42af226cd133425d2b61765d09edd8c`; tag object `575ae8dbd8f9ab30e821b2d81667d564a02b9357` uses the verified numeric GitHub noreply identity. The merged tree is identical to candidate `fea2b4f`, and main CI also passed. Reporter dependency installation now resolves the published 0.4.1 package; its local pin/clean acceptance is being verified. No Reporter publication or deployment is authorized by this approval.
+
+The review below records the original candidate and preview evidence before publication.
+
 The candidate fixes the shared components behind the Flow 4 import and immutable article readers. Reporter still pins Design System 0.4.0 at `0479b31c567653c76b93ec2ec89eb6976ce31172`. The local overlay is a preview, not clean-install or CI acceptance.
 
 ## Reviewable source
