@@ -32,6 +32,7 @@ export function ArticleWorkspace(inputs: StudioInputs) {
   const [linking, setLinking] = useState(false);
   const [refresh, setRefresh] = useState<MemoryRefreshBasis>();
   const [context, setContext] = useState<MemoryContextBasis>();
+  const [contextOpen, setContextOpen] = useState(false);
   const tab = panes.panelTab;
   // The interview and the conversation own their scroll (and touch the pane's edges).
   const owned = tab === 'material' || tab === 'assistant' || (tab === 'comments' && Boolean(studio.reviewNote));
@@ -55,7 +56,7 @@ export function ArticleWorkspace(inputs: StudioInputs) {
           max: 520,
           collapsed: !panes.panelOpen,
           onCollapsedChange: (collapsed) => panes.setPanelOpen(!collapsed),
-          header: <><PanelTabs />{tab === 'material' && !studio.desk ? <MaterialSourcePicker onRefresh={setRefresh} onContext={setContext} /> : null}</>,
+          header: <><PanelTabs />{tab === 'material' && !studio.desk ? <MaterialSourcePicker onRefresh={setRefresh} onContext={basis => { setContext(basis); setContextOpen(true); }} /> : null}</>,
           content: <PanelPane />,
           scroll: !owned,
           flush: owned,
@@ -68,7 +69,7 @@ export function ArticleWorkspace(inputs: StudioInputs) {
         <FloatingBars onLink={() => setLinking(true)} />
       </WorkspaceLayout>
       <StudioDialogs />
-      {context && <MemorySelectedContextDialog basis={context} onClose={() => setContext(undefined)} />}
+      {context && <MemorySelectedContextDialog basis={context} open={contextOpen} onClose={() => setContextOpen(false)} />}
       {refresh && <MemorySourceRefreshDialog basis={refresh} writable={!studio.readOnly && !studio.locked && studio.production.activeRuns.length === 0}
         onClose={() => setRefresh(undefined)} onDone={result => { setRefresh(undefined); studio.showSource(result.source); studio.bankReadiness.retry(); }} />}
       <LinkDialog open={linking} onClose={() => setLinking(false)} />

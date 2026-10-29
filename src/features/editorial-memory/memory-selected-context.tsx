@@ -10,11 +10,11 @@ import { useMemoryLibrary, useMemoryResource } from '@/state/use-memory-library'
 export type MemoryContextBasis = { productionId: string; input: MemorySelectedContextInput; port: MemoryLibrary };
 
 /** An explicit, read-only inspection of the proof used by this collection version. */
-export function MemorySelectedContextDialog({ basis, onClose }: { basis: MemoryContextBasis; onClose: () => void }) {
+export function MemorySelectedContextDialog({ basis, open, onClose }: { basis: MemoryContextBasis; open: boolean; onClose: () => void }) {
   const port = useMemoryLibrary(), { productionId, input } = basis, bound = port === basis.port;
   const load = useCallback((library: MemoryLibrary) => library.selectedContext(productionId, input), [productionId, input]);
-  const resource = useMemoryResource(load, 0, bound);
-  return <ResponsiveDialog open title="Origem da evidência selecionada" size="lg" onClose={onClose}
+  const resource = useMemoryResource(load, 0, bound && open);
+  return <ResponsiveDialog open={open} title="Origem da evidência selecionada" size="lg" onClose={onClose}
     footer={<Button variant="ghost" onClick={onClose}>Fechar</Button>}>
     {!bound ? <ErrorState title="A conta mudou" description="Feche esta consulta e abra a evidência na conta atual." />
       : resource.error ? <ErrorState title="Não foi possível consultar a origem" description={resource.error} onRetry={resource.reload} />
