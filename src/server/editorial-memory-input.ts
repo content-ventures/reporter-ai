@@ -49,6 +49,11 @@ export const memoryDuplicateResolutionSchema = z.object({ expected: memoryEviden
   .refine(value => value.expected.id !== value.canonical.id, 'Escolha registros diferentes.');
 export const memoryCheckRefSchema = z.object({ id, revision: z.number().int().positive() }).strict();
 const sourceRef = z.object({ kind: z.literal('source-version'), sourceId: id, sourceVersion: z.number().int().positive(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
+export const memorySourceRefreshSchema = z.object({
+  target: z.object({ productionId: id, updatedAt: z.iso.datetime({ offset: true }), draftRevision: z.number().int().nonnegative() }).strict(),
+  expected: sourceRef, selection: z.object({ id, revision: z.number().int().positive() }).strict().nullable(),
+  updateDraftReferences: z.boolean(), reason: z.string().trim().min(1).max(2000),
+}).strict();
 const support = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('internal'), evidence: memoryEvidenceRefSchema, primaryOrigin: z.string().min(1).max(2000), excerpt: z.string().min(1).max(20000), originStatus: z.literal('unverified').optional() }).strict(),
   z.object({ kind: z.literal('external'), url: safeUrl, title: z.string().min(1).max(500), excerpt: z.string().min(1).max(20000),
