@@ -65,6 +65,7 @@ const functions = {
     source: './functions/reporter-worker.ts',
     env: {
       REPORTER_DEPLOYMENT_MODE: 'cloud',
+      REPORTER_MEMORY_MODE: process.env.REPORTER_MEMORY_MODE === 'on' ? 'on' : 'off',
       REPORTER_FUNCTION_RUNTIME: 'true',
       REPORTER_SOURCE_COMMIT: process.env.REPORTER_SOURCE_COMMIT || process.env.GITHUB_SHA || 'local-validation',
       REPORTER_DEPLOYMENT_ACTOR: process.env.GITHUB_ACTOR || 'local-validation',

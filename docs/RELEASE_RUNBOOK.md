@@ -105,6 +105,20 @@ origin, such as `https://reporteria.contentventures.com.br` and `https://reporte
 - **Release.** After the pull request is merged, dispatch the workflow from `main`.
 - **Read the run.** Its summary records the transfer reading, each drain receipt and the live version.
 
+### Citation and statistics bank
+
+The bank is disabled by default. After its acceptance and the separately approved deployment,
+set `REPORTER_MEMORY_MODE=on` in the target GitHub environment for the Neon worker and in the
+matching Vercel environment for the app. Deploy the worker through the controlled workflow and
+the app through its Git integration; changing only the app exposes the interface while extraction
+and checking jobs remain unprocessed. Test staging first and verify an authorized import, review,
+writing and original download in that environment. Leave production disabled until its approval.
+
+To stop new bank operations, remove or change the app setting and redeploy the app; disable the
+worker setting and redeploy the worker as a separate controlled action. Existing evidence and
+queued work remain in the database; confirm the status of in-flight jobs before any recovery.
+Do not assume that disabling the interface deletes data or instantly cancels running work.
+
 During the minutes between the production migration and Vercel serving the new app, the old app
 keeps reading; migrations are additive. The first release after the editorial-rows migration is
 the exception: the previous app can no longer save editorial changes until the new app is live.

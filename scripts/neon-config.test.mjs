@@ -25,6 +25,24 @@ test("the worker reads its allowed origins from the deployment, never a hard-cod
   assert.equal("REPORTER_APP_ORIGIN" in env, false);
 });
 
+test('the memory worker is enabled only by an explicit environment setting', async () => {
+  const previous = process.env.REPORTER_MEMORY_MODE;
+  try {
+    delete process.env.REPORTER_MEMORY_MODE;
+    const disabled = await import('../neon.ts?memory-disabled');
+    assert.equal(disabled.default.functions.reporterworker.env.REPORTER_MEMORY_MODE, 'off');
+    process.env.REPORTER_MEMORY_MODE = 'on';
+    const enabled = await import('../neon.ts?memory-enabled');
+    assert.equal(enabled.default.functions.reporterworker.env.REPORTER_MEMORY_MODE, 'on');
+    const workflow = await readFile(new URL('../.github/workflows/worker-deploy.yml', import.meta.url), 'utf8');
+    assert.match(workflow, /REPORTER_MEMORY_MODE: \$\{\{ vars\.REPORTER_MEMORY_MODE \}\}/);
+    assert.match(workflow, /'REPORTER_APP_ORIGINS', 'REPORTER_MEMORY_MODE', 'REPORTER_WORKER_PASSWORD'/);
+  } finally {
+    if (previous === undefined) delete process.env.REPORTER_MEMORY_MODE;
+    else process.env.REPORTER_MEMORY_MODE = previous;
+  }
+});
+
 test("Gemini is optional and its Google alias is normalized into the worker environment", async () => {
   assert.equal(config.functions.reporterworker.env.GEMINI_API_KEY, 'gemini-config-test-only');
   delete process.env.GEMINI_API_KEY;
