@@ -15,8 +15,8 @@ export function MemorySelections({ onOpen, refresh, cursor, onCursor }: { onOpen
   if (resource.error) return <ErrorState title="Não foi possível recuperar as seleções" description={resource.error} onRetry={cursor ? undefined : resource.reload}
     actions={cursor ? <Button onClick={() => onCursor(undefined)}>Atualizar seleções</Button> : undefined} />;
   if (!resource.data) return <Spinner label="Carregando seleções" />;
-  return <DataTable label="Seleções salvas" rows={resource.data.items} rowKey={item => item.id} rowLabel={item => `Seleção de ${item.items.length} evidências`} onRowClick={onOpen}
-    columns={[{ key: 'items', header: 'Seleção', pinned: true, render: item => `${item.items.length} evidências` },
+  return <DataTable label="Seleções salvas" rows={resource.data.items} rowKey={item => item.id} rowLabel={item => `Seleção de ${item.items.length} ${item.items.length === 1 ? 'evidência' : 'evidências'}`} onRowClick={onOpen}
+    columns={[{ key: 'items', header: 'Seleção', pinned: true, render: item => `${item.items.length} ${item.items.length === 1 ? 'evidência' : 'evidências'}` },
       { key: 'actor', header: 'Salva por', render: item => people.data?.find(person => person.id === item.updatedBy)?.name ?? 'Usuário do cliente' },
       { key: 'date', header: 'Atualização', render: item => new Date(item.updatedAt).toLocaleString('pt-BR') },
       { key: 'revision', header: 'Revisão', render: item => item.revision }]}

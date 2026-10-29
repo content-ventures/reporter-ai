@@ -2,7 +2,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { memoryAddressParams, readMemoryAddress, type MemoryAddress, type MemoryTab } from '@/domain/editorial-memory-address';
-import { Alert, Badge, Button, ButtonGroup, DataTable, EmptyState, ErrorState, FilterBar, PageHeader, PageStack, SearchField, Section, Select, Spinner, Tabs, toast } from '@content-ventures/design-system/v3';
+import { Alert, Badge, Button, ButtonGroup, DataTable, EmptyState, ErrorState, FilterBar, LiveRegion, PageHeader, PageStack, SearchField, Section, Select, Spinner, Tabs, toast } from '@content-ventures/design-system/v3';
 import { Plus, RotateCw } from '@content-ventures/design-system/v3/icons';
 import type { MemoryEvidenceChoice, MemoryMaterial, MemoryQuery, MemorySelection } from '@/domain/editorial-memory';
 import { captureMemoryChoice, memoryChoiceFromItem } from '@/domain/editorial-memory-discovery';
@@ -46,6 +46,7 @@ export function MemoryLibraryScreen() {
   const resource = useMemoryResource(load, 0, browsing && address.ok), page = resource.data;
   const reset = () => { changeQuery({}); resource.reload(); setMaterialsRefresh(value => value + 1); setSelectionsRefresh(value => value + 1); setFeedbackRefresh(value => value + 1); setPolicyRefresh(value => value + 1); };
   return <PageStack>
+    <LiveRegion message={browsing && page && !resource.error ? `${page.total} ${page.total === 1 ? 'evidência encontrada' : 'evidências encontradas'}. ${page.items.length} nesta página.` : ''} />
     <PageHeader title="Banco de citações e estatísticas" actions={<>{canEdit && <Button icon={Plus} onClick={() => setImporting(true)}>Importar material</Button>}<Button variant="secondary" icon={RotateCw} onClick={reset}>Atualizar</Button></>} />
     <FilterBar filters={browsing} filtersOpen={filtersOpen && browsing} onFiltersOpenChange={setFiltersOpen} filterCount={Object.values(filters).filter(value => value !== undefined).length} tabs={<Tabs key={canAdmin ? 'administrator-tabs' : 'member-tabs'} label="Conteúdo do banco" value={tab} onChange={value => { if (value === 'feedback' || value === 'policy') navigate({ tab: value, query: {} }); else changeQuery({}, value as MemoryTab); }} items={[{ value: 'all', label: 'Todas' }, { value: 'citation', label: 'Citações' }, { value: 'statistic', label: 'Estatísticas' }, { value: 'materials', label: 'Materiais' }, { value: 'selections', label: 'Seleções' }, { value: 'feedback', label: 'Feedback' }, ...(canAdmin ? [{ value: 'policy', label: 'Política' }] : [])]} />}
       search={browsing ? <SearchField label="Buscar evidências" value={query} onValueChange={value => { changeQuery({ query: value }); }} /> : undefined}
@@ -79,7 +80,7 @@ export function MemoryLibraryScreen() {
           setCursors(current => { const index = current.indexOf(cursor); return [...(index < 0 ? [undefined, cursor] : current.slice(0, index + 1)), page.nextCursor!]; });
           navigate({ tab, query: { ...input, cursor: page.nextCursor! } }, true);
         }}>Próxima</Button></ButtonGroup>} />}
-      {selected.length > 0 && <Section title={`${selected.length} evidências selecionadas`} action={<ButtonGroup label="Ações"><Button variant="secondary" onClick={() => { setSelected([]); setSelection(undefined); }}>Limpar seleção</Button><Button onClick={() => setSelectionOpen(true)}>Organizar e escrever</Button></ButtonGroup>} />}
+      {selected.length > 0 && <Section title={`${selected.length} ${selected.length === 1 ? 'evidência selecionada' : 'evidências selecionadas'}`} action={<ButtonGroup label="Ações"><Button variant="secondary" onClick={() => { setSelected([]); setSelection(undefined); }}>Limpar seleção</Button><Button onClick={() => setSelectionOpen(true)}>Organizar e escrever</Button></ButtonGroup>} />}
     </>}
     {resource.port && <MemoryImportDialog port={resource.port} open={importing} onClose={() => setImporting(false)} onImported={id => { setImporting(false); setMaterialId(id); changeQuery({}, 'materials'); setMaterialsRefresh(value => value + 1); setSelectionsRefresh(value => value + 1); toast('Material importado'); }} />}
     {materialId && <MemoryMaterialDrawer key={materialId} id={materialId} open={materialOpen} onClose={() => setMaterialOpen(false)} onImpact={() => openImpact({ kind: 'material', id: materialId })} onEvidence={item => { setMaterial(item); setMaterialOpen(false); setEvidenceOpen(false); changeQuery({ materialId: item.id }, 'all'); }} />}

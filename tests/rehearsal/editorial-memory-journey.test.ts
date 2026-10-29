@@ -90,6 +90,7 @@ test('two imported materials reach orchestrated writing, separate approval and a
   definition.writing.enabled = true; definition.writing.minimumQuotes = 2;
   const view = await api<{ active: { revision: number } }>('pipeline'); await rpc('pipeline.save', [definition, view.active.revision], 2);
   const actor = (await snapshot()).state.sessionPersonId;
+  await ui?.probeImportEntry();
   const materials: { material: MemoryMaterial; job: MemoryJob; text: string; kind: 'statistic' | 'citation' }[] = [];
   for (const kind of ['statistic', 'citation'] as const) {
     const text = passages.filter(passage => passage.kind === kind).map(passage => passage.text).join('\n\n') + '\n\nPRIVATE_UNSELECTED_ARCHIVE_SENTINEL';
@@ -98,6 +99,7 @@ test('two imported materials reach orchestrated writing, separate approval and a
     const imported = ui ? await ui.import(input) : await api<{ material: MemoryMaterial; job: MemoryJob }>('memory/materials', input); materials.push({ ...imported, text, kind });
   }
   let extractionCalls = 0;
+  const extract = async () => {
   for (let turn = 0; turn < 12; turn++) {
     const jobs = await Promise.all(materials.map(material => api<MemoryJob>(`memory/jobs/${material.job.id}`)));
     if (jobs.every(job => job.status === 'completed')) break;
@@ -112,6 +114,8 @@ test('two imported materials reach orchestrated writing, separate approval and a
       return { value: { overflow: false, evidence }, model: claim.job.model!, provider: 'synthetic', provider_request_id: null, usage_unit: 'tokens', input_units: 0, output_units: 0 };
     }), true);
   }
+  };
+  if (ui) await ui.observeExtraction(materials[0].material, materials[0].job, extract); else await extract();
   assert.ok(extractionCalls >= 4);
   let evidence = (await api<MemoryPage<MemoryEvidenceView>>('memory?limit=100')).items;
   assert.equal(evidence.length, 4); assert.equal((await snapshot()).state.productions.length, 0, 'intake/extraction needs no article');
