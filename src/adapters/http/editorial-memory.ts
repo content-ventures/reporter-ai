@@ -1,5 +1,6 @@
 import type { MemoryLibrary } from '../../ports/editorial-memory.ts';
-import { reporterResponse, type ReporterTransport } from './reporter-client.ts';
+import { reporterResponse, ReporterHttpError, type ReporterTransport } from './reporter-client.ts';
+import { committedCommand } from './committed-command.ts';
 
 function parameters(input: object): string {
   const params = new URLSearchParams();
@@ -9,11 +10,16 @@ function parameters(input: object): string {
   }
   const query = params.toString(); return query ? `?${query}` : '';
 }
-export function createHttpMemoryLibrary(http: ReporterTransport): MemoryLibrary {
+export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () => Promise<void> = async () => {}): MemoryLibrary {
   const id = encodeURIComponent;
-  const command = async <T>(path: string, input: unknown, requestId: string): Promise<T> => reporterResponse<T>(await http.fetch(`/memory/${path}`, {
+  const command = <T>(path: string, input: unknown, requestId: string): Promise<T> => committedCommand(async () => reporterResponse<T>(await http.fetch(`/memory/${path}`, {
     method: 'POST', cache: 'no-store', headers: { 'x-reporter-client': 'local', 'content-type': 'application/json', 'idempotency-key': requestId }, body: JSON.stringify(input),
-  }));
+  })), afterWrite).catch(async error => {
+    if (error instanceof ReporterHttpError && error.code === 'MEMORY_CONFLICT') {
+      try { await afterWrite(); } catch { /* Preserve the original conflict; normal polling can recover the projection. */ }
+    }
+    throw error;
+  });
   return {
     query: input => http.request(`/memory${parameters(input)}`), detail: evidence => http.request(`/memory/${id(evidence)}`),
     history: (evidence, kind, input) => http.request(`/memory/${id(evidence)}/history/${kind}${parameters(input)}`),

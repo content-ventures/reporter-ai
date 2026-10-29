@@ -43,3 +43,24 @@ test('library commands keep the bound workspace, account and request identity wh
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });
+
+test('a bank command awaits the committed workspace projection and never resubmits after projection failure', async () => {
+  const previous = globalThis.fetch, readStarted = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  let writes = 0, reads = 0, failProjection = false, settled = false, refuse = 0;
+  globalThis.fetch = async () => { writes++; return refuse ? Response.json({ error: refuse === 409 ? 'MEMORY_CONFLICT' : 'FORBIDDEN', message: 'Refused' }, { status: refuse }) : Response.json({ committed: true }); };
+  const http = createReporterTransport('editorial-client');
+  const library = createHttpMemoryLibrary(http, async () => { reads++; readStarted.resolve(); if (failProjection) throw new Error('Projection unavailable'); await release.promise; });
+  const input = { target: { productionId: 'pauta', updatedAt: '2026-10-29T01:00:00Z', draftRevision: 1 },
+    expected: { kind: 'source-version' as const, sourceId: 'collection', sourceVersion: 1, hash: '0123456789abcdef' }, selection: null, updateDraftReferences: false, reason: 'Explicit retirement.' };
+  try {
+    const pending = library.refreshSource('collection', input, 'same-request-key').then(value => { settled = true; return value; });
+    await readStarted.promise; assert.equal(settled, false); assert.equal(writes, 1);
+    release.resolve(); assert.deepEqual(await pending, { committed: true }); assert.equal(reads, 1);
+    failProjection = true; assert.deepEqual(await library.refreshSource('collection', input, 'another-request-key'), { committed: true });
+    assert.equal(writes, 2); assert.equal(reads, 2);
+    refuse = 403; await assert.rejects(library.refreshSource('collection', input, 'refused-request-key'));
+    assert.equal(writes, 3); assert.equal(reads, 2, 'an authorization refusal does not refresh or report a commit');
+    refuse = 409; await assert.rejects(library.refreshSource('collection', input, 'conflicting-request-key'), error => (error as { code: string }).code === 'MEMORY_CONFLICT');
+    assert.equal(writes, 4); assert.equal(reads, 3, 'a source conflict reconciles newer state without resubmission, even when the read fails');
+  } finally { release.resolve(); http.dispose(); globalThis.fetch = previous; }
+});
