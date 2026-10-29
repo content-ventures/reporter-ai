@@ -137,7 +137,8 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
         current = { ...merged.workspace,syncToken: snapshot.syncToken,workerOnline: snapshot.workerOnline,stalled: snapshot.stalled };
         engineCheckpoint.imageAssets = current.imageAssets;
         assets.adoptSnapshot();
-        if (merged.productionIds.length) ports.store.transact(() => ok({ state: current.state,value: undefined,persist: 'none',scope: 'external',productionIds: merged.productionIds }));
+        // Membership, people and sources can change without touching a production row.
+        ports.store.transact(() => ok({ state: current.state,value: undefined,persist: 'none',scope: 'external',productionIds: merged.productionIds }));
         generation.accept(current);
         return;
       }
