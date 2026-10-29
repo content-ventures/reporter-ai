@@ -280,7 +280,10 @@ test('two imported materials reach orchestrated writing, separate approval and a
   assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
   const prior = observations.find(row => row.evidence.anchor.excerpt.includes('240'))!.evidence;
   const replacement = observations.find(row => row.evidence.anchor.excerpt.includes('241'))!.evidence;
-  const linked = await api<MemoryReplacementResult>(`memory/${prior.id}/replacement`, { expected: memoryEvidenceRef(prior), replacement: memoryEvidenceRef(replacement), reason: 'Synthetic updated statistic from the corrected original.' });
+  const replacementReason = 'Synthetic updated statistic from the corrected original.';
+  const linked = ui ? await ui.replaceObservation(prior, replacement, replacementReason, () => api(`memory/${replacement.id}/correction`, {
+    expected: memoryEvidenceRef(replacement), reason: 'Synthetic competing replacement metadata edit.', changes: { kind: 'statistic', metadata: { event: 'Synthetic concurrent clarification' } },
+  }, 2)) : await api<MemoryReplacementResult>(`memory/${prior.id}/replacement`, { expected: memoryEvidenceRef(prior), replacement: memoryEvidenceRef(replacement), reason: replacementReason });
   assert.equal(linked.previous.evidence.status, 'superseded'); assert.equal(linked.current.eligibility.usable, false);
   const comparison = await api<MemoryReplacementComparison>(`memory/replacements/${linked.relation.id}`);
   assert.equal(comparison.previous.anchor.source.sourceVersion, 1); assert.equal(comparison.current.anchor.source.sourceVersion, 2);
