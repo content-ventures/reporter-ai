@@ -65,6 +65,8 @@ test('original uploads retain exact bytes and independent receipts; downloads re
       metadata: { company: null, edition: null, event: null, institution: null, originalUrl: null, publishedOn: null, recordedOn: null, topics: [] } }, 'stable-import-request');
     assert.equal(refreshes, 1); assert.ok(calls.at(-1)!.path.endsWith('/materials/from-file'));
     assert.equal(new Headers(calls.at(-1)!.init.headers).get('idempotency-key'), 'stable-import-request');
+    assert.equal((await library.originalFile('original/encoded')).name, input.name);
+    assert.ok(calls.at(-1)!.path.endsWith('/originals/original%2Fencoded'));
     const downloaded = await library.downloadOriginal('original/encoded');
     assert.equal(downloaded.name, input.name); assert.deepEqual(Buffer.from(downloaded.href.split(',')[1], 'base64'), bytes);
     assert.ok(calls.at(-2)!.path.endsWith('/originals/original%2Fencoded')); assert.ok(calls.at(-1)!.path.endsWith('/originals/original%2Fencoded/file'));

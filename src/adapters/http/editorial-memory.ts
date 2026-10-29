@@ -38,6 +38,7 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     replacement: relation => http.request(`/memory/replacements/${id(relation)}`),
     import: (input, key) => command('materials', input, key), job: job => http.request(`/memory/jobs/${id(job)}`),
     uploadOriginal: (input, key) => command('originals', { ...input, bytes: base64(input.bytes) }, key, false),
+    originalFile: original => http.request(`/memory/originals/${id(original)}`),
     importFile: (input, key) => command('materials/from-file', input, key),
     async downloadOriginal(original) {
       const file = await http.request<MemoryOriginalFile>(`/memory/originals/${id(original)}`);
