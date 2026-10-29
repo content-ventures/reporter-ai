@@ -7,6 +7,7 @@ import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import { blockText, type ArticleBody } from '../../src/domain/article.ts';
 import type { MemoryCalibrationCase } from '../../src/domain/editorial-memory-calibration.ts';
 import { annotateMemoryPolicyCase, inspectMemoryPolicyLifecycle, reapplyMemoryPolicy } from './editorial-memory-policy-browser.ts';
+import { inspectMemoryCollectionPages } from './editorial-memory-collections-browser.ts';
 
 /** Real product UI and handlers, with a test-only authenticated identity adapter. */
 export async function createMemoryJourneyBrowser(base: string, width: number, dispatch: (request: Request, actor: number) => Promise<Response>) {
@@ -47,6 +48,13 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
   }
   const editor = await pageFor(0);
   return {
+    async collectionPages() {
+      for (const kind of ['materials', 'selections'] as const) {
+        const params = new URLSearchParams(kind === 'materials' ? { limit: '25', cursor: 'invalid-collection-cursor' } : { cursor: 'invalid-collection-cursor', limit: '25' });
+        expectedConflictConsole.set(`${base}/api/reporter/w/reporter-ai/memory/${kind}?${params}`, 1);
+        await inspectMemoryCollectionPages(editor, base, kind, audit);
+      }
+    },
     annotateCalibration: (excerpt: string) => annotateMemoryPolicyCase(editor, base, excerpt, audit),
     async policyLifecycle(item: MemoryCalibrationCase) { return inspectMemoryPolicyLifecycle(await pageFor(2), editor, base, item, audit); },
     async reapplyPolicy(evidence: MemoryEvidence, checkedAt: string, compete: () => Promise<MemoryPolicy>) {

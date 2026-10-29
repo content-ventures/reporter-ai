@@ -345,4 +345,15 @@ test('two imported materials reach orchestrated writing, separate approval and a
   assert.equal(reevaluated.policyEvaluation!.personId, (await snapshot()).state.sessionPersonId); assert.equal((await api<MemoryDetail>(`memory/${replacement.id}`)).eligibility.usable, false);
   assert.deepEqual(await record(made.productionId), beforePolicy, 'recalculating a current proof never changes any article, source, draft or frozen version');
   for (const item of selected.items) assert.equal((await api<MemoryDetail>(`memory/${item.evidence.id}`)).checkState, 'outdated');
+  if (ui) {
+    const current = await api<MemoryDetail>(`memory/${replacement.id}`);
+    await api(`memory/${replacement.id}/review`, { evidence: memoryEvidenceRef(current.evidence), check: { id: current.check!.id, revision: current.check!.revision },
+      policyRevision: current.policy.revision, previousSequence: current.decision?.sequence ?? 0, action: 'accept', supports: [], reason: 'Synthetic pagination fixture, independently reviewed after policy reassessment.' });
+    for (let index = 0; index < 26; index++) {
+      await api('memory/materials', { title: `Synthetic pagination document ${index}`, kind: 'archive', text: `Synthetic pagination document ${index}; technical input only, not an actual historical source.`, authorized: false, metadata, primaryOrigin: `synthetic-pagination-${index}`, originalFileId: null });
+      await api('memory/selections', { baseRevision: 0, productionId: null, evidence: [memoryEvidenceRef(current.evidence)] });
+    }
+    await ui.collectionPages();
+    assert.deepEqual(await record(made.productionId), beforePolicy, 'collection pagination and independent evidence review never modify an approved production');
+  }
 });
