@@ -6,7 +6,7 @@ import { Alert, Badge, Button, ButtonGroup, DataTable, EmptyState, ErrorState, F
 import { Plus, RotateCw } from '@content-ventures/design-system/v3/icons';
 import type { MemoryEvidenceChoice, MemoryMaterial, MemoryQuery, MemorySelection } from '@/domain/editorial-memory';
 import { captureMemoryChoice, memoryChoiceFromItem } from '@/domain/editorial-memory-discovery';
-import type { MemoryLibrary } from '@/ports/editorial-memory';
+import type { MemoryImpactScope, MemoryLibrary } from '@/ports/editorial-memory';
 import { useCan, usePeople } from '@/state';
 import { useMemoryResource } from '@/state/use-memory-library';
 import { ELIGIBILITY_LABELS, MemoryEvidenceDrawer } from './memory-evidence-detail';
@@ -14,6 +14,7 @@ import { MemoryFilters } from './memory-filters';
 import { MemoryImportDialog, MemoryMaterialDrawer, MemoryMaterials } from './memory-materials';
 import { MemorySelectionDialog } from './memory-selection-dialog';
 import { MemorySelections } from './memory-selections';
+import { MemoryImpactDrawer } from './memory-impact-drawer';
 
 export function MemoryLibraryScreen() {
   const search = useSearchParams().toString();
@@ -30,6 +31,8 @@ export function MemoryLibraryScreen() {
   const changeQuery = (patch: MemoryQuery, nextTab: MemoryTab = tab) => { setCursors([undefined]); navigate({ tab: nextTab, query: { ...input, ...patch, cursor: undefined } }); };
   const [material, setMaterial] = useState<MemoryMaterial>(), [materialId, setMaterialId] = useState<string>(), [evidenceId, setEvidenceId] = useState<string>(), [importing, setImporting] = useState(false);
   const [materialOpen, setMaterialOpen] = useState(false), [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [impact, setImpact] = useState<MemoryImpactScope>(), [impactOpen, setImpactOpen] = useState(false);
+  const openImpact = (scope: MemoryImpactScope) => { setImpact(scope); setImpactOpen(true); };
   const [selected, setSelected] = useState<MemoryEvidenceChoice[]>([]), [selection, setSelection] = useState<MemorySelection>(), [selectionOpen, setSelectionOpen] = useState(false), [error, setError] = useState<string>();
   const [selectionsRefresh, setSelectionsRefresh] = useState(0);
   const people = usePeople(), canEdit = useCan('library.edit'), browsing = tab !== 'materials' && tab !== 'selections';
@@ -71,8 +74,9 @@ export function MemoryLibraryScreen() {
       {selected.length > 0 && <Section title={`${selected.length} evidências selecionadas`} action={<ButtonGroup label="Ações"><Button variant="secondary" onClick={() => { setSelected([]); setSelection(undefined); }}>Limpar seleção</Button><Button onClick={() => setSelectionOpen(true)}>Organizar e escrever</Button></ButtonGroup>} />}
     </>}
     {resource.port && <MemoryImportDialog port={resource.port} open={importing} onClose={() => setImporting(false)} onImported={id => { setImporting(false); setMaterialId(id); changeQuery({}, 'materials'); setSelectionsRefresh(value => value + 1); toast('Material importado'); }} />}
-    {materialId && <MemoryMaterialDrawer key={materialId} id={materialId} open={materialOpen} onClose={() => setMaterialOpen(false)} onEvidence={item => { setMaterial(item); setMaterialOpen(false); setEvidenceOpen(false); changeQuery({ materialId: item.id }, 'all'); }} />}
-    {evidenceId && <MemoryEvidenceDrawer key={evidenceId} id={evidenceId} open={evidenceOpen} onClose={() => setEvidenceOpen(false)} onChanged={resource.reload} onMaterial={item => { setMaterialId(item.id); setMaterialOpen(true); }} />}
+    {materialId && <MemoryMaterialDrawer key={materialId} id={materialId} open={materialOpen} onClose={() => setMaterialOpen(false)} onImpact={() => openImpact({ kind: 'material', id: materialId })} onEvidence={item => { setMaterial(item); setMaterialOpen(false); setEvidenceOpen(false); changeQuery({ materialId: item.id }, 'all'); }} />}
+    {evidenceId && <MemoryEvidenceDrawer key={evidenceId} id={evidenceId} open={evidenceOpen} onClose={() => setEvidenceOpen(false)} onChanged={resource.reload} onImpact={() => openImpact({ kind: 'evidence', id: evidenceId })} onMaterial={item => { setMaterialId(item.id); setMaterialOpen(true); }} />}
+    {impact && <MemoryImpactDrawer key={`${impact.kind}:${impact.id}`} scope={impact} open={impactOpen} onClose={() => setImpactOpen(false)} onSelection={value => { setSelection(value); setSelected(value.items.map(memoryChoiceFromItem)); setSelectionOpen(true); }} />}
     <MemorySelectionDialog open={selectionOpen} evidence={selected} selection={selection} onClose={() => setSelectionOpen(false)} onChange={setSelected} onSaved={value => { setSelection(value); setSelected(value.items.map(memoryChoiceFromItem)); setSelectionsRefresh(current => current + 1); }} />
   </PageStack>;
 }

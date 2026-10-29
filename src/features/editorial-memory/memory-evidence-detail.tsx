@@ -15,11 +15,11 @@ export const ELIGIBILITY_LABELS = { ready: 'Disponível para uso', source_unavai
 const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar', reject: 'Rejeitar', request_revision: 'Solicitar revisão' };
 const HISTORY_LABELS: Record<MemoryHistoryKind, string> = { checks: 'Checagens', decisions: 'Decisões', revisions: 'Revisões', occurrences: 'Ocorrências' };
 const USE_LABELS: Record<MemoryUseStage, string> = { selected: 'Selecionada', inserted: 'Inserida no rascunho', approved: 'Aprovada', published: 'Publicada' };
-export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial }: { id: string; open: boolean; onClose: () => void; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void }) {
+export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial, onImpact }: { id: string; open: boolean; onClose: () => void; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onImpact: () => void }) {
   const load = useCallback((port: MemoryLibrary) => port.detail(id), [id]), resource = useMemoryResource(load, 2500, open);
   const [reading, setReading] = useState<MemoryVersionUse>(), [readingOpen, setReadingOpen] = useState(false);
   const readVersion = useCallback((occurrence: MemoryVersionUse) => { setReading(occurrence); setReadingOpen(true); }, []);
-  return <><Drawer open={open} size="lg" title="Evidência" onClose={() => { setReadingOpen(false); onClose(); }}>
+  return <><Drawer open={open} size="lg" title="Evidência" actions={<Button variant="secondary" size="sm" onClick={onImpact}>Ver impacto</Button>} onClose={() => { setReadingOpen(false); onClose(); }}>
     {resource.error ? <ErrorState title="Não foi possível abrir a evidência" description={resource.error} onRetry={resource.reload} /> : !resource.data || !resource.port ? <Spinner label="Carregando evidência" /> :
       <EvidenceContent key={`${id}:${resource.data.evidence.revision}:${resource.data.check?.revision ?? 0}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onReadVersion={readVersion} onChanged={() => { resource.reload(); onChanged(); }} />}
   </Drawer>

@@ -44,6 +44,43 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
   }
   const editor = await pageFor(0);
   return {
+    async inspectImpact(material: MemoryMaterial, excerpt: string, productionId: string, title: string, count: number, selectionRevision: number) {
+      console.info('memory UI correction impact', width);
+      await editor.goto(`${base}/w/reporter-ai/quotes?bankView=materials`);
+      await editor.getByRole('row', { name: material.title, exact: true }).click();
+      const original = editor.getByRole('dialog', { name: material.title, exact: true });
+      const trigger = original.getByRole('button', { name: 'Ver impacto da correção', exact: true }); await trigger.click();
+      const impact = editor.getByRole('dialog', { name: 'Impacto da correção', exact: true });
+      const table = impact.getByRole('table', { name: 'Destinos afetados', exact: true });
+      const production = table.getByRole('row', { name: title, exact: true });
+      const selection = table.getByRole('row', { name: `Seleção de 4 evidências · revisão ${selectionRevision}`, exact: true });
+      await expect(production.getByRole('cell').nth(2)).toHaveText(String(count));
+      await expect(production.getByRole('cell').nth(3)).toHaveText(String(count));
+      await expect(selection.getByRole('cell').nth(2)).toHaveText(String(count));
+      await expect(impact.getByRole('button', { name: 'Próxima', exact: true })).toBeDisabled();
+      await audit(editor, 'impact-material');
+      await selection.focus(); await editor.keyboard.press('Enter');
+      const review = editor.getByRole('dialog', { name: 'Escrever com a seleção', exact: true });
+      await expect(review.getByText('Há evidências com nova revisão', { exact: true })).toBeVisible();
+      await expect(review.getByRole('list', { name: 'Ordem das evidências' }).getByRole('listitem')).toHaveCount(4);
+      await expect(review.getByRole('button', { name: 'Salvar seleção', exact: true })).toBeDisabled();
+      await audit(editor, 'impact-selection');
+      await review.getByRole('button', { name: 'Fechar', exact: true }).filter({ hasText: /^Fechar$/ }).click();
+      await expect(review).toBeHidden(); await expect(impact).toBeVisible(); await expect(selection).toBeFocused();
+      await editor.keyboard.press('Escape'); await editor.keyboard.press('Escape');
+      await expect(impact).toBeHidden(); await expect(original).toBeVisible(); await expect(trigger).toBeFocused();
+      await trigger.click(); await production.click();
+      await editor.waitForURL(url => url.pathname.endsWith(`/productions/${productionId}/article`));
+      await expect(editor.getByRole('textbox', { name: 'Texto do artigo', exact: true })).toBeVisible(); await audit(editor, 'impact-production');
+      await editor.goto(`${base}/w/reporter-ai/quotes?bankView=statistic&q=240`);
+      await editor.getByRole('row', { name: excerpt.slice(0, 80), exact: true }).click();
+      const evidence = editor.getByRole('dialog', { name: 'Evidência', exact: true });
+      const evidenceTrigger = evidence.getByRole('button', { name: 'Ver impacto', exact: true }); await evidenceTrigger.click();
+      await expect(production.getByRole('cell').nth(2)).toHaveText('1'); await expect(production.getByRole('cell').nth(3)).toHaveText('1');
+      await expect(selection.getByRole('cell').nth(2)).toHaveText('1'); await audit(editor, 'impact-evidence');
+      await editor.keyboard.press('Escape'); await editor.keyboard.press('Escape');
+      await expect(impact).toBeHidden(); await expect(evidence).toBeVisible(); await expect(evidenceTrigger).toBeFocused();
+    },
     async reviseOriginal(material: MemoryMaterial, original: string, corrected: string, reason: string, competing?: { text: string; run: () => Promise<MemoryMaterialRevisionResult> }): Promise<MemoryMaterialRevisionResult> {
       console.info('memory UI original revision', width, Boolean(competing));
       await editor.goto(`${base}/w/reporter-ai/quotes?bankView=materials`);

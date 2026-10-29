@@ -65,7 +65,7 @@ export function MemoryMaterials({ onOpen }: { onOpen: (id: string) => void }) {
     footer={<ButtonGroup label="Ações"><Button variant="secondary" disabled={cursors.length === 1} onClick={() => setCursors(current => current.slice(0, -1))}>Anterior</Button>
       <Button variant="secondary" disabled={!resource.data.nextCursor} onClick={() => setCursors(current => [...current, resource.data!.nextCursor!])}>Próxima</Button></ButtonGroup>} />;
 }
-export function MemoryMaterialDrawer({ id, open, onClose, onEvidence }: { id: string; open: boolean; onClose: () => void; onEvidence: (material: MemoryMaterial) => void }) {
+export function MemoryMaterialDrawer({ id, open, onClose, onEvidence, onImpact }: { id: string; open: boolean; onClose: () => void; onEvidence: (material: MemoryMaterial) => void; onImpact: () => void }) {
   const session = useSession().data;
   const [historical, setHistorical] = useState<number>(), [latestKnown, setLatestKnown] = useState<number>();
   const [editing, setEditing] = useState<MaterialRevisionBasis>(), [editingOpen, setEditingOpen] = useState(false);
@@ -108,6 +108,7 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence }: { id: st
           ...(detail.source.versions[0].note ? [{ label: 'Motivo da versão', value: detail.source.versions[0].note }] : [])]} />
         <Textarea aria-label="Texto original preservado" readOnly rows={18} value={detail.source.versions[0]?.content.segments.map(segment => segment.text).join('\n') ?? ''} />
         <ButtonGroup label="Histórico do material">
+          <Button variant="secondary" onClick={onImpact}>Ver impacto da correção</Button>
           <Button variant="secondary" disabled={busy || detail.material.revision <= 1} onClick={() => { if (historical === undefined) setLatestKnown(detail.material.revision); setHistorical(detail.material.revision - 1); }}>Versão anterior</Button>
           <Button variant="secondary" disabled={busy || historical === undefined || historical >= (latestKnown ?? 0)} onClick={() => setHistorical(historical! + 1 === latestKnown ? undefined : historical! + 1)}>Próxima versão</Button>
           {historical !== undefined && <Button variant="ghost" onClick={() => setHistorical(undefined)}>Ver versão atual</Button>}
