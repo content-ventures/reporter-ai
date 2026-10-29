@@ -5,19 +5,19 @@ import { Button, EmptyState, ErrorState, FieldGroup, Section, Select, Transcript
 import { MessageSquareText, Quote } from '@content-ventures/design-system/v3/icons';
 import { useStudio } from './studio-context';
 import { quotedSegmentIds, sourceSegmentIds } from './studio-model';
-import { MemorySourceRefreshDialog, type MemoryRefreshBasis } from '@/features/editorial-memory/memory-source-refresh-dialog';
+import type { MemoryRefreshBasis } from '@/features/editorial-memory/memory-source-refresh-dialog';
 import { useCan } from '@/state';
 import { useMemoryLibrary } from '@/state/use-memory-library';
 
 /** The pane header owns the controls, leaving the transcript its remaining scroll height. */
-export function MaterialSourcePicker() {
+export function MaterialSourcePicker({ onRefresh }: { onRefresh: (basis: MemoryRefreshBasis) => void }) {
   const studio = useStudio(), { production, source, sourceDetails, sourceSelection, showSource } = studio;
-  const port = useMemoryLibrary(), canEdit = useCan('library.edit'), [basis, setBasis] = useState<MemoryRefreshBasis>(), [preparing, setPreparing] = useState(false);
+  const port = useMemoryLibrary(), canEdit = useCan('library.edit'), [preparing, setPreparing] = useState(false);
   if (!production.sources.length) return null;
   if (production.sources.length === 1 && source && source.source.versions.length === 1 && !source.source.memory) return null;
   const selected = source?.source.id ?? sourceSelection?.sourceId ?? production.sources[0]?.id ?? '';
   return (
-    <><Section variant="band">
+    <Section variant="band">
       <FieldGroup label="Material">
         <Select label="Fonte do material" searchable={production.sources.length > 5} loading={!sourceDetails} disabled={preparing}
           value={selected} options={production.sources.map((entry, index) => ({ value: entry.id, label: entry.title, description: `Fonte ${index + 1} · versão ${entry.version}` }))}
@@ -31,11 +31,11 @@ export function MaterialSourcePicker() {
           try {
             const saved = await studio.actions.prepareSourceRefresh();
             if (!saved || !port) { toast('Confira o salvamento do rascunho antes de continuar.'); return; }
-            setBasis({ source: source.source, target: { productionId: production.id, updatedAt: production.production.updatedAt, draftRevision: saved.baseRevision }, port });
+            onRefresh({ source: source.source, target: { productionId: production.id, updatedAt: production.production.updatedAt, draftRevision: saved.baseRevision }, port });
           } finally { setPreparing(false); }
         }}>{source.version.number !== source.summary.version ? 'Ver versão atual' : source.summary.retired ? 'Reativar fonte' : 'Atualizar fonte'}</Button>}
       </FieldGroup>
-    </Section>{basis && <MemorySourceRefreshDialog basis={basis} writable={!studio.readOnly && !studio.locked && production.activeRuns.length === 0} onClose={() => setBasis(undefined)} onDone={result => { setBasis(undefined); showSource(result.source); studio.bankReadiness.retry(); }} />}</>
+    </Section>
   );
 }
 
