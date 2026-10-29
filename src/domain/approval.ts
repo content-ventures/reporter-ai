@@ -1,7 +1,7 @@
 import type { CheckResult } from './checks.ts';
 import type { ReviewRequest } from './decision.ts';
 import type { CheckId, IsoDateTime, PieceId, SlideId, SuggestionId } from './ids.ts';
-import { bodyHash } from './piece.ts';
+import { draftMatchesVersion } from './piece.ts';
 import type { PieceKind } from './piece.ts';
 import { findPiece, latestApproved, pendingReview, pieceDecisions } from './record.ts';
 import type { ProductionRecord } from './record.ts';
@@ -29,7 +29,7 @@ export function approvalStateOf(record: ProductionRecord, pieceId: PieceId): App
   const piece = findPiece(record, pieceId);
   if (!approved || !piece) return 'none';
   // Editing after approval keeps the approval (carousel and delivery use it) but asks to resend.
-  return bodyHash(piece.draft.body) === approved.version.hash ? 'approved' : 'approval_outdated';
+  return draftMatchesVersion(piece.draft, approved.version) ? 'approved' : 'approval_outdated';
 }
 
 /** The text is locked while a request waits for a decision ("Retirar envio para editar", D8). */

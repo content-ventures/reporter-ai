@@ -28,7 +28,12 @@ export function validateMemoryWritingSources(sources: Source[], items: MemoryWri
     const ref = refs.find(ref => ref.sourceId === source.id); if (!ref) continue;
     const version = source.versions.find(version => version.number === ref.sourceVersion && version.hash === ref.hash);
     const receipt = source.memory.find(receipt => receipt.version.number === version?.number && receipt.version.hash === version?.hash);
-    if (!source.rights.authorized || !receipt || !version || sourceContentHash(version.content) !== ref.hash) return refuse('memory_source_changed', 'A fonte do banco mudou ou perdeu a autorização. Confira a seleção.');
+    if (!receipt || !version || sourceContentHash(version.content) !== ref.hash) return refuse('memory_source_changed', 'A fonte do banco mudou ou perdeu a autorização. Confira a seleção.');
+    if (receipt.retired) {
+      if (receipt.items.length || version.content.segments.length) return refuse('memory_source_changed', 'Confira a retirada da fonte antes de continuar.');
+      continue;
+    }
+    if (!source.rights.authorized || !receipt.items.length) return refuse('memory_source_changed', 'A fonte do banco mudou ou perdeu a autorização. Confira a seleção.');
     if (receipt.items.some(binding => !currentItem(binding, items, source.workspaceId))) return refuse('memory_review_changed', 'Há evidências do banco que precisam de uma seleção atualizada antes de escrever.');
   }
   return ok(undefined);

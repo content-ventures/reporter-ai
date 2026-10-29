@@ -109,6 +109,8 @@ export type MemorySelection = {
 /** A writing source exposes selected excerpts, never a private material's complete original. */
 export type MemorySourceBinding = {
   selection: { id: string; revision: number }; version: { number: number; hash: string };
+  /** An explicit empty latest version excludes this collection from future writing only. */
+  retired?: true;
   items: { segmentId: string; materialId: string; kind: MemoryEvidence['kind']; anchor: MemoryAnchor;
     selected: MemorySelection['items'][number]; metadata: MemoryMetadata }[];
 };
