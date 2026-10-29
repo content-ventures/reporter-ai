@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Badge, Button, ButtonGroup, Checkbox, DataTable, DescriptionList, Drawer, EmptyState, ErrorState, Field, FieldGroup, Input, Panel, Progress, ResponsiveDialog, Section, Select, Spinner, Textarea, toast } from '@content-ventures/design-system/v3';
 import type { MemoryMaterial, MemoryMetadata } from '@/domain/editorial-memory';
 import type { MemoryLibrary, MemoryImportInput, MemoryJob } from '@/ports/editorial-memory';
@@ -49,11 +49,14 @@ export function MemoryImportDialog({ port, open, onClose, onImported }: { port: 
     </Section>
   </ResponsiveDialog>;
 }
-export function MemoryMaterials({ onOpen }: { onOpen: (id: string) => void }) {
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]), cursor = cursors.at(-1);
+export function MemoryMaterials({ onOpen, cursor, onCursor, refresh }: { onOpen: (id: string) => void; cursor?: string; onCursor: (cursor?: string) => void; refresh: number }) {
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const load = useCallback((port: MemoryLibrary) => port.materials({ limit: 25, cursor }), [cursor]);
   const resource = useMemoryResource(load, 5000);
-  if (resource.error) return <ErrorState title="Não foi possível carregar os materiais" description={resource.error} onRetry={resource.reload} />;
+  const { reload } = resource;
+  useEffect(() => { reload(); }, [refresh, reload]);
+  if (resource.error) return <ErrorState title="Não foi possível carregar os materiais" description={resource.error} onRetry={cursor ? undefined : reload}
+    actions={cursor ? <Button onClick={() => onCursor(undefined)}>Atualizar materiais</Button> : undefined} />;
   if (!resource.data) return <Spinner label="Carregando materiais" />;
   return <DataTable label="Materiais" rows={resource.data.items} rowKey={material => material.id} rowLabel={material => material.title} onRowClick={material => onOpen(material.id)}
     columns={[{ key: 'title', header: 'Material', pinned: true, render: material => material.title },
@@ -62,8 +65,11 @@ export function MemoryMaterials({ onOpen }: { onOpen: (id: string) => void }) {
       { key: 'blocks', header: 'Blocos', render: material => material.job ? `${material.job.completedBlocks}/${material.job.totalBlocks}` : '—' },
       { key: 'evidence', header: 'Evidências', render: material => material.job?.evidenceCount ?? 0 }]}
     empty={<EmptyState title="Nenhum material importado" />}
-    footer={<ButtonGroup label="Ações"><Button variant="secondary" disabled={cursors.length === 1} onClick={() => setCursors(current => current.slice(0, -1))}>Anterior</Button>
-      <Button variant="secondary" disabled={!resource.data.nextCursor} onClick={() => setCursors(current => [...current, resource.data!.nextCursor!])}>Próxima</Button></ButtonGroup>} />;
+    footer={<ButtonGroup label="Páginas de materiais"><Button variant="secondary" disabled={!cursor} onClick={() => onCursor(cursors.indexOf(cursor) > 0 ? cursors[cursors.indexOf(cursor) - 1] : undefined)}>{cursors.indexOf(cursor) < 0 ? 'Primeira página' : 'Anterior'}</Button>
+      <Button variant="secondary" disabled={!resource.data.nextCursor} onClick={() => {
+        const next = resource.data!.nextCursor!;
+        setCursors(current => { const index = current.indexOf(cursor); return [...(index < 0 ? [undefined, cursor] : current.slice(0, index + 1)), next]; }); onCursor(next);
+      }}>Próxima</Button></ButtonGroup>} />;
 }
 export function MemoryMaterialDrawer({ id, open, onClose, onEvidence, onImpact }: { id: string; open: boolean; onClose: () => void; onEvidence: (material: MemoryMaterial) => void; onImpact: () => void }) {
   const session = useSession().data;
