@@ -74,6 +74,7 @@ export const LOCAL_INIT = Object.freeze([
   ['database/migrations/075-editorial-memory-batch-reconciliation.sql', '99-zp-editorial-memory-batch-reconciliation.sql'],
   ['database/migrations/076-editorial-memory-original-rebinding.sql', '99-zq-editorial-memory-original-rebinding.sql'],
   ['database/migrations/077-editorial-memory-batch-comparison.sql', '99-zr-editorial-memory-batch-comparison.sql'],
+  ['database/migrations/078-editorial-memory-impact-performance.sql', '99-zs-editorial-memory-impact-performance.sql'],
 ].map(entry => Object.freeze(entry)));
 
 // Replayed onto an existing local database by `pnpm db:flow`; every file is idempotent.
@@ -144,6 +145,7 @@ export const LOCAL_FLOW = Object.freeze([
   'database/migrations/075-editorial-memory-batch-reconciliation.sql',
   'database/migrations/076-editorial-memory-original-rebinding.sql',
   'database/migrations/077-editorial-memory-batch-comparison.sql',
+  'database/migrations/078-editorial-memory-impact-performance.sql',
 ]);
 
 // Neon. The first three files create the schema once; everything after them is replayable.
@@ -227,6 +229,7 @@ export const CLOUD = Object.freeze([
   'database/migrations/075-editorial-memory-batch-reconciliation.sql',
   'database/migrations/076-editorial-memory-original-rebinding.sql',
   'database/migrations/077-editorial-memory-batch-comparison.sql',
+  'database/migrations/078-editorial-memory-impact-performance.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 
@@ -261,4 +264,5 @@ export const LOCAL_CATALOG = Object.freeze([
   'database/migrations/075-editorial-memory-batch-reconciliation.sql',
   'database/migrations/076-editorial-memory-original-rebinding.sql',
   'database/migrations/077-editorial-memory-batch-comparison.sql',
+  'database/migrations/078-editorial-memory-impact-performance.sql',
 ]);
