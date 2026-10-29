@@ -11,6 +11,7 @@ const feedbackKind = z.enum(['correction', 'rejection', 'conflict_resolution', '
 export const memoryFeedbackQuerySchema = memoryHistoryQuerySchema.extend({ kind: feedbackKind.optional(), evidenceId: id.optional(), materialId: id.optional() });
 export const memoryHistoryBindingSchema = z.object({ resource: z.literal('history'), evidenceId: id, kind: memoryHistoryKindSchema, limit: z.number().int().min(1).max(100) }).strict();
 export const memoryResourceBindingSchema = z.discriminatedUnion('resource', [memoryHistoryBindingSchema,
+  z.object({ resource: z.literal('policy-records'), kind: z.enum(['case', 'proposal', 'version']), limit: z.number().int().min(1).max(100) }).strict(),
   z.object({ resource: z.literal('feedback'), kind: feedbackKind.optional(), evidenceId: id.optional(), materialId: id.optional(), limit: z.number().int().min(1).max(100) }).strict(),
   z.object({ resource: z.literal('correction-impact'), kind: z.enum(['material', 'evidence']), id, limit: z.number().int().min(1).max(100) }).strict(),
   z.object({ resource: z.literal('selections'), limit: z.number().int().min(1).max(100) }).strict(),
@@ -73,6 +74,18 @@ export const memoryDuplicateResolutionSchema = z.object({ expected: memoryEviden
   choice: z.enum(['keep_variant', 'use_curated']), reason: z.string().trim().min(1).max(2000) }).strict()
   .refine(value => value.expected.id !== value.canonical.id, 'Escolha registros diferentes.');
 export const memoryCheckRefSchema = z.object({ id, revision: z.number().int().positive() }).strict();
+export const memoryCalibrationCaseSchema = z.object({ evidence: memoryEvidenceRefSchema, check: memoryCheckRefSchema, purpose: z.enum(['technical', 'editorial']),
+  outcome: z.enum(['confirmed', 'contradicted', 'insufficient']), reason: z.string().trim().min(1).max(2000) }).strict();
+const threshold = z.number().min(0).max(100).nullable();
+export const memoryPolicyProposalSchema = z.object({ baseRevision: z.number().int().positive(),
+  settings: z.object({ mode: z.enum(['review_required', 'calibrated']), thresholds: z.object({ fact: threshold, declared: threshold, opinion: z.null(), forecast: z.null() }).strict() }).strict(),
+  criteria: z.object({ minTraining: z.number().int().min(1).max(1000), minValidation: z.number().int().min(1).max(1000), minOrigins: z.number().int().min(1).max(1000),
+    minReleased: z.number().int().min(1).max(1000), minPrecision: z.number().min(0).max(100), maxErrors: z.number().int().min(0).max(1000) }).strict().nullable().default(null),
+  cases: z.array(z.object({ id, split: z.enum(['training', 'validation']) }).strict()).max(1000).default([]).refine(items => new Set(items.map(item => item.id)).size === items.length),
+  reason: z.string().trim().min(1).max(2000),
+}).strict();
+export const memoryPolicyActivationSchema = z.object({ baseRevision: z.number().int().positive(), reason: z.string().trim().min(1).max(2000) }).strict();
+export const memoryPolicyRestoreSchema = memoryPolicyActivationSchema.extend({ targetRevision: z.number().int().positive() });
 const sourceRef = z.object({ kind: z.literal('source-version'), sourceId: id, sourceVersion: z.number().int().positive(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
 export const memorySourceRefreshSchema = z.object({
   target: z.object({ productionId: id, updatedAt: z.iso.datetime({ offset: true }), draftRevision: z.number().int().nonnegative() }).strict(),

@@ -3,16 +3,17 @@ import { test } from 'node:test';
 import { initialMemoryPolicy, memoryEvidenceRef, type MemoryPolicy } from './editorial-memory.ts';
 import { memoryWritingFixture } from './testing/editorial-memory.ts';
 import { assessMemoryEvidence } from './editorial-memory-check.ts';
-import { evaluateMemoryPolicy, memoryCalibrationBin, memoryCalibratedConfidence, memoryPrecisionLowerBound, type MemoryCalibrationCase } from './editorial-memory-calibration.ts';
+import { evaluateMemoryPolicy, memoryCalibrationBin, memoryCalibrationGroups, memoryCalibratedConfidence, memoryPrecisionLowerBound, type MemoryCalibrationCase } from './editorial-memory-calibration.ts';
 import { activateMemoryPolicy, proposeMemoryPolicy } from './editorial-memory-policy.ts';
+import { contentHash } from './text/hash.ts';
 const policy = initialMemoryPolicy('workspace'), settings = { mode: 'calibrated' as const, thresholds: { fact: null, declared: 80, opinion: null, forecast: null } };
 const criteria = { minTraining: 30, minValidation: 30, minOrigins: 10, minReleased: 30, minPrecision: 80, maxErrors: 0 };
 let sequence = 0;
 const ctx = { actorId: 'actual-reviewer', now: '2026-10-29T08:00:00Z', newId: (prefix: string) => `${prefix}-${++sequence}` };
 function sample(index: number, split: 'training' | 'validation', purpose: 'technical' | 'editorial' = 'editorial') {
-  const id = `${split}-${index}`, item: MemoryCalibrationCase = { id, workspaceId: 'workspace', evidence: { id, revision: 0, hash: '0123456789abcdef' }, check: { id, revision: 1 },
+  const id = `${split}-${index}`, item: MemoryCalibrationCase = { id, workspaceId: 'workspace', version: 'independent-confirmation-v1', policyRevision: 1, evidence: { id, revision: 0, hash: '0123456789abcdef' }, check: { id, revision: 1 },
     source: { kind: 'source-version', sourceId: id, sourceVersion: 1, hash: 'fedcba9876543210' }, materialId: `material-${id}`, primaryOrigin: `original-${id}`,
-    kinds: ['declared'], bin: 'one_origin', structurallyUsable: true, purpose, outcome: 'confirmed', reason: 'Synthetic evaluator test, not real quality acceptance.', personId: ctx.actorId, at: ctx.now };
+    excerpt: `Synthetic observation ${id}.`, materialTitle: 'Synthetic original', groups: [contentHash(id)], kinds: ['declared'], bin: 'one_origin', structurallyUsable: true, purpose, outcome: 'confirmed', reason: 'Synthetic evaluator test, not real quality acceptance.', personId: ctx.actorId, at: ctx.now };
   return { item, split };
 }
 const dataset = () => [...Array.from({ length: 40 }, (_, i) => sample(i, 'training')), ...Array.from({ length: 40 }, (_, i) => sample(i, 'validation'))];
@@ -36,6 +37,7 @@ test('held-out original groups and explicit measured criteria produce reproducib
 test('versions, mirror annotations and the same primary original cannot leak between splits or inflate measured certainty', () => {
   const leaked = dataset(); leaked[40].item.source.sourceId = leaked[0].item.source.sourceId;
   assert.ok(evaluateMemoryPolicy(leaked, policy, settings, criteria).blockers.includes('SOURCE_LEAKAGE'));
+  const mirrors = dataset(); mirrors[40].item.groups = mirrors[0].item.groups; assert.ok(evaluateMemoryPolicy(mirrors, policy, settings, criteria).blockers.includes('SOURCE_LEAKAGE'));
   const repeated = dataset(); for (const row of repeated.filter(row => row.split === 'training')) row.item.primaryOrigin = 'one-original';
   const report = evaluateMemoryPolicy(repeated, policy, settings, criteria); assert.equal(report.calibration.bins[0].total, 1); assert.ok(report.blockers.includes('INSUFFICIENT_ORIGINS'));
   assert.throws(() => evaluateMemoryPolicy([sample(0, 'training'), sample(0, 'training')], policy, settings, criteria), /DATASET_INVALID/);
@@ -48,6 +50,11 @@ test('scoring is based on independent verified support and never on strength, us
     primaryOrigin: 'independent', excerpt: 'A separate independently checked synthetic statement.', title: 'Synthetic support', url: 'https://independent.test/report', retrievedAt: ctx.now, publishedOn: null } }], strength: null, provider: 'synthetic', model: 'synthetic' };
   const report = evaluateMemoryPolicy(dataset(), policy, settings, criteria), calibrated: MemoryPolicy = { ...policy, ...settings, calibrationReportId: 'measured-report', calibration: report.calibration };
   const checked = assessMemoryEvidence(evidence, material, calibrated, null, input, ctx); assert.equal(checked.confidence, 91); assert.equal(memoryCalibrationBin(evidence, material, checked), 'one_origin');
+  const groups = memoryCalibrationGroups(evidence, material, checked), republication = structuredClone(checked);
+  if (republication.supports[0].evidence.kind === 'external') republication.supports[0].evidence.url = 'https://www.independent.test/report?utm_source=mirror#section';
+  assert.deepEqual(memoryCalibrationGroups(evidence, material, republication), groups);
+  const repeated = { ...evidence, id: 'another-record', anchor: { ...evidence.anchor, source: { ...evidence.anchor.source, sourceId: 'another-original' } } };
+  assert.ok(memoryCalibrationGroups(repeated, { ...material, primaryOrigin: 'another-origin' }, checked).some(group => groups.includes(group)));
   const mirrors = structuredClone(input); mirrors.supports.push({ ...structuredClone(input.supports[0]), evidence: { ...input.supports[0].evidence, primaryOrigin: 'mirror', url: 'https://independent.test/mirror' } });
   assert.equal(memoryCalibrationBin(evidence, material, assessMemoryEvidence(evidence, material, calibrated, null, mirrors, ctx)), 'one_origin');
   const unknown = structuredClone(input); Object.assign(unknown.supports[0].evidence, { originStatus: 'unverified' });

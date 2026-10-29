@@ -9,6 +9,7 @@ import { memoryQuerySchema } from './editorial-memory-input.ts';
 import { memoryGet, memoryRead } from './editorial-memory-store.ts';
 import { currentReporterContext } from './request-context.ts';
 import { FlowError } from './errors.ts';
+import { memoryPolicyView } from './editorial-memory-policy-view.ts';
 
 export type MemoryBundle = { evidence: MemoryEvidence; material: MemoryMaterial; check: MemoryCheck | null; decision: MemoryDecision | null;
   policy: MemoryPolicy | null; source: Source | null; relevance: number | null; uses: Record<MemoryUseStage, number>;
@@ -43,5 +44,5 @@ export async function queryEditorialMemory(input: MemoryQuery): Promise<MemoryPa
   });
 }
 export async function readMemoryPolicy(): Promise<MemoryPolicy> {
-  return memoryRead(async client => (await memoryGet<MemoryPolicy>(client, 'policy', 'editorial-memory'))?.doc ?? initialMemoryPolicy(currentReporterContext().portal));
+  return memoryRead(async client => memoryPolicyView((await memoryGet<MemoryPolicy>(client, 'policy', 'editorial-memory'))?.doc ?? initialMemoryPolicy(currentReporterContext().portal)));
 }

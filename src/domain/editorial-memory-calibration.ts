@@ -8,8 +8,8 @@ export const MEMORY_CALIBRATION_VERSION = 'independent-confirmation-v1' as const
 export type MemoryCalibrationBin = 'one_origin' | 'multiple_origins';
 export type MemoryCalibration = { version: typeof MEMORY_CALIBRATION_VERSION; bins: { key: MemoryCalibrationBin; confirmed: number; total: number; confidence: number }[] };
 export type MemoryCalibrationCase = {
-  id: string; workspaceId: string; evidence: MemoryEvidenceRef; check: MemoryCheckRef; source: SourceVersionRef; materialId: string;
-  primaryOrigin: string; kinds: ClaimKind[]; bin: MemoryCalibrationBin | null; structurallyUsable: boolean;
+  id: string; workspaceId: string; version: typeof MEMORY_CALIBRATION_VERSION; evidence: MemoryEvidenceRef; check: MemoryCheckRef; policyRevision: number; source: SourceVersionRef; materialId: string;
+  primaryOrigin: string; excerpt: string; materialTitle: string; groups: string[]; kinds: ClaimKind[]; bin: MemoryCalibrationBin | null; structurallyUsable: boolean;
   purpose: 'technical' | 'editorial'; outcome: 'confirmed' | 'contradicted' | 'insufficient'; reason: string; personId: string; at: string;
 };
 export type MemoryCalibrationCaseInput = Pick<MemoryCalibrationCase, 'evidence' | 'check' | 'purpose' | 'outcome' | 'reason'>;
@@ -39,7 +39,22 @@ function components<T>(items: T[], tokens: (item: T) => string[]): T[][] {
   }
   return groups.map(group => group.items);
 }
-const originalGroups = (items: MemoryCalibrationCase[]) => components(items, item => [`source:${item.source.sourceId}`, `origin:${item.primaryOrigin}`]);
+const originalGroups = (items: MemoryCalibrationCase[]) => components(items, item => [`source:${item.source.sourceId}`, `origin:${item.primaryOrigin}`, ...item.groups]);
+/** Exact republications and shared checked originals remain one sampling group across record IDs. */
+export function memoryCalibrationGroups(evidence: MemoryEvidence, material: MemoryMaterial, check: MemoryCheck): string[] {
+  const keys = [`source:${evidence.anchor.source.sourceId}`, `origin:${material.primaryOrigin}`,
+    `statement:${evidence.anchor.excerpt.normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase('pt-BR')}`];
+  for (const support of check.supports) {
+    if (support.relation === 'related' || support.evidence.originStatus === 'unverified') continue;
+    if (support.evidence.kind === 'internal') keys.push(`support-origin:${support.evidence.primaryOrigin}`);
+    else {
+      const url = new URL(support.evidence.url); url.hash = ''; url.hostname = url.hostname.replace(/^www\./, '');
+      for (const key of [...url.searchParams.keys()]) if (/^(utm_|fbclid$|gclid$)/i.test(key)) url.searchParams.delete(key);
+      url.searchParams.sort(); keys.push(`support-url:${url.href}`);
+    }
+  }
+  return [...new Set(keys.map(key => contentHash(key)))].sort();
+}
 /** Only independent, verified confirmations of every factual claim participate in a scoring bin. */
 export function memoryCalibrationBin(evidence: MemoryEvidence, material: MemoryMaterial, check: MemoryCheck): MemoryCalibrationBin | null {
   if (!sameMemoryEvidence(check.evidence, memoryEvidenceRef(evidence)) || check.verdict !== 'validated') return null;
@@ -77,9 +92,10 @@ export function evaluateMemoryPolicy(cases: { item: MemoryCalibrationCase; split
   settings: MemoryPolicySettings, criteria: MemoryEvaluationCriteria | null): MemoryPolicyEvaluation {
   const ids = cases.map(({ item }) => item.id), proofs = cases.map(({ item }) => contentHash({ evidence: item.evidence, check: item.check }));
   if (cases.length > 1000 || new Set(ids).size !== ids.length || new Set(proofs).size !== proofs.length
-    || cases.some(({ item, split }) => item.workspaceId !== baseline.workspaceId || !['training', 'validation'].includes(split)
+    || cases.some(({ item, split }) => item.workspaceId !== baseline.workspaceId || item.version !== MEMORY_CALIBRATION_VERSION || !['training', 'validation'].includes(split)
       || !['confirmed', 'contradicted', 'insufficient'].includes(item.outcome) || !['technical', 'editorial'].includes(item.purpose)
-      || !item.primaryOrigin || !item.source.sourceId || !item.kinds.length || item.kinds.some(kind => !['fact', 'declared', 'opinion', 'forecast'].includes(kind)))) throw new Error('MEMORY_CALIBRATION_DATASET_INVALID');
+      || !item.primaryOrigin || !item.source.sourceId || !item.groups.length || item.groups.some(group => !/^[a-f0-9]{16}$/.test(group))
+      || !item.kinds.length || item.kinds.some(kind => !['fact', 'declared', 'opinion', 'forecast'].includes(kind)))) throw new Error('MEMORY_CALIBRATION_DATASET_INVALID');
   if (settings.mode === 'calibrated' && !criteria || criteria && (Object.values(criteria).some(value => !Number.isFinite(value) || value < 0) || ['minTraining', 'minValidation', 'minOrigins', 'minReleased'].some(key => criteria[key as keyof MemoryEvaluationCriteria] < 1)
     || Object.entries(criteria).some(([key, value]) => key !== 'minPrecision' && !Number.isInteger(value)) || criteria.minPrecision > 100)) throw new Error('MEMORY_CALIBRATION_CRITERIA_INVALID');
   if (!['review_required', 'calibrated'].includes(settings.mode) || Object.keys(settings.thresholds).length !== 4 || ['fact', 'declared', 'opinion', 'forecast'].some(kind => !Object.hasOwn(settings.thresholds, kind))
@@ -88,7 +104,7 @@ export function evaluateMemoryPolicy(cases: { item: MemoryCalibrationCase; split
     || settings.mode === 'review_required' && Object.values(settings.thresholds).some(value => value !== null)) throw new Error('MEMORY_POLICY_SETTINGS_INVALID');
   const training = cases.filter(item => item.split === 'training').map(item => item.item), validation = cases.filter(item => item.split === 'validation').map(item => item.item);
   const trainOrigins = originalGroups(training), validationOrigins = originalGroups(validation);
-  const collision = training.some(item => validation.some(other => other.primaryOrigin === item.primaryOrigin || other.source.sourceId === item.source.sourceId));
+  const collision = components(cases, row => [`source:${row.item.source.sourceId}`, `origin:${row.item.primaryOrigin}`, ...row.item.groups]).some(group => new Set(group.map(row => row.split)).size > 1);
   const bins: MemoryCalibration['bins'] = [];
   for (const key of ['one_origin', 'multiple_origins'] as const) {
     const sample = originalGroups(training.filter(item => item.bin === key)), confirmed = sample.filter(group => group.every(item => item.outcome === 'confirmed')).length;

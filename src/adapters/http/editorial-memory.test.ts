@@ -74,6 +74,18 @@ test('library commands keep the bound workspace, account and request identity wh
     await library.relevanceContext({ selection: relevance.selection, evidence: relevance.evidence });
     assert.equal(seen[16].url.pathname, '/api/reporter/w/editorial-client/memory/feedback/relevance-context'); assert.equal(seen[16].url.searchParams.get('selectionRevision'), '1');
     assert.equal(seen[16].url.searchParams.get('evidenceHash'), relevance.evidence.hash); assert.equal(seen[16].init.method ?? 'GET', 'GET');
+    await library.calibrationCases({ cursor: 'case+/=cursor', limit: 5 }); assert.equal(seen[17].url.pathname, '/api/reporter/w/editorial-client/memory/policy/cases');
+    assert.equal(seen[17].url.searchParams.get('cursor'), 'case+/=cursor');
+    const annotation = { evidence: replacement.expected, check: { id: 'check', revision: 2 }, purpose: 'technical' as const, outcome: 'confirmed' as const, reason: 'Technical annotation only.' };
+    await library.annotateCalibration(annotation, 'stable-case-key'); assert.deepEqual(JSON.parse(String(seen[18].init.body)), annotation); assert.equal(new Headers(seen[18].init.headers).get('x-reporter-account'), 'actual-account');
+    await library.policyProposals({ limit: 2 }); assert.equal(seen[19].url.pathname, '/api/reporter/w/editorial-client/memory/policy/proposals');
+    await library.policyProposal('proposal/encoded'); assert.equal(seen[20].url.pathname, '/api/reporter/w/editorial-client/memory/policy/proposals/proposal%2Fencoded');
+    const proposal = { baseRevision: 1, settings: { mode: 'review_required' as const, thresholds: { fact: null, declared: null, opinion: null, forecast: null } }, criteria: null, cases: [], reason: 'Reviewed policy.' };
+    await library.proposePolicy(proposal, 'stable-proposal-key'); assert.deepEqual(JSON.parse(String(seen[21].init.body)), proposal);
+    await library.restorePolicy({ baseRevision: 2, targetRevision: 1, reason: 'Restore baseline.' }, 'stable-restore-key'); assert.equal(seen[22].url.pathname, '/api/reporter/w/editorial-client/memory/policy/restore');
+    await library.activatePolicy('proposal/encoded', { baseRevision: 2, reason: 'Activate reviewed comparison.' }, 'stable-activation-key');
+    assert.equal(seen[23].url.pathname, '/api/reporter/w/editorial-client/memory/policy/proposals/proposal%2Fencoded/activate'); assert.equal(new Headers(seen[23].init.headers).get('idempotency-key'), 'stable-activation-key');
+    await library.policyVersions({ cursor: 'version+/=cursor' }); assert.equal(seen[24].url.pathname, '/api/reporter/w/editorial-client/memory/policy/versions'); assert.equal(seen[24].url.searchParams.get('cursor'), 'version+/=cursor');
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });

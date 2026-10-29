@@ -10,6 +10,7 @@ import type { MemoryBundle } from './editorial-memory-query.ts';
 import { memoryRead } from './editorial-memory-store.ts';
 import { currentReporterContext } from './request-context.ts';
 import { FlowError } from './errors.ts';
+import { memoryPolicyView } from './editorial-memory-policy-view.ts';
 
 export type MemoryReadState = { snapshot: string; visibility: string };
 export async function memoryReadState(client: PoolClient): Promise<MemoryReadState> {
@@ -52,7 +53,7 @@ export async function readMemoryDetail(id: string): Promise<MemoryDetail> {
     const replacements = { previous: links?.previous && links.previous.current.after.revision <= bundle.evidence.revision ? links.previous : null,
       next: links?.next && links.next.previous.after.revision <= bundle.evidence.revision ? links.next : null };
     const version = bundle.source?.versions.find(version => version.number === bundle.evidence.anchor.source.sourceVersion);
-    return { ...memoryView(bundle), material: bundle.material, policy: bundle.policy ?? initialMemoryPolicy(currentReporterContext().portal),
+    return { ...memoryView(bundle), material: bundle.material, policy: memoryPolicyView(bundle.policy ?? initialMemoryPolicy(currentReporterContext().portal)),
       source: { ref: bundle.evidence.anchor.source, authorized: bundle.source?.rights.authorized ?? false, segments: version?.content.segments ?? [] },
       checkJob, checks, decisions, revisions, occurrences, replacements };
   });
