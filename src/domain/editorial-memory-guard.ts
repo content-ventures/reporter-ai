@@ -7,7 +7,7 @@ import type { Source } from './source.ts';
 import type { Result } from './result.ts';
 import { ok, refuse } from './result.ts';
 
-type Reason = 'memory_source_changed' | 'memory_literal_changed' | 'memory_review_changed';
+export type MemoryWritingIssueCode = 'memory_source_changed' | 'memory_literal_changed' | 'memory_review_changed';
 type BoundItem = MemorySourceBinding['items'][number];
 export type MemoryArticleProof = { sourceId: string; sourceVersion: number; sourceHash: string; binding: BoundItem;
   blockId: string; from: number; to: number; sourceFrom: number; sourceTo: number };
@@ -22,7 +22,7 @@ function currentItem(binding: BoundItem, items: MemoryWritingItem[], workspaceId
 }
 
 /** Generation reads the whole collection: every supplied excerpt must still be authorized. */
-export function validateMemoryWritingSources(sources: Source[], items: MemoryWritingItem[], refs: SourceVersionRef[] = sources.map(source => toSourceVersionRef(source))): Result<undefined, Reason> {
+export function validateMemoryWritingSources(sources: Source[], items: MemoryWritingItem[], refs: SourceVersionRef[] = sources.map(source => toSourceVersionRef(source))): Result<undefined, MemoryWritingIssueCode> {
   for (const source of sources) {
     if (!source.memory) continue;
     const ref = refs.find(ref => ref.sourceId === source.id); if (!ref) continue;
@@ -35,7 +35,7 @@ export function validateMemoryWritingSources(sources: Source[], items: MemoryWri
 }
 
 /** Approval/delivery validate every referenced bank excerpt, retaining only actual occurrences. */
-export function validateMemoryArticle(body: ArticleBody, sources: Source[], items: MemoryWritingItem[]): Result<MemoryArticleProof[], Reason> {
+export function validateMemoryArticle(body: ArticleBody, sources: Source[], items: MemoryWritingItem[]): Result<MemoryArticleProof[], MemoryWritingIssueCode> {
   const proofs: MemoryArticleProof[] = [];
   for (const source of sources) {
     if (!source.memory) continue;

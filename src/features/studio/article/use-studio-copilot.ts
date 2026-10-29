@@ -47,6 +47,7 @@ export function useStudioCopilot({
   setSuggestionFocus,
   segments,
   source,
+  blockedReason,
   focusComposer,
   showAssistant,
   copilotHidden,
@@ -60,6 +61,7 @@ export function useStudioCopilot({
   setSuggestionFocus: Dispatch<SetStateAction<SuggestionFocus>>;
   segments: ViewerSegment[];
   source: SourceDetail | undefined;
+  blockedReason: string | null;
   focusComposer: () => void;
   showAssistant: () => void;
   copilotHidden: () => boolean;
@@ -99,6 +101,7 @@ export function useStudioCopilot({
     async (tool: CopilotTool, options: ToolOptions = {}) => {
       const request = tool.request;
       if (!request || sending.current || activeAssist) return;
+      if (blockedReason) { toast('Confira as fontes antes de escrever', { tone: 'info', description: blockedReason }); return; }
       showAssistant();
       const needsTarget = request !== 'article.ask' && (tool.target === 'selection' || tool.target === 'block');
       const selection = currentSelection();
@@ -169,7 +172,7 @@ export function useStudioCopilot({
         updateTurn(turn.id, { pending: false, error: 'Não foi possível enviar o pedido. Seu texto está preservado; tente novamente.' });
       } finally { sending.current = false; setSubmitting(false); }
     },
-    [currentSelection, editor, prepare, productionId, pieceId, commands, updateTurn, production.brief, setSuggestionFocus, activeAssist, showAssistant],
+    [blockedReason, currentSelection, editor, prepare, productionId, pieceId, commands, updateTurn, production.brief, setSuggestionFocus, activeAssist, showAssistant],
   );
 
   /** "Gerar de novo": the same request again, on the passage as it is now. */
@@ -199,6 +202,7 @@ export function useStudioCopilot({
   const ask = useCallback(
     (typed: string) => {
       if (!typed.trim() || sending.current || activeAssist) return;
+      if (blockedReason) { toast('Confira as fontes antes de escrever', { tone: 'info', description: blockedReason }); return; }
       const tool = copilotTool('ask');
       if (!tool) return;
       const used = chips;
@@ -207,18 +211,19 @@ export function useStudioCopilot({
       setChips([]);
       void startTool(tool, { prompt: typed, question: askQuestion(typed, used), chips: used, ...(target ? { target } : {}) });
     },
-    [chips, startTool, activeAssist],
+    [blockedReason, chips, startTool, activeAssist],
   );
 
   /** A preset chip of the composer: the pinned selection is its target, then the chips clear. */
   const runPreset = useCallback(
     (toolId: string) => {
+      if (blockedReason) { toast('Confira as fontes antes de escrever', { tone: 'info', description: blockedReason }); return; }
       const used = chips;
       const target = selectionTarget(used);
       setChips([]);
       runTool(toolId, { chips: used, ...(target ? { target } : {}) });
     },
-    [chips, runTool],
+    [blockedReason, chips, runTool],
   );
 
   // ——— Context chips ———
@@ -253,6 +258,7 @@ export function useStudioCopilot({
   // ——— Runs of the thread ———
   const retryRun = useCallback(
     async (runId: RunId) => {
+      if (blockedReason) { toast('Confira as fontes antes de continuar', { tone: 'info', description: blockedReason }); return; }
       try {
       const result = await commands.generation.retry(runId);
       if (!result.ok) {
@@ -262,7 +268,7 @@ export function useStudioCopilot({
       setTurns((current) => current.map((turn) => (turn.runId === runId ? { ...turn, runId: result.value.runId } : turn)));
       } catch { toast('Não foi possível tentar de novo', { tone: 'error', description: 'Confira a conexão. O texto original foi preservado.' }); }
     },
-    [commands],
+    [blockedReason, commands],
   );
 
   return {

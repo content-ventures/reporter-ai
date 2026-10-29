@@ -10,6 +10,7 @@ import { FlowError } from './errors.ts';
 import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
 import { checkEditorialMemory } from './editorial-memory-check.ts';
 import { writeMemorySelection } from './editorial-memory-writing.ts';
+import { readMemoryWritingStatus } from './editorial-memory-writing-status.ts';
 import { readMemorySelection, readMemorySelections, selectEditorialMemory } from './editorial-memory-selection.ts';
 import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemoryBlocks, readMemoryJob, readMemoryMaterial, readMemoryMaterials } from './editorial-memory-materials.ts';
 
@@ -17,6 +18,10 @@ import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemor
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
   if (process.env.REPORTER_MEMORY_MODE !== 'on') throw new FlowError('NOT_FOUND', 404);
   const noStore = { headers: { 'Cache-Control': 'private, no-store' } }, params = new URL(request.url).searchParams;
+  if (request.method === 'GET' && path.length === 3 && path[0] === 'productions' && path[2] === 'writing-status') {
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await readMemoryWritingStatus(path[1]), noStore);
+  }
   if (path[0] === 'materials' || path[0] === 'jobs') {
     if (request.method === 'GET') {
       if (path[0] === 'materials' && path.length === 1) return Response.json(await readMemoryMaterials(parseMemoryHistoryQuery(params)), noStore);

@@ -9,6 +9,7 @@ import { briefChangedSince, READ_ONLY_REASON, studioBadge } from './studio-sessi
 import { studioSource } from './studio-model';
 import type { GenerationState, StudioInputs } from './studio-types';
 import { useStudioChecks } from './use-studio-checks';
+import { useBankReadiness } from './use-bank-readiness';
 import { withEvidenceWarning } from '@/features/hard-news/studio/send-items';
 import { useStudioCommands } from './use-studio-commands';
 import { useStudioCopilot } from './use-studio-copilot';
@@ -52,6 +53,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
   const sessionCanEdit = useCan('piece.edit');
   const canEdit = stored?.viewer.canEdit ?? sessionCanEdit;
   const locked = stored?.locked ?? false;
+  const bankReadiness = useBankReadiness({ production, sourceDetails, sourceError }, canEdit);
 
   const panes = useStudioPanes();
   const { showPanel } = panes;
@@ -72,6 +74,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
     setSuggestionFocus: bar.setSuggestionFocus,
     segments: sourceLink.segments,
     source,
+    blockedReason: bankReadiness.reason,
     focusComposer: panes.focusComposer,
     showAssistant,
     copilotHidden: panes.assistantHidden,
@@ -84,6 +87,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
     generation,
     prepare: text.prepare,
     setLocalTitle: text.setLocalTitle,
+    blockedReason: bankReadiness.reason,
   });
   const review = useStudioReview({ commands, piece, text });
 
@@ -264,6 +268,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
     briefChanged,
     source,
     sourceDetails,
+    bankReadiness,
     sourceSelection,
     showSource,
     sourceError,

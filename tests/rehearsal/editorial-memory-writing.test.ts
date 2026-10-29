@@ -6,7 +6,7 @@ import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { createTranscriptSource, toSourceVersionRef } from '../../src/domain/source.ts';
 import { parseTranscript } from '../../src/domain/text/transcript-parse.ts';
 import { memoryEvidenceRef, type MemoryEvidence, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
-import type { MemoryDetail, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
+import type { MemoryDetail, MemoryWritingResult, MemoryWritingStatus } from '../../src/ports/editorial-memory.ts';
 import type { ReporterRequestContext } from '../../src/server/request-context.ts';
 import type { ArticleBody } from '../../src/domain/article.ts';
 import type { VersionRef } from '../../src/domain/refs.ts';
@@ -116,6 +116,48 @@ test('writing rejects stale selection revisions, decisions and revoked source ri
     if (mode === 'rights') await json(`memory/materials/${item.material.id}/authorization`, { baseRevision: 1, authorized: false, reason: 'Synthetic rights withdrawal.' });
     assert.equal((await api(`memory/selections/${saved.id}/write`, { ...writingInput, ...(mode === 'revision' ? { baseRevision: 99 } : {}) })).status, 409);
   }
+});
+test('writing status reads current gates for every collection without recording a use or exposing originals', async () => {
+  const a = await fixture('statistic'), aSelection = await selection([a.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${aSelection.id}/write`, writingInput);
+  const b = await fixture('citation'), bSelection = await selection([b.evidence]);
+  const [before] = await owner('SELECT doc FROM public.reporter_ed_productions WHERE production_id=$1', [made.productionId]);
+  const added = await json<MemoryWritingResult>(`memory/selections/${bSelection.id}/write`, { baseRevision: 1, target: { productionId: made.productionId, updatedAt: before.doc.updatedAt } });
+  const path = `memory/productions/${made.productionId}/writing-status`;
+  const production = () => owner('SELECT doc,seq FROM public.reporter_ed_productions WHERE production_id=$1', [made.productionId]);
+  const uses = () => owner("SELECT doc FROM public.reporter_memory_history WHERE portal_id=$1 AND kind='use' AND doc->>'productionId'=$2 ORDER BY id,storage_revision", [PORTAL, made.productionId]);
+  const savedProduction = await production(), savedUses = await uses();
+  const response = await api(path); assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  const initial = await response.json() as MemoryWritingStatus;
+  assert.equal(initial.productionId, made.productionId); assert.equal(initial.updatedAt, savedProduction[0].doc.updatedAt);
+  assert.ok(Number.isFinite(Date.parse(initial.checkedAt))); assert.deepEqual(initial.issues, []);
+  assert.deepEqual(initial.sources.map(ref => ref.sourceId), [made.sourceId, added.sourceId]);
+  assert.ok(initial.sources.every(ref => ref.kind === 'source-version' && ref.sourceVersion === 1 && ref.hash));
+  assert.equal(JSON.stringify(initial).includes('CONTEÚDO PRIVADO'), false);
+  assert.equal((await api(path, undefined, randomUUID(), identities[1])).status, 200, 'approver may read the current status');
+  assert.deepEqual(await production(), savedProduction); assert.deepEqual(await uses(), savedUses);
+  await json(`memory/${a.evidence.id}/review`, { evidence: memoryEvidenceRef(a.evidence), check: null, policyRevision: 1, previousSequence: 1, action: 'reject', reason: 'Synthetic change after attaching the source.', supports: [] });
+  const changed = await json<MemoryWritingStatus>(path);
+  assert.equal(changed.issues.length, 1); assert.equal(changed.issues[0].source.sourceId, made.sourceId);
+  assert.equal(changed.issues[0].code, 'memory_review_changed'); assert.ok(changed.issues[0].message);
+  assert.deepEqual(changed.sources, initial.sources, 'attached immutable snapshots have not been silently refreshed');
+  await json(`memory/materials/${b.material.id}/authorization`, { baseRevision: 1, authorized: false, reason: 'Synthetic rights revoked after attachment.' });
+  assert.deepEqual((await json<MemoryWritingStatus>(path)).issues.map(issue => issue.source.sourceId), [made.sourceId, added.sourceId]);
+  assert.deepEqual(await production(), savedProduction); assert.deepEqual(await uses(), savedUses);
+  assert.equal((await api(path + '?unexpected=1')).status, 422);
+  assert.equal((await api(path, {})).status, 404);
+});
+test('writing status preserves private production scope, authentication and the module ceiling', async () => {
+  const item = await fixture('statistic', true), saved = await selection([item.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+  const path = `memory/productions/${made.productionId}/writing-status`;
+  assert.equal((await api(path)).status, 200);
+  assert.equal((await api(path, undefined, randomUUID(), identities[2])).status, 404);
+  assert.equal((await api(path, undefined, randomUUID(), null)).status, 401);
+  assert.equal((await api('memory/productions/unknown-production/writing-status')).status, 404);
+  process.env.REPORTER_MEMORY_MODE = 'off';
+  try { assert.equal((await api(path)).status, 404); }
+  finally { process.env.REPORTER_MEMORY_MODE = 'on'; }
 });
 test('creation and receipt replay preserve inherited private scope and actual role boundaries', async () => {
   const item = await fixture('statistic', true), saved = await selection([item.evidence]), key = randomUUID();

@@ -172,7 +172,7 @@ function EmptyDraft() {
   ]
     .filter(Boolean)
     .join(' · ');
-  const blocked = guard && !guard.allowed ? guard.reason : null;
+  const blocked = guard && !guard.allowed ? guard.reason : studio.bankReadiness.reason;
   // Quotes are attributed from "Falantes" (REQ-T.7): who speaks is decided before the AI writes.
   const router = useRouter();
   const unmapped = useSpeakersWithoutPerson();

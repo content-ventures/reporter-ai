@@ -5,12 +5,18 @@ import type { Source, TranscriptSegment } from '../domain/source.ts';
 import type { Piece, Version } from '../domain/piece.ts';
 import type { MemoryArticlePosition, MemoryArticleReport, MemoryLegacyReport } from '../domain/editorial-memory-legacy.ts';
 import type { BriefInput } from './production-commands.ts';
+import type { MemoryWritingIssueCode } from '../domain/editorial-memory-guard.ts';
 
 export type MemoryWritingInput = { baseRevision: number } & (
   | { title: string; brief: BriefInput }
   | { target: { productionId: string; updatedAt: string } }
 );
 export type MemoryWritingResult = { productionId: string; pieceId: string; sourceId: string };
+/** Advisory read of current bank gates; generation still rechecks inside its own transaction. */
+export type MemoryWritingStatus = {
+  productionId: string; updatedAt: string; checkedAt: string; sources: SourceVersionRef[];
+  issues: { source: SourceVersionRef; code: MemoryWritingIssueCode; message: string }[];
+};
 
 export type MemoryImportInput = {
   title: string; kind: MemoryMaterial['kind']; text: string; metadata: MemoryMetadata; authorized: boolean;
@@ -55,6 +61,7 @@ export interface EditorialMemory {
   selection(id: string): Promise<MemorySelection>;
   selections(input: MemoryHistoryQuery): Promise<MemoryPage<MemorySelection>>;
   writeSelection(id: string, input: MemoryWritingInput, requestId: string): Promise<MemoryWritingResult>;
+  writingStatus(productionId: string): Promise<MemoryWritingStatus>;
   policy(): Promise<MemoryPolicy>;
   lookupLegacy(id: string): Promise<{ id: string; materialId: string }[]>;
   originalArticle(id: string, snapshot?: string): Promise<{ origin: MemoryArticleOrigin; doc: Piece | Version; importedBy: string; importedAt: string }>;
