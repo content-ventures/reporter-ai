@@ -51,7 +51,7 @@ import { runWritingOrchestration } from './writing-orchestration';
 import { writingArticleBody } from '../domain/writing-article.ts';
 import type { WritingTrace } from '../domain/writing-orchestration.ts';
 import { effectiveWritingMinimumQuotes } from '../domain/writing-orchestration.ts';
-import { writingSourceCandidates } from '../domain/writing-source.ts';
+import { writingSourceCandidates, type WritingSourceCandidate } from '../domain/writing-source.ts';
 import { writingExecutionDate, writingTemporalContext } from '../domain/writing-context.ts';
 import {contentHash} from '../domain/text/hash.ts';
 import { writingArticleChecks, writingArticleLimits } from '../domain/writing-checks.ts';
@@ -214,7 +214,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       logEvent('worker','editorial_completed',{ generation_id: job.meta.runId });
       return true;
     }
-    const candidates = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
+    const candidates: WritingSourceCandidate[] = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
       ? writingSourceCandidates(input.record.sources) : editorialCandidates(input.record);
     // Curated citations and quotable lines reach a step only when its prompt explains them.
     const curated = curatedEvidence(input.citations,input.record.sources,candidates);
@@ -250,7 +250,8 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       const evidenceContext = { runId: job.meta.runId, workspaceId: input.record.production.workspaceId, actorId: input.record.production.createdBy };
       const written = await runWritingOrchestration({
         configuration: pipeline.definition.writing, policy: pipeline.definition.editorial,
-        source: candidates.map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}) })),
+        source: candidates.map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}),
+          ...(candidate.memory ? { memory: candidate.memory } : {}) })),
         brief: { ...input.record.production.brief, people, today, limits: sizing, requestedOutline: requestedOutline ?? null,
           temporalContext: writingTemporalContext(originalSources, writingExecutionDate(executionTime)),
           sourceReferences: candidates.map(candidate => ({ id: candidate.key, reference: candidate.ref })) },
@@ -258,9 +259,12 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
         validateArticle: (article, externalSources = []) => {
           const external = writingResearchEvidence(externalSources, evidenceContext);
           const resolve = (keys: string[]) => keys.flatMap(key => external.references.has(key) ? [external.references.get(key)!] : refs([key]));
-          return writingArticleChecks(writingArticleBody(article, job.meta.runId, resolve), [...originalSources, ...external.sources],
+          const sources = [...originalSources, ...external.sources], body = writingArticleBody(article, job.meta.runId, resolve, sources);
+          const ids = new Map(body.blocks.map((block, index) => [block.id, article.blocks[index].id]));
+          return writingArticleChecks(body, sources,
             input.record.production.brief, people.flatMap(person => [person.name, person.title ?? '', person.organization ?? '']),
-            { minimumQuotes: minimumQuotes!, titleSourceRefs: resolve(article.titleEvidenceIds), dekSourceRefs: resolve(article.dekEvidenceIds) });
+            { minimumQuotes: minimumQuotes!, titleSourceRefs: resolve(article.titleEvidenceIds), dekSourceRefs: resolve(article.dekEvidenceIds) })
+            .map(issue => ({ ...issue, blockId: ids.get(issue.blockId) ?? issue.blockId }));
         },
         trace: async trace => {
           lastStepId = `writing-${trace.stage}-${trace.attempt}`;
@@ -283,7 +287,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       const external = writingResearchEvidence(written.externalSources ?? [], evidenceContext);
       const resolve = (keys: string[]) => keys.flatMap(key => external.references.has(key) ? [external.references.get(key)!] : refs([key]));
       const finalSources = [...originalSources, ...external.sources];
-      const body = writingArticleBody(written.article, job.meta.runId, resolve);
+      const body = writingArticleBody(written.article, job.meta.runId, resolve, finalSources);
       const issue = r1ArticleIssue(body, finalSources, writingArticleLimits(input.record.production.brief, minimumQuotes));
       if (issue) throw new FlowError(issue, 422);
       // Header evidence has no paragraph block; keep it explicit in the run's provenance.

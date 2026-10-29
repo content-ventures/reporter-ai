@@ -6,6 +6,8 @@ import type { SourceVersionRef } from './refs.ts';
 import type { Source } from './source.ts';
 import type { Result } from './result.ts';
 import { ok, refuse } from './result.ts';
+import { memoryArticleContentIssues } from './editorial-memory-article.ts';
+import { memorySourceSegment } from './editorial-memory-excerpt.ts';
 
 export type MemoryWritingIssueCode = 'memory_source_changed' | 'memory_literal_changed' | 'memory_review_changed';
 type BoundItem = MemorySourceBinding['items'][number];
@@ -34,6 +36,9 @@ export function validateMemoryWritingSources(sources: Source[], items: MemoryWri
       continue;
     }
     if (!source.rights.authorized || !receipt.items.length) return refuse('memory_source_changed', 'A fonte do banco mudou ou perdeu a autorização. Confira a seleção.');
+    if (receipt.items.length !== version.content.segments.length || new Set(receipt.items.map(item => item.segmentId)).size !== receipt.items.length
+      || version.content.segments.some(segment => !memorySourceSegment(source, version.number, segment.id)))
+      return refuse('memory_source_changed', 'A coleção não corresponde aos trechos selecionados. Confira a fonte antes de escrever.');
     if (receipt.items.some(binding => !currentItem(binding, items, source.workspaceId))) return refuse('memory_review_changed', 'Há evidências do banco que precisam de uma seleção atualizada antes de escrever.');
   }
   return ok(undefined);
@@ -41,6 +46,8 @@ export function validateMemoryWritingSources(sources: Source[], items: MemoryWri
 
 /** Approval/delivery validate every referenced bank excerpt, retaining only actual occurrences. */
 export function validateMemoryArticle(body: ArticleBody, sources: Source[], items: MemoryWritingItem[]): Result<MemoryArticleProof[], MemoryWritingIssueCode> {
+  const issue = memoryArticleContentIssues(body, sources)[0];
+  if (issue) return refuse(issue.code, issue.message);
   const proofs: MemoryArticleProof[] = [];
   for (const source of sources) {
     if (!source.memory) continue;

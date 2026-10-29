@@ -2,9 +2,11 @@ import type { ArticleBody, ArticleBlock } from './article.ts';
 import type { SourceRef } from './refs.ts';
 import type { WritingArticle } from './writing-orchestration.ts';
 import { contentHash } from './text/hash.ts';
+import type { Source } from './source.ts';
+import { memoryArticleReferences } from './editorial-memory-article.ts';
 
 /** Preserve reviewed semantic blocks and original evidence when creating the editable draft. */
-export function writingArticleBody(article: WritingArticle, runId: string, references: (ids: string[]) => SourceRef[]): ArticleBody {
+export function writingArticleBody(article: WritingArticle, runId: string, references: (ids: string[]) => SourceRef[], sources: readonly Source[] = []): ArticleBody {
   const blocks = article.blocks.map((block): ArticleBlock => {
     const common = { id: `writing-${contentHash({ runId, blockId: block.id })}`, sourceRefs: references(block.evidenceIds), ai: 'unreviewed' as const };
     if (block.type === 'list') return { ...common, type: 'list', ordered: false, items: block.items.map(text => [{ text }]) };
@@ -12,5 +14,6 @@ export function writingArticleBody(article: WritingArticle, runId: string, refer
     if (block.type === 'heading') return { ...common, type: 'heading', level: block.level, inlines };
     return { ...common, type: block.type, inlines };
   });
-  return { type: 'article', title: article.title, ...(article.dek ? { dek: article.dek } : {}), blocks };
+  return { type: 'article', title: article.title, ...(article.dek ? { dek: article.dek } : {}), blocks: blocks.map(block => ({ ...block,
+    sourceRefs: memoryArticleReferences(block, block.sourceRefs ?? [], sources) })) };
 }

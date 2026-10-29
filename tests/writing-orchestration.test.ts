@@ -11,6 +11,8 @@ import type { WritingRunInput } from '../src/server/writing-orchestration.ts';
 import { cacheWrite } from '../src/server/storage.ts';
 import { FlowError } from '../src/server/errors.ts';
 import { defaultWritingResearch } from '../src/domain/writing-research.ts';
+import type { WritingSource } from '../src/domain/writing-orchestration.ts';
+import { writingMemoryChecks } from '../src/domain/writing-memory.ts';
 
 const source = [{ id: 's1', text: 'A empresa apresentou pescado na feira. Não há previsão de lançamento nacional.', speaker: 'Ana' },
   { id: 's2', text: 'A distribuição começa em novembro, apenas no estado de São Paulo.', speaker: 'Bruno' }];
@@ -63,6 +65,77 @@ function requestData(args: Parameters<NonNullable<WritingRunInput['generate']>>)
   const user = args[4]!.userPrompt;
   return JSON.parse(user.slice(user.indexOf('\n') + 1));
 }
+
+test('bank context stays immutable through all model stages and statistics cannot satisfy a quotation plan', async () => {
+  const f = await fixture();
+  const data = 'O levantamento sintético registrou cerca de 240 pessoas em 2025, somente no Brasil.';
+  const memory = { kind: 'statistic' as const, materialId: 'material', metadata: { publishedOn: null, recordedOn: null, institution: null,
+    company: null, event: null, edition: null, topics: [], originalUrl: null },
+    origin: { source: { kind: 'source-version' as const, sourceId: 'original', sourceVersion: 7, hash: '0000000000000000' }, spans: [{ segmentId: 'original', from: 10, to: 10 + data.length }] },
+    selected: { evidence: { id: 'datum', revision: 3, hash: '0000000000000000' }, check: { id: 'check', revision: 2 }, decisionId: 'decision', policyRevision: 4 } };
+  const bank: WritingSource[] = [{ ...source[0] }, { id: 's2', text: data, memory }];
+  const chosen: WritingPlan = { ...plan, facts: [{ ...plan.facts[0], text: data }] };
+  const complete: WritingArticle = { ...article, blocks: [{ ...article.blocks[0], text: data, evidenceIds: ['s2'] }, article.blocks[1]] };
+  const accepted: WritingReview = { ...ready, audit: { ...ready.audit!, factChecks: [{ ...preservation, articlePassages: [{ blockId: 'lead', text: data }] }] } };
+  const provider = mock([chosen, complete, accepted]);
+  try {
+    await runWritingOrchestration({ ...f.input, source: bank, generate: provider.generate });
+    for (const call of provider.calls) {
+      assert.deepEqual(requestData(call).source, bank);
+      assert.ok(call[4]!.systemPrompt.includes('memory.kind statistic'));
+    }
+    const cached = mock([]);
+    await runWritingOrchestration({ ...f.input, source: bank, generate: cached.generate });
+    assert.equal(cached.calls.length, 0);
+    const updated = structuredClone(bank); updated[1].memory!.selected.decisionId = 'new-accepted-decision';
+    const refreshed = mock([chosen, complete, accepted]);
+    await runWritingOrchestration({ ...f.input, source: updated, generate: refreshed.generate });
+    assert.equal(refreshed.calls.length, 3, 'a new selected decision cannot inherit the cached proof despite identical words');
+    const invalid = { ...chosen, facts: [{ ...chosen.facts[0], kind: 'quote' }] };
+    assert.throws(() => validateWritingOutput('plan', invalid, new Map(bank.map(item => [item.id, item.text])), undefined,
+      { statisticEvidence: new Set(['s2']) }), /WRITING_INVALID_OUTPUT/);
+    const capped = { ...f.input.configuration, maxSourceCharacters: 1000 };
+    const long = bank.map(item => item.id === 's2' ? { ...item, text: data + ' Contexto sintético.'.repeat(40) } : item);
+    const noCalls = mock([]);
+    await assert.rejects(runWritingOrchestration({ ...f.input, source: long, configuration: capped, generate: noCalls.generate }), /WRITING_SOURCE_TOO_LARGE/);
+    assert.equal(noCalls.calls.length, 0);
+  } finally { await f.cleanup(); }
+});
+
+test('a model cannot approve a bank statistic with missing context or presented as speech', async () => {
+  const data = 'O levantamento sintético registrou cerca de 240 pessoas em 2025, somente no Brasil.';
+  const memory = { kind: 'statistic' as const, materialId: 'material', metadata: { publishedOn: null, recordedOn: null, institution: null,
+    company: null, event: null, edition: null, topics: [], originalUrl: null },
+    origin: { source: { kind: 'source-version' as const, sourceId: 'original', sourceVersion: 1, hash: '0000000000000000' }, spans: [{ segmentId: 'original', from: 0, to: data.length }] },
+    selected: { evidence: { id: 'datum', revision: 0, hash: '0000000000000000' }, check: null, decisionId: 'decision', policyRevision: 1 } };
+  const bank: WritingSource[] = [{ ...source[0] }, { id: 's2', text: data, memory }];
+  const chosen: WritingPlan = { ...plan, facts: [{ ...plan.facts[0], text: data }] };
+  const complete: WritingArticle = { ...article, blocks: [{ ...article.blocks[0], text: data, evidenceIds: ['s2'] }, article.blocks[1]] };
+  const accepted: WritingReview = { ...ready, audit: { ...ready.audit!, factChecks: [{ ...preservation, articlePassages: [{ blockId: 'lead', text: data }] }] } };
+  for (const first of [{ ...complete.blocks[0], type: 'quote' as const }, { ...complete.blocks[0], text: data.replace('cerca de ', '') },
+    { ...complete.blocks[0], text: data.replace(' em 2025', '') }, { ...complete.blocks[0], text: data.replace('pessoas', 'empresas') }]) {
+    const f = await fixture(), invalid = { ...complete, blocks: [first, complete.blocks[1]] };
+    const approvedAnyway = { ...accepted, audit: { ...accepted.audit!, factChecks: [{ ...preservation, articlePassages: [{ blockId: 'lead', text: first.text }] }] } };
+    const provider = mock([chosen, invalid, approvedAnyway]);
+    try {
+      await assert.rejects(runWritingOrchestration({ ...f.input, configuration: { ...f.input.configuration, maxCorrections: 0 }, source: bank, generate: provider.generate }), /WRITING_REVIEW_UNRESOLVED/);
+      const review = f.traces.at(-1)!.output as WritingReview;
+      assert.equal(review.decision, 'revise'); assert.equal(review.issues[0].severity, 'critical');
+      assert.equal(review.issues[0].code, 'MEMORY_LITERAL_CHANGED'); assert.deepEqual(f.traces.at(-1)!.providerOutput, approvedAnyway);
+      assert.equal(provider.calls.length, 3, 'no extra hidden provider call can override the content check');
+    } finally { await f.cleanup(); }
+  }
+  const f = await fixture(), bad = { ...complete, blocks: [{ ...complete.blocks[0], type: 'quote' as const }, complete.blocks[1]] };
+  const issue = writingMemoryChecks(bad, bank)[0], recheckedData = { ...accepted, audit: { ...accepted.audit!, issueChecks: [{ issueId: issue.id,
+    status: 'resolved' as const, articlePassages: [{ blockId: 'lead', text: data }], reason: 'O dado completo voltou a ser um parágrafo, preservando suas condições.' }] } };
+  const provider = mock([chosen, bad, accepted, complete, recheckedData]);
+  try {
+    const result = await runWritingOrchestration({ ...f.input, source: bank, generate: provider.generate });
+    assert.deepEqual(result.article, complete); assert.equal(result.review.decision, 'ready_for_human'); assert.equal(provider.calls.length, 5);
+    assert.equal(requestData(provider.calls[2]).deterministicChecks[0].code, 'MEMORY_LITERAL_CHANGED');
+    assert.deepEqual(requestData(provider.calls[4]).deterministicChecks, []);
+  } finally { await f.cleanup(); }
+});
 
 test('the normal path makes three observable calls with full original content and configured models', async () => {
   const f = await fixture(), provider = mock([plan, article, ready]);

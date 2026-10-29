@@ -32,7 +32,7 @@ test('editable review criteria have visible defaults without rewriting historica
   assert.notEqual(edited.system, original.system);
   assert.ok(edited.system.includes(configuration.reviewCriteria.editorial));
   assert.ok(edited.system.endsWith(before.stages.review.prompt));
-  assert.equal(WRITING_COMPILER_VERSION, 'editorial-orchestration-v5');
+  assert.equal(WRITING_COMPILER_VERSION, 'editorial-orchestration-v6');
 });
 
 test('research is opt-in and only enabled planning asks for grounded research queries', () => {
