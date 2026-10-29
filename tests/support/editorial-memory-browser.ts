@@ -58,7 +58,7 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
       const why = dialog.getByRole('textbox', { name: 'Motivo da revisão', exact: true });
       await expect(comparison).toHaveValue(original); await expect(comparison).toHaveAttribute('readonly', '');
       await revision.fill(corrected); await why.fill(reason);
-      await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
+      await dialog.getByRole('button', { name: 'Fechar', exact: true }).filter({ hasText: /^Fechar$/ }).click();
       await expect(dialog).toBeHidden(); await expect(drawer).toBeVisible(); await expect(trigger).toBeFocused();
       await trigger.click(); await expect(revision).toHaveValue(corrected); await expect(why).toHaveValue(reason);
       const path = `/memory/materials/${material.id}/revision`;
@@ -72,6 +72,9 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
         await dialog.getByRole('button', { name: 'Atualizar comparação', exact: true }).click();
         await expect(comparison).toHaveValue(competing.text); await expect(revision).toHaveValue(corrected); await expect(why).toHaveValue(reason);
       }
+      const beforeBox = await comparison.boundingBox(), afterBox = await revision.boundingBox(); assert.ok(beforeBox && afterBox);
+      if (width === 390) { assert.ok(beforeBox.width >= 300 && afterBox.width >= 300); assert.ok(afterBox.y >= beforeBox.y + beforeBox.height); }
+      else { assert.ok(Math.abs(beforeBox.y - afterBox.y) < 2); assert.ok(afterBox.x >= beforeBox.x + beforeBox.width); }
       await audit(editor, competing ? 'revision-conflict' : 'revision-comparison');
       const response = editor.waitForResponse(response => response.url().endsWith(path) && response.request().method() === 'POST');
       await dialog.getByRole('button', { name: 'Salvar nova versão', exact: true }).click();
@@ -98,14 +101,14 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
       await editor.getByRole('button', { name: 'Importar material', exact: true }).click();
       const dialog = editor.getByRole('dialog', { name: 'Importar material', exact: true });
       await dialog.getByRole('textbox', { name: 'Título', exact: true }).fill(input.title);
-      await dialog.getByRole('textbox', { name: 'Texto original', exact: true }).fill(input.text);
-      await dialog.getByRole('textbox', { name: /^Documento ou origem principal/ }).fill(input.primaryOrigin ?? '');
-      await dialog.getByRole('textbox', { name: /^Temas/ }).fill(input.metadata.topics.join(', '));
       const kind = input.kind === 'report' ? 'Relatório' : 'Transcrição', select = dialog.getByRole('combobox', { name: 'Tipo', exact: true });
       if (!(await select.textContent())?.includes(kind)) {
         await select.click(); await editor.getByRole('option', { name: kind, exact: true }).click();
       }
       await expect(select).toContainText(kind);
+      await dialog.getByRole('textbox', { name: 'Texto original', exact: true }).fill(input.text);
+      await dialog.getByRole('textbox', { name: /^Documento ou origem principal/ }).fill(input.primaryOrigin ?? '');
+      await dialog.getByRole('textbox', { name: /^Temas/ }).fill(input.metadata.topics.join(', '));
       await dialog.getByRole('checkbox', { name: 'Confirmo a autorização de uso deste material' }).check();
       const response = editor.waitForResponse(response => response.url().endsWith('/memory/materials') && response.request().method() === 'POST');
       await dialog.getByRole('button', { name: 'Importar', exact: true }).click();

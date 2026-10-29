@@ -1,6 +1,6 @@
 'use client';
 import { useRef, useState } from 'react';
-import { Alert, Button, DescriptionList, ErrorState, Field, FieldGroup, ResponsiveDialog, Section, Textarea } from '@content-ventures/design-system/v3';
+import { Alert, Button, DescriptionList, ErrorState, Field, FieldGroup, Grid, ResponsiveDialog, Section, Textarea } from '@content-ventures/design-system/v3';
 import type { MemoryMaterial } from '@/domain/editorial-memory';
 import type { MemoryLibrary, MemoryMaterialRevisionResult } from '@/ports/editorial-memory';
 import { contentHash } from '@/domain/text/hash';
@@ -38,10 +38,10 @@ export function MemoryMaterialRevisionDialog({ basis, open, onClose, onSaved }: 
     {!bound ? <ErrorState title="A conta mudou" description="Feche esta revisão e abra o material na conta atual." /> : <Section>
       {error && <Alert tone="danger" title={error.message} action={error.conflict ? <Button disabled={locked} onClick={() => void reloadComparison()}>Atualizar comparação</Button> : undefined} />}
       <DescriptionList items={[{ label: 'Material', value: comparison.material.title }, { label: 'Versão do original', value: comparison.material.source.sourceVersion }, { label: 'Revisão do material', value: comparison.material.revision }]} />
-      <FieldGroup label="Comparação do original" columns={2}>
+      <FieldGroup label="Comparação do original"><Grid columns="1:1" collapseBelow={480}>
         <Field label="Original em uso">{({ id }) => <Textarea id={id} readOnly rows={12} value={comparison.text} />}</Field>
         <Field label="Original revisado" required>{({ id }) => <Textarea id={id} disabled={locked} rows={12} value={text} onChange={event => setText(event.target.value)} />}</Field>
-      </FieldGroup>
+      </Grid></FieldGroup>
       <Field label="Motivo da revisão" required hint="A revisão inicia uma nova extração e exige conferir os usos existentes.">{({ id, describedBy }) => <Textarea id={id} aria-describedby={describedBy} disabled={locked} rows={3} maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} />}</Field>
     </Section>}
   </ResponsiveDialog>;
