@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { chromium, expect, type BrowserContext, type Page } from '@playwright/test';
 import type { MemoryImportInput, MemoryJob, MemoryMaterialRevisionResult, MemoryReplacementResult, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
-import type { MemoryEvidence, MemoryMaterial, MemorySelection } from '../../src/domain/editorial-memory.ts';
+import type { MemoryEvidence, MemoryMaterial, MemoryPolicy, MemorySelection } from '../../src/domain/editorial-memory.ts';
 import type { MemoryFeedback } from '../../src/domain/editorial-memory-feedback.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import { blockText, type ArticleBody } from '../../src/domain/article.ts';
 import type { MemoryCalibrationCase } from '../../src/domain/editorial-memory-calibration.ts';
-import { annotateMemoryPolicyCase, inspectMemoryPolicyLifecycle } from './editorial-memory-policy-browser.ts';
+import { annotateMemoryPolicyCase, inspectMemoryPolicyLifecycle, reapplyMemoryPolicy } from './editorial-memory-policy-browser.ts';
 
 /** Real product UI and handlers, with a test-only authenticated identity adapter. */
 export async function createMemoryJourneyBrowser(base: string, width: number, dispatch: (request: Request, actor: number) => Promise<Response>) {
@@ -49,6 +49,9 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
   return {
     annotateCalibration: (excerpt: string) => annotateMemoryPolicyCase(editor, base, excerpt, audit),
     async policyLifecycle(item: MemoryCalibrationCase) { return inspectMemoryPolicyLifecycle(await pageFor(2), editor, base, item, audit); },
+    async reapplyPolicy(evidence: MemoryEvidence, checkedAt: string, compete: () => Promise<MemoryPolicy>) {
+      return reapplyMemoryPolicy(editor, base, evidence, checkedAt, audit, async () => { const result = await compete(); expectedConflictConsole.set(`${base}/api/reporter/w/reporter-ai/memory/${encodeURIComponent(evidence.id)}/reassess-policy`, 1); return result; });
+    },
     async rateSelection(selection: MemorySelection, excerpt: string, reason: string): Promise<MemoryFeedback> {
       console.info('memory UI pauta feedback', width);
       await editor.goto(`${base}/w/reporter-ai/quotes?bankView=selections`);

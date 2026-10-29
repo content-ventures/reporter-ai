@@ -9,7 +9,7 @@ import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { MEMORY_JOURNEY_PASSAGES as passages } from '../fixtures/editorial-memory-journey.ts';
 import { createMemoryJourneyBrowser } from '../support/editorial-memory-browser.ts';
 import { articleStats, blockText, markTextReviewed, type ArticleBody } from '../../src/domain/article.ts';
-import { initialMemoryPolicy, memoryEvidenceRef, type MemoryEvidenceView, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
+import { initialMemoryPolicy, memoryEvidenceRef, type MemoryCheck, type MemoryEvidenceView, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
 import { assessMemoryEvidence } from '../../src/domain/editorial-memory-check.ts';
 import { captureMemoryChoice } from '../../src/domain/editorial-memory-discovery.ts';
 import { memoryWritingProvenance } from '../../src/domain/editorial-memory-writing.ts';
@@ -321,6 +321,12 @@ test('two imported materials reach orchestrated writing, separate approval and a
     await ui.inspectFeedback(feedbackReason, replacementReason);
     assert.deepEqual((await record(made.productionId)).versions, frozen); assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
   }
+  const replacementDetail = await api<MemoryDetail>(`memory/${replacement.id}`);
+  await api(`memory/${replacement.id}/check`, { expected: memoryEvidenceRef(replacementDetail.evidence) });
+  assert.equal(await runMemoryCheckJob('reassessment-proof', new AbortController().signal, undefined, async claim => assessMemoryEvidence(claim.evidence, claim.material,
+    claim.policy ?? initialMemoryPolicy(PORTAL), claim.previous, { claims: [{ text: claim.evidence.anchor.excerpt, kind: 'declared' }], supports: [], strength: null, provider: 'synthetic', model: claim.job.model! },
+    { actorId: claim.job.createdBy, now: new Date().toISOString(), newId: () => randomUUID() })), true);
+  const savedCheck = (await api<MemoryDetail>(`memory/${replacement.id}`)).check!; assert.ok(savedCheck);
   const beforePolicy = await record(made.productionId), basePolicy = await api<ReturnType<typeof initialMemoryPolicy>>('memory/policy');
   if (ui) await ui.policyLifecycle(annotation);
   else {
@@ -330,5 +336,13 @@ test('two imported materials reach orchestrated writing, separate approval and a
     await api(`memory/policy/proposals/${restored.id}/activate`, { baseRevision: active.revision, reason: 'Explicit synthetic restore activation.' }, 2);
   }
   assert.deepEqual(await record(made.productionId), beforePolicy, 'policy activation and restoration never rewrite approved articles, sources, current drafts or frozen versions');
+  const detail = await api<MemoryDetail>(`memory/${replacement.id}`), proof = detail.policyReassessment!; assert.ok(proof);
+  const reevaluated = ui ? await ui.reapplyPolicy(detail.evidence, savedCheck.checkedAt, async () => {
+    const current = await api<ReturnType<typeof initialMemoryPolicy>>('memory/policy'), proposal = await api<MemoryPolicyProposal>('memory/policy/proposals', { baseRevision: current.revision, settings: { mode: 'review_required', thresholds: current.thresholds }, cases: [], criteria: null, reason: 'Synthetic concurrent policy version.' }, 2);
+    return api<ReturnType<typeof initialMemoryPolicy>>(`memory/policy/proposals/${proposal.id}/activate`, { baseRevision: current.revision, reason: 'Synthetic concurrent activation.' }, 2);
+  }) : await api<MemoryCheck>(`memory/${replacement.id}/reassess-policy`, { evidence: proof.evidence, check: proof.check, policyRevision: proof.policyRevision, reason: 'Synthetic reevaluation preserves approved articles.' });
+  assert.equal(reevaluated.checkedAt, savedCheck.checkedAt); assert.deepEqual(reevaluated.claims, savedCheck.claims); assert.deepEqual(reevaluated.supports, savedCheck.supports);
+  assert.equal(reevaluated.policyEvaluation!.personId, (await snapshot()).state.sessionPersonId); assert.equal((await api<MemoryDetail>(`memory/${replacement.id}`)).eligibility.usable, false);
+  assert.deepEqual(await record(made.productionId), beforePolicy, 'recalculating a current proof never changes any article, source, draft or frozen version');
   for (const item of selected.items) assert.equal((await api<MemoryDetail>(`memory/${item.evidence.id}`)).checkState, 'outdated');
 });
