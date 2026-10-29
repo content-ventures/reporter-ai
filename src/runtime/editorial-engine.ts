@@ -88,9 +88,10 @@ export function editorialCandidates(record: ProductionRecord) {
   // Switching pipelines must not turn retained web context into an original interview.
   const material = readMaterial(writingSources(record.sources).filter(source => !source.research));
   return material.lines.filter(line => (!material.interviewer || line.speaker !== material.interviewer) && !line.question)
-    .flatMap(line => line.sentences.filter(sentence => !isPleasantry(sentence)).map(sentence => ({
+    .flatMap(line => line.sentences.filter(sentence => line.memory || !isPleasantry(sentence)).map(sentence => ({
       text: sentence.text, speaker: line.speaker,
       ref: segmentRef(line.sourceId,line.sourceVersion,line.segmentId,{ from: sentence.from,to: sentence.to }),
+      ...(line.memory ? { memory: structuredClone(line.memory) } : {}),
     }))).map((candidate,index) => ({ ...candidate,key: String(index) }));
 }
 export function validateEditorialOutline(record: ProductionRecord, outline: OutlineInput) {

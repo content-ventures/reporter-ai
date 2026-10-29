@@ -1,5 +1,5 @@
 import { countWords } from '../../../domain/text/stats.ts';
-import { FIRST_PERSON, keywords, WEAK_START } from './material.ts';
+import { FIRST_PERSON, keywords, materialSentenceKey, WEAK_START } from './material.ts';
 import type { Material, MaterialLine, Sentence } from './material.ts';
 import { capitalize, withoutFinalPeriod } from './sentences.ts';
 
@@ -107,7 +107,9 @@ export function reportedSpeech(line: MaterialLine, run: readonly Sentence[], voi
   const first = run[0];
   const last = run[run.length - 1];
   const excerpt = `${line.text.slice(first.from, last.to)}${ellipsis ? '…' : ''}`;
+  if (line.memory?.kind === 'statistic') return excerpt;
   const said = voices.attribution(line.speaker);
+  if (line.memory) return `“${excerpt}”${said ? `, ${endSentence(said)}` : ''}`;
   if (!said) return line.speaker ? closing(excerpt) : excerpt;
   if (run.length === 1) {
     const text = `${first.text}${ellipsis ? '…' : ''}`;
@@ -147,6 +149,7 @@ function trimLeadIns(text: string, from: number): { text: string; from: number }
 
 /** Verbatim clauses of a sentence that could stand as a heading (3–10 words, no first person). */
 export function phraseCandidates(sentence: Sentence, maxWords = 10): Phrase[] {
+  if (sentence.line.memory) return [];
   const found: Phrase[] = [];
   const push = (raw: string, from: number) => {
     const lead = trimLeadIns(raw, from);
@@ -241,15 +244,16 @@ export function headlineLine(
     return full.length <= 120 ? full : quoted;
   };
   // The lead quote is the article's strongest line: it heads the article when it is short enough.
-  const preferred = options.prefer ? statement(options.prefer) : undefined;
+  const preferred = options.prefer && !options.prefer.line.memory ? statement(options.prefer) : undefined;
   if (options.prefer && preferred) {
-    return { text: format(preferred.text, options.prefer.line.speaker), key: `${options.prefer.line.segmentId}:${options.prefer.from}` };
+    return { text: format(preferred.text, options.prefer.line.speaker), key: materialSentenceKey(options.prefer) };
   }
   const lines = [...material.preamble, ...material.units.flatMap((unit) => unit.answers)];
   let best: { text: string; speaker?: string; score: number; key: string } | undefined;
   for (const line of lines) {
+    if (line.memory) continue;
     for (const sentence of line.sentences) {
-      const key = `${line.segmentId}:${sentence.from}`;
+      const key = materialSentenceKey({ line, from: sentence.from });
       if (options.avoid?.has(key)) continue;
       const found = statement(sentence);
       if (!found) continue;

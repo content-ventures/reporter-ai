@@ -16,7 +16,7 @@ import { createVoices, headingOf, headline, headlineLine, keyPhrase, reportedSpe
 import type { HeadlineLine, SpeakerInfo, Voices } from './editorial.ts';
 import { withImageSlots } from './image-plan.ts';
 import type { ImagePlanOptions } from './image-plan.ts';
-import { groupUnits, keywords, lineRef, lineSentences, pickKeyQuotes, quoteScore, readMaterial, sentenceRef } from './material.ts';
+import { groupUnits, keywords, lineRef, lineSentences, materialLineKey, materialRefLineKey, materialSentenceKey as sentenceKey, pickKeyQuotes, quoteScore, readMaterial, sentenceRef } from './material.ts';
 import type { Material, MaterialLine, QaUnit, Sentence } from './material.ts';
 import { createRng } from './random.ts';
 import type { Rng } from './random.ts';
@@ -56,7 +56,7 @@ export type DraftSection = {
 export type DraftPlan = {
   origin: 'script' | 'extractive';
   title: string;
-  material: { segments: number; speakers: number };
+  material: { segments: number; speakers: number; statistics?: number };
   keyQuotes: SourceRef[];
   intro: ArticleBlock[];
   /** The lines the introduction opens with (the lead). */
@@ -68,7 +68,7 @@ export type DraftPlan = {
   coverSlot?: ImageSlot;
 };
 
-export type DraftPlanRefusal = 'material_too_short';
+export type DraftPlanRefusal = 'material_too_short' | 'memory_not_ready';
 
 type NewId = (prefix: string) => string;
 
@@ -87,7 +87,10 @@ function plural(count: number, one: string, many: string): string {
 }
 
 export function materialMeta(plan: Pick<DraftPlan, 'material'>): string {
-  return `${plural(plan.material.segments, 'fala', 'falas')} · ${plural(plan.material.speakers, 'falante', 'falantes')}`;
+  const { segments, speakers, statistics = 0 } = plan.material;
+  if (statistics) return [plural(statistics, 'dado', 'dados'), ...(segments > statistics ? [plural(segments - statistics, 'fala', 'falas')] : []),
+    ...(speakers ? [plural(speakers, 'falante', 'falantes')] : [])].join(' · ');
+  return `${plural(segments, 'fala', 'falas')} · ${plural(speakers, 'falante', 'falantes')}`;
 }
 
 /** A section's blocks in document order: its intertítulo (when it has one), then its text. */
@@ -95,8 +98,9 @@ export function draftSectionBlocks(section: Pick<DraftSection, 'heading' | 'bloc
   return section.heading ? [section.heading, ...section.blocks] : [...section.blocks];
 }
 
-function countSpeakers(material: Material): { segments: number; speakers: number } {
-  return { segments: material.lines.length, speakers: material.speakers.length };
+function countSpeakers(material: Material): DraftPlan['material'] {
+  const statistics = material.lines.filter(line => line.memory?.kind === 'statistic').length;
+  return { segments: material.lines.length, speakers: material.speakers.length, ...(statistics ? { statistics } : {}) };
 }
 
 /** Keeps only refs that resolve in the cited source version (scripts are data, data can drift). */
@@ -119,8 +123,6 @@ function scriptBlock(block: ArticleBlock, sources: readonly Source[]): ArticleBl
 
 // ——— Lines of the interview the structure quotes ———
 
-const sentenceKey = (sentence: Pick<Sentence, 'line' | 'from'>) => `${sentence.line.segmentId}:${sentence.from}`;
-
 /** Lines that answer (never the interviewer's): what an article and its structure may quote. */
 function answerLines(material: Material): MaterialLine[] {
   const answers = new Set<MaterialLine>([...material.preamble, ...material.units.flatMap((unit) => unit.answers)]);
@@ -129,6 +131,7 @@ function answerLines(material: Material): MaterialLine[] {
 
 /** The line's best quotable sentence, else its first statement long enough to stand alone. */
 function bestLineSentence(line: MaterialLine, angle: ReadonlySet<string>): Sentence | undefined {
+  if (line.memory) return lineSentences(line)[0];
   let best: { sentence: Sentence; score: number } | undefined;
   for (const sentence of lineSentences(line)) {
     const score = quoteScore(sentence, angle);
@@ -163,11 +166,12 @@ function candidatesOf(material: Material, anchored: readonly SourceRef[], angle:
   const bySegment = new Map<string, SourceRef[]>();
   for (const ref of anchored) {
     if (ref.locator.type !== 'segment') continue;
-    bySegment.set(ref.locator.segmentId, [...(bySegment.get(ref.locator.segmentId) ?? []), ref]);
+    const key = materialRefLineKey(ref);
+    bySegment.set(key, [...(bySegment.get(key) ?? []), ref]);
   }
   const out: SourceRef[] = [];
   for (const line of answerLines(material)) {
-    const given = bySegment.get(line.segmentId);
+    const given = bySegment.get(materialLineKey(line));
     if (given) {
       out.push(...given);
       continue;
@@ -180,16 +184,16 @@ function candidatesOf(material: Material, anchored: readonly SourceRef[], angle:
 
 /** One quote per answer line a run of blocks cites (block quotes first): a script section's "citações". */
 function quotesOfBlocks(blocks: readonly ArticleBlock[], material: Material, taken: Set<string>): SourceRef[] {
-  const answers = new Set(answerLines(material).map((line) => line.segmentId as string));
+  const answers = new Set(answerLines(material).map(materialLineKey));
   const ordered = [...blocks.filter((block) => block.type === 'quote'), ...blocks.filter((block) => block.type !== 'quote' && block.type !== 'heading' && block.type !== 'figure')];
   const out: SourceRef[] = [];
   const lines = new Set<string>();
   for (const block of ordered) {
     for (const ref of block.sourceRefs ?? []) {
-      if (ref.locator.type !== 'segment' || !answers.has(ref.locator.segmentId)) continue;
+      if (ref.locator.type !== 'segment' || !answers.has(materialRefLineKey(ref))) continue;
       const key = refKey(ref);
-      if (lines.has(ref.locator.segmentId) || taken.has(key)) continue;
-      lines.add(ref.locator.segmentId);
+      if (lines.has(materialRefLineKey(ref)) || taken.has(key)) continue;
+      lines.add(materialRefLineKey(ref));
       taken.add(key);
       out.push(ref);
     }
@@ -300,11 +304,13 @@ function answerHeading(unit: QaUnit): { text: string; ref: SourceRef } {
  * question. A clause of a line the section quotes or opens with is the second choice (better
  * than no heading of the answers' own).
  */
-function sectionHeading(group: readonly QaUnit[], angle: ReadonlySet<string>, used: Set<string>, skip: ReadonlySet<string>): { text: string; ref: SourceRef } {
+function sectionHeading(group: readonly QaUnit[], angle: ReadonlySet<string>, used: Set<string>, skip: ReadonlySet<string>): { text: string; ref: SourceRef } | undefined {
   const topic = new Set(group.flatMap((unit) => (unit.question ? keywords(unit.question.text) : [])));
-  const all = group.flatMap((unit) => unit.answers.flatMap(lineSentences));
+  const ordinary = group.map(unit => ({ ...unit, answers: unit.answers.filter(line => !line.memory) })).filter(unit => unit.answers.length);
+  const all = ordinary.flatMap((unit) => unit.answers.flatMap(lineSentences));
+  if (!all.length) return undefined;
   const phrase = keyPhrase(all.filter((sentence) => !skip.has(sentenceKey(sentence))), topic, angle, used) ?? keyPhrase(all, topic, angle, used);
-  if (!phrase) return answerHeading(group[0]);
+  if (!phrase) return answerHeading(ordinary[0]);
   used.add(phrase.text.toLocaleLowerCase('pt-BR'));
   return { text: headingOf(phrase), ref: lineRef(phrase.sentence.line, { from: phrase.from, to: phrase.to }) };
 }
@@ -316,7 +322,7 @@ function bestQuote(group: readonly QaUnit[], angle: ReadonlySet<string>, lead: S
   let best: { sentence: Sentence; score: number } | undefined;
   for (const unit of group) {
     for (const line of unit.answers) {
-      if (lead && line.segmentId === lead.line.segmentId) continue;
+      if (lead && materialLineKey(line) === materialLineKey(lead.line)) continue;
       for (const sentence of lineSentences(line)) {
         if (avoid.has(sentenceKey(sentence))) continue;
         const score = quoteScore(sentence, angle) + rng.next() * 0.5;
@@ -411,10 +417,10 @@ function sectionBlocks(group: readonly QaUnit[], budget: SectionBudget, options:
     budget.remaining -= quoteItem.sentence.words;
   }
   const chunks = items
-    .filter((item): item is Chunk => item.kind === 'chunk' && item.words >= MIN_PARAGRAPH_WORDS)
+    .filter((item): item is Chunk => item.kind === 'chunk' && (item.line.memory !== undefined || item.words >= MIN_PARAGRAPH_WORDS))
     .sort((a, b) => b.score - a.score || a.order - b.order);
   for (const chunk of chunks) {
-    if (budget.remaining < MIN_PARAGRAPH_WORDS) break;
+    if (budget.remaining < MIN_PARAGRAPH_WORDS && !chunk.line.memory) continue;
     if (chunk.words <= budget.remaining) {
       chosen.set(chunk.order, { sentences: chunk.sentences, ellipsis: false });
       budget.remaining -= chunk.words;
@@ -437,7 +443,7 @@ function sectionBlocks(group: readonly QaUnit[], budget: SectionBudget, options:
     // Nothing fits whole: the best candidate's opening, cut at a word boundary.
     const best = chunks[0];
     const sentence = best.sentences[0];
-    const cut = cutWords(sentence.text, Math.max(12, budget.remaining));
+    const cut = best.line.memory ? { text: sentence.text, cut: false } : cutWords(sentence.text, Math.max(12, budget.remaining));
     const partial: Sentence = { ...sentence, to: sentence.from + cut.text.length, text: cut.text, words: countWords(cut.text) };
     chosen.set(best.order, { sentences: [partial], ellipsis: cut.cut });
     budget.remaining = 0;
@@ -460,7 +466,7 @@ function sectionBlocks(group: readonly QaUnit[], budget: SectionBudget, options:
     const first = picked.sentences[0];
     const last = picked.sentences[picked.sentences.length - 1];
     if (blocks.length === 0) opening = sentenceKey(first);
-    if (!lines.some((entry) => entry.line.segmentId === item.line.segmentId)) lines.push(first);
+    if (!lines.some((entry) => materialLineKey(entry.line) === materialLineKey(item.line))) lines.push(first);
     blocks.push(
       paragraphBlock(newId('blk'), reportedSpeech(item.line, picked.sentences, voices, picked.ellipsis), {
         ai: 'unreviewed',
@@ -588,13 +594,13 @@ function writeDraft(input: ExtractiveInput, material: Material, layout: Layout, 
     let headRef: SourceRef | undefined;
     if (title === undefined) {
       const head = sectionHeading(section.pool, angle, headingTexts, written.opening ? new Set([...lifted, written.opening]) : lifted);
-      title = head.text;
-      headRef = head.ref;
+      title = head?.text ?? input.fallbackTitle;
+      headRef = head?.ref;
     } else {
-      headRef = section.quotes?.[0] ?? blocks.find((block) => block.sourceRefs?.length)?.sourceRefs?.[0];
+      headRef = (section.quotes ?? blocks.flatMap(block => block.sourceRefs ?? [])).find(ref => !answerSentence(material, ref)?.line.memory);
     }
     const blockId = section.blockId ?? input.newId('blk');
-    const anchors = section.quotes ?? dedupeRefs([...(quote ? [quote] : []), ...written.lines.filter((line) => line.line.segmentId !== quote?.line.segmentId)].map(sentenceRef));
+    const anchors = section.quotes ?? dedupeRefs([...(quote ? [quote] : []), ...written.lines.filter((line) => !quote || materialLineKey(line.line) !== materialLineKey(quote.line))].map(sentenceRef));
     const draft: DraftSection = { stepId: `section-${index + 1}`, blockId, title, blocks, quotes: anchors };
     if (headings) draft.heading = headingBlock(blockId, title, 2, { ai: 'unreviewed', ...(headRef ? { sourceRefs: [headRef] } : {}) });
     return draft;
@@ -686,7 +692,7 @@ function capAtMax(plan: DraftPlan, maxChars: number): DraftPlan {
 }
 
 function tooShort(material: Material): boolean {
-  return material.answerWords < MIN_ANSWER_WORDS || material.units.length === 0;
+  return material.units.length === 0 || material.answerWords < (material.lines.some(line => line.memory) ? 1 : MIN_ANSWER_WORDS);
 }
 
 const SHORT_MATERIAL = `O material tem menos de ${MIN_ANSWER_WORDS} palavras de fala para um artigo.`;
@@ -697,6 +703,7 @@ const SHORT_MATERIAL = `O material tem menos de ${MIN_ANSWER_WORDS} palavras de 
  */
 export function extractivePlan(input: ExtractiveInput): Result<DraftPlan, DraftPlanRefusal> {
   const material = readMaterial(input.sources);
+  if (material.unavailableMemory) return refuse('memory_not_ready', 'Confira os trechos e a autorização da fonte do banco antes de escrever.');
   if (tooShort(material)) return refuse('material_too_short', SHORT_MATERIAL);
   const sizing = draftSizeInstructions({ size: input.brief.size, sections: Math.min(input.brief.sections, material.units.length) });
   const ceiling = Math.max(MIN_ANSWER_WORDS, Math.floor(material.answerWords * MAX_MATERIAL_SHARE));
@@ -725,6 +732,7 @@ export type PlannedOutline = {
  */
 export function extractivePlanFromOutline(input: ExtractiveInput, outline: PlannedOutline): Result<DraftPlan, DraftPlanRefusal> {
   const material = readMaterial(input.sources);
+  if (material.unavailableMemory) return refuse('memory_not_ready', 'Confira os trechos e a autorização da fonte do banco antes de escrever.');
   if (tooShort(material)) return refuse('material_too_short', SHORT_MATERIAL);
   const angle = new Set(input.brief.angle ? keywords(input.brief.angle) : []);
   const resolve = (refs: readonly SourceRef[]) => refs.map((ref) => answerSentence(material, ref)).filter((sentence): sentence is Sentence => sentence !== undefined);
@@ -734,19 +742,19 @@ export function extractivePlanFromOutline(input: ExtractiveInput, outline: Plann
   // Each answer line belongs to the first section that quotes it.
   const owner = new Map<string, number>();
   anchors.forEach((lines, index) => {
-    for (const line of lines) if (!owner.has(line.line.segmentId)) owner.set(line.line.segmentId, index);
+    for (const line of lines) if (!owner.has(materialLineKey(line.line))) owner.set(materialLineKey(line.line), index);
   });
   const units: QaUnit[] = [...(material.preamble.length > 0 ? [{ answers: material.preamble, words: 0 }] : []), ...material.units];
   const poolOf = (index: number): QaUnit[] =>
     units
       .map((unit) => {
-        const answers = unit.answers.filter((line) => owner.get(line.segmentId) === index);
+        const answers = unit.answers.filter((line) => owner.get(materialLineKey(line)) === index);
         const pooled: QaUnit = { answers, words: answers.reduce((sum, line) => sum + line.words, 0) };
         if (unit.question) pooled.question = unit.question;
         return pooled;
       })
       .filter((unit) => unit.answers.length > 0);
-  const quotable = (sentence: Sentence) => Number.isFinite(quoteScore(sentence, angle)) && sentence.line.segmentId !== lead?.line.segmentId;
+  const quotable = (sentence: Sentence) => Number.isFinite(quoteScore(sentence, angle)) && (!lead || materialLineKey(sentence.line) !== materialLineKey(lead.line));
   const sections: SectionLayout[] = outline.sections.map((section, index) => {
     const lines = anchors[index];
     const quote = lines.find(quotable);

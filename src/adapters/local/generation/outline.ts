@@ -12,6 +12,7 @@ import { draftSizeInstructions } from '../../../registries/sizing.ts';
 import { answerSentence, planChars } from './draft-plan.ts';
 import type { DraftPlan, PlannedOutline } from './draft-plan.ts';
 import type { Material } from './material.ts';
+import { materialSentenceKey } from './material.ts';
 
 /**
  * The structure of an article ("Montando estrutura"): what the outline event announces for a
@@ -136,7 +137,7 @@ export function normalizeOutline(outline: OutlineInput, context: NormalizeContex
     for (const ref of refs ?? []) {
       const sentence = answerSentence(context.material, ref);
       if (!sentence) return OUTLINE_MESSAGES.quoteUnknown;
-      const keys = [refKey(ref), `${sentence.line.segmentId}:${sentence.from}`];
+      const keys = [refKey(ref), materialSentenceKey(sentence)];
       if (keys.some((key) => seen.has(key))) return OUTLINE_MESSAGES.quoteTwice;
       for (const key of keys) seen.add(key);
     }
