@@ -403,3 +403,25 @@ test('market mappings save explicit column choices with source binding and revie
   const escapedText = escapedPiece.doc.draft.body.blocks[0].inlines[0].text;
   assert.ok(escapedText.includes('Instituição: Órgão "A"')); assert.ok(escapedText.includes('"Órgão ""A""";Vendas;240;pessoas;2025'));
 });
+
+test('staging memory acceptance exercises the actual import, review and writing without providers', async () => {
+  const { acceptMemoryFlow } = await import('../../scripts/neon-memory-acceptance.mjs');
+  const foreign = { subject: randomUUID(), email: `outside-${randomUUID()}@originals.test`, name: 'Other user', emailVerified: true };
+  await owner('INSERT INTO core.users(id,name,email,auth_subject,email_verified) VALUES($1,$2,$3,$4,true)', [randomUUID(), foreign.name, foreign.email, foreign.subject]);
+  const call = async (actor: typeof foreign, path: string, input?: unknown) => {
+    const response = await handle(new Request(`${APP}/api/reporter/${path}`, { method: input === undefined ? 'GET' : 'POST',
+      headers: { origin: APP, 'content-type': 'application/json', 'idempotency-key': randomUUID() }, ...(input === undefined ? {} : { body: JSON.stringify(input) }) }),
+    path.split('/'), { identify: async () => actor, defer: () => {} });
+    const content = Buffer.from(await response.arrayBuffer());
+    return { status: response.status, value: response.headers.get('content-type')?.includes('application/json') ? JSON.parse(content.toString()) : content };
+  };
+  const ok = async (actor: typeof foreign, path: string, input?: unknown) => {
+    const response = await call(actor, path, input); assert.equal(response.status, 200, JSON.stringify(response.value)); return response.value;
+  };
+  const [reviewer] = await owner('SELECT id FROM core.users WHERE email=$1', [identities[2].email]);
+  const setup = { ok, call, owner: { query: async (sql: string, args: unknown[]) => ({ rows: await owner(sql, args) }) },
+    editor: identities[0], reviewer: { ...identities[2], id: reviewer.id }, other: foreign, client: { id: PORTAL, slug: 'reporter-ai' },
+    environment: { ...process.env, REPORTER_MEMORY_MODE: 'off' } };
+  await acceptMemoryFlow(setup);
+  await assert.rejects(acceptMemoryFlow({ ...setup, environment: { ...process.env, REPORTER_MEMORY_MODE: 'on' } }), /worker ceiling off/);
+});

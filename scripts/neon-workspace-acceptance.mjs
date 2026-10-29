@@ -13,6 +13,7 @@ import {validateExport} from './neon-render-acceptance.mjs';
 import {runWithReporterContext} from '../src/server/request-context.ts';
 import {resolveReporterContext,pool} from '../src/server/database.ts';
 import {handleReporter} from '../src/server/http.ts';
+import {acceptMemoryFlow} from './neon-memory-acceptance.mjs';
 
 const PILOT='10000000-0000-0000-0000-000000000101';
 const quotes=['A revisão humana faz parte de cada etapa.','A previsão depende de testes reais.','Ainda não temos um calendário definido.'];
@@ -45,11 +46,11 @@ export async function acceptWorkspaceFlow(environment=process.env,request=fetch)
   };
   async function call(actor,path,body){
     const response=await handleReporter(new Request(origin+'/api/reporter/'+path,{method:body===undefined?'GET':'POST',
-      headers:{origin,'x-reporter-account':actor.id,'content-type':body instanceof Blob?body.type:'application/json'},
+      headers:{origin,'x-reporter-account':actor.id,'idempotency-key':randomUUID(),'content-type':body instanceof Blob?body.type:'application/json'},
       ...(body===undefined?{}:{body:body instanceof Blob?body:JSON.stringify(body)})}),path.split('?')[0].split('/'),{
       identify:async()=>actor,defer:()=>{},
     });
-    const content=await response.text();return{status:response.status,value:JSON.parse(content)};
+    const content=Buffer.from(await response.arrayBuffer());return{status:response.status,value:response.headers.get('content-type')?.includes('application/json')?JSON.parse(content.toString('utf8')):content};
   }
   async function ok(actor,path,body,status=200){const result=await call(actor,path,body);assert.equal(result.status,status,result.value.error??result.value.refusal?.code??'Unexpected HTTP status');return result.value;}
   async function rpc(actor,client,method,...args){const result=await ok(actor,`w/${client.slug}/workspace`,{method,args,requestId:randomUUID()});assert.equal(result.ok,true,JSON.stringify(result));return result.value;}
@@ -98,6 +99,7 @@ export async function acceptWorkspaceFlow(environment=process.env,request=fetch)
       await ok(operator,`platform/workspaces/${client.id}/templates`,{revision:metadata.revision,config:{publication:client.name,presets:['editorial'],defaultPreset:'editorial',font:'Inter',logoId:brand.id}});
       metadata=await ok(operator,`platform/workspaces/${client.id}`);
       await ok(operator,`platform/workspaces/${client.id}/update`,{revision:metadata.revision,name:client.name,status:'active'});
+      if(index===0)await acceptMemoryFlow({ok,call,owner,editor,reviewer,other:actors[3],client,environment});
       const created=await rpc(editor,client,'createFromSource',{title:client.name+' — cobertura de teste',material:{text:source,format:'auto',origin:'event',authorized:true},brief:{sections:2,size:'standard'},plan:['article','carousel']});
       let current=await record(editor,client,created.productionId),piece=current.pieces.find(item=>item.kind==='article');
       const evidence=quotes.map(quote=>{const candidate=editorialCandidates(current).find(candidate=>candidate.text.includes(quote));assert.ok(candidate);return candidate;});
