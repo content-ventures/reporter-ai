@@ -372,6 +372,8 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
         const text = version.getByRole('textbox', { name: `Artigo na versão ${number}`, exact: true });
         await expect(text).toHaveAttribute('aria-readonly', 'true');
         await version.getByRole('button', { name: 'Fechar painel', exact: true }).focus(); await editor.keyboard.press('Tab'); await expect(text).toBeFocused();
+        const focusRing = await text.evaluate(element => { const style = getComputedStyle(element); return { visible: element.matches(':focus-visible'), width: parseFloat(style.outlineWidth), style: style.outlineStyle }; });
+        assert.ok(focusRing.visible && focusRing.width > 0 && focusRing.style !== 'none', 'immutable article text must retain a visible keyboard focus ring');
         await audit(editor, `used-${passage.kind}`); await editor.keyboard.press('Escape');
         // A repeated Escape during the reader's exit still belongs to that topmost layer.
         await editor.keyboard.press('Escape'); await expect(version).toBeHidden();
