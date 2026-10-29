@@ -10,6 +10,11 @@ type BoundItem = MemorySourceBinding['items'][number];
 export type WritingMemoryContext = Pick<BoundItem, 'kind' | 'materialId' | 'selected' | 'metadata'> & { origin: Omit<BoundItem['anchor'], 'excerpt'> };
 export type WritingSourceCandidate = { key: string; text: string; speaker?: string; ref: SourceRef; memory?: WritingMemoryContext };
 
+export function writingMemoryContext(binding: BoundItem): WritingMemoryContext {
+  return { kind: binding.kind, materialId: binding.materialId, selected: structuredClone(binding.selected), metadata: structuredClone(binding.metadata),
+    origin: { source: { ...binding.anchor.source }, spans: structuredClone(binding.anchor.spans) } };
+}
+
 /** Complete original turns, including questions and qualifiers; no editorial reduction. */
 export function writingSourceCandidates(sources: readonly Source[]): WritingSourceCandidate[] {
   return writingSources(sources).filter(source => !source.research).flatMap(source => {
@@ -19,8 +24,7 @@ export function writingSourceCandidates(sources: readonly Source[]): WritingSour
       if (source.memory && !binding) return [];
       const ref = segmentRef(source.id, version.number, segment.id);
       return [{ key: 'source-' + contentHash(ref), text: segment.text, ...(segment.speaker && binding?.kind !== 'statistic' ? { speaker: segment.speaker } : {}), ref,
-        ...(binding ? { memory: { kind: binding.kind, materialId: binding.materialId, selected: structuredClone(binding.selected), metadata: structuredClone(binding.metadata),
-          origin: { source: { ...binding.anchor.source }, spans: structuredClone(binding.anchor.spans) } } } : {}) }];
+        ...(binding ? { memory: writingMemoryContext(binding) } : {}) }];
     });
   });
 }

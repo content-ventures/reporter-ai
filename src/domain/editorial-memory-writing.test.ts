@@ -13,7 +13,7 @@ import { toVersionRef } from './piece.ts';
 import { baseRecord, commitVersion, createKit, recordDecision } from './testing/scenario.ts';
 import { memorySourceSegment, memoryWritingExcerpt } from './editorial-memory-excerpt.ts';
 import { sourceContentHash } from './source.ts';
-import { paragraphBlock, quoteBlock } from './article.ts';
+import { headingBlock, paragraphBlock, quoteBlock } from './article.ts';
 import { listBlock } from './article.ts';
 import { writingArticleBody } from './writing-article.ts';
 import { writingSourceCandidates } from './writing-source.ts';
@@ -79,6 +79,7 @@ test('a complete numeric observation still cannot be turned into a direct quotat
     assert.ok(!result.ok); assert.equal(result.refusal.code, 'memory_literal_changed'); assert.ok(result.refusal.message.includes('fala'));
   }
   assert.equal(validateMemoryArticle({ ...body, blocks: [listBlock('complete', [text], false, { sourceRefs: original.sourceRefs })] }, [source], items).ok, true);
+  assert.equal(validateMemoryArticle({ ...body, blocks: [headingBlock('heading', text, 2, { sourceRefs: original.sourceRefs })] }, [source], items).ok, false);
 });
 test('selecting a numeric fragment inserts its complete datum with exact usable provenance', () => {
   const { source, body } = prepared(), text = source.versions[0].content.segments[0].text, start = text.indexOf('240');

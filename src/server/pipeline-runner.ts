@@ -380,7 +380,7 @@ export async function executePipelineStep(input: {
     schema: input.schema,model: step.model,temperature: step.temperature,maxTokens: step.maxTokens,
     ...(pipelineModelEffortOptions(step.model).length ? { effort: step.effort ?? pipelineDefaultEffort(step.model) } : {}),
     ...(['article', 'intro', 'section'].includes(input.key) ? { validation: 'r1-length-and-literal-quotes-v1' }
-      : input.key === 'assist' ? { validation: 'article-assist-scope-quotes-and-size-v1' } : {}) });
+      : input.key === 'assist' ? { validation: 'article-assist-scope-quotes-size-and-memory-v2' } : {}) });
   const cacheKey = 'pipeline-'+hash;
   const sizing = JSON.parse(input.variables.sizing || '{}');
   const budget = input.key === 'intro' ? sizing.maxChars??sizing.introChars : input.key === 'section' ? sizing.currentSection?.maxChars??sizing.currentSection?.budgetChars

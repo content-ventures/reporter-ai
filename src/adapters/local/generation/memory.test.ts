@@ -1,14 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { blockText, type ArticleBody } from '../../../domain/article.ts';
+import { blockText, paragraphBlock, type ArticleBody } from '../../../domain/article.ts';
 import { memoryArticleContentIssues } from '../../../domain/editorial-memory-article.ts';
 import { validateMemoryArticle } from '../../../domain/editorial-memory-guard.ts';
-import { createMemoryMaterial, memoryBlocks } from '../../../domain/editorial-memory-import.ts';
-import { materializeMemoryCandidates, type MemoryCandidate } from '../../../domain/editorial-memory-extraction.ts';
-import { prepareMemoryWriting, type MemoryWritingItem } from '../../../domain/editorial-memory-writing.ts';
-import { initialMemoryPolicy, memoryEligibility, memoryEvidenceRef, reviewMemoryEvidence, type MemorySelection } from '../../../domain/editorial-memory.ts';
 import { createTranscriptSource, type Source } from '../../../domain/source.ts';
 import { parseTranscript } from '../../../domain/text/transcript-parse.ts';
+import { memoryWritingFixture } from '../../../domain/testing/editorial-memory.ts';
 import { baseRecord, createKit } from '../../../domain/testing/scenario.ts';
 import { editorialCandidates } from '../../../runtime/editorial-engine.ts';
 import { extractivePlan, extractivePlanFromOutline, materialMeta, planBlocks, type DraftPlan } from './draft-plan.ts';
@@ -16,34 +13,15 @@ import { createVoices, headlineLine } from './editorial.ts';
 import { lineRef, lineSentences, materialLineKey, pickKeyQuotes, readMaterial } from './material.ts';
 import { normalizeOutline } from './outline.ts';
 import { createRng } from './random.ts';
+import { planAsk, planExpand, planToList, validateMemoryAssistPlan } from './assist-plan.ts';
+import { applySuggestion } from '../../../domain/suggestion.ts';
+import { segmentRef } from '../../../domain/refs.ts';
+import { createLocalGenerationService } from './local-generation.ts';
 
 let n = 0;
 const ctx = { now: '2026-10-28T20:00:00Z', actorId: 'actor', newId: (prefix: string) => `${prefix}-${++n}` };
-const workspace = 'workspace', policy = initialMemoryPolicy(workspace);
-function bank(kind: 'citation' | 'statistic', text: string) {
-  const original = 'PRIVATE HEADER. ' + text + ' PRIVATE FOOTER.';
-  const { material, source } = createMemoryMaterial({ title: kind, kind: 'report', text: original, authorized: true,
-    primaryOrigin: kind, originalFileId: null, metadata: { publishedOn: null, recordedOn: null, institution: null,
-      company: null, event: null, edition: null, topics: [], originalUrl: null } }, workspace, ctx);
-  const common = { excerpt: text, from: original.indexOf(text) };
-  const candidate: MemoryCandidate = kind === 'citation' ? { ...common, kind, kinds: ['opinion'] } : { ...common, kind, kinds: ['declared'],
-    indicator: 'Pessoas', raw: '240', unit: 'pessoas', period: '2025', geography: null, population: null, qualifier: text.includes('cerca de') ? 'cerca de' : 'Cerca de', issuingInstitution: null };
-  const evidence = materializeMemoryCandidates([candidate], memoryBlocks(material, 'job', original)[0], material, { from: 0, text: original }, ctx)[0];
-  if (evidence.kind === 'citation') { evidence.personId = 'author'; evidence.authorConfirmed = true; }
-  const decision = reviewMemoryEvidence({ evidence: memoryEvidenceRef(evidence), check: null, policyRevision: 1,
-    previousSequence: 0, action: 'accept', reason: 'Synthetic technical review', supports: [] }, evidence, source, policy, null, null,
-    { personId: 'actor', workspaceId: workspace, roles: ['editor'] }, ctx);
-  assert.ok(decision.ok);
-  const item: MemoryWritingItem = { policy, ...(kind === 'citation' ? { author: { id: 'author', name: 'Pessoa Fictícia', title: 'Porta-voz', organization: 'Organização sintética' } } : {}),
-    view: { evidence, material: { id: material.id, title: material.title, kind: material.kind, primaryOrigin: material.primaryOrigin },
-      check: null, decision: decision.value, eligibility: memoryEligibility(evidence, source, policy, null, decision.value),
-      relevance: null, uses: { selected: 0, inserted: 0, approved: 0, published: 0 } } };
-  const selection: MemorySelection = { id: ctx.newId('selection'), workspaceId: workspace, revision: 1, productionId: null,
-    items: [{ evidence: memoryEvidenceRef(evidence), check: null, decisionId: decision.value.id, policyRevision: 1 }],
-    createdBy: 'actor', updatedBy: 'actor', createdAt: ctx.now, updatedAt: ctx.now };
-  const prepared = prepareMemoryWriting(selection, [item], 'Pauta sintética', ctx); assert.ok(prepared.ok);
-  return { source: prepared.value.source as Source, item };
-}
+const workspace = 'workspace';
+const bank = (kind: 'citation' | 'statistic', text: string) => memoryWritingFixture(kind, text, ctx, workspace);
 function input(sources: Source[]) {
   return { sources, brief: { sections: 3, size: 'standard' as const, revision: 1 }, fallbackTitle: 'Pauta sintética',
     newId: ctx.newId, rng: createRng('bank-reader'), images: false as const };
@@ -126,4 +104,48 @@ test('ordinary interviews keep sentence spans and research never becomes bank or
   const { source } = bank('statistic', 'Cerca de 240 pessoas em 2025.');
   const material = readMaterial([ordinary, { ...source, research: { provider: 'tavily', runId: 'test', query: 'synthetic', retrievedAt: ctx.now, publishedOn: null } }]);
   assert.equal(material.lines.length, 1); assert.equal(lineSentences(material.lines[0]).length, 2);
+});
+test('the local assistant answers bank questions with complete data and literal citations', () => {
+  const stat = bank('statistic', 'Foram atendidas cerca de 240 pessoas em 2025. Apenas participantes do piloto foram incluídos.'),
+    quote = bank('citation', 'Queremos  ouvir\n todas as pessoas neste exemplo sintético.');
+  const context = { sources: [stat.source, quote.source], newId: ctx.newId }, empty: ArticleBody = { type: 'article', title: '', blocks: [] };
+  const plan = planAsk(empty, 'Quais pessoas participaram?', undefined, context); assert.ok(plan.ok);
+  const checked = validateMemoryAssistPlan(empty, plan.value, context); assert.ok(checked.ok);
+  assert.ok(checked.value.reply.some(block => blockText(block) === stat.item.view.evidence.anchor.excerpt));
+  assert.ok(checked.value.reply.some(block => blockText(block).includes(quote.item.view.evidence.anchor.excerpt)));
+  assert.ok(checked.value.reply.every(block => !blockText(block).includes('memory-person-')));
+});
+test('local list conversion keeps a multi-sentence statistic as one complete item', () => {
+  const text = 'Foram atendidas cerca de 240 pessoas em 2025. Apenas participantes do piloto foram incluídos.', { source, item } = bank('statistic', text);
+  const ref = lineRef(readMaterial([source]).lines[0]);
+  const article: ArticleBody = { type: 'article', title: '', blocks: [paragraphBlock('p', 'Introdução editorial. ' + text + ' Encerramento editorial.', { sourceRefs: [ref] })] };
+  const context = { sources: [source], newId: ctx.newId };
+  const plan = planToList(article, [{ blockId: 'p', from: 0, to: blockText(article.blocks[0]).length }], context); assert.ok(plan.ok);
+  const checked = validateMemoryAssistPlan(article, plan.value, context); assert.ok(checked.ok);
+  const suggestion = checked.value.suggestions[0], applied = applySuggestion(article, { ...suggestion, state: 'ready', anchorText: [blockText(article.blocks[0])] }); assert.ok(applied.ok);
+  const list = applied.value.blocks[0]; assert.equal(list.type, 'list'); assert.ok(list.items.some(item => item.map(inline => inline.text).join('') === text));
+  assert.equal(validateMemoryArticle(applied.value, [source], [item]).ok, true);
+});
+test('local expansion restores the entire selected observation without exposing unselected original text', () => {
+  const text = 'Foram atendidas cerca de 240 pessoas em 2025. Apenas participantes do piloto foram incluídos.', { source, item } = bank('statistic', text);
+  const partial = text.slice(0, text.indexOf('.') + 1), line = readMaterial([source]).lines[0];
+  const ref = segmentRef(source.id, line.sourceVersion, line.segmentId, { from: 0, to: partial.length });
+  const article: ArticleBody = { type: 'article', title: '', blocks: [paragraphBlock('p', partial, { sourceRefs: [ref] })] }, context = { sources: [source], newId: ctx.newId };
+  const plan = planExpand(article, [{ blockId: 'p', from: 0, to: partial.length }], context); assert.ok(plan.ok);
+  const checked = validateMemoryAssistPlan(article, plan.value, context); assert.ok(checked.ok);
+  const applied = applySuggestion(article, { ...checked.value.suggestions[0], state: 'ready', anchorText: [partial] }); assert.ok(applied.ok);
+  assert.equal(blockText(applied.value.blocks[0]), text); assert.equal(validateMemoryArticle(applied.value, [source], [item]).ok, true);
+  assert.equal(JSON.stringify(checked).includes('PRIVATE'), false);
+});
+test('the public local generation service refuses a shortening that removes numeric context', async () => {
+  const text = 'Foram atendidas cerca de 240 pessoas em 2025. Apenas participantes do piloto foram incluídos nesta observação sintética.', { source } = bank('statistic', text);
+  const ref = lineRef(readMaterial([source]).lines[0]), record = { ...baseRecord(createKit()), sources: [source] };
+  const article: ArticleBody = { type: 'article', title: '', blocks: [paragraphBlock('p', text, { sourceRefs: [ref] })] };
+  record.pieces[0].draft.body = article;
+  const service = createLocalGenerationService({ getRecord: () => record, actorId: () => 'actor',
+    clock: { now: () => ctx.now }, ids: { next: ctx.newId }, sleep: async () => undefined });
+  const started = await service.start('article.shorten', { productionId: record.production.id, pieceId: record.pieces[0].id,
+    body: article, baseRevision: 0, target: [{ blockId: 'p', from: 0, to: text.length }] });
+  assert.ok(!started.ok); assert.equal(started.refusal.code, 'no_change'); assert.match(started.refusal.message, /contexto/);
+  assert.equal(service.snapshots().length, 0); assert.equal(blockText(article.blocks[0]), text);
 });
