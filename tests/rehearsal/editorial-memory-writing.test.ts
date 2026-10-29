@@ -718,8 +718,9 @@ test('correction impact tracks current selections and actual old draft segments 
 test('impact pages bind actor, scope, limits, current bank and editorial clocks and conceal inaccessible targets and originals', async () => {
   const item = await fixture('statistic'), saved = await selection([item.evidence]);
   const made = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput), path = `memory/materials/${item.material.id}/impact`;
+  const attached = await json<MemorySelection>('memory/selections', { productionId: made.productionId, baseRevision: 0, evidence: [memoryEvidenceRef(item.evidence)] });
   await json(`memory/${item.evidence.id}/correction`, { expected: memoryEvidenceRef(item.evidence), reason: 'Synthetic changed provenance.', changes: { kind: 'statistic', metadata: { event: 'Synthetic correction event' } } });
-  const first = await impact('material', item.material.id, '?limit=1'); assert.ok(first.nextCursor);
+  const first = await impact('material', item.material.id, '?limit=1'); assert.equal(first.total, 3); assert.ok(first.nextCursor);
   const cursor = encodeURIComponent(first.nextCursor);
   for (const query of ['limit=0', 'limit=101', 'limit=1&limit=2', 'unknown=1', 'cursor=x&cursor=y']) assert.equal((await api(`${path}?${query}`)).status, 422);
   for (const other of [`${path}?limit=2&cursor=${cursor}`, `memory/${item.evidence.id}/impact?limit=1&cursor=${cursor}`]) assert.equal((await api(other)).status, 409);
@@ -735,6 +736,7 @@ test('impact pages bind actor, scope, limits, current bank and editorial clocks 
   await owner("UPDATE reporter_ed_productions SET doc=doc||jsonb_build_object('restrictedTo','[]'::jsonb) WHERE production_id=$1", [made.productionId]);
   const restricted = await api(path, undefined, randomUUID(), identities[2]); assert.equal(restricted.status, 200);
   const visible = await restricted.json() as MemoryCorrectionImpact; assert.equal(visible.total, 1); assert.equal(visible.items[0].kind, 'selection');
+  assert.equal(visible.items[0].id, saved.id); assert.ok(!JSON.stringify(visible).includes(attached.id));
   assert.ok(!JSON.stringify(visible).includes(made.productionId)); assert.ok(!JSON.stringify(visible).includes(writingInput.title));
   const privateItem = await fixture('statistic', true);
   for (const route of [`memory/materials/${privateItem.material.id}/impact`, `memory/${privateItem.evidence.id}/impact`]) assert.equal((await api(route, undefined, randomUUID(), identities[2])).status, 404);
