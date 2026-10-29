@@ -31,9 +31,11 @@ export async function readMemoryJob(id: string): Promise<MemoryJob> {
   return memoryRead(async client => { const value = (await client.query('SELECT public.reporter_memory_job($1) AS value', [id])).rows[0].value;
     if (!value) throw new FlowError('NOT_FOUND', 404); return value; });
 }
-export async function readMemoryMaterial(id: string): ReturnType<EditorialMemory['material']> {
+export async function readMemoryMaterial(id: string, revision?: number): ReturnType<EditorialMemory['material']> {
   memoryIdSchema.parse(id);
-  return memoryRead(async client => { const value = (await client.query('SELECT public.reporter_memory_material_detail($1) AS value', [id])).rows[0].value;
+  if (revision !== undefined) memoryCancelSchema.parse({ baseRevision: revision });
+  return memoryRead(async client => { const value = (revision === undefined ? await client.query('SELECT public.reporter_memory_material_detail($1) AS value', [id])
+    : await client.query('SELECT public.reporter_memory_material_version($1,$2) AS value', [id, revision])).rows[0].value;
     if (!value) throw new FlowError('NOT_FOUND', 404); return value; });
 }
 export async function readMemoryMaterials(input: MemoryHistoryQuery): Promise<MemoryPage<MemoryMaterial & { job: MemoryJob | null }>> {

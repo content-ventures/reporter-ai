@@ -44,6 +44,14 @@ test('library commands keep the bound workspace, account and request identity wh
     assert.equal(seen[7].url.pathname, '/api/reporter/w/editorial-client/memory/productions/production%2Fencoded/sources/source%2Fencoded/context');
     assert.equal(seen[7].url.searchParams.get('sourceVersion'), '2'); assert.equal(seen[7].url.searchParams.get('segmentId'), 'segment & literal');
     assert.equal(seen[7].init.method ?? 'GET', 'GET'); assert.equal(new Headers(seen[7].init.headers).get('x-reporter-account'), 'actual-account');
+    const revision = { baseRevision: 2, source: refresh.expected, text: 'A complete corrected synthetic original.', reason: 'Corrected original words.' };
+    await library.reviseMaterial('material/encoded', revision, 'stable-material-revision');
+    assert.equal(seen[8].url.pathname, '/api/reporter/w/editorial-client/memory/materials/material%2Fencoded/revision');
+    assert.equal(new Headers(seen[8].init.headers).get('idempotency-key'), 'stable-material-revision');
+    assert.equal(new Headers(seen[8].init.headers).get('x-reporter-account'), 'actual-account'); assert.deepEqual(JSON.parse(String(seen[8].init.body)), revision);
+    await library.material('material/encoded', 1);
+    assert.equal(seen[9].url.pathname, '/api/reporter/w/editorial-client/memory/materials/material%2Fencoded');
+    assert.equal(seen[9].url.searchParams.get('revision'), '1'); assert.equal(seen[9].init.method ?? 'GET', 'GET');
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });

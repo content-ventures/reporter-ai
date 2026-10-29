@@ -22,7 +22,7 @@ import { writingSourceCandidates } from '../../src/domain/writing-source.ts';
 import { createLocalExportService } from '../../src/adapters/local/export/local-export.ts';
 import { createLocalRenderService } from '../../src/adapters/local/render/local-render.ts';
 import type { ConnectedWorkspace } from '../../src/ports/connected-workspace.ts';
-import type { MemoryDetail, MemoryJob, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
+import type { MemoryDetail, MemoryJob, MemorySelectedContext, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import type { BuiltFile, ExportPackage } from '../../src/ports/export.ts';
 import type { WritingRunDetails } from '../../src/ports/pipeline-settings.ts';
@@ -232,4 +232,43 @@ test('two imported materials reach orchestrated writing, separate approval and a
     const approved = detail.occurrences.items.filter(use => use.stage === 'approved'); assert.equal(approved.length, 1);
     assert.equal(approved[0].personId, approval.by); assert.equal(approved[0].stage, 'approved'); if (approved[0].stage === 'approved') assert.deepEqual(approved[0].proof!.selected, item);
   }
+  const original = materials.find(material => material.kind === 'statistic')!, beforeRevision = await record(made.productionId);
+  const frozen = structuredClone(beforeRevision.versions), draftBeforeRevision = structuredClone(beforeRevision.pieces[0].draft);
+  const correctedText = original.text.replace('240', '241');
+  const revised = await api<{ material: MemoryMaterial; job: MemoryJob; affectedEvidence: number }>(`memory/materials/${original.material.id}/revision`, {
+    baseRevision: original.material.revision, source: original.material.source, text: correctedText, reason: 'Synthetic correction of the original count after approval.',
+  });
+  assert.equal(revised.material.source.sourceVersion, 2); assert.equal(revised.affectedEvidence, 2);
+  assert.deepEqual((await record(made.productionId)).versions, frozen, 'original corrections never rewrite frozen approved/generated articles');
+  assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
+  const originalContext = await api<MemorySelectedContext>(`memory/productions/${made.productionId}/sources/${made.sourceId}/context?sourceVersion=1&segmentId=${encodeURIComponent(initialProof.items[0].segmentId)}`);
+  assert.deepEqual(originalContext.binding.selected, selected.items[0]); assert.equal(originalContext.current.matchesSelection, false);
+  assert.equal(originalContext.original.ref.sourceVersion, 1); assert.ok(originalContext.original.excerpt.includes('240'));
+  for (const item of selected.items.filter(item => evidence.find(row => row.evidence.id === item.evidence.id)?.evidence.kind === 'statistic')) {
+    const detail = await api<MemoryDetail>(`memory/${item.evidence.id}`);
+    assert.equal(detail.evidence.revision, item.evidence.revision + 1); assert.equal(memoryEvidenceRef(detail.evidence).hash, item.evidence.hash);
+    assert.equal(detail.evidence.anchor.source.sourceVersion, 1); assert.equal(detail.evidence.correction!.materialRevision, revised.material.revision);
+    assert.equal(detail.eligibility.usable, false); assert.equal(detail.checkState, 'outdated');
+    assert.deepEqual(detail.uses, { selected: 1, inserted: 1, approved: 1, published: 0 });
+  }
+  assert.equal((await api<{ ok: boolean }>('exports/prepare', { productionId: made.productionId, selection: [toVersionRef(approvedVersion)] })).ok, false);
+  const blocked = await api<{ ok: boolean; refusal: { code: string } }>('workspace', { method: 'generation.start', args: ['article.draft', { productionId: made.productionId, pieceId: made.pieceId }], requestId: randomUUID() });
+  assert.equal(blocked.ok, false); assert.equal(blocked.refusal.code, 'memory_not_ready');
+  const newPassages = passages.filter(passage => passage.kind === 'statistic').map(passage => ({ ...passage, text: passage.text.replace('240', '241'), raw: passage.raw === '240' ? '241' : passage.raw }));
+  for (let turn = 0; turn < 4; turn++) {
+    if ((await api<MemoryJob>(`memory/jobs/${revised.job.id}`)).status === 'completed') break;
+    assert.equal(await runMemoryJob('journey-reextract', new AbortController().signal, undefined, async claim => ({
+      value: { overflow: false, evidence: newPassages.flatMap(passage => {
+        const at = correctedText.indexOf(passage.text), block = claim.block!.anchor.spans[0];
+        return at < block.from || at >= block.to ? [] : [{ kind: 'statistic', excerpt: passage.text, from: at - claim.context.from, kinds: ['declared'],
+          indicator: 'Observação sintética', raw: passage.raw, unit: passage.unit, period: passage.period, geography: 'Brasil', population: null, qualifier: passage.qualifier, issuingInstitution: null }];
+      }) }, model: claim.job.model!, provider: 'synthetic', provider_request_id: null, usage_unit: 'tokens', input_units: 0, output_units: 0,
+    })), true);
+  }
+  assert.equal((await api<MemoryJob>(`memory/jobs/${revised.job.id}`)).status, 'completed');
+  const observations = (await api<MemoryPage<MemoryEvidenceView>>(`memory?materialId=${original.material.id}&limit=100`)).items;
+  assert.equal(observations.length, 4); assert.equal(observations.filter(row => row.evidence.anchor.source.sourceVersion === 2).length, 2);
+  assert.ok(observations.every(row => !row.eligibility.usable), 'corrected observations never inherit old acceptance');
+  assert.deepEqual((await record(made.productionId)).versions, frozen);
+  assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
 });

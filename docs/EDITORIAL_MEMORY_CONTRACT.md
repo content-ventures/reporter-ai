@@ -134,6 +134,14 @@ Creation and updates stamp the real creator, creation time, updating actor and u
 
 Only actual `selected` events are created here. Each points to its first selection revision and exact evidence snapshot; reordering or removing/readding that snapshot does not duplicate its event. Distinct target productions and unattached selections occupy separate counting namespaces. Selection does not count as insertion, approval or publication. Writing must revalidate all current source/evidence/check/policy/decision conditions again and record its own actual occurrences in phase 6.
 
+## Original-material revisions
+
+POST `/memory/materials/:id/revision` requires the exact material revision and source version/hash, a complete literal original and a reason. The existing editor/admin import capability governs corrections; ordinary evidence acceptance remains open to any authenticated member. The command appends a source version with database-owned actor/time/reason, retains metadata/primary origin/file provenance and preserves all prior source versions. New text never grants source authorization. The same transaction creates a complete new extraction job, cancels/fences queued or running obsolete extraction, and records audit/idempotency receipts.
+
+Active observations from the material gain a context revision and correction stamp. Their historical literal/semantic hash is unchanged; their previous checks, decisions, selections and article-use proofs no longer match the current revision. Historical observations are not erased or silently rewritten into the new original. Future extraction produces new records anchored to the corrected source and requires fresh review. An editor may explicitly recheck/review a historical observation against its own original; old acceptance is never automatically reused. Explicit evidence-replacement relationships, impact UI and calibration remain phase 7 work.
+
+GET `/memory/materials/:id?revision=N` retrieves one exact historical material/source snapshot while applying current source rights and visibility. It returns one source version, not the entire accumulated original history. Revision writes recheck current visibility before replaying a receipt. Competing alternatives have one winner; source, context revisions, jobs, audit and receipt roll back together on failure. Approved article snapshots, drafts and persistent use counts never change as a side effect.
+
 ## Phase 1 verification
 
 `src/domain/editorial-memory.test.ts` covers every workspace role, audit identity, missing/foreign/read-only membership, reason requirements, optimistic revisions, stale acceptance, source withdrawal, unknown authors, fabricated quote text, conservative D10, numeric score bounds and contiguous original anchors. `src/domain/permissions.test.ts` covers the complete role/capability matrix including `library.review`.

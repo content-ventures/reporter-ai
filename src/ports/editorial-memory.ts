@@ -42,6 +42,8 @@ export type MemoryImportInput = {
   title: string; kind: MemoryMaterial['kind']; text: string; metadata: MemoryMetadata; authorized: boolean;
   primaryOrigin: string | null; originalFileId: string | null;
 };
+export type MemoryMaterialRevisionInput = { baseRevision: number; source: MemoryMaterial['source']; text: string; reason: string };
+export type MemoryMaterialRevisionResult = { material: MemoryMaterial; job: MemoryJob; affectedEvidence: number };
 export type MemoryJob = {
   id: string; workspaceId: string; revision: number; kind: 'extract' | 'check' | 'archive'; materialId: string; evidenceId: string | null;
   sourceVersion: number; sourceHash: string; extractorVersion: string; model?: string; generation: number; status: MemoryProcessingStatus;
@@ -65,7 +67,7 @@ export interface EditorialMemory {
   detail(id: string): Promise<MemoryDetail>;
   history(id: string, kind: MemoryHistoryKind, input: MemoryHistoryQuery): Promise<MemoryPage<MemoryHistoryEntry>>;
   materials(input: { cursor?: string; limit?: number }): Promise<MemoryPage<MemoryMaterial & { job: MemoryJob | null }>>;
-  material(id: string): Promise<{ material: MemoryMaterial; source: Source; job: MemoryJob | null }>;
+  material(id: string, revision?: number): Promise<{ material: MemoryMaterial; source: Source; job: MemoryJob | null }>;
   import(input: MemoryImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
   authorizeMaterial(id: string, input: { baseRevision: number; authorized: boolean; reason: string }, requestId: string): Promise<MemoryMaterial>;
   job(id: string): Promise<MemoryJob>;
@@ -75,8 +77,7 @@ export interface EditorialMemory {
   review(id: string, input: MemoryDecisionInput, requestId: string): Promise<MemoryDecision>;
   check(id: string, expected: MemoryEvidenceRef, requestId: string): Promise<MemoryJob>;
   correct(id: string, input: { expected: MemoryEvidenceRef; reason: string; changes: MemoryCorrection }, requestId: string): Promise<MemoryEvidenceView>;
-  reviseMaterial(id: string, input: { baseRevision: number; source: MemoryMaterial['source']; text: string; reason: string },
-    requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
+  reviseMaterial(id: string, input: MemoryMaterialRevisionInput, requestId: string): Promise<MemoryMaterialRevisionResult>;
   select(input: { id?: string; baseRevision: number; productionId: string | null; evidence: MemoryEvidenceChoice[] }, requestId: string): Promise<MemorySelection>;
   selection(id: string): Promise<MemorySelection>;
   selections(input: MemoryHistoryQuery): Promise<MemoryPage<MemorySelection>>;
@@ -94,4 +95,4 @@ export interface EditorialMemory {
     requestId: string): Promise<MemoryEvidenceView>;
 }
 /** Available library operations; processing capabilities join this port when their workers ship. */
-export type MemoryLibrary = Omit<EditorialMemory, 'reviseMaterial'>;
+export type MemoryLibrary = EditorialMemory;

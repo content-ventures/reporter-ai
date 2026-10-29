@@ -4,6 +4,8 @@ import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
 import { correctEditorialMemory } from './editorial-memory-correction.ts';
+import { reviseEditorialMemoryMaterial } from './editorial-memory-material-revision.ts';
+import { memoryMaterialRevisionSchema } from './editorial-memory-input.ts';
 import { reconcileEditorialMemory, resolveMemoryLegacy } from './editorial-memory-legacy.ts';
 import { lookupMemoryLegacy, readMemoryArticle, reconcileMemoryArticles, resolveMemoryArticle } from './editorial-memory-articles.ts';
 import { FlowError } from './errors.ts';
@@ -39,6 +41,10 @@ export async function handleEditorialMemory(request: Request, path: string[], re
       if (path[0] === 'materials' && path.length === 1) return Response.json(await readMemoryMaterials(parseMemoryHistoryQuery(params)), noStore);
       if (path[0] === 'jobs' && path.length === 3 && path[2] === 'blocks') return Response.json(await readMemoryBlocks(path[1], parseMemoryHistoryQuery(params)), noStore);
       if (path.length === 2) {
+        if (path[0] === 'materials' && params.has('revision')) {
+          if ([...params.keys()].some(key => key !== 'revision') || params.getAll('revision').length !== 1 || !/^[1-9]\d{0,8}$/.test(params.get('revision') ?? '')) throw new FlowError('INVALID_INPUT', 422);
+          return Response.json(await readMemoryMaterial(path[1], Number(params.get('revision'))), noStore);
+        }
         if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
         return Response.json(await (path[0] === 'materials' ? readMemoryMaterial(path[1]) : readMemoryJob(path[1])), noStore);
       }
@@ -46,6 +52,7 @@ export async function handleEditorialMemory(request: Request, path: string[], re
     if (request.method === 'POST') {
       if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
       const key = request.headers.get('idempotency-key') ?? '';
+      if (path[0] === 'materials' && path.length === 3 && path[2] === 'revision') return Response.json(await reviseEditorialMemoryMaterial(path[1], memoryMaterialRevisionSchema.parse(await readJson(request)), key), noStore);
       if (path[0] === 'materials' && path.length === 3 && path[2] === 'authorization') return Response.json(await authorizeMemoryMaterial(path[1], memoryAuthorizationSchema.parse(await readJson(request)), key), noStore);
       if (path[0] === 'materials' && path.length === 1) return Response.json(await importEditorialMemory(memoryImportInputSchema.parse(await readJson(request)), key), noStore);
       if (path[0] === 'jobs' && path.length === 3 && (path[2] === 'retry' || path[2] === 'cancel')) {
