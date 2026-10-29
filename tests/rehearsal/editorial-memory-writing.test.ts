@@ -14,6 +14,9 @@ import type { Piece } from '../../src/domain/piece.ts';
 import { paragraphBlock, quoteBlock } from '../../src/domain/article.ts';
 import { segmentRef } from '../../src/domain/refs.ts';
 import { r1ArticleIssue } from '../../src/domain/article-policy.ts';
+import { refreshMemoryWriting } from '../../src/domain/editorial-memory-refresh.ts';
+import type { MemoryWritingItem } from '../../src/domain/editorial-memory-writing.ts';
+import type { Source } from '../../src/domain/source.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 
 const PORTAL = '10000000-0000-0000-0000-000000000101', APP = 'http://127.0.0.1:3994';
@@ -91,6 +94,84 @@ async function gateRecord(productionId: string) {
     return { sources, article: await guardMemoryArticle(client, body as ArticleBody, record.sources) };
   }, false, 'reporter.edit', { productions: [productionId], pipelines: false }))).value;
 }
+
+async function installCollection(productionId: string, source: Source) {
+  const { runWithReporterContext } = await import('../../src/server/request-context.ts'), { editorialTransaction } = await import('../../src/server/editorial.ts');
+  await runWithReporterContext(context, () => editorialTransaction('runtime', async (_checkpoint, engine) => {
+    const result = engine.records.apply(productionId, record => ({ ...record, sources: record.sources.map(item => item.id === source.id ? source : item) }));
+    assert.ok(result.ok);
+  }, true, 'reporter.edit', { productions: [productionId], pipelines: false }));
+}
+async function collectionRefresh(source: Source, body: ArticleBody, saved: MemorySelection | null) {
+  const items: MemoryWritingItem[] = [];
+  for (const selected of saved?.items ?? []) {
+    const detail = await json<MemoryDetail>(`memory/${selected.evidence.id}`);
+    items.push({ view: detail, policy: detail.policy, ...(detail.evidence.kind === 'citation' ? { author: { id: detail.evidence.personId!, name: 'Synthetic author' } } : {}) });
+  }
+  const result = refreshMemoryWriting(source, toSourceVersionRef(source), saved ? { selection: saved, items } : null, body, true,
+    'Synthetic explicit source refresh.', { actorId: context.actor, now: new Date().toISOString(), newId: prefix => `${prefix}-${randomUUID()}` });
+  assert.ok(result.ok); return result.value.source;
+}
+
+test('collection refresh appends current reviewed attribution while preserving historical source and article snapshots', async () => {
+  const item = await fixture('citation'), chosen = await selection([item.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${chosen.id}/write`, writingInput);
+  const original = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc as Source;
+  const piece = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc as Piece;
+  await owner("INSERT INTO public.reporter_ed_items(portal_id,kind,item_id,doc,seq) VALUES($1,'person','synthetic-new-author',$2,1)", [PORTAL, JSON.stringify({ id: 'synthetic-new-author', name: 'New synthetic author' })]);
+  await json(`memory/${item.evidence.id}/correction`, { expected: memoryEvidenceRef(item.evidence), reason: 'Synthetic attribution correction.', changes: { kind: 'citation', personId: 'synthetic-new-author', authorConfirmed: true } });
+  const corrected = await json<MemoryDetail>(`memory/${item.evidence.id}`);
+  await json(`memory/${item.evidence.id}/review`, { evidence: memoryEvidenceRef(corrected.evidence), check: null, policyRevision: 1,
+    previousSequence: corrected.decision?.sequence ?? 0, action: 'accept', reason: 'Synthetic corrected author reviewed.', supports: [] });
+  const nextSelection = await json<MemorySelection>('memory/selections', { productionId: made.productionId, baseRevision: 0, evidence: [memoryEvidenceRef(corrected.evidence)] });
+  const refreshed = await collectionRefresh(original, piece.draft.body as ArticleBody, nextSelection);
+  await installCollection(made.productionId, refreshed);
+  const stored = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc as Source;
+  assert.deepEqual(stored, refreshed); assert.deepEqual(stored.versions[0], original.versions[0]); assert.deepEqual(stored.memory![0], original.memory![0]);
+  const audits = await owner("SELECT user_id,before_data,after_data FROM public.audit_log WHERE action='memory.source.refresh' AND after_data->>'sourceId'=$1", [made.sourceId]);
+  assert.equal(audits.length, 1); assert.equal(audits[0].user_id, context.actor); assert.deepEqual(audits[0].before_data.receipt, original.memory![0]);
+  assert.deepEqual(audits[0].after_data.receipt, stored.memory![1]); assert.equal(audits[0].after_data.reason, stored.versions[1].note);
+  assert.deepEqual(stored.speakers, [...original.speakers, { label: 'memory-person-synthetic-new-author', personId: 'synthetic-new-author' }]);
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc, piece);
+  assert.equal((await gateRecord(made.productionId)).sources.ok, true); assert.equal((await gateRecord(made.productionId)).article.ok, false);
+  for (const mutate of [
+    (bad: Source) => { bad.versions[0].content.segments[0].text = 'Rewritten past'; },
+    (bad: Source) => { bad.speakers[0].personId = 'synthetic-new-author'; },
+    (bad: Source) => { bad.speakers.push({ label: 'unused', personId: 'synthetic-new-author' }); },
+    (bad: Source) => { bad.memory![0].selection.id = nextSelection.id; },
+  ]) {
+    const bad = structuredClone(stored); mutate(bad);
+    await assert.rejects(() => installCollection(made.productionId, bad), /MEMORY_CONFLICT/);
+  }
+  assert.deepEqual((await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc, stored);
+});
+
+test('collection retirement keeps revoked rights and historical proof, refuses forged retirement and supports reviewed reactivation', async () => {
+  const item = await fixture('statistic'), chosen = await selection([item.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${chosen.id}/write`, writingInput);
+  const original = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc as Source;
+  const piece = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc as Piece;
+  original.rights = { authorized: false }; await installCollection(made.productionId, original);
+  const retired = await collectionRefresh(original, piece.draft.body as ArticleBody, null);
+  const forged = structuredClone(retired); forged.rights.authorized = true;
+  await assert.rejects(() => installCollection(made.productionId, forged), /MEMORY_CONFLICT/);
+  const nonempty = structuredClone(retired); nonempty.versions[1].content.segments = original.versions[0].content.segments;
+  await assert.rejects(() => installCollection(made.productionId, nonempty), /MEMORY_CONFLICT/);
+  const initial = { ...retired, id: randomUUID() };
+  await assert.rejects(() => owner('INSERT INTO public.reporter_ed_sources(portal_id,source_id,doc,seq) VALUES($1,$2,$3,1)', [PORTAL, initial.id, JSON.stringify(initial)]), /MEMORY_CONFLICT/);
+  await owner("CREATE FUNCTION core.fail_source_refresh_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='memory.source.refresh' THEN RAISE EXCEPTION 'synthetic refresh audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_source_refresh_audit BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION core.fail_source_refresh_audit()");
+  try { await assert.rejects(() => installCollection(made.productionId, retired), /synthetic refresh audit failure/); }
+  finally { await owner('DROP TRIGGER fail_source_refresh_audit ON public.audit_log; DROP FUNCTION core.fail_source_refresh_audit()'); }
+  assert.deepEqual((await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc, original);
+  await installCollection(made.productionId, retired);
+  const stored = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc as Source;
+  assert.deepEqual(stored, retired); assert.deepEqual(stored.versions[0], original.versions[0]); assert.equal(stored.rights.authorized, false);
+  assert.equal((await gateRecord(made.productionId)).sources.ok, true); assert.equal((await gateRecord(made.productionId)).article.ok, false);
+  const restored = await collectionRefresh(stored, piece.draft.body as ArticleBody, chosen);
+  await installCollection(made.productionId, restored);
+  assert.deepEqual(restored.versions.slice(0, 2), stored.versions); assert.equal(restored.versions[2].content.segments[0].id, original.versions[0].content.segments[0].id);
+  assert.equal((await gateRecord(made.productionId)).sources.ok, true);
+});
 
 test('writing creates one ordered multi-material article, literal sources and actual inserted uses atomically', async () => {
   const quote = await fixture('citation'), statistic = await fixture('statistic'), saved = await selection([statistic.evidence, quote.evidence]), key = randomUUID();
