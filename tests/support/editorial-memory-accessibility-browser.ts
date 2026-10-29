@@ -38,12 +38,27 @@ async function measureTabContrast(page: Page) {
   });
 }
 
-const entering = (select: Locator) => select.evaluate(element => element.closest('dialog')?.getAnimations({ subtree: true }).some(animation => {
-  const target = (animation.effect as KeyframeEffect | null)?.target;
-  return animation instanceof CSSAnimation && target instanceof Element && target.contains(element) && (animation.playState === 'running' || animation.pending);
-}) ?? false);
+type EntryInput = { hit: boolean; duringEntry: boolean; x: number | null; y: number | null; target: string; rect: { x: number; y: number; width: number; height: number } };
+async function observeEntryInput(select: Locator, type: 'pointerdown' | 'keydown') {
+  await select.evaluate((element, eventType) => {
+    document.addEventListener(eventType, event => {
+      const rect = element.getBoundingClientRect(), target = event.target as Element;
+      const duringEntry = element.closest('dialog')?.getAnimations({ subtree: true }).some(animation => {
+        const animated = (animation.effect as KeyframeEffect | null)?.target;
+        return animation instanceof CSSAnimation && animated instanceof Element && animated.contains(element) && (animation.playState === 'running' || animation.pending);
+      }) ?? false;
+      (element as HTMLElement & { memoryEntryInput?: EntryInput }).memoryEntryInput = { hit: element.contains(target), duringEntry,
+        x: event instanceof PointerEvent ? event.clientX : null, y: event instanceof PointerEvent ? event.clientY : null,
+        target: target.outerHTML.slice(0, 300), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
+    }, { capture: true, once: true });
+  }, type);
+}
+const entryInput = (select: Locator) => select.evaluate(element => {
+  const target = element as HTMLElement & { memoryEntryInput?: EntryInput };
+  const input = target.memoryEntryInput; delete target.memoryEntryInput; return input;
+});
 
-/** Exercise real pointer/touch and keyboard input while the native entry animation is active. */
+/** Verify native touch plus keyboard/desktop-pointer interaction during native entry. */
 export async function probeMemoryImportEntry(page: Page, base: string, width: number, audit: (page: Page, label: string) => Promise<void>) {
   await page.goto(`${base}/w/reporter-ai/quotes`);
   const trigger = page.getByRole('button', { name: 'Importar material', exact: true });
@@ -53,22 +68,28 @@ export async function probeMemoryImportEntry(page: Page, base: string, width: nu
   let earlyPointer = 0, earlyKeyboard = 0;
   for (let index = 0; index < 12; index++) {
     await trigger.focus(); await page.keyboard.press('Enter'); await expect(dialog).toBeVisible();
+    await observeEntryInput(select, index % 2 === 0 ? 'pointerdown' : 'keydown');
     if (index % 2 === 0) {
-      await expect(select).toBeInViewport({ ratio: 1 });
-      const box = await select.boundingBox(); assert.ok(box);
-      // The measured target is clicked immediately: actionability stability would wait out the very animation under test.
-      if (width === 390) await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-      else await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-      await expect(select).toHaveAttribute('aria-expanded', 'true'); if (await entering(select)) earlyPointer++;
+      // Native touch actionability avoids aiming at an obsolete coordinate while a sheet moves.
+      // Desktop entry remains a measured real mouse event; keyboard entry is required at both sizes.
+      if (width === 390) await select.tap();
+      else {
+        await expect(select).toBeInViewport({ ratio: 1 }); const box = await select.boundingBox(); assert.ok(box);
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      }
+      const actual = await entryInput(select); await writeFile(`/tmp/reporter-memory-entry-${width}-${index}.json`, JSON.stringify({ actual }, null, 2));
+      assert.ok(actual?.hit, `pointer must hit the actual select: ${JSON.stringify(actual)}`);
+      await expect(select).toHaveAttribute('aria-expanded', 'true'); if (actual.duringEntry) earlyPointer++;
     } else {
       await select.focus(); await page.keyboard.press('ArrowDown');
-      await expect(select).toHaveAttribute('aria-expanded', 'true'); if (await entering(select)) earlyKeyboard++;
+      const actual = await entryInput(select); assert.ok(actual?.hit);
+      await expect(select).toHaveAttribute('aria-expanded', 'true'); if (actual.duringEntry) earlyKeyboard++;
     }
     const kind = kinds[index % kinds.length]; await page.getByRole('option', { name: kind, exact: true }).click();
     await expect(select).toContainText(kind); await expect(select).toHaveAttribute('aria-expanded', 'false');
     await page.keyboard.press('Escape'); await expect(dialog).toBeHidden(); await expect(trigger).toBeFocused();
   }
-  assert.ok(earlyPointer > 0 && earlyKeyboard > 0, `the probe must actually overlap entry: pointer=${earlyPointer}, keyboard=${earlyKeyboard}`);
+  assert.ok(earlyKeyboard > 0 && (width === 390 || earlyPointer > 0), `required native entry overlap: pointer=${earlyPointer}, keyboard=${earlyKeyboard}, width=${width}`);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   try {
     await trigger.focus(); await page.keyboard.press('Enter'); await expect(dialog).toBeVisible();
@@ -81,9 +102,12 @@ export async function probeMemoryImportEntry(page: Page, base: string, width: nu
     await writeFile(`/tmp/reporter-memory-a11y-${width}-reduced-motion.json`, JSON.stringify(reduced, null, 2));
     // The DS uses 0.01ms to retain native lifecycle events without visible motion.
     assert.deepEqual(reduced.filter(animation => typeof animation.endTime !== 'number' || !Number.isFinite(animation.endTime) || animation.endTime > 0.01 || animation.delay !== 0 || animation.iterations !== 1), [], 'reduced motion must use the DS near-zero duration without delay or repetition');
-    const close = dialog.getByRole('button', { name: 'Fechar', exact: true }); await close.focus(); await page.keyboard.press('Shift+Tab');
-    await expect(dialog.getByRole('button', { name: 'Cancelar', exact: true })).toBeFocused(); await page.keyboard.press('Tab'); await expect(close).toBeFocused();
-    const title = dialog.getByRole('textbox', { name: 'Título', exact: true }); await title.focus(); await page.keyboard.press('Tab'); await expect(select).toBeFocused();
+    const title = dialog.getByRole('textbox', { name: 'Título', exact: true });
+    const first = width === 390 ? dialog.getByRole('region', { name: 'Importar material', exact: true }) : dialog.getByRole('button', { name: 'Fechar', exact: true });
+    if (width === 390) await expect(first).toHaveAttribute('tabindex', '0');
+    await first.focus(); await page.keyboard.press('Shift+Tab');
+    await expect(dialog.getByRole('button', { name: 'Cancelar', exact: true })).toBeFocused(); await page.keyboard.press('Tab'); await expect(first).toBeFocused();
+    await title.focus(); await page.keyboard.press('Tab'); await expect(select).toBeFocused();
     await page.keyboard.press('Tab'); await expect(dialog.getByRole('textbox', { name: 'Texto original', exact: true })).toBeFocused();
     await audit(page, 'import-keyboard-reduced-motion');
     await page.keyboard.press('Escape'); await expect(dialog).toBeHidden(); await expect(trigger).toBeFocused();
