@@ -21,6 +21,7 @@ import {
   words,
 } from '../../../domain/index.ts';
 import { enforceR1ArticleChecks } from '../../../domain/article-policy.ts';
+import { memorySourceSegment } from '../../../domain/editorial-memory-excerpt.ts';
 import type { ArticlePolicyLimits } from '../../../domain/article-policy.ts';
 import type { SourceDetail } from '../../../ports/production-queries.ts';
 import type {
@@ -379,33 +380,37 @@ export function suggestionDelta(suggestion: Pick<Suggestion, 'anchorText' | 'pro
  * The transcript line closest to a quotation that does not match it ("Falta"): the sentence of
  * the block's own segments (else of the whole material) sharing most words with the quote.
  */
-export type ClosestExcerpt = { ref: SourceRef; segmentId: string; text: string; from: number; to: number };
+export type ClosestExcerpt = { ref: SourceRef; segmentId: string; text: string; from: number; to: number; readOnly?: boolean };
 
 export function closestExcerpt(quote: Pick<QuoteCheck, 'text' | 'sourceRefs'>, sources: readonly Source[]): ClosestExcerpt | undefined {
   const wanted = new Set(words(foldForMatch(quote.text)).filter((word) => word.length >= 3));
   if (wanted.size === 0) return undefined;
   const own = new Set(quote.sourceRefs.flatMap((ref) => ref.locator.type === 'segment' ? [refKey(segmentRef(ref.sourceId, ref.sourceVersion, ref.locator.segmentId))] : []));
+  if (quote.sourceRefs.length && !own.size) return undefined;
   let best: (ClosestExcerpt & { score: number }) | undefined;
   for (const source of sources) {
-    if (source.kind !== 'transcript') continue;
+    if (source.kind !== 'transcript' && !source.memory || !own.size && !source.rights.authorized) continue;
     for (const version of own.size > 0 ? source.versions : [currentSourceVersion(source)]) {
       for (const segment of version.content.segments) {
         const ref = segmentRef(source.id, version.number, segment.id);
         if (own.size > 0 && !own.has(refKey(ref))) continue;
+        const binding = source.memory ? memorySourceSegment(source, version.number, segment.id) : undefined;
+        if (source.memory && binding?.kind !== 'citation') continue;
         for (const match of segment.text.matchAll(/[^.!?…]+[.!?…]*/g)) {
           const text = match[0].trim();
           if (!text) continue;
           const from = (match.index ?? 0) + (match[0].length - match[0].trimStart().length);
           const hits = words(foldForMatch(text)).filter((word) => wanted.has(word)).length;
           const score = hits / Math.max(wanted.size, 1);
-          if (hits >= 2 && (!best || score > best.score)) best = { ref, segmentId: segment.id, text: text.replace(/[.]+$/, ''), from, to: from + text.length, score };
+          const literal = source.memory ? text : text.replace(/[.]+$/, '');
+          if (hits >= 2 && (!best || score > best.score)) best = { ref, segmentId: segment.id, text: literal, from, to: from + literal.length, score,
+            ...(!source.rights.authorized || source.memory && version.number !== currentSourceVersion(source).number ? { readOnly: true } : {}) };
         }
       }
     }
   }
-  if (!best && own.size > 0) return closestExcerpt({ text: quote.text, sourceRefs: [] }, sources);
   if (!best) return undefined;
-  const excerpt = narrowToClause({ ref: best.ref, segmentId: best.segmentId, text: best.text, from: best.from, to: best.to }, wanted);
+  const excerpt = narrowToClause({ ref: best.ref, segmentId: best.segmentId, text: best.text, from: best.from, to: best.to, ...(best.readOnly ? { readOnly: true } : {}) }, wanted);
   return { ...excerpt, ref: segmentRef(excerpt.ref.sourceId, excerpt.ref.sourceVersion, excerpt.segmentId, { from: excerpt.from, to: excerpt.to }) };
 }
 

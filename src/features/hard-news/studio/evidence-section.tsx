@@ -74,7 +74,7 @@ function FlagToCheck({ flag, desk }: { flag: LocatedFlag; desk: DeskStudio }) {
       )}
       action={editable ? (
         flag.fix ? (
-          <LinkButton onClick={() => { if (range) studio.actions.useSourceText(range, flag.fix ?? flag.claim); decide('fixed'); }}>Corrigir</LinkButton>
+          <LinkButton onClick={() => { if (range) studio.actions.replacePassage(range, flag.fix ?? flag.claim); decide('fixed'); }}>Corrigir</LinkButton>
         ) : (
           <LinkButton onClick={() => decide('confirmed')}>Conferida</LinkButton>
         )
@@ -102,7 +102,7 @@ function FlagToCheck({ flag, desk }: { flag: LocatedFlag; desk: DeskStudio }) {
           size="sm"
           items={[
             flag.fix ? <LinkButton key="confirm" size="sm" onClick={() => decide('confirmed')}>Manter, conferida</LinkButton> : null,
-            <LinkButton key="remove" size="sm" onClick={() => { if (range) studio.actions.useSourceText(range, ''); decide('removed'); }}>Remover frase</LinkButton>,
+            <LinkButton key="remove" size="sm" onClick={() => { if (range) studio.actions.replacePassage(range, ''); decide('removed'); }}>Remover frase</LinkButton>,
           ]}
         />
       ) : null}

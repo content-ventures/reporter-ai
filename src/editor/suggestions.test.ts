@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { undo } from '@tiptap/pm/history';
 import { TextSelection } from '@tiptap/pm/state';
-import { applySuggestion, locateTargets, paragraphBlock, quoteBlock, sliceText } from '../domain/index.ts';
+import { applySuggestion, blockText, locateTargets, paragraphBlock, quoteBlock, sliceText } from '../domain/index.ts';
 import type { ArticleBody, Suggestion, SuggestionProposal, TextRange } from '../domain/index.ts';
 import { articleDecorationInput, articleDecorationsKey, setArticleDecorations } from './decorations.ts';
 import { docBody } from './nodes.ts';
@@ -45,6 +45,15 @@ function suggestion(target: TextRange[], proposal: SuggestionProposal, overrides
 }
 
 const REWRITE = suggestion([{ blockId: 'p1', from: 2, to: 8 }], { kind: 'replace-text', text: 'estúdio' });
+
+test('whole-block suggestions have the same staleness in the live editor and the domain after an appended edit', () => {
+  const text = blockText(BODY.blocks[0]), pending = suggestion([{ blockId: 'p1', from: 0, to: text.length }],
+    { kind: 'replace-blocks', blocks: [paragraphBlock('p1', 'Proposed text.')] });
+  const changed = { ...BODY, blocks: [paragraphBlock('p1', text + ' Later human edit.'), ...BODY.blocks.slice(1)] };
+  const state = articleState(changed);
+  assert.equal(locateTargets(changed, pending), undefined); assert.equal(locateSuggestionInDoc(state.doc, pending), undefined);
+  assert.equal(isSuggestionStaleInDoc(state.doc, pending), true);
+});
 
 describe('accepting a suggestion', () => {
   test('replace-text: the document ends equal to the domain applySuggestion, and the block is unreviewed AI text', () => {

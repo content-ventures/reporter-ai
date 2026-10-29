@@ -291,8 +291,8 @@ function MissingQuote({ quote }: { quote: QuoteCheck }) {
       role="none"
       title={<LinkButton tone="inherit" size="inherit" onClick={() => studio.actions.showQuote(quote.range)}>{`“${clip(quote.text, 90)}”`}</LinkButton>}
       action={
-        closest ? (
-          <LinkButton onClick={() => studio.actions.useSourceText(quote.range, closest.text)}>Usar texto da fonte</LinkButton>
+        closest && !closest.readOnly && studio.canEdit ? (
+          <LinkButton disabled={Boolean(studio.refusal)} onClick={() => studio.actions.useSourceText(quote, closest)}>Usar texto da fonte</LinkButton>
         ) : undefined
       }
     >
