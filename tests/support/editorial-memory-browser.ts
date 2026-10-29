@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium, expect, type BrowserContext, type Page } from '@playwright/test';
-import type { MemoryImportInput, MemoryJob, MemoryMaterialRevisionResult, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
-import type { MemoryMaterial, MemorySelection } from '../../src/domain/editorial-memory.ts';
+import type { MemoryImportInput, MemoryJob, MemoryMaterialRevisionResult, MemoryReplacementResult, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
+import type { MemoryEvidence, MemoryMaterial, MemorySelection } from '../../src/domain/editorial-memory.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import { blockText, type ArticleBody } from '../../src/domain/article.ts';
 
@@ -44,6 +44,55 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
   }
   const editor = await pageFor(0);
   return {
+    async replaceObservation(previous: MemoryEvidence, current: MemoryEvidence, reason: string, competing?: () => Promise<unknown>): Promise<MemoryReplacementResult> {
+      console.info('memory UI evidence replacement', width);
+      await editor.goto(`${base}/w/reporter-ai/quotes?bankView=statistic&q=240`);
+      await editor.getByRole('row', { name: previous.anchor.excerpt.slice(0, 80), exact: true }).click();
+      const drawer = editor.getByRole('dialog', { name: 'Evidência', exact: true });
+      const trigger = drawer.getByRole('button', { name: 'Substituir', exact: true }); await trigger.click();
+      const form = editor.getByRole('dialog', { name: 'Substituir evidência', exact: true });
+      const save = form.getByRole('button', { name: 'Registrar substituição', exact: true }); await expect(save).toBeDisabled();
+      await form.getByRole('searchbox', { name: 'Buscar registro substituto', exact: true }).fill('241');
+      const candidate = form.getByRole('row', { name: current.anchor.excerpt.slice(0, 80), exact: true });
+      await candidate.focus(); await editor.keyboard.press('Enter');
+      const oldText = form.getByRole('textbox', { name: 'Trecho registro anterior', exact: true });
+      const newText = form.getByRole('textbox', { name: 'Trecho registro substituto', exact: true });
+      const why = form.getByRole('textbox', { name: 'Motivo da substituição', exact: true });
+      await expect(oldText).toHaveValue(previous.anchor.excerpt); await expect(newText).toHaveValue(current.anchor.excerpt);
+      await expect(oldText).toHaveAttribute('readonly', ''); await expect(newText).toHaveAttribute('readonly', '');
+      await expect(save).toBeDisabled(); await why.fill(reason);
+      await form.getByRole('button', { name: 'Fechar', exact: true }).filter({ hasText: /^Fechar$/ }).click();
+      await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); await trigger.click();
+      await expect(why).toHaveValue(reason); await expect(newText).toHaveValue(current.anchor.excerpt);
+      const beforeBox = await oldText.boundingBox(), afterBox = await newText.boundingBox(); assert.ok(beforeBox && afterBox);
+      if (width === 390) { assert.ok(beforeBox.width >= 300 && afterBox.width >= 300); assert.ok(afterBox.y >= beforeBox.y + beforeBox.height); }
+      else { assert.ok(Math.abs(beforeBox.y - afterBox.y) < 2); assert.ok(afterBox.x >= beforeBox.x + beforeBox.width); }
+      if (competing) {
+        await competing();
+        const path = `/memory/${previous.id}/replacement`; expectedConflictConsole.set(`${base}/api/reporter/w/reporter-ai${path}`, 1);
+        const refusal = editor.waitForResponse(reply => reply.url().endsWith(path) && reply.request().method() === 'POST');
+        await save.click(); assert.equal((await refusal).status(), 409);
+        await expect(why).toHaveValue(reason); await expect(newText).toHaveValue(current.anchor.excerpt); await expect(save).toBeDisabled();
+        await form.getByRole('button', { name: 'Atualizar comparação', exact: true }).click();
+        await expect(save).toBeEnabled(); await expect(why).toHaveValue(reason); await expect(newText).toHaveValue(current.anchor.excerpt);
+      }
+      await audit(editor, 'replacement-comparison');
+      const response = editor.waitForResponse(reply => reply.url().endsWith(`/memory/${previous.id}/replacement`) && reply.request().method() === 'POST');
+      await save.click(); const saved = await response; assert.equal(saved.status(), 200, await saved.text()); const result = await saved.json() as MemoryReplacementResult;
+      await expect(form).toBeHidden();
+      const historyTrigger = drawer.getByRole('button', { name: 'Ver substituição', exact: true }); await expect(historyTrigger).toBeFocused(); await historyTrigger.click();
+      const history = editor.getByRole('dialog', { name: 'Substituição registrada', exact: true });
+      await expect(history.getByRole('textbox', { name: 'Trecho registro anterior', exact: true })).toHaveValue(previous.anchor.excerpt);
+      await expect(history.getByRole('textbox', { name: 'Trecho registro substituto', exact: true })).toHaveValue(current.anchor.excerpt);
+      await expect(history.getByText(reason, { exact: true })).toBeVisible(); await expect(history.getByRole('textbox')).toHaveCount(2);
+      await audit(editor, 'replacement-history');
+      await editor.keyboard.press('Escape'); await editor.keyboard.press('Escape');
+      await expect(history).toBeHidden(); await expect(drawer).toBeVisible(); await expect(historyTrigger).toBeFocused();
+      await historyTrigger.click(); await history.getByRole('button', { name: 'Abrir registro substituto', exact: true }).click();
+      await expect(history).toBeHidden(); await expect(drawer.getByRole('textbox', { name: 'Trecho literal', exact: true })).toHaveValue(current.anchor.excerpt);
+      await expect(drawer.getByText('Aguardando revisão', { exact: true })).toBeVisible(); await expect(drawer.getByRole('button', { name: 'Ver registro anterior', exact: true })).toBeVisible();
+      await audit(editor, 'replacement-current'); return result;
+    },
     async inspectImpact(material: MemoryMaterial, excerpt: string, productionId: string, title: string, count: number, selectionRevision: number) {
       console.info('memory UI correction impact', width);
       await editor.goto(`${base}/w/reporter-ai/quotes?bankView=materials`);
