@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import pg, { type Pool } from 'pg';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { MEMORY_JOURNEY_PASSAGES as passages } from '../fixtures/editorial-memory-journey.ts';
+import { createMemoryJourneyBrowser } from '../support/editorial-memory-browser.ts';
 import { articleStats, blockText, markTextReviewed, type ArticleBody } from '../../src/domain/article.ts';
 import { initialMemoryPolicy, memoryEvidenceRef, type MemoryEvidenceView, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
 import { assessMemoryEvidence } from '../../src/domain/editorial-memory-check.ts';
@@ -26,10 +27,12 @@ import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import type { BuiltFile, ExportPackage } from '../../src/ports/export.ts';
 import type { WritingRunDetails } from '../../src/ports/pipeline-settings.ts';
 
-const APP = 'http://127.0.0.1:3990', PORTAL = '10000000-0000-0000-0000-000000000101';
+const browserBase = process.env.REPORTER_MEMORY_JOURNEY_UI_BASE;
+const APP = browserBase ?? 'http://127.0.0.1:3990', PORTAL = '10000000-0000-0000-0000-000000000101';
 const identities = ['editor', 'approver', 'admin'].map(role => ({ subject: `memory-journey-${role}`, email: `${role}@memory-journey.test`, name: role, emailVerified: true }));
 const metadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: ['synthetic-journey'], originalUrl: null };
 let db: Awaited<ReturnType<typeof startRehearsalDatabase>>, handle: typeof import('../../src/server/http.ts').handleReporter, outputDirectory: string;
+let ui: Awaited<ReturnType<typeof createMemoryJourneyBrowser>> | undefined;
 const originalFetch = globalThis.fetch, runIds: string[] = [];
 async function owner(sql: string, values: unknown[] = []) {
   const client = new pg.Client({ connectionString: db.owner }); await client.connect();
@@ -59,13 +62,21 @@ before(async () => {
     REPORTER_MEMORY_MODE: 'on', GROQ_API_KEY: 'synthetic-no-network' });
   ({ handleReporter: handle } = await import('../../src/server/http.ts'));
   outputDirectory = await mkdtemp(join(tmpdir(), 'reporter-memory-journey-files-'));
+  if (browserBase) {
+    assert.ok(['127.0.0.1', 'localhost'].includes(new URL(browserBase).hostname), 'the UI rehearsal only targets loopback');
+    ui = await createMemoryJourneyBrowser(browserBase, Number(process.env.REPORTER_MEMORY_JOURNEY_UI_WIDTH ?? 1440), async (request, actor) =>
+      handle(request, new URL(request.url).pathname.split('/').slice(3), { identify: async () => identities[actor], defer: () => {} }));
+  }
 }, { timeout: 180000 });
 after(async () => {
-  globalThis.fetch = originalFetch;
-  const pools = (globalThis as typeof globalThis & { reporterPools?: Partial<Record<string, Pool>> }).reporterPools ?? {};
-  await Promise.all(Object.values(pools).map(pool => pool?.end())); db?.stop();
-  if (outputDirectory) await rm(outputDirectory, { recursive: true, force: true });
-  for (const id of runIds) await rm(join(process.cwd(), '.reporter-local', `${PORTAL}-${id}.work`), { recursive: true, force: true });
+  try { await ui?.close(); }
+  finally {
+    globalThis.fetch = originalFetch;
+    const pools = (globalThis as typeof globalThis & { reporterPools?: Partial<Record<string, Pool>> }).reporterPools ?? {};
+    await Promise.all(Object.values(pools).map(pool => pool?.end())); db?.stop();
+    if (outputDirectory) await rm(outputDirectory, { recursive: true, force: true });
+    for (const id of runIds) await rm(join(process.cwd(), '.reporter-local', `${PORTAL}-${id}.work`), { recursive: true, force: true });
+  }
 });
 
 test('two imported materials reach orchestrated writing, separate approval and actual files with stable evidence/query receipts', async () => {
@@ -79,8 +90,9 @@ test('two imported materials reach orchestrated writing, separate approval and a
   const materials: { material: MemoryMaterial; job: MemoryJob; text: string; kind: 'statistic' | 'citation' }[] = [];
   for (const kind of ['statistic', 'citation'] as const) {
     const text = passages.filter(passage => passage.kind === kind).map(passage => passage.text).join('\n\n') + '\n\nPRIVATE_UNSELECTED_ARCHIVE_SENTINEL';
-    const imported = await api<{ material: MemoryMaterial; job: MemoryJob }>('memory/materials', { title: `Synthetic ${kind} journalistic journey`, kind: kind === 'citation' ? 'transcript' : 'report',
-      text, metadata, authorized: true, primaryOrigin: `synthetic-journey:${kind}`, originalFileId: null }); materials.push({ ...imported, text, kind });
+    const input = { title: `Synthetic ${kind} journalistic journey`, kind: kind === 'citation' ? 'transcript' as const : 'report' as const,
+      text, metadata, authorized: true, primaryOrigin: `synthetic-journey:${kind}`, originalFileId: null };
+    const imported = ui ? await ui.import(input) : await api<{ material: MemoryMaterial; job: MemoryJob }>('memory/materials', input); materials.push({ ...imported, text, kind });
   }
   let extractionCalls = 0;
   for (let turn = 0; turn < 12; turn++) {
@@ -118,8 +130,8 @@ test('two imported materials reach orchestrated writing, separate approval and a
     const page = await api<MemoryPage<MemoryEvidenceView>>(`memory?kind=${query.kind}&materialId=${query.materialId}&q=${query.query}`), row = page.items.find(row => row.evidence.anchor.excerpt === passage.text); assert.ok(row);
     choices.push(captureMemoryChoice(row.evidence, query, page.snapshot));
   }
-  const selected = await api<MemorySelection>('memory/selections', { productionId: null, baseRevision: 0, evidence: choices });
-  const made = await api<MemoryWritingResult>(`memory/selections/${selected.id}/write`, { baseRevision: selected.revision, title: 'Synthetic complete writing journey', brief: { size: 'standard', sections: 2 } });
+  const selected = ui ? await ui.select(orderedPassages) : await api<MemorySelection>('memory/selections', { productionId: null, baseRevision: 0, evidence: choices });
+  const made = ui ? await ui.write('Synthetic complete writing journey') : await api<MemoryWritingResult>(`memory/selections/${selected.id}/write`, { baseRevision: selected.revision, title: 'Synthetic complete writing journey', brief: { size: 'standard', sections: 2 } });
   const initial = await record(made.productionId), initialProof = structuredClone(initial.sources[0].memory![0]);
   assert.ok(selected.items.every(item => item.check && item.decisionId && item.discovery));
   const candidates = writingSourceCandidates(initial.sources), byText = new Map(candidates.map(candidate => [candidate.text, candidate]));
@@ -144,7 +156,7 @@ test('two imported materials reach orchestrated writing, separate approval and a
     assert.ok(round < modelOutputs.length, 'no hidden calls or an unplanned correction cycle');
     return Response.json({ usage: { prompt_tokens: 10, completion_tokens: 20 }, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(modelOutputs[round++]) } }] });
   };
-  const run = await rpc<{ runId: string }>('generation.start', ['article.draft', { productionId: made.productionId, pieceId: made.pieceId }]); runIds.push(run.runId);
+  const run = ui ? await ui.start(made.productionId) : await rpc<{ runId: string }>('generation.start', ['article.draft', { productionId: made.productionId, pieceId: made.pieceId }]); runIds.push(run.runId);
   assert.equal(await runEditorialJob('journey-writing', new AbortController().signal), true);
   let current = await record(made.productionId); const finished = await snapshot();
   assert.equal(finished.state.runFolds[run.runId].run.status, 'completed', JSON.stringify(finished.state.runFolds[run.runId].run.error));
@@ -161,12 +173,12 @@ test('two imported materials reach orchestrated writing, separate approval and a
   for (const trace of execution.traces) assert.ok(trace.prompt.user.includes('discovery'));
   const notReviewed = await api<{ ok: boolean; refusal: { code: string } }>('workspace', { method: 'requestReview', args: [made.pieceId], requestId: randomUUID() });
   assert.equal(notReviewed.ok, false); assert.equal(notReviewed.refusal.code, 'send_blocked');
-  await rpc('saveDraft', [made.pieceId, markTextReviewed(body), current.pieces[0].draft.revision]);
-  const review = await rpc<RequestedReview>('requestReview', [made.pieceId]);
+  if (!ui) await rpc('saveDraft', [made.pieceId, markTextReviewed(body), current.pieces[0].draft.revision]);
+  const review = ui ? await ui.send(made.productionId) : await rpc<RequestedReview>('requestReview', [made.pieceId]);
   current = await record(made.productionId); assert.equal(current.versions.length, 3);
   assert.deepEqual(current.versions[1], generatedVersion, 'human review never changes the frozen AI version');
   const approvedVersion = structuredClone(current.versions[2]); assert.equal(approvedVersion.hash, generatedVersion.hash); assert.deepEqual(review.version.ref, toVersionRef(approvedVersion));
-  const approval = await rpc<{ id: string; by: string }>('decide', [{ pieceId: made.pieceId, subject: review.version.ref, displayedHash: review.version.ref.hash, decision: 'approved' }], 1);
+  const approval = ui ? await ui.approve(made.productionId, body) : await rpc<{ id: string; by: string }>('decide', [{ pieceId: made.pieceId, subject: review.version.ref, displayedHash: review.version.ref.hash, decision: 'approved' }], 1);
   assert.notEqual(approval.by, actor);
   const render = createLocalRenderService({ templates: [], renders: {}, createSurface: () => undefined, fontsReady: async () => {} });
   const exporter = createLocalExportService({ clock: { now: () => new Date().toISOString() }, getRecord: () => current, render });
@@ -190,8 +202,18 @@ test('two imported materials reach orchestrated writing, separate approval and a
     return built.value;
   }
   const first = await exportApproved('first'), second = await exportApproved('repeat'); assert.equal(first.plan.idempotencyKey, second.plan.idempotencyKey);
+  async function browserDownload() {
+    if (!ui) return;
+    const files = await ui.download(made.productionId); assert.equal(files.length, 3);
+    for (const file of files) {
+      assert.ok(!file.text.includes('PRIVATE_UNSELECTED_ARCHIVE_SENTINEL'));
+      if (file.name.endsWith('.json')) assert.deepEqual(JSON.parse(file.text).items[0], first.manifest.items[0]);
+      else { const proof = /<!-- reporter\.memory\/v1\n([\s\S]*?)\n-->/.exec(file.text); assert.ok(proof); assert.equal(JSON.parse(proof[1]).article.hash, approvedVersion.hash); }
+    }
+  }
+  await browserDownload();
   round = 0; modelOutputs = outputs('Origem e contexto no texto do ensaio');
-  const again = await rpc<{ runId: string }>('generation.start', ['article.draft', { productionId: made.productionId, pieceId: made.pieceId }]); runIds.push(again.runId);
+  const again = ui ? await ui.start(made.productionId) : await rpc<{ runId: string }>('generation.start', ['article.draft', { productionId: made.productionId, pieceId: made.pieceId }]); runIds.push(again.runId);
   assert.equal(await runEditorialJob('journey-writing-again', new AbortController().signal), true);
   current = await record(made.productionId); const replayed = await snapshot(); assert.equal(replayed.state.runFolds[again.runId].run.status, 'completed', JSON.stringify(replayed.state.runFolds[again.runId].run.error));
   assert.equal(round, 3); assert.equal(current.versions.length, 4); assert.deepEqual(current.versions[0], selectedDraftVersion);
@@ -199,6 +221,12 @@ test('two imported materials reach orchestrated writing, separate approval and a
   assert.equal(current.versions[3].runId, again.runId); assert.notEqual(current.versions[3].hash, approvedVersion.hash);
   assert.equal((await api<{ ok: boolean }>('exports/prepare', { productionId: made.productionId, selection: [toVersionRef(current.versions[3])] })).ok, false);
   await exportApproved('after-new-draft');
+  await browserDownload();
+  if (ui) {
+    const beforeReading = structuredClone((await record(made.productionId)).pieces[0].draft);
+    await ui.used(orderedPassages, approvedVersion.number, (approvedVersion.body as ArticleBody).title);
+    assert.deepEqual((await record(made.productionId)).pieces[0].draft, beforeReading, 'reading frozen occurrences never edits the current draft');
+  }
   for (const item of selected.items) {
     const detail = await api<MemoryDetail>(`memory/${item.evidence.id}`); assert.deepEqual(detail.uses, { selected: 1, inserted: 1, approved: 1, published: 0 });
     const approved = detail.occurrences.items.filter(use => use.stage === 'approved'); assert.equal(approved.length, 1);
