@@ -1,0 +1,71 @@
+import assert from 'node:assert/strict';
+import { expect, type Page } from '@playwright/test';
+import type { MemoryCalibrationCase } from '../../src/domain/editorial-memory-calibration.ts';
+import type { MemoryPolicyProposal } from '../../src/domain/editorial-memory-policy.ts';
+import type { MemoryPolicy } from '../../src/domain/editorial-memory.ts';
+const response = (page: Page, path: string) => page.waitForResponse(reply => reply.url().endsWith(`/memory/policy/${path}`) && reply.request().method() === 'POST');
+async function result<T>(pending: ReturnType<typeof response>): Promise<T> { const reply = await pending; assert.equal(reply.status(), 200, await reply.text()); return reply.json() as Promise<T>; }
+const settle = async (page: Page, name: string) => page.getByRole('dialog', { name, exact: true }).evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)).then(() => undefined));
+async function choose(page: Page, field: string, option: string) { await page.getByRole('combobox', { name: field, exact: true }).click(); await page.getByRole('option', { name: option, exact: true }).click(); }
+export async function annotateMemoryPolicyCase(page: Page, base: string, excerpt: string, audit: (page: Page, label: string) => Promise<void>) {
+  await page.goto(`${base}/w/reporter-ai/quotes?q=${encodeURIComponent(excerpt.slice(0, 70))}`);
+  const row = page.getByRole('row', { name: excerpt.slice(0, 80), exact: true }); await row.focus(); await page.keyboard.press('Enter');
+  const drawer = page.getByRole('dialog', { name: 'Evidência', exact: true }), trigger = drawer.getByRole('button', { name: 'Avaliar para calibração', exact: true });
+  await expect(trigger).toBeEnabled(); await trigger.click();
+  const form = page.getByRole('dialog', { name: 'Avaliar para calibração', exact: true }), submit = form.getByRole('button', { name: 'Registrar amostra', exact: true });
+  await expect(form.getByRole('textbox', { name: 'Trecho da amostra factual', exact: true })).toHaveValue(excerpt); await expect(submit).toBeDisabled(); await settle(page, 'Avaliar para calibração');
+  await choose(page, 'Finalidade da amostra', 'Teste técnico com conteúdo sintético'); await choose(page, 'Resultado factual conferido', 'Confirmada');
+  const reason = 'Synthetic browser case; not representative factual-quality acceptance.';
+  await form.getByRole('textbox', { name: 'Justificativa da amostra', exact: true }).fill(reason);
+  await form.getByRole('button', { name: 'Fechar', exact: true }).click(); await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); await trigger.click();
+  await expect(form.getByRole('textbox', { name: 'Justificativa da amostra', exact: true })).toHaveValue(reason); await audit(page, 'calibration-form');
+  const pending = response(page, 'cases'); await submit.click(); const item = await result<MemoryCalibrationCase>(pending);
+  await expect(form).toBeHidden(); await expect(trigger).toBeFocused(); assert.equal(item.purpose, 'technical'); assert.equal(item.outcome, 'confirmed'); return item;
+}
+export async function inspectMemoryPolicyLifecycle(admin: Page, editor: Page, base: string, item: MemoryCalibrationCase, audit: (page: Page, label: string) => Promise<void>) {
+  await editor.goto(`${base}/w/reporter-ai/quotes?bankView=policy`);
+  await expect(editor.getByText('A administração da política exige acesso de administrador', { exact: true })).toBeVisible();
+  await expect(editor.getByRole('tab', { name: 'Política', exact: true })).toHaveCount(0);
+  await admin.goto(`${base}/w/reporter-ai/quotes?bankView=policy`);
+  await expect(admin.getByRole('tab', { name: 'Política', exact: true })).toHaveAttribute('aria-selected', 'true');
+  const create = admin.getByRole('button', { name: 'Criar proposta', exact: true }); await expect(create).toBeEnabled(); await create.click();
+  const form = admin.getByRole('dialog', { name: 'Criar proposta de política', exact: true }); await settle(admin, 'Criar proposta de política');
+  await expect(form.getByRole('button', { name: 'Avaliar proposta', exact: true })).toBeDisabled();
+  await choose(admin, 'Modo da proposta', 'Aplicar confiança factual avaliada');
+  await form.getByRole('textbox', { name: 'Motivo da proposta', exact: true }).fill('Synthetic calibration UI must remain blocked.');
+  await form.getByRole('spinbutton', { name: 'Confiança mínima para declarações factuais (%)', exact: true }).fill('80');
+  for (const [label, value] of [['Mínimo de amostras de treino por tipo', '1'], ['Mínimo de amostras de validação por tipo', '1'], ['Mínimo de grupos de origem por conjunto e tipo', '1'],
+    ['Mínimo de liberações na validação por tipo', '1'], ['Limite inferior mínimo da precisão (%)', '0'], ['Máximo de erros na validação por tipo', '0']]) await form.getByRole('spinbutton', { name: label, exact: true }).fill(value);
+  const original = form.getByRole('button', { name: item.excerpt.slice(0, 120), exact: true }); await original.click();
+  const reader = admin.getByRole('dialog', { name: 'Amostra factual', exact: true }); await expect(reader.getByRole('textbox', { name: 'Trecho original da amostra', exact: true })).toHaveValue(item.excerpt);
+  await admin.keyboard.press('Escape'); await expect(reader).toBeHidden(); await expect(original).toBeFocused();
+  await choose(admin, `Conjunto da amostra ${item.excerpt.slice(0, 70)}`, 'Treino');
+  let pending = response(admin, 'proposals'); await form.getByRole('button', { name: 'Avaliar proposta', exact: true }).click(); const blocked = await result<MemoryPolicyProposal>(pending);
+  assert.ok(blocked.evaluation.blockers.includes('EDITORIAL_CORPUS_REQUIRED'));
+  const comparison = admin.getByRole('dialog', { name: 'Comparar proposta de política', exact: true }); await expect(comparison).toBeVisible(); await expect(form).toBeHidden();
+  await expect(comparison.getByText('A proposta exige amostras editoriais reais.', { exact: true })).toBeVisible();
+  await comparison.getByRole('textbox', { name: 'Motivo da ativação', exact: true }).fill('Synthetic samples cannot authorize automatic use.');
+  await expect(comparison.getByRole('button', { name: 'Ativar proposta', exact: true })).toBeDisabled(); await settle(admin, 'Comparar proposta de política'); await audit(admin, 'policy-blocked');
+  await comparison.getByRole('button', { name: 'Fechar', exact: true }).click(); await expect(comparison).toBeHidden(); await create.click(); await settle(admin, 'Criar proposta de política');
+  await choose(admin, 'Modo da proposta', 'Exigir revisão humana');
+  await form.getByRole('textbox', { name: 'Motivo da proposta', exact: true }).fill('Synthetic explicit manual policy proposal.');
+  pending = response(admin, 'proposals'); await form.getByRole('button', { name: 'Avaliar proposta', exact: true }).click(); const proposal = await result<MemoryPolicyProposal>(pending);
+  assert.equal(proposal.evaluation.activatable, true); await expect(comparison).toBeVisible();
+  await expect(comparison.getByRole('button', { name: 'Ativar proposta', exact: true })).toBeDisabled();
+  await comparison.getByRole('textbox', { name: 'Motivo da ativação', exact: true }).fill('Synthetic manual policy activation preserves approved articles.');
+  await settle(admin, 'Comparar proposta de política'); await audit(admin, 'policy-comparison');
+  pending = response(admin, `proposals/${proposal.id}/activate`); await comparison.getByRole('button', { name: 'Ativar proposta', exact: true }).click(); const active = await result<MemoryPolicy>(pending);
+  await expect(comparison).toBeHidden(); assert.equal(active.revision, proposal.baseRevision + 1); assert.equal(active.mode, 'review_required');
+  const history = admin.getByRole('table', { name: 'Versões de política', exact: true }), baseline = history.getByRole('row', { name: 'Versão 1', exact: true });
+  await baseline.focus(); await admin.keyboard.press('Enter');
+  const version = admin.getByRole('dialog', { name: 'Política versão 1', exact: true }); await expect(version).toBeVisible();
+  await version.getByRole('textbox', { name: 'Motivo da restauração', exact: true }).fill('Synthetic restore keeps all newer originals and versions.');
+  pending = response(admin, 'restore'); await version.getByRole('button', { name: 'Preparar restauração', exact: true }).click(); const restoredProposal = await result<MemoryPolicyProposal>(pending);
+  assert.equal(restoredProposal.restoredFrom, 1); await expect(comparison).toBeVisible(); await expect(version).toBeHidden();
+  await comparison.getByRole('textbox', { name: 'Motivo da ativação', exact: true }).fill('Explicit synthetic restoration activation.');
+  pending = response(admin, `proposals/${restoredProposal.id}/activate`); await comparison.getByRole('button', { name: 'Ativar proposta', exact: true }).click(); const restored = await result<MemoryPolicy>(pending);
+  await expect(comparison).toBeHidden(); assert.equal(restored.revision, active.revision + 1); assert.equal(restored.change!.restoredFrom, 1);
+  await admin.reload(); await expect(admin.getByRole('tab', { name: 'Política', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(history.getByRole('row', { name: `Versão ${restored.revision}`, exact: true })).toBeVisible(); await expect(history.getByRole('row', { name: `Versão ${active.revision}`, exact: true })).toBeVisible(); await expect(baseline).toBeVisible();
+  await audit(admin, 'policy-restored'); return restored;
+}

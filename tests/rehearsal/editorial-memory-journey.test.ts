@@ -24,6 +24,8 @@ import { createLocalRenderService } from '../../src/adapters/local/render/local-
 import type { ConnectedWorkspace } from '../../src/ports/connected-workspace.ts';
 import type { MemoryCorrectionImpact, MemoryDetail, MemoryJob, MemoryMaterialRevisionResult, MemoryReplacementComparison, MemoryReplacementResult, MemorySelectedContext, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { MemoryFeedback } from '../../src/domain/editorial-memory-feedback.ts';
+import type { MemoryCalibrationCase } from '../../src/domain/editorial-memory-calibration.ts';
+import type { MemoryPolicyProposal } from '../../src/domain/editorial-memory-policy.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import type { BuiltFile, ExportPackage } from '../../src/ports/export.ts';
 import type { WritingRunDetails } from '../../src/ports/pipeline-settings.ts';
@@ -233,6 +235,12 @@ test('two imported materials reach orchestrated writing, separate approval and a
   const rated = ui ? await ui.rateSelection(ratingSelection, orderedPassages[0].text, feedbackReason) : await api<MemoryFeedback>('memory/feedback/relevance', ratingInput);
   assert.equal(rated.rating, 'not_useful'); assert.deepEqual(rated.selection, ratingInput.selection); assert.deepEqual(rated.query, ratingSelection.items[0].discovery!.query);
   assert.deepEqual(await record(made.productionId), ratingBefore, 'pauta feedback never edits sources, draft or frozen article versions');
+  const caseEvidence = evidence.find(item => item.evidence.kind === 'statistic')!.evidence, caseDetail = await api<MemoryDetail>(`memory/${caseEvidence.id}`);
+  const annotation = ui ? await ui.annotateCalibration(caseEvidence.anchor.excerpt) : await api<MemoryCalibrationCase>('memory/policy/cases', {
+    evidence: memoryEvidenceRef(caseEvidence), check: { id: caseDetail.check!.id, revision: caseDetail.check!.revision }, purpose: 'technical', outcome: 'confirmed', reason: 'Synthetic integration case; not real quality acceptance.',
+  });
+  assert.equal(annotation.personId, (await snapshot()).state.sessionPersonId); assert.equal(annotation.excerpt, caseEvidence.anchor.excerpt);
+  assert.deepEqual(await record(made.productionId), ratingBefore, 'calibration annotation never edits the approved article or its current draft');
   for (const item of selected.items) {
     const detail = await api<MemoryDetail>(`memory/${item.evidence.id}`); assert.deepEqual(detail.uses, { selected: 1, inserted: 1, approved: 1, published: 0 });
     const approved = detail.occurrences.items.filter(use => use.stage === 'approved'); assert.equal(approved.length, 1);
@@ -313,4 +321,14 @@ test('two imported materials reach orchestrated writing, separate approval and a
     await ui.inspectFeedback(feedbackReason, replacementReason);
     assert.deepEqual((await record(made.productionId)).versions, frozen); assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
   }
+  const beforePolicy = await record(made.productionId), basePolicy = await api<ReturnType<typeof initialMemoryPolicy>>('memory/policy');
+  if (ui) await ui.policyLifecycle(annotation);
+  else {
+    const proposal = await api<MemoryPolicyProposal>('memory/policy/proposals', { baseRevision: basePolicy.revision, settings: { mode: 'review_required', thresholds: basePolicy.thresholds }, cases: [], criteria: null, reason: 'Synthetic explicit policy change after article approval.' }, 2);
+    const active = await api<ReturnType<typeof initialMemoryPolicy>>(`memory/policy/proposals/${proposal.id}/activate`, { baseRevision: basePolicy.revision, reason: 'Synthetic activation preserves approved versions.' }, 2);
+    const restored = await api<MemoryPolicyProposal>('memory/policy/restore', { baseRevision: active.revision, targetRevision: 1, reason: 'Synthetic restore preserves newer source corrections.' }, 2);
+    await api(`memory/policy/proposals/${restored.id}/activate`, { baseRevision: active.revision, reason: 'Explicit synthetic restore activation.' }, 2);
+  }
+  assert.deepEqual(await record(made.productionId), beforePolicy, 'policy activation and restoration never rewrite approved articles, sources, current drafts or frozen versions');
+  for (const item of selected.items) assert.equal((await api<MemoryDetail>(`memory/${item.evidence.id}`)).checkState, 'outdated');
 });

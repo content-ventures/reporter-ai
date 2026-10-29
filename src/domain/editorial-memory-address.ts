@@ -3,9 +3,9 @@ import type { Result } from './result.ts';
 import type { MemoryFeedbackQuery } from './editorial-memory-feedback.ts';
 import { ok, refuse } from './result.ts';
 
-export type MemoryTab = 'all' | 'citation' | 'statistic' | 'materials' | 'selections' | 'feedback';
+export type MemoryTab = 'all' | 'citation' | 'statistic' | 'materials' | 'selections' | 'feedback' | 'policy';
 export type MemoryAddress = { tab: MemoryTab; query: MemoryQuery; feedback?: Omit<MemoryFeedbackQuery, 'limit'> };
-const tabs: readonly string[] = ['all', 'citation', 'statistic', 'materials', 'selections', 'feedback'];
+const tabs: readonly string[] = ['all', 'citation', 'statistic', 'materials', 'selections', 'feedback', 'policy'];
 const feedbackFields = { feedbackKind: 'kind', feedbackEvidence: 'evidenceId', feedbackMaterial: 'materialId', feedbackCursor: 'cursor' } as const;
 const choices = {
   status: ['active', 'withdrawn', 'superseded', 'all'], materialKind: ['transcript', 'news', 'release', 'report', 'archive', 'market_data'],
