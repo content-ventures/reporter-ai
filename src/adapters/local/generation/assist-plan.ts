@@ -65,8 +65,9 @@ export function validateMemoryAssistPlan(body: ArticleBody, plan: AssistPlan, co
     combined = applied.value;
     suggestions.push({ ...planned, target: prepared.value.target, proposal: prepared.value.proposal });
   }
+  const bankSources = new Set(context.sources.filter(source => source.memory).map(source => source.id));
   return ok({ ...plan, suggestions, sourcesUsed: dedupeRefs([...plan.sourcesUsed, ...suggestions.flatMap(suggestion =>
-    suggestion.proposal.kind === 'replace-blocks' ? suggestion.proposal.blocks.flatMap(block => block.sourceRefs ?? []) : [])]) });
+    suggestion.proposal.kind === 'replace-blocks' ? suggestion.proposal.blocks.flatMap(block => block.sourceRefs ?? []).filter(ref => bankSources.has(ref.sourceId)) : [])]) });
 }
 
 type Located = { block: ArticleBlock; range: TextRange; text: string; wholeBlock: boolean };
