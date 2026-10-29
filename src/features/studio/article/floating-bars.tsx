@@ -399,7 +399,7 @@ function QuoteBar({ open, quote, onDismiss }: { open: boolean; quote: QuoteCheck
       {closest && range ? (
         <>
           <ToolbarSeparator />
-          <ToolbarButton label="Usar texto da fonte" icon={TextQuote} showLabel={!narrow} onClick={() => studio.actions.useSourceText(range, closest.text)} />
+          {!closest.readOnly && studio.canEdit && <ToolbarButton label="Usar texto da fonte" icon={TextQuote} showLabel={!narrow} disabled={Boolean(studio.refusal)} onClick={() => shown && studio.actions.useSourceText(shown, closest)} />}
           <ToolbarButton label="Ver na transcrição" icon={PanelLeftOpen} showLabel={!narrow} onClick={() => studio.actions.showInTranscript(closest.ref)} />
         </>
       ) : null}

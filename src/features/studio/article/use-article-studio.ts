@@ -178,7 +178,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
   const { retryRun, repeatTurn, runTool, runPreset, ask, askAboutSelection, addExcerpt } = copilot;
   const { accept, discard, reapply } = decide;
   const { showQuote } = checking;
-  const { insertQuote, takeSourceText, showInTranscript } = sourceLink;
+  const { insertQuote, takeSourceText, replacePassage, showInTranscript } = sourceLink;
   const { saveVersion, restoreVersion, undoChanges } = review;
   const { scrollToBlock, readOnly, prepare } = text;
   /** Why nothing may change the text here, said when someone tries (null: it may). */
@@ -217,6 +217,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
       nextMissingQuote,
       insertQuote: writes(insertQuote),
       useSourceText: writes(takeSourceText),
+      replacePassage: writes(replacePassage),
       showInTranscript,
       addExcerpt,
       saveVersion: writes(saveVersion),
@@ -231,7 +232,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
       jumpTo,
       focusTitle,
     };
-  }, [refusal, readOnly, canEdit, generate, retryGeneration, retryRun, repeatTurn, runTool, runPreset, ask, askAboutSelection, accept, discard, reapply, revealSuggestion, nextSuggestion, focusRange, showQuote, markTextReviewed, unmarkTextReviewed, nextMissingQuote, insertQuote, takeSourceText, showInTranscript, addExcerpt, saveVersion, restoreVersion, undoChanges, prepare, scrollToBlock, showImage, showImageSlot, nextImageIssue, nextImageSlot, jumpTo, focusTitle]);
+  }, [refusal, readOnly, canEdit, generate, retryGeneration, retryRun, repeatTurn, runTool, runPreset, ask, askAboutSelection, accept, discard, reapply, revealSuggestion, nextSuggestion, focusRange, showQuote, markTextReviewed, unmarkTextReviewed, nextMissingQuote, insertQuote, takeSourceText, replacePassage, showInTranscript, addExcerpt, saveVersion, restoreVersion, undoChanges, prepare, scrollToBlock, showImage, showImageSlot, nextImageIssue, nextImageSlot, jumpTo, focusTitle]);
 
   /** The brief changed after the text on screen was generated ("Reescrever" follows the new one). */
   const briefChanged = briefChangedSince(generation.run, production.brief);

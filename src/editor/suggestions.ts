@@ -19,7 +19,7 @@ import type { ViewLike } from './view.ts';
 
 export const SUGGESTION_META = 'reporterSuggestion';
 
-type Located = Pick<Suggestion, 'target' | 'anchorText'>;
+type Located = Pick<Suggestion, 'target' | 'anchorText'> & Partial<Pick<Suggestion, 'proposal'>>;
 
 function sliceBlock(doc: PMNode, range: TextRange): string | undefined {
   const entry = findBlockEntry(doc, range.blockId);
@@ -39,6 +39,10 @@ export function locateSuggestionInDoc(doc: PMNode, suggestion: Located): TextRan
   for (const [index, range] of suggestion.target.entries()) {
     const expected = suggestion.anchorText[index];
     if (expected === undefined) return undefined;
+    if (suggestion.proposal?.kind === 'replace-blocks') {
+      const entry = findBlockEntry(doc, range.blockId);
+      if (!entry || blockTextOf(entry.node) !== expected) return undefined;
+    }
     if (sliceBlock(doc, range) === expected) {
       located.push(range);
       continue;

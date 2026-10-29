@@ -62,4 +62,5 @@ export * from './figures.ts';
 export * from './image-input.ts';
 export * from './extensions.ts';
 export * from './commands.ts';
+export * from './source-quotes.ts';
 export * from './use-article-editor.ts';

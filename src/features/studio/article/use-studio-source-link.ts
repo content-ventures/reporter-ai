@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { toast, type WorkspaceView } from '@content-ventures/design-system/v3';
-import { paragraphBlock, quoteBlock, type ArticleBody, type BlockId, type SourceRef, type TextRange } from '@/domain';
-import { blockIdOf, createBlockIdFactory, findBlockEntry, insertBlocks, setArticleDecorations, textRangeToPositions } from '@/editor';
+import { paragraphBlock, quoteBlock, type ArticleBody, type BlockId, type QuoteCheck, type SourceRef, type TextRange } from '@/domain';
+import { blockIdOf, createBlockIdFactory, findBlockEntry, insertBlocks, recoverSourceQuote, setArticleDecorations, textRangeToPositions } from '@/editor';
 import type { PersonSummary, SourceDetail } from '@/ports';
-import { blocksCitingSegment, viewerSegments, type SourceScope, type ViewerSegment } from './studio-model';
+import { blocksCitingSegment, viewerSegments, type ClosestExcerpt, type SourceScope, type ViewerSegment } from './studio-model';
 import type { StudioText } from './use-studio-text';
 import { studioSourceExcerpt, type StudioExcerptSelection } from './studio-source-excerpt';
 
@@ -149,16 +149,30 @@ export function useStudioSourceLink({
 
   /** "Usar texto da fonte": the quotation takes the transcript's words (one undo reverts it). */
   const takeSourceText = useCallback(
-    (range: TextRange, words: string) => {
+    (quote: Pick<QuoteCheck, 'range' | 'text' | 'sourceRefs'>, excerpt: ClosestExcerpt) => {
       if (!editor || editor.isDestroyed) return;
-      const positions = textRangeToPositions(editor.state.doc, range);
-      if (!positions) return;
+      const sources = sourceDetails?.map(detail => detail.source) ?? [];
+      if (excerpt.readOnly || blockedReason && sources.some(source => source.id === excerpt.ref.sourceId && source.memory)) {
+        toast('Confira a fonte do banco antes de corrigir a citação.'); return;
+      }
+      if (!recoverSourceQuote(editor.view, quote, excerpt, sources)) {
+        toast('A citação ou a fonte mudou. Confira o trecho novamente.'); return;
+      }
       setView('main');
-      editor.view.dispatch(editor.state.tr.insertText(words, positions.from, positions.to).scrollIntoView());
       editor.commands.focus();
     },
-    [editor, setView],
+    [editor, sourceDetails, blockedReason, setView],
   );
+
+  /** Explicit editorial edits keep their original references for the subsequent evidence check. */
+  const replacePassage = useCallback((range: TextRange, words: string) => {
+    if (!editor || editor.isDestroyed) return;
+    const positions = textRangeToPositions(editor.state.doc, range);
+    if (!positions) return;
+    setView('main');
+    editor.view.dispatch(editor.state.tr.insertText(words, positions.from, positions.to).scrollIntoView());
+    editor.commands.focus();
+  }, [editor, setView]);
 
   /** "Inserir como citação": at the caret once placed, else after the last paragraph citing the line. */
   const insertQuote = useCallback(
@@ -181,5 +195,5 @@ export function useStudioSourceLink({
     [editor, source, sourceDetails, blockedReason, quoteIds, factsBody, caretWasPlaced, setView],
   );
 
-  return { segments, link: visibleLink, linkSegment, showInTranscript, takeSourceText, insertQuote };
+  return { segments, link: visibleLink, linkSegment, showInTranscript, takeSourceText, replacePassage, insertQuote };
 }
