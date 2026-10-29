@@ -39,6 +39,8 @@ export const memoryMetadataSchema = z.object({
 }).strict();
 export const memoryEvidenceRefSchema = z.object({ id, revision: z.number().int().nonnegative(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
 export const memoryCheckInputSchema = z.object({ expected: memoryEvidenceRefSchema }).strict();
+export const memoryReplacementSchema = z.object({ expected: memoryEvidenceRefSchema, replacement: memoryEvidenceRefSchema, reason: z.string().trim().min(1).max(2000) }).strict()
+  .refine(value => value.expected.id !== value.replacement.id, 'Escolha registros diferentes.');
 export const memoryLegacyBatchSchema = z.object({ after: id.nullable().default(null), limit: z.number().int().min(1).max(100).default(25) }).strict();
 const articlePosition = z.object({ productionId: id, kind: z.enum(['piece', 'version']), id, offset: z.number().int().min(0).max(1_000_000),
   storageHash: z.string().regex(/^[a-f0-9]{32}$/).nullable() }).strict().refine(value => value.offset === 0 || value.storageHash !== null);

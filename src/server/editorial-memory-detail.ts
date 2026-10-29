@@ -47,9 +47,13 @@ export async function readMemoryDetail(id: string): Promise<MemoryDetail> {
     const decisions = await history<MemoryDecision>(client, id, 'decisions', {}, state);
     const revisions = await history<MemoryEvidence>(client, id, 'revisions', {}, state);
     const occurrences = await history<MemoryUse>(client, id, 'occurrences', {}, state);
+    const links = (await client.query('SELECT public.reporter_memory_replacements($1) AS value', [id])).rows[0].value as MemoryDetail['replacements'];
+    // An edge committed after this detail's snapshot belongs to the next refresh.
+    const replacements = { previous: links?.previous && links.previous.current.after.revision <= bundle.evidence.revision ? links.previous : null,
+      next: links?.next && links.next.previous.after.revision <= bundle.evidence.revision ? links.next : null };
     const version = bundle.source?.versions.find(version => version.number === bundle.evidence.anchor.source.sourceVersion);
     return { ...memoryView(bundle), material: bundle.material, policy: bundle.policy ?? initialMemoryPolicy(currentReporterContext().portal),
       source: { ref: bundle.evidence.anchor.source, authorized: bundle.source?.rights.authorized ?? false, segments: version?.content.segments ?? [] },
-      checkJob, checks, decisions, revisions, occurrences };
+      checkJob, checks, decisions, revisions, occurrences, replacements };
   });
 }

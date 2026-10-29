@@ -5,8 +5,9 @@ import pg, { type Client, type Pool } from 'pg';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { createTranscriptSource, toSourceVersionRef } from '../../src/domain/source.ts';
 import { parseTranscript } from '../../src/domain/text/transcript-parse.ts';
-import { memoryEvidenceRef, type MemoryCheck, type MemoryEvidence, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
-import type { MemoryCorrectionImpact, MemoryDetail, MemorySelectedContext, MemorySourceRefreshInput, MemorySourceRefreshResult, MemoryWritingResult, MemoryWritingStatus } from '../../src/ports/editorial-memory.ts';
+import { initialMemoryPolicy, memoryEvidenceRef, type MemoryCheck, type MemoryEvidence, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
+import type { MemoryCorrectionImpact, MemoryDetail, MemoryMaterialRevisionResult, MemoryReplacementComparison, MemoryReplacementResult, MemorySelectedContext, MemorySourceRefreshInput, MemorySourceRefreshResult, MemoryWritingResult, MemoryWritingStatus } from '../../src/ports/editorial-memory.ts';
+import { assessMemoryEvidence } from '../../src/domain/editorial-memory-check.ts';
 import type { ReporterRequestContext } from '../../src/server/request-context.ts';
 import type { ArticleBody } from '../../src/domain/article.ts';
 import type { VersionRef } from '../../src/domain/refs.ts';
@@ -40,7 +41,7 @@ async function session<T>(action: (client: Client) => Promise<T>, acting: Report
 async function api(path: string, input?: unknown, key: string = randomUUID(), identity: typeof identities[number] | null = identities[0], origin = APP) {
   const { handleReporter } = await import('../../src/server/http.ts'), url = new URL(`${APP}/api/reporter/w/reporter-ai/${path}`);
   return handleReporter(new Request(url, input === undefined ? {} : { method: 'POST', headers: { origin, 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify(input) }),
-    ['w', 'reporter-ai', ...url.pathname.split('/').slice(5).filter(Boolean)], { identify: async () => identity });
+    ['w', 'reporter-ai', ...url.pathname.split('/').slice(5).filter(Boolean)], { identify: async () => identity, defer: () => {} });
 }
 async function json<T>(path: string, input?: unknown, key?: string): Promise<T> {
   const response = await api(path, input, key); assert.equal(response.status, 200, await response.clone().text()); return response.json() as Promise<T>;
@@ -58,8 +59,8 @@ after(async () => {
   const pools = (globalThis as typeof globalThis & { reporterPools?: Partial<Record<string, Pool>> }).reporterPools ?? {};
   await Promise.all(Object.values(pools).map(pool => pool?.end())); db?.stop();
 });
-async function fixture(kind: 'citation' | 'statistic', privateOrigin = false) {
-  const id = randomUUID(), excerpt = kind === 'citation' ? 'Uma declaração sintética literal com 🐟 e autoria conhecida.' : 'Foram atendidas cerca de 240 pessoas fictícias em 2025.';
+async function fixture(kind: 'citation' | 'statistic', privateOrigin = false, observation = { raw: '240', period: '2025' }) {
+  const id = randomUUID(), excerpt = kind === 'citation' ? 'Uma declaração sintética literal com 🐟 e autoria conhecida.' : `Foram atendidas cerca de ${observation.raw} pessoas fictícias em ${observation.period}.`;
   const source = createTranscriptSource({ workspaceId: PORTAL, title: 'Synthetic original', origin: 'other', authorized: true,
     parsed: parseTranscript(`${excerpt}\n\nCONTEÚDO PRIVADO FORA DA SELEÇÃO`, { format: 'plain' }) }, { actorId: context.actor, now: new Date().toISOString(), newId: () => `original-${id}` });
   await owner('INSERT INTO public.reporter_ed_sources(portal_id,source_id,doc,seq) VALUES($1,$2,$3,1)', [PORTAL, source.id, JSON.stringify(source)]);
@@ -77,7 +78,7 @@ async function fixture(kind: 'citation' | 'statistic', privateOrigin = false) {
     createdAt: source.createdAt, updatedAt: source.createdAt, supersedes: null,
     anchor: { source: material.source, spans: [{ segmentId: source.versions[0].content.segments[0].id, from: 0, to: excerpt.length }], excerpt } };
   const evidence: MemoryEvidence = kind === 'citation' ? { ...base, kind, text: excerpt, personId: 'synthetic-author', authorConfirmed: true, legacyCitationId: null }
-    : { ...base, kind, indicator: 'Atendimento', value: { raw: '240', decimal: '240', lower: null, upper: null, scale: null }, unit: 'pessoas', period: { label: '2025', from: null, to: null },
+    : { ...base, kind, indicator: 'Atendimento', value: { raw: observation.raw, decimal: observation.raw, lower: null, upper: null, scale: null }, unit: 'pessoas', period: { label: observation.period, from: null, to: null },
       geography: null, population: null, qualifier: 'cerca de', issuingInstitution: null, declaringPersonId: null };
   await session(async client => {
     await client.query('SELECT public.reporter_memory_put($1::jsonb)', [JSON.stringify({ kind: 'material', id: material.id, expected: null, doc: material, sourceId: source.id, productionId })]);
@@ -756,4 +757,101 @@ test('a thousand affected selections paginate once each without transferring ori
     cursor = page.nextCursor;
   } while (cursor);
   assert.equal(ids.size, 1001); assert.deepEqual(await impactClocks(), before);
+});
+
+test('statistic replacement retains independent observations, fences an in-flight check, audits both revisions and never transfers uses', async () => {
+  const a = await fixture('statistic'), b = await fixture('statistic', false, { raw: '360', period: '2026' });
+  const saved = await selection([a.evidence]), made = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+  const beforePiece = (await owner("SELECT doc FROM reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc;
+  const beforeUses = (await json<MemoryDetail>(`memory/${a.evidence.id}`)).uses;
+  const job = await json<{ id: string }>(`memory/${b.evidence.id}/check`, { expected: memoryEvidenceRef(b.evidence) });
+  const { runMemoryCheckJob } = await import('../../src/server/editorial-memory-check-worker.ts');
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>(); let produced = false;
+  const worker = runMemoryCheckJob('replacement-fence', new AbortController().signal, undefined, async claim => {
+    assert.equal(claim.evidence.id, b.evidence.id); entered.resolve(); await release.promise;
+    const result = assessMemoryEvidence(claim.evidence, claim.material, claim.policy ?? initialMemoryPolicy(PORTAL), claim.previous, { claims: [{ text: claim.evidence.anchor.excerpt, kind: 'declared' }], supports: [], strength: null, provider: 'synthetic', model: claim.job.model! },
+      { actorId: context.actor, now: new Date().toISOString(), newId: () => randomUUID() }); produced = true; return result;
+  });
+  await Promise.race([entered.promise, worker.then(() => { throw new Error('The check ended before claiming the intended fixture.'); })]);
+  const input = { expected: memoryEvidenceRef(a.evidence), replacement: memoryEvidenceRef(b.evidence), reason: 'Synthetic new observation with a distinct period and original.' }, key = randomUUID();
+  let result: MemoryReplacementResult;
+  try { result = await json(`memory/${a.evidence.id}/replacement`, input, key); } finally { release.resolve(); assert.equal(await worker, true); assert.equal(produced, true); }
+  assert.deepEqual(await json(`memory/${a.evidence.id}/replacement`, input, key), result);
+  assert.equal(result.previous.evidence.status, 'superseded'); assert.equal(result.current.evidence.revision, b.evidence.revision + 1);
+  assert.equal(result.current.eligibility.usable, false); assert.deepEqual(result.previous.uses, beforeUses);
+  assert.deepEqual(result.current.uses, { selected: 0, inserted: 0, approved: 0, published: 0 });
+  const read = await json<MemoryReplacementComparison>(`memory/replacements/${result.relation.id}`);
+  assert.deepEqual(read.previous.anchor, a.evidence.anchor); assert.deepEqual(read.current.anchor, b.evidence.anchor);
+  assert.ok(read.previous.kind === 'statistic' && read.current.kind === 'statistic'); assert.equal(read.previous.value.raw, '240'); assert.equal(read.current.value.raw, '360');
+  assert.equal(read.previous.period!.label, '2025'); assert.equal(read.current.period!.label, '2026');
+  assert.equal(result.relation.personId, context.actor); assert.deepEqual(result.relation.previous.before, input.expected); assert.deepEqual(result.relation.current.before, input.replacement);
+  const terminal = await json<{ status: string; generation: number }>(`memory/jobs/${job.id}`); assert.equal(terminal.status, 'cancelled'); assert.equal(terminal.generation, 2);
+  assert.equal((await json<MemoryDetail>(`memory/${b.evidence.id}`)).check, null);
+  assert.deepEqual((await owner("SELECT doc FROM reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc, beforePiece);
+  const audit = await owner("SELECT user_id,after_data FROM audit_log WHERE action='memory.evidence.replace' AND after_data->'relation'->>'id'=$1", [result.relation.id]);
+  assert.equal(audit.length, 1); assert.equal(audit[0].user_id, context.actor); assert.deepEqual(audit[0].after_data.relation, result.relation);
+  assert.equal((await api('memory/selections', { baseRevision: 0, productionId: null, evidence: [memoryEvidenceRef(result.current.evidence)] })).status, 409);
+  const accepted = await api(`memory/${b.evidence.id}/review`, { evidence: memoryEvidenceRef(result.current.evidence), check: null, policyRevision: 1,
+    previousSequence: 1, action: 'accept', reason: 'Independent review of the replacement observation.', supports: [] }, randomUUID(), identities[1]); assert.equal(accepted.status, 200);
+  const fresh = await selection([result.current.evidence]), future = await json<MemoryWritingResult>(`memory/selections/${fresh.id}/write`, writingInput);
+  const futureSource = (await owner('SELECT doc FROM reporter_ed_sources WHERE source_id=$1', [future.sourceId]))[0].doc as Source;
+  assert.deepEqual(futureSource.memory![0].items[0].selected.evidence, memoryEvidenceRef(result.current.evidence)); assert.ok(futureSource.versions[0].content.segments[0].text.includes('360'));
+  assert.deepEqual((await owner("SELECT doc FROM reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc, beforePiece);
+  await assert.rejects(session(client => client.query('SELECT * FROM public.reporter_memory_replacements')), error => (error as { code: string }).code === '42501');
+});
+
+test('a corrected quotation links a later original version and comparison stays exact after later corrections', async () => {
+  const a = await fixture('citation'), literal = 'Uma declaração sintética corrigida com 🐟 e sua autoria preservada.';
+  const revised = await json<MemoryMaterialRevisionResult>(`memory/materials/${a.material.id}/revision`, { baseRevision: 1, source: a.material.source, text: literal, reason: 'Synthetic corrected transcript.' });
+  const current = { ...a.evidence, id: randomUUID(), revision: 0, text: literal, anchor: { source: revised.material.source, spans: [{ segmentId: 'original', from: 0, to: literal.length }], excerpt: literal } };
+  await session(client => client.query('SELECT public.reporter_memory_put($1::jsonb)', [JSON.stringify({ kind: 'evidence', id: current.id, expected: null, doc: current, fingerprint: memoryEvidenceRef(current).hash, parentKind: 'material', parentId: a.material.id })]));
+  const previous = (await json<MemoryDetail>(`memory/${a.evidence.id}`)).evidence;
+  const result = await json<MemoryReplacementResult>(`memory/${a.evidence.id}/replacement`, { expected: memoryEvidenceRef(previous), replacement: memoryEvidenceRef(current), reason: 'Explicit correction from the revised original.' });
+  const before = await json<MemoryReplacementComparison>(`memory/replacements/${result.relation.id}`);
+  assert.equal(before.previous.anchor.source.sourceVersion, 1); assert.equal(before.current.anchor.source.sourceVersion, 2); assert.equal(before.current.anchor.excerpt, literal);
+  await json(`memory/${current.id}/correction`, { expected: memoryEvidenceRef(result.current.evidence), reason: 'Later synthetic metadata correction.', changes: { kind: 'citation', metadata: { event: 'Later event' } } });
+  assert.deepEqual(await json(`memory/replacements/${result.relation.id}`), before);
+  const detail = await json<MemoryDetail>(`memory/${current.id}`); assert.equal(detail.replacements!.previous!.id, result.relation.id);
+  assert.equal((await json<MemoryDetail>(`memory/${previous.id}`)).replacements!.next!.id, result.relation.id);
+  const unrelated = await fixture('citation');
+  assert.equal((await api(`memory/${unrelated.evidence.id}/replacement`, { expected: memoryEvidenceRef(unrelated.evidence), replacement: memoryEvidenceRef(detail.evidence), reason: 'Unrelated original refused.' })).status, 422);
+});
+
+test('replacement permissions, exact revisions and competing alternatives preserve one immutable successor and reject cycles', async () => {
+  const a = await fixture('statistic'), b = await fixture('statistic'), c = await fixture('statistic'), path = `memory/${a.evidence.id}/replacement`;
+  const input = { expected: memoryEvidenceRef(a.evidence), replacement: memoryEvidenceRef(b.evidence), reason: 'Synthetic controlled replacement.' };
+  for (const bad of [{ ...input, reason: '' }, { ...input, actorId: context.actor }, { ...input, replacement: input.expected }]) assert.equal((await api(path, bad)).status, 422);
+  assert.equal((await api(`${path}?extra=1`, input)).status, 422); assert.equal((await api(path, input, '')).status, 422);
+  assert.equal((await api(path, input, randomUUID(), identities[1])).status, 403); assert.equal((await api(path, input, randomUUID(), null)).status, 401);
+  assert.equal((await api(path, { ...input, replacement: { ...input.replacement, revision: 999 } })).status, 409);
+  const responses = await Promise.all([api(path, input), api(path, { ...input, replacement: memoryEvidenceRef(c.evidence) })]); assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+  const winner = await responses.find(response => response.status === 200)!.json() as MemoryReplacementResult;
+  const d = await fixture('statistic');
+  const chained = await json<MemoryReplacementResult>(`memory/${winner.current.evidence.id}/replacement`, { expected: memoryEvidenceRef(winner.current.evidence), replacement: memoryEvidenceRef(d.evidence), reason: 'Next independent observation.' });
+  const middle = await json<MemoryDetail>(`memory/${winner.current.evidence.id}`); assert.equal(middle.replacements!.previous!.id, winner.relation.id); assert.equal(middle.replacements!.next!.id, chained.relation.id);
+  assert.equal((await api(`memory/${d.evidence.id}/replacement`, { expected: memoryEvidenceRef(chained.current.evidence), replacement: memoryEvidenceRef(winner.previous.evidence), reason: 'Cycle refused.' })).status, 422);
+  const x = await fixture('statistic');
+  assert.equal((await api(`memory/${x.evidence.id}/replacement`, { expected: memoryEvidenceRef(x.evidence), replacement: memoryEvidenceRef(chained.current.evidence), reason: 'Merging an already linked successor refused.' })).status, 409);
+});
+
+test('replacement audit failure rolls both records and the edge back; private counterparts never leak through public evidence or cached receipts', async () => {
+  const a = await fixture('statistic'), b = await fixture('statistic', true), key = randomUUID(), path = `memory/${a.evidence.id}/replacement`;
+  const input = { expected: memoryEvidenceRef(a.evidence), replacement: memoryEvidenceRef(b.evidence), reason: 'DO_NOT_REVEAL_PRIVATE_RELATION: synthetic private editorial context.' };
+  await owner("CREATE FUNCTION public.fail_replacement_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='memory.evidence.replace' THEN RAISE EXCEPTION 'SYNTHETIC_AUDIT_FAILURE'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_replacement_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION public.fail_replacement_audit()");
+  try { assert.equal((await api(path, input, key)).status, 500); }
+  finally { await owner('DROP TRIGGER fail_replacement_audit ON audit_log; DROP FUNCTION public.fail_replacement_audit()'); }
+  assert.deepEqual((await json<MemoryDetail>(`memory/${a.evidence.id}`)).evidence, a.evidence); assert.deepEqual((await json<MemoryDetail>(`memory/${b.evidence.id}`)).evidence, b.evidence);
+  assert.equal((await owner('SELECT count(*)::int AS n FROM reporter_memory_replacements WHERE previous_id=$1', [a.evidence.id]))[0].n, 0);
+  const result = await json<MemoryReplacementResult>(path, input, key);
+  const publicRead = await api(`memory/${a.evidence.id}`, undefined, randomUUID(), identities[2]); assert.equal(publicRead.status, 200);
+  const visible = await publicRead.json() as MemoryDetail; assert.equal(visible.replacements!.next, null); assert.ok(!JSON.stringify(visible).includes(b.evidence.id)); assert.equal(visible.evidence.supersedes, null);
+  assert.ok(!JSON.stringify(visible).includes('DO_NOT_REVEAL_PRIVATE_RELATION'));
+  assert.equal((await api(`memory/replacements/${result.relation.id}`, undefined, randomUUID(), identities[2])).status, 404);
+  const other = (await owner('SELECT id FROM core.users WHERE email=$1', [identities[2].email]))[0].id;
+  await owner("UPDATE reporter_ed_productions SET doc=doc||jsonb_build_object('ownerId',$2::text,'restrictedTo','[]'::jsonb) WHERE production_id=(SELECT origin_production_id FROM reporter_memory_heads WHERE kind='evidence' AND id=$1)", [b.evidence.id, other]);
+  assert.equal((await api(path, input, key)).status, 404, 'replay rechecks both current scopes before returning any cached result');
+  const c = await fixture('statistic', true), d = await fixture('statistic');
+  await json<MemoryReplacementResult>(`memory/${c.evidence.id}/replacement`, { expected: memoryEvidenceRef(c.evidence), replacement: memoryEvidenceRef(d.evidence), reason: 'Private predecessor stays private.' });
+  const publicSuccessor = await api(`memory/${d.evidence.id}`, undefined, randomUUID(), identities[2]); assert.equal(publicSuccessor.status, 200);
+  const successor = await publicSuccessor.json() as MemoryDetail; assert.equal(successor.replacements!.previous, null); assert.ok(!JSON.stringify(successor).includes(c.evidence.id));
 });

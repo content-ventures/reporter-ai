@@ -58,6 +58,12 @@ test('library commands keep the bound workspace, account and request identity wh
     assert.equal(new Headers(seen[10].init.headers).get('x-reporter-account'), 'actual-account'); assert.equal(seen[10].init.method ?? 'GET', 'GET');
     await library.correctionImpact({ kind: 'evidence', id: 'evidence/encoded' }, {});
     assert.equal(seen[11].url.pathname, '/api/reporter/w/editorial-client/memory/evidence%2Fencoded/impact');
+    const replacement = { expected: { id: 'old', revision: 1, hash: '0123456789abcdef' }, replacement: { id: 'new', revision: 2, hash: 'fedcba9876543210' }, reason: 'Explicit correction.' };
+    await library.replace('evidence/encoded', replacement, 'stable-replacement-key');
+    assert.equal(seen[12].url.pathname, '/api/reporter/w/editorial-client/memory/evidence%2Fencoded/replacement');
+    assert.equal(new Headers(seen[12].init.headers).get('x-reporter-account'), 'actual-account');
+    assert.equal(new Headers(seen[12].init.headers).get('idempotency-key'), 'stable-replacement-key'); assert.deepEqual(JSON.parse(String(seen[12].init.body)), replacement);
+    await library.replacement('relation/encoded'); assert.equal(seen[13].url.pathname, '/api/reporter/w/editorial-client/memory/replacements/relation%2Fencoded');
     transport.dispose(); await assert.rejects(library.material('material'));
   } finally { globalThis.fetch = previous; transport.dispose(); }
 });

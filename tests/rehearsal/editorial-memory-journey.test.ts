@@ -22,7 +22,7 @@ import { writingSourceCandidates } from '../../src/domain/writing-source.ts';
 import { createLocalExportService } from '../../src/adapters/local/export/local-export.ts';
 import { createLocalRenderService } from '../../src/adapters/local/render/local-render.ts';
 import type { ConnectedWorkspace } from '../../src/ports/connected-workspace.ts';
-import type { MemoryCorrectionImpact, MemoryDetail, MemoryJob, MemoryMaterialRevisionResult, MemorySelectedContext, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
+import type { MemoryCorrectionImpact, MemoryDetail, MemoryJob, MemoryMaterialRevisionResult, MemoryReplacementComparison, MemoryReplacementResult, MemorySelectedContext, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import type { BuiltFile, ExportPackage } from '../../src/ports/export.ts';
 import type { WritingRunDetails } from '../../src/ports/pipeline-settings.ts';
@@ -278,6 +278,15 @@ test('two imported materials reach orchestrated writing, separate approval and a
   assert.ok(observations.every(row => !row.eligibility.usable), 'corrected observations never inherit old acceptance');
   assert.deepEqual((await record(made.productionId)).versions, frozen);
   assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
+  const prior = observations.find(row => row.evidence.anchor.excerpt.includes('240'))!.evidence;
+  const replacement = observations.find(row => row.evidence.anchor.excerpt.includes('241'))!.evidence;
+  const linked = await api<MemoryReplacementResult>(`memory/${prior.id}/replacement`, { expected: memoryEvidenceRef(prior), replacement: memoryEvidenceRef(replacement), reason: 'Synthetic updated statistic from the corrected original.' });
+  assert.equal(linked.previous.evidence.status, 'superseded'); assert.equal(linked.current.eligibility.usable, false);
+  const comparison = await api<MemoryReplacementComparison>(`memory/replacements/${linked.relation.id}`);
+  assert.equal(comparison.previous.anchor.source.sourceVersion, 1); assert.equal(comparison.current.anchor.source.sourceVersion, 2);
+  assert.ok(comparison.previous.kind === 'statistic' && comparison.current.kind === 'statistic'); assert.equal(comparison.previous.value.raw, '240'); assert.equal(comparison.current.value.raw, '241');
+  assert.deepEqual(linked.previous.uses, { selected: 1, inserted: 1, approved: 1, published: 0 }); assert.deepEqual(linked.current.uses, { selected: 0, inserted: 0, approved: 0, published: 0 });
+  assert.deepEqual((await record(made.productionId)).versions, frozen); assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
   if (ui) {
     const quotation = materials.find(material => material.kind === 'citation')!;
     const competitor = quotation.text + '\n\nSynthetic concurrent clarification.';

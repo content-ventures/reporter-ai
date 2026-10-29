@@ -41,6 +41,13 @@ export type MemoryEvidenceBase = {
   /** A corrected projection requires an explicit choice before consolidation. */
   deduplication?: { canonicalId: string; canonical: MemoryEvidenceRef; state: 'pending' | 'superseded'; choice: 'pending' | 'automatic' | 'keep_variant' | 'use_curated'; reason: string; personId: string; at: string };
 };
+/** Immutable, separately authorized relation; private counterpart IDs never enter public evidence payloads. */
+export type MemoryReplacement = {
+  id: string; workspaceId: string;
+  previous: { before: MemoryEvidenceRef; after: MemoryEvidenceRef };
+  current: { before: MemoryEvidenceRef; after: MemoryEvidenceRef };
+  reason: string; personId: string; at: string;
+};
 export type MemoryCitation = MemoryEvidenceBase & {
   kind: 'citation'; text: string; personId: string | null; authorConfirmed: boolean;
   /** Exact legacy id is retained when importing an existing curated/article citation. */
