@@ -14,14 +14,26 @@ import { auditMemoryAccessibility, probeMemoryImportEntry } from './editorial-me
 export async function createMemoryJourneyBrowser(base: string, width: number, dispatch: (request: Request, actor: number) => Promise<Response>) {
   const browser = await chromium.launch({ headless: true }), contexts: BrowserContext[] = [], errors: string[] = [];
   const expectedConflictConsole = new Map<string, number>();
+  const expectedFileConsole = new Map<string, number>(), lostFileReplies = new Set<string>();
+  const fileReceipts: { path: string; key: string | undefined; payload: string | null; value: { id?: string; material?: MemoryMaterial } }[] = [];
+  let originalReplyHold: Promise<void> | undefined;
   let reviewer: Page | undefined;
   async function pageFor(actor: number) {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, isMobile: width === 390, hasTouch: width === 390, locale: 'pt-BR' });
     contexts.push(context);
     await context.route('**/api/reporter/**', async route => {
       const original = route.request(), method = original.method();
-      const response = await dispatch(new Request(original.url(), { method, headers: original.headers(),
+      let response = await dispatch(new Request(original.url(), { method, headers: original.headers(),
         ...(method === 'GET' || method === 'HEAD' ? {} : { body: original.postData() }) }), actor);
+      const path = new URL(original.url()).pathname;
+      if (method === 'POST' && (path.endsWith('/memory/originals') || path.endsWith('/memory/materials/from-file')) && response.ok) {
+        fileReceipts.push({ path, key: original.headers()['idempotency-key'], payload: original.postData(), value: await response.clone().json() });
+        if (lostFileReplies.delete(path)) {
+          if (path.endsWith('/originals')) await originalReplyHold;
+          expectedFileConsole.set(original.url(), (expectedFileConsole.get(original.url()) ?? 0) + 1);
+          response = Response.json({ error: 'SYNTHETIC_REPLY_LOST', message: 'Falha sintética após gravação. Tente novamente.' }, { status: 503 });
+        }
+      }
       if (response.status >= 400) console.info('memory UI refusal', actor, new URL(original.url()).pathname, response.status, await response.clone().text());
       await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
     });
@@ -30,7 +42,9 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
     page.on('console', message => {
       if (message.type() !== 'error') return;
       const url = message.location().url, remaining = expectedConflictConsole.get(url) ?? 0;
-      if (remaining > 0 && /^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/.test(message.text())) expectedConflictConsole.set(url, remaining - 1);
+      const fileRemaining = expectedFileConsole.get(url) ?? 0;
+      if (fileRemaining > 0 && /^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/.test(message.text())) expectedFileConsole.set(url, fileRemaining - 1);
+      else if (remaining > 0 && /^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/.test(message.text())) expectedConflictConsole.set(url, remaining - 1);
       else errors.push(message.text());
     });
     return page;
@@ -256,7 +270,7 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
       await editor.getByRole('row', { name: material.title, exact: true }).click(); await expect(preserved).toHaveValue(corrected);
       await audit(editor, 'original-revised'); return result;
     },
-    async import(input: MemoryImportInput): Promise<{ material: MemoryMaterial; job: MemoryJob }> {
+    async import(input: MemoryImportInput, original?: { name: string; bytes: Buffer }): Promise<{ material: MemoryMaterial; job: MemoryJob }> {
       console.info('memory UI import', width, input.kind);
       await editor.goto(`${base}/w/reporter-ai/quotes`);
       await editor.getByRole('button', { name: 'Importar material', exact: true }).click();
@@ -268,15 +282,78 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
         await select.click(); await editor.getByRole('option', { name: kind, exact: true }).click();
       }
       await expect(select).toContainText(kind);
-      await dialog.getByRole('textbox', { name: 'Texto original', exact: true }).fill(input.text);
+      if (original) {
+        await dialog.getByRole('radio', { name: 'Enviar arquivo', exact: true }).click();
+        const choose = async (name: string, buffer: Buffer) => {
+          const waiting = editor.waitForEvent('filechooser'); await dialog.getByRole('button', { name: 'Escolher arquivo original', exact: true }).click();
+          await (await waiting).setFiles({ name, mimeType: 'application/octet-stream', buffer });
+        };
+        await choose('unsupported.pdf', Buffer.from('Synthetic unsupported file'));
+        await expect(dialog.getByRole('alert')).toContainText('Escolha um arquivo TXT'); await expect(dialog.getByRole('button', { name: 'Importar', exact: true })).toBeDisabled();
+        await choose('invalid.txt', Buffer.from([255]));
+        await expect(dialog.getByText('Salve o arquivo em UTF-8 e tente novamente.', { exact: true })).toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'Importar', exact: true })).toBeDisabled();
+        await choose('dialect.csv', Buffer.from('institution;value\r\n"Synthetic; institution";1.234,56\r\n'));
+        const dialect = dialog.getByRole('combobox', { name: 'Separador do CSV', exact: true });
+        await dialect.click(); await editor.getByRole('option', { name: 'Ponto e vírgula', exact: true }).click();
+        await expect(dialog.getByRole('textbox', { name: 'Prévia do arquivo original', exact: true })).toHaveValue('institution;value\n"Synthetic; institution";1.234,56\n');
+        await choose(original.name, original.bytes);
+        const preview = dialog.getByRole('textbox', { name: 'Prévia do arquivo original', exact: true });
+        await expect(preview).toHaveValue(input.text); await expect(preview).toHaveAttribute('readonly', '');
+        await expect(dialog.getByRole('textbox', { name: /^Instituição/ })).toHaveValue('');
+      } else await dialog.getByRole('textbox', { name: 'Texto original', exact: true }).fill(input.text);
       await dialog.getByRole('textbox', { name: /^Documento ou origem principal/ }).fill(input.primaryOrigin ?? '');
       await dialog.getByRole('textbox', { name: /^Temas/ }).fill(input.metadata.topics.join(', '));
       await dialog.getByRole('checkbox', { name: 'Confirmo a autorização de uso deste material' }).check();
-      const response = editor.waitForResponse(response => response.url().endsWith('/memory/materials') && response.request().method() === 'POST');
+      if (original) {
+        let release: () => void = () => {};
+        originalReplyHold = new Promise<void>(resolve => { release = resolve; });
+        try {
+          for (const [index, path] of ['originals', 'materials/from-file'].entries()) {
+            lostFileReplies.add(`/api/reporter/w/reporter-ai/memory/${path}`);
+            const failure = editor.waitForResponse(reply => reply.url().endsWith(`/memory/${path}`) && reply.request().method() === 'POST');
+            await dialog.getByRole('button', { name: 'Importar', exact: true }).click();
+            if (index === 0) {
+              await expect(dialog.getByRole('status').filter({ hasText: /^Enviando original/ }).and(dialog.locator('[aria-live="polite"]'))).toHaveText('Enviando original…');
+              await editor.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+              await editor.getByRole('button', { name: 'Importar material', exact: true }).click();
+              await expect(dialog.getByRole('status').filter({ hasText: /^Enviando original/ }).and(dialog.locator('[aria-live="polite"]'))).toHaveText('Enviando original…'); release();
+            }
+            assert.equal((await failure).status(), 503);
+            await expect(dialog.getByRole('alert')).toContainText('Falha sintética após gravação.');
+            await editor.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+            await editor.getByRole('button', { name: 'Importar material', exact: true }).click();
+            await expect(dialog.getByRole('textbox', { name: 'Título', exact: true })).toHaveValue(input.title);
+            await expect(dialog.getByRole('textbox', { name: 'Prévia do arquivo original', exact: true })).toHaveValue(input.text);
+            await expect(dialog.getByRole('checkbox', { name: 'Confirmo a autorização de uso deste material' })).toBeChecked();
+            await audit(editor, `file-retry-${index}`);
+          }
+        } finally { release(); originalReplyHold = undefined; }
+      }
+      const response = editor.waitForResponse(response => response.url().endsWith(original ? '/memory/materials/from-file' : '/memory/materials') && response.request().method() === 'POST');
       await dialog.getByRole('button', { name: 'Importar', exact: true }).click();
       const imported = await response; assert.equal(imported.status(), 200, await imported.text());
       const result = await imported.json(); assert.equal(result.material.kind, input.kind);
+      if (original) {
+        for (const path of ['/memory/originals', '/memory/materials/from-file']) {
+          const receipts = fileReceipts.filter(receipt => receipt.path.endsWith(path)); assert.equal(receipts.length, 2);
+          assert.equal(new Set(receipts.map(receipt => receipt.key)).size, 1); assert.ok(receipts[0].key);
+          assert.equal(receipts[0].payload, receipts[1].payload); assert.deepEqual(receipts[0].value, receipts[1].value);
+        }
+        assert.equal(fileReceipts[0].value.id, result.material.originalFileId);
+      }
       await expect(dialog).toBeHidden(); await audit(editor, 'import'); return result;
+    },
+    async downloadOriginal(material: MemoryMaterial, original: { name: string; bytes: Buffer }) {
+      await editor.goto(`${base}/w/reporter-ai/quotes?bankView=materials`);
+      await editor.getByRole('row', { name: material.title, exact: true }).click();
+      const drawer = editor.getByRole('dialog', { name: material.title, exact: true });
+      const waiting = editor.waitForEvent('download'); await drawer.getByRole('link', { name: 'Baixar arquivo enviado', exact: true }).click();
+      const download = await waiting, stream = await download.createReadStream(); assert.ok(stream);
+      const chunks: Buffer[] = []; for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+      assert.equal(download.suggestedFilename(), original.name); assert.deepEqual(Buffer.concat(chunks), original.bytes);
+      await expect(drawer.getByRole('link', { name: 'Baixar arquivo enviado', exact: true })).toHaveAttribute('href', '#');
+      await audit(editor, 'original-file-download');
     },
     async select(passages: readonly { kind: 'citation' | 'statistic'; text: string }[]): Promise<MemorySelection> {
       console.info('memory UI select', width);

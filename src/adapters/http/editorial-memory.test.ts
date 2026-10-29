@@ -3,6 +3,43 @@ import { test } from 'node:test';
 import { createHttpMemoryLibrary } from './editorial-memory.ts';
 import { createReporterTransport } from './reporter-client.ts';
 
+test('original uploads retain exact bytes and independent receipts; downloads reauthorize before exposing any file', async () => {
+  const previous = globalThis.fetch, bytes = Buffer.from('\ufeffÓrgão;valor\r\nSintético;1.234,56\r\n');
+  const calls: { path: string; init: RequestInit }[] = [];
+  let refreshes = 0, denied = false, truncated = false;
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url), 'http://localhost').pathname; calls.push({ path, init });
+    if (denied) return Response.json({ error: 'NOT_FOUND', message: 'Arquivo indisponível.' }, { status: 404 });
+    if (path.endsWith('/file')) return new Response(truncated ? bytes.subarray(1) : bytes);
+    return Response.json({ id: 'original', name: 'Órgão sintético.csv', size: bytes.length, status: 'stored' });
+  };
+  const http = createReporterTransport('file-client', { requireAccount: true }); http.bindAccount('actual-editor');
+  const library = createHttpMemoryLibrary(http, async () => { refreshes++; });
+  try {
+    const input = { name: 'Órgão sintético.csv', bytes: new Uint8Array(bytes), delimiter: ';' as const };
+    await library.uploadOriginal(input, 'stable-original-request'); await library.uploadOriginal(input, 'stable-original-request');
+    assert.equal(refreshes, 0, 'preparing a private file does not reload the editorial workspace');
+    for (const call of calls) {
+      assert.equal(call.path, '/api/reporter/w/file-client/memory/originals');
+      assert.equal(new Headers(call.init.headers).get('idempotency-key'), 'stable-original-request');
+      assert.deepEqual(JSON.parse(String(call.init.body)), { ...input, bytes: bytes.toString('base64') });
+    }
+    await library.importFile({ title: 'Actual file', kind: 'archive', originalFileId: 'original', authorized: true, primaryOrigin: null,
+      metadata: { company: null, edition: null, event: null, institution: null, originalUrl: null, publishedOn: null, recordedOn: null, topics: [] } }, 'stable-import-request');
+    assert.equal(refreshes, 1); assert.ok(calls.at(-1)!.path.endsWith('/materials/from-file'));
+    assert.equal(new Headers(calls.at(-1)!.init.headers).get('idempotency-key'), 'stable-import-request');
+    const downloaded = await library.downloadOriginal('original/encoded');
+    assert.equal(downloaded.name, input.name); assert.deepEqual(Buffer.from(downloaded.href.split(',')[1], 'base64'), bytes);
+    assert.ok(calls.at(-2)!.path.endsWith('/originals/original%2Fencoded')); assert.ok(calls.at(-1)!.path.endsWith('/originals/original%2Fencoded/file'));
+    assert.ok(calls.every(call => new Headers(call.init.headers).get('x-reporter-account') === 'actual-editor'));
+    assert.equal(calls.at(-1)!.init.cache, 'no-store');
+    truncated = true; await assert.rejects(library.downloadOriginal('original'), /incompleto/);
+    const before = calls.length; denied = true; await assert.rejects(library.downloadOriginal('original'), /indisponível/);
+    assert.equal(calls.length, before + 1, 'a revoked original cannot fetch or reuse previously downloaded bytes');
+    http.dispose(); await assert.rejects(library.downloadOriginal('original')); assert.equal(calls.length, before + 1);
+  } finally { http.dispose(); globalThis.fetch = previous; }
+});
+
 test('library commands keep the bound workspace, account and request identity while query cursors remain opaque', async () => {
   const previous = globalThis.fetch, seen: { url: URL; init: RequestInit }[] = [];
   globalThis.fetch = async (input, init = {}) => { seen.push({ url: new URL(String(input), 'http://localhost'), init }); return Response.json({ ok: true }); };

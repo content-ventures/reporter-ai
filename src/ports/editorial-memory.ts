@@ -11,6 +11,8 @@ import type { MemoryFeedback, MemoryFeedbackQuery, MemoryRelevanceInput } from '
 import type { MemoryCalibrationCase, MemoryCalibrationCaseInput } from '../domain/editorial-memory-calibration.ts';
 import type { MemoryPolicyProposal, MemoryPolicyProposalInput } from '../domain/editorial-memory-policy.ts';
 import type { MemoryPolicyReassessment, MemoryPolicyReassessmentInput } from '../domain/editorial-memory-reassessment.ts';
+import type { MemoryOriginalFile } from '../domain/editorial-memory-original-file.ts';
+import type { MemoryDocumentDelimiter } from '../domain/editorial-memory-document.ts';
 
 export type MemoryWritingInput = { baseRevision: number } & (
   | { title: string; brief: BriefInput }
@@ -46,6 +48,8 @@ export type MemoryImportInput = {
   title: string; kind: MemoryMaterial['kind']; text: string; metadata: MemoryMetadata; authorized: boolean;
   primaryOrigin: string | null; originalFileId: string | null;
 };
+export type MemoryOriginalUploadInput = { name: string; bytes: Uint8Array; delimiter?: MemoryDocumentDelimiter };
+export type MemoryFileImportInput = Omit<MemoryImportInput, 'text' | 'originalFileId'> & { originalFileId: string };
 export type MemoryMaterialRevisionInput = { baseRevision: number; source: MemoryMaterial['source']; text: string; reason: string };
 export type MemoryMaterialRevisionResult = { material: MemoryMaterial; job: MemoryJob; affectedEvidence: number };
 export type MemoryImpactScope = { kind: 'material' | 'evidence'; id: string };
@@ -86,6 +90,10 @@ export interface EditorialMemory {
   materials(input: { cursor?: string; limit?: number }): Promise<MemoryPage<MemoryMaterial & { job: MemoryJob | null }>>;
   material(id: string, revision?: number): Promise<{ material: MemoryMaterial; source: Source; job: MemoryJob | null }>;
   import(input: MemoryImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
+  uploadOriginal(input: MemoryOriginalUploadInput, requestId: string): Promise<MemoryOriginalFile>;
+  importFile(input: MemoryFileImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
+  /** Fresh authorized bytes for a rendered DS download anchor; never a public storage URL. */
+  downloadOriginal(id: string): Promise<{ name: string; href: string }>;
   authorizeMaterial(id: string, input: { baseRevision: number; authorized: boolean; reason: string }, requestId: string): Promise<MemoryMaterial>;
   job(id: string): Promise<MemoryJob>;
   blocks(jobId: string, input: MemoryHistoryQuery): Promise<MemoryPage<MemoryBlock>>;
