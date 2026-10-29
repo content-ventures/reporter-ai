@@ -1,13 +1,13 @@
 'use client';
 import { useCallback, useState } from 'react';
-import { Alert, Badge, Button, ButtonGroup, Checkbox, DescriptionList, Drawer, ErrorState, Field, Input, Panel, Section, Select, Spinner, Textarea, TextLink, toast } from '@content-ventures/design-system/v3';
+import { Alert, Badge, Button, ButtonGroup, Checkbox, DescriptionList, Drawer, ErrorState, Field, Input, LiveRegion, Panel, Section, Select, Spinner, Textarea, TextLink, toast } from '@content-ventures/design-system/v3';
 import type { MemoryDecisionAction, MemoryHistoryKind, MemoryMaterial, MemoryUseStage } from '@/domain/editorial-memory';
 import { memoryEvidenceRef } from '@/domain/editorial-memory';
 import { CLAIM_KIND_LABELS, CLAIM_VERDICT_LABELS, VERDICT_LABELS } from '@/domain/fact-check';
 import type { MemoryDetail, MemoryHistoryEntry, MemoryLibrary } from '@/ports/editorial-memory';
 import { useMemoryResource } from '@/state/use-memory-library';
 import { useCan, usePeople, useSession } from '@/state';
-import { JobStatus } from './memory-materials';
+import { JobStatus, memoryJobLabel } from './memory-materials';
 import { MemoryUsedVersion } from './memory-used-version';
 import type { MemoryVersionUse } from '@/domain/editorial-memory-reading';
 import { MemoryReplacementDialog, MemoryReplacementReader, type MemoryReplacementBasis } from './memory-replacement-dialog';
@@ -40,6 +40,7 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
     {(canEdit || next) && <Button variant="secondary" size="sm" disabled={!resource.data || !next && resource.data.evidence.status !== 'active'} onClick={replace}>{next ? 'Ver substituição' : 'Substituir'}</Button>}
     <Button variant="secondary" size="sm" onClick={() => onImpact(viewedId)}>Ver impacto</Button>
   </ButtonGroup>} onClose={() => { setReadingOpen(false); setReplacingOpen(false); setRelationOpen(false); setCalibrationOpen(false); setReassessmentOpen(false); onClose(); }}>
+    <LiveRegion message={open && resource.data?.checkJob ? `Checagem: ${memoryJobLabel(resource.data.checkJob)}.` : ''} />
     {resource.error ? <ErrorState title="Não foi possível abrir a evidência" description={resource.error} onRetry={resource.reload} /> : !resource.data || !resource.port ? <Spinner label="Carregando evidência" /> :
       <EvidenceContent key={`${viewedId}:${resource.data.evidence.revision}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onReadVersion={readVersion} onReplacement={readRelation} onReassessment={() => {
         if (!resource.data || !resource.port) return; const detail = resource.data, port = resource.port;

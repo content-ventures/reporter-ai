@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Badge, Button, ButtonGroup, Checkbox, DataTable, DescriptionList, Drawer, EmptyState, ErrorState, Field, FieldGroup, Input, Panel, Progress, ResponsiveDialog, Section, Select, Spinner, Textarea, toast } from '@content-ventures/design-system/v3';
+import { Alert, Badge, Button, ButtonGroup, Checkbox, DataTable, DescriptionList, Drawer, EmptyState, ErrorState, Field, FieldGroup, Input, LiveRegion, Panel, Progress, ResponsiveDialog, Section, Select, Spinner, Textarea, toast } from '@content-ventures/design-system/v3';
 import type { MemoryMaterial, MemoryMetadata } from '@/domain/editorial-memory';
 import type { MemoryLibrary, MemoryImportInput, MemoryJob } from '@/ports/editorial-memory';
 import { useMemoryResource } from '@/state/use-memory-library';
@@ -15,8 +15,9 @@ const JOB_LABELS: Record<MemoryJob['status'], string> = { queued: 'Na fila', run
 const BLANK_METADATA: MemoryMetadata = { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: [], originalUrl: null };
 const blankImport = (): MemoryImportInput => ({ title: '', kind: 'transcript', text: '', authorized: false, metadata: structuredClone(BLANK_METADATA), primaryOrigin: null, originalFileId: null });
 export function JobStatus({ job }: { job: MemoryJob | null }) {
-  return <Badge tone={job?.status === 'completed' ? 'green' : job?.status === 'failed' || job?.status === 'partial' ? 'amber' : 'gray'}>{job ? job.kind === 'check' && job.status === 'running' ? 'Checando' : JOB_LABELS[job.status] : 'Sem extração'}</Badge>;
+  return <Badge tone={job?.status === 'completed' ? 'green' : job?.status === 'failed' || job?.status === 'partial' ? 'amber' : 'gray'}>{memoryJobLabel(job)}</Badge>;
 }
+export const memoryJobLabel = (job: MemoryJob | null) => job ? job.kind === 'check' && job.status === 'running' ? 'Checando' : JOB_LABELS[job.status] : 'Sem extração';
 export function MemoryImportDialog({ port, open, onClose, onImported }: { port: MemoryLibrary; open: boolean; onClose: () => void; onImported: (id: string) => void }) {
   const [input, setInput] = useState<MemoryImportInput>(blankImport);
   const [topicsText, setTopicsText] = useState('');
@@ -88,6 +89,7 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence, onImpact }
     finally { setBusy(false); }
   };
   return <><Drawer open={open} title={detail?.material.title ?? 'Material'} onClose={onClose} size="lg">
+    <LiveRegion message={open && detail ? `Extração de ${detail.material.title}: ${memoryJobLabel(job ?? null)}.${job ? ` ${job.completedBlocks} de ${job.totalBlocks} blocos concluídos.` : ''}` : ''} />
     {resource.error ? <ErrorState title="Não foi possível abrir o material" description={resource.error} onRetry={resource.reload} /> : !detail ? <Spinner label="Carregando original" /> : <Panel>
       <Section title="Processamento" meta={<JobStatus job={job ?? null} />}>
         {error && <Alert tone="danger" title={error} />}

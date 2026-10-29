@@ -71,7 +71,7 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
     footer={<><Button variant="ghost" disabled={Boolean(busy)} onClick={onClose}>Fechar</Button>{canEdit && <Button variant="secondary" loading={busy === 'save'} disabled={locked || blocked || mode === 'existing' && Boolean(blocker)} onClick={() => void save(false)}>Salvar seleção</Button>}
       {canEdit && canCreate && <Button loading={busy === 'write'} disabled={locked || blocked || Boolean(blocker)} onClick={() => void save(true)}>{mode === 'existing' ? 'Adicionar fontes e abrir editor' : 'Criar artigo e abrir editor'}</Button>}</>}>
     <Panel>
-      <Section title={`${evidence.length} evidências na seleção`}>
+      <Section title={`${evidence.length} ${evidence.length === 1 ? 'evidência' : 'evidências'} na seleção`}>
         {(error || resource.error) && <Alert tone="danger" title={error ?? resource.error} action={mode === 'existing' ? <Button disabled={Boolean(busy)} onClick={() => { attempt.current = undefined; setError(undefined); target.retry(); resource.reload(); }}>Atualizar pauta</Button> : undefined} />}
         {changed && <Alert tone="warning" title="Há evidências com nova revisão" action={<Button disabled={locked} onClick={() => onChange(details!.map((item, index) => updateMemoryChoice(evidence[index], memoryEvidenceRef(item.evidence))))}>Atualizar seleção</Button>}>Confira os trechos atuais antes de continuar.</Alert>}
         {unavailable && <Alert tone="warning" title="Conclua a revisão das evidências ou remova os itens pendentes." />}

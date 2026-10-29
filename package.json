@@ -70,6 +70,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@neon/config": "^1.9.1",
     "@neon/config-runtime": "1.9.1",
     "@playwright/test": "1.62.1",

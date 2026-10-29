@@ -8,6 +8,7 @@ import { blockText, type ArticleBody } from '../../src/domain/article.ts';
 import type { MemoryCalibrationCase } from '../../src/domain/editorial-memory-calibration.ts';
 import { annotateMemoryPolicyCase, inspectMemoryPolicyLifecycle, reapplyMemoryPolicy } from './editorial-memory-policy-browser.ts';
 import { inspectMemoryCollectionPages } from './editorial-memory-collections-browser.ts';
+import { auditMemoryAccessibility, probeMemoryImportEntry } from './editorial-memory-accessibility-browser.ts';
 
 /** Real product UI and handlers, with a test-only authenticated identity adapter. */
 export async function createMemoryJourneyBrowser(base: string, width: number, dispatch: (request: Request, actor: number) => Promise<Response>) {
@@ -39,6 +40,7 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
     assert.ok(layout.scroll <= layout.width, JSON.stringify(layout));
     assert.deepEqual(errors, []);
     await page.screenshot({ path: `/tmp/reporter-memory-writing-${width}-${label}.png`, fullPage: true, animations: 'disabled' });
+    if (new URL(page.url()).pathname.endsWith('/quotes')) await auditMemoryAccessibility(page, width, label);
   }
   const command = (page: Page, method: string) => page.waitForResponse(response => response.url().includes('/api/reporter/')
     && response.request().method() === 'POST' && response.url().endsWith('/workspace') && response.request().postDataJSON().method === method);
@@ -48,6 +50,17 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
   }
   const editor = await pageFor(0);
   return {
+    probeImportEntry: () => probeMemoryImportEntry(editor, base, width, audit),
+    async observeExtraction(material: MemoryMaterial, job: MemoryJob, extract: () => Promise<void>) {
+      await editor.goto(`${base}/w/reporter-ai/quotes?bankView=materials`);
+      const row = editor.getByRole('row', { name: material.title, exact: true }); await row.focus(); await editor.keyboard.press('Enter');
+      const drawer = editor.getByRole('dialog', { name: material.title, exact: true });
+      const announcement = drawer.getByRole('status').filter({ hasText: /^Extração de / }); await expect(announcement).toContainText('Na fila');
+      await expect(announcement).toHaveAttribute('aria-live', 'polite'); const close = drawer.getByRole('button', { name: 'Fechar', exact: true }); await close.focus();
+      await extract(); await expect(announcement).toContainText('Concluído'); await expect(announcement).toContainText(`${job.totalBlocks} de ${job.totalBlocks} blocos concluídos`);
+      await expect(drawer.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100'); await expect(close).toBeFocused(); await audit(editor, 'extraction-announced');
+      await editor.keyboard.press('Escape'); await expect(drawer).toBeHidden(); await expect(row).toBeFocused();
+    },
     async collectionPages() {
       for (const kind of ['materials', 'selections'] as const) {
         const params = new URLSearchParams(kind === 'materials' ? { limit: '25', cursor: 'invalid-collection-cursor' } : { cursor: 'invalid-collection-cursor', limit: '25' });
