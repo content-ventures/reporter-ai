@@ -1,7 +1,9 @@
 import type { SegmentId, SourceId } from '../../../domain/ids.ts';
-import { segmentRef } from '../../../domain/refs.ts';
+import { refKey, segmentRef } from '../../../domain/refs.ts';
 import type { SourceRef } from '../../../domain/refs.ts';
-import { currentSourceVersion } from '../../../domain/source.ts';
+import { currentSourceVersion, writingSources } from '../../../domain/source.ts';
+import { memorySourceSegment } from '../../../domain/editorial-memory-excerpt.ts';
+import { writingSourceCandidates, type WritingMemoryContext } from '../../../domain/writing-source.ts';
 import type { Source } from '../../../domain/source.ts';
 import { foldForMatch } from '../../../domain/text/normalize.ts';
 import { countWords, words } from '../../../domain/text/stats.ts';
@@ -23,6 +25,7 @@ export type MaterialLine = {
   words: number;
   sentences: Span[];
   question: boolean;
+  memory?: WritingMemoryContext;
 };
 
 export type Sentence = Span & { line: MaterialLine; index: number };
@@ -40,6 +43,7 @@ export type Material = {
   preamble: MaterialLine[];
   /** Words in answers (what the article may draw from). */
   answerWords: number;
+  unavailableMemory?: boolean;
 };
 
 /** Greetings and thanks ("Bom dia, Clara.", "Eu que agradeço.") are never article material. */
@@ -73,12 +77,28 @@ function lineOf(sourceId: SourceId, sourceVersion: number, segment: SegmentLike)
 
 export function readMaterial(sources: readonly Source[]): Material {
   const lines: MaterialLine[] = [];
-  for (const source of sources) {
-    if (source.kind !== 'transcript') continue;
+  let unavailableMemory = false;
+  for (const source of writingSources(sources).filter(source => !source.research)) {
+    if (!source.memory && source.kind !== 'transcript') continue;
     const version = currentSourceVersion(source);
-    for (const segment of version.content.segments) lines.push(lineOf(source.id, version.number, segment));
+    if (source.memory) {
+      const receipt = source.memory.find(receipt => receipt.version.number === version.number && receipt.version.hash === version.hash);
+      if (!source.rights.authorized || !receipt?.items.length || receipt.items.length !== version.content.segments.length
+        || new Set(receipt.items.map(item => item.segmentId)).size !== receipt.items.length
+        || version.content.segments.some(segment => !memorySourceSegment(source, version.number, segment.id))) {
+        unavailableMemory = true;
+        continue;
+      }
+      for (const candidate of writingSourceCandidates([source])) {
+        if (candidate.ref.locator.type !== 'segment') continue;
+        const words = countWords(candidate.text);
+        lines.push({ sourceId: source.id, sourceVersion: version.number, segmentId: candidate.ref.locator.segmentId,
+          text: candidate.text, words, sentences: [{ from: 0, to: candidate.text.length, text: candidate.text, words }],
+          question: false, ...(candidate.speaker ? { speaker: candidate.speaker } : {}), memory: candidate.memory });
+      }
+    } else for (const segment of version.content.segments) lines.push(lineOf(source.id, version.number, segment));
   }
-  return materialOf(lines);
+  return { ...materialOf(lines), ...(unavailableMemory ? { unavailableMemory: true } : {}) };
 }
 
 /** Material of segments not saved yet (Nova produção's live analysis). */
@@ -166,6 +186,17 @@ export function lineRef(line: MaterialLine, range?: { from: number; to: number }
   return segmentRef(line.sourceId, line.sourceVersion, line.segmentId, range);
 }
 
+/** Segment ids repeat between collections; selection identity includes source and version. */
+export function materialLineKey(line: Pick<MaterialLine, 'sourceId' | 'sourceVersion' | 'segmentId'>): string {
+  return refKey(segmentRef(line.sourceId, line.sourceVersion, line.segmentId));
+}
+export function materialRefLineKey(ref: SourceRef): string {
+  return ref.locator.type === 'segment' ? refKey(segmentRef(ref.sourceId, ref.sourceVersion, ref.locator.segmentId)) : refKey(ref);
+}
+export function materialSentenceKey(sentence: Pick<Sentence, 'line' | 'from'>): string {
+  return `${materialLineKey(sentence.line)}:${sentence.from}`;
+}
+
 export const FIRST_PERSON = /(^|[\s,.;:!?"“(])(eu|a gente|nós|nosso|nossa|nossos|nossas|meu|minha|meus|minhas|comigo)(?=$|[\s,.;:!?"”)])/i;
 export const WEAK_START = /^(e|mas|então|aí|daí|porque|tipo|né|bom|olha|assim)\b/i;
 const STOP_WORDS = new Set([
@@ -182,6 +213,7 @@ export function keywords(text: string): string[] {
 /** How quotable a sentence is: complete, mid-length, personal, concrete, on the brief's angle. */
 export function quoteScore(sentence: Sentence, angleWords: ReadonlySet<string>): number {
   const { words: count, text } = sentence;
+  if (sentence.line.memory?.kind === 'statistic') return Number.NEGATIVE_INFINITY;
   if (count < 8 || count > 40 || text.includes('?')) return Number.NEGATIVE_INFINITY;
   let score = 10 - Math.abs(count - 18) * 0.3;
   if (FIRST_PERSON.test(text)) score += 3;
@@ -204,7 +236,7 @@ export function pickKeyQuotes(material: Material, count: number, rng: Rng, angle
       .map((sentence) => ({
         sentence,
         // A line the headline already lifts is not quoted again (`avoid`: `segmentId:from`).
-        score: avoid?.has(`${sentence.line.segmentId}:${sentence.from}`) ? Number.NEGATIVE_INFINITY : quoteScore(sentence, angleWords) + rng.next() * 0.5,
+        score: avoid?.has(materialSentenceKey(sentence)) ? Number.NEGATIVE_INFINITY : quoteScore(sentence, angleWords) + rng.next() * 0.5,
       }))
       .filter((entry) => Number.isFinite(entry.score))
       .sort((a, b) => b.score - a.score),
@@ -213,17 +245,17 @@ export function pickKeyQuotes(material: Material, count: number, rng: Rng, angle
   const usedSegments = new Set<string>();
   const take = (sentence: Sentence) => {
     picked.push(sentence);
-    usedSegments.add(sentence.line.segmentId);
+    usedSegments.add(materialLineKey(sentence.line));
   };
   for (const unitScores of scored) {
     if (picked.length >= count) break;
     const best = unitScores[0];
-    if (best && !usedSegments.has(best.sentence.line.segmentId)) take(best.sentence);
+    if (best && !usedSegments.has(materialLineKey(best.sentence.line))) take(best.sentence);
   }
   const rest = scored.flat().sort((a, b) => b.score - a.score);
   for (const entry of rest) {
     if (picked.length >= count) break;
-    if (!usedSegments.has(entry.sentence.line.segmentId)) take(entry.sentence);
+    if (!usedSegments.has(materialLineKey(entry.sentence.line))) take(entry.sentence);
   }
   return picked;
 }

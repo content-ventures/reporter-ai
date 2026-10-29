@@ -4,6 +4,7 @@ import type { SourceRef } from '../../../domain/refs.ts';
 import type { SpeakerInfo } from './editorial.ts';
 import { isFullName } from './editorial.ts';
 import type { Material, MaterialLine } from './material.ts';
+import { materialLineKey, materialRefLineKey } from './material.ts';
 import { capitalize, sentenceSpans } from './sentences.ts';
 
 /**
@@ -183,7 +184,7 @@ type Voice = { label: string; name: string; title?: string; words: number };
 function namedVoices(material: Material, speakers: Readonly<Record<string, SpeakerInfo>> | undefined): Voice[] {
   const voices = new Map<string, Voice>();
   for (const line of material.lines) {
-    if (!line.speaker || line.speaker === material.interviewer) continue;
+    if (line.memory || !line.speaker || line.speaker === material.interviewer) continue;
     const info = speakers?.[line.speaker];
     const name = info?.name?.trim() || (isFullName(line.speaker) ? line.speaker.trim() : '');
     if (!name) continue;
@@ -217,7 +218,7 @@ function refsOf(blocks: readonly ArticleBlock[]): SourceRef[] {
 /** Blocks with text that a voice speaks in (by the segments their evidence cites). */
 function spokenBy(blocks: readonly ArticleBlock[], label: string, lines: ReadonlyMap<string, MaterialLine>): ArticleBlock[] {
   return blocks.filter((block) =>
-    (block.sourceRefs ?? []).some((ref) => ref.locator.type === 'segment' && lines.get(ref.locator.segmentId)?.speaker === label),
+    (block.sourceRefs ?? []).some((ref) => ref.locator.type === 'segment' && lines.get(materialRefLineKey(ref))?.speaker === label),
   );
 }
 
@@ -235,10 +236,13 @@ function textsOf(blocks: readonly ArticleBlock[]): string[] {
 export function withImageSlots<P extends ImagePlanTarget>(plan: P, input: ImagePlanInput): P {
   const options = { ...DEFAULT_IMAGE_PLAN, ...input.options };
   const voices = namedVoices(input.material, input.speakers);
-  const lines = new Map(input.material.lines.map((line) => [line.segmentId as string, line]));
+  const lines = new Map(input.material.lines.map((line) => [materialLineKey(line), line]));
   const used = new Set<string>();
   const portrayed = new Set<string>();
-  const allBlocks = [...plan.intro, ...plan.sections.flatMap((section) => section.blocks)];
+  // Bank selection authorizes textual evidence, not a portrait or a scene from its publication.
+  const bankSources = new Set(input.material.lines.filter(line => line.memory).map(line => line.sourceId));
+  const visualMaterial = (blocks: readonly ArticleBlock[]) => blocks.filter(block => !(block.sourceRefs ?? []).some(ref => bankSources.has(ref.sourceId)));
+  const allBlocks = visualMaterial([...plan.intro, ...plan.sections.flatMap((section) => section.blocks)]);
   const main = voices[0];
 
   const slotBlock = (slot: ImageSlot, refs: readonly SourceRef[]) =>
@@ -261,11 +265,12 @@ export function withImageSlots<P extends ImagePlanTarget>(plan: P, input: ImageP
 
   let intro = plan.intro;
   if (options.afterIntro && plan.intro.length > 0) {
-    const mention = bestMention(textsOf(plan.intro), used);
+    const eligible = visualMaterial(plan.intro);
+    const mention = bestMention(textsOf(eligible), used);
     let slot: ArticleBlock | undefined;
     if (mention) {
-      const source = plan.intro.find((block) => visualMentions(blockText(block)).some((entry) => entry.text === mention.text));
-      slot = slotBlock(take(scene(mention), mention.head), refsOf(source ? [source] : plan.intro));
+      const source = eligible.find((block) => visualMentions(blockText(block)).some((entry) => entry.text === mention.text));
+      slot = slotBlock(take(scene(mention), mention.head), refsOf(source ? [source] : eligible));
     } else if (main && !portrayed.has(main.label)) {
       portrayed.add(main.label);
       slot = slotBlock(take(portrait(main), main.name), refsOf(spokenBy(allBlocks, main.label, lines)));
@@ -276,16 +281,17 @@ export function withImageSlots<P extends ImagePlanTarget>(plan: P, input: ImageP
   const every = Math.max(0, Math.floor(options.everySections));
   const sections = plan.sections.map((section, index) => {
     if (every === 0 || (index + 1) % every !== 0 || section.blocks.length === 0) return section;
-    const mention = bestMention(textsOf(section.blocks), used);
+    const eligible = visualMaterial(section.blocks);
+    const mention = bestMention(textsOf(eligible), used);
     let slot: ArticleBlock | undefined;
     if (mention) {
-      const source = section.blocks.find((block) => visualMentions(blockText(block)).some((entry) => entry.text === mention.text));
-      slot = slotBlock(take(scene(mention), mention.head), refsOf(source ? [source] : section.blocks));
+      const source = eligible.find((block) => visualMentions(blockText(block)).some((entry) => entry.text === mention.text));
+      slot = slotBlock(take(scene(mention), mention.head), refsOf(source ? [source] : eligible));
     } else {
-      const voice = voices.find((candidate) => !portrayed.has(candidate.label) && spokenBy(section.blocks, candidate.label, lines).length > 0);
+      const voice = voices.find((candidate) => !portrayed.has(candidate.label) && spokenBy(eligible, candidate.label, lines).length > 0);
       if (voice) {
         portrayed.add(voice.label);
-        slot = slotBlock(take(portrait(voice), voice.name), refsOf(spokenBy(section.blocks, voice.label, lines)));
+        slot = slotBlock(take(portrait(voice), voice.name), refsOf(spokenBy(eligible, voice.label, lines)));
       }
     }
     if (!slot) return section;
