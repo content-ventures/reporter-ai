@@ -79,7 +79,8 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
           {details.map((item, index) => <ListItem key={item.evidence.id} draggable={!locked} title={`${index + 1}. ${item.evidence.anchor.excerpt}`} titleLines={2}
             description={`${item.material.title} · ${item.evidence.kind === 'statistic' ? item.evidence.issuingInstitution ?? 'Instituição não informada' : people.data?.find(person => person.id === (item.evidence.kind === 'citation' ? item.evidence.personId : null))?.name ?? 'Autoria não identificada'}`}
             actions={<ButtonGroup label={`Ações da evidência ${index + 1}`}>
-              {evidence[index].discovery && <Button size="sm" variant="ghost" onClick={() => setInspected(inspected === item.evidence.id ? undefined : item.evidence.id)}>Ver busca da evidência {index + 1}</Button>}
+              {evidence[index].discovery && <Button size="sm" variant="ghost" aria-label={`Ver busca da evidência ${index + 1}`} aria-expanded={inspected === item.evidence.id}
+                onClick={() => setInspected(inspected === item.evidence.id ? undefined : item.evidence.id)}>Ver busca</Button>}
               <IconButton label={`Remover evidência ${index + 1}`} icon={X} disabled={locked} onClick={() => onChange(evidence.filter(ref => ref.id !== item.evidence.id))} />
             </ButtonGroup>} />)}
         </List>}
