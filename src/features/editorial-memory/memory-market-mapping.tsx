@@ -45,7 +45,8 @@ export function MemoryMarketMappingDialog({ port, materialId, open, onClose }: {
   };
   const save = async () => {
     if (!data || !complete(draft) || previewSignature !== JSON.stringify(draft) || inFlight.current) return;
-    const input = { mapping: draft, revision: data.mapping?.revision ?? 0, materialRevision: data.materialRevision }, signature = JSON.stringify(input);
+    const input = { mapping: draft, revision: data.mapping?.revision ?? 0, materialRevision: data.materialRevision,
+      source: data.source, originalFileId: data.originalFileId, checksum: data.checksum }, signature = JSON.stringify(input);
     if (attempt.current?.signature !== signature) attempt.current = { signature, key: crypto.randomUUID() };
     inFlight.current = true; setBusy(true); setError(undefined);
     try { const saved = await port.saveMarketMapping(materialId, input, attempt.current.key); if (live.current) { setData({ ...data, mapping: saved }); setStale(false); onClose(); } }
@@ -73,9 +74,11 @@ export function MemoryMarketMappingDialog({ port, materialId, open, onClose }: {
         </FieldGroup>
         {data.preview && previewSignature === JSON.stringify(draft) && <Section title="Prévia dos registros" titleAs="h3" meta={`${data.preview.total} registros`}>
           <DataTable label="Prévia dos dados de mercado" rows={data.preview.rows} rowKey={row => String(row.record)} rowLabel={row => `Registro ${row.record}`}
-            columns={[{ key: 'record', header: 'Registro', render: row => row.record }, { key: 'indicator', header: 'Indicador', render: row => row.fields.indicator?.value },
+            columns={[{ key: 'record', header: 'Registro', render: row => row.record }, { key: 'institution', header: 'Instituição', render: row => row.fields.institution?.value }, { key: 'indicator', header: 'Indicador', render: row => row.fields.indicator?.value },
               { key: 'value', header: 'Valor', render: row => row.fields.value?.value }, { key: 'unit', header: 'Unidade', render: row => row.fields.unit?.value },
-              { key: 'period', header: 'Período', render: row => row.fields.period?.value }, { key: 'missing', header: 'Pendências', render: row => row.missing.length ? row.missing.map(key => fields.find(field => field.key === key)?.label).join(', ') : '—' }]} />
+              { key: 'period', header: 'Período', render: row => row.fields.period?.value },
+              ...(['geography', 'population', 'qualifier'] as const).filter(key => draft[key]).map(key => ({ key, header: fields.find(field => field.key === key)!.label, render: (row: NonNullable<MemoryMarketPreview['preview']>['rows'][number]) => row.fields[key]?.value })),
+              { key: 'missing', header: 'Pendências', render: row => row.missing.length ? row.missing.map(key => fields.find(field => field.key === key)?.label).join(', ') : '—' }]} />
           {data.preview.next !== null && <ButtonGroup label="Prévia"><Button variant="secondary" disabled={busy || !complete(draft)} onClick={async () => {
             if (!complete(draft)) return; setBusy(true); setError(undefined);
             try { const result = await port.previewMarket(materialId, { mapping: draft, start: data.preview!.next! }); if (live.current) setData(result); }
