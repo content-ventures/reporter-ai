@@ -55,7 +55,8 @@ export function MemoryBatchItemEditor({ port, batch, item, open, onClose, onSave
       <FieldGroup label="Metadados do documento" columns={2}>
         {([{ key: 'originalUrl', label: 'URL original', type: 'url' }, { key: 'institution', label: 'Instituição' }, { key: 'company', label: 'Empresa' },
           { key: 'event', label: 'Evento' }, { key: 'edition', label: 'Edição' }, { key: 'publishedOn', label: 'Data de publicação', type: 'date' },
-          { key: 'recordedOn', label: 'Data da fala', type: 'date' }] as const).map(field => <Field key={field.key} label={field.label} optional>{({ id }) =>
+          { key: 'recordedOn', label: 'Data da fala', type: 'date' }, { key: 'publication', label: 'Nome da publicação' },
+          { key: 'documentAuthor', label: 'Autor do documento' }, { key: 'documentSection', label: 'Página ou seção informada' }] as const).map(field => <Field key={field.key} label={field.label} optional>{({ id }) =>
           <Input id={id} type={'type' in field ? field.type : 'text'} disabled={busy || accepted} value={input.metadata[field.key] ?? ''} onChange={event => changeMetadata(field.key, event.target.value)} />}</Field>)}
         <Field label="Temas" optional>{({ id }) => <Input id={id} disabled={busy || accepted} value={topics} onChange={event => { setTopics(event.target.value); changeMetadata('topics', event.target.value); }} />}</Field>
       </FieldGroup>

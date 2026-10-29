@@ -152,6 +152,12 @@ test('individual imports reuse exact files, preserve occurrences and require rev
   assert.equal(existingBatch.items[0].file.name, 'Cópia renomeada.csv'); assert.equal(existingBatch.items[0].materialId, imported.material.id);
   const generic = await api('materials', { ...same, text: bytes.toString('utf8') }); assert.equal(generic.status, 200);
   assert.equal((await generic.json()).material.id, imported.material.id);
+  const unspecified = await api('materials/from-file', { ...same, metadata: { ...metadata, publication: null, documentAuthor: null, documentSection: null } });
+  assert.equal(unspecified.status, 200, await unspecified.clone().text());
+  assert.equal((await unspecified.json()).material.id, imported.material.id);
+  const attributed = await api('materials/from-file', { ...same, metadata: { ...metadata, documentAuthor: 'Autora Sintética' } });
+  assert.equal(attributed.status, 200, await attributed.clone().text());
+  assert.ok((await attributed.json()).pending, 'a new document author requires an explicit reconciliation');
   const before = await owner("SELECT count(*)::int AS n FROM public.reporter_memory_heads WHERE kind='material' AND portal_id=$1", [PORTAL]);
   assert.equal((await api('materials', { ...same, text: 'Texto inventado que não pertence ao arquivo original.' })).status, 422);
   assert.deepEqual(await owner("SELECT count(*)::int AS n FROM public.reporter_memory_heads WHERE kind='material' AND portal_id=$1", [PORTAL]), before);

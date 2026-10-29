@@ -109,6 +109,9 @@ function MemoryImportForm({ port, open, onClose, onImported, onReviewBatch }: Pr
         <Field label="Empresa" optional>{({ id }) => <Input id={id} disabled={busy} value={input.metadata.company ?? ''} onChange={event => setMetadata('company', event.target.value)} />}</Field>
         <Field label="Evento" optional>{({ id }) => <Input id={id} disabled={busy} value={input.metadata.event ?? ''} onChange={event => setMetadata('event', event.target.value)} />}</Field>
         <Field label="Edição" optional>{({ id }) => <Input id={id} disabled={busy} value={input.metadata.edition ?? ''} onChange={event => setMetadata('edition', event.target.value)} />}</Field>
+        <Field label="Nome da publicação" optional>{({ id }) => <Input id={id} maxLength={240} disabled={busy} value={input.metadata.publication ?? ''} onChange={event => setMetadata('publication', event.target.value)} />}</Field>
+        <Field label="Autor do documento" optional>{({ id }) => <Input id={id} maxLength={240} disabled={busy} value={input.metadata.documentAuthor ?? ''} onChange={event => setMetadata('documentAuthor', event.target.value)} />}</Field>
+        <Field label="Página ou seção informada" optional>{({ id }) => <Input id={id} maxLength={240} disabled={busy} value={input.metadata.documentSection ?? ''} onChange={event => setMetadata('documentSection', event.target.value)} />}</Field>
         <Field label="Temas" optional>{({ id }) => <Input id={id} disabled={busy} value={topicsText} onChange={event => { setTopicsText(event.target.value); setMetadata('topics', event.target.value); }} />}</Field>
       </FieldGroup>
       <Checkbox label="Confirmo a autorização de uso deste material" checked={input.authorized} disabled={busy} onChange={event => setInput({ ...input, authorized: event.target.checked })} />

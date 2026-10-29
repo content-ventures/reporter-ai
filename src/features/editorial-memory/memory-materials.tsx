@@ -77,6 +77,9 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence, onImpact }
       </Section>}
       <Section title="Original preservado" meta={historical === undefined ? 'Versão atual' : 'Somente consulta'}>
         <DescriptionList items={[{ label: 'Revisão do material', value: detail.material.revision }, { label: 'Versão do original', value: detail.material.source.sourceVersion },
+          { label: 'Nome da publicação', value: detail.material.metadata.publication }, { label: 'Autor do documento', value: detail.material.metadata.documentAuthor },
+          { label: 'Edição', value: detail.material.metadata.edition }, { label: 'Página ou seção informada', value: detail.material.metadata.documentSection },
+          { label: 'Data de publicação', value: detail.material.metadata.publishedOn },
           { label: 'Registrada em', value: new Date(detail.source.versions[0].createdAt).toLocaleString('pt-BR') },
           { label: 'Registrada por', value: session?.current?.id === detail.source.versions[0].createdBy ? session.current.name : session?.members.find(member => member.id === detail.source.versions[0].createdBy)?.name ?? detail.source.versions[0].createdBy },
           ...(detail.source.versions[0].note ? [{ label: 'Motivo da versão', value: detail.source.versions[0].note }] : [])]} />

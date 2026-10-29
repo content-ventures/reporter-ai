@@ -42,7 +42,9 @@ function SelectedContext({ context }: { context: MemorySelectedContext }) {
           : [{ label: 'Indicador', value: evidence.indicator }, { label: 'Valor literal', value: evidence.value.raw }, { label: 'Unidade', value: evidence.unit },
             { label: 'Período', value: evidence.period?.label }, { label: 'Geografia', value: evidence.geography }, { label: 'População', value: evidence.population },
             { label: 'Ressalva', value: evidence.qualifier }, { label: 'Instituição emissora', value: evidence.issuingInstitution }]),
-        { label: 'Publicação original', value: evidence.metadata.publishedOn }, { label: 'Data da declaração', value: evidence.metadata.recordedOn }]} />
+        { label: 'Nome da publicação', value: evidence.metadata.publication }, { label: 'Autor do documento', value: evidence.metadata.documentAuthor },
+        { label: 'Edição', value: evidence.metadata.edition }, { label: 'Página ou seção informada', value: evidence.metadata.documentSection },
+        { label: 'Data de publicação', value: evidence.metadata.publishedOn }, { label: 'Data da declaração', value: evidence.metadata.recordedOn }]} />
     </Section>
     <Section title="Decisão usada na seleção">
       {context.decisionRestricted ? <Alert tone="warning" title="A decisão editorial contém fontes restritas à sua conta" />
