@@ -37,7 +37,8 @@ export function prepareMemoryWriting(selection: MemorySelection, items: MemoryWr
     if (label && !speakers.some(speaker => speaker.label === label)) speakers.push({ label, personId: author!.id });
     content.segments.push({ id: segmentId, text, ...(label ? { speaker: label } : {}) });
     bindings.push({ segmentId, materialId: evidence.materialId, kind: evidence.kind, anchor: structuredClone(evidence.anchor),
-      metadata: structuredClone(evidence.metadata), selected: structuredClone(selected) });
+      metadata: structuredClone(evidence.metadata), selected: structuredClone(selected),
+      ...(evidence.kind === 'statistic' && evidence.market ? { market: structuredClone(evidence.market) } : {}) });
     const sourceRefs = [segmentRef(sourceId, 1, segmentId, { from: 0, to: text.length })];
     blocks.push(evidence.kind === 'citation' ? quoteBlock(ctx.newId('memory-quote'), text, { sourceRefs }) : paragraphBlock(ctx.newId('memory-statistic'), text, { sourceRefs }));
     if (evidence.kind === 'citation' && author) blocks.push(paragraphBlock(ctx.newId('memory-attribution'),

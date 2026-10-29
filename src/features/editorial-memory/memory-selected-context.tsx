@@ -45,6 +45,12 @@ function SelectedContext({ context }: { context: MemorySelectedContext }) {
         { label: 'Nome da publicação', value: evidence.metadata.publication }, { label: 'Autor do documento', value: evidence.metadata.documentAuthor },
         { label: 'Edição', value: evidence.metadata.edition }, { label: 'Página ou seção informada', value: evidence.metadata.documentSection },
         { label: 'Data de publicação', value: evidence.metadata.publishedOn }, { label: 'Data da declaração', value: evidence.metadata.recordedOn }]} />
+      {context.binding.market && <Section title="Células da importação" titleAs="h3">
+        <DescriptionList items={Object.entries(context.binding.market.fields).flatMap(([key, cell]) => cell ? [{
+          label: ({ institution: 'Instituição', indicator: 'Indicador', value: 'Valor', unit: 'Unidade', period: 'Período', geography: 'Geografia', population: 'População', qualifier: 'Ressalva' } as Record<string, string>)[key] ?? key,
+          value: `${cell.value} · registro ${cell.record}, coluna ${cell.column}`,
+        }] : [])} />
+      </Section>}
     </Section>
     <Section title="Decisão usada na seleção">
       {context.decisionRestricted ? <Alert tone="warning" title="A decisão editorial contém fontes restritas à sua conta" />

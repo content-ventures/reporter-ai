@@ -2,6 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { MemoryDecision, MemoryEvidence, MemoryDecisionInput } from '../domain/editorial-memory.ts';
 import { initialMemoryPolicy, reviewMemoryEvidence } from '../domain/editorial-memory.ts';
+import { verifyMemoryMarketProof } from '../domain/editorial-memory-market-proof.ts';
 import { memoryDecisionInputSchema, memoryIdSchema } from './editorial-memory-input.ts';
 import { memoryBundle, memoryReadState } from './editorial-memory-detail.ts';
 import type { MemoryBundle } from './editorial-memory-query.ts';
@@ -26,6 +27,8 @@ export async function reviewEditorialMemory(id: string, value: MemoryDecisionInp
   }, async client => {
     if (bundle.checkState === 'outdated') throw new FlowError('MEMORY_CHECK_OUTDATED', 409);
     if (!bundle.source) throw new FlowError('NOT_FOUND', 404);
+    if (input.action === 'accept' && bundle.evidence.kind === 'statistic' && bundle.evidence.market?.mapping
+      && (!bundle.material.originalFileId || !verifyMemoryMarketProof(bundle.evidence, bundle.source, bundle.material.originalFileId))) throw new FlowError('MEMORY_CONFLICT', 409);
     const decision = reviewMemoryEvidence(input, bundle.evidence, bundle.source, bundle.policy ?? initialMemoryPolicy(context.portal), bundle.check, bundle.decision,
       { personId: context.actor, workspaceId: context.portal, roles: context.roles },
       { actorId: context.actor, now: new Date().toISOString(), newId: prefix => `${prefix}-${randomUUID()}` });

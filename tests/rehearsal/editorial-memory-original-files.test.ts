@@ -339,6 +339,16 @@ test('market mappings save explicit column choices with source binding and revie
   const evidenceResponse = await api(report.rows[0].id); assert.equal(evidenceResponse.status, 200, await evidenceResponse.clone().text());
   const evidence = await evidenceResponse.json(); assert.equal(evidence.evidence.value.raw, '1.234,56');
   assert.equal(evidence.evidence.market.fields.value.column, 3); assert.equal(evidence.eligibility.reason, 'review_required');
+  const proof = memoryEvidenceRef(evidence.evidence);
+  const reviewed = await api(`${report.rows[0].id}/review`, { evidence: proof, check: null, policyRevision: 1, previousSequence: 0,
+    action: 'accept', reason: 'Conferido no arquivo original.', supports: [] });
+  assert.equal(reviewed.status, 200, await reviewed.clone().text());
+  const selection = await api('selections', { baseRevision: 0, productionId: null, evidence: [proof] }); assert.equal(selection.status, 200, await selection.clone().text());
+  const chosen = await selection.json();
+  const writing = await api(`selections/${chosen.id}/write`, { baseRevision: 1, title: 'Mercado para revisão', brief: { size: 'standard', sections: 3 } });
+  assert.equal(writing.status, 200, await writing.clone().text()); const draft = await writing.json();
+  const [source] = await owner('SELECT doc FROM public.reporter_ed_sources WHERE portal_id=$1 AND source_id=$2', [PORTAL, draft.sourceId]);
+  assert.deepEqual(source.doc.memory[0].items[0].market, evidence.evidence.market);
   assert.deepEqual(await (await api(`${root}/market-import`, command, 0, importKey)).json(), report);
   const again = await api(`${root}/market-import`, command); assert.equal(again.status, 200, await again.clone().text());
   assert.equal((await again.json()).rows[0].status, 'existing');
