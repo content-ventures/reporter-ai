@@ -11,6 +11,7 @@ import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
 import { checkEditorialMemory } from './editorial-memory-check.ts';
 import { writeMemorySelection } from './editorial-memory-writing.ts';
 import { readMemoryWritingStatus } from './editorial-memory-writing-status.ts';
+import { readMemorySelectedContext } from './editorial-memory-selected-context.ts';
 import { refreshEditorialMemorySource } from './editorial-memory-refresh.ts';
 import { memorySourceRefreshSchema } from './editorial-memory-input.ts';
 import { readMemorySelection, readMemorySelections, selectEditorialMemory } from './editorial-memory-selection.ts';
@@ -20,6 +21,11 @@ import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemor
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
   if (process.env.REPORTER_MEMORY_MODE !== 'on') throw new FlowError('NOT_FOUND', 404);
   const noStore = { headers: { 'Cache-Control': 'private, no-store' } }, params = new URL(request.url).searchParams;
+  if (request.method === 'GET' && path.length === 5 && path[0] === 'productions' && path[2] === 'sources' && path[4] === 'context') {
+    if ([...params.keys()].some(key => !['sourceVersion', 'segmentId'].includes(key)) || params.getAll('sourceVersion').length !== 1
+      || params.getAll('segmentId').length !== 1 || !/^[1-9]\d{0,8}$/.test(params.get('sourceVersion') ?? '')) throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await readMemorySelectedContext(path[1], { sourceId: path[3], sourceVersion: Number(params.get('sourceVersion')), segmentId: params.get('segmentId')! }), noStore);
+  }
   if (request.method === 'POST' && path.length === 3 && path[0] === 'sources' && path[2] === 'refresh') {
     if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
     return Response.json(await refreshEditorialMemorySource(path[1], memorySourceRefreshSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''), noStore);

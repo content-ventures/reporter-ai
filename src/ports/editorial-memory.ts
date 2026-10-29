@@ -1,5 +1,5 @@
 import type { MemoryCheck, MemoryDecision, MemoryDecisionInput, MemoryEvidence, MemoryEvidenceRef, MemoryEvidenceView,
-  MemoryArticleOrigin, MemoryBlock, MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
+  MemoryArticleOrigin, MemoryBlock, MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemorySourceBinding, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
 import type { SourceVersionRef } from '../domain/refs.ts';
 import type { Source, TranscriptSegment } from '../domain/source.ts';
 import type { Piece, Version } from '../domain/piece.ts';
@@ -13,6 +13,15 @@ export type MemoryWritingInput = { baseRevision: number } & (
   | { target: { productionId: string; updatedAt: string } }
 );
 export type MemoryWritingResult = { productionId: string; pieceId: string; sourceId: string };
+export type MemorySelectedContextInput = { sourceId: string; sourceVersion: number; segmentId: string };
+export type MemorySelectedContext = {
+  productionId: string; collection: SourceVersionRef; segmentId: string; binding: MemorySourceBinding['items'][number];
+  selection: Pick<MemorySelection, 'id' | 'revision' | 'createdAt' | 'createdBy' | 'updatedAt' | 'updatedBy'>; snapshot: string;
+  evidence: MemoryEvidence; material: MemoryMaterial; policy: MemoryPolicy; check: MemoryCheck | null; decision: MemoryDecision | null;
+  checkRestricted: boolean; decisionRestricted: boolean;
+  original: { ref: SourceVersionRef; authorized: boolean; before: string; excerpt: string; after: string };
+  current: { evidence: MemoryEvidenceRef; matchesSelection: boolean; usable: boolean }; readOnly: boolean;
+};
 export type MemorySourceRefreshInput = {
   target: { productionId: string; updatedAt: string; draftRevision: number }; expected: SourceVersionRef;
   selection: { id: string; revision: number } | null; updateDraftReferences: boolean; reason: string;
@@ -74,6 +83,7 @@ export interface EditorialMemory {
   writeSelection(id: string, input: MemoryWritingInput, requestId: string): Promise<MemoryWritingResult>;
   refreshSource(id: string, input: MemorySourceRefreshInput, requestId: string): Promise<MemorySourceRefreshResult>;
   writingStatus(productionId: string): Promise<MemoryWritingStatus>;
+  selectedContext(productionId: string, input: MemorySelectedContextInput): Promise<MemorySelectedContext>;
   policy(): Promise<MemoryPolicy>;
   lookupLegacy(id: string): Promise<{ id: string; materialId: string }[]>;
   originalArticle(id: string, snapshot?: string): Promise<{ origin: MemoryArticleOrigin; doc: Piece | Version; importedBy: string; importedAt: string }>;

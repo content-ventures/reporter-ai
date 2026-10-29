@@ -15,7 +15,7 @@ export type MemoryArticleProof = { sourceId: string; sourceVersion: number; sour
   blockId: string; from: number; to: number; sourceFrom: number; sourceTo: number };
 
 /** Current eligibility and the exact selected decision are both required at a gated use. */
-function currentItem(binding: BoundItem, items: MemoryWritingItem[], workspaceId: string): boolean {
+export function memorySelectedItemCurrent(binding: BoundItem, items: MemoryWritingItem[], workspaceId: string): boolean {
   const current = items.find(item => item.view.evidence.id === binding.selected.evidence.id), view = current?.view;
   return Boolean(current && view && view.evidence.workspaceId === workspaceId && current.policy.workspaceId === workspaceId && view.eligibility.usable && !view.reviewRestricted && view.checkState !== 'outdated' && view.checkState !== 'restricted'
     && sameMemoryEvidence(binding.selected.evidence, memoryEvidenceRef(view.evidence)) && binding.selected.policyRevision === current.policy.revision
@@ -39,7 +39,7 @@ export function validateMemoryWritingSources(sources: Source[], items: MemoryWri
     if (receipt.items.length !== version.content.segments.length || new Set(receipt.items.map(item => item.segmentId)).size !== receipt.items.length
       || version.content.segments.some(segment => !memorySourceSegment(source, version.number, segment.id)))
       return refuse('memory_source_changed', 'A coleção não corresponde aos trechos selecionados. Confira a fonte antes de escrever.');
-    if (receipt.items.some(binding => !currentItem(binding, items, source.workspaceId))) return refuse('memory_review_changed', 'Há evidências do banco que precisam de uma seleção atualizada antes de escrever.');
+    if (receipt.items.some(binding => !memorySelectedItemCurrent(binding, items, source.workspaceId))) return refuse('memory_review_changed', 'Há evidências do banco que precisam de uma seleção atualizada antes de escrever.');
   }
   return ok(undefined);
 }
@@ -57,7 +57,7 @@ export function validateMemoryArticle(body: ArticleBody, sources: Source[], item
       const receipt = source.memory.find(receipt => receipt.version.number === ref.sourceVersion);
       if (!source.rights.authorized || !receipt || ref.locator.type !== 'segment') return refuse('memory_source_changed', 'Confira a origem da evidência antes de continuar.');
       const segmentId = ref.locator.segmentId, binding = receipt.items.find(binding => binding.segmentId === segmentId);
-      if (!binding || !currentItem(binding, items, source.workspaceId)) return refuse('memory_review_changed', 'Uma evidência usada no artigo mudou ou precisa de revisão. Atualize a seleção.');
+      if (!binding || !memorySelectedItemCurrent(binding, items, source.workspaceId)) return refuse('memory_review_changed', 'Uma evidência usada no artigo mudou ou precisa de revisão. Atualize a seleção.');
       const matching = occurrences.filter(occurrence => occurrence.blockId === block.id && occurrence.sourceVersion === ref.sourceVersion && occurrence.binding.segmentId === segmentId && (binding.kind === 'statistic' || ref.locator.type === 'segment' && occurrence.sourceFrom === (ref.locator.from ?? 0) && occurrence.sourceTo === (ref.locator.to ?? binding.anchor.excerpt.length)));
       if (!matching.length) return refuse('memory_literal_changed', binding.kind === 'statistic'
         ? 'O dado usado perdeu parte do contexto original. Confira número, unidade, período e qualificadores.' : 'A citação usada não corresponde mais ao trecho original. Confira a referência.');
