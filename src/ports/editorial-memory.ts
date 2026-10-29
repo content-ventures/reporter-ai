@@ -25,6 +25,8 @@ export type MemorySourceRefreshResult = {
 export type MemoryWritingStatus = {
   productionId: string; updatedAt: string; checkedAt: string; sources: SourceVersionRef[];
   issues: { source: SourceVersionRef; code: MemoryWritingIssueCode; message: string }[];
+  draft: { pieceId: string; revision: number; hash: string } | null;
+  draftIssues: { source: Omit<SourceVersionRef, 'hash'> & { hash: string | null }; blockId: string; code: MemoryWritingIssueCode; message: string }[];
 };
 
 export type MemoryImportInput = {

@@ -35,7 +35,7 @@ export function activitySummary(event: ActivityEvent, actor: PersonSummary | nul
     case 'source.added':
       return typeof data?.title === 'string' ? `${who} adicionou o material “${data.title}”` : `${who} adicionou o material`;
     case 'source.revised':
-      return `${who} corrigiu o material`;
+      return data?.retired === true ? `${who} retirou a fonte das novas gerações` : data?.retired === false ? `${who} atualizou a fonte do banco` : `${who} corrigiu o material`;
     case 'source.authorized':
       return `${who} autorizou o material`;
     case 'source.date_updated':

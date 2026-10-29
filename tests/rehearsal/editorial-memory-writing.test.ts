@@ -14,6 +14,7 @@ import type { Piece } from '../../src/domain/piece.ts';
 import { articleHash, paragraphBlock, quoteBlock } from '../../src/domain/article.ts';
 import { segmentRef } from '../../src/domain/refs.ts';
 import { r1ArticleIssue } from '../../src/domain/article-policy.ts';
+import { contentHash } from '../../src/domain/text/hash.ts';
 import { refreshMemoryWriting } from '../../src/domain/editorial-memory-refresh.ts';
 import type { MemoryWritingItem } from '../../src/domain/editorial-memory-writing.ts';
 import type { Source } from '../../src/domain/source.ts';
@@ -212,6 +213,7 @@ test('writing status reads current gates for every collection without recording 
   const initial = await response.json() as MemoryWritingStatus;
   assert.equal(initial.productionId, made.productionId); assert.equal(initial.updatedAt, savedProduction[0].doc.updatedAt);
   assert.ok(Number.isFinite(Date.parse(initial.checkedAt))); assert.deepEqual(initial.issues, []);
+  assert.deepEqual(initial.draftIssues, []); assert.equal(initial.draft?.pieceId, made.pieceId);
   assert.deepEqual(initial.sources.map(ref => ref.sourceId), [made.sourceId, added.sourceId]);
   assert.ok(initial.sources.every(ref => ref.kind === 'source-version' && ref.sourceVersion === 1 && ref.hash));
   assert.equal(JSON.stringify(initial).includes('CONTEÚDO PRIVADO'), false);
@@ -227,6 +229,8 @@ test('writing status reads current gates for every collection without recording 
   const changed = await json<MemoryWritingStatus>(path);
   assert.equal(changed.issues.length, 1); assert.equal(changed.issues[0].source.sourceId, made.sourceId);
   assert.equal(changed.issues[0].code, 'memory_review_changed'); assert.ok(changed.issues[0].message);
+  assert.equal(changed.draftIssues.length, 1); assert.equal(changed.draftIssues[0].source.sourceId, made.sourceId);
+  assert.equal(changed.draft?.hash, contentHash(edited)); assert.equal(changed.draft?.revision, article.doc.draft.revision + 1);
   assert.deepEqual(changed.sources, initial.sources, 'attached immutable snapshots have not been silently refreshed');
   await json(`memory/materials/${b.material.id}/authorization`, { baseRevision: 1, authorized: false, reason: 'Synthetic rights revoked after attachment.' });
   assert.deepEqual((await json<MemoryWritingStatus>(path)).issues.map(issue => issue.source.sourceId), [made.sourceId, added.sourceId]);
@@ -477,6 +481,8 @@ test('refresh HTTP atomically rebases unchanged proof, preserves frozen words an
   const after = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc as Piece;
   assert.equal(articleHash(after.draft.body as ArticleBody), articleHash(beforePiece.draft.body as ArticleBody));
   assert.deepEqual(after.draft.sources, [result.source]); assert.equal((after.draft.body as ArticleBody).blocks[0].sourceRefs![0].sourceVersion, 2);
+  const status = await json<MemoryWritingStatus>(`memory/productions/${made.productionId}/writing-status`);
+  assert.deepEqual(status.issues, []); assert.deepEqual(status.draftIssues, []); assert.equal(status.draft?.hash, contentHash(after.draft.body));
   assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='version' AND part_id=$1", [oldVersion.id]))[0].doc, oldVersion);
   const saved = await json<{ ok: true; value: { version: { ref: VersionRef } } }>('workspace', { method: 'createVersion', args: [made.pieceId], requestId: randomUUID() });
   assert.ok(saved.ok); assert.notEqual(saved.value.version.ref.versionId, frozen.value.version.ref.versionId); assert.equal(saved.value.version.ref.hash, frozen.value.version.ref.hash);
@@ -511,6 +517,15 @@ test('refresh HTTP preserves private scope, permissions, conflicts and recovery 
   assert.equal(restored.source.sourceVersion, 3); assert.equal(restored.retired, false); assert.equal(restored.updatedReferences, 0);
   assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc, before);
   assert.equal((await gateRecord(made.productionId)).sources.ok, true); assert.equal((await gateRecord(made.productionId)).article.ok, false);
+  const statusPath = `memory/productions/${made.productionId}/writing-status`, current = await json<MemoryWritingStatus>(statusPath);
+  assert.deepEqual(current.issues, []); assert.equal(current.sources[0].sourceVersion, 3);
+  assert.equal(current.draftIssues.length, 1); assert.equal(current.draftIssues[0].source.sourceVersion, 1);
+  assert.equal(current.draftIssues[0].source.hash, input.expected.hash); assert.equal(current.draft?.hash, contentHash(before.draft.body));
+  assert.deepEqual((await json<MemoryWritingStatus>(statusPath)).draftIssues, current.draftIssues, 'the saved old-proof concern survives another independent read');
+  const missing = structuredClone(before.draft.body) as ArticleBody; missing.blocks[0].sourceRefs![0].sourceVersion = 99;
+  assert.ok((await json<{ ok: boolean }>('workspace', { method: 'saveDraft', args: [made.pieceId, missing, before.draft.revision], requestId: randomUUID() })).ok);
+  const unresolved = await json<MemoryWritingStatus>(statusPath);
+  assert.deepEqual(unresolved.issues, []); assert.equal(unresolved.draftIssues[0].source.sourceVersion, 99); assert.equal(unresolved.draftIssues[0].source.hash, null);
 });
 
 test('refresh HTTP refuses review and active-run locks and serializes competing collection updates', async () => {

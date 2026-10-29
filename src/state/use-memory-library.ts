@@ -3,9 +3,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { MemoryLibrary } from '../ports/editorial-memory.ts';
 import { useRuntime } from './use-runtime.ts';
 
+export function useMemoryLibrary(): MemoryLibrary | undefined { return useRuntime().runtime?.memory; }
+
 /** Results belong to one port and query; late responses cannot cross an account or filter change. */
 export function useMemoryResource<T>(load: (library: MemoryLibrary) => Promise<T>, pollMs = 0, enabled = true) {
-  const port = useRuntime().runtime?.memory;
+  const port = useMemoryLibrary();
   const [epoch, setEpoch] = useState(0);
   const activity = useMemo(() => ({ enabled }), [enabled]);
   const binding = useMemo(() => ({ port, load, epoch, activity }), [port, load, epoch, activity]);

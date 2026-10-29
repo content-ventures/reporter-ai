@@ -74,7 +74,7 @@ export async function refreshEditorialMemorySource(id: string, value: MemorySour
           state: { ...state, sources: state.sources.map(source => source.id === id ? next.source : source),
             productions: state.productions.map(entry => entry.production.id !== record.production.id ? entry : { ...entry,
               production: { ...entry.production, updatedAt: ctx.now }, pieces: entry.pieces.map(item => item.id === piece.id ? updated : item) }) },
-          activity: [{ type: 'source.revised' as const, productionId: record.production.id, subject: ref, data: { reason: input.reason, retired: next.retired, updatedReferences: next.updatedReferences } }] });
+          activity: [{ type: 'source.revised' as const, productionId: record.production.id, subject: ref, data: { reason: input.reason, number: ref.sourceVersion, retired: next.retired, updatedReferences: next.updatedReferences } }] });
       });
       if (!installed.ok) throw new FlowError('MEMORY_CONFLICT', 409);
       await client.query('SELECT public.reporter_memory_receipt($1,$2,$3,$4::jsonb)', [operation, requestId, hash, JSON.stringify(installed.value)]);
