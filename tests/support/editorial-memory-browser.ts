@@ -85,6 +85,8 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
       await expect(history.getByRole('textbox', { name: 'Trecho registro anterior', exact: true })).toHaveValue(previous.anchor.excerpt);
       await expect(history.getByRole('textbox', { name: 'Trecho registro substituto', exact: true })).toHaveValue(current.anchor.excerpt);
       await expect(history.getByText(reason, { exact: true })).toBeVisible(); await expect(history.getByRole('textbox')).toHaveCount(2);
+      await history.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)).then(() => undefined));
+      await expect(history.getByRole('textbox', { name: 'Trecho registro anterior', exact: true })).toBeInViewport({ ratio: 1 });
       await audit(editor, 'replacement-history');
       await editor.keyboard.press('Escape'); await editor.keyboard.press('Escape');
       await expect(history).toBeHidden(); await expect(drawer).toBeVisible(); await expect(historyTrigger).toBeFocused();
