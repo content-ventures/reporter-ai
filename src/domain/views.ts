@@ -33,7 +33,7 @@ import { PIECE_STATUS_LABELS, PRODUCTION_STATUS_LABELS, pieceStatus } from './ru
 import type { PieceStatus, ProductionStatus } from './rules/status.ts';
 import { currentStep, isRunActive, RUN_KIND_LABELS, runDurationMs, stepProgress } from './run.ts';
 import type { GenerationRun, RunStep } from './run.ts';
-import { currentSourceVersion } from './source.ts';
+import { currentSourceVersion, isSourceRetired, writingSources } from './source.ts';
 import type { Source, SourceKind, SourceOrigin, Speaker } from './source.ts';
 import { situationOf } from './situation.ts';
 import type { Situation } from './situation.ts';
@@ -144,6 +144,7 @@ export type SourceSummary = {
   hasTimestamps: boolean;
   durationMs?: number;
   authorized: boolean;
+  retired?: true;
 };
 
 export type NextActionKind = 'authorize' | 'generate' | 'continue' | 'review' | 'fix' | 'derive' | 'update' | 'export' | 'wait' | 'done';
@@ -343,6 +344,7 @@ export function toSourceSummary(source: Source): SourceSummary {
     }),
     hasTimestamps: analysis.hasTimestamps,
     authorized: source.rights.authorized,
+    ...(isSourceRetired(source) ? { retired: true as const } : {}),
   };
   if (source.recordedOn) summary.recordedOn = source.recordedOn;
   if (analysis.durationMs !== undefined) summary.durationMs = analysis.durationMs;
@@ -351,7 +353,7 @@ export function toSourceSummary(source: Source): SourceSummary {
 
 /** What to do next, for "Continue de onde parou", board cards and the hub. */
 export function nextAction(record: ProductionRecord, pieces: readonly PieceView[], stages: readonly StageView[]): NextAction {
-  if (record.sources.length > 0 && record.sources.some((source) => !source.rights.authorized)) {
+  if (writingSources(record.sources).some((source) => !source.rights.authorized)) {
     return { kind: 'authorize', label: 'Autorizar material', stageId: 'source' };
   }
   for (const kind of record.production.plan) {

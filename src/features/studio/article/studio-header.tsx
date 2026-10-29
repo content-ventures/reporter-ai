@@ -29,7 +29,7 @@ export function useStudioPrimary(): HeaderPrimary | undefined {
     generating: generation.active,
     generationFailed: generation.run?.status === 'failed',
     ...(approval ? { approval } : {}),
-    authorized: production.sources.length > 0 && production.sources.every((entry) => entry.authorized),
+    authorized: production.sources.some(entry => !entry.retired) && production.sources.every((entry) => entry.retired || entry.authorized),
     ...(carousel ? { carousel: { status: carousel.status } } : {}),
     plannedCarousel: production.plan.includes('carousel'),
     tabReadOnly: studio.readOnly,

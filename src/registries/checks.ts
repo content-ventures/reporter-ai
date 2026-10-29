@@ -9,6 +9,7 @@ import type {
 } from '../domain/index.ts';
 import { availableIn, CURRENT_RELEASE, isReleased } from './release.ts';
 import type { ReleaseId } from './release.ts';
+import { writingSources } from '../domain/source.ts';
 
 /**
  * Check registry. `readiness` checks feed the studio status line, the review panel and the
@@ -37,6 +38,7 @@ export const GENERATION_CHECKS: readonly CheckDefinition<GenerationCheckContext>
     pieceKind: 'article',
     blocking: true,
     evaluate: ({ sources }) => {
+      sources = writingSources(sources);
       if (sources.length === 0) return { status: 'fail', detail: 'Adicione o material antes de gerar.' };
       const pending = sources.filter((source) => !source.rights.authorized).length;
       if (pending > 0) return { status: 'fail', detail: 'Confirme que o material está autorizado para gerar.' };

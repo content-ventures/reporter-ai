@@ -34,7 +34,7 @@ export function ArticleStudio({ productionId }: { productionId: ProductionId }) 
   const sources = useProductionSources(production?.id, production?.sources.map((entry) => entry.id) ?? []);
 
   if (frame.production.status === 'ready' && production && !piece) {
-    const unauthorized = production.sources.some((entry) => !entry.authorized);
+    const unauthorized = production.sources.some((entry) => !entry.retired && !entry.authorized);
     return (
       <WorkspaceLayout docked header={<ProductionHeader />} mainLabel="Texto">
         <EmptyState

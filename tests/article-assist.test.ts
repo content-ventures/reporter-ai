@@ -15,6 +15,7 @@ import { r1ArticleIssue } from '../src/domain/article-policy.ts';
 import { RUN_KIND_OF } from '../src/ports/generation.ts';
 import type { GenerationKind } from '../src/ports/generation.ts';
 import type { EditorialJob } from '../src/ports/connected-workspace.ts';
+import { sourceContentHash } from '../src/domain/source.ts';
 
 let sequence = 0;
 async function fixture() {
@@ -43,6 +44,29 @@ async function fixture() {
   return { engine,record,body,pieceId,input,first,second,source };
 }
 const change = (text: string,evidenceIds: string[] = ['0']) => ({ targetIndex: 0,kind: 'text',text,items: [],evidenceIds });
+
+function addRetiredSource(f: Awaited<ReturnType<typeof fixture>>) {
+  const source = structuredClone(f.source); source.id = 'synthetic-retired-source'; source.rights = { authorized: false };
+  source.speakers = [{ label: 'RETIRED_AUTHOR_SENTINEL', personId: 'synthetic-retired-author' }];
+  source.versions[0].content.segments = [{ id: 'removed', speaker: 'RETIRED_AUTHOR_SENTINEL', text: 'RETIRED_EVIDENCE_SENTINEL sobre dados do pescado.' }];
+  source.versions[0].hash = sourceContentHash(source.versions[0].content);
+  const empty = { type: 'transcript' as const, format: 'plain' as const, segments: [] };
+  source.versions.push({ ...source.versions[0], number: 2, content: empty, hash: sourceContentHash(empty) });
+  source.memory = source.versions.map(version => ({ selection: { id: 'synthetic-selection', revision: 1 }, version: { number: version.number, hash: version.hash }, items: [], ...(version.number === 2 ? { retired: true as const } : {}) }));
+  f.record.sources.push(source); return source;
+}
+
+test('assistant evidence excludes retired historical references while retaining the editable article', async () => {
+  const f = await fixture();
+  try {
+    const retired = addRetiredSource(f); f.input.body.blocks[0].sourceRefs!.push(segmentRef(retired.id, 1, 'removed'));
+    const context = articleAssistContext(f.record, { kind: 'article.ask', input: { ...f.input, prompt: 'Confira os dados do pescado.' } });
+    assert.equal(context.body, f.input.body); assert.ok(context.evidence.length);
+    assert.ok(context.evidence.every(item => item.ref.sourceId !== retired.id));
+    assert.equal(JSON.stringify(context.evidence).includes('RETIRED_'), false);
+    assert.equal(retired.versions[0].content.segments[0].text.includes('RETIRED_EVIDENCE_SENTINEL'), true);
+  } finally { f.engine.store.dispose(); }
+});
 
 test('server-owned revision/body and selection bounds reject forged, stale and overlapping inputs before provider calls', async () => {
   const f = await fixture();
@@ -162,6 +186,7 @@ test('an immutable pipeline extension preserves every existing editorial prompt 
 
 test('real orchestration consumes the exact saved assistant prompt and provider deltas without mutating a draft', async () => {
   const f = await fixture(), directory = await mkdtemp(join(tmpdir(),'reporter-assist-test-'));
+  addRetiredSource(f);
   const originalFetch = globalThis.fetch, originalStorage = process.env.REPORTER_STORAGE_DIR, originalKey = process.env.OPENAI_API_KEY;
   process.env.REPORTER_LOCAL_MODE = 'true'; process.env.REPORTER_STORAGE_DIR = directory; process.env.OPENAI_API_KEY = 'synthetic-test-key';
   const pipeline = pipelineRevision(defaultPipelineDefinition('openai/gpt-4.1'));
@@ -197,6 +222,7 @@ test('real orchestration consumes the exact saved assistant prompt and provider 
     assert.ok(job.events.every(event => event.type !== 'assist.preview' || !event.reply && !event.proposals.length), 'terminal runs discard ephemeral preview payloads');
     assert.equal(f.engine.store.state.runFolds[runId].assistPreview,undefined);
     assert.equal(requests[0].stream,true);
+    assert.equal(JSON.stringify(requests).includes('RETIRED_'), false, 'retained source history and attribution never become new provider evidence');
     const messages = requests[0].input as { content: string }[];
     assert.equal(messages[0].content,pipeline.definition.systemPrompt);
     assert.match(messages[1].content,/INSTRUÇÃO EDITORIAL EDITÁVEL DE TESTE/);

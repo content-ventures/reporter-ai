@@ -10,7 +10,7 @@ import { dedupeRefs, sameVersionRef } from './refs.ts';
 import type { SourceRef, SourceVersionRef, VersionRef } from './refs.ts';
 import { isPlanningRun, isRunActive } from './run.ts';
 import type { GenerationRun } from './run.ts';
-import { currentSourceVersion, toSourceVersionRef } from './source.ts';
+import { currentSourceVersion, toSourceVersionRef, writingSources } from './source.ts';
 import type { Source } from './source.ts';
 import { isSuggestionPending } from './suggestion.ts';
 import type { Suggestion } from './suggestion.ts';
@@ -187,7 +187,7 @@ export function pendingSuggestions(record: Pick<ProductionRecord, 'suggestions'>
 }
 
 export function currentSourceRefs(record: Pick<ProductionRecord, 'sources'>): SourceVersionRef[] {
-  return record.sources.map((source) => toSourceVersionRef(source, currentSourceVersion(source)));
+  return writingSources(record.sources).map((source) => toSourceVersionRef(source, currentSourceVersion(source)));
 }
 
 /** Retain frozen inputs plus exact source versions cited by output, including later web research. */

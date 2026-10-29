@@ -9,7 +9,7 @@ import { applySuggestion } from '../domain/suggestion.ts';
 import type { Suggestion, SuggestionProposal } from '../domain/suggestion.ts';
 import { dedupeRefs, refKey, segmentRef } from '../domain/refs.ts';
 import type { SourceRef, TextRange } from '../domain/refs.ts';
-import { resolveSourceRef, currentSourceVersion } from '../domain/source.ts';
+import { resolveSourceRef, currentSourceVersion, writingSources } from '../domain/source.ts';
 import type { ProductionRecord } from '../domain/record.ts';
 import type { EditorialJob } from '../ports/connected-workspace.ts';
 import { GENERATION_LABELS, REWRITE_TONE_LABELS } from '../ports/generation.ts';
@@ -63,6 +63,7 @@ export type AssistContext = { kind: GenerationKind; body: ArticleBody; targets: 
 /** Relevant literal excerpts only: no expensive whole-podcast rewrite for an inline request. */
 export function articleAssistContext(record: ProductionRecord, job: Pick<EditorialJob, 'kind' | 'input'>): AssistContext {
   const input = job.input as { body: ArticleBody; target?: TextRange[]; anchors?: TextRange[]; prompt?: string; note?: string; tone?: string; targetCharacters?: number };
+  const sources = writingSources(record.sources);
   const body = input.body, explicit = input.target ?? input.anchors;
   const targets = explicit?.length ? explicit : body.blocks.filter(block => block.type === 'paragraph' || block.type === 'quote')
     .filter(block => blockText(block).trim()).slice(0,16).map(block => ({ blockId: block.id, from: 0, to: blockText(block).length }));
@@ -76,11 +77,11 @@ export function articleAssistContext(record: ProductionRecord, job: Pick<Editori
   };
   // Existing exact refs first preserve quotations spanning several transcript sentences.
   for (const block of body.blocks.filter(block => targetIds.has(block.id))) for (const ref of block.sourceRefs ?? []) {
-    const resolved = resolveSourceRef(record.sources, ref);
+    const resolved = resolveSourceRef(sources, ref);
     if (resolved) add(resolved.excerpt, ref, resolved.segment?.speaker);
   }
   const words = new Set((prompt + ' ' + targets.map(target => sliceText(body,target)).join(' ')).toLowerCase().match(/[\p{L}\p{N}]{5,}/gu) ?? []);
-  const candidates = record.sources.flatMap(source => {
+  const candidates = sources.flatMap(source => {
     const version = currentSourceVersion(source);
     return version.content.segments.map(segment => ({ text: segment.text, speaker: segment.speaker,
       ref: segmentRef(source.id,version.number,segment.id) }));

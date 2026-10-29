@@ -133,6 +133,21 @@ export function currentSourceVersion(source: Source): SourceVersion {
   return source.versions[source.versions.length - 1];
 }
 
+/** Retirement affects future writing only; historical readers still use the complete source. */
+export function isSourceRetired(source: Source): boolean {
+  const receipt = source.memory?.at(-1);
+  if (receipt?.retired !== true) return false;
+  const version = currentSourceVersion(source);
+  return Boolean(version && receipt.version.number === version.number
+    && receipt.version.hash === version.hash && sourceContentHash(version.content) === version.hash
+    && version.content.type === 'transcript' && version.content.format === 'plain'
+    && version.content.segments.length === 0 && receipt.items.length === 0);
+}
+
+export function writingSources<T extends Source>(sources: readonly T[]): T[] {
+  return sources.filter(source => !isSourceRetired(source));
+}
+
 export function sourceVersion(source: Source, number: number): SourceVersion | undefined {
   return source.versions.find((version) => version.number === number);
 }

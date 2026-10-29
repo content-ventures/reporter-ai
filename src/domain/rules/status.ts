@@ -1,4 +1,5 @@
-import { bodyHash } from '../piece.ts';
+import { bodyHash, draftMatchesVersion } from '../piece.ts';
+import { writingSources } from '../source.ts';
 import type { Piece, PieceKind } from '../piece.ts';
 import {
   activeRun,
@@ -163,7 +164,7 @@ export function pieceStatus(record: ProductionRecord, kind: PieceKind): PieceSta
   const approved = latestApproved(record, piece.id);
   if (!approved) return 'draft';
   // Edited after the approval: the approval stays (carousel and delivery use it) but asks to resend.
-  if (last?.decision === 'approved' && bodyHash(piece.draft.body) !== approved.version.hash) return 'approval_outdated';
+  if (last?.decision === 'approved' && !draftMatchesVersion(piece.draft, approved.version)) return 'approval_outdated';
   return 'approved';
 }
 
@@ -180,7 +181,7 @@ export function productionStatus(record: ProductionRecord): ProductionStatus {
   const statuses = record.production.plan.map((kind) => pieceStatus(record, kind));
   if (statuses.includes('generating')) return 'generating';
   // Nothing can be generated until the material is authorised (REQ-T.1): a red "Falta", not a draft.
-  if (record.sources.some((source) => !source.rights.authorized)) return 'unauthorized';
+  if (writingSources(record.sources).some((source) => !source.rights.authorized)) return 'unauthorized';
   const allApproved = statuses.every((status) => status === 'approved');
   if (allApproved) return isDelivered(record) ? 'completed' : 'approved';
   const current = statuses.find((status) => status !== 'approved');

@@ -6,6 +6,7 @@ import { latestApproved, pendingReview, pieceOfKind } from './record.ts';
 import type { ProductionRecord } from './record.ts';
 import { isDelivered, PIECE_PARENTS, pieceStatus, productionStatus } from './rules/status.ts';
 import type { PieceStatus, ProductionStatus } from './rules/status.ts';
+import { writingSources } from './source.ts';
 
 /**
  * The production journey (Material · Artigo · Aprovação · Carrossel · Entrega) derived from a flow
@@ -98,8 +99,9 @@ function joinLabels(kinds: readonly PieceKind[]): string {
 }
 
 function evaluateSource(record: ProductionRecord): Evaluation {
-  if (record.sources.length === 0) return { complete: false, status: 'waiting' };
-  const authorized = record.sources.every((source) => source.rights.authorized);
+  const sources = writingSources(record.sources);
+  if (sources.length === 0) return { complete: false, status: 'waiting' };
+  const authorized = sources.every((source) => source.rights.authorized);
   return authorized ? { complete: true, status: 'ready' } : { complete: false, flag: 'warn', status: 'waiting' };
 }
 
@@ -134,7 +136,7 @@ const SENT: readonly PieceStatus[] = ['in_review', 'approved', 'approval_outdate
 
 function evaluatePiece(record: ProductionRecord, kind: PieceKind, gated: boolean, options: StageStateOptions): Evaluation {
   const status = pieceStatus(record, kind);
-  const sourcesReady = record.sources.length > 0 && record.sources.every((source) => source.rights.authorized);
+  const sources = writingSources(record.sources), sourcesReady = sources.length > 0 && sources.every((source) => source.rights.authorized);
   const parents = (PIECE_PARENTS[kind] ?? []).filter((parent) => record.production.plan.includes(parent));
   // A parent edited after its approval still has an approved version to derive from.
   const blockedByParents = parents.filter((parent) => !OPENS_DERIVATIVES.includes(pieceStatus(record, parent)));

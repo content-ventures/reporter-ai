@@ -30,7 +30,7 @@ import { contiguousSourcePassages, r1ArticleIssue, unquoteUnsupported, ARTICLE_P
 import { articleContractFor, articleGateFor, outletPunctuation, quoteRuleFor, tidyQuoteOpenings } from '../domain/formats.ts';
 import { quotableIds, quotableSpeaker } from '../domain/quote-plan.ts';
 import { ungroundedTerms } from '../domain/grounding.ts';
-import { currentSourceVersion } from '../domain/source.ts';
+import { currentSourceVersion, writingSources } from '../domain/source.ts';
 import type { Source } from '../domain/source.ts';
 import { writingResearchEvidence } from '../domain/writing-research-evidence.ts';
 import type { Person } from '../domain/workspace.ts';
@@ -116,7 +116,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       if (full) {
         const record = engine.records.record(job.meta.productionId);
         const run = engine.store.state.runFolds[job.meta.runId].run;
-        if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
+        if (!record || writingSources(record.sources).some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
         const refs = run.inputs.filter((ref): ref is import('../domain/refs.ts').SourceVersionRef => ref.kind === 'source-version');
         const memory = await guardMemorySources(client, record, refs.length ? refs : undefined);
         if (!memory.ok) throw new FlowError('MEMORY_NOT_READY', 409);
@@ -190,7 +190,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
     await guarded([{ type: 'step.started',stepId: 'source',meta: 'Preparando a fonte autorizada' }]);
     const input = (await editorialTransaction('worker',async (checkpoint,engine,client) => {
       const record = engine.records.record(job.meta.productionId);
-      if (!record || record.sources.some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
+      if (!record || writingSources(record.sources).some(source => !source.rights.authorized)) throw new FlowError('SOURCE_NOT_AUTHORIZED',422);
       const run = engine.store.state.runFolds[job.meta.runId]?.run;
       const refs = run?.inputs.filter((ref): ref is import('../domain/refs.ts').SourceVersionRef => ref.kind === 'source-version');
       const memory = await guardMemorySources(client, record, refs?.length ? refs : undefined);
@@ -201,7 +201,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
         const saved=[config?.active,...(config?.history??[])].find(entry=>entry?.hash===job.template!.hash);
         if(!saved||contentHash(saved)!==contentHash(job.template))throw new FlowError('JOB_CONTEXT_MISMATCH',422);
       }
-      return { record,templates: editorialTemplates(checkpoint),people: engine.store.state.people,
+      return { record: { ...record, sources: writingSources(record.sources) },templates: editorialTemplates(checkpoint),people: engine.store.state.people,
         citations: (checkpoint.citations ?? []).filter(citation => citation.productionId === job.meta.productionId) };
     },false,'reporter.edit',{...scope,templates:true})).value;
     if (ARTICLE_ASSIST_KINDS.has(job.kind)) {
