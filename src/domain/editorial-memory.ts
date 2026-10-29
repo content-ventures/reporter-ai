@@ -23,6 +23,7 @@ export type MemoryMaterial = {
   source: SourceVersionRef; metadata: MemoryMetadata; importedAt: string; importedBy: string;
   /** Republishing one origin does not create independent corroboration. */
   primaryOrigin: string; originalFileId: string | null;
+  revisionInfo?: { reason: string; personId: string; at: string; materialRevision: number; previous: SourceVersionRef };
 };
 /** UTF-16 offsets into the saved source segment, following the existing SourceRef contract. */
 export type MemorySpan = { segmentId: string; from: number; to: number };
@@ -36,7 +37,7 @@ export type MemoryEvidenceBase = {
   metadata: MemoryMetadata; kinds: ClaimKind[]; status: 'active' | 'withdrawn' | 'superseded';
   createdAt: string; updatedAt: string; supersedes: string | null;
   /** Authenticated correction provenance; historical snapshots retain each earlier stamp. */
-  correction?: { reason: string; personId: string; at: string };
+  correction?: { reason: string; personId: string; at: string; materialRevision?: number };
   /** A corrected projection requires an explicit choice before consolidation. */
   deduplication?: { canonicalId: string; canonical: MemoryEvidenceRef; state: 'pending' | 'superseded'; choice: 'pending' | 'automatic' | 'keep_variant' | 'use_curated'; reason: string; personId: string; at: string };
 };
