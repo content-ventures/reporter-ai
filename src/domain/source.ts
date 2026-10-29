@@ -148,6 +148,13 @@ export function writingSources<T extends Source>(sources: readonly T[]): T[] {
   return sources.filter(source => !isSourceRetired(source));
 }
 
+/** Bank attribution is version-bound; retained historical mappings never add current speakers. */
+export function sourceVersionSpeakers(source: Source, version: SourceVersion = currentSourceVersion(source)): Speaker[] {
+  if (!source.memory) return source.speakers;
+  const labels = new Set(version.content.segments.map(segment => segment.speaker));
+  return source.speakers.filter(speaker => labels.has(speaker.label));
+}
+
 export function sourceVersion(source: Source, number: number): SourceVersion | undefined {
   return source.versions.find((version) => version.number === number);
 }

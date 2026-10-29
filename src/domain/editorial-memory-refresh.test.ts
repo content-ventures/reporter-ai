@@ -7,7 +7,7 @@ import { initialMemoryPolicy, memoryEvidenceRef, type MemorySelection } from './
 import { validateMemoryArticle, validateMemoryWritingSources } from './editorial-memory-guard.ts';
 import { refreshMemoryWriting } from './editorial-memory-refresh.ts';
 import { prepareMemoryWriting, type MemoryWritingItem } from './editorial-memory-writing.ts';
-import { isSourceRetired, resolveSourceRef, sourceContentHash, toSourceVersionRef, writingSources } from './source.ts';
+import { isSourceRetired, resolveSourceRef, sourceContentHash, sourceVersionSpeakers, toSourceVersionRef, writingSources } from './source.ts';
 import { baseRecord, commitVersion, createKit, recordDecision, sampleArticle } from './testing/scenario.ts';
 import { canGenerate } from './rules/generate.ts';
 import { pieceStatus } from './rules/status.ts';
@@ -60,6 +60,8 @@ test('author changes append speaker mappings and leave affected draft words and 
   current[1].view.decision = { ...current[1].view.decision!, id: 'corrected-author-review', evidence: memoryEvidenceRef(evidence) };
   const result = refreshMemoryWriting(source, toSourceVersionRef(source), { selection: selection(current), items: current }, body, true, 'Corrected attribution reviewed.', context); assert.ok(result.ok);
   assert.deepEqual(result.value.source.speakers[0], source.speakers[0]); assert.equal(result.value.source.speakers[1].personId, 'new-author');
+  assert.deepEqual(sourceVersionSpeakers(result.value.source).map(speaker => speaker.personId), ['new-author']);
+  assert.deepEqual(sourceVersionSpeakers(result.value.source, result.value.source.versions[0]), source.speakers);
   assert.deepEqual(result.value.body.blocks[1], body.blocks[1]); assert.equal(result.value.updatedReferences, 1);
   assert.deepEqual(result.value.concerns, [{ blockId: body.blocks[1].id, evidenceId: evidence.id, reason: 'changed' }]);
   const keep = refreshMemoryWriting(source, toSourceVersionRef(source), { selection: selection(items), items }, body, false, 'Keep draft references for manual review.', context); assert.ok(keep.ok);
@@ -82,6 +84,7 @@ test('retirement excludes future provider input without changing past article pr
   const retired = result.value.source;
   assert.deepEqual(result.value.body, body); assert.equal(retired.rights.authorized, false); assert.equal(retired.memory!.at(-1)!.retired, true);
   assert.deepEqual(retired.versions.at(-1)!.content.segments, []); assert.equal(validateMemoryWritingSources([retired], []).ok, true);
+  assert.deepEqual(sourceVersionSpeakers(retired), []); assert.deepEqual(sourceVersionSpeakers(retired, retired.versions[0]), source.speakers);
   assert.equal(validateMemoryArticle(body, [retired], []).ok, false); assert.equal(refreshMemoryWriting(retired, toSourceVersionRef(retired), null, body, false, 'Again.', context).ok, false);
   const record = baseRecord(createKit()), active = record.sources[0]; record.sources.push(retired);
   const allowed = canGenerate(record, 'article'); assert.ok(allowed.ok);

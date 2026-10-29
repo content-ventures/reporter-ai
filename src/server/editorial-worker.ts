@@ -30,7 +30,7 @@ import { contiguousSourcePassages, r1ArticleIssue, unquoteUnsupported, ARTICLE_P
 import { articleContractFor, articleGateFor, outletPunctuation, quoteRuleFor, tidyQuoteOpenings } from '../domain/formats.ts';
 import { quotableIds, quotableSpeaker } from '../domain/quote-plan.ts';
 import { ungroundedTerms } from '../domain/grounding.ts';
-import { currentSourceVersion, writingSources } from '../domain/source.ts';
+import { currentSourceVersion, sourceVersionSpeakers, writingSources } from '../domain/source.ts';
 import type { Source } from '../domain/source.ts';
 import { writingResearchEvidence } from '../domain/writing-research-evidence.ts';
 import type { Person } from '../domain/workspace.ts';
@@ -239,7 +239,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
     const people = confirmedPeople(input.record,input.people);
     // A line is quotable when a linked speaker said it, or, in a stand interview without speaker labels and one
     // confirmed person, when it is one of her answers (never a line that names or thanks her, which is the interviewer's).
-    const linked = new Set(input.record.sources.flatMap(s => s.speakers.filter(speaker => speaker.personId && !speaker.unattributed).map(speaker => speaker.label)));
+    const linked = new Set(input.record.sources.flatMap(s => sourceVersionSpeakers(s).filter(speaker => speaker.personId && !speaker.unattributed).map(speaker => speaker.label)));
     const identified = quotableSpeaker({ linked,people,unlabeledAnswers: format === 'stand' });
     const executionTime = new Date();
     const today = new Intl.DateTimeFormat('pt-BR',{ timeZone: 'America/Sao_Paulo',weekday: 'long',day: 'numeric',month: 'long',year: 'numeric' }).format(executionTime);
@@ -544,7 +544,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
 function confirmedPeople(record: ProductionRecord, people: readonly Person[]) {
   const byId = new Map(people.map(person => [person.id,person]));
   const seen = new Set<string>();
-  return record.sources.flatMap(source => source.speakers.flatMap(speaker => {
+  return record.sources.flatMap(source => sourceVersionSpeakers(source).flatMap(speaker => {
     const person = speaker.personId ? byId.get(speaker.personId) : undefined;
     if (!person || seen.has(person.id)) return [];
     seen.add(person.id);
