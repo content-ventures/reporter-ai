@@ -22,7 +22,7 @@ import { writingSourceCandidates } from '../../src/domain/writing-source.ts';
 import { createLocalExportService } from '../../src/adapters/local/export/local-export.ts';
 import { createLocalRenderService } from '../../src/adapters/local/render/local-render.ts';
 import type { ConnectedWorkspace } from '../../src/ports/connected-workspace.ts';
-import type { MemoryDetail, MemoryJob, MemoryMaterialRevisionResult, MemorySelectedContext, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
+import type { MemoryCorrectionImpact, MemoryDetail, MemoryJob, MemoryMaterialRevisionResult, MemorySelectedContext, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import type { BuiltFile, ExportPackage } from '../../src/ports/export.ts';
 import type { WritingRunDetails } from '../../src/ports/pipeline-settings.ts';
@@ -235,11 +235,16 @@ test('two imported materials reach orchestrated writing, separate approval and a
   const original = materials.find(material => material.kind === 'statistic')!, beforeRevision = await record(made.productionId);
   const frozen = structuredClone(beforeRevision.versions), draftBeforeRevision = structuredClone(beforeRevision.pieces[0].draft);
   const correctedText = original.text.replace('240', '241');
+  assert.equal((await api<MemoryCorrectionImpact>(`memory/materials/${original.material.id}/impact`)).total, 0);
   const revisionReason = 'Synthetic correction of the original count after approval.';
   const revised = ui ? await ui.reviseOriginal(original.material, original.text, correctedText, revisionReason) : await api<MemoryMaterialRevisionResult>(`memory/materials/${original.material.id}/revision`, {
     baseRevision: original.material.revision, source: original.material.source, text: correctedText, reason: revisionReason,
   });
   assert.equal(revised.material.source.sourceVersion, 2); assert.equal(revised.affectedEvidence, 2);
+  const affected = await api<MemoryCorrectionImpact>(`memory/materials/${original.material.id}/impact`); assert.equal(affected.total, 2);
+  assert.equal(affected.currentRevision, revised.material.revision);
+  assert.ok(affected.items.some(item => item.kind === 'selection' && item.id === selected.id && item.changedEvidence === 2));
+  assert.ok(affected.items.some(item => item.kind === 'production' && item.id === made.productionId && item.selectedEvidence === 2 && item.draftEvidence === 2));
   assert.deepEqual((await record(made.productionId)).versions, frozen, 'original corrections never rewrite frozen approved/generated articles');
   assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
   const originalContext = await api<MemorySelectedContext>(`memory/productions/${made.productionId}/sources/${made.sourceId}/context?sourceVersion=1&segmentId=${encodeURIComponent(initialProof.items[0].segmentId)}`);

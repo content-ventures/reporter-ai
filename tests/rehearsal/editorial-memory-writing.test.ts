@@ -6,7 +6,7 @@ import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { createTranscriptSource, toSourceVersionRef } from '../../src/domain/source.ts';
 import { parseTranscript } from '../../src/domain/text/transcript-parse.ts';
 import { memoryEvidenceRef, type MemoryCheck, type MemoryEvidence, type MemoryMaterial, type MemoryPage, type MemorySelection } from '../../src/domain/editorial-memory.ts';
-import type { MemoryDetail, MemorySelectedContext, MemorySourceRefreshInput, MemorySourceRefreshResult, MemoryWritingResult, MemoryWritingStatus } from '../../src/ports/editorial-memory.ts';
+import type { MemoryCorrectionImpact, MemoryDetail, MemorySelectedContext, MemorySourceRefreshInput, MemorySourceRefreshResult, MemoryWritingResult, MemoryWritingStatus } from '../../src/ports/editorial-memory.ts';
 import type { ReporterRequestContext } from '../../src/server/request-context.ts';
 import type { ArticleBody } from '../../src/domain/article.ts';
 import type { VersionRef } from '../../src/domain/refs.ts';
@@ -664,4 +664,96 @@ test('mixed discovery filters survive saved selection, writer receipts and expli
   assert.equal((await api('memory/selections', { baseRevision: 0, productionId: null, evidence: [future] })).status, 409);
   const privateItem = await fixture('statistic', true), forgedAccess = captureMemoryChoice(privateItem.evidence, { materialId: privateItem.material.id }, '0');
   assert.equal((await api('memory/selections', { baseRevision: 0, productionId: null, evidence: [forgedAccess] }, randomUUID(), identities[2])).status, 404);
+});
+
+const impact = (kind: 'material' | 'evidence', id: string, query = '') => json<MemoryCorrectionImpact>(`memory/${kind === 'material' ? 'materials/' : ''}${id}/impact${query}`);
+async function impactClocks() {
+  return (await owner(`SELECT (SELECT seq::text FROM reporter_memory_clock WHERE portal_id=$1) AS memory,
+    (SELECT seq::text FROM reporter_ed_sync WHERE portal_id=$1) AS editorial,
+    (SELECT count(*)::integer FROM reporter_memory_receipts WHERE portal_id=$1) AS receipts`, [PORTAL]))[0];
+}
+test('correction impact tracks current selections and actual old draft segments after collection refresh without editing frozen articles', async () => {
+  const a = await fixture('statistic'), b = await fixture('citation'), saved = await selection([a.evidence, b.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+  assert.equal((await impact('material', a.material.id)).total, 0);
+  const frozen = await json<{ ok: true; value: { version: { ref: VersionRef } } }>('workspace', { method: 'createVersion', args: [made.pieceId], requestId: randomUUID() }); assert.ok(frozen.ok);
+  const frozenDoc = (await owner("SELECT doc FROM reporter_ed_parts WHERE kind='version' AND part_id=$1", [frozen.value.version.ref.versionId]))[0].doc;
+  await json(`memory/${a.evidence.id}/correction`, { expected: memoryEvidenceRef(a.evidence), reason: 'Synthetic impact correction.', changes: { kind: 'statistic', metadata: { company: 'Synthetic corrected company' } } });
+  const before = await impactClocks(), first = await impact('material', a.material.id, '?limit=1');
+  assert.equal(first.total, 2); assert.equal(first.items.length, 1); assert.ok(first.nextCursor);
+  assert.deepEqual(first.scope, { kind: 'material', id: a.material.id }); assert.equal(first.currentRevision, a.material.revision);
+  assert.deepEqual(first.items[0], { kind: 'production', id: made.productionId, title: writingInput.title,
+    updatedAt: (await owner('SELECT doc FROM reporter_ed_productions WHERE production_id=$1', [made.productionId]))[0].doc.updatedAt, selectedEvidence: 1, draftEvidence: 1 });
+  const next = await impact('material', a.material.id, `?limit=1&cursor=${encodeURIComponent(first.nextCursor)}`);
+  assert.equal(next.snapshot, first.snapshot); assert.equal(next.nextCursor, null); assert.equal(next.items[0].kind, 'selection');
+  const selected = next.items[0]; assert.equal(selected.id, saved.id);
+  if (selected.kind === 'selection') { assert.equal(selected.changedEvidence, 1); assert.equal(selected.totalEvidence, 2); assert.equal(selected.revision, saved.revision); }
+  const repeated = await impact('material', a.material.id, '?limit=1');
+  assert.deepEqual({ ...repeated, nextCursor: null }, { ...first, nextCursor: null }); assert.deepEqual(await impactClocks(), before);
+  assert.deepEqual((await impact('material', a.material.id, `?limit=1&cursor=${encodeURIComponent(repeated.nextCursor!)}`)).items, next.items);
+  assert.equal((await impact('evidence', a.evidence.id)).total, 2); assert.equal((await impact('evidence', b.evidence.id)).total, 0);
+  assert.equal((await impact('material', b.material.id)).total, 0);
+  const corrected = await json<MemoryDetail>(`memory/${a.evidence.id}`);
+  await json(`memory/${a.evidence.id}/review`, { evidence: memoryEvidenceRef(corrected.evidence), check: null, policyRevision: 1,
+    previousSequence: corrected.decision!.sequence, action: 'accept', reason: 'Synthetic corrected metadata accepted.', supports: [] });
+  const replacement = await json<MemorySelection>('memory/selections', { baseRevision: 0, productionId: made.productionId, evidence: [memoryEvidenceRef(corrected.evidence), memoryEvidenceRef(b.evidence)] });
+  await json<MemorySourceRefreshResult>(`memory/sources/${made.sourceId}/refresh`, await refreshInput(made, replacement, false));
+  const draftOnly = (await impact('material', a.material.id)).items.find(item => item.kind === 'production'); assert.ok(draftOnly?.kind === 'production');
+  assert.equal(draftOnly.selectedEvidence, 0); assert.equal(draftOnly.draftEvidence, 1, 'old draft segments remain affected after a current collection is installed');
+  const status = await json<MemoryWritingStatus>(`memory/productions/${made.productionId}/writing-status`); assert.equal(status.issues.length, 0); assert.equal(status.draftIssues.length, 1);
+  const refreshed = await json<MemorySourceRefreshResult>(`memory/sources/${made.sourceId}/refresh`, { ...await refreshInput(made, replacement), updateDraftReferences: true });
+  assert.ok(refreshed.concerns.some(concern => concern.evidenceId === a.evidence.id && concern.reason === 'changed'));
+  assert.ok((await impact('material', a.material.id)).items.some(target => target.kind === 'production' && target.draftEvidence === 1), 'a changed semantic proof still requires explicit editor recovery');
+  const piece = (await owner("SELECT doc FROM reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc as Piece;
+  const body = structuredClone(piece.draft.body) as ArticleBody;
+  for (const block of body.blocks) for (const ref of block.sourceRefs ?? []) if (ref.sourceId === made.sourceId) ref.sourceVersion = refreshed.source.sourceVersion;
+  const repaired = await json<{ ok: boolean }>('workspace', { method: 'saveDraft', args: [made.pieceId, body, piece.draft.revision], requestId: randomUUID() }); assert.ok(repaired.ok);
+  assert.deepEqual((await json<MemoryWritingStatus>(`memory/productions/${made.productionId}/writing-status`)).draftIssues, []);
+  const cleared = await impact('material', a.material.id); assert.equal(cleared.total, 1); assert.equal(cleared.items[0].id, saved.id);
+  assert.deepEqual((await owner("SELECT doc FROM reporter_ed_parts WHERE kind='version' AND part_id=$1", [frozen.value.version.ref.versionId]))[0].doc, frozenDoc);
+});
+
+test('impact pages bind actor, scope, limits, current bank and editorial clocks and conceal inaccessible targets and originals', async () => {
+  const item = await fixture('statistic'), saved = await selection([item.evidence]);
+  const made = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput), path = `memory/materials/${item.material.id}/impact`;
+  await json(`memory/${item.evidence.id}/correction`, { expected: memoryEvidenceRef(item.evidence), reason: 'Synthetic changed provenance.', changes: { kind: 'statistic', metadata: { event: 'Synthetic correction event' } } });
+  const first = await impact('material', item.material.id, '?limit=1'); assert.ok(first.nextCursor);
+  const cursor = encodeURIComponent(first.nextCursor);
+  for (const query of ['limit=0', 'limit=101', 'limit=1&limit=2', 'unknown=1', 'cursor=x&cursor=y']) assert.equal((await api(`${path}?${query}`)).status, 422);
+  for (const other of [`${path}?limit=2&cursor=${cursor}`, `memory/${item.evidence.id}/impact?limit=1&cursor=${cursor}`]) assert.equal((await api(other)).status, 409);
+  assert.equal((await api(`${path}?limit=1&cursor=${cursor}`, undefined, randomUUID(), identities[2])).status, 409);
+  const clocks = await impactClocks();
+  const created = await json<{ ok: true }>('workspace', { method: 'createBlank', args: [{ title: 'Unrelated synthetic editorial change', brief: writingInput.brief }], requestId: randomUUID() }); assert.ok(created.ok);
+  const after = await impactClocks(); assert.equal(after.memory, clocks.memory); assert.notEqual(after.editorial, clocks.editorial);
+  assert.equal((await api(`${path}?limit=1&cursor=${cursor}`)).status, 409, 'an ordinary editorial change invalidates pages independently of the bank clock');
+  const bankCursor = (await impact('material', item.material.id, '?limit=1')).nextCursor!;
+  const current = await json<MemoryDetail>(`memory/${item.evidence.id}`);
+  await json(`memory/${item.evidence.id}/correction`, { expected: memoryEvidenceRef(current.evidence), reason: 'Another synthetic bank revision.', changes: { kind: 'statistic', metadata: { company: 'Another synthetic company' } } });
+  assert.equal((await api(`${path}?limit=1&cursor=${encodeURIComponent(bankCursor)}`)).status, 409);
+  await owner("UPDATE reporter_ed_productions SET doc=doc||jsonb_build_object('restrictedTo','[]'::jsonb) WHERE production_id=$1", [made.productionId]);
+  const restricted = await api(path, undefined, randomUUID(), identities[2]); assert.equal(restricted.status, 200);
+  const visible = await restricted.json() as MemoryCorrectionImpact; assert.equal(visible.total, 1); assert.equal(visible.items[0].kind, 'selection');
+  assert.ok(!JSON.stringify(visible).includes(made.productionId)); assert.ok(!JSON.stringify(visible).includes(writingInput.title));
+  const privateItem = await fixture('statistic', true);
+  for (const route of [`memory/materials/${privateItem.material.id}/impact`, `memory/${privateItem.evidence.id}/impact`]) assert.equal((await api(route, undefined, randomUUID(), identities[2])).status, 404);
+  assert.equal((await api(path, undefined, randomUUID(), null)).status, 401);
+  const readOnly = await api(path, undefined, randomUUID(), identities[1]); assert.equal(readOnly.status, 200, 'an approver may inspect visible correction impact');
+});
+
+test('a thousand affected selections paginate once each without transferring originals or mutating either ledger', async () => {
+  const item = await fixture('citation'), saved = await selection([item.evidence]);
+  const prefix = `impact-bulk-${randomUUID()}-`;
+  await owner(`WITH allocation AS (UPDATE reporter_memory_clock SET seq=seq+1000 WHERE portal_id=$1 RETURNING seq-1000 AS start),
+    inserted AS (INSERT INTO reporter_memory_heads(portal_id,kind,id,storage_revision,doc,seq)
+      SELECT $1,'selection',$2||lpad(n::text,4,'0'),0,$3::jsonb||jsonb_build_object('id',$2||lpad(n::text,4,'0')),start+n FROM allocation,generate_series(1,1000) n RETURNING *)
+    INSERT INTO reporter_memory_history SELECT * FROM inserted`, [PORTAL, prefix, JSON.stringify(saved)]);
+  await json(`memory/${item.evidence.id}/correction`, { expected: memoryEvidenceRef(item.evidence), reason: 'Synthetic bulk selection impact.', changes: { kind: 'citation', metadata: { edition: 'Synthetic corrected edition' } } });
+  const before = await impactClocks(), ids = new Set<string>(); let cursor: string | null = null;
+  do {
+    const page = await impact('evidence', item.evidence.id, `?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+    assert.equal(page.total, 1001); assert.ok(page.items.length <= 100); assert.ok(!JSON.stringify(page).includes('CONTEÚDO PRIVADO FORA DA SELEÇÃO'));
+    for (const target of page.items) { assert.equal(target.kind, 'selection'); assert.equal(ids.has(target.id), false); ids.add(target.id); }
+    cursor = page.nextCursor;
+  } while (cursor);
+  assert.equal(ids.size, 1001); assert.deepEqual(await impactClocks(), before);
 });

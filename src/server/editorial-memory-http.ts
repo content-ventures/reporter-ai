@@ -2,6 +2,7 @@ import 'server-only';
 import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema, memoryCheckInputSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, memoryWritingInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
+import { readMemoryCorrectionImpact } from './editorial-memory-impact.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
 import { correctEditorialMemory } from './editorial-memory-correction.ts';
 import { reviseEditorialMemoryMaterial } from './editorial-memory-material-revision.ts';
@@ -23,6 +24,9 @@ import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemor
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
   if (process.env.REPORTER_MEMORY_MODE !== 'on') throw new FlowError('NOT_FOUND', 404);
   const noStore = { headers: { 'Cache-Control': 'private, no-store' } }, params = new URL(request.url).searchParams;
+  if (request.method === 'GET' && (path.length === 3 && path[0] === 'materials' && path[2] === 'impact' || path.length === 2 && path[1] === 'impact')) {
+    return Response.json(await readMemoryCorrectionImpact({ kind: path.length === 3 ? 'material' : 'evidence', id: path.length === 3 ? path[1] : path[0] }, parseMemoryHistoryQuery(params)), noStore);
+  }
   if (request.method === 'GET' && path.length === 5 && path[0] === 'productions' && path[2] === 'sources' && path[4] === 'context') {
     if ([...params.keys()].some(key => !['sourceVersion', 'segmentId'].includes(key)) || params.getAll('sourceVersion').length !== 1
       || params.getAll('segmentId').length !== 1 || !/^[1-9]\d{0,8}$/.test(params.get('sourceVersion') ?? '')) throw new FlowError('INVALID_INPUT', 422);
