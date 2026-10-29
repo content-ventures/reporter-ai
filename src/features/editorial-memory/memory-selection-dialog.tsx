@@ -2,7 +2,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { Alert, Button, ButtonGroup, Field, IconButton, Input, List, ListItem, Panel, ResponsiveDialog, SearchField, Section, Select, Spinner, toast } from '@content-ventures/design-system/v3';
 import { X } from '@content-ventures/design-system/v3/icons';
-import { memoryEvidenceRef, sameMemoryEvidence, type MemoryEvidenceRef, type MemorySelection } from '@/domain/editorial-memory';
+import { memoryEvidenceRef, sameMemoryEvidence, type MemoryEvidenceChoice, type MemorySelection } from '@/domain/editorial-memory';
+import { updateMemoryChoice } from '@/domain/editorial-memory-discovery';
 import type { MemoryLibrary, MemoryWritingInput } from '@/ports/editorial-memory';
 import { useCan, usePeople, useProduction, useProductions } from '@/state';
 import { useMemoryResource } from '@/state/use-memory-library';
@@ -10,9 +11,10 @@ import { useWorkspaceRouter } from '@/ui/workspace-navigation';
 import { pieceHref } from '@/ui/routes';
 import { BriefStep } from '@/features/new-production/brief-sections';
 import { briefBlocker, EMPTY_DRAFT, MAX_TITLE_LENGTH, type NewProductionDraft } from '@/features/new-production/form';
+import { MemoryDiscoveryDetails } from './memory-discovery';
 
-type Props = { open: boolean; evidence: MemoryEvidenceRef[]; selection?: MemorySelection; onClose: () => void;
-  onChange: (items: MemoryEvidenceRef[]) => void; onSaved: (selection: MemorySelection) => void };
+type Props = { open: boolean; evidence: MemoryEvidenceChoice[]; selection?: MemorySelection; onClose: () => void;
+  onChange: (items: MemoryEvidenceChoice[]) => void; onSaved: (selection: MemorySelection) => void };
 type Attempt = { signature: string; saveKey: string; writeKey: string; selection?: MemorySelection; input?: MemoryWritingInput };
 export function MemorySelectionDialog({ open, evidence, selection, onClose, onChange, onSaved }: Props) {
   const router = useWorkspaceRouter(), canEdit = useCan('library.edit'), canCreate = useCan('production.create'), people = usePeople();
@@ -24,6 +26,7 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
   const targets = useProductions({ search: targetSearch }, { page: targetPage, size: 25 }), target = useProduction(open && targetId ? targetId : undefined);
   const choose = (nextMode: 'new' | 'existing', id = '') => setDestination({ selectionId: selection?.id, mode: nextMode, id });
   const [busy, setBusy] = useState<'save' | 'write'>(), [error, setError] = useState<string>();
+  const [inspected, setInspected] = useState<string>();
   const titleRef = useRef<HTMLInputElement>(null), attempt = useRef<Attempt>(undefined), pending = useRef(false);
   const idsKey = JSON.stringify(evidence.map(item => item.id).sort());
   const load = useCallback(async (port: MemoryLibrary) => {
@@ -35,6 +38,7 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
   const resource = useMemoryResource(load, 0, open), details = resource.data && evidence.map(ref => resource.data!.find(item => item.evidence.id === ref.id)!);
   const changed = details?.some((item, index) => !sameMemoryEvidence(evidence[index], memoryEvidenceRef(item.evidence)));
   const unavailable = details?.some(item => !item.eligibility.usable);
+  const discovery = evidence.find(item => item.id === inspected)?.discovery, discoveredMaterial = details?.find(item => item.evidence.id === inspected)?.material;
   const blocker = mode === 'new' ? briefBlocker(draft) : target.status !== 'ready' ? 'Escolha uma pauta disponível.'
     : target.data.production.archivedAt ? 'A pauta está arquivada.' : target.data.activeRuns.length ? 'Aguarde a geração antes de adicionar fontes.' : undefined;
   async function save(write: boolean) {
@@ -67,16 +71,20 @@ export function MemorySelectionDialog({ open, evidence, selection, onClose, onCh
     <Panel>
       <Section title={`${evidence.length} evidências na seleção`}>
         {(error || resource.error) && <Alert tone="danger" title={error ?? resource.error} action={mode === 'existing' ? <Button disabled={Boolean(busy)} onClick={() => { attempt.current = undefined; setError(undefined); target.retry(); resource.reload(); }}>Atualizar pauta</Button> : undefined} />}
-        {changed && <Alert tone="warning" title="Há evidências com nova revisão" action={<Button disabled={locked} onClick={() => onChange(details!.map(item => memoryEvidenceRef(item.evidence)))}>Atualizar seleção</Button>}>Confira os trechos atuais antes de continuar.</Alert>}
+        {changed && <Alert tone="warning" title="Há evidências com nova revisão" action={<Button disabled={locked} onClick={() => onChange(details!.map((item, index) => updateMemoryChoice(evidence[index], memoryEvidenceRef(item.evidence))))}>Atualizar seleção</Button>}>Confira os trechos atuais antes de continuar.</Alert>}
         {unavailable && <Alert tone="warning" title="Conclua a revisão das evidências ou remova os itens pendentes." />}
         {!details ? <Spinner label="Conferindo evidências selecionadas" /> : <List label="Ordem das evidências" maxHeight={280} onReorder={locked ? undefined : (from, to) => {
           const next = [...evidence], [item] = next.splice(from, 1); next.splice(to, 0, item); onChange(next);
         }}>
           {details.map((item, index) => <ListItem key={item.evidence.id} draggable={!locked} title={`${index + 1}. ${item.evidence.anchor.excerpt}`} titleLines={2}
             description={`${item.material.title} · ${item.evidence.kind === 'statistic' ? item.evidence.issuingInstitution ?? 'Instituição não informada' : people.data?.find(person => person.id === (item.evidence.kind === 'citation' ? item.evidence.personId : null))?.name ?? 'Autoria não identificada'}`}
-            actions={<IconButton label={`Remover evidência ${index + 1}`} icon={X} disabled={locked} onClick={() => onChange(evidence.filter(ref => ref.id !== item.evidence.id))} />} />)}
+            actions={<ButtonGroup label={`Ações da evidência ${index + 1}`}>
+              {evidence[index].discovery && <Button size="sm" variant="ghost" onClick={() => setInspected(inspected === item.evidence.id ? undefined : item.evidence.id)}>Ver busca da evidência {index + 1}</Button>}
+              <IconButton label={`Remover evidência ${index + 1}`} icon={X} disabled={locked} onClick={() => onChange(evidence.filter(ref => ref.id !== item.evidence.id))} />
+            </ButtonGroup>} />)}
         </List>}
       </Section>
+      {discovery && <Section title="Busca original da evidência"><MemoryDiscoveryDetails discovery={discovery} material={discoveredMaterial} /></Section>}
       {canEdit && <Section>
         <Field label="Destino da seleção">{({ id }) => <Select id={id} value={mode} disabled={locked || Boolean(selection?.productionId)} options={[{ value: 'new', label: 'Novo artigo' }, { value: 'existing', label: 'Pauta existente' }]} onChange={value => choose(value as 'new' | 'existing')} />}</Field>
         {mode === 'existing' ? <>

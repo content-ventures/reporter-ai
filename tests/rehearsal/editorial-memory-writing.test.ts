@@ -16,6 +16,8 @@ import { segmentRef } from '../../src/domain/refs.ts';
 import { r1ArticleIssue } from '../../src/domain/article-policy.ts';
 import { contentHash } from '../../src/domain/text/hash.ts';
 import { refreshMemoryWriting } from '../../src/domain/editorial-memory-refresh.ts';
+import { captureMemoryChoice, memoryChoiceFromItem, updateMemoryChoice } from '../../src/domain/editorial-memory-discovery.ts';
+import { memoryWritingProvenance } from '../../src/domain/editorial-memory-writing.ts';
 import type { MemoryWritingItem } from '../../src/domain/editorial-memory-writing.ts';
 import type { Source } from '../../src/domain/source.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
@@ -620,4 +622,46 @@ test('refresh HTTP refuses review and active-run locks and serializes competing 
   })]);
   assert.equal((await api(path, await refreshInput(made))).status, 409);
   assert.equal((await owner("SELECT count(*)::int AS count FROM public.audit_log WHERE action='memory.source.refresh' AND after_data->>'sourceId'=$1", [made.sourceId]))[0].count, 1);
+});
+
+test('mixed discovery filters survive saved selection, writer receipts and explicit revision refresh without granting access', async () => {
+  const a = await fixture('statistic'), b = await fixture('citation');
+  const searches = [{ materialId: a.material.id, kind: 'statistic' as const, query: '240', sort: 'oldest' as const },
+    { materialId: b.material.id, kind: 'citation' as const, query: 'declaração', sort: 'relevance' as const }];
+  const choices = [];
+  for (const [index, item] of [a, b].entries()) {
+    const q = searches[index], page = await json<MemoryPage<MemoryDetail>>(`memory?materialId=${q.materialId}&kind=${q.kind}&q=${encodeURIComponent(q.query)}&sort=${q.sort}`);
+    const row = page.items.find(row => row.evidence.id === item.evidence.id); assert.ok(row);
+    choices.push(captureMemoryChoice(row.evidence, { ...q, limit: 25, cursor: 'never-save-pagination' }, page.snapshot));
+  }
+  const saved = await json<MemorySelection>('memory/selections', { baseRevision: 0, productionId: null, evidence: choices.toReversed() });
+  assert.deepEqual(saved.items.map(item => item.discovery), choices.toReversed().map(item => item.discovery));
+  assert.deepEqual((await json<MemorySelection>(`memory/selections/${saved.id}`)).items, saved.items);
+  const made = await json<MemoryWritingResult>(`memory/selections/${saved.id}/write`, writingInput);
+  const source = (await owner('SELECT doc FROM public.reporter_ed_sources WHERE source_id=$1', [made.sourceId]))[0].doc as Source;
+  const piece = (await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc as Piece;
+  assert.equal(piece.draft.body.type, 'article');
+  assert.deepEqual(memoryWritingProvenance(piece.draft.body as ArticleBody, [source]).map(proof => proof.selected.discovery), saved.items.map(item => item.discovery));
+  const path = `memory/productions/${made.productionId}/sources/${made.sourceId}/context?sourceVersion=1&segmentId=memory-item-1`;
+  const originalContext = await json<MemorySelectedContext>(path); assert.deepEqual(originalContext.binding.selected.discovery, choices[1].discovery);
+  assert.equal(originalContext.binding.selected.discovery!.query.query, 'declaração');
+  await json(`memory/${b.evidence.id}/correction`, { expected: memoryEvidenceRef(b.evidence), reason: 'Synthetic metadata revision after discovery.', changes: { kind: 'citation', metadata: { institution: 'Instituição sintética posterior' } } });
+  const corrected = await json<MemoryDetail>(`memory/${b.evidence.id}`);
+  await json(`memory/${b.evidence.id}/review`, { evidence: memoryEvidenceRef(corrected.evidence), check: null, policyRevision: 1,
+    previousSequence: corrected.decision?.sequence ?? 0, action: 'accept', reason: 'Synthetic corrected record accepted.', supports: [] });
+  const replacements = [updateMemoryChoice(memoryChoiceFromItem(saved.items[0]), memoryEvidenceRef(corrected.evidence)), memoryChoiceFromItem(saved.items[1])];
+  const next = await json<MemorySelection>('memory/selections', { baseRevision: 0, productionId: made.productionId, evidence: replacements });
+  const production = (await owner('SELECT doc FROM public.reporter_ed_productions WHERE production_id=$1', [made.productionId]))[0].doc;
+  const refreshed = await json<MemorySourceRefreshResult>(`memory/sources/${made.sourceId}/refresh`, { target: { productionId: made.productionId,
+    updatedAt: production.updatedAt, draftRevision: piece.draft.revision }, expected: toSourceVersionRef(source), selection: { id: next.id, revision: next.revision }, updateDraftReferences: false, reason: 'Preserve original discovery context on refresh.' });
+  const historical = await json<MemorySelectedContext>(path), current = await json<MemorySelectedContext>(path.replace('sourceVersion=1', `sourceVersion=${refreshed.source.sourceVersion}`));
+  assert.deepEqual(historical.binding.selected.discovery, originalContext.binding.selected.discovery);
+  assert.deepEqual(current.binding.selected.discovery, originalContext.binding.selected.discovery);
+  assert.equal(current.evidence.revision, corrected.evidence.revision);
+  assert.equal(current.binding.selected.discovery!.evidence.revision, b.evidence.revision);
+  assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_parts WHERE kind='piece' AND part_id=$1", [made.pieceId]))[0].doc.draft.body, piece.draft.body);
+  const future = { ...choices[0], discovery: { ...choices[0].discovery!, snapshot: (BigInt(choices[0].discovery!.snapshot) + BigInt('1000000')).toString() } };
+  assert.equal((await api('memory/selections', { baseRevision: 0, productionId: null, evidence: [future] })).status, 409);
+  const privateItem = await fixture('statistic', true), forgedAccess = captureMemoryChoice(privateItem.evidence, { materialId: privateItem.material.id }, '0');
+  assert.equal((await api('memory/selections', { baseRevision: 0, productionId: null, evidence: [forgedAccess] }, randomUUID(), identities[2])).status, 404);
 });

@@ -4,8 +4,8 @@ import { useSearchParams } from 'next/navigation';
 import { memoryAddressParams, readMemoryAddress, type MemoryAddress, type MemoryTab } from '@/domain/editorial-memory-address';
 import { Alert, Badge, Button, ButtonGroup, DataTable, EmptyState, ErrorState, FilterBar, PageHeader, PageStack, SearchField, Section, Select, Spinner, Tabs, toast } from '@content-ventures/design-system/v3';
 import { Plus, RotateCw } from '@content-ventures/design-system/v3/icons';
-import type { MemoryEvidenceRef, MemoryMaterial, MemoryQuery, MemorySelection } from '@/domain/editorial-memory';
-import { memoryEvidenceRef } from '@/domain/editorial-memory';
+import type { MemoryEvidenceChoice, MemoryMaterial, MemoryQuery, MemorySelection } from '@/domain/editorial-memory';
+import { captureMemoryChoice, memoryChoiceFromItem } from '@/domain/editorial-memory-discovery';
 import type { MemoryLibrary } from '@/ports/editorial-memory';
 import { useCan, usePeople } from '@/state';
 import { useMemoryResource } from '@/state/use-memory-library';
@@ -30,7 +30,7 @@ export function MemoryLibraryScreen() {
   const changeQuery = (patch: MemoryQuery, nextTab: MemoryTab = tab) => { setCursors([undefined]); navigate({ tab: nextTab, query: { ...input, ...patch, cursor: undefined } }); };
   const [material, setMaterial] = useState<MemoryMaterial>(), [materialId, setMaterialId] = useState<string>(), [evidenceId, setEvidenceId] = useState<string>(), [importing, setImporting] = useState(false);
   const [materialOpen, setMaterialOpen] = useState(false), [evidenceOpen, setEvidenceOpen] = useState(false);
-  const [selected, setSelected] = useState<MemoryEvidenceRef[]>([]), [selection, setSelection] = useState<MemorySelection>(), [selectionOpen, setSelectionOpen] = useState(false), [error, setError] = useState<string>();
+  const [selected, setSelected] = useState<MemoryEvidenceChoice[]>([]), [selection, setSelection] = useState<MemorySelection>(), [selectionOpen, setSelectionOpen] = useState(false), [error, setError] = useState<string>();
   const [selectionsRefresh, setSelectionsRefresh] = useState(0);
   const people = usePeople(), canEdit = useCan('library.edit'), browsing = tab !== 'materials' && tab !== 'selections';
   const load = useCallback((port: MemoryLibrary) => port.query({ ...input, ...(tab === 'citation' || tab === 'statistic' ? { kind: tab } : {}), limit: 25 }), [tab, input]);
@@ -42,7 +42,7 @@ export function MemoryLibraryScreen() {
       search={browsing ? <SearchField label="Buscar evidências" value={query} onValueChange={value => { changeQuery({ query: value }); }} /> : undefined}
       actions={browsing ? <Select label="Ordenação" value={sort ?? 'newest'} onChange={value => { changeQuery({ sort: value as MemoryQuery['sort'] }); }} options={[{ value: 'newest', label: 'Mais recentes' }, { value: 'oldest', label: 'Mais antigas' }, { value: 'relevance', label: 'Relevância' }, { value: 'confidence', label: 'Confiança factual' }, { value: 'usage', label: 'Mais usadas' }]} /> : undefined} />
     {filtersOpen && browsing && <MemoryFilters key={JSON.stringify(filters)} applied={filters} onApply={value => { setCursors([undefined]); navigate({ tab, query: { ...value, query, sort } }); setFiltersOpen(false); }} />}
-    {tab === 'materials' ? <MemoryMaterials key={materialId ?? 'materials'} onOpen={id => { setMaterialId(id); setMaterialOpen(true); }} /> : tab === 'selections' ? <MemorySelections refresh={selectionsRefresh} onOpen={item => { setSelection(item); setSelected(item.items.map(item => item.evidence)); setSelectionOpen(true); }} /> : <>
+    {tab === 'materials' ? <MemoryMaterials key={materialId ?? 'materials'} onOpen={id => { setMaterialId(id); setMaterialOpen(true); }} /> : tab === 'selections' ? <MemorySelections refresh={selectionsRefresh} onOpen={item => { setSelection(item); setSelected(item.items.map(memoryChoiceFromItem)); setSelectionOpen(true); }} /> : <>
       {input.materialId && <Section title={material?.id === input.materialId ? material.title : page?.items.find(item => item.material.id === input.materialId)?.material.title ?? 'Material selecionado'} action={<Button variant="ghost" onClick={() => { setMaterial(undefined); changeQuery({ materialId: undefined }); }}>Limpar material</Button>} />}
       {error && <Alert tone="danger" title={error} />}
       {!address.ok ? <ErrorState title="Filtros inválidos" description={address.refusal.message} actions={<Button onClick={() => { setCursors([undefined]); navigate({ tab: 'all', query: {} }); }}>Limpar filtros</Button>} /> : resource.error ? <ErrorState title="Não foi possível carregar o banco" description={resource.error} onRetry={cursor ? undefined : resource.reload} actions={cursor ? <Button onClick={reset}>Atualizar consulta</Button> : undefined} /> : !page ? <Spinner label="Carregando evidências" /> : <DataTable
@@ -53,7 +53,7 @@ export function MemoryLibraryScreen() {
           const pageIds = new Set(page.items.map(item => item.evidence.id));
           const kept = current.filter(item => !pageIds.has(item.id) || next.has(item.id));
           const added = page.items.filter(item => item.eligibility.usable && next.has(item.evidence.id) && !kept.some(ref => ref.id === item.evidence.id));
-          return [...kept, ...added.map(item => memoryEvidenceRef(item.evidence))].slice(0, 100);
+          return [...kept, ...added.map(item => captureMemoryChoice(item.evidence, { ...input, ...(tab === 'citation' || tab === 'statistic' ? { kind: tab } : {}) }, page.snapshot))].slice(0, 100);
           });
         }}
         columns={[{ key: 'text', header: 'Evidência', pinned: true, render: item => item.evidence.anchor.excerpt.slice(0, 180) },
@@ -73,6 +73,6 @@ export function MemoryLibraryScreen() {
     {resource.port && <MemoryImportDialog port={resource.port} open={importing} onClose={() => setImporting(false)} onImported={id => { setImporting(false); setMaterialId(id); changeQuery({}, 'materials'); setSelectionsRefresh(value => value + 1); toast('Material importado'); }} />}
     {materialId && <MemoryMaterialDrawer key={materialId} id={materialId} open={materialOpen} onClose={() => setMaterialOpen(false)} onEvidence={item => { setMaterial(item); setMaterialOpen(false); setEvidenceOpen(false); changeQuery({ materialId: item.id }, 'all'); }} />}
     {evidenceId && <MemoryEvidenceDrawer key={evidenceId} id={evidenceId} open={evidenceOpen} onClose={() => setEvidenceOpen(false)} onChanged={resource.reload} onMaterial={item => { setMaterialId(item.id); setMaterialOpen(true); }} />}
-    <MemorySelectionDialog open={selectionOpen} evidence={selected} selection={selection} onClose={() => setSelectionOpen(false)} onChange={setSelected} onSaved={value => { setSelection(value); setSelectionsRefresh(current => current + 1); }} />
+    <MemorySelectionDialog open={selectionOpen} evidence={selected} selection={selection} onClose={() => setSelectionOpen(false)} onChange={setSelected} onSaved={value => { setSelection(value); setSelected(value.items.map(memoryChoiceFromItem)); setSelectionsRefresh(current => current + 1); }} />
   </PageStack>;
 }

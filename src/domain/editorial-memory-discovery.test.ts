@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { captureMemoryChoice, memoryChoiceFromItem, updateMemoryChoice } from './editorial-memory-discovery.ts';
+import { memoryWritingFixture } from './testing/editorial-memory.ts';
+import { prepareMemoryWriting, memoryWritingProvenance } from './editorial-memory-writing.ts';
+import { writingSourceCandidates } from './writing-source.ts';
+import { buildManifest } from './manifest.ts';
+import { toVersionRef } from './piece.ts';
+import { baseRecord, commitVersion, createKit, recordDecision } from './testing/scenario.ts';
+import type { MemoryQuery } from './editorial-memory.ts';
+
+let n = 0;
+const ctx = { now: '2026-10-29T05:00:00Z', actorId: 'actor', newId: (prefix: string) => `${prefix}-${++n}` };
+test('mixed search choices retain their original filters through reordered writer input and the approved manifest', () => {
+  const a = memoryWritingFixture('statistic', 'Foram atendidas cerca de 240 pessoas em 2025.', ctx);
+  const b = memoryWritingFixture('citation', 'Queremos ouvir todas as pessoas neste exemplo sintético.', ctx);
+  const input: MemoryQuery = { query: '240', kind: 'statistic', topics: ['B', 'A'], dateField: 'observation', from: '2025-01-01', unused: true, cursor: 'opaque-page', limit: 25 };
+  const first = captureMemoryChoice(a.item.view.evidence, input, '9007199254740993'), second = captureMemoryChoice(b.item.view.evidence, { query: 'ouvir', kind: 'citation', sort: 'relevance' }, '9007199254740994');
+  input.query = 'later filter'; input.topics!.push('later topic');
+  assert.equal(first.discovery!.query.query, '240'); assert.deepEqual(first.discovery!.query.topics, ['A', 'B']);
+  assert.ok(!('cursor' in first.discovery!.query)); assert.ok(!('limit' in first.discovery!.query));
+  const selection = { ...a.selection, items: [{ ...b.selection.items[0], discovery: second.discovery }, { ...a.selection.items[0], discovery: first.discovery }] };
+  const prepared = prepareMemoryWriting(selection, [b.item, a.item], 'Mixed synthetic searches', ctx); assert.ok(prepared.ok);
+  const { source, body } = prepared.value;
+  assert.deepEqual(writingSourceCandidates([source]).map(candidate => candidate.memory?.selected.discovery), [second.discovery, first.discovery]);
+  const kit = createKit(), record = baseRecord(kit, { plan: ['article'] }); record.sources = [source]; record.production.sourceIds = [source.id];
+  const version = commitVersion(record, kit, 'article', body), decision = recordDecision(record, kit, version, 'approved');
+  const delivery = [{ kind: 'article' as const, version: toVersionRef(version), decisionId: decision.id }];
+  const manifest = buildManifest(record, delivery, [], kit.now());
+  assert.deepEqual(manifest.items[0].memory?.map(proof => proof.selected.discovery), [second.discovery, first.discovery]);
+  assert.deepEqual(memoryWritingProvenance(body, [source]).map(proof => proof.selected.discovery), [second.discovery, first.discovery]);
+  selection.items[0].discovery!.query.query = 'changed selection';
+  assert.equal(source.memory[0].items[0].selected.discovery!.query.query, 'ouvir');
+});
+test('saved choices preserve the originally found revision across later corrections without inventing legacy context', () => {
+  const f = memoryWritingFixture('statistic', 'Foram atendidas cerca de 240 pessoas em 2025.', ctx), original = captureMemoryChoice(f.item.view.evidence, { query: '240' }, '10');
+  const changed = updateMemoryChoice(original, { ...original, revision: original.revision + 1, hash: 'a'.repeat(16) });
+  assert.equal(changed.discovery!.evidence.revision, original.revision); assert.equal(changed.revision, original.revision + 1);
+  const saved = { ...f.selection.items[0], evidence: { id: changed.id, revision: changed.revision, hash: changed.hash }, discovery: changed.discovery };
+  assert.deepEqual(memoryChoiceFromItem(saved), changed);
+  assert.equal(memoryChoiceFromItem(f.selection.items[0]).discovery, undefined);
+  assert.equal(updateMemoryChoice(original, { ...original, id: 'different-item' }).discovery, undefined);
+});

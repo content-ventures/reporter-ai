@@ -95,9 +95,6 @@ const correction = z.discriminatedUnion('kind', [
 ]).refine(value => Object.entries(value).some(([key, field]) => key !== 'kind' && field !== undefined
   && (key !== 'metadata' || Object.keys(field ?? {}).length > 0)), 'Informe pelo menos uma correção.');
 export const memoryCorrectionSchema = z.object({ expected: memoryEvidenceRefSchema, reason: z.string().trim().min(1).max(2000), changes: correction }).strict();
-export const memorySelectionInputSchema = z.object({ id: id.optional(), baseRevision: z.number().int().nonnegative(), productionId: id.nullable(),
-  evidence: z.array(memoryEvidenceRefSchema).min(1).max(100) }).strict()
-  .refine(value => new Set(value.evidence.map(item => item.id)).size === value.evidence.length, 'Uma evidência só pode aparecer uma vez na seleção.');
 const memoryNewWritingSchema = z.object({ baseRevision: z.number().int().positive(), title: z.string().trim().min(1).max(120),
   brief: z.object({ size: z.enum(['short', 'standard']), sections: z.number().int().min(1).max(8), angle: z.string().max(600).optional(),
     format: z.enum(EDITORIAL_FORMATS).optional(), formatSize: id.optional(), event: z.object({ name: z.string().trim().min(1).max(600), boxTitle: z.string().max(600).optional(),
@@ -108,7 +105,7 @@ export const memoryWritingInputSchema = z.union([memoryNewWritingSchema,
 export const memoryMaterialRevisionSchema = z.object({ baseRevision: z.number().int().positive(), source: sourceRef,
   text: originalText, reason: z.string().trim().min(1).max(2000) }).strict();
 
-export const memoryQuerySchema = z.object({
+const memoryQueryFiltersSchema = z.object({
   kind: z.enum(['citation', 'statistic']).optional(), status: z.enum(['active', 'withdrawn', 'superseded', 'all']).default('active'), query: z.string().trim().max(200).optional(),
   topics: z.array(z.string().trim().min(1).max(100)).max(20).optional(), personId: id.optional(), institution: z.string().trim().min(1).max(240).optional(),
   company: z.string().trim().min(1).max(240).optional(), event: z.string().trim().min(1).max(240).optional(), edition: z.string().trim().min(1).max(160).optional(),
@@ -116,10 +113,19 @@ export const memoryQuerySchema = z.object({
   dateField: z.enum(['recorded', 'published', 'observation']).optional(), from: day.optional(), to: day.optional(),
   verdict: z.enum(['validated', 'disputed', 'not_validated', 'not_checkable', 'pending']).optional(),
   minConfidence: z.number().min(0).max(100).optional(), unused: z.boolean().optional(), useStage: z.enum(['inserted', 'approved', 'published']).default('inserted'),
-  sort: z.enum(['newest', 'oldest', 'confidence', 'relevance', 'usage']).default('newest'), cursor: z.string().min(1).max(4096).optional(),
-  limit: z.number().int().min(1).max(100).default(25),
+  sort: z.enum(['newest', 'oldest', 'confidence', 'relevance', 'usage']).default('newest'),
 }).strict().refine(value => !(value.from || value.to) || Boolean(value.dateField), 'Escolha qual data deseja filtrar.')
   .refine(value => !value.from || !value.to || value.from <= value.to, 'O período final deve ser posterior ao inicial.');
+export const memoryQuerySchema = memoryQueryFiltersSchema.safeExtend({ cursor: z.string().min(1).max(4096).optional(), limit: z.number().int().min(1).max(100).default(25) });
+const memoryDiscoverySchema = z.object({ evidence: memoryEvidenceRefSchema, query: memoryQueryFiltersSchema,
+  snapshot: z.string().regex(/^(?:0|[1-9]\d{0,18})$/).refine(value => /^(?:0|[1-9]\d{0,18})$/.test(value) && BigInt(value) <= BigInt('9223372036854775807')),
+}).strict();
+const memoryChoiceSchema = memoryEvidenceRefSchema.extend({ discovery: memoryDiscoverySchema.optional() })
+  .refine(value => !value.discovery || value.discovery.evidence.id === value.id && value.discovery.evidence.revision <= value.revision,
+    'A busca original precisa pertencer à evidência selecionada.');
+export const memorySelectionInputSchema = z.object({ id: id.optional(), baseRevision: z.number().int().nonnegative(), productionId: id.nullable(),
+  evidence: z.array(memoryChoiceSchema).min(1).max(100) }).strict()
+  .refine(value => new Set(value.evidence.map(item => item.id)).size === value.evidence.length, 'Uma evidência só pode aparecer uma vez na seleção.');
 
 /** Unknown or duplicate selectors are refused rather than silently changing a saved query. */
 export function parseMemoryQuery(params: URLSearchParams): MemoryQuery {

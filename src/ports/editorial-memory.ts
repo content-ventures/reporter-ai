@@ -1,5 +1,5 @@
 import type { MemoryCheck, MemoryDecision, MemoryDecisionInput, MemoryEvidence, MemoryEvidenceRef, MemoryEvidenceView,
-  MemoryArticleOrigin, MemoryBlock, MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemorySourceBinding, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
+  MemoryArticleOrigin, MemoryBlock, MemoryEvidenceChoice, MemoryHistoryKind, MemoryMaterial, MemoryMetadata, MemoryNumericValue, MemoryPage, MemoryPolicy, MemoryProcessingStatus, MemoryQuery, MemorySelection, MemorySourceBinding, MemoryStatistic, MemoryUse } from '../domain/editorial-memory.ts';
 import type { SourceVersionRef } from '../domain/refs.ts';
 import type { Source, TranscriptSegment } from '../domain/source.ts';
 import type { Piece, Version } from '../domain/piece.ts';
@@ -77,7 +77,7 @@ export interface EditorialMemory {
   correct(id: string, input: { expected: MemoryEvidenceRef; reason: string; changes: MemoryCorrection }, requestId: string): Promise<MemoryEvidenceView>;
   reviseMaterial(id: string, input: { baseRevision: number; source: MemoryMaterial['source']; text: string; reason: string },
     requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
-  select(input: { id?: string; baseRevision: number; productionId: string | null; evidence: MemoryEvidenceRef[] }, requestId: string): Promise<MemorySelection>;
+  select(input: { id?: string; baseRevision: number; productionId: string | null; evidence: MemoryEvidenceChoice[] }, requestId: string): Promise<MemorySelection>;
   selection(id: string): Promise<MemorySelection>;
   selections(input: MemoryHistoryQuery): Promise<MemoryPage<MemorySelection>>;
   writeSelection(id: string, input: MemoryWritingInput, requestId: string): Promise<MemoryWritingResult>;

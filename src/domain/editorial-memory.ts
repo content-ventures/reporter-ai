@@ -63,6 +63,9 @@ export type MemoryStatistic = MemoryEvidenceBase & {
 };
 export type MemoryEvidence = MemoryCitation | MemoryStatistic;
 export type MemoryEvidenceRef = { id: string; revision: number; hash: string };
+/** Descriptive search context captured by the client; never grants access or editorial eligibility. */
+export type MemoryDiscovery = { evidence: MemoryEvidenceRef; query: Omit<MemoryQuery, 'cursor' | 'limit'>; snapshot: string };
+export type MemoryEvidenceChoice = MemoryEvidenceRef & { discovery?: MemoryDiscovery };
 export type MemoryCheckRef = { id: string; revision: number };
 export type MemorySupport = (
   | { kind: 'internal'; evidence: MemoryEvidenceRef; primaryOrigin: string; excerpt: string }
@@ -103,7 +106,7 @@ export type MemoryUse = MemoryUseBase & (
 );
 export type MemorySelection = {
   id: string; workspaceId: string; revision: number; productionId: string | null;
-  items: { evidence: MemoryEvidenceRef; decisionId: string | null; check: MemoryCheckRef | null; policyRevision: number }[];
+  items: { evidence: MemoryEvidenceRef; decisionId: string | null; check: MemoryCheckRef | null; policyRevision: number; discovery?: MemoryDiscovery }[];
   createdBy: string; createdAt: string; updatedBy: string; updatedAt: string;
 };
 /** A writing source exposes selected excerpts, never a private material's complete original. */
