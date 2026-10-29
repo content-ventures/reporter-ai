@@ -89,6 +89,8 @@ export type MemoryPolicy = {
   id: string; workspaceId: string; revision: number; mode: 'review_required' | 'calibrated';
   thresholds: Record<ClaimKind, number | null>; calibrationReportId: string | null;
   activatedAt: string | null; activatedBy: string | null;
+  calibration?: import('./editorial-memory-calibration.ts').MemoryCalibration;
+  change?: { proposalId: string; previousRevision: number; restoredFrom: number | null; reason: string };
 };
 export type MemoryDecisionAction = 'accept' | 'reject' | 'request_revision';
 /** Append-only audit record, independent of evidence and check revisions. */

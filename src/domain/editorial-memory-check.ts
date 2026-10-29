@@ -3,6 +3,7 @@ import { checkable } from './fact-check.ts';
 import type { MemoryCheck, MemoryEvidence, MemoryMaterial, MemoryPolicy } from './editorial-memory.ts';
 import { memoryEvidenceRef } from './editorial-memory.ts';
 import type { CommandContext } from './result.ts';
+import { memoryCalibrationBin, memoryCalibratedConfidence } from './editorial-memory-calibration.ts';
 
 export type MemoryAssessment = {
   claims: Pick<FactClaim, 'text' | 'kind' | 'query'>[];
@@ -46,9 +47,11 @@ export function assessMemoryEvidence(evidence: MemoryEvidence, material: MemoryM
   const factual = claims.filter(claim => checkable(claim.kind));
   const verdict = !factual.length ? 'not_checkable' : factual.some(claim => claim.verdict === 'disputed') ? 'disputed'
     : factual.some(claim => claim.verdict !== 'validated') ? 'not_validated' : 'validated';
-  return { id: evidence.id, workspaceId: evidence.workspaceId, revision: (previous?.revision ?? 0) + 1, evidence: memoryEvidenceRef(evidence),
+  const result: MemoryCheck = { id: evidence.id, workspaceId: evidence.workspaceId, revision: (previous?.revision ?? 0) + 1, evidence: memoryEvidenceRef(evidence),
     policyRevision: policy.revision, checkedAt: ctx.now, verdict, confidence: null, claims, supports,
     strength: structuredClone(input.strength), provider: input.provider, model: input.model };
+  if (policy.mode === 'calibrated' && policy.calibrationReportId) result.confidence = memoryCalibratedConfidence(memoryCalibrationBin(evidence, material, result), policy.calibration);
+  return result;
 }
 
 /** Treat a publisher's own pages conservatively; tracking URLs do not create independence. */
