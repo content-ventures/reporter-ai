@@ -11,17 +11,19 @@ import { JobStatus } from './memory-materials';
 import { MemoryUsedVersion } from './memory-used-version';
 import type { MemoryVersionUse } from '@/domain/editorial-memory-reading';
 import { MemoryReplacementDialog, MemoryReplacementReader, type MemoryReplacementBasis } from './memory-replacement-dialog';
+import { MemoryCalibrationDialog, type MemoryCalibrationBasis } from './memory-calibration-dialog';
 
 export const ELIGIBILITY_LABELS = { ready: 'Disponível para uso', source_unavailable: 'Conferir fonte e autorização', withdrawn: 'Retirada', authorship_pending: 'Confirmar autoria', review_required: 'Aguardando revisão', rejected: 'Rejeitada' };
 const REVIEW_LABELS: Record<MemoryDecisionAction, string> = { accept: 'Aceitar', reject: 'Rejeitar', request_revision: 'Solicitar revisão' };
 const HISTORY_LABELS: Record<MemoryHistoryKind, string> = { checks: 'Checagens', decisions: 'Decisões', revisions: 'Revisões', occurrences: 'Ocorrências' };
 const USE_LABELS: Record<MemoryUseStage, string> = { selected: 'Selecionada', inserted: 'Inserida no rascunho', approved: 'Aprovada', published: 'Publicada' };
 export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial, onImpact }: { id: string; open: boolean; onClose: () => void; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onImpact: (id: string) => void }) {
-  const [viewedId, setViewedId] = useState(id), canEdit = useCan('library.edit');
+  const [viewedId, setViewedId] = useState(id), canEdit = useCan('library.edit'), canReview = useCan('library.review');
   const load = useCallback((port: MemoryLibrary) => port.detail(viewedId), [viewedId]), resource = useMemoryResource(load, 2500, open);
   const [reading, setReading] = useState<MemoryVersionUse>(), [readingOpen, setReadingOpen] = useState(false);
   const [replacing, setReplacing] = useState<MemoryReplacementBasis>(), [replacingOpen, setReplacingOpen] = useState(false);
   const [relation, setRelation] = useState<string>(), [relationOpen, setRelationOpen] = useState(false);
+  const [calibration, setCalibration] = useState<MemoryCalibrationBasis>(), [calibrationOpen, setCalibrationOpen] = useState(false);
   const readVersion = useCallback((occurrence: MemoryVersionUse) => { setReading(occurrence); setReadingOpen(true); }, []);
   const readRelation = (relationId: string) => { setRelation(relationId); setRelationOpen(true); };
   const next = resource.data?.replacements?.next;
@@ -33,9 +35,13 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
     setReplacingOpen(true);
   }
   return <><Drawer open={open} size="lg" title="Evidência" actions={<ButtonGroup label="Ações da evidência">
+    {canReview && <Button variant="secondary" size="sm" disabled={!resource.data?.check || resource.data.checkState !== 'current' || resource.data.reviewRestricted || resource.data.evidence.status !== 'active' || !resource.data.evidence.kinds.some(kind => kind === 'fact' || kind === 'declared') || resource.data.eligibility.reason === 'source_unavailable'} onClick={() => {
+      if (!resource.data || !resource.port) return; const detail = resource.data, port = resource.port;
+      setCalibration(current => current?.port === port && current.detail.evidence.id === detail.evidence.id && current.detail.evidence.revision === detail.evidence.revision && current.detail.check?.revision === detail.check?.revision && current.detail.policy.revision === detail.policy.revision ? current : { key: crypto.randomUUID(), detail, port }); setCalibrationOpen(true);
+    }}>Avaliar para calibração</Button>}
     {(canEdit || next) && <Button variant="secondary" size="sm" disabled={!resource.data || !next && resource.data.evidence.status !== 'active'} onClick={replace}>{next ? 'Ver substituição' : 'Substituir'}</Button>}
     <Button variant="secondary" size="sm" onClick={() => onImpact(viewedId)}>Ver impacto</Button>
-  </ButtonGroup>} onClose={() => { setReadingOpen(false); setReplacingOpen(false); setRelationOpen(false); onClose(); }}>
+  </ButtonGroup>} onClose={() => { setReadingOpen(false); setReplacingOpen(false); setRelationOpen(false); setCalibrationOpen(false); onClose(); }}>
     {resource.error ? <ErrorState title="Não foi possível abrir a evidência" description={resource.error} onRetry={resource.reload} /> : !resource.data || !resource.port ? <Spinner label="Carregando evidência" /> :
       <EvidenceContent key={`${viewedId}:${resource.data.evidence.revision}:${resource.data.check?.revision ?? 0}:${resource.data.decision?.sequence ?? 0}`} detail={resource.data} port={resource.port} onMaterial={onMaterial} onReadVersion={readVersion} onReplacement={readRelation} onChanged={() => { resource.reload(); onChanged(); }} />}
   </Drawer>
@@ -43,6 +49,7 @@ export function MemoryEvidenceDrawer({ id, open, onClose, onChanged, onMaterial,
     {reading && <MemoryUsedVersion occurrence={reading} open={open && readingOpen} onClose={() => setReadingOpen(false)} />}
     {replacing && <MemoryReplacementDialog key={replacing.key} basis={replacing} open={open && replacingOpen} onClose={() => setReplacingOpen(false)} onSaved={() => { setReplacingOpen(false); resource.reload(); onChanged(); toast('Substituição registrada'); }} />}
     {relation && <MemoryReplacementReader key={relation} id={relation} open={open && relationOpen} onClose={() => setRelationOpen(false)} onEvidence={current => { setViewedId(current); setRelationOpen(false); }} />}
+    {calibration && <MemoryCalibrationDialog key={calibration.key} basis={calibration} open={open && calibrationOpen} onClose={() => setCalibrationOpen(false)} onSaved={() => { setCalibrationOpen(false); resource.reload(); onChanged(); toast('Amostra factual registrada'); }} />}
   </>;
 }
 function EvidenceContent({ detail, port, onChanged, onMaterial, onReadVersion, onReplacement }: { detail: MemoryDetail; port: MemoryLibrary; onChanged: () => void; onMaterial: (material: MemoryMaterial) => void; onReadVersion: (occurrence: MemoryVersionUse) => void; onReplacement: (id: string) => void }) {

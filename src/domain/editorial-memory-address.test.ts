@@ -30,7 +30,7 @@ test('malformed, repeated or contradictory library selectors produce an explicit
 test('bank tab changes never create, replace or remove the actual member-inspection selector', () => {
   for (const view of ['', 'view=inspection-session']) {
     let params = new URLSearchParams(view);
-    for (const tab of ['statistic', 'materials', 'selections', 'feedback', 'citation', 'all'] as const) {
+    for (const tab of ['statistic', 'materials', 'selections', 'feedback', 'policy', 'citation', 'all'] as const) {
       params = memoryAddressParams(params, { tab, query: {} });
       assert.equal(params.get('view'), view ? 'inspection-session' : null);
       assert.deepEqual(readMemoryAddress(params), { ok: true, value: { tab, query: {} } });
