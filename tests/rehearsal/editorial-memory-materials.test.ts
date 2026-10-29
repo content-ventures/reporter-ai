@@ -74,9 +74,20 @@ test('material and block cursors bind resource, user and snapshot; original file
   assert.equal((await api('materials', input, randomUUID(), identities[1])).status, 403);
   assert.equal((await api('materials', input, randomUUID(), null)).status, 401);
   assert.equal((await api('materials', input, randomUUID(), identities[0], 'https://foreign.invalid')).status, 403);
-  assert.equal((await api('materials', { ...input, originalFileId: randomUUID() })).status, 403);
+  assert.equal((await api('materials', { ...input, originalFileId: randomUUID() })).status, 404);
   assert.equal((await api('materials', { ...input, importedBy: randomUUID() })).status, 422);
   assert.equal((await api('jobs/unknown')).status, 404);
+});
+
+test('historical document context survives import, storage, audit and a subsequent read', async () => {
+  const historical = { ...metadata, publishedOn: '1987-04-12', edition: '42', publication: 'Jornal Sintético', documentAuthor: 'Autora Sintética', documentSection: 'Página 3' };
+  const response = await api('materials', { ...input, kind: 'archive', metadata: historical });
+  assert.equal(response.status, 200, await response.clone().text());
+  const result = await response.json() as { material: MemoryMaterial };
+  const detail = await (await api(`materials/${result.material.id}`)).json() as { material: MemoryMaterial };
+  assert.deepEqual(detail.material.metadata, historical);
+  const [audit] = await owner("SELECT after_data FROM public.audit_log WHERE action='memory.material.import' AND after_data->'material'->>'id'=$1", [result.material.id]);
+  assert.deepEqual(audit.after_data.material.metadata, historical);
 });
 
 test('cancel and retry retain completed blocks, invalidate generations and audit exact mutations', async () => {

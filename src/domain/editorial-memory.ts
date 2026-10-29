@@ -16,6 +16,8 @@ export type MemoryProcessingStatus = 'queued' | 'running' | 'partial' | 'complet
 export type MemoryMetadata = {
   publishedOn: string | null; recordedOn: string | null;
   institution: string | null; company: string | null; event: string | null; edition: string | null;
+  /** Explicit historical document context; never inferred as the speaker or physical location. */
+  publication?: string | null; documentAuthor?: string | null; documentSection?: string | null;
   topics: string[]; originalUrl: string | null;
 };
 export type MemoryMaterial = {

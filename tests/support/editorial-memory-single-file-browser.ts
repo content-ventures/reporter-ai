@@ -25,10 +25,16 @@ export async function exerciseMemorySingleFileBrowser(base: string, width: numbe
     await (await chooser).setFiles({ name: 'outra-edicao.csv', mimeType: 'text/csv', buffer: bytes });
     await form.getByRole('combobox', { name: 'Separador do CSV', exact: true }).click(); await page.getByRole('option', { name: 'Ponto e vírgula', exact: true }).click();
     await form.getByRole('textbox', { name: /^Edição/ }).fill('Outra edição sintética');
+    await form.getByRole('textbox', { name: /^Nome da publicação/ }).fill('Jornal Sintético');
+    await form.getByRole('textbox', { name: /^Autor do documento/ }).fill('Autora Sintética');
+    await form.getByRole('textbox', { name: /^Página ou seção informada/ }).fill('Página 3');
     await form.getByRole('checkbox', { name: 'Confirmo a autorização de uso deste material', exact: true }).check();
     await form.getByRole('button', { name: 'Importar', exact: true }).click();
     const review = page.getByRole('dialog', { name: 'Revisar correspondência', exact: true }); await expect(review).toBeVisible();
     await expect(review.getByText('Synthetic original file', { exact: true })).toBeVisible(); await expect(review.getByText('Edição sintética', { exact: true })).toBeVisible();
+    await expect(review.getByText('Jornal Sintético', { exact: true })).toBeVisible();
+    await expect(review.getByText('Autora Sintética', { exact: true })).toBeVisible();
+    await expect(review.getByText('Página 3', { exact: true })).toBeVisible();
     await expect(review.getByText('Origem no envio', { exact: true })).toHaveCount(0);
     const choice = width === 390 ? 'Registrar material distinto' : 'Usar material existente';
     const accept = review.getByRole('button', { name: choice, exact: true }); await expect(accept).toBeDisabled();
@@ -54,6 +60,9 @@ export async function exerciseMemorySingleFileBrowser(base: string, width: numbe
     assert.ok(resolved); assert.equal(resolved.items[0].status, width === 390 && !compete ? 'included' : 'existing');
     if (width === 390 && !compete) assert.notEqual(resolved.items[0].materialId, expectedMaterial); else assert.equal(resolved.items[0].materialId, expectedMaterial);
     assert.equal(resolved.items[0].input.metadata.edition, 'Outra edição sintética');
+    assert.equal(resolved.items[0].input.metadata.publication, 'Jornal Sintético');
+    assert.equal(resolved.items[0].input.metadata.documentAuthor, 'Autora Sintética');
+    assert.equal(resolved.items[0].input.metadata.documentSection, 'Página 3');
     assert.equal(resolved.items[0].reason, reason); assert.deepEqual(errors, []);
   } finally { await browser.close(); }
 }

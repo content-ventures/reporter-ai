@@ -50,7 +50,15 @@ const safeUrl = z.url().max(2000).refine(value => {
 export const memoryMetadataSchema = z.object({
   publishedOn: day.nullable(), recordedOn: day.nullable(), institution: nullableText(240), company: nullableText(240),
   event: nullableText(240), edition: nullableText(160), topics: z.array(z.string().trim().min(1).max(100)).max(20), originalUrl: safeUrl.nullable(),
+  publication: nullableText(240).optional(), documentAuthor: nullableText(240).optional(), documentSection: nullableText(240).optional(),
 }).strict();
+// Treat an unspecified historical field and an explicit null as the same import context.
+// Corrections use the unmodified schema so null can explicitly clear a saved field.
+const memoryImportMetadataSchema = memoryMetadataSchema.transform(value => {
+  const metadata = { ...value };
+  for (const key of ['publication', 'documentAuthor', 'documentSection'] as const) if (metadata[key] === null) delete metadata[key];
+  return metadata;
+});
 export const memoryEvidenceRefSchema = z.object({ id, revision: z.number().int().nonnegative(), hash: z.string().regex(/^[a-f0-9]{16}$/) }).strict();
 export const memoryRelevanceSchema = z.object({ selection: z.object({ id, revision: z.number().int().positive() }).strict(), evidence: memoryEvidenceRefSchema,
   rating: z.enum(['useful', 'not_useful']), reason: z.string().trim().min(1).max(2000) }).strict();
@@ -111,7 +119,7 @@ const originalText = z.string().refine(value => value.trim().length >= 24, 'O ma
   .refine(value => Buffer.byteLength(value, 'utf8') <= MEMORY_TEXT_MAX_BYTES, 'O texto excede o limite de 1 MiB.');
 export const memoryImportInputSchema = z.object({
   title: z.string().trim().min(1).max(160), kind: z.enum(['transcript', 'news', 'release', 'report', 'archive', 'market_data']),
-  text: originalText, metadata: memoryMetadataSchema, authorized: z.boolean(),
+  text: originalText, metadata: memoryImportMetadataSchema, authorized: z.boolean(),
   primaryOrigin: nullableText(2000), originalFileId: id.nullable(),
 }).strict();
 const decimal = z.string().regex(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/).max(100);
