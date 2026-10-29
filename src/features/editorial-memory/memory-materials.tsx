@@ -1,10 +1,11 @@
 'use client';
 import { useCallback, useState } from 'react';
-import { Alert, Badge, Button, ButtonGroup, Checkbox, DataTable, DescriptionList, Drawer, EmptyState, ErrorState, Field, FieldGroup, Input, Panel, Progress, ResponsiveDialog, Section, Select, Spinner, Textarea } from '@content-ventures/design-system/v3';
+import { Alert, Badge, Button, ButtonGroup, Checkbox, DataTable, DescriptionList, Drawer, EmptyState, ErrorState, Field, FieldGroup, Input, Panel, Progress, ResponsiveDialog, Section, Select, Spinner, Textarea, toast } from '@content-ventures/design-system/v3';
 import type { MemoryMaterial, MemoryMetadata } from '@/domain/editorial-memory';
 import type { MemoryLibrary, MemoryImportInput, MemoryJob } from '@/ports/editorial-memory';
 import { useMemoryResource } from '@/state/use-memory-library';
 import { useCan, useSession } from '@/state';
+import { MemoryMaterialRevisionDialog, type MaterialRevisionBasis } from './memory-material-revision-dialog';
 
 export const MATERIAL_KINDS = [
   { value: 'transcript', label: 'Transcrição' }, { value: 'news', label: 'Notícia' }, { value: 'release', label: 'Release' },
@@ -66,7 +67,10 @@ export function MemoryMaterials({ onOpen }: { onOpen: (id: string) => void }) {
 }
 export function MemoryMaterialDrawer({ id, open, onClose, onEvidence }: { id: string; open: boolean; onClose: () => void; onEvidence: (material: MemoryMaterial) => void }) {
   const session = useSession().data;
-  const load = useCallback((port: MemoryLibrary) => port.material(id), [id]), resource = useMemoryResource(load, 3000, open), canEdit = useCan('library.edit');
+  const [historical, setHistorical] = useState<number>(), [latestKnown, setLatestKnown] = useState<number>();
+  const [editing, setEditing] = useState<MaterialRevisionBasis>(), [editingOpen, setEditingOpen] = useState(false);
+  const load = useCallback((port: MemoryLibrary) => port.material(id, historical), [id, historical]), resource = useMemoryResource(load, 3000, open), canEdit = useCan('library.edit');
+  const editable = canEdit && historical === undefined;
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>(), [rightsReason, setRightsReason] = useState('');
   const detail = resource.data, job = detail?.job;
   const act = async (action: 'retry' | 'cancel') => {
@@ -76,7 +80,7 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence }: { id: st
     catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível atualizar o processamento.'); }
     finally { setBusy(false); }
   };
-  return <Drawer open={open} title={detail?.material.title ?? 'Material'} onClose={onClose} size="lg">
+  return <><Drawer open={open} title={detail?.material.title ?? 'Material'} onClose={onClose} size="lg">
     {resource.error ? <ErrorState title="Não foi possível abrir o material" description={resource.error} onRetry={resource.reload} /> : !detail ? <Spinner label="Carregando original" /> : <Panel>
       <Section title="Processamento" meta={<JobStatus job={job ?? null} />}>
         {error && <Alert tone="danger" title={error} />}
@@ -85,11 +89,11 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence }: { id: st
           ...(job?.error ? [{ label: 'Falha', value: job.error === 'MEMORY_SOURCE_NOT_AUTHORIZED' ? 'Autorize o uso do material para retomar.' : job.error === 'MEMORY_SOURCE_CHANGED' ? 'A fonte mudou. Importe a versão atual.' : /KEY_MISSING|AUTH_INVALID|QUOTA_EXHAUSTED/.test(job.error) ? 'Confira o acesso e os créditos do provedor de IA.' : 'Não foi possível concluir. Retome a extração.' }] : []),
           { label: 'Importado por', value: session?.current?.id === detail.material.importedBy ? session.current.name : session?.members.find(member => member.id === detail.material.importedBy)?.name ?? detail.material.importedBy }]} />
         <ButtonGroup label="Ações"><Button variant="secondary" onClick={() => onEvidence(detail.material)}>Ver evidências</Button>
-          {canEdit && job && ['failed', 'partial', 'cancelled'].includes(job.status) && <Button loading={busy} onClick={() => void act('retry')}>Retomar extração</Button>}
-          {canEdit && job && ['queued', 'running'].includes(job.status) && <Button variant="secondary" loading={busy} onClick={() => void act('cancel')}>Cancelar extração</Button>}
+          {editable && job && ['failed', 'partial', 'cancelled'].includes(job.status) && <Button loading={busy} onClick={() => void act('retry')}>Retomar extração</Button>}
+          {editable && job && ['queued', 'running'].includes(job.status) && <Button variant="secondary" loading={busy} onClick={() => void act('cancel')}>Cancelar extração</Button>}
         </ButtonGroup>
       </Section>
-      {canEdit && <Section title="Autorização de uso" meta={detail.source.rights.authorized ? 'Autorizado' : 'Pendente'}>
+      {editable && <Section title="Autorização de uso" meta={detail.source.rights.authorized ? 'Autorizado' : 'Pendente'}>
         <Field label="Motivo da autorização ou revogação" required>{({ id }) => <Input id={id} value={rightsReason} maxLength={2000} onChange={event => setRightsReason(event.target.value)} />}</Field>
         <Button variant="secondary" loading={busy} disabled={!rightsReason.trim()} onClick={async () => {
           if (!resource.port) return; setBusy(true); setError(undefined);
@@ -97,7 +101,26 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence }: { id: st
           catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível atualizar a autorização.'); } finally { setBusy(false); }
         }}>{detail.source.rights.authorized ? 'Revogar autorização' : 'Autorizar uso'}</Button>
       </Section>}
-      <Section title="Original preservado"><Textarea aria-label="Texto original preservado" readOnly rows={18} value={detail.source.versions[0]?.content.segments.map(segment => segment.text).join('\n') ?? ''} /></Section>
+      <Section title="Original preservado" meta={historical === undefined ? 'Versão atual' : 'Somente consulta'}>
+        <DescriptionList items={[{ label: 'Revisão do material', value: detail.material.revision }, { label: 'Versão do original', value: detail.material.source.sourceVersion },
+          { label: 'Registrada em', value: new Date(detail.source.versions[0].createdAt).toLocaleString('pt-BR') },
+          { label: 'Registrada por', value: session?.current?.id === detail.source.versions[0].createdBy ? session.current.name : session?.members.find(member => member.id === detail.source.versions[0].createdBy)?.name ?? detail.source.versions[0].createdBy },
+          ...(detail.source.versions[0].note ? [{ label: 'Motivo da versão', value: detail.source.versions[0].note }] : [])]} />
+        <Textarea aria-label="Texto original preservado" readOnly rows={18} value={detail.source.versions[0]?.content.segments.map(segment => segment.text).join('\n') ?? ''} />
+        <ButtonGroup label="Histórico do material">
+          <Button variant="secondary" disabled={busy || detail.material.revision <= 1} onClick={() => { if (historical === undefined) setLatestKnown(detail.material.revision); setHistorical(detail.material.revision - 1); }}>Versão anterior</Button>
+          <Button variant="secondary" disabled={busy || historical === undefined || historical >= (latestKnown ?? 0)} onClick={() => setHistorical(historical! + 1 === latestKnown ? undefined : historical! + 1)}>Próxima versão</Button>
+          {historical !== undefined && <Button variant="ghost" onClick={() => setHistorical(undefined)}>Ver versão atual</Button>}
+          {editable && resource.port && <Button onClick={() => {
+            const port = resource.port!;
+            setEditing(current => current?.material.revision === detail.material.revision && current.port === port ? current : { key: crypto.randomUUID(), material: detail.material, text: detail.source.versions[0].content.segments.map(segment => segment.text).join('\n'), port }); setEditingOpen(true);
+          }}>Revisar original</Button>}
+        </ButtonGroup>
+      </Section>
     </Panel>}
-  </Drawer>;
+  </Drawer>
+    {editing && <MemoryMaterialRevisionDialog key={editing.key} basis={editing} open={open && editingOpen} onClose={() => setEditingOpen(false)} onSaved={result => {
+      setEditingOpen(false); setHistorical(undefined); resource.reload(); toast('Original revisado', { description: `${result.affectedEvidence} evidências precisam de nova revisão editorial.` });
+    }} />}
+  </>;
 }
