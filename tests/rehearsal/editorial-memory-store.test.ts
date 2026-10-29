@@ -674,6 +674,8 @@ test('bank corrections survive legacy updates, conflict resolution guards both s
   const resolved = await memoryApi(`${legacy.id}/legacy`, { identity: identities[1], requestId: randomUUID(), input: { ...input, legacyHash: latest.evidence.legacy.hash } });
   assert.equal(resolved.status, 200, await resolved.clone().text()); const kept = await resolved.json();
   assert.equal(kept.evidence.metadata.recordedOn, '2019-10-10'); assert.equal(kept.evidence.legacy.state, 'synchronized'); assert.equal(kept.eligibility.usable, false);
+  const keptFeedback = (await (await memoryApi(`feedback?kind=conflict_resolution&evidenceId=${legacy.id}`)).json()).items.find((item: { reason: string }) => item.reason === input.reason);
+  assert.equal(keptFeedback.resolution, 'keep_bank'); assert.equal(keptFeedback.personId, contexts[1].actor); assert.deepEqual(keptFeedback.after, memoryEvidenceRef(kept.evidence));
   const revision = kept.evidence.revision;
   await updateLegacyCitation({ relevance: 'New legacy curation text without changing evidence metadata.' });
   const refreshed = await (await memoryApi(legacy.id)).json(); assert.equal(refreshed.evidence.metadata.recordedOn, '2019-10-10'); assert.equal(refreshed.evidence.revision, revision);
@@ -682,6 +684,8 @@ test('bank corrections survive legacy updates, conflict resolution guards both s
   const applied = await memoryApi(`${legacy.id}/legacy`, { identity: identities[1], requestId: randomUUID(), input: {
     expected: memoryEvidenceRef(newConflict.evidence), legacyHash: newConflict.evidence.legacy.hash, choice: 'apply_legacy', reason: 'Use newly confirmed historical date',
   } }); assert.equal(applied.status, 200, await applied.clone().text()); const current = await applied.json(); assert.equal(current.evidence.metadata.recordedOn, '2020-06-06');
+  const appliedFeedback = (await (await memoryApi(`feedback?kind=conflict_resolution&evidenceId=${legacy.id}`)).json()).items.find((item: { resolution: string }) => item.resolution === 'apply_legacy');
+  assert.deepEqual(appliedFeedback.before, memoryEvidenceRef(newConflict.evidence)); assert.deepEqual(appliedFeedback.after, memoryEvidenceRef(current.evidence));
   const acceptance = await memoryApi(`${legacy.id}/review`, { requestId: randomUUID(), input: { evidence: memoryEvidenceRef(current.evidence), check: null,
     policyRevision: 1, previousSequence: 0, action: 'accept', reason: 'Reviewed original and the resolved date', supports: [] } }); assert.equal(acceptance.status, 200, await acceptance.clone().text());
   assert.equal((await (await memoryApi(legacy.id)).json()).eligibility.usable, true, 'old pilot alias is projected through actual row ownership');
@@ -1027,6 +1031,10 @@ test('corrected duplicates wait for an explicit choice and preserve both origina
   assert.deepEqual((await owner("SELECT doc FROM public.reporter_ed_items WHERE portal_id=$1 AND kind='citation' AND item_id=$2", [PILOT, record.id]))[0].doc, record);
   const audits = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.duplicate.supersede' AND after_data->>'id'=$1", [id]);
   assert.equal(audits.length, 1); assert.equal(audits[0].user_id, contexts[1].actor); assert.equal(audits[0].after_data.deduplication.reason, input.reason);
+  const resolvedFeedback = await (await memoryApi(`feedback?kind=conflict_resolution&evidenceId=${id}`)).json(); assert.equal(resolvedFeedback.total, 1);
+  assert.equal(resolvedFeedback.items[0].resolution, 'keep_variant'); assert.equal(resolvedFeedback.items[0].personId, contexts[1].actor);
+  assert.deepEqual(resolvedFeedback.items[0].before, memoryEvidenceRef(pending.evidence)); assert.deepEqual(resolvedFeedback.items[0].after, memoryEvidenceRef(retired.evidence));
+  assert.deepEqual(resolvedFeedback.items[0].related, [retired.evidence.deduplication.canonical]);
 });
 
 test('duplicate resolution guards both revisions and concurrent alternatives have exactly one audited winner', async () => {

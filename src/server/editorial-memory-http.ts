@@ -5,6 +5,8 @@ import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.t
 import { readMemoryCorrectionImpact } from './editorial-memory-impact.ts';
 import { readMemoryReplacement, replaceEditorialMemory } from './editorial-memory-replacement.ts';
 import { memoryReplacementSchema } from './editorial-memory-input.ts';
+import { memoryRelevanceSchema, parseMemoryFeedbackQuery, parseMemoryRelevanceContext } from './editorial-memory-input.ts';
+import { readMemoryFeedback, readMemoryRelevanceContext, recordMemoryRelevance } from './editorial-memory-feedback.ts';
 import { reviewEditorialMemory } from './editorial-memory-review.ts';
 import { correctEditorialMemory } from './editorial-memory-correction.ts';
 import { reviseEditorialMemoryMaterial } from './editorial-memory-material-revision.ts';
@@ -26,6 +28,12 @@ import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemor
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
   if (process.env.REPORTER_MEMORY_MODE !== 'on') throw new FlowError('NOT_FOUND', 404);
   const noStore = { headers: { 'Cache-Control': 'private, no-store' } }, params = new URL(request.url).searchParams;
+  if (request.method === 'GET' && path.join('/') === 'feedback') return Response.json(await readMemoryFeedback(parseMemoryFeedbackQuery(params)), noStore);
+  if (request.method === 'GET' && path.join('/') === 'feedback/relevance-context') return Response.json(await readMemoryRelevanceContext(parseMemoryRelevanceContext(params)), noStore);
+  if (request.method === 'POST' && path.join('/') === 'feedback/relevance') {
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    return Response.json(await recordMemoryRelevance(memoryRelevanceSchema.parse(await readJson(request)), request.headers.get('idempotency-key') ?? ''), noStore);
+  }
   if (request.method === 'GET' && path.length === 2 && path[0] === 'replacements') {
     if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
     return Response.json(await readMemoryReplacement(path[1]), noStore);

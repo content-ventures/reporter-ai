@@ -7,6 +7,7 @@ import type { MemoryArticlePosition, MemoryArticleReport, MemoryLegacyReport } f
 import type { BriefInput } from './production-commands.ts';
 import type { MemoryWritingIssueCode } from '../domain/editorial-memory-guard.ts';
 import type { MemoryRefreshConcern } from '../domain/editorial-memory-refresh.ts';
+import type { MemoryFeedback, MemoryFeedbackQuery, MemoryRelevanceInput } from '../domain/editorial-memory-feedback.ts';
 
 export type MemoryWritingInput = { baseRevision: number } & (
   | { title: string; brief: BriefInput }
@@ -63,6 +64,8 @@ export type MemoryCorrection =
     period?: MemoryStatistic['period']; geography?: string | null; population?: string | null; qualifier?: string | null;
     issuingInstitution?: string | null; declaringPersonId?: string | null };
 export type MemoryHistoryQuery = { cursor?: string; limit?: number };
+export type MemoryRelevanceContext = { selection: MemoryRelevanceInput['selection']; item: MemorySelection['items'][number]; evidence: MemoryEvidence;
+  source: SourceVersionRef; material: { id: string; title: string }; productionId: string | null; productionTitle: string | null };
 export type MemoryReplacementInput = { expected: MemoryEvidenceRef; replacement: MemoryEvidenceRef; reason: string };
 export type MemoryReplacementResult = { previous: MemoryEvidenceView; current: MemoryEvidenceView; relation: MemoryReplacement };
 export type MemoryReplacementComparison = { relation: MemoryReplacement; previous: MemoryEvidence; current: MemoryEvidence; materials: { previous: string; current: string } };
@@ -99,6 +102,9 @@ export interface EditorialMemory {
   writingStatus(productionId: string): Promise<MemoryWritingStatus>;
   selectedContext(productionId: string, input: MemorySelectedContextInput): Promise<MemorySelectedContext>;
   policy(): Promise<MemoryPolicy>;
+  feedback(input: MemoryFeedbackQuery): Promise<MemoryPage<MemoryFeedback>>;
+  rateRelevance(input: MemoryRelevanceInput, requestId: string): Promise<MemoryFeedback>;
+  relevanceContext(input: Pick<MemoryRelevanceInput, 'selection' | 'evidence'>): Promise<MemoryRelevanceContext>;
   lookupLegacy(id: string): Promise<{ id: string; materialId: string }[]>;
   originalArticle(id: string, snapshot?: string): Promise<{ origin: MemoryArticleOrigin; doc: Piece | Version; importedBy: string; importedAt: string }>;
   reconcileLegacy(input: { after?: string | null; limit?: number }, requestId: string): Promise<MemoryLegacyReport>;
