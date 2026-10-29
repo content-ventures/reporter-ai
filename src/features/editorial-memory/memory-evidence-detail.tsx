@@ -98,6 +98,12 @@ function EvidenceContent({ detail, port, locationActive, onChanged, onMaterial, 
       {evidence.kind === 'statistic' && <DescriptionList items={[{ label: 'Valor original', value: evidence.value.raw }, { label: 'Unidade', value: evidence.unit },
         { label: 'Período', value: evidence.period?.label }, { label: 'População', value: evidence.population }, { label: 'Geografia', value: evidence.geography },
         { label: 'Ressalva', value: evidence.qualifier }, { label: 'Instituição emissora', value: evidence.issuingInstitution }]} />}
+      {evidence.kind === 'statistic' && evidence.market && <Section title="Células da importação" titleAs="h3">
+        <DescriptionList items={Object.entries(evidence.market.fields).flatMap(([key, cell]) => cell ? [{
+          label: ({ institution: 'Instituição', indicator: 'Indicador', value: 'Valor', unit: 'Unidade', period: 'Período', geography: 'Geografia', population: 'População', qualifier: 'Ressalva' } as Record<string, string>)[key] ?? key,
+          value: `${cell.value} · registro ${cell.record}, coluna ${cell.column}`,
+        }] : [])} />
+      </Section>}
       {canEdit && (detail.policyReassessment || check?.policyEvaluation) && <Button variant="secondary" onClick={onReassessment}>{detail.policyReassessment ? 'Reaplicar política' : 'Ver reaplicação'}</Button>}
       {(canEdit || canReview) && <ButtonGroup label="Checagem">
         {canReview && <Button variant="secondary" disabled={!check || outdated || checking || detail.reviewRestricted || evidence.status !== 'active' || !evidence.kinds.some(kind => kind === 'fact' || kind === 'declared') || detail.eligibility.reason === 'source_unavailable'} onClick={onCalibration}>Avaliar para calibração</Button>}

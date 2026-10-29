@@ -42,7 +42,8 @@ export function prepareMemoryMarketRows(material: MemoryMaterial, source: Source
       issuingInstitution: values.institution!.value }], block, material, { from: row.from, text: row.excerpt }, ctx);
     if (!evidence || evidence.kind !== 'statistic') throw new Error('MEMORY_MARKET_EVIDENCE_INVALID');
     output.push({ record: row.record, status: 'ready', evidence: { ...evidence, market: { originalFileId: plan.originalFileId,
-      checksum: plan.checksum, mappingRevision: plan.revision, record: row.record, fields: structuredClone(row.fields) } } });
+      checksum: plan.checksum, mappingRevision: plan.revision, record: row.record, fileName: document.fileName,
+      delimiter: document.delimiter!, mapping: structuredClone(plan.mapping), fields: structuredClone(row.fields) } } });
   }
   return ok({ rows: output, next: mapped.value.next, total: mapped.value.total });
 }

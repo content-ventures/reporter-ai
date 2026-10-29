@@ -72,7 +72,8 @@ export type MemoryStatistic = MemoryEvidenceBase & {
   issuingInstitution: string | null; declaringPersonId: string | null;
   /** Original mapped cells; later corrections retain this import provenance in revision history. */
   market?: { originalFileId: string; checksum: string; mappingRevision: number; record: number;
-    fields: Partial<Record<import('./editorial-memory-market.ts').MemoryMarketField, import('./editorial-memory-market.ts').MemoryMarketCell>> };
+    fields: Partial<Record<import('./editorial-memory-market.ts').MemoryMarketField, import('./editorial-memory-market.ts').MemoryMarketCell>>;
+    fileName?: string; delimiter?: import('./editorial-memory-document.ts').MemoryDocumentDelimiter; mapping?: import('./editorial-memory-market.ts').MemoryMarketMapping };
 };
 export type MemoryEvidence = MemoryCitation | MemoryStatistic;
 export type MemoryEvidenceRef = { id: string; revision: number; hash: string };
@@ -132,7 +133,7 @@ export type MemorySourceBinding = {
   /** An explicit empty latest version excludes this collection from future writing only. */
   retired?: true;
   items: { segmentId: string; materialId: string; kind: MemoryEvidence['kind']; anchor: MemoryAnchor;
-    selected: MemorySelection['items'][number]; metadata: MemoryMetadata }[];
+    selected: MemorySelection['items'][number]; metadata: MemoryMetadata; market?: MemoryStatistic['market'] }[];
 };
 export type MemoryQuery = {
   kind?: MemoryEvidence['kind']; status?: MemoryEvidence['status'] | 'all'; query?: string; topics?: string[]; personId?: string; institution?: string;

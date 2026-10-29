@@ -4,6 +4,7 @@ import { readMemoryDocument } from './editorial-memory-document.ts';
 import { mapMemoryMarketRows, type MemoryMarketMapping } from './editorial-memory-market.ts';
 import { prepareMemoryMarketRows } from './editorial-memory-market-import.ts';
 import { createMemoryMaterial } from './editorial-memory-import.ts';
+import { memoryMarketContext, verifyMemoryMarketProof } from './editorial-memory-market-proof.ts';
 
 test('market mapping retains each literal CSV cell and reports missing values without inventing data', () => {
   const text = 'Instituição;Indicador;Valor;Unidade;Período\r\nÓrgão;"Índice ""A""";"1.234,56";%;2025\r\nÓrgão;Índice B;;%;2026\r\n';
@@ -34,8 +35,20 @@ test('market evidence keeps literal rows and refuses absent or nonliteral contex
   const first = result.value.rows[0]; assert.equal(first.status, 'ready'); if (first.status === 'ready') {
     assert.equal(first.evidence.value.raw, '1.234,56'); assert.equal(first.evidence.market?.fields.value?.column, 3);
     assert.equal(first.evidence.anchor.excerpt, 'Órgão;Vendas;1.234,56;pessoas;2025\n');
+    assert.equal(verifyMemoryMarketProof(first.evidence, made.source, 'original'), true);
+    const altered = structuredClone(first.evidence); altered.market!.fields.value!.column = 2;
+    assert.equal(verifyMemoryMarketProof(altered, made.source, 'original'), false);
+    assert.equal(verifyMemoryMarketProof(first.evidence, made.source, 'other'), false);
   }
   assert.deepEqual(result.value.rows[1], { record: 3, status: 'refused', reason: 'missing', fields: ['value'] });
   const header = prepareMemoryMarketRows(made.material, made.source, doc.value, { ...plan, mapping: { ...mapping, unit: { record: 'header', column: 3 } } }, 1, ctx);
   assert.ok(header.ok); assert.equal(header.value.rows[0].status, 'refused');
+  const preview = mapMemoryMarketRows(doc.value, { ...mapping, unit: { record: 'header', column: 3 } }); assert.ok(preview.ok);
+  if (first.status === 'ready') {
+    const evidence = structuredClone(first.evidence); evidence.market!.mapping = { ...mapping, unit: { record: 'header', column: 3 } };
+    evidence.market!.fields = preview.value.rows[0].fields;
+    const context = memoryMarketContext(evidence, made.source, 'original'); assert.ok(context);
+    assert.equal(context[0].field, 'unit'); assert.equal(context[0].anchor.excerpt, 'unidade');
+    assert.notEqual(context[0].anchor.spans[0].from, evidence.anchor.spans[0].from);
+  }
 });
