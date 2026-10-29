@@ -16,6 +16,7 @@ import { memoryMaterialRevisionSchema } from './editorial-memory-input.ts';
 import { reconcileEditorialMemory, resolveMemoryLegacy } from './editorial-memory-legacy.ts';
 import { lookupMemoryLegacy, readMemoryArticle, reconcileMemoryArticles, resolveMemoryArticle } from './editorial-memory-articles.ts';
 import { FlowError } from './errors.ts';
+import { downloadMemoryOriginal, importMemoryOriginal, readMemoryOriginal, uploadMemoryOriginal } from './editorial-memory-original-files.ts';
 import { resolveMemoryDuplicate } from './editorial-memory-duplicates.ts';
 import { checkEditorialMemory } from './editorial-memory-check.ts';
 import { reassessEditorialMemory } from './editorial-memory-reassessment.ts';
@@ -32,6 +33,14 @@ import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemor
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
   if (process.env.REPORTER_MEMORY_MODE !== 'on') throw new FlowError('NOT_FOUND', 404);
   const noStore = { headers: { 'Cache-Control': 'private, no-store' } }, params = new URL(request.url).searchParams;
+  if (path[0] === 'originals' || path.join('/') === 'materials/from-file') {
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    if (request.method === 'GET' && path[0] === 'originals' && path.length === 2) return Response.json(await readMemoryOriginal(path[1]), noStore);
+    if (request.method === 'GET' && path[0] === 'originals' && path.length === 3 && path[2] === 'file') return downloadMemoryOriginal(path[1]);
+    if (request.method === 'POST' && path.length === 1) return Response.json(await uploadMemoryOriginal(await readJson(request), request.headers.get('idempotency-key') ?? ''), noStore);
+    if (request.method === 'POST' && path.join('/') === 'materials/from-file') return Response.json(await importMemoryOriginal(await readJson(request), request.headers.get('idempotency-key') ?? ''), noStore);
+    throw new FlowError('NOT_FOUND', 404);
+  }
   if (path[0] === 'policy' && path.length > 1) {
     if (request.method === 'GET' && path.length === 2 && ['cases', 'proposals', 'versions'].includes(path[1])) return Response.json(
       await readMemoryPolicyRecords(path[1] === 'cases' ? 'case' : path[1] === 'proposals' ? 'proposal' : 'version', parseMemoryHistoryQuery(params)), noStore);
