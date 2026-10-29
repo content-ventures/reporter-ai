@@ -136,6 +136,12 @@ test('writing status reads current gates for every collection without recording 
   assert.equal(JSON.stringify(initial).includes('CONTEÚDO PRIVADO'), false);
   assert.equal((await api(path, undefined, randomUUID(), identities[1])).status, 200, 'approver may read the current status');
   assert.deepEqual(await production(), savedProduction); assert.deepEqual(await uses(), savedUses);
+  const [article] = await owner("SELECT doc FROM public.reporter_ed_parts WHERE production_id=$1 AND kind='piece' AND part_id=$2", [made.productionId, made.pieceId]);
+  const edited = { ...article.doc.draft.body, blocks: [...article.doc.draft.body.blocks, paragraphBlock('manual-readiness-edit', 'A human can keep editing while source readiness is checked.')] };
+  const saved = await json<{ ok: boolean }>('workspace', { method: 'saveDraft', args: [made.pieceId, edited, article.doc.draft.revision], requestId: randomUUID() });
+  assert.equal(saved.ok, true);
+  assert.equal((await json<MemoryWritingStatus>(path)).updatedAt, initial.updatedAt, 'source status binds the stored production stamp, not newer draft activity');
+  const afterEdit = await production(), afterEditUses = await uses();
   await json(`memory/${a.evidence.id}/review`, { evidence: memoryEvidenceRef(a.evidence), check: null, policyRevision: 1, previousSequence: 1, action: 'reject', reason: 'Synthetic change after attaching the source.', supports: [] });
   const changed = await json<MemoryWritingStatus>(path);
   assert.equal(changed.issues.length, 1); assert.equal(changed.issues[0].source.sourceId, made.sourceId);
@@ -143,7 +149,7 @@ test('writing status reads current gates for every collection without recording 
   assert.deepEqual(changed.sources, initial.sources, 'attached immutable snapshots have not been silently refreshed');
   await json(`memory/materials/${b.material.id}/authorization`, { baseRevision: 1, authorized: false, reason: 'Synthetic rights revoked after attachment.' });
   assert.deepEqual((await json<MemoryWritingStatus>(path)).issues.map(issue => issue.source.sourceId), [made.sourceId, added.sourceId]);
-  assert.deepEqual(await production(), savedProduction); assert.deepEqual(await uses(), savedUses);
+  assert.deepEqual(await production(), afterEdit); assert.deepEqual(await uses(), afterEditUses);
   assert.equal((await api(path + '?unexpected=1')).status, 422);
   assert.equal((await api(path, {})).status, 404);
 });

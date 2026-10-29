@@ -7,9 +7,9 @@ import { bankWritingReadiness } from './bank-readiness-model';
 import type { StudioInputs } from './studio-types';
 
 export function useBankReadiness({ production, sourceDetails, sourceError }: Pick<StudioInputs, 'production' | 'sourceDetails' | 'sourceError'>, canEdit: boolean) {
-  const snapshot = useMemo(() => ({ productionId: production.id, updatedAt: production.updatedAt,
+  const snapshot = useMemo(() => ({ productionId: production.id, updatedAt: production.production.updatedAt,
     sources: (sourceDetails ?? []).filter(detail => detail.source.memory).map(detail => toSourceVersionRef(detail.source)),
-  }), [production.id, production.updatedAt, sourceDetails]);
+  }), [production.id, production.production.updatedAt, sourceDetails]);
   const load = useCallback((port: MemoryLibrary) => port.writingStatus(snapshot.productionId), [snapshot]);
   const resource = useMemoryResource(load, 5000, canEdit && snapshot.sources.length > 0);
   const readiness = bankWritingReadiness(snapshot, resource.data);
