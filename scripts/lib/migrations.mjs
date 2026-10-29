@@ -80,6 +80,8 @@ export const LOCAL_INIT = Object.freeze([
   ['database/migrations/081-editorial-memory-market-provenance.sql', '99-zv-editorial-memory-market-provenance.sql'],
   ['database/migrations/082-editorial-memory-market-header.sql', '99-zw-editorial-memory-market-header.sql'],
   ['database/migrations/083-editorial-memory-market-context.sql', '99-zx-editorial-memory-market-context.sql'],
+  ['database/migrations/084-editorial-memory-market-header-value.sql', '99-zy-editorial-memory-market-header-value.sql'],
+  ['database/migrations/085-editorial-memory-market-cell-context.sql', '99-zz-editorial-memory-market-cell-context.sql'],
 ].map(entry => Object.freeze(entry)));
 
 // Replayed onto an existing local database by `pnpm db:flow`; every file is idempotent.
@@ -156,6 +158,8 @@ export const LOCAL_FLOW = Object.freeze([
   'database/migrations/081-editorial-memory-market-provenance.sql',
   'database/migrations/082-editorial-memory-market-header.sql',
   'database/migrations/083-editorial-memory-market-context.sql',
+  'database/migrations/084-editorial-memory-market-header-value.sql',
+  'database/migrations/085-editorial-memory-market-cell-context.sql',
 ]);
 
 // Neon. The first three files create the schema once; everything after them is replayable.
@@ -245,6 +249,8 @@ export const CLOUD = Object.freeze([
   'database/migrations/081-editorial-memory-market-provenance.sql',
   'database/migrations/082-editorial-memory-market-header.sql',
   'database/migrations/083-editorial-memory-market-context.sql',
+  'database/migrations/084-editorial-memory-market-header-value.sql',
+  'database/migrations/085-editorial-memory-market-cell-context.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 
@@ -285,4 +291,6 @@ export const LOCAL_CATALOG = Object.freeze([
   'database/migrations/081-editorial-memory-market-provenance.sql',
   'database/migrations/082-editorial-memory-market-header.sql',
   'database/migrations/083-editorial-memory-market-context.sql',
+  'database/migrations/084-editorial-memory-market-header-value.sql',
+  'database/migrations/085-editorial-memory-market-cell-context.sql',
 ]);

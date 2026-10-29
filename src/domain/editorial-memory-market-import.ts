@@ -27,7 +27,8 @@ export function prepareMemoryMarketRows(material: MemoryMaterial, source: Source
   for (const row of mapped.value.rows) {
     if (row.missing.length) { output.push({ record: row.record, status: 'refused', reason: 'missing', fields: row.missing }); continue; }
     const entries = Object.entries(row.fields) as [MemoryMarketField, NonNullable<typeof row.fields[MemoryMarketField]>][];
-    const nonliteral = entries.filter(([field, cell]) => cell.value && !row.excerpt.includes(cell.value) && (field === 'value' || cell.record !== 1)).map(([field]) => field);
+    const nonliteral = entries.filter(([, cell]) => cell.value && !row.excerpt.includes(cell.value)
+      && cell.record !== 1 && cell.record !== row.record).map(([field]) => field);
     if (nonliteral.length) { output.push({ record: row.record, status: 'refused', reason: 'nonliteral', fields: nonliteral }); continue; }
     const values = row.fields;
     if (row.excerpt.length > 2000 || values.indicator!.value.length > 240 || values.value!.value.length > 240

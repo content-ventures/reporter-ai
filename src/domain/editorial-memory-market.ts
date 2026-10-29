@@ -17,26 +17,26 @@ export type MemoryMarketPreview = { materialRevision: number; source: SourceVers
 export type MemoryMarketImportReport = { rows: ({ record: number; status: 'created' | 'existing' | 'conflict'; id: string }
   | { record: number; status: 'refused'; reason: 'missing' | 'nonliteral' | 'too_long'; fields: MemoryMarketField[] })[]; next: number | null; total: number };
 
-/** Header cells remain explicitly identified as context, separate from the literal row. */
-export function memoryMarketHeaderValues(market: import('./editorial-memory.ts').MemoryStatistic['market'], excerpt: string,
+/** Header cells and decoded row cells remain context separate from the literal encoded row. */
+export function memoryMarketContextValues(market: import('./editorial-memory.ts').MemoryStatistic['market'], excerpt: string,
   selected?: Partial<Record<MemoryMarketField, string>>): { field: MemoryMarketField; value: string }[] {
-  void excerpt;
   if (!market?.mapping) return [];
   return (Object.entries(market.fields) as [MemoryMarketField, MemoryMarketCell | undefined][]).flatMap(([field, cell]) =>
-    cell?.record === 1 && market.mapping?.[field]?.record === 'header' && cell.value.trim()
+    cell && cell.value.trim() && (cell.record === 1 && market.mapping?.[field]?.record === 'header'
+      || cell.record === market.record && market.mapping?.[field]?.record === 'row' && !excerpt.includes(cell.value))
       && (!selected || selected[field] === cell.value) ? [{ field, value: cell.value }] : []);
 }
 export function memoryMarketWritingText(market: import('./editorial-memory.ts').MemoryStatistic['market'], excerpt: string,
   selected?: Partial<Record<MemoryMarketField, string>>): string {
-  const values = memoryMarketHeaderValues(market, excerpt, selected);
+  const values = memoryMarketContextValues(market, excerpt, selected);
   const labels: Record<MemoryMarketField, string> = { institution: 'Instituição', indicator: 'Indicador', value: 'Valor', unit: 'Unidade',
     period: 'Período', geography: 'Geografia', population: 'População', qualifier: 'Ressalva' };
-  return values.length ? `Cabeçalho original: ${values.map(item => `${labels[item.field]}: ${item.value}`).join(' · ')}\n${excerpt}` : excerpt;
+  return values.length ? `Contexto do arquivo: ${values.map(item => `${labels[item.field]}: ${item.value}`).join(' · ')}\n${excerpt}` : excerpt;
 }
 export function memoryStatisticMarketContext(evidence: import('./editorial-memory.ts').MemoryStatistic): Partial<Record<MemoryMarketField, string>> {
   const values: Partial<Record<MemoryMarketField, string | null>> = { indicator: evidence.indicator, value: evidence.value.raw, unit: evidence.unit,
     period: evidence.period?.label ?? null, geography: evidence.geography, population: evidence.population, qualifier: evidence.qualifier, institution: evidence.issuingInstitution };
-  return Object.fromEntries(memoryMarketHeaderValues(evidence.market, evidence.anchor.excerpt).filter(item => values[item.field] === item.value).map(item => [item.field, item.value]));
+  return Object.fromEntries(memoryMarketContextValues(evidence.market, evidence.anchor.excerpt).filter(item => values[item.field] === item.value).map(item => [item.field, item.value]));
 }
 
 const required = ['institution', 'indicator', 'value', 'unit', 'period'] as const;

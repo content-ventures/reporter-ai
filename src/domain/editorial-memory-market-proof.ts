@@ -25,20 +25,20 @@ export function verifyMemoryMarketProof(evidence: MemoryStatistic, source: Sourc
     && evidence.anchor.excerpt === row.excerpt && stableStringify(proof.fields) === stableStringify(row.fields);
 }
 
-/** Independent cell anchors preserve the distinction between the header and the observation. */
+/** Independent cell anchors preserve the original encoding for separately interpreted values. */
 export function memoryMarketContext(evidence: MemoryStatistic, source: Source, originalFileId: string):
   { field: MemoryMarketField; value: string; record: number; column: number; anchor: MemoryAnchor }[] | undefined {
   if (!verifyMemoryMarketProof(evidence, source, originalFileId)) return undefined;
   return (Object.entries(evidence.market!.fields) as [MemoryMarketField, NonNullable<NonNullable<MemoryStatistic['market']>['fields'][MemoryMarketField]>][])
     .flatMap(([field, cell]) => {
-      if (cell.record !== 1 || !cell.value.trim()) return [];
+      if (!cell.value.trim() || cell.record !== 1 && evidence.anchor.excerpt.includes(cell.value)) return [];
       const anchor: MemoryAnchor = { source: evidence.anchor.source, spans: [{ segmentId: 'original', from: cell.from, to: cell.to }], excerpt: cell.original };
       return resolveMemoryAnchor(source, anchor) === cell.original ? [{ field, value: cell.value, record: cell.record, column: cell.column, anchor }] : [];
     });
 }
 
-export function memoryMarketHeaderSupports(evidence: MemoryStatistic, source: Source, field: MemoryMarketField, value: string): boolean {
-  const cell = evidence.market?.fields[field];
-  return Boolean(cell && cell.record === 1 && cell.value === value && evidence.market?.mapping?.[field]?.record === 'header'
-    && verifyMemoryMarketProof(evidence, source, evidence.market.originalFileId));
+export function memoryMarketCellSupports(evidence: MemoryStatistic, source: Source, field: MemoryMarketField, value: string): boolean {
+  const proof = evidence.market, cell = proof?.fields[field], record = proof?.mapping?.[field]?.record;
+  return Boolean(proof && cell && cell.value === value && (record === 'header' && cell.record === 1 || record === 'row' && cell.record === proof.record)
+    && verifyMemoryMarketProof(evidence, source, proof.originalFileId));
 }
