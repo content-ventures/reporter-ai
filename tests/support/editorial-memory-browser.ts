@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium, expect, type BrowserContext, type Page } from '@playwright/test';
-import type { MemoryImportInput, MemoryJob, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
+import type { MemoryImportInput, MemoryJob, MemoryMaterialRevisionResult, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { MemoryMaterial, MemorySelection } from '../../src/domain/editorial-memory.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import { blockText, type ArticleBody } from '../../src/domain/article.ts';
@@ -8,6 +8,7 @@ import { blockText, type ArticleBody } from '../../src/domain/article.ts';
 /** Real product UI and handlers, with a test-only authenticated identity adapter. */
 export async function createMemoryJourneyBrowser(base: string, width: number, dispatch: (request: Request, actor: number) => Promise<Response>) {
   const browser = await chromium.launch({ headless: true }), contexts: BrowserContext[] = [], errors: string[] = [];
+  const expectedConflictConsole = new Map<string, number>();
   let reviewer: Page | undefined;
   async function pageFor(actor: number) {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, isMobile: width === 390, hasTouch: width === 390, locale: 'pt-BR' });
@@ -21,7 +22,12 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
     });
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
-    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('console', message => {
+      if (message.type() !== 'error') return;
+      const url = message.location().url, remaining = expectedConflictConsole.get(url) ?? 0;
+      if (remaining > 0 && /^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/.test(message.text())) expectedConflictConsole.set(url, remaining - 1);
+      else errors.push(message.text());
+    });
     return page;
   }
   async function audit(page: Page, label: string) {
@@ -38,6 +44,54 @@ export async function createMemoryJourneyBrowser(base: string, width: number, di
   }
   const editor = await pageFor(0);
   return {
+    async reviseOriginal(material: MemoryMaterial, original: string, corrected: string, reason: string, competing?: { text: string; run: () => Promise<MemoryMaterialRevisionResult> }): Promise<MemoryMaterialRevisionResult> {
+      console.info('memory UI original revision', width, Boolean(competing));
+      await editor.goto(`${base}/w/reporter-ai/quotes?bankView=materials`);
+      await editor.getByRole('row', { name: material.title, exact: true }).click();
+      const drawer = editor.getByRole('dialog', { name: material.title, exact: true });
+      const trigger = drawer.getByRole('button', { name: 'Revisar original', exact: true });
+      const preserved = drawer.getByRole('textbox', { name: 'Texto original preservado', exact: true });
+      await expect(preserved).toHaveValue(original); await trigger.click();
+      const dialog = editor.getByRole('dialog', { name: 'Revisar original', exact: true });
+      const comparison = dialog.getByRole('textbox', { name: 'Original em uso', exact: true });
+      const revision = dialog.getByRole('textbox', { name: 'Original revisado', exact: true });
+      const why = dialog.getByRole('textbox', { name: 'Motivo da revisão', exact: true });
+      await expect(comparison).toHaveValue(original); await expect(comparison).toHaveAttribute('readonly', '');
+      await revision.fill(corrected); await why.fill(reason);
+      await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
+      await expect(dialog).toBeHidden(); await expect(drawer).toBeVisible(); await expect(trigger).toBeFocused();
+      await trigger.click(); await expect(revision).toHaveValue(corrected); await expect(why).toHaveValue(reason);
+      const path = `/memory/materials/${material.id}/revision`;
+      if (competing) {
+        const winner = await competing.run(); assert.equal(winner.material.source.sourceVersion, material.source.sourceVersion + 1);
+        expectedConflictConsole.set(`${base}/api/reporter/w/reporter-ai${path}`, 1);
+        const refused = editor.waitForResponse(response => response.url().endsWith(path) && response.request().method() === 'POST');
+        await dialog.getByRole('button', { name: 'Salvar nova versão', exact: true }).click();
+        assert.equal((await refused).status(), 409);
+        await expect(revision).toHaveValue(corrected); await expect(why).toHaveValue(reason);
+        await dialog.getByRole('button', { name: 'Atualizar comparação', exact: true }).click();
+        await expect(comparison).toHaveValue(competing.text); await expect(revision).toHaveValue(corrected); await expect(why).toHaveValue(reason);
+      }
+      await audit(editor, competing ? 'revision-conflict' : 'revision-comparison');
+      const response = editor.waitForResponse(response => response.url().endsWith(path) && response.request().method() === 'POST');
+      await dialog.getByRole('button', { name: 'Salvar nova versão', exact: true }).click();
+      const saved = await response; assert.equal(saved.status(), 200, await saved.text()); const result = await saved.json() as MemoryMaterialRevisionResult;
+      await expect(dialog).toBeHidden(); await expect(drawer).toBeVisible(); await expect(trigger).toBeFocused();
+      await expect(preserved).toHaveValue(corrected);
+      await drawer.getByRole('button', { name: 'Versão anterior', exact: true }).click();
+      await expect(preserved).toHaveValue(competing?.text ?? original);
+      await expect(drawer.getByRole('button', { name: 'Revisar original', exact: true })).toHaveCount(0);
+      await expect(drawer.getByRole('button', { name: 'Revogar autorização', exact: true })).toHaveCount(0);
+      await expect(preserved).toHaveAttribute('readonly', ''); await audit(editor, 'original-history');
+      if (competing) {
+        await drawer.getByRole('button', { name: 'Versão anterior', exact: true }).click(); await expect(preserved).toHaveValue(original);
+        await drawer.getByRole('button', { name: 'Próxima versão', exact: true }).click(); await expect(preserved).toHaveValue(competing.text);
+      }
+      await drawer.getByRole('button', { name: 'Próxima versão', exact: true }).click(); await expect(preserved).toHaveValue(corrected);
+      await expect(trigger).toBeVisible(); await editor.reload();
+      await editor.getByRole('row', { name: material.title, exact: true }).click(); await expect(preserved).toHaveValue(corrected);
+      await audit(editor, 'original-revised'); return result;
+    },
     async import(input: MemoryImportInput): Promise<{ material: MemoryMaterial; job: MemoryJob }> {
       console.info('memory UI import', width, input.kind);
       await editor.goto(`${base}/w/reporter-ai/quotes`);

@@ -22,7 +22,7 @@ import { writingSourceCandidates } from '../../src/domain/writing-source.ts';
 import { createLocalExportService } from '../../src/adapters/local/export/local-export.ts';
 import { createLocalRenderService } from '../../src/adapters/local/render/local-render.ts';
 import type { ConnectedWorkspace } from '../../src/ports/connected-workspace.ts';
-import type { MemoryDetail, MemoryJob, MemorySelectedContext, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
+import type { MemoryDetail, MemoryJob, MemoryMaterialRevisionResult, MemorySelectedContext, MemoryWritingResult } from '../../src/ports/editorial-memory.ts';
 import type { RequestedReview } from '../../src/ports/production-commands.ts';
 import type { BuiltFile, ExportPackage } from '../../src/ports/export.ts';
 import type { WritingRunDetails } from '../../src/ports/pipeline-settings.ts';
@@ -235,8 +235,9 @@ test('two imported materials reach orchestrated writing, separate approval and a
   const original = materials.find(material => material.kind === 'statistic')!, beforeRevision = await record(made.productionId);
   const frozen = structuredClone(beforeRevision.versions), draftBeforeRevision = structuredClone(beforeRevision.pieces[0].draft);
   const correctedText = original.text.replace('240', '241');
-  const revised = await api<{ material: MemoryMaterial; job: MemoryJob; affectedEvidence: number }>(`memory/materials/${original.material.id}/revision`, {
-    baseRevision: original.material.revision, source: original.material.source, text: correctedText, reason: 'Synthetic correction of the original count after approval.',
+  const revisionReason = 'Synthetic correction of the original count after approval.';
+  const revised = ui ? await ui.reviseOriginal(original.material, original.text, correctedText, revisionReason) : await api<MemoryMaterialRevisionResult>(`memory/materials/${original.material.id}/revision`, {
+    baseRevision: original.material.revision, source: original.material.source, text: correctedText, reason: revisionReason,
   });
   assert.equal(revised.material.source.sourceVersion, 2); assert.equal(revised.affectedEvidence, 2);
   assert.deepEqual((await record(made.productionId)).versions, frozen, 'original corrections never rewrite frozen approved/generated articles');
@@ -271,4 +272,19 @@ test('two imported materials reach orchestrated writing, separate approval and a
   assert.ok(observations.every(row => !row.eligibility.usable), 'corrected observations never inherit old acceptance');
   assert.deepEqual((await record(made.productionId)).versions, frozen);
   assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
+  if (ui) {
+    const quotation = materials.find(material => material.kind === 'citation')!;
+    const competitor = quotation.text + '\n\nSynthetic concurrent clarification.';
+    const finalText = quotation.text + '\n\nSynthetic final editorial clarification.';
+    const resolved = await ui.reviseOriginal(quotation.material, quotation.text, finalText, 'Synthetic conflict resolved after comparing both originals.', {
+      text: competitor,
+      run: () => api<MemoryMaterialRevisionResult>(`memory/materials/${quotation.material.id}/revision`, {
+        baseRevision: quotation.material.revision, source: quotation.material.source, text: competitor, reason: 'Synthetic competing edit by another workspace editor.',
+      }, 2),
+    });
+    assert.equal(resolved.material.source.sourceVersion, 3); assert.equal(resolved.affectedEvidence, 2);
+    assert.deepEqual((await record(made.productionId)).versions, frozen); assert.deepEqual((await record(made.productionId)).pieces[0].draft, draftBeforeRevision);
+    const competingVersion = await api<{ source: { versions: { createdBy: string }[] } }>(`memory/materials/${quotation.material.id}?revision=2`);
+    assert.equal(competingVersion.source.versions[0].createdBy, (await api<ConnectedWorkspace>('workspace', undefined, 2)).state.sessionPersonId);
+  }
 });
