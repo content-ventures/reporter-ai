@@ -1,4 +1,5 @@
 import 'server-only';
+import { createMemoryBatch, readMemoryBatch, readMemoryBatches, updateMemoryBatchItem, uploadMemoryBatchItem, processMemoryBatchItem } from './editorial-memory-batches.ts';
 import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema, memoryCheckInputSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, memoryWritingInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
@@ -33,6 +34,22 @@ import { actMemoryJob, authorizeMemoryMaterial, importEditorialMemory, readMemor
 export async function handleEditorialMemory(request: Request, path: string[], readJson: (request: Request) => Promise<unknown>): Promise<Response> {
   if (process.env.REPORTER_MEMORY_MODE !== 'on') throw new FlowError('NOT_FOUND', 404);
   const noStore = { headers: { 'Cache-Control': 'private, no-store' } }, params = new URL(request.url).searchParams;
+  if (path[0] === 'batches') {
+    if (request.method === 'GET' && path.length === 1) return Response.json(await readMemoryBatches(parseMemoryHistoryQuery(params)), noStore);
+    if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
+    if (request.method === 'GET' && path.length === 2) return Response.json(await readMemoryBatch(path[1]), noStore);
+    if (request.method === 'POST') {
+      const key = request.headers.get('idempotency-key') ?? '';
+      if (path.length === 1) return Response.json(await createMemoryBatch(await readJson(request), key), noStore);
+      if (path.length === 5 && path[2] === 'items') {
+        const value = await readJson(request);
+        if (path[4] === 'upload') return Response.json(await uploadMemoryBatchItem(path[1], path[3], value, key), noStore);
+        if (path[4] === 'process') return Response.json(await processMemoryBatchItem(path[1], path[3], value, key), noStore);
+        if (path[4] === 'revision') return Response.json(await updateMemoryBatchItem(path[1], path[3], value, key), noStore);
+      }
+    }
+    throw new FlowError('NOT_FOUND', 404);
+  }
   if (path[0] === 'originals' || path.join('/') === 'materials/from-file') {
     if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
     if (request.method === 'GET' && path[0] === 'originals' && path.length === 2) return Response.json(await readMemoryOriginal(path[1]), noStore);

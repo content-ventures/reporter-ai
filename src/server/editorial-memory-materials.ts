@@ -12,18 +12,23 @@ import { currentReporterContext } from './request-context.ts';
 import { FlowError } from './errors.ts';
 import { generationModel } from './text-generation.ts';
 
+export function prepareMemoryMaterial(input: MemoryImportInput) {
+  const context = currentReporterContext();
+  const now = new Date().toISOString(), created = createMemoryMaterial(input, context.portal, { actorId: context.actor, now, newId: prefix => `${prefix}-${randomUUID()}` });
+  const id = `memory-job-${randomUUID()}`, blocks = memoryBlocks(created.material, id, input.text);
+  const job: MemoryJob = { id, workspaceId: context.portal, revision: 1, kind: 'extract', materialId: created.material.id, evidenceId: null,
+    sourceVersion: created.material.source.sourceVersion, sourceHash: created.material.source.hash, extractorVersion: 'memory-extract-v1', model: generationModel(), generation: 1, status: 'queued',
+    totalBlocks: blocks.length, completedBlocks: 0, failedBlocks: 0, evidenceCount: 0, error: null, createdBy: context.actor, createdAt: now, updatedAt: now };
+  return { source: created.source, material: created.material, job, blocks };
+}
 export async function importEditorialMemory(value: MemoryImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }> {
-  const input = memoryImportInputSchema.parse(value), context = currentReporterContext();
+  const input = memoryImportInputSchema.parse(value);
   return memoryCommand('memory.material.import', input, requestId, 'library.edit', async client => {
     await client.query('SELECT public.reporter_memory_import_access($1)', [input.originalFileId]);
   }, async client => {
-    const now = new Date().toISOString(), created = createMemoryMaterial(input, context.portal, { actorId: context.actor, now, newId: prefix => `${prefix}-${randomUUID()}` });
-    const id = `memory-job-${randomUUID()}`, blocks = memoryBlocks(created.material, id, input.text);
-    const job: MemoryJob = { id, workspaceId: context.portal, revision: 1, kind: 'extract', materialId: created.material.id, evidenceId: null,
-      sourceVersion: created.material.source.sourceVersion, sourceHash: created.material.source.hash, extractorVersion: 'memory-extract-v1', model: generationModel(), generation: 1, status: 'queued',
-      totalBlocks: blocks.length, completedBlocks: 0, failedBlocks: 0, evidenceCount: 0, error: null, createdBy: context.actor, createdAt: now, updatedAt: now };
+    const { source, material, job, blocks } = prepareMemoryMaterial(input);
     return (await client.query('SELECT public.reporter_memory_import($1::jsonb,$2::jsonb,$3::jsonb,$4::jsonb) AS value',
-      [JSON.stringify(created.source), JSON.stringify(created.material), JSON.stringify(job), JSON.stringify(blocks)])).rows[0].value;
+      [JSON.stringify(source), JSON.stringify(material), JSON.stringify(job), JSON.stringify(blocks)])).rows[0].value;
   });
 }
 export async function readMemoryJob(id: string): Promise<MemoryJob> {
