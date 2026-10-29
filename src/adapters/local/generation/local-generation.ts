@@ -18,7 +18,7 @@ import { canGenerate } from '../../../domain/rules/generate.ts';
 import { briefHash } from '../../../domain/production.ts';
 import { contentHash } from '../../../domain/text/hash.ts';
 import { mainOrganization } from '../../../domain/text/kicker.ts';
-import { currentSourceVersion } from '../../../domain/source.ts';
+import { currentSourceVersion, writingSources } from '../../../domain/source.ts';
 import type { Unsubscribe } from '../../../ports/common.ts';
 import { GENERATION_LABELS, REWRITE_TONE_LABELS, RUN_KIND_OF, SLIDE_ASSIST_LABELS } from '../../../ports/generation.ts';
 import type {
@@ -415,6 +415,7 @@ export function createLocalGenerationService(deps: LocalGenerationDeps): LocalGe
 
   /** Validates a request against the current record and computes the run's full output. */
   const prepare = (record: ProductionRecord, request: GenerationRequest, options: StartOptions): Result<Prepared, StartRefusal> => {
+    record = { ...record, sources: writingSources(record.sources) };
     const piece = record.pieces.find((candidate) => candidate.id === request.input.pieceId);
     const wantedKind = request.kind === 'carousel.copy' || request.kind === 'carousel.assist' ? 'carousel' : 'article';
     if (!piece || piece.kind !== wantedKind) return refuse('unknown_piece', 'Peça não encontrada nesta produção.');

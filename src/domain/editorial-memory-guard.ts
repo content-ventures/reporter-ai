@@ -30,7 +30,7 @@ export function validateMemoryWritingSources(sources: Source[], items: MemoryWri
     const receipt = source.memory.find(receipt => receipt.version.number === version?.number && receipt.version.hash === version?.hash);
     if (!receipt || !version || sourceContentHash(version.content) !== ref.hash) return refuse('memory_source_changed', 'A fonte do banco mudou ou perdeu a autorização. Confira a seleção.');
     if (receipt.retired) {
-      if (receipt.items.length || version.content.segments.length) return refuse('memory_source_changed', 'Confira a retirada da fonte antes de continuar.');
+      if (receipt.retired !== true || receipt.items.length || version.content.segments.length || version.content.format !== 'plain') return refuse('memory_source_changed', 'Confira a retirada da fonte antes de continuar.');
       continue;
     }
     if (!source.rights.authorized || !receipt.items.length) return refuse('memory_source_changed', 'A fonte do banco mudou ou perdeu a autorização. Confira a seleção.');

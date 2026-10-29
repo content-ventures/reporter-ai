@@ -7,6 +7,7 @@ import type { Ref, VersionRef } from '../refs.ts';
 import { ok, refuse } from '../result.ts';
 import type { Result } from '../result.ts';
 import { canDerive } from './derive.ts';
+import { writingSources } from '../source.ts';
 import { PIECE_PARENTS } from './status.ts';
 
 /**
@@ -28,8 +29,9 @@ export function canGenerate(record: ProductionRecord, kind: PieceKind): Result<G
   if (!record.production.plan.includes(kind)) {
     return refuse('not_planned', `${PIECE_LABELS[kind]} não faz parte desta produção.`);
   }
-  if (record.sources.length === 0) return refuse('source_missing', 'Adicione o material antes de gerar.');
-  if (record.sources.some((source) => !source.rights.authorized)) {
+  const sources = writingSources(record.sources);
+  if (sources.length === 0) return refuse('source_missing', 'Adicione o material antes de gerar.');
+  if (sources.some((source) => !source.rights.authorized)) {
     return refuse('source_not_authorized', 'Confirme que o material está autorizado para gerar.');
   }
   const piece = pieceOfKind(record, kind);

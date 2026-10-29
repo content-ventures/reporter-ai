@@ -7,7 +7,11 @@ import { initialMemoryPolicy, memoryEvidenceRef, type MemorySelection } from './
 import { validateMemoryArticle, validateMemoryWritingSources } from './editorial-memory-guard.ts';
 import { refreshMemoryWriting } from './editorial-memory-refresh.ts';
 import { prepareMemoryWriting, type MemoryWritingItem } from './editorial-memory-writing.ts';
-import { sourceContentHash, toSourceVersionRef } from './source.ts';
+import { isSourceRetired, resolveSourceRef, sourceContentHash, toSourceVersionRef, writingSources } from './source.ts';
+import { baseRecord, commitVersion, createKit, recordDecision, sampleArticle } from './testing/scenario.ts';
+import { canGenerate } from './rules/generate.ts';
+import { pieceStatus } from './rules/status.ts';
+import { writingSourceCandidates } from './writing-source.ts';
 
 let count = 0;
 const context = { now: '2026-10-29T00:30:00Z', actorId: 'editor', newId: (prefix: string) => `${prefix}-${++count}` };
@@ -79,8 +83,17 @@ test('retirement excludes future provider input without changing past article pr
   assert.deepEqual(result.value.body, body); assert.equal(retired.rights.authorized, false); assert.equal(retired.memory!.at(-1)!.retired, true);
   assert.deepEqual(retired.versions.at(-1)!.content.segments, []); assert.equal(validateMemoryWritingSources([retired], []).ok, true);
   assert.equal(validateMemoryArticle(body, [retired], []).ok, false); assert.equal(refreshMemoryWriting(retired, toSourceVersionRef(retired), null, body, false, 'Again.', context).ok, false);
+  const record = baseRecord(createKit()), active = record.sources[0]; record.sources.push(retired);
+  const allowed = canGenerate(record, 'article'); assert.ok(allowed.ok);
+  assert.deepEqual(allowed.value.inputs.filter(ref => ref.kind === 'source-version'), [toSourceVersionRef(active)]);
+  assert.equal(isSourceRetired(retired), true); assert.deepEqual(writingSources(record.sources), [active]);
+  assert.ok(writingSourceCandidates(record.sources).every(item => item.ref.sourceId === active.id));
+  const oldRef = body.blocks[0].sourceRefs![0]; assert.equal(resolveSourceRef(record.sources, oldRef)?.excerpt, source.versions[0].content.segments[0].text);
+  record.sources = [retired]; const missing = canGenerate(record, 'article'); assert.equal(!missing.ok && missing.refusal.code, 'source_missing');
   const malformed = structuredClone(retired); malformed.memory!.at(-1)!.items = source.memory![0].items;
   assert.equal(validateMemoryWritingSources([malformed], []).ok, false);
+  assert.equal(isSourceRetired(malformed), false); record.sources = [active, malformed]; assert.equal(canGenerate(record, 'article').ok, false);
+  const badHash = structuredClone(retired); badHash.versions.at(-1)!.hash = 'forged'; assert.equal(isSourceRetired(badHash), false);
 });
 
 test('stale versions, missing reasons and unavailable replacement evidence refuse without changing anything', () => {
@@ -90,4 +103,14 @@ test('stale versions, missing reasons and unavailable replacement evidence refus
   const unavailable = structuredClone(items); unavailable[0].view.eligibility = { usable: false, reason: 'rejected' };
   assert.equal(refreshMemoryWriting(source, expected, { selection: selection(unavailable), items: unavailable }, body, true, 'Reason.', context).ok, false);
   assert.deepEqual({ source, body, items }, before);
+});
+
+test('piece status cannot inherit approval after a source-proof-only edit', () => {
+  const kit = createKit(), record = baseRecord(kit), version = commitVersion(record, kit, 'article', sampleArticle(record.sources[0]));
+  recordDecision(record, kit, version, 'approved'); assert.equal(pieceStatus(record, 'article'), 'approved');
+  const piece = record.pieces[0]; assert.equal(piece.draft.body.type, 'article');
+  if (piece.draft.body.type !== 'article') return;
+  piece.draft.body.blocks[0].sourceRefs![0].locator = { type: 'segment', segmentId: 'a-different-origin' };
+  assert.equal(articleHash(piece.draft.body), version.hash); assert.equal(pieceStatus(record, 'article'), 'approval_outdated');
+  assert.notDeepEqual(piece.draft.body, version.body);
 });
