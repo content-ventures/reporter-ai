@@ -5,9 +5,37 @@ import { expect, type Locator, type Page } from '@playwright/test';
 
 export async function auditMemoryAccessibility(page: Page, width: number, label: string) {
   const result = await new AxeBuilder({ page }).analyze();
-  await writeFile(`/tmp/reporter-memory-a11y-${width}-${label}.json`, JSON.stringify({ url: page.url(), engine: result.testEngine, violations: result.violations, incomplete: result.incomplete }, null, 2));
+  const tabContrast = result.incomplete.some(rule => rule.id === 'color-contrast') ? await measureTabContrast(page) : [];
+  await writeFile(`/tmp/reporter-memory-a11y-${width}-${label}.json`, JSON.stringify({ url: page.url(), engine: result.testEngine, violations: result.violations, incomplete: result.incomplete, tabContrast }, null, 2));
   await writeFile(`/tmp/reporter-memory-a11y-${width}-${label}.txt`, await page.locator('body').ariaSnapshot());
   assert.deepEqual(result.violations.map(rule => ({ id: rule.id, impact: rule.impact, nodes: rule.nodes.map(node => ({ target: node.target, failure: node.failureSummary })) })), [], `accessibility: ${label}`);
+  assert.deepEqual(tabContrast.filter(sample => !sample.hiddenSizingTwin || sample.ratio === null || sample.ratio < 4.5), [], `tab contrast: ${label}`);
+}
+
+/** Supplement Axe's pseudoContent review without disabling or removing any rule/result. */
+async function measureTabContrast(page: Page) {
+  const samples = await page.getByRole('tablist', { name: 'Conteúdo do banco', exact: true }).locator('[data-label]').evaluateAll(elements => elements.map(element => {
+    const style = getComputedStyle(element), twin = getComputedStyle(element, '::after'), backgrounds = [];
+    for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
+      const paint = getComputedStyle(ancestor); backgrounds.push({ color: paint.backgroundColor, image: paint.backgroundImage, opacity: paint.opacity });
+    }
+    return { label: element.textContent, color: style.color, backgrounds, hiddenSizingTwin: twin.visibility === 'hidden' && parseFloat(twin.height) === 0 };
+  }));
+  assert.ok(samples.length > 0, 'incomplete contrast requires the actual bank tabs');
+  const rgb = (value: string) => { const match = /^rgba?\(([^)]+)\)$/.exec(value); return match ? match[1].split(',').map(Number) : null; };
+  // WCAG relative luminance; compare the unrounded result against 4.5:1.
+  const luminance = (color: number[]) => color.slice(0, 3).map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  return samples.map(sample => {
+    const foreground = rgb(sample.color); let background: number[] | null = null, known = true;
+    for (const paint of sample.backgrounds) {
+      if (paint.opacity !== '1' || paint.image !== 'none') known = false;
+      const color = rgb(paint.color); if (!color) { known = false; break; }
+      if (color.length === 3 || color[3] === 1) { background = color; break; }
+      if (color[3] !== 0) { known = false; break; }
+    }
+    const light = foreground && background && known && (foreground.length === 3 || foreground[3] === 1) ? [luminance(foreground), luminance(background)] : null;
+    return { label: sample.label, foreground: sample.color, background, hiddenSizingTwin: sample.hiddenSizingTwin, ratio: light ? (Math.max(...light) + 0.05) / (Math.min(...light) + 0.05) : null };
+  });
 }
 
 const entering = (select: Locator) => select.evaluate(element => element.closest('dialog')?.getAnimations({ subtree: true }).some(animation => {
