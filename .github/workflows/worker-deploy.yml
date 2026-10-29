@@ -48,6 +48,7 @@ jobs:
       NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
       NEON_TRANSFER_QUOTA_BYTES: ${{ vars.NEON_TRANSFER_QUOTA_BYTES }}
       REPORTER_APP_ORIGINS: ${{ vars.REPORTER_APP_ORIGINS }}
+      REPORTER_MEMORY_MODE: ${{ vars.REPORTER_MEMORY_MODE }}
       REPORTER_WORKER_PASSWORD: ${{ secrets.REPORTER_WORKER_PASSWORD }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEN_AI_API_KEY }}
@@ -145,7 +146,7 @@ jobs:
             node scripts/lib/mask-env.mjs "$env_file"
             node --input-type=module - "$env_file" <<'NODE'
           import { appendFile } from 'node:fs/promises';
-          const names = ['DATABASE_URL', 'REPORTER_APP_ORIGINS', 'REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY',
+          const names = ['DATABASE_URL', 'REPORTER_APP_ORIGINS', 'REPORTER_MEMORY_MODE', 'REPORTER_WORKER_PASSWORD', 'GROQ_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PIXABAY_API_KEY',
             // Optional providers stay unavailable when their keys are absent.
             ...['TAVILY_API_KEY', 'GEMINI_API_KEY'].filter(name => process.env[name]?.trim())];
           await appendFile(process.argv[2], `\n${names.map(name => `${name}=${JSON.stringify(process.env[name])}`).join('\n')}\n`, { mode: 0o600 });
