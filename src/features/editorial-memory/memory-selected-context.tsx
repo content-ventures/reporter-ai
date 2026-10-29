@@ -57,7 +57,7 @@ function SelectedContext({ context }: { context: MemorySelectedContext }) {
         : check ? <>
           <DescriptionList items={[{ label: 'Revisão da checagem', value: check.revision }, { label: 'Resultado', value: VERDICT_LABELS[check.verdict] },
             { label: 'Data da checagem', value: new Date(check.checkedAt).toLocaleString('pt-BR') },
-            { label: 'Confiança factual', value: check.confidence === null ? 'Não calibrada' : `${Math.round(check.confidence * 100)}%` },
+            { label: 'Confiança factual', value: check.confidence === null ? 'Não calibrada' : `${check.confidence}%` },
             { label: 'Força editorial', value: check.strength ? `${check.strength.score} — ${check.strength.reason}` : 'Não calculada' }]} />
           {check.claims.map((claim, index) => <Section key={index} titleAs="h3" title={`Afirmação ${index + 1}`}>
             <Textarea aria-label={`Afirmação selecionada ${index + 1}`} readOnly rows={3} value={claim.text} />
