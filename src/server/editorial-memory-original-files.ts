@@ -8,7 +8,6 @@ import { MAX_TEXT_BYTES } from '../domain/reporter.ts';
 import { reporterDeploymentMode } from './deployment.ts';
 import { FlowError } from './errors.ts';
 import { memoryImportInputSchema } from './editorial-memory-input.ts';
-import { importEditorialMemory } from './editorial-memory-materials.ts';
 import { readMemoryOriginalObject, writeMemoryOriginalObject } from './editorial-memory-original-storage.ts';
 import { memoryAuthorizeWrite, memoryCommand, memoryRead } from './editorial-memory-store.ts';
 import { currentReporterContext } from './request-context.ts';
@@ -79,9 +78,8 @@ export async function readMemoryOriginalDocument(id: string, allowPending = fals
   return { file, document: document(file, bytes) };
 }
 export async function importMemoryOriginal(value: unknown, requestId: string) {
-  const input = fileImportSchema.parse(value), file = await readMemoryOriginal(input.originalFileId, true);
-  const parsed = document(file, await originalBytes(file));
-  return importEditorialMemory({ ...input, text: parsed.text }, requestId);
+  const input = fileImportSchema.parse(value);
+  return (await import('./editorial-memory-file-import.ts')).importMemoryFile(input, requestId);
 }
 export async function downloadMemoryOriginal(id: string) {
   const file = await readMemoryOriginal(id), bytes = await originalBytes(file);

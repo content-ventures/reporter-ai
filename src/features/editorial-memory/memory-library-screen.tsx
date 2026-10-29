@@ -26,7 +26,7 @@ export function MemoryLibraryScreen() {
   const feedbackQuery = useMemo(() => route.feedback ?? {}, [route.feedback]);
   const { tab, query: input } = route, query = input.query ?? '', sort = input.sort ?? 'newest', cursor = input.cursor;
   const filters = useMemo(() => Object.fromEntries(Object.entries(input).filter(([key]) => !['query', 'sort', 'cursor'].includes(key))) as MemoryQuery, [input]);
-  const [batchesOpen, setBatchesOpen] = useState(false);
+  const [batchesOpen, setBatchesOpen] = useState(false), [focusedBatch, setFocusedBatch] = useState<string>();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const navigate = (state: MemoryAddress, push = false) => {
@@ -49,7 +49,7 @@ export function MemoryLibraryScreen() {
   const reset = () => { changeQuery({}); resource.reload(); setMaterialsRefresh(value => value + 1); setSelectionsRefresh(value => value + 1); setFeedbackRefresh(value => value + 1); setPolicyRefresh(value => value + 1); };
   return <PageStack>
     <LiveRegion message={browsing && page && !resource.error ? `${page.total} ${page.total === 1 ? 'evidência encontrada' : 'evidências encontradas'}. ${page.items.length} nesta página.` : ''} />
-    <PageHeader title="Banco de citações e estatísticas" actions={<>{canEdit && <Button icon={Plus} onClick={() => setImporting(true)}>Importar material</Button>}<Button variant="secondary" onClick={() => setBatchesOpen(true)}>Importações</Button><Button variant="secondary" icon={RotateCw} onClick={reset}>Atualizar</Button></>} />
+    <PageHeader title="Banco de citações e estatísticas" actions={<>{canEdit && <Button icon={Plus} onClick={() => setImporting(true)}>Importar material</Button>}<Button variant="secondary" onClick={() => { setFocusedBatch(undefined); setBatchesOpen(true); }}>Importações</Button><Button variant="secondary" icon={RotateCw} onClick={reset}>Atualizar</Button></>} />
     <FilterBar filters={browsing} filtersOpen={filtersOpen && browsing} onFiltersOpenChange={setFiltersOpen} filterCount={Object.values(filters).filter(value => value !== undefined).length} tabs={<Tabs key={canAdmin ? 'administrator-tabs' : 'member-tabs'} label="Conteúdo do banco" value={tab} onChange={value => { if (value === 'feedback' || value === 'policy') navigate({ tab: value, query: {} }); else changeQuery({}, value as MemoryTab); }} items={[{ value: 'all', label: 'Todas' }, { value: 'citation', label: 'Citações' }, { value: 'statistic', label: 'Estatísticas' }, { value: 'materials', label: 'Materiais' }, { value: 'selections', label: 'Seleções' }, { value: 'feedback', label: 'Feedback' }, ...(canAdmin ? [{ value: 'policy', label: 'Política' }] : [])]} />}
       search={browsing ? <SearchField label="Buscar evidências" value={query} onValueChange={value => { changeQuery({ query: value }); }} /> : undefined}
       actions={browsing ? <Select label="Ordenação" value={sort ?? 'newest'} onChange={value => { changeQuery({ sort: value as MemoryQuery['sort'] }); }} options={[{ value: 'newest', label: 'Mais recentes' }, { value: 'oldest', label: 'Mais antigas' }, { value: 'relevance', label: 'Relevância' }, { value: 'confidence', label: 'Confiança factual' }, { value: 'usage', label: 'Mais usadas' }]} /> : undefined} />
@@ -84,11 +84,11 @@ export function MemoryLibraryScreen() {
         }}>Próxima</Button></ButtonGroup>} />}
       {selected.length > 0 && <Section title={`${selected.length} ${selected.length === 1 ? 'evidência selecionada' : 'evidências selecionadas'}`} action={<ButtonGroup label="Ações"><Button variant="secondary" onClick={() => { setSelected([]); setSelection(undefined); }}>Limpar seleção</Button><Button onClick={() => setSelectionOpen(true)}>Organizar e escrever</Button></ButtonGroup>} />}
     </>}
-    {resource.port && <MemoryImportDialog port={resource.port} open={importing} onClose={() => setImporting(false)} onImported={id => { setImporting(false); setMaterialId(id); changeQuery({}, 'materials'); setMaterialsRefresh(value => value + 1); setSelectionsRefresh(value => value + 1); toast('Material importado'); }} />}
+    {resource.port && <MemoryImportDialog port={resource.port} open={importing} onClose={() => setImporting(false)} onReviewBatch={id => { setImporting(false); setFocusedBatch(id); setBatchesOpen(true); }} onImported={id => { setImporting(false); setMaterialId(id); changeQuery({}, 'materials'); setMaterialsRefresh(value => value + 1); setSelectionsRefresh(value => value + 1); toast('Material importado'); }} />}
     {materialId && <MemoryMaterialDrawer key={materialId} id={materialId} open={materialOpen} onClose={() => setMaterialOpen(false)} onImpact={() => openImpact({ kind: 'material', id: materialId })} onEvidence={item => { setMaterial(item); setMaterialOpen(false); setEvidenceOpen(false); changeQuery({ materialId: item.id }, 'all'); }} />}
     {evidenceId && <MemoryEvidenceDrawer key={evidenceId} id={evidenceId} open={evidenceOpen} onClose={() => setEvidenceOpen(false)} onChanged={resource.reload} onImpact={id => openImpact({ kind: 'evidence', id })} onMaterial={item => { setMaterialId(item.id); setMaterialOpen(true); }} />}
     {impact && <MemoryImpactDrawer key={`${impact.kind}:${impact.id}`} scope={impact} open={impactOpen} onClose={() => setImpactOpen(false)} onSelection={value => { setSelection(value); setSelected(value.items.map(memoryChoiceFromItem)); setSelectionOpen(true); }} />}
     <MemorySelectionDialog open={selectionOpen} evidence={selected} selection={selection} onClose={() => setSelectionOpen(false)} onChange={setSelected} onSaved={value => { setSelection(value); setSelected(value.items.map(memoryChoiceFromItem)); setSelectionsRefresh(current => current + 1); }} />
-    {resource.port && <MemoryBatchManager port={resource.port} open={batchesOpen} onClose={() => { setBatchesOpen(false); setMaterialsRefresh(value => value + 1); resource.reload(); }} onMaterial={id => { setMaterialId(id); setMaterialOpen(true); }} />}
+    {resource.port && <MemoryBatchManager port={resource.port} open={batchesOpen} initialBatchId={focusedBatch} onClose={() => { setBatchesOpen(false); setMaterialsRefresh(value => value + 1); resource.reload(); }} onMaterial={id => { setMaterialId(id); setMaterialOpen(true); }} />}
   </PageStack>;
 }

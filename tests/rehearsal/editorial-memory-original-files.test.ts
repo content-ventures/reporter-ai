@@ -5,13 +5,15 @@ import pg, { type Pool } from 'pg';
 import type { MemoryOriginalFile } from '../../src/domain/editorial-memory-original-file.ts';
 import { memoryEvidenceRef, type MemoryEvidence, type MemoryEvidenceView, type MemoryMaterial, type MemoryPage } from '../../src/domain/editorial-memory.ts';
 import type { MemoryJob } from '../../src/ports/editorial-memory.ts';
+import type { MemoryBatch } from '../../src/ports/editorial-memory-batch.ts';
 import type { Source } from '../../src/domain/source.ts';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { startFakeS3 } from '../support/fake-s3.ts';
 import { startWorkerHost } from '../support/worker-host.ts';
 import { exerciseMemoryLocationBrowser } from '../support/editorial-memory-location-browser.ts';
+import { exerciseMemorySingleFileBrowser } from '../support/editorial-memory-single-file-browser.ts';
 
-const APP = process.env.REPORTER_MEMORY_LOCATION_UI_BASE ?? 'http://127.0.0.1:3998', PORTAL = '10000000-0000-0000-0000-000000000101';
+const APP = process.env.REPORTER_MEMORY_SINGLE_UI_BASE ?? process.env.REPORTER_MEMORY_LOCATION_UI_BASE ?? 'http://127.0.0.1:3998', PORTAL = '10000000-0000-0000-0000-000000000101';
 const identities = ['editor', 'peer', 'approver', 'admin'].map(role => ({ subject: `original-${role}`, email: `${role}@originals.test`, name: role, emailVerified: true }));
 const bytes = Buffer.from('\ufeffinstituição;indicador;valor;unidade;período\r\nÓrgão sintético;Visitantes;1.234,56;pessoas;2025\r\n');
 const upload = { name: 'Acervo — março.csv', bytes: bytes.toString('base64'), delimiter: ';' };
@@ -128,6 +130,68 @@ test('original evidence location is accessible and reset on close in the browser
     handle(request, new URL(request.url).pathname.split('/').slice(3), { identify: async () => identities[0], defer: () => {} }));
 });
 
+test('individual file conflict is reviewed and retained in the browser', { skip: !process.env.REPORTER_MEMORY_SINGLE_UI_BASE }, async () => {
+  assert.ok(['127.0.0.1', 'localhost'].includes(new URL(APP).hostname));
+  await exerciseMemorySingleFileBrowser(APP, Number(process.env.REPORTER_MEMORY_SINGLE_UI_WIDTH ?? 1440), bytes, imported.material.id, request =>
+    handle(request, new URL(request.url).pathname.split('/').slice(3), { identify: async () => identities[0], defer: () => {} }));
+});
+
+test('individual imports reuse exact files, preserve occurrences and require review for different context', async () => {
+  const copyResponse = await api('originals', { ...upload, name: 'Cópia renomeada.csv' }); assert.equal(copyResponse.status, 200);
+  const copy = await copyResponse.json() as MemoryOriginalFile;
+  const same = { ...intake(copy.id), title: 'Another display title' }, key = randomUUID();
+  const response = await api('materials/from-file', same, 0, key); assert.equal(response.status, 200, await response.clone().text());
+  const found = await response.json(); assert.equal(found.material.id, imported.material.id); assert.equal(found.existing, true);
+  assert.deepEqual(await (await api('materials/from-file', same, 0, key)).json(), found);
+  const existingBatch = await (await api(`batches/${found.occurrence.batchId}`)).json() as MemoryBatch;
+  assert.equal(existingBatch.items[0].file.name, 'Cópia renomeada.csv'); assert.equal(existingBatch.items[0].materialId, imported.material.id);
+  const generic = await api('materials', { ...same, text: bytes.toString('utf8') }); assert.equal(generic.status, 200);
+  assert.equal((await generic.json()).material.id, imported.material.id);
+  const before = await owner("SELECT count(*)::int AS n FROM public.reporter_memory_heads WHERE kind='material' AND portal_id=$1", [PORTAL]);
+  assert.equal((await api('materials', { ...same, text: 'Texto inventado que não pertence ao arquivo original.' })).status, 422);
+  assert.deepEqual(await owner("SELECT count(*)::int AS n FROM public.reporter_memory_heads WHERE kind='material' AND portal_id=$1", [PORTAL]), before);
+
+  const changed = { ...same, metadata: { ...metadata, edition: 'Outra edição sintética' } }, reviewKey = randomUUID();
+  const pendingResponse = await api('materials/from-file', changed, 0, reviewKey); assert.equal(pendingResponse.status, 200);
+  const pending = (await pendingResponse.json()).pending;
+  assert.ok(pending?.batchId && pending?.itemId); assert.deepEqual((await (await api('materials/from-file', changed, 0, reviewKey)).json()).pending, pending);
+  const batch = await (await api(`batches/${pending.batchId}`)).json() as MemoryBatch, item = batch.items[0];
+  assert.equal(item.status, 'pending_review'); assert.equal(item.input.metadata.edition, 'Outra edição sintética'); assert.equal(item.candidate?.id, imported.material.id);
+  const decision = { revision: item.revision, decision: { choice: 'reuse', expected: item.candidate, reason: 'Mesma publicação confirmada no teste sintético.' } };
+  const decided = await api(`batches/${pending.batchId}/items/${pending.itemId}/process`, decision); assert.equal(decided.status, 200, await decided.clone().text());
+  const resolved = await decided.json() as MemoryBatch; assert.equal(resolved.items[0].status, 'existing'); assert.equal(resolved.items[0].materialId, imported.material.id);
+  assert.equal(resolved.items[0].input.metadata.edition, 'Outra edição sintética');
+  const replay = await (await api('materials/from-file', changed, 0, reviewKey)).json();
+  assert.equal(replay.material.id, imported.material.id); assert.deepEqual(replay.occurrence, pending);
+});
+
+test('concurrent individual imports of the same new original create one material and retain two occurrences', async () => {
+  const text = Buffer.from('Documento sintético concorrente: 720 pessoas em 2025, sem valor factual real.');
+  const uploadOne = { name: 'concorrente.txt', bytes: text.toString('base64') };
+  const firstFile = await (await api('originals', uploadOne)).json(), secondFile = await (await api('originals', { ...uploadOne, name: 'segunda-cópia.txt' })).json();
+  const input = (id: string) => ({ ...intake(id), kind: 'archive', title: 'Concorrente sintético' });
+  const responses = await Promise.all([api('materials/from-file', input(firstFile.id)), api('materials/from-file', input(secondFile.id))]);
+  for (const response of responses) assert.equal(response.status, 200, await response.clone().text());
+  const results = await Promise.all(responses.map(response => response.json()));
+  assert.equal(results[0].material.id, results[1].material.id); assert.deepEqual(results.map(result => result.existing).sort(), [false, true]);
+  assert.notEqual(results[0].occurrence.batchId, results[1].occurrence.batchId);
+});
+
+test('an individual import rolls its occurrence and material back when reconciliation audit fails', async () => {
+  const fileResponse = await api('originals', { name: 'auditoria.txt', bytes: Buffer.from('Documento sintético destinado à prova de recuperação atômica.').toString('base64') });
+  assert.equal(fileResponse.status, 200); const file = await fileResponse.json();
+  const before = await owner('SELECT count(*)::int AS n FROM public.reporter_memory_batches WHERE portal_id=$1', [PORTAL]);
+  await owner("CREATE FUNCTION public.synthetic_file_audit_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='memory.batch.item.reconciled' THEN RAISE EXCEPTION 'synthetic audit failure'; END IF; RETURN NEW; END $$");
+  await owner('CREATE TRIGGER synthetic_file_audit_failure BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.synthetic_file_audit_failure()');
+  const key = randomUUID();
+  try { assert.equal((await api('materials/from-file', intake(file.id), 0, key)).status, 500); }
+  finally { await owner('DROP TRIGGER synthetic_file_audit_failure ON public.audit_log'); await owner('DROP FUNCTION public.synthetic_file_audit_failure()'); }
+  assert.deepEqual(await owner('SELECT count(*)::int AS n FROM public.reporter_memory_batches WHERE portal_id=$1', [PORTAL]), before);
+  assert.equal((await owner("SELECT count(*)::int AS n FROM public.reporter_memory_heads WHERE portal_id=$1 AND kind='material' AND doc->>'originalFileId'=$2", [PORTAL, file.id]))[0].n, 0);
+  const retry = await api('materials/from-file', intake(file.id), 0, key); assert.equal(retry.status, 200, await retry.clone().text());
+  assert.equal((await retry.json()).existing, false);
+});
+
 test('storage failures retain a pending original that retries without duplicate metadata or audit', async () => {
   const key = randomUUID(), value = { name: 'Pending.txt', bytes: Buffer.from('Synthetic pending original with sufficient literal content.').toString('base64') };
   refuseStorage = true;
@@ -170,7 +234,24 @@ test('current private source ancestry is checked before original metadata or sto
     for (const actor of [1, 2]) assert.equal((await api(location, undefined, actor)).status, 404);
     assert.equal(storage.requests.length, count);
     assert.equal((await api(`originals/${original.id}/file`)).status, 200, 'the uploader still owns the retained original');
+    const peerFile = await (await api('originals', { ...upload, name: 'Outro original.csv' }, 1)).json();
+    const independent = await api('materials/from-file', intake(peerFile.id), 1); assert.equal(independent.status, 200, await independent.clone().text());
+    const accepted = await independent.json(); assert.equal(accepted.existing, false); assert.notEqual(accepted.material.id, imported.material.id);
+    const occurrence = await (await api(`batches/${accepted.occurrence.batchId}`, undefined, 1)).json() as MemoryBatch;
+    assert.equal(occurrence.items[0].candidate, null, 'a private counterpart cannot be disclosed or block an independent import');
   } finally { await owner("UPDATE public.reporter_memory_heads SET origin_production_id=NULL WHERE portal_id=$2 AND kind='material' AND id=$1", [imported.material.id, PORTAL]); }
+});
+
+test('an explicitly distinct individual occurrence can be reimported without another material', async () => {
+  const distinctInput = { ...intake(original.id), metadata: { ...metadata, edition: 'Edição distinta' } }, distinctKey = randomUUID();
+  const distinctPending = (await (await api('materials/from-file', distinctInput, 0, distinctKey)).json()).pending;
+  const distinctBatch = await (await api(`batches/${distinctPending.batchId}`)).json() as MemoryBatch, distinctItem = distinctBatch.items[0];
+  const distinct = await api(`batches/${distinctPending.batchId}/items/${distinctPending.itemId}/process`, { revision: distinctItem.revision,
+    decision: { choice: 'distinct', expected: distinctItem.candidate, reason: 'Edição distinta confirmada no teste sintético.' } });
+  assert.equal(distinct.status, 200, await distinct.clone().text()); const distinctResult = await distinct.json() as MemoryBatch;
+  assert.equal(distinctResult.items[0].status, 'included'); assert.notEqual(distinctResult.items[0].materialId, imported.material.id);
+  const second = await (await api('materials/from-file', distinctInput)).json();
+  assert.equal(second.existing, true); assert.equal(second.material.id, distinctResult.items[0].materialId);
 });
 
 test('an audit failure cannot finalize an original; the same upload action recovers the tracked pending record', async () => {

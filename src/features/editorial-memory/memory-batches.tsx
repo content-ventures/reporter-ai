@@ -12,12 +12,12 @@ import { MemoryOriginalDownload } from './memory-original-download';
 import { batchFailureMessage, describeBatchFile } from './memory-batch-files';
 
 const labels: Record<MemoryBatchItem['status'], string> = { needs_file: 'Selecionar arquivo', uploading: 'Envio pendente', ready: 'Pronto para importar', failed: 'Falha recuperável', refused: 'Recusado', included: 'Incluído', existing: 'Já existente', pending_review: 'Revisar correspondência' };
-export function MemoryBatchManager(props: { port: MemoryLibrary; open: boolean; onClose: () => void; onMaterial: (id: string) => void }) {
-  const binding = useMemo(() => ({ port: props.port, key: crypto.randomUUID() }), [props.port]);
+export function MemoryBatchManager(props: { port: MemoryLibrary; open: boolean; initialBatchId?: string; onClose: () => void; onMaterial: (id: string) => void }) {
+  const binding = useMemo(() => ({ port: props.port, key: crypto.randomUUID() }), [props.port, props.initialBatchId]);
   return <BatchManager key={binding.key} {...props} />;
 }
-function BatchManager({ port, open, onClose, onMaterial }: { port: MemoryLibrary; open: boolean; onClose: () => void; onMaterial: (id: string) => void }) {
-  const [creating, setCreating] = useState(false), [id, setId] = useState<string>(), [cursor, setCursor] = useState<string>();
+function BatchManager({ port, open, initialBatchId, onClose, onMaterial }: { port: MemoryLibrary; open: boolean; initialBatchId?: string; onClose: () => void; onMaterial: (id: string) => void }) {
+  const [creating, setCreating] = useState(false), [id, setId] = useState<string | undefined>(initialBatchId), [cursor, setCursor] = useState<string>();
   const [selection, setSelected] = useState<MemoryBatchItem>(), [editBasis, setEditBasis] = useState<{ key: string; item: MemoryBatchItem }>(), [editing, setEditing] = useState(false), [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState<string>();
   const [active, setActive] = useState<{ id: string; stage: string }>();

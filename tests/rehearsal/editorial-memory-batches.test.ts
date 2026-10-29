@@ -102,6 +102,11 @@ test('storage failure leaves the original linked and an administrator resumes th
   batch = await upload(batch, 0, body, 3); assert.equal(batch.items[0].original!.id, original); assert.equal(batch.items[0].status, 'ready');
   assert.notEqual(batch.items[0].original!.createdBy, batch.items[0].original!.storedBy);
   batch = await processItem(batch); assert.equal(batch.items[0].status, 'included');
+  const individual = { ...batch.items[0].input, originalFileId: original };
+  assert.equal((await api('materials/from-file', individual, 1)).status, 404);
+  const reused = await api('materials/from-file', individual); assert.equal(reused.status, 200, await reused.clone().text());
+  const result = await reused.json(); assert.equal(result.existing, true); assert.equal(result.material.id, batch.items[0].materialId);
+  assert.notEqual(result.occurrence.batchId, batch.id);
 });
 
 test('explicit distinct editions retain their relation and unchanged reimport finds that exact edition', async () => {
