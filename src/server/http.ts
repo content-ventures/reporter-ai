@@ -114,6 +114,9 @@ function reply(value: unknown, status = 200) {
 const messages: Record<string, string> = {
   MEMORY_CONFLICT: 'A evidência ou a decisão mudou. Recarregue antes de tentar novamente.',
   MEMORY_CURSOR_INVALID: 'A consulta mudou ou expirou. Atualize os resultados.',
+  MEMORY_ORIGINAL_UNAVAILABLE: 'O arquivo original não está disponível. Recarregue e tente novamente.',
+  MEMORY_ORIGINAL_CHANGED: 'O arquivo não corresponde ao original preservado. Confira a integridade da cópia antes de continuar.',
+  MEMORY_ORIGINAL_PENDING: 'O envio do original não foi concluído. Retome o envio antes de importar ou baixar.',
   MEMORY_CURSOR_CONFIGURATION: 'A paginação do banco editorial ainda não está configurada no servidor.',
   MEMORY_REVIEW_RESTRICTED: 'A revisão usa evidências às quais você não tem acesso.',
   MEMORY_CHECK_OUTDATED: 'A checagem está desatualizada. Execute uma nova checagem antes de decidir.',

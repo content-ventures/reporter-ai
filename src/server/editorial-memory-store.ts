@@ -31,6 +31,18 @@ export function memoryError(error: unknown): never {
 export async function memoryRead<T>(read: (client: PoolClient) => Promise<T>): Promise<T> {
   try { return await transaction('runtime', read); } catch (error) { return memoryError(error); }
 }
+export async function memoryAuthorizeWrite(client: PoolClient, capability: Extract<Capability, 'library.edit' | 'library.review' | 'pipeline.edit'>) {
+  const context = currentReporterContext();
+  if (context.view || !can(context.roles, capability)) throw forbiddenError(capability);
+  await client.query('SELECT public.reporter_memory_authorize($1)', [capability]);
+  if (reporterDeploymentMode() === 'local') {
+    const loaded = (await client.query('SELECT public.reporter_ed_load($1::jsonb) AS value', [JSON.stringify({
+      write: false, productions: [], parts: [], sources: 'none', runs: 'none', pipelines: false, items: { member: 'all' },
+    })])).rows[0].value as { items: { kind: string; doc: Member | null }[] };
+    const member = loaded.items.find(item => item.kind === 'member' && item.doc?.personId === context.actor)?.doc;
+    if (member && !can(member, capability)) throw forbiddenError(capability);
+  }
+}
 /** Authorization runs before reading a cached response, including an otherwise idempotent retry. */
 export async function memoryCommand<T>(operation: string, input: unknown, requestId: string, capability: Extract<Capability, 'library.edit' | 'library.review' | 'pipeline.edit'>,
   authorize: (client: PoolClient) => Promise<void>, write: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -40,14 +52,7 @@ export async function memoryCommand<T>(operation: string, input: unknown, reques
   const hash = createHash('sha256').update(stableStringify({ operation, input })).digest('hex');
   try {
     return await transaction('runtime', async client => {
-      await client.query('SELECT public.reporter_memory_authorize($1)', [capability]);
-      if (reporterDeploymentMode() === 'local') {
-        const loaded = (await client.query('SELECT public.reporter_ed_load($1::jsonb) AS value', [JSON.stringify({
-          write: false, productions: [], parts: [], sources: 'none', runs: 'none', pipelines: false, items: { member: 'all' },
-        })])).rows[0].value as { items: { kind: string; doc: Member | null }[] };
-        const member = loaded.items.find(item => item.kind === 'member' && item.doc?.personId === context.actor)?.doc;
-        if (member && !can(member, capability)) throw forbiddenError(capability);
-      }
+      await memoryAuthorizeWrite(client, capability);
       await authorize(client);
       const receipt = (await client.query('SELECT public.reporter_memory_receipt($1,$2,$3) AS value', [operation, requestId, hash])).rows[0].value as { replayed: boolean; result?: T };
       if (receipt.replayed) {
