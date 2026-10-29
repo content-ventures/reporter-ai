@@ -1,5 +1,5 @@
 import 'server-only';
-import { createMemoryBatch, readMemoryBatch, readMemoryBatches, updateMemoryBatchItem, uploadMemoryBatchItem, processMemoryBatchItem } from './editorial-memory-batches.ts';
+import { createMemoryBatch, readMemoryBatch, readMemoryBatchCandidate, readMemoryBatches, updateMemoryBatchItem, uploadMemoryBatchItem, processMemoryBatchItem } from './editorial-memory-batches.ts';
 import { memoryArticleBatchSchema, memoryAuthorizationSchema, memoryCancelSchema, memoryCheckInputSchema, memoryCorrectionSchema, memoryDecisionInputSchema, memoryDuplicateResolutionSchema, memoryHistoryKindSchema, memoryImportInputSchema, memoryLegacyBatchSchema, memoryLegacyResolutionSchema, memoryRetrySchema, memorySelectionInputSchema, memoryWritingInputSchema, parseMemoryHistoryQuery, parseMemoryQuery } from './editorial-memory-input.ts';
 import { queryEditorialMemory, readMemoryPolicy } from './editorial-memory-query.ts';
 import { readMemoryDetail, readMemoryHistory } from './editorial-memory-detail.ts';
@@ -39,6 +39,7 @@ export async function handleEditorialMemory(request: Request, path: string[], re
     if (request.method === 'GET' && path.length === 1) return Response.json(await readMemoryBatches(parseMemoryHistoryQuery(params)), noStore);
     if ([...params].length) throw new FlowError('INVALID_INPUT', 422);
     if (request.method === 'GET' && path.length === 2) return Response.json(await readMemoryBatch(path[1]), noStore);
+    if (request.method === 'GET' && path.length === 5 && path[2] === 'items' && path[4] === 'candidate') return Response.json(await readMemoryBatchCandidate(path[1], path[3]), noStore);
     if (request.method === 'POST') {
       const key = request.headers.get('idempotency-key') ?? '';
       if (path.length === 1) return Response.json(await createMemoryBatch(await readJson(request), key), noStore);

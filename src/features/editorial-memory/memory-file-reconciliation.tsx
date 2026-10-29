@@ -9,19 +9,16 @@ export function MemoryFileReconciliation({ port, batchId, itemId, reason, onReas
   const load = useCallback(async (library: MemoryLibrary) => {
     const batch = await library.batch(batchId), item = batch.items.find(value => value.id === itemId);
     if (!item) throw new Error('Documento indisponível.');
-    const candidate = item.candidate ? await library.material(item.candidate.id) : null;
-    const original = candidate?.material.originalFileId ? await library.originalFile(candidate.material.originalFileId) : null;
+    const candidate = item.candidate ? await library.batchCandidate(batchId, itemId) : null;
     const latest = await library.batch(batchId), current = latest.items.find(value => value.id === itemId);
     if (!current) throw new Error('Documento indisponível.');
-    if (!candidate || !current.candidate || current.candidate.id !== item.candidate?.id) return { item: current, candidate: null, original: null };
-    const verified = await library.material(current.candidate.id);
-    if (verified.material.originalFileId !== candidate.material.originalFileId) throw new Error('O material mudou. Atualize a correspondência.');
-    return { item: current, candidate: verified, original };
+    if (!candidate || !current.candidate || current.candidate.id !== candidate.material.id) return { item: current, candidate: null };
+    return { item: current, candidate };
   }, [batchId, itemId]);
   const resource = useMemoryResource(load, 3000), [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   const attempt = useRef<{ signature: string; key: string }>(undefined), running = useRef(false), live = useRef(true);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
-  const item = resource.data?.item, candidate = resource.data?.candidate, original = resource.data?.original;
+  const item = resource.data?.item, candidate = resource.data?.candidate, original = candidate?.original;
   const decide = async (choice: 'reuse' | 'distinct') => {
     if (running.current || resource.port !== port || !item?.candidate || !reason.trim()) return;
     const input = { revision: item.revision, decision: { choice, expected: item.candidate, reason: reason.trim() } };
@@ -46,7 +43,8 @@ export function MemoryFileReconciliation({ port, batchId, itemId, reason, onReas
   const separator = (value: string | null) => value === ',' ? 'Vírgula' : value === ';' ? 'Ponto e vírgula' : value === '\t' ? 'Tabulação' : 'Não informado';
   const format = (fileName: string) => ({ txt: 'text', md: 'markdown', srt: 'srt', vtt: 'vtt', csv: 'csv', tsv: 'tsv' } as Record<string, string>)[fileName.split('.').at(-1)?.toLowerCase() ?? ''];
   const displayFormat = (value: string | undefined) => value === 'text' ? 'TXT' : value === 'markdown' ? 'MD' : value?.toUpperCase() ?? 'Não informado';
-  const newOrigin = item.input.primaryOrigin ?? item.input.metadata.originalUrl, oldOrigin = candidate.material.primaryOrigin.startsWith('text:') ? null : candidate.material.primaryOrigin;
+  const newOrigin = item.input.primaryOrigin ?? item.input.metadata.originalUrl;
+  const oldOrigin = candidate.material.primaryOrigin;
   const currentSource = candidate.material.source, basis = item.candidate.source;
   const stale = candidate.material.revision !== item.candidate.revision || currentSource.kind !== basis.kind || currentSource.sourceId !== basis.sourceId
     || currentSource.sourceVersion !== basis.sourceVersion || currentSource.hash !== basis.hash;
@@ -61,8 +59,8 @@ export function MemoryFileReconciliation({ port, batchId, itemId, reason, onReas
     { label: 'Temas', proposed: item.input.metadata.topics.join(', ') || null, current: candidate.material.metadata.topics.join(', ') || null,
       differs: JSON.stringify(item.input.metadata.topics) !== JSON.stringify(candidate.material.metadata.topics) },
     { label: 'URL', proposed: item.input.metadata.originalUrl, current: candidate.material.metadata.originalUrl },
-    { label: 'Origem', proposed: newOrigin, current: oldOrigin },
-    { label: 'Autorização', proposed: item.input.authorized ? 'Autorizada' : 'Não confirmada', current: candidate.source.rights.authorized ? 'Autorizada' : 'Não confirmada' },
+    { label: 'Origem', proposed: newOrigin ?? 'Automática pelo conteúdo', current: oldOrigin },
+    { label: 'Autorização', proposed: item.input.authorized ? 'Autorizada' : 'Não confirmada', current: candidate.authorized ? 'Autorizada' : 'Não confirmada' },
     { label: 'Formato', proposed: displayFormat(format(item.file.name)), current: displayFormat(original?.format) },
     { label: 'Separador', proposed: separator(item.file.delimiter), current: separator(original?.delimiter ?? null) },
   ];

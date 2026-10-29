@@ -29,8 +29,8 @@ test('batch transfers retain scoped account, exact bytes, request keys and curso
     await library.uploadBatchItem('batch/encoded', 'item/encoded', { revision: 1, bytes: new Uint8Array([239, 187, 191]) }, 'stable-upload-key');
     await library.processBatchItem('batch/encoded', 'item/encoded', { revision: 1 }, 'stable-process-key');
     await library.updateBatchItem('batch/encoded', 'item/encoded', { file: input.file, input: input.input, revision: 1, reason: 'Corrected metadata.' }, 'stable-revision-key');
-    await library.batches({ limit: 25, cursor: 'opaque+/=batch' }); await library.batch('batch/encoded');
-    assert.deepEqual(calls.map(call => call.path.pathname.split('/memory/')[1]), ['batches', 'batches/batch%2Fencoded/items/item%2Fencoded/upload', 'batches/batch%2Fencoded/items/item%2Fencoded/process', 'batches/batch%2Fencoded/items/item%2Fencoded/revision', 'batches', 'batches/batch%2Fencoded']);
+    await library.batches({ limit: 25, cursor: 'opaque+/=batch' }); await library.batch('batch/encoded'); await library.batchCandidate('batch/encoded', 'item/encoded');
+    assert.deepEqual(calls.map(call => call.path.pathname.split('/memory/')[1]), ['batches', 'batches/batch%2Fencoded/items/item%2Fencoded/upload', 'batches/batch%2Fencoded/items/item%2Fencoded/process', 'batches/batch%2Fencoded/items/item%2Fencoded/revision', 'batches', 'batches/batch%2Fencoded', 'batches/batch%2Fencoded/items/item%2Fencoded/candidate']);
     assert.equal(calls[4].path.searchParams.get('cursor'), 'opaque+/=batch');
     assert.deepEqual(JSON.parse(String(calls[1].init.body)), { revision: 1, bytes: '77u/' });
     assert.deepEqual(JSON.parse(String(calls[3].init.body)), { file: input.file, input: input.input, revision: 1, reason: 'Corrected metadata.' });
@@ -65,8 +65,6 @@ test('original uploads retain exact bytes and independent receipts; downloads re
       metadata: { company: null, edition: null, event: null, institution: null, originalUrl: null, publishedOn: null, recordedOn: null, topics: [] } }, 'stable-import-request');
     assert.equal(refreshes, 1); assert.ok(calls.at(-1)!.path.endsWith('/materials/from-file'));
     assert.equal(new Headers(calls.at(-1)!.init.headers).get('idempotency-key'), 'stable-import-request');
-    assert.equal((await library.originalFile('original/encoded')).name, input.name);
-    assert.ok(calls.at(-1)!.path.endsWith('/originals/original%2Fencoded'));
     const downloaded = await library.downloadOriginal('original/encoded');
     assert.equal(downloaded.name, input.name); assert.deepEqual(Buffer.from(downloaded.href.split(',')[1], 'base64'), bytes);
     assert.ok(calls.at(-2)!.path.endsWith('/originals/original%2Fencoded')); assert.ok(calls.at(-1)!.path.endsWith('/originals/original%2Fencoded/file'));

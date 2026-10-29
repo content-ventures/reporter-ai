@@ -2,7 +2,7 @@ import type { MemoryDocumentDelimiter } from '../domain/editorial-memory-documen
 import type { MemoryOriginalFile } from '../domain/editorial-memory-original-file.ts';
 import type { MemoryImportInput, MemoryJob } from './editorial-memory.ts';
 import type { SourceVersionRef } from '../domain/refs.ts';
-import type { MemoryPage } from '../domain/editorial-memory.ts';
+import type { MemoryMaterial, MemoryPage } from '../domain/editorial-memory.ts';
 import type { MemoryHistoryQuery } from './editorial-memory.ts';
 
 export const MEMORY_BATCH_MAX_ITEMS = 100;
@@ -20,9 +20,11 @@ export type MemoryBatch = { id: string; workspaceId: string; title: string; crea
 export type MemoryBatchInput = { title: string; items: MemoryBatchItemInput[] };
 export type MemoryBatchSummary = Omit<MemoryBatch, 'items'> & { total: number; resolved: number; pendingReview: number; refused: number };
 export type MemoryBatchProcessInput = { revision: number; decision?: { choice: 'reuse' | 'distinct'; expected: MemoryBatchCandidate; reason: string } };
+export type MemoryBatchComparison = { material: MemoryMaterial; authorized: boolean; original: MemoryOriginalFile | null };
 export interface MemoryBatchLibrary {
   batches(input: MemoryHistoryQuery): Promise<MemoryPage<MemoryBatchSummary>>;
   batch(id: string): Promise<MemoryBatch>;
+  batchCandidate(batch: string, item: string): Promise<MemoryBatchComparison | null>;
   createBatch(input: MemoryBatchInput, requestId: string): Promise<MemoryBatch>;
   updateBatchItem(batch: string, item: string, input: { revision: number; file: MemoryBatchFile; input: MemoryBatchFields; reason: string }, requestId: string): Promise<MemoryBatch>;
   uploadBatchItem(batch: string, item: string, input: { revision: number; bytes: Uint8Array }, requestId: string): Promise<MemoryBatch>;

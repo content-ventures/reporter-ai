@@ -198,6 +198,7 @@ test('a private counterpart disappears from pending reconciliation and never blo
   await owner("UPDATE public.reporter_ed_productions SET source_ids=ARRAY[$2],doc=doc||jsonb_build_object('restrictedTo',jsonb_build_array($3::text)) WHERE portal_id=$4 AND production_id=$1", [production.productionId, detail.material.source.sourceId, peer.createdBy, PORTAL]);
   await owner("UPDATE public.reporter_memory_heads SET origin_production_id=$2 WHERE portal_id=$3 AND kind='material' AND id=$1", [material, production.productionId, PORTAL]);
   batch = await ok(`batches/${batch.id}`); assert.equal(batch.items[0].candidate, null);
+  assert.equal(await ok(`batches/${batch.id}/items/${item.id}/candidate`), null);
   assert.equal((await api(`batches/${batch.id}/items/${item.id}/process`, { revision: 1, decision: { choice: 'reuse', expected, reason: 'This stale private comparison must be refused.' } })).status, 409);
   const independent = await processItem(await upload(await create([descriptor(body)]), 0, body));
   assert.equal(independent.items[0].status, 'included'); assert.notEqual(independent.items[0].materialId, material); assert.equal(independent.items[0].candidate, null);

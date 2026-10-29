@@ -162,6 +162,12 @@ test('individual imports reuse exact files, preserve occurrences and require rev
   assert.ok(pending?.batchId && pending?.itemId); assert.deepEqual((await (await api('materials/from-file', changed, 0, reviewKey)).json()).pending, pending);
   const batch = await (await api(`batches/${pending.batchId}`)).json() as MemoryBatch, item = batch.items[0];
   assert.equal(item.status, 'pending_review'); assert.equal(item.input.metadata.edition, 'Outra edição sintética'); assert.equal(item.candidate?.id, imported.material.id);
+  const comparisonResponse = await api(`batches/${pending.batchId}/items/${pending.itemId}/candidate`);
+  assert.equal(comparisonResponse.status, 200); assert.equal(comparisonResponse.headers.get('cache-control'), 'private, no-store');
+  const comparison = await comparisonResponse.json(); assert.equal(comparison.material.id, imported.material.id); assert.equal(comparison.authorized, true);
+  assert.equal(comparison.original.id, original.id); assert.equal(JSON.stringify(comparison).includes(bytes.toString('utf8')), false);
+  assert.equal((await api(`batches/${pending.batchId}/items/${pending.itemId}/candidate`, undefined, 1)).status, 404);
+  assert.equal((await api(`batches/${pending.batchId}/items/${pending.itemId}/candidate?extra=1`)).status, 422);
   const decision = { revision: item.revision, decision: { choice: 'reuse', expected: item.candidate, reason: 'Mesma publicação confirmada no teste sintético.' } };
   const decided = await api(`batches/${pending.batchId}/items/${pending.itemId}/process`, decision); assert.equal(decided.status, 200, await decided.clone().text());
   const resolved = await decided.json() as MemoryBatch; assert.equal(resolved.items[0].status, 'existing'); assert.equal(resolved.items[0].materialId, imported.material.id);

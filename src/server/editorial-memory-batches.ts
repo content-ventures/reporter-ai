@@ -2,7 +2,7 @@ import 'server-only';
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
-import type { MemoryBatch, MemoryBatchFile, MemoryBatchItem, MemoryBatchIssue, MemoryBatchSummary } from '../ports/editorial-memory-batch.ts';
+import type { MemoryBatch, MemoryBatchComparison, MemoryBatchFile, MemoryBatchItem, MemoryBatchIssue, MemoryBatchSummary } from '../ports/editorial-memory-batch.ts';
 import { MEMORY_BATCH_MAX_ITEMS } from '../ports/editorial-memory-batch.ts';
 import type { MemoryPage } from '../domain/editorial-memory.ts';
 import type { MemoryHistoryQuery } from '../ports/editorial-memory.ts';
@@ -70,6 +70,13 @@ export async function readMemoryBatch(batch: string): Promise<MemoryBatch> {
   z.guid().parse(batch);
   return memoryRead(async client => { const value = (await client.query('SELECT public.reporter_memory_batch($1) AS value', [batch])).rows[0].value;
     if (!value) throw new FlowError('NOT_FOUND', 404); return value; });
+}
+export async function readMemoryBatchCandidate(batch: string, item: string): Promise<MemoryBatchComparison | null> {
+  z.guid().parse(batch); z.guid().parse(item);
+  return memoryRead(async client => {
+    await itemFor(client, batch, item);
+    return (await client.query('SELECT public.reporter_memory_batch_candidate($1,$2) AS value', [batch, item])).rows[0].value;
+  });
 }
 export async function readMemoryBatches(value: MemoryHistoryQuery): Promise<MemoryPage<MemoryBatchSummary>> {
   const query = memoryHistoryQuerySchema.parse(value), context = currentReporterContext(), key = memoryCursorKey();
