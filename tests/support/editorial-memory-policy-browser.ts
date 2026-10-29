@@ -96,5 +96,6 @@ export async function reapplyMemoryPolicy(page: Page, base: string, evidence: Me
   await expect(registered.getByRole('textbox', { name: 'Motivo registrado da reaplicação', exact: true })).toHaveValue(reason);
   await expect(registered.getByText('editor', { exact: true })).toBeVisible(); await expect(registered.getByText(new Date(checkedAt).toLocaleString('pt-BR'), { exact: true })).toBeVisible();
   await expect(registered.getByRole('button', { name: 'Reaplicar política', exact: true })).toHaveCount(0); await settle(page, 'Reaplicação registrada'); await audit(page, 'reassessment-recorded');
-  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await expect(registered).toBeHidden(); await expect(drawer).toBeVisible(); await expect(reading).toBeFocused(); return saved;
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await expect(registered).toBeHidden(); await expect(drawer).toBeVisible(); await expect(reading).toBeFocused();
+  await audit(page, 'reassessment-current'); await expect(drawer.getByRole('button', { name: 'Checar novamente', exact: true })).toBeInViewport({ ratio: 1 }); return saved;
 }
