@@ -14,6 +14,8 @@ export type MemoryMarketPlan = { materialId: string; revision: number; source: S
   checksum: string; mapping: MemoryMarketMapping; updatedBy: string; updatedAt: string };
 export type MemoryMarketPreview = { materialRevision: number; source: SourceVersionRef; originalFileId: string; checksum: string;
   headers: string[]; preview: { rows: MemoryMarketRow[]; next: number | null; total: number } | null; mapping: MemoryMarketPlan | null };
+export type MemoryMarketImportReport = { rows: ({ record: number; status: 'created' | 'existing' | 'conflict'; id: string }
+  | { record: number; status: 'refused'; reason: 'missing' | 'nonliteral' | 'too_long'; fields: MemoryMarketField[] })[]; next: number | null; total: number };
 
 const required = ['institution', 'indicator', 'value', 'unit', 'period'] as const;
 const fields: readonly MemoryMarketField[] = [...required, 'geography', 'population', 'qualifier'];

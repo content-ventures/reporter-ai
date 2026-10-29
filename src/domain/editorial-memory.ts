@@ -70,6 +70,9 @@ export type MemoryStatistic = MemoryEvidenceBase & {
   period: { label: string; from: string | null; to: string | null } | null;
   geography: string | null; population: string | null; qualifier: string | null;
   issuingInstitution: string | null; declaringPersonId: string | null;
+  /** Original mapped cells; later corrections retain this import provenance in revision history. */
+  market?: { originalFileId: string; checksum: string; mappingRevision: number; record: number;
+    fields: Partial<Record<import('./editorial-memory-market.ts').MemoryMarketField, import('./editorial-memory-market.ts').MemoryMarketCell>> };
 };
 export type MemoryEvidence = MemoryCitation | MemoryStatistic;
 export type MemoryEvidenceRef = { id: string; revision: number; hash: string };

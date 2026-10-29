@@ -333,4 +333,16 @@ test('market mappings save explicit column choices with source binding and revie
   assert.equal((await peer.json()).mapping.revision, 1);
   const [audit] = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.market.mapping' AND after_data->>'materialId'=$1", [material.id]);
   assert.equal(audit.user_id, plan.updatedBy); assert.deepEqual(audit.after_data, plan);
+  const command = { revision: plan.revision, materialRevision: material.revision, source: material.source, originalFileId: file.id, checksum: file.checksum, start: 1 }, importKey = randomUUID();
+  const response = await api(`${root}/market-import`, command, 0, importKey); assert.equal(response.status, 200, await response.clone().text());
+  const report = await response.json(); assert.equal(report.rows.length, 1); assert.equal(report.rows[0].status, 'created');
+  const evidenceResponse = await api(report.rows[0].id); assert.equal(evidenceResponse.status, 200, await evidenceResponse.clone().text());
+  const evidence = await evidenceResponse.json(); assert.equal(evidence.evidence.value.raw, '1.234,56');
+  assert.equal(evidence.evidence.market.fields.value.column, 3); assert.equal(evidence.eligibility.reason, 'review_required');
+  assert.deepEqual(await (await api(`${root}/market-import`, command, 0, importKey)).json(), report);
+  const again = await api(`${root}/market-import`, command); assert.equal(again.status, 200, await again.clone().text());
+  assert.equal((await again.json()).rows[0].status, 'existing');
+  assert.equal((await api(`${root}/market-import`, command, 2)).status, 403);
+  const importAudit = await owner("SELECT user_id,after_data FROM public.audit_log WHERE action='memory.market.import' AND after_data->>'materialId'=$1 ORDER BY created_at", [material.id]);
+  assert.equal(importAudit.length, 2); assert.equal(importAudit[0].user_id, plan.updatedBy); assert.equal(importAudit[0].after_data.created, 1);
 });

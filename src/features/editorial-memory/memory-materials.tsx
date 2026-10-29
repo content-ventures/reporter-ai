@@ -104,6 +104,7 @@ export function MemoryMaterialDrawer({ id, open, onClose, onEvidence, onImpact }
     {editing && <MemoryMaterialRevisionDialog key={editing.key} basis={editing} open={open && editingOpen} onClose={() => setEditingOpen(false)} onSaved={result => {
       setEditingOpen(false); setHistorical(undefined); resource.reload(); toast('Original revisado', { description: `${result.affectedEvidence} evidências precisam de nova revisão editorial.` });
     }} />}
-    {resource.port && <MemoryMarketMappingDialog key={`${id}:${mappingOpen}`} port={resource.port} materialId={id} open={open && mappingOpen} onClose={() => setMappingOpen(false)} />}
+    {resource.port && detail && <MemoryMarketMappingDialog key={`${id}:${mappingOpen}`} port={resource.port} materialId={id} open={open && mappingOpen} onClose={() => setMappingOpen(false)}
+      onViewEvidence={() => { setMappingOpen(false); onEvidence(detail.material); }} />}
   </>;
 }
