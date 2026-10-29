@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useState } from 'react';
-import { Alert, Button, ButtonGroup, DataTable, DescriptionList, EmptyState, ErrorState, Field, FieldGroup, Input, Panel, ResponsiveDialog, Section, Select, Spinner, Textarea } from '@content-ventures/design-system/v3';
+import { Alert, Button, ButtonGroup, DataTable, DescriptionList, EmptyState, ErrorState, Field, FieldGroup, Input, Panel, Section, Select, Spinner, Textarea } from '@content-ventures/design-system/v3';
 import type { MemoryPolicy } from '@/domain/editorial-memory';
 import type { MemoryCalibrationCase, MemoryEvaluationCriteria } from '@/domain/editorial-memory-calibration';
 import type { MemoryPolicyProposal, MemoryPolicyProposalInput } from '@/domain/editorial-memory-policy';
@@ -12,8 +12,8 @@ import { useMemoryPolicyCommand } from './use-memory-policy-command';
 
 export type MemoryPolicyBasis = { key: string; policy: MemoryPolicy; port: MemoryLibrary };
 const CRITERIA = { minTraining: 'Mínimo de amostras de treino por tipo', minValidation: 'Mínimo de amostras de validação por tipo', minOrigins: 'Mínimo de grupos de origem por conjunto e tipo', minReleased: 'Mínimo de liberações na validação por tipo', minPrecision: 'Limite inferior mínimo da precisão (%)', maxErrors: 'Máximo de erros na validação por tipo' };
-export function MemoryPolicyProposalDialog({ basis, open, onClose, onSaved }: { basis: MemoryPolicyBasis; open: boolean; onClose: () => void; onSaved: (proposal: MemoryPolicyProposal) => void }) {
-  const allowed = useCan('pipeline.edit'), command = useMemoryPolicyCommand(basis.port, open && allowed);
+export function useMemoryPolicyProposalForm({ basis, open, onClose, onSaved }: { basis?: MemoryPolicyBasis; open: boolean; onClose: () => void; onSaved: (proposal: MemoryPolicyProposal) => void }) {
+  const allowed = useCan('pipeline.edit'), command = useMemoryPolicyCommand(basis?.port, open && allowed);
   const [mode, setMode] = useState('review_required'), [fact, setFact] = useState(''), [declared, setDeclared] = useState(''), [reason, setReason] = useState('');
   const [criteria, setCriteria] = useState<Record<keyof MemoryEvaluationCriteria, string>>({ minTraining: '', minValidation: '', minOrigins: '', minReleased: '', minPrecision: '', maxErrors: '' });
   const [cases, setCases] = useState<Record<string, 'training' | 'validation'>>({}), [cursor, setCursor] = useState<string>(), [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
@@ -22,7 +22,7 @@ export function MemoryPolicyProposalDialog({ basis, open, onClose, onSaved }: { 
   const resource = useMemoryResource(load, 0, open && command.bound && allowed && mode === 'calibrated'), page = resource.data;
   const locked = command.busy || !command.bound || !allowed;
   function input(): MemoryPolicyProposalInput | undefined {
-    if (!reason.trim()) return;
+    if (!basis || !reason.trim()) return;
     const base = { baseRevision: basis.policy.revision, reason: reason.trim() };
     if (mode === 'review_required') return { ...base, settings: { mode, thresholds: { fact: null, declared: null, opinion: null, forecast: null } }, criteria: null, cases: [] };
     if (![fact, declared].some(value => value.trim()) || [fact, declared].some(value => value.trim() && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100))) return;
@@ -33,9 +33,9 @@ export function MemoryPolicyProposalDialog({ basis, open, onClose, onSaved }: { 
       cases: Object.entries(cases).map(([id, split]) => ({ id, split })) };
   }
   const payload = input();
-  return <><ResponsiveDialog open={open} title="Criar proposta de política" size="lg" dirty={Boolean(reason || fact || declared || Object.keys(cases).length)} onClose={command.busy ? () => undefined : () => { setReadingOpen(false); onClose(); }}
-    footer={<><Button variant="ghost" disabled={command.busy} onClick={onClose}>Fechar</Button><Button loading={command.busy} disabled={locked || !payload} onClick={() => { if (payload) void command.execute(payload, key => basis.port.proposePolicy(payload, key), onSaved); }}>Avaliar proposta</Button></>}>
-    {!command.bound || !allowed ? <ErrorState title="Acesso alterado" description="Abra uma nova proposta na conta atual." /> : <Panel>
+  return { title: 'Criar proposta de política', busy: command.busy, dirty: Boolean(reason || fact || declared || Object.keys(cases).length),
+    footer: <><Button variant="ghost" disabled={command.busy} onClick={onClose}>Fechar</Button><Button loading={command.busy} disabled={locked || !payload} onClick={() => { if (payload && basis) void command.execute(payload, key => basis.port.proposePolicy(payload, key), onSaved); }}>Avaliar proposta</Button></>,
+    body: !basis || !command.bound || !allowed ? <ErrorState title="Acesso alterado" description="Abra uma nova proposta na conta atual." /> : <Panel>
       <Section>
         {command.error && <Alert tone="danger" title={command.error} />}
         <DescriptionList items={[{ label: 'Política de referência', value: `Versão ${basis.policy.revision}` }]} />
@@ -61,6 +61,5 @@ export function MemoryPolicyProposalDialog({ basis, open, onClose, onSaved }: { 
           </ButtonGroup>} />}
         </Section>
       </>}
-    </Panel>}
-  </ResponsiveDialog><MemoryCalibrationReader item={command.bound ? reading : undefined} open={open && readingOpen && command.bound} onClose={() => setReadingOpen(false)} /></>;
+    </Panel>, preview: <MemoryCalibrationReader item={command.bound ? reading : undefined} open={open && readingOpen && command.bound} onClose={() => setReadingOpen(false)} /> };
 }
