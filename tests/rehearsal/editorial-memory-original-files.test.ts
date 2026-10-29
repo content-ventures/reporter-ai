@@ -133,7 +133,12 @@ test('original evidence location is accessible and reset on close in the browser
 test('individual file conflict is reviewed and retained in the browser', { skip: !process.env.REPORTER_MEMORY_SINGLE_UI_BASE }, async () => {
   assert.ok(['127.0.0.1', 'localhost'].includes(new URL(APP).hostname));
   await exerciseMemorySingleFileBrowser(APP, Number(process.env.REPORTER_MEMORY_SINGLE_UI_WIDTH ?? 1440), bytes, imported.material.id, request =>
-    handle(request, new URL(request.url).pathname.split('/').slice(3), { identify: async () => identities[0], defer: () => {} }));
+    handle(request, new URL(request.url).pathname.split('/').slice(3), { identify: async () => identities[0], defer: () => {} }),
+  process.env.REPORTER_MEMORY_SINGLE_STALE_UI === '1' ? async () => {
+    const response = await api(`materials/${imported.material.id}/revision`, { baseRevision: imported.material.revision, source: imported.material.source,
+      text: 'Uma revisão sintética diferente da fonte exige nova comparação editorial.', reason: 'Alteração concorrente para o teste.' });
+    assert.equal(response.status, 200, await response.clone().text());
+  } : undefined);
 });
 
 test('individual imports reuse exact files, preserve occurrences and require review for different context', async () => {
