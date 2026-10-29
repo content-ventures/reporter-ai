@@ -104,9 +104,11 @@ function useStudioNotice(): ReactNode {
   const studio = useStudio();
   const { generation, approval, production, panes, actions } = studio;
   const run = generation.run;
-  const { issue, error, retry } = studio.bankReadiness;
+  const { issue, draftIssue, error, retry } = studio.bankReadiness;
   if (issue || error) return <Alert tone="warning" title={issue?.message ?? error}
     action={<Button size="sm" variant="secondary" onClick={issue ? () => { studio.showSource(issue.source); panes.showPanel('material'); } : retry}>{issue ? 'Conferir fonte' : 'Tentar novamente'}</Button>} />;
+  if (draftIssue) return <Alert tone="warning" title={draftIssue.message}
+    action={<Button size="sm" variant="secondary" onClick={() => { studio.actions.scrollToBlock(draftIssue.blockId); studio.showSource(draftIssue.source); panes.showPanel('material'); }}>Conferir trecho do rascunho</Button>} />;
   if (run?.status === 'failed') {
     return (
       <GenerationBanner

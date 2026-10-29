@@ -8,6 +8,7 @@ import type { ProductionRecord } from '../domain/record.ts';
 import type { SourceVersionRef } from '../domain/refs.ts';
 import type { Source } from '../domain/source.ts';
 import { toSourceVersionRef } from '../domain/source.ts';
+import { contentHash } from '../domain/text/hash.ts';
 import type { MemoryWritingStatus } from '../ports/editorial-memory.ts';
 import { ok } from '../domain/result.ts';
 import { memoryBundle, memoryReadState } from './editorial-memory-detail.ts';
@@ -41,14 +42,24 @@ export async function guardMemorySources(client: PoolClient, record: ProductionR
 }
 
 /** The same current-proof check, grouped by visible attached source for pre-generation UX. */
-export async function inspectMemorySources(client: PoolClient, record: ProductionRecord): Promise<Pick<MemoryWritingStatus, 'sources' | 'issues'>> {
+export async function inspectMemorySources(client: PoolClient, record: ProductionRecord): Promise<Pick<MemoryWritingStatus, 'sources' | 'issues' | 'draft' | 'draftIssues'>> {
   const sources = record.sources.filter(source => source.memory), refs = sources.map(source => toSourceVersionRef(source));
-  const items = sources.length ? await currentItems(client, sources, refs) : [], issues: MemoryWritingStatus['issues'] = [];
+  const piece = record.pieces.find(piece => piece.kind === 'article'), body = piece?.draft.body;
+  const used = body?.type === 'article' ? body.blocks.flatMap(block => block.sourceRefs ?? []) : [];
+  const items = sources.length ? await currentItems(client, sources, [...refs, ...used]) : [], issues: MemoryWritingStatus['issues'] = [], draftIssues: MemoryWritingStatus['draftIssues'] = [];
   for (const [index, source] of sources.entries()) {
     const result = validateMemoryWritingSources([source], items);
     if (!result.ok) issues.push({ source: refs[index], code: result.refusal.code, message: result.refusal.message });
   }
-  return { sources: refs, issues };
+  if (body?.type === 'article') for (const block of body.blocks) for (const ref of block.sourceRefs ?? []) {
+    const source = sources.find(source => source.id === ref.sourceId); if (!source) continue;
+    const result = validateMemoryArticle({ ...body, blocks: [{ ...block, sourceRefs: [ref] }] }, [source], items);
+    if (result.ok || draftIssues.some(issue => issue.blockId === block.id && issue.source.sourceId === source.id && issue.source.sourceVersion === ref.sourceVersion)) continue;
+    const version = source.versions.find(version => version.number === ref.sourceVersion);
+    draftIssues.push({ source: version ? toSourceVersionRef(source, version) : { kind: 'source-version', sourceId: source.id, sourceVersion: ref.sourceVersion, hash: null },
+      blockId: block.id, code: result.refusal.code, message: result.refusal.message });
+  }
+  return { sources: refs, issues, draft: piece ? { pieceId: piece.id, revision: piece.draft.revision, hash: contentHash(piece.draft.body) } : null, draftIssues };
 }
 export async function guardMemoryArticle(client: PoolClient, body: ArticleBody, sources: Source[]) {
   const memory = sources.filter(source => source.memory && body.blocks.some(block => block.sourceRefs?.some(ref => ref.sourceId === source.id)));

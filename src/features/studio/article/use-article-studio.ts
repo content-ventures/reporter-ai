@@ -53,7 +53,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
   const sessionCanEdit = useCan('piece.edit');
   const canEdit = stored?.viewer.canEdit ?? sessionCanEdit;
   const locked = stored?.locked ?? false;
-  const bankReadiness = useBankReadiness({ production, sourceDetails, sourceError }, canEdit);
+  const bankReadiness = useBankReadiness({ production, sourceDetails, sourceError, draft }, canEdit);
 
   const panes = useStudioPanes();
   const { showPanel } = panes;
@@ -180,7 +180,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
   const { showQuote } = checking;
   const { insertQuote, takeSourceText, showInTranscript } = sourceLink;
   const { saveVersion, restoreVersion, undoChanges } = review;
-  const { scrollToBlock, readOnly } = text;
+  const { scrollToBlock, readOnly, prepare } = text;
   /** Why nothing may change the text here, said when someone tries (null: it may). */
   const refusal = readOnly ? READ_ONLY_REASON : locked ? lockedMessage('article', firstName(stored?.request?.assignee?.name) || undefined) : null;
   const actions = useMemo(() => {
@@ -222,6 +222,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
       saveVersion: writes(saveVersion),
       restoreVersion: writes(restoreVersion),
       undoChanges: writes(undoChanges),
+      prepareSourceRefresh: writes(prepare),
       scrollToBlock,
       showImage,
       showImageSlot,
@@ -230,7 +231,7 @@ export function useArticleStudio({ production, piece, draft, sourceDetails, sour
       jumpTo,
       focusTitle,
     };
-  }, [refusal, readOnly, canEdit, generate, retryGeneration, retryRun, repeatTurn, runTool, runPreset, ask, askAboutSelection, accept, discard, reapply, revealSuggestion, nextSuggestion, focusRange, showQuote, markTextReviewed, unmarkTextReviewed, nextMissingQuote, insertQuote, takeSourceText, showInTranscript, addExcerpt, saveVersion, restoreVersion, undoChanges, scrollToBlock, showImage, showImageSlot, nextImageIssue, nextImageSlot, jumpTo, focusTitle]);
+  }, [refusal, readOnly, canEdit, generate, retryGeneration, retryRun, repeatTurn, runTool, runPreset, ask, askAboutSelection, accept, discard, reapply, revealSuggestion, nextSuggestion, focusRange, showQuote, markTextReviewed, unmarkTextReviewed, nextMissingQuote, insertQuote, takeSourceText, showInTranscript, addExcerpt, saveVersion, restoreVersion, undoChanges, prepare, scrollToBlock, showImage, showImageSlot, nextImageIssue, nextImageSlot, jumpTo, focusTitle]);
 
   /** The brief changed after the text on screen was generated ("Reescrever" follows the new one). */
   const briefChanged = briefChangedSince(generation.run, production.brief);
