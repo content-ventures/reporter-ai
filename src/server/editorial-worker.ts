@@ -42,7 +42,8 @@ import type { Citation } from '../domain/citation-library.ts';
 import { autoFactCheckIds } from './fact-check-pipeline.ts';
 import { tavilyConfigured } from './tavily';
 import { mergeCitationAdditions, suggestedCitations } from '../domain/citation-suggestions.ts';
-import { curatedEvidence, explainedHints, planningSource, quotableShortlist, writingSource } from '../domain/evidence-hints.ts';
+import { curatedEvidence, explainedHints, planningSource, quotableShortlist, withMemoryPlanningEvidence, writingSource } from '../domain/evidence-hints.ts';
+import { memoryArticleContentIssues, memoryArticleReferences } from '../domain/editorial-memory-article.ts';
 import type { EditorialJob, ServerImageAsset } from '../ports/connected-workspace.ts';
 import { articleImageTarget } from './article-image-task.ts';
 import { editorialResponseValid } from './editorial-validation';
@@ -220,6 +221,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
     const curated = curatedEvidence(input.citations,input.record.sources,candidates);
     const hints = explainedHints(pipeline.definition);
     const byKey = new Map(candidates.map(c => [c.key,c]));
+    const memoryContract = candidates.some(candidate => candidate.memory) ? { sources: input.record.sources, references: new Map(candidates.map(candidate => [candidate.key, candidate.ref])) } : undefined;
     const knownIds = new Set(byKey.keys());
     const evidencePassages=(ids:readonly string[])=>contiguousSourcePassages(input.record.sources,ids.flatMap(id=>byKey.get(id)?[byKey.get(id)!.ref]:[]));
     const refs = (keys: string[]) => keys.map(key => {
@@ -339,6 +341,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
           && (key !== 'outline' || !grounding || outlineGrounded(value,grounding)),
         ...(key === 'article' && index === 0 || key === 'intro' || key === 'section' ? { deferWritingRevision: true } : {}),
         ...(['article', 'intro', 'section'].includes(key) ? { writingContract: { evidencePassages,evidence: new Map(candidates.map(candidate => [candidate.key, candidate.text])),
+          ...(memoryContract ? { memory: memoryContract } : {}),
           ...(key === 'article' ? { limits: sizing, minQuotes: sizing.minQuotes } : {}) } } : {}),
         signal: key === 'images' ? AbortSignal.any([combined,AbortSignal.timeout(30000)]) : combined,trace: trace => guarded([],trace).then(() => undefined),
         ...(streamText ? { onText: async (text: string) => { writingStages.set(stepId,text); await publishPreview(); } } : {}) });
@@ -371,6 +374,10 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       // Summaries lose the exact words: the planning steps also get the quotable lines of linked speakers.
       variables.source = hints.planning ? planningSource(context,curated,context !== source
         ? quotableShortlist(candidates,identified,new Set(curated.byKey.keys())) : []) : context;
+      if (memoryContract) {
+        if (withMemoryPlanningEvidence('', candidates).length > 24000) throw new FlowError('GENERATION_INPUT_TOO_LARGE',422);
+        variables.source = withMemoryPlanningEvidence(variables.source, candidates);
+      }
     }
     await guarded([{ type: 'step.completed',stepId: 'source' },{ type: 'step.skipped',stepId: 'generate' }]);
     let value: unknown;
@@ -403,12 +410,12 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       // The planning hints stay out: the writing steps read curated lines as marks on literalEvidence.
       variables.source = writingSource(context,candidates,selected,hints.writing ? curated.byKey : new Map());
       variables.outline = JSON.stringify(outline);
-      if (pipeline.definition.articleMode === 'single') value = await writeCompleteArticle(outline, variables, sizing, call);
+      if (pipeline.definition.articleMode === 'single') value = await writeCompleteArticle(outline, variables, sizing, call, memoryContract);
       else {
         // A part asked for the quotation its evidence allows, only when both writing prompts explain it.
         const soft = explainedRevisionCodes(pipeline.definition).includes('SECTION_QUOTE_REQUIRED') ? { rule: quoteRuleFor(input.record.production.brief),
           quotable: (ids: readonly string[]) => quotableIds(ids,byKey,identified).map(id => byKey.get(id)!) } : undefined;
-        value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages,grounding,people.map(person => person.name),soft);
+        value = await writeSequentialArticle(outline,variables,sizing,call,new Map(candidates.map(candidate=>[candidate.key,candidate.text])),evidencePassages,grounding,people.map(person => person.name),soft,memoryContract);
       }
     }
     if (job.kind === 'carousel.copy') {
@@ -443,7 +450,12 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       const article = z.object({ title: z.string().min(1).max(500),intro: z.array(paragraph).min(1).max(3),sections: z.array(z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict()).min(1).max(8) }).strict().parse(value);
       if (reviewed && (article.title !== reviewed.title || article.sections.length !== reviewed.sections.length || article.sections.some((s,i) => s.title !== reviewed.sections[i].title))) throw new FlowError('OUTLINE_NOT_FOLLOWED',502);
       const blocks: ArticleBlock[] = [];
-      const add = (p: z.infer<typeof paragraph>) => blocks.push({ id: randomUUID(),type: 'paragraph',inlines: [{ text: format ? tidyQuoteOpenings(outletPunctuation(p.text)) : p.text }],sourceRefs: refs(p.evidenceIds),ai: 'unreviewed' });
+      const add = (p: z.infer<typeof paragraph>) => {
+        const bank = p.evidenceIds.some(id => byKey.get(id)?.memory);
+        const block: ArticleBlock = { id: randomUUID(),type: 'paragraph',inlines: [{ text: format && !bank ? tidyQuoteOpenings(outletPunctuation(p.text)) : p.text }],sourceRefs: refs(p.evidenceIds),ai: 'unreviewed' };
+        block.sourceRefs = memoryArticleReferences(block, block.sourceRefs!, input.record.sources);
+        blocks.push(block);
+      };
       article.intro.forEach(add);
       article.sections.forEach((s,i) => {
         if (sizing.headings) blocks.push({ id: reviewed?.sections[i].blockId ?? randomUUID(),type: 'heading',level: 2,inlines: [{ text: s.title }],ai: 'unreviewed' });
@@ -455,6 +467,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       const dek = plannedDek ? unquoteUnsupported([{ text: plannedDek,evidenceIds: candidates.map(candidate => candidate.key) }],
         new Map(candidates.map(candidate => [candidate.key,candidate.text])))[0].text : undefined;
       const body = emphasizeArticleQuotes({ type: 'article' as const,title: article.title,...(dek ? { dek } : {}),blocks });
+      if (memoryArticleContentIssues(body, input.record.sources).length) throw new FlowError('MEMORY_LITERAL_CHANGED',502);
       const issue = r1ArticleIssue(body, input.record.sources, articleGateFor(input.record.production.brief));
       // No block/version is committed until the WHOLE sequential or single output passes.
       if (issue) throw new FlowError(issue, 502);

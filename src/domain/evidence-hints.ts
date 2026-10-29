@@ -5,6 +5,7 @@ import type { SourceRef } from './refs.ts';
 import { sourceVersion } from './source.ts';
 import type { Source, TranscriptSegment } from './source.ts';
 import { countWords } from './text/stats.ts';
+import type { WritingMemoryContext } from './writing-source.ts';
 
 /**
  * Hints that point the planning and writing steps at the best literal lines of a production:
@@ -22,7 +23,7 @@ export function explainedHints(definition: PipelineDefinition): { planning: bool
 }
 
 /** One sentence of the material as the editorial steps see it: `[key] speaker: text`. */
-export type EvidenceCandidate = { key: string; text: string; speaker?: string; ref: SourceRef };
+export type EvidenceCandidate = { key: string; text: string; speaker?: string; ref: SourceRef; memory?: WritingMemoryContext };
 /** A sentence a curated citation covers. The newsroom's note stays out: the writing steps never read it. */
 export type CuratedMark = { citationId: string };
 export type CuratedLine = { keys: string[]; speaker?: string; text: string; relevance?: string };
@@ -84,7 +85,7 @@ export function curatedEvidence(citations: readonly Citation[], sources: readonl
   for (const citation of curated) {
     const where = segmentKey(citation.ref), segment = citedSegment(citation, sources);
     const ranges = segment ? citationRanges(citation.text, segment) : [];
-    const matched = candidates.filter(candidate => segment && segmentKey(candidate.ref) === where
+    const matched = candidates.filter(candidate => candidate.memory?.kind !== 'statistic' && segment && segmentKey(candidate.ref) === where
       && ranges.some(range => overlaps(range, candidateRange(candidate, segment))));
     if (!matched.length) continue;
     const relevance = citation.relevance.trim().slice(0, RELEVANCE_CHARS).trim();
@@ -113,7 +114,7 @@ export function quotableShortlist(candidates: readonly EvidenceCandidate[], iden
   const thirds: { candidate: EvidenceCandidate; index: number; score: number }[][] = [[], [], []];
   candidates.forEach((candidate, index) => {
     const count = countWords(candidate.text);
-    if (count < 8 || count > 60 || skip.has(candidate.key) || !identified(candidate)) return;
+    if (candidate.memory?.kind === 'statistic' || count < 8 || count > 60 || skip.has(candidate.key) || !identified(candidate)) return;
     thirds[Math.min(2, Math.floor(index * 3 / candidates.length))].push({ candidate, index, score: quotableScore(candidate.text) });
   });
   for (const third of thirds) third.sort((a, b) => b.score - a.score || a.index - b.index);
@@ -146,10 +147,21 @@ export function planningSource(context: string, curated: CuratedEvidence, shortl
   return source;
 }
 
+const bankEvidenceRules = { statistic: 'Preserve the full selected observation, including unit, period, population, geography and qualifiers, in one paragraph. Never present it as speech.',
+  citation: 'Preserve a contiguous literal excerpt and its exact source/version. Selection proof does not authorize unselected original content.' };
+/** A long-source summary cannot replace the literal bank selection or its immutable decision. */
+export function withMemoryPlanningEvidence(context: string, candidates: readonly EvidenceCandidate[]): string {
+  const bank = candidates.filter(candidate => candidate.memory);
+  return bank.length ? JSON.stringify({ context, bankEvidenceRules, bankEvidence: bank.map(candidate => ({ id: candidate.key, text: candidate.text, ref: candidate.ref,
+    ...(candidate.speaker && candidate.memory?.kind !== 'statistic' ? { speaker: candidate.speaker } : {}), memory: candidate.memory })) }) : context;
+}
+
 /** The source of the writing steps: the context and the exact selected sentences, curated ones marked (without their note). */
 export function writingSource(context: string, candidates: readonly EvidenceCandidate[], selected: ReadonlySet<string>, curated: ReadonlyMap<string, CuratedMark>): string {
-  return JSON.stringify({ context, literalEvidence: candidates.filter(candidate => selected.has(candidate.key)).map(candidate => {
+  const included = candidates.filter(candidate => selected.has(candidate.key));
+  return JSON.stringify({ context, ...(included.some(candidate => candidate.memory) ? { bankEvidenceRules } : {}), literalEvidence: included.map(candidate => {
     const mark = curated.get(candidate.key);
-    return { id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}), ...(mark ? { curated: true } : {}) };
+    return { id: candidate.key, text: candidate.text, ...(candidate.speaker && candidate.memory?.kind !== 'statistic' ? { speaker: candidate.speaker } : {}),
+      ...(candidate.memory ? { ref: candidate.ref, memory: candidate.memory } : {}), ...(mark && candidate.memory?.kind !== 'statistic' ? { curated: true } : {}) };
   }) });
 }

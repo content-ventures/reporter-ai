@@ -5,8 +5,23 @@ import { PIPELINE_SENTENCE_PATTERN } from '../domain/pipeline.ts';
 import { articleLengthIssue, articleQuotationIssue, literalQuoteText, quoteInSource, quoteOpensSentence, quotedIn, quotedWords } from '../domain/article-policy.ts';
 import type { ArticleLengthLimits } from '../domain/article-policy.ts';
 import { countCharacters, textStats } from '../domain/text/stats.ts';
+import { paragraphBlock } from '../domain/article.ts';
+import { memoryArticleContentIssues, memoryArticleReferences } from '../domain/editorial-memory-article.ts';
+import type { Source } from '../domain/source.ts';
+import type { SourceRef } from '../domain/refs.ts';
 
-export type WritingContract = { limits?: ArticleLengthLimits; evidence: ReadonlyMap<string, string>; minQuotes?: number; evidencePassages?:(ids:readonly string[])=>readonly string[] };
+export type WritingContract = { limits?: ArticleLengthLimits; evidence: ReadonlyMap<string, string>; minQuotes?: number; evidencePassages?:(ids:readonly string[])=>readonly string[];
+  memory?: { sources: readonly Source[]; references: ReadonlyMap<string, SourceRef> } };
+
+export function memoryWritingIssue(paragraphs: readonly { text: string; evidenceIds: string[] }[], memory?: WritingContract['memory']) {
+  if (!memory) return undefined;
+  const blocks = paragraphs.map((paragraph, index) => {
+    const block = paragraphBlock('memory-paragraph-' + index, paragraph.text);
+    block.sourceRefs = memoryArticleReferences(block, paragraph.evidenceIds.flatMap(id => memory.references.get(id) ?? []), memory.sources);
+    return block;
+  });
+  return memoryArticleContentIssues({ type: 'article', title: '', blocks }, memory.sources).length ? 'MEMORY_LITERAL_CHANGED' : undefined;
+}
 
 const ids = z.array(z.string());
 const paragraph = z.object({ text: z.string().trim().min(1).max(5000).regex(new RegExp(PIPELINE_SENTENCE_PATTERN, 'u')), evidenceIds: ids.min(1).max(30) }).strict();
@@ -81,10 +96,11 @@ export function writtenArticleText(article: WrittenArticle, headings: boolean) {
 }
 /** Restore source capitalization only when the quoted words and punctuation match exactly.
  * References stay unchanged; paraphrases, typos and missing evidence remain invalid. */
-export function restoreLiteralQuoteCase(key:PipelineStepKey,value:unknown,evidence:ReadonlyMap<string,string>,passages?:(ids:readonly string[])=>readonly string[]){
+export function restoreLiteralQuoteCase(key:PipelineStepKey,value:unknown,evidence:ReadonlyMap<string,string>,passages?:(ids:readonly string[])=>readonly string[],preserve?:ReadonlySet<string>){
   if(!['intro','section','article'].includes(key)||!outputs[key as 'intro'|'section'|'article'].safeParse(value).success)return value;
   const copy=structuredClone(value) as {paragraphs?:{text:string;evidenceIds:string[]}[];intro?:{text:string;evidenceIds:string[]}[];sections?:{paragraphs:{text:string;evidenceIds:string[]}[]}[]};
   for(const paragraph of [...(copy.paragraphs??copy.intro??[]),...(copy.sections??[]).flatMap(section=>section.paragraphs)]){
+    if(paragraph.evidenceIds.some(id=>preserve?.has(id)))continue;
     const original=paragraph.text;
     paragraph.text=original.replace(/“([^”]+)”|"([^"]+)"|«([^»]+)»/gu,(match,a,b,c,offset:number)=>{
       // Only the words are compared: a closing comma for the source's period is not a change.
@@ -109,6 +125,10 @@ export function writingContractIssue(key: PipelineStepKey, value: unknown, contr
   if (!contract || !['article', 'intro', 'section'].includes(key)) return undefined;
   const result = outputs[key as 'article' | 'intro' | 'section'].safeParse(value);
   if (!result.success) return 'INVALID_PROVIDER_OUTPUT';
+  const paragraphs = key === 'article' ? [...(result.data as WrittenArticle).intro, ...(result.data as WrittenArticle).sections.flatMap(section => section.paragraphs)]
+    : (result.data as { paragraphs: { text: string; evidenceIds: string[] }[] }).paragraphs;
+  const memoryIssue = memoryWritingIssue(paragraphs, contract.memory);
+  if (memoryIssue) return memoryIssue;
   if (key === 'article') {
     const article = result.data as WrittenArticle;
     return articleLengthIssue(textStats(writtenArticleText(article, headings)), contract.limits ?? {})

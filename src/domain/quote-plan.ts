@@ -11,7 +11,7 @@ export const QUOTABLE_MIN_WORDS = 4;
 
 /** Where a text wants quotations: its minimum, and whether the opening and the sections carry one. */
 export type QuoteRule = { minQuotes: number; openingQuote: boolean; sectionQuotes: boolean };
-export type QuotableCandidate = { key: string; text: string; speaker?: string };
+export type QuotableCandidate = { key: string; text: string; speaker?: string; memory?: { kind: 'citation' | 'statistic' } };
 
 const word = (pattern: string, flags = 'u') => new RegExp(`(?<![\\p{L}\\p{N}])(?:${pattern})(?![\\p{L}\\p{N}])`, flags);
 /** A thank-you is a courtesy, never a position, a number, a reason or a forecast. */
@@ -29,7 +29,7 @@ const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function quotableSpeaker({ linked, people, unlabeledAnswers }: { linked: ReadonlySet<string>; people: readonly { name: string }[]; unlabeledAnswers: boolean }): (candidate: QuotableCandidate) => boolean {
   const names = unlabeledAnswers && people.length === 1 ? people[0].name.split(/\s+/u).filter(name => /^\p{Lu}\p{L}{2,}/u.test(name)) : undefined;
   const named = names?.length ? word(names.map(escaped).join('|')) : undefined;
-  return candidate => candidate.speaker ? linked.has(candidate.speaker)
+  return candidate => candidate.memory?.kind === 'statistic' ? false : candidate.speaker ? linked.has(candidate.speaker)
     : Boolean(names) && !named?.test(candidate.text) && !THANKS.test(candidate.text) && !PROMPTING.test(candidate.text.trim());
 }
 
@@ -38,7 +38,7 @@ export function quotableIds(ids: readonly string[], candidates: ReadonlyMap<stri
   identified: (candidate: QuotableCandidate) => boolean): string[] {
   return [...new Set(ids)].filter(id => {
     const candidate = candidates.get(id);
-    return Boolean(candidate && identified(candidate) && countWords(candidate.text) >= QUOTABLE_MIN_WORDS
+    return Boolean(candidate && candidate.memory?.kind !== 'statistic' && identified(candidate) && countWords(candidate.text) >= QUOTABLE_MIN_WORDS
       && !/\?[”"»')]*$/u.test(candidate.text.trim()) && !THANKS.test(candidate.text));
   });
 }
