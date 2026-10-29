@@ -76,3 +76,14 @@ test('selection keeps order, permits unattached briefs and refuses repeated evid
   assert.equal(memorySelectionInputSchema.safeParse({ ...input, evidence: [ref, { ...ref, revision: 2 }] }).success, false);
   assert.equal(memorySelectionInputSchema.safeParse({ ...input, workspaceId: 'other' }).success, false);
 });
+test('search context is bounded descriptive metadata and cannot replace selected identity or carry pagination/actor fields', () => {
+  const discovery = { evidence: ref, snapshot: '9007199254740993', query: { kind: 'statistic', query: '240', minConfidence: 0, unused: false } };
+  const input = { baseRevision: 0, productionId: null, evidence: [{ ...ref, discovery }] };
+  const saved = memorySelectionInputSchema.parse(input).evidence[0].discovery!;
+  assert.equal(saved.snapshot, discovery.snapshot); assert.equal(saved.query.minConfidence, 0); assert.equal(saved.query.unused, false);
+  assert.equal(saved.query.status, 'active'); assert.ok(!('limit' in saved.query));
+  for (const changed of [{ ...discovery, actor: 'forged' }, { ...discovery, evidence: { ...ref, id: 'other' } },
+    { ...discovery, evidence: { ...ref, revision: 1 } }, ...['abc', '-1', '01', '9223372036854775808'].map(snapshot => ({ ...discovery, snapshot })),
+    ...[{ cursor: 'page' }, { limit: 25 }, { minConfidence: 101 }, { actor: 'forged' }, { from: '2025-01-01' }].map(extra => ({ ...discovery, query: { ...discovery.query, ...extra } }))])
+    assert.equal(memorySelectionInputSchema.safeParse({ ...input, evidence: [{ ...ref, discovery: changed }] }).success, false);
+});

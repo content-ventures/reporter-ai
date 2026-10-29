@@ -6,6 +6,7 @@ import { CLAIM_KIND_LABELS, CLAIM_VERDICT_LABELS, VERDICT_LABELS } from '@/domai
 import type { MemoryLibrary, MemorySelectedContext, MemorySelectedContextInput } from '@/ports/editorial-memory';
 import { usePeople, useSession } from '@/state';
 import { useMemoryLibrary, useMemoryResource } from '@/state/use-memory-library';
+import { MemoryDiscoveryDetails } from './memory-discovery';
 
 export type MemoryContextBasis = { productionId: string; input: MemorySelectedContextInput; port: MemoryLibrary };
 
@@ -72,6 +73,7 @@ function SelectedContext({ context }: { context: MemorySelectedContext }) {
         { label: 'Selecionada por', value: person(selection.updatedBy) }, { label: 'Data da seleção', value: new Date(selection.updatedAt).toLocaleString('pt-BR') },
         { label: 'Política selecionada', value: `Revisão ${context.policy.revision}` }, { label: 'Modo da política', value: context.policy.mode === 'calibrated' ? 'Calibrada' : 'Revisão editorial obrigatória' }]} />
       <Field label="Hash do original">{({ id }) => <Textarea id={id} readOnly rows={2} value={original.ref.hash} />}</Field>
+      {context.binding.selected.discovery && <Section titleAs="h3" title="Busca original da evidência"><MemoryDiscoveryDetails discovery={context.binding.selected.discovery} material={context.material} /></Section>}
     </Section>
   </Panel>;
 }

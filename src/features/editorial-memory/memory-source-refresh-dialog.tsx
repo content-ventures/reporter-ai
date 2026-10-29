@@ -4,6 +4,7 @@ import { Alert, Button, ButtonGroup, Checkbox, DescriptionList, EmptyState, Erro
 import { X } from '@content-ventures/design-system/v3/icons';
 import type { Source } from '@/domain/source';
 import { toSourceVersionRef } from '@/domain/source';
+import { memoryChoiceFromItem } from '@/domain/editorial-memory-discovery';
 import type { MemoryDetail, MemoryLibrary, MemorySourceRefreshInput, MemorySourceRefreshResult } from '@/ports/editorial-memory';
 import { useMemoryLibrary, useMemoryResource } from '@/state/use-memory-library';
 import { useCan, usePeople } from '@/state';
@@ -46,7 +47,7 @@ export function MemorySourceRefreshDialog({ basis, writable, onClose, onDone }: 
   const cursor = cursors.at(-1), readSelections = useCallback((library: MemoryLibrary) => library.selections({ cursor, limit: 25 }), [cursor]);
   const selections = useMemoryResource(readSelections, 0, bound && mode === 'refresh' && origin === 'saved');
   const rows = items.map(item => ({ item, ...details.data?.find(row => row.id === item.evidence.id) }));
-  const unavailable = rows.some(row => !row.detail?.eligibility.usable), stale = rows.some(row => row.detail && !sameRefreshItem(row.item, currentRefreshItem(row.detail)));
+  const unavailable = rows.some(row => !row.detail?.eligibility.usable), stale = rows.some(row => row.detail && !sameRefreshItem(row.item, currentRefreshItem(row.detail, row.item)));
   const locked = busy || !bound, blocked = !reason.trim() || !bound || staleContext || mode === 'refresh' && (!items.length || !details.data || unavailable || stale || Boolean(details.error));
   const inspectedRow = rows.find(row => row.item.evidence.id === inspected), previous = original.find(item => item.selected.evidence.id === inspected);
   const inspectedAuthor = inspectedRow?.detail?.evidence.kind === 'citation' ? inspectedRow.detail.evidence.personId : null;
@@ -70,7 +71,7 @@ export function MemorySourceRefreshDialog({ basis, writable, onClose, onDone }: 
     pending.current = true; setBusy(true); setWriting(true); setError(undefined);
     try {
       if (!current.input) {
-        const selected = mode === 'refresh' ? await basis.port.select({ productionId: basis.target.productionId, baseRevision: 0, evidence: items.map(item => item.evidence) }, current.selectionKey) : null;
+        const selected = mode === 'refresh' ? await basis.port.select({ productionId: basis.target.productionId, baseRevision: 0, evidence: items.map(memoryChoiceFromItem) }, current.selectionKey) : null;
         if (binding.current !== basis.port) return;
         if (selected && (selected.items.length !== items.length || selected.items.some((item, index) => !sameRefreshItem(item, items[index])))) {
           details.reload(); setError('A revisão mudou enquanto a seleção era salva. Confira as evidências novamente.'); return;
@@ -111,7 +112,7 @@ export function MemorySourceRefreshDialog({ basis, writable, onClose, onDone }: 
             {rows.map(({ item, detail, error }, index) => <ListItem key={item.evidence.id} draggable={!locked} selected={inspected === item.evidence.id} title={`${index + 1}. ${detail?.evidence.anchor.excerpt ?? original.find(old => old.selected.evidence.id === item.evidence.id)?.anchor.excerpt ?? 'Evidência indisponível'}`} titleLines={2}
               description={detail ? `${detail.material.title} · revisão ${detail.evidence.revision} · ${ELIGIBILITY_LABELS[detail.eligibility.reason]}` : error}
               onClick={() => setInspected(item.evidence.id)} actions={<ButtonGroup label={`Ações da evidência ${index + 1}`}>
-                {detail && !sameRefreshItem(item, currentRefreshItem(detail)) && <Button size="sm" variant="secondary" disabled={locked || !detail.eligibility.usable} onClick={() => setItems(current => current.map(pin => pin.evidence.id === item.evidence.id ? currentRefreshItem(detail) : pin))}>Usar revisão atual</Button>}
+                {detail && !sameRefreshItem(item, currentRefreshItem(detail, item)) && <Button size="sm" variant="secondary" disabled={locked || !detail.eligibility.usable} onClick={() => setItems(current => current.map(pin => pin.evidence.id === item.evidence.id ? currentRefreshItem(detail, pin) : pin))}>Usar revisão atual</Button>}
                 <IconButton ref={element => { if (element) removeButtons.current.set(item.evidence.id, element); else removeButtons.current.delete(item.evidence.id); }}
                   label={`Remover evidência ${index + 1}`} icon={X} disabled={locked} onClick={() => { const next = items.filter(pin => pin.evidence.id !== item.evidence.id); focusAfterRemove.current = next[Math.min(index, next.length - 1)]?.evidence.id ?? null; setItems(next); }} />
               </ButtonGroup>} />)}

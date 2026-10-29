@@ -5,6 +5,7 @@ import { materializeMemoryCandidates } from '../../domain/editorial-memory-extra
 import { initialMemoryPolicy, memoryEvidenceRef } from '../../domain/editorial-memory.ts';
 import type { MemoryDetail } from '../../ports/editorial-memory.ts';
 import { currentRefreshItem, sameRefreshItem } from './memory-source-refresh-model.ts';
+import { captureMemoryChoice } from '../../domain/editorial-memory-discovery.ts';
 
 function detail(): MemoryDetail {
   let sequence = 0;
@@ -34,4 +35,12 @@ test('an old decision is not carried into a corrected evidence or a later policy
   current.decision = { ...current.decision!, evidence: memoryEvidenceRef(current.evidence) };
   assert.equal(currentRefreshItem(current).decisionId, 'review-1'); current.policy.revision++;
   assert.equal(currentRefreshItem(current).decisionId, null); assert.equal(sameRefreshItem(displayed, currentRefreshItem(current)), false);
+});
+test('refresh preserves the original discovery revision and checks that saved search context was not dropped', () => {
+  const current = detail(), displayed = { ...currentRefreshItem(current), discovery: captureMemoryChoice(current.evidence, { query: '240' }, '10').discovery! };
+  const next = currentRefreshItem(current, displayed); assert.equal(sameRefreshItem(displayed, next), true);
+  assert.equal(sameRefreshItem(displayed, currentRefreshItem(current)), false);
+  current.evidence.revision++; const corrected = currentRefreshItem(current, displayed);
+  assert.equal(corrected.discovery!.evidence.revision, displayed.evidence.revision);
+  assert.equal(corrected.evidence.revision, displayed.evidence.revision + 1);
 });
