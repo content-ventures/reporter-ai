@@ -74,6 +74,7 @@ services:
       - ./database/migrations/063-editorial-memory-approved-uses.sql:/docker-entrypoint-initdb.d/99-zd-editorial-memory-approved-uses.sql:ro
       - ./database/migrations/064-editorial-memory-list-keys.sql:/docker-entrypoint-initdb.d/99-ze-editorial-memory-list-keys.sql:ro
       - ./database/migrations/065-editorial-memory-source-refresh.sql:/docker-entrypoint-initdb.d/99-zf-editorial-memory-source-refresh.sql:ro
+      - ./database/migrations/066-editorial-memory-selected-context.sql:/docker-entrypoint-initdb.d/99-zg-editorial-memory-selected-context.sql:ro
     networks:
       - reporter
     healthcheck:
