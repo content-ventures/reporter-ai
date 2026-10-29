@@ -1,5 +1,7 @@
 # Original-file control accessibility review
 
+Publication update (October 29, 2026): João explicitly approved this DS-only publication. [PR #8](https://github.com/content-ventures/design-system/pull/8) passed CI and was merged by rebase by `fagundesjv`. Annotated tag `v0.4.2` points to `d7410a5fb3ebd7dec622395b2ce72faeaa0d1886`; tag object `6991962686f6e8869a427257ea13f8339782e4e0` uses the verified numeric GitHub noreply identity. The merged tree matches candidate `f678bb3`; main CI passed. Reporter now installs the official 0.4.2 package, with a passing frozen install and matching component source. Its final local pin/QA is in progress. The candidate review below preserves the prepublication state.
+
 The first published dependency, DS v0.4.1, is complete: [PR #7](https://github.com/content-ventures/design-system/pull/7), rebase commit `ccc227c0e42af226cd133425d2b61765d09edd8c`, annotated tag `v0.4.1`, passing PR and main CI. The new Flow 4 file form then exercised two unchanged controls that were outside that original patch: inactive Segmented text fails contrast at 4.18:1, and Dropzone nests its native input inside another interactive control. Both failures remain recorded; no Axe rule is disabled.
 
 ## Reviewable candidate
