@@ -5,12 +5,11 @@ import { readMemoryDocument, type MemoryDocumentDelimiter } from '@/domain/edito
 import { MAX_TEXT_BYTES } from '@/domain/reporter';
 import type { MemoryMetadata } from '@/domain/editorial-memory';
 import type { MemoryLibrary, MemoryImportInput } from '@/ports/editorial-memory';
+import { MemoryFileReconciliation } from './memory-file-reconciliation';
+import { MATERIAL_KINDS } from './memory-material-kinds';
+export { MATERIAL_KINDS } from './memory-material-kinds';
 
-export const MATERIAL_KINDS = [
-  { value: 'transcript', label: 'Transcrição' }, { value: 'news', label: 'Notícia' }, { value: 'release', label: 'Release' },
-  { value: 'report', label: 'Relatório' }, { value: 'archive', label: 'Acervo' }, { value: 'market_data', label: 'Dados de mercado' },
-];
-type Props = { port: MemoryLibrary; open: boolean; onClose: () => void; onImported: (id: string) => void };
+type Props = { port: MemoryLibrary; open: boolean; onClose: () => void; onImported: (id: string) => void; onReviewBatch: (id: string) => void };
 type Original = { name: string; bytes: Uint8Array };
 const blankImport = (): MemoryImportInput => ({ title: '', kind: 'transcript', text: '', authorized: false, primaryOrigin: null, originalFileId: null,
   metadata: { publishedOn: null, recordedOn: null, institution: null, company: null, event: null, edition: null, topics: [], originalUrl: null } });
@@ -20,13 +19,15 @@ export function MemoryImportDialog(props: Props) {
   const binding = useMemo(() => ({ port: props.port, key: crypto.randomUUID() }), [props.port]);
   return <MemoryImportForm key={binding.key} {...props} />;
 }
-function MemoryImportForm({ port, open, onClose, onImported }: Props) {
+function MemoryImportForm({ port, open, onClose, onImported, onReviewBatch }: Props) {
   const modeName = useId();
   const [input, setInput] = useState<MemoryImportInput>(blankImport), [topicsText, setTopicsText] = useState('');
   const [mode, setMode] = useState<'text' | 'file'>('text'), [file, setFile] = useState<Original>();
   const [delimiter, setDelimiter] = useState<MemoryDocumentDelimiter>(','), [error, setError] = useState<string>();
   const [stored, setStored] = useState<{ file: Original; delimiter: MemoryDocumentDelimiter }>();
   const [phase, setPhase] = useState('');
+  const [pending, setPending] = useState<{ batchId: string; itemId: string }>();
+  const [decisionReason, setDecisionReason] = useState('');
   const live = useRef(true), running = useRef(false);
   const upload = useRef<{ file: Original; delimiter: MemoryDocumentDelimiter; key: string; id?: string }>(undefined);
   const submission = useRef<{ payload: string; key: string }>(undefined);
@@ -66,14 +67,17 @@ function MemoryImportForm({ port, open, onClose, onImported }: Props) {
       if (submission.current?.payload !== payload) submission.current = { payload, key: crypto.randomUUID() };
       const result = originalFileId ? await port.importFile({ ...fields, originalFileId }, submission.current.key) : await port.import(input, submission.current.key);
       if (!live.current) return;
+      if ('pending' in result) { setPending(result.pending); return; }
       setInput(blankImport()); setTopicsText(''); setFile(undefined); upload.current = undefined; submission.current = undefined;
       onImported(result.material.id);
     } catch (failure) { if (live.current) setError(failure instanceof Error ? failure.message : 'Não foi possível importar. Tente novamente.'); }
     finally { running.current = false; if (live.current) setPhase(''); }
   };
-  return <ResponsiveDialog open={open} title="Importar material" dirty={Boolean(input.title || input.text || file)} onClose={onClose}
-    footer={<><Button variant="secondary" disabled={busy} onClick={onClose}>Cancelar</Button><Button loading={busy} disabled={!input.title.trim() || originalText.trim().length < 24} onClick={() => void submit()}>{phase || 'Importar'}</Button></>}>
-    <Section>
+  const completed = (id: string) => { setPending(undefined); setDecisionReason(''); setInput(blankImport()); setTopicsText(''); setFile(undefined); upload.current = undefined; submission.current = undefined; onImported(id); };
+  const leavePending = () => { setPending(undefined); setDecisionReason(''); setInput(blankImport()); setTopicsText(''); setFile(undefined); upload.current = undefined; submission.current = undefined; onClose(); };
+  return <ResponsiveDialog open={open} title={pending ? 'Revisar correspondência' : 'Importar material'} dirty={Boolean(input.title || input.text || file)} onClose={onClose}
+    footer={pending ? <Button variant="secondary" onClick={leavePending}>Continuar depois</Button> : <><Button variant="secondary" disabled={busy} onClick={onClose}>Cancelar</Button><Button loading={busy} disabled={!input.title.trim() || originalText.trim().length < 24} onClick={() => void submit()}>{phase || 'Importar'}</Button></>}>
+    {pending && open ? <MemoryFileReconciliation port={port} {...pending} reason={decisionReason} onReason={setDecisionReason} onDone={completed} onOpenBatch={onReviewBatch} /> : !pending && <Section>
       <LiveRegion message={phase || (mode === 'file' && parsed && !parsed.ok ? parsed.refusal.message : '')} />
       {error && <Alert tone="danger" title={error} />}
       <RadioGroup legend="Formato de entrada" orientation="horizontal">
@@ -107,6 +111,6 @@ function MemoryImportForm({ port, open, onClose, onImported }: Props) {
         <Field label="Temas" optional>{({ id }) => <Input id={id} disabled={busy} value={topicsText} onChange={event => { setTopicsText(event.target.value); setMetadata('topics', event.target.value); }} />}</Field>
       </FieldGroup>
       <Checkbox label="Confirmo a autorização de uso deste material" checked={input.authorized} disabled={busy} onChange={event => setInput({ ...input, authorized: event.target.checked })} />
-    </Section>
+    </Section>}
   </ResponsiveDialog>;
 }

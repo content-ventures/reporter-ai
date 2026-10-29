@@ -2,7 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { MemoryBlock, MemoryMaterial, MemoryPage } from '../domain/editorial-memory.ts';
 import { createMemoryMaterial, memoryBlocks } from '../domain/editorial-memory-import.ts';
-import type { EditorialMemory, MemoryImportInput, MemoryJob, MemoryHistoryQuery } from '../ports/editorial-memory.ts';
+import type { EditorialMemory, MemoryImportInput, MemoryImportResult, MemoryJob, MemoryHistoryQuery } from '../ports/editorial-memory.ts';
 import { decodeMemoryCursor, encodeMemoryCursor } from './editorial-memory-cursor.ts';
 import { memoryAuthorizationSchema, memoryCancelSchema, memoryHistoryQuerySchema, memoryIdSchema, memoryImportInputSchema, memoryRetrySchema } from './editorial-memory-input.ts';
 import { memoryCommand, memoryGet, memoryRead } from './editorial-memory-store.ts';
@@ -21,8 +21,12 @@ export function prepareMemoryMaterial(input: MemoryImportInput) {
     totalBlocks: blocks.length, completedBlocks: 0, failedBlocks: 0, evidenceCount: 0, error: null, createdBy: context.actor, createdAt: now, updatedAt: now };
   return { source: created.source, material: created.material, job, blocks };
 }
-export async function importEditorialMemory(value: MemoryImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }> {
+export async function importEditorialMemory(value: MemoryImportInput, requestId: string): Promise<MemoryImportResult> {
   const input = memoryImportInputSchema.parse(value);
+  if (input.originalFileId) {
+    const { text, originalFileId, ...fields } = input;
+    return (await import('./editorial-memory-file-import.ts')).importMemoryFile({ ...fields, originalFileId }, requestId, text);
+  }
   return memoryCommand('memory.material.import', input, requestId, 'library.edit', async client => {
     await client.query('SELECT public.reporter_memory_import_access($1)', [input.originalFileId]);
   }, async client => {

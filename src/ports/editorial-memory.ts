@@ -51,6 +51,9 @@ export type MemoryImportInput = {
 };
 export type MemoryOriginalUploadInput = { name: string; bytes: Uint8Array; delimiter?: MemoryDocumentDelimiter };
 export type MemoryFileImportInput = Omit<MemoryImportInput, 'text' | 'originalFileId'> & { originalFileId: string };
+/** File-backed imports preserve a reviewable occurrence when an existing document has different context. */
+export type MemoryImportResult = { material: MemoryMaterial; job: MemoryJob | null; existing?: boolean; occurrence?: { batchId: string; itemId: string } }
+  | { pending: { batchId: string; itemId: string } };
 export type MemoryMaterialRevisionInput = { baseRevision: number; source: MemoryMaterial['source']; text: string; reason: string };
 export type MemoryMaterialRevisionResult = { material: MemoryMaterial; job: MemoryJob; affectedEvidence: number };
 export type MemoryImpactScope = { kind: 'material' | 'evidence'; id: string };
@@ -91,9 +94,9 @@ export interface EditorialMemory extends MemoryBatchLibrary {
   history(id: string, kind: MemoryHistoryKind, input: MemoryHistoryQuery): Promise<MemoryPage<MemoryHistoryEntry>>;
   materials(input: { cursor?: string; limit?: number }): Promise<MemoryPage<MemoryMaterial & { job: MemoryJob | null }>>;
   material(id: string, revision?: number): Promise<{ material: MemoryMaterial; source: Source; job: MemoryJob | null }>;
-  import(input: MemoryImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
+  import(input: MemoryImportInput, requestId: string): Promise<MemoryImportResult>;
   uploadOriginal(input: MemoryOriginalUploadInput, requestId: string): Promise<MemoryOriginalFile>;
-  importFile(input: MemoryFileImportInput, requestId: string): Promise<{ material: MemoryMaterial; job: MemoryJob }>;
+  importFile(input: MemoryFileImportInput, requestId: string): Promise<MemoryImportResult>;
   /** Fresh authorized bytes for a rendered DS download anchor; never a public storage URL. */
   downloadOriginal(id: string): Promise<{ name: string; href: string }>;
   authorizeMaterial(id: string, input: { baseRevision: number; authorized: boolean; reason: string }, requestId: string): Promise<MemoryMaterial>;
