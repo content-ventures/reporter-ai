@@ -24,6 +24,7 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
   });
   return {
     batches: input => http.request(`/memory/batches${parameters(input)}`), batch: batch => http.request(`/memory/batches/${id(batch)}`),
+    batchCandidate: (batch, item) => http.request(`/memory/batches/${id(batch)}/items/${id(item)}/candidate`),
     createBatch: (input, key) => command('batches', input, key, false),
     updateBatchItem: (batch, item, input, key) => command(`batches/${id(batch)}/items/${id(item)}/revision`, input, key, false),
     uploadBatchItem: (batch, item, input, key) => command(`batches/${id(batch)}/items/${id(item)}/upload`, { ...input, bytes: base64(input.bytes) }, key, false),
@@ -38,7 +39,6 @@ export function createHttpMemoryLibrary(http: ReporterTransport, afterWrite: () 
     replacement: relation => http.request(`/memory/replacements/${id(relation)}`),
     import: (input, key) => command('materials', input, key), job: job => http.request(`/memory/jobs/${id(job)}`),
     uploadOriginal: (input, key) => command('originals', { ...input, bytes: base64(input.bytes) }, key, false),
-    originalFile: original => http.request(`/memory/originals/${id(original)}`),
     importFile: (input, key) => command('materials/from-file', input, key),
     async downloadOriginal(original) {
       const file = await http.request<MemoryOriginalFile>(`/memory/originals/${id(original)}`);

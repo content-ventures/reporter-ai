@@ -96,7 +96,6 @@ export interface EditorialMemory extends MemoryBatchLibrary {
   material(id: string, revision?: number): Promise<{ material: MemoryMaterial; source: Source; job: MemoryJob | null }>;
   import(input: MemoryImportInput, requestId: string): Promise<MemoryImportResult>;
   uploadOriginal(input: MemoryOriginalUploadInput, requestId: string): Promise<MemoryOriginalFile>;
-  originalFile(id: string): Promise<MemoryOriginalFile>;
   importFile(input: MemoryFileImportInput, requestId: string): Promise<MemoryImportResult>;
   /** Fresh authorized bytes for a rendered DS download anchor; never a public storage URL. */
   downloadOriginal(id: string): Promise<{ name: string; href: string }>;
