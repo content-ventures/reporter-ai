@@ -2,12 +2,26 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { blockText, paragraphBlock } from '../article.ts';
 import type { ArticleBody } from '../article.ts';
-import { toVersionRef, versionLabel } from '../piece.ts';
+import { bodyHash, toVersionRef, versionLabel } from '../piece.ts';
 import { isApproved } from '../record.ts';
 import { baseRecord, commitVersion, createKit, pieceIn, recordDecision, sampleArticle } from '../testing/scenario.ts';
 import { ensureVersion, isDraftDirty, nextVersionNumber, restoreVersion, saveVersion, settleGeneration, updateDraft } from './versions.ts';
 
 describe('working draft', () => {
+  test('freezes new provenance and restores old proof even when visible article content has the same hash', () => {
+    const kit = createKit(), record = baseRecord(kit), version = commitVersion(record, kit, 'article', sampleArticle(record.sources[0]));
+    const original = pieceIn(record, 'article'), changed = structuredClone(original);
+    assert.equal(changed.draft.body.type, 'article'); if (changed.draft.body.type !== 'article') return;
+    const block = changed.draft.body.blocks.find(block => block.sourceRefs?.length); assert.ok(block?.sourceRefs); block.sourceRefs[0].sourceVersion++;
+    assert.equal(bodyHash(changed.draft.body), version.hash); assert.equal(isDraftDirty(changed, version), true);
+    const saved = saveVersion(changed, record.versions, kit.ctx()); assert.ok(saved.ok); assert.notEqual(saved.value.version.id, version.id);
+    assert.equal(saved.value.version.hash, version.hash); assert.deepEqual(version.body, original.draft.body);
+    const ensured = ensureVersion(changed, record.versions, kit.ctx()); assert.ok(ensured.ok && ensured.value.created);
+    const restored = restoreVersion(saved.value.piece, [...record.versions, saved.value.version], version.id, kit.ctx()); assert.ok(restored.ok);
+    assert.deepEqual(restored.value.version.body, version.body);
+    const inputsOnly = structuredClone(original); inputsOnly.draft.sources[0].sourceVersion++;
+    assert.equal(isDraftDirty(inputsOnly, version), true); assert.ok(saveVersion(inputsOnly, record.versions, kit.ctx()).ok);
+  });
   test('autosave overwrites one slot and bumps the revision', () => {
     const kit = createKit();
     const record = baseRecord(kit);

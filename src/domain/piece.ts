@@ -4,6 +4,8 @@ import { carouselHash } from './carousel.ts';
 import type { CarouselBody } from './carousel.ts';
 import type { ActorId, IsoDateTime, PieceId, ProductionId, RunId, VersionId } from './ids.ts';
 import type { SourceVersionRef, VersionRef } from './refs.ts';
+import { refKey, sameRefSet } from './refs.ts';
+import { contentHash } from './text/hash.ts';
 
 /** `article` and `carousel` are live in R1; the rest are reserved plug points (R3–R6). */
 export type PieceKind =
@@ -77,6 +79,14 @@ export type Version = {
 
 export function bodyHash(body: PieceBody): string {
   return body.type === 'article' ? articleHash(body) : carouselHash(body);
+}
+
+/** Equal words cannot carry an earlier human approval onto different source proof. */
+export function draftMatchesVersion(draft: Pick<WorkingDraft, 'body' | 'inputs' | 'sources'>, version: Version): boolean {
+  const proof = (body: PieceBody) => body.type === 'article'
+    ? contentHash(body.blocks.map(block => (block.sourceRefs ?? []).map(refKey).sort())) : '';
+  return bodyHash(draft.body) === version.hash && sameRefSet(draft.inputs, version.inputs) && sameRefSet(draft.sources, version.sources)
+    && proof(draft.body) === proof(version.body);
 }
 
 export function toVersionRef(version: Version): VersionRef {

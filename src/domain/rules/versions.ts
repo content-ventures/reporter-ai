@@ -1,6 +1,6 @@
 import type { ArticleBody } from '../article.ts';
 import type { PieceId, RunId, VersionId } from '../ids.ts';
-import { bodyHash } from '../piece.ts';
+import { bodyHash, draftMatchesVersion } from '../piece.ts';
 import type { Piece, PieceBody, Version, VersionOrigin } from '../piece.ts';
 import type { SourceVersionRef, VersionRef } from '../refs.ts';
 import { ok, refuse } from '../result.ts';
@@ -78,7 +78,7 @@ export function draftFromVersion(piece: Piece, version: Version, ctx: CommandCon
 
 export function isDraftDirty(piece: Piece, latest: Version | undefined): boolean {
   if (!latest) return bodyHasContent(piece.draft.body);
-  return bodyHash(piece.draft.body) !== latest.hash;
+  return !draftMatchesVersion(piece.draft, latest);
 }
 
 function bodyHasContent(body: PieceBody): boolean {
@@ -116,7 +116,7 @@ export function saveVersion(
 ): Result<{ version: Version; piece: Piece }, SaveVersionRefusal> {
   const latest = versionsOfPiece(versions, piece.id).pop();
   if (!bodyHasContent(piece.draft.body)) return refuse('empty', 'Não há conteúdo para salvar.');
-  if (latest && bodyHash(piece.draft.body) === latest.hash) {
+  if (latest && draftMatchesVersion(piece.draft, latest)) {
     return refuse('unchanged', 'Nenhuma alteração desde a última versão.', { versionId: latest.id, number: latest.number });
   }
   const version = createVersion({ piece, versions, origin, basedOn: latest?.id }, ctx);
@@ -156,7 +156,7 @@ export function restoreVersion(
   const target = pieceVersions.find((version) => version.id === targetVersionId);
   if (!target) return refuse('unknown_version', 'Versão não encontrada.');
   const latest = pieceVersions[pieceVersions.length - 1];
-  if (latest.hash === target.hash && bodyHash(piece.draft.body) === target.hash) {
+  if (draftMatchesVersion(latest, target) && draftMatchesVersion(piece.draft, target)) {
     return refuse('nothing_to_restore', 'O texto atual já é igual a esta versão.');
   }
   const version = createVersion(

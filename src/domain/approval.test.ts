@@ -58,6 +58,20 @@ describe('approvalStateOf', () => {
     assert.equal(isLocked(record, v1.pieceId), false);
     assert.equal(approvalStateOf(record, v1.pieceId), 'none');
   });
+
+  it('requires a new approval when unchanged words point to different source proof', () => {
+    const kit = createKit(), record = baseRecord(kit, { plan: ['article'] });
+    const version = commitVersion(record, kit, 'article', sampleArticle(record.sources[0]), { origin: 'generation' });
+    recordDecision(record, kit, version, 'approved');
+    const draft = pieceIn(record, 'article').draft, original = structuredClone(version);
+    const body = structuredClone(draft.body); assert.equal(body.type, 'article'); if (body.type !== 'article') return;
+    const cited = body.blocks.find(block => block.sourceRefs?.length); assert.ok(cited?.sourceRefs);
+    cited.sourceRefs[0].sourceVersion++;
+    const at = record.pieces.findIndex(piece => piece.id === version.pieceId);
+    record.pieces[at] = { ...record.pieces[at], draft: { ...draft, body } };
+    assert.equal(approvalStateOf(record, version.pieceId), 'approval_outdated');
+    assert.deepEqual(version, original, 'the original approval snapshot is immutable');
+  });
 });
 
 describe('requestRound', () => {
