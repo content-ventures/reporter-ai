@@ -223,7 +223,7 @@ export function createConnectedRuntime(options: { typefaces?: Readonly<Record<st
     visuals: createHttpVisualLibrary(http),
     imageGeneration: createHttpImageGenerator(http),
     citations: createHttpCitationLibrary(http),
-    memory: createHttpMemoryLibrary(http),
+    memory: createHttpMemoryLibrary(http, () => refresh(true)),
     news: createHttpNewsIntake(http),
     pipeline: { get: () => http.request<PipelineView>('/pipeline'), save: (definition,baseRevision) => rpc('pipeline.save',[definition,baseRevision]),
       getWritingRun: runId => http.request<WritingRunDetails>(`/pipeline/runs/${encodeURIComponent(runId)}`) },
