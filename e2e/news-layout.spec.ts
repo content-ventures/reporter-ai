@@ -287,9 +287,9 @@ for (const viewport of VIEWPORTS) {
       expect(writes, 'consultar as ações não grava decisões').toEqual([]);
       // The next story is one click (or J) away, and the position follows.
       await page.getByRole('button', { name: 'Próxima notícia', exact: true }).click();
-      await expect(page).toHaveURL(new RegExp(`/news\\?item=${SIXTH}$`));
+      await expect(page).toHaveURL(new RegExp(`/news\\?item=${SECOND}$`));
       await expect(page.getByText('2 de 18', { exact: true })).toBeVisible();
-      await expect(article.getByRole('heading', { level: 2, name: 'Cadeia do pescado acompanha pesquisa e mercado 6', exact: true })).toBeVisible();
+      await expect(article.getByRole('heading', { level: 2, name: SECOND_TITLE, exact: true })).toBeVisible();
       await expectNoHorizontalOverflow(page);
       await expectHeadingOutline(page);
       expect(errors).toEqual([]);
