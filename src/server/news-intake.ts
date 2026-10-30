@@ -32,8 +32,9 @@ export type StoredItem = {
   id: string; sourceId?: string; via: 'rss' | 'url' | 'tavily'; contentKind?: 'feed' | 'article' | 'search'; contentRevision?: number; discoveredAt?: string; url: string; title: string; outlet: string; excerpt: string;
   publishedAt: string; importedAt: string; updatedAt?: string; duplicates: { source: string; url: string; publishedAt: string }[];
   paragraphs: number; body?: string[]; imageUrl?: string;
-  status?: 'new' | 'selected' | 'later' | 'discarded'; decisionRevision?: number;
+  status?: 'new' | 'selected' | 'covered' | 'later' | 'discarded'; decisionRevision?: number;
   decidedBy?: string; decidedAt?: string; laterUntil?: string; discardReason?: string; returnedAt?: string;
+  productionId?: string; coveredAt?: string;
   translation?: NewsTranslation & { title?: string; excerpt?: string; body?: string[] };
 };
 
@@ -102,6 +103,8 @@ export function itemView(item: StoredItem): NewsItem {
     ...(item.laterUntil ? { laterUntil: iso(item.laterUntil) } : {}),
     ...(item.discardReason ? { discardReason: item.discardReason } : {}),
     ...(item.returnedAt ? { returnedAt: iso(item.returnedAt) } : {}),
+    ...(item.productionId ? { productionId: item.productionId } : {}),
+    ...(item.coveredAt ? { coveredAt: iso(item.coveredAt) } : {}),
   };
 }
 

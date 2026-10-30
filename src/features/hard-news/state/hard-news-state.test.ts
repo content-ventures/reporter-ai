@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { initialState, migrate, rebase } from './hard-news-state.ts';
+import type { NewsItem } from '../../../domain/hard-news.ts';
+import { coveredToday, initialState, migrate, rebase } from './hard-news-state.ts';
 
 const NOW = Date.parse('2026-10-17T15:00:00.000Z');
 const HOUR = 3_600_000;
@@ -30,4 +31,16 @@ test('rebase moves the question time with the rest of the desk', () => {
   const shift = Date.parse(moved.lastAsk!.askedAt) - before;
   // Ten hours away, minus the 20 minutes the example pretends the person was gone.
   assert.equal(shift, 10 * HOUR - 20 * 60_000);
+});
+
+test('today counts connected production links, honors local midnight and has no daily cap', () => {
+  const story = initialState(NOW).news[0];
+  const today = new Date(NOW);
+  today.setHours(0, 0, 0, 0);
+  const linked: NewsItem[] = Array.from({ length: 31 }, (_, index) => ({
+    ...story, id: `covered-${index}`, status: 'covered', coveredAt: new Date(today.getTime() + index * 60_000).toISOString(),
+  }));
+  const yesterday: NewsItem = { ...story, id: 'covered-yesterday', status: 'covered', coveredAt: new Date(today.getTime() - HOUR).toISOString() };
+  const selected: NewsItem = { ...story, id: 'selected-today', status: 'selected', decidedAt: new Date(today.getTime() + HOUR).toISOString() };
+  assert.equal(coveredToday([...linked, yesterday, selected], NOW), 31);
 });

@@ -99,6 +99,10 @@ export type NewsItem = {
   /** Absent while the AI is still reading it. */
   classification?: NewsClassification;
   status: NewsStatus;
+  /** Production created from this radar item in the connected workspace. */
+  productionId?: string;
+  /** When the connected news item became a production. */
+  coveredAt?: string;
   /** Version of the editorial decision, checked to refuse stale writes from another session. */
   decisionRevision?: number;
   decidedBy?: string;
@@ -108,8 +112,6 @@ export type NewsItem = {
   /** When a postponed item came back to the queue on its own. */
   returnedAt?: string;
   discardReason?: string;
-  /** The production "Cobrir" opened. */
-  productionId?: string;
 };
 
 export function priorityOf(item: Pick<NewsItem, 'classification'>): NewsPriority | undefined {
@@ -132,9 +134,6 @@ export function compareQueue(a: NewsItem, b: NewsItem): number {
 }
 
 export const DISCARD_REASONS = ['Fora do mapa editorial', 'Já publicamos', 'Fonte pouco confiável', 'Sem novidade'] as const;
-
-/** REQ-2.2: how many stories the desk wants to open per day. */
-export type DeskGoal = { perDay: number };
 
 // ── F2.3 · Mapa editorial ────────────────────────────────────────────────────────────────────
 

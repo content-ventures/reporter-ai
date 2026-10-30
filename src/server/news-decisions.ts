@@ -9,11 +9,21 @@ import { itemView } from './news-intake.ts';
 import type { StoredItem } from './news-intake.ts';
 
 const revision = z.number().int().min(0).max(2_147_483_646);
+const scoreSnapshot = z.object({
+  score: z.number().int().min(0).max(100),
+  topic: z.string().trim().min(1).max(160),
+  mapVersion: z.number().int().min(0).max(2_147_483_647),
+  reasons: z.array(z.object({
+    criterion: z.string().trim().min(1).max(80),
+    effect: z.enum(['up', 'down']),
+    detail: z.string().trim().min(1).max(300),
+  }).strict()).max(12),
+}).strict();
 const decisionSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('select'), revision }).strict(),
+  z.object({ action: z.literal('select'), revision, scoreSnapshot: scoreSnapshot.optional() }).strict(),
   z.object({ action: z.literal('restore'), revision }).strict(),
-  z.object({ action: z.literal('postpone'), revision, hours: z.number().int().min(1).max(NEWS_DECISION_LIMITS.postponeHours) }).strict(),
-  z.object({ action: z.literal('discard'), revision, reason: z.string().trim().min(1).max(NEWS_DECISION_LIMITS.reasonChars) }).strict(),
+  z.object({ action: z.literal('postpone'), revision, hours: z.number().int().min(1).max(NEWS_DECISION_LIMITS.postponeHours), scoreSnapshot: scoreSnapshot.optional() }).strict(),
+  z.object({ action: z.literal('discard'), revision, reason: z.string().trim().min(1).max(NEWS_DECISION_LIMITS.reasonChars), scoreSnapshot: scoreSnapshot.optional() }).strict(),
 ]);
 
 export type NewsDecisionServices = { write(id: string, decision: NewsDecisionInput): Promise<StoredItem> };
@@ -24,6 +34,11 @@ const services: NewsDecisionServices = {
       decision.action === 'postpone' ? decision.hours : null,
       decision.action === 'discard' ? decision.reason : null,
     ]);
+    if (decision.action !== 'restore' && decision.scoreSnapshot) {
+      await client.query('SELECT public.reporter_news_score_feedback($1,$2,$3,$4::jsonb)', [
+        id, decision.revision, decision.action, JSON.stringify(decision.scoreSnapshot),
+      ]);
+    }
     return result.rows[0].value as StoredItem;
   }),
 };
@@ -40,6 +55,8 @@ export async function decideNewsItem(newsId: string, input: unknown, deps: NewsD
     if (message === 'NEWS_ITEM_NOT_FOUND') throw new FlowError(message, 404);
     if (message === 'NEWS_DECISION_CONFLICT') throw new FlowError(message, 409);
     if (message === 'NEWS_DECISION_INVALID') throw new FlowError(message, 422);
+    if (message === 'NEWS_SCORE_FEEDBACK_INVALID') throw new FlowError(message, 422);
+    if (message === 'NEWS_SCORE_FEEDBACK_CONFLICT') throw new FlowError(message, 409);
     if (safeCode(error) === '42501') throw new FlowError('FORBIDDEN', 403);
     throw error;
   }

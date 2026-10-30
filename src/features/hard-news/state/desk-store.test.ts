@@ -9,11 +9,11 @@ test('connected desks isolate clients and accounts without claiming unowned lega
   try{
     const legacy=JSON.stringify(initialState(0));storage.set(STORAGE_KEY,legacy);
     const a=createDeskStore({storageKey:'desk:client-a:account-one'}),b=createDeskStore({storageKey:'desk:client-b:account-one'}),other=createDeskStore({storageKey:'desk:client-a:account-two'});
-    a.load();a.set(state=>({...state,goal:{perDay:7},map:{...state.map,audience:'Client A only'}}));b.load();other.load();
+    a.load();a.set(state=>({...state,map:{...state.map,audience:'Client A only'}}));b.load();other.load();
     assert.equal(a.get().state.map.audience,'Client A only');assert.equal(b.get().state.map.audience,'');assert.equal(other.get().state.map.audience,'');
     assert.equal(b.get().state.news.length,0);assert.equal(b.get().state.archive.length,0);assert.equal(b.get().state.cms.siteUrl,'');
     assert.equal(storage.get(STORAGE_KEY),legacy);
-    const reload=createDeskStore({storageKey:'desk:client-a:account-one'});reload.load();assert.equal(reload.get().state.goal.perDay,7);assert.equal(reload.get().state.news.length,0);
-    b.reset();assert.equal(a.get().state.goal.perDay,7);
+    const reload=createDeskStore({storageKey:'desk:client-a:account-one'});reload.load();assert.equal(reload.get().state.map.audience,'Client A only');assert.equal(reload.get().state.news.length,0);
+    b.reset();assert.equal(a.get().state.map.audience,'Client A only');
   }finally{browser.window=before;}
 });
