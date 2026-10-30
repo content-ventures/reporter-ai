@@ -37,7 +37,8 @@ async function mockDesk(page: Page, count = 18) {
       excerpt: 'Os novos dados ajudam a acompanhar a produção, o comércio e os próximos desafios do setor.',
       body: Array.from({ length: 12 }, (_, paragraph) => `Parágrafo ${paragraph + 1} da notícia ${index + 1}. Pesquisadores e produtores apresentam os resultados, explicam a metodologia e discutem seus efeitos sobre a cadeia do pescado no Brasil.`),
       // Two stories ran in a second outlet: they lead the cover, in order of publication.
-      duplicates: index % 3 === 0 || index === 5 ? [{ source: 'Jornal do Pescado', url: `https://jornal.example/noticia-${index + 1}`, publishedAt }] : [],
+      duplicates: index === 5 || index > 0 && index % 3 === 0
+        ? [{ source: 'Jornal do Pescado', url: `https://jornal.example/noticia-${index + 1}`, publishedAt }] : [],
       decisionRevision: 0,
     };
   });
@@ -79,7 +80,7 @@ async function expectRadar(page: Page) {
   const lead = page.locator('[data-news-layout="lead"]');
   await expect(lead).toHaveCount(1);
   await loadedNewsImage(lead, 1);
-  await expect(lead.getByText('Em 2 veículos', { exact: true })).toBeVisible();
+  await expect(lead).toContainText(FIRST_TITLE);
   const highlights = page.getByRole('list', { name: 'Outros destaques', exact: true });
   await expect(highlights.getByTestId(/^news-card-/)).toHaveCount(3);
   await expect(page.getByTestId(`news-card-${SIXTH}`).getByText('Em 2 veículos', { exact: true })).toBeVisible();
@@ -152,8 +153,8 @@ test('decide na fila sem abrir a notícia e desfaz pela confirmação', async ({
   const open = page.getByRole('tab', { name: /^Para decidir/ });
   const decided = page.getByRole('tab', { name: /^Decididas/ });
   await expect(open).toContainText('18');
-  // The A1 stories lead the score-ranked cover; use the next A2 item to exercise a wire-row action.
-  const row = page.getByTestId('news-card-10000000-0000-4000-8000-000000000011');
+  // The score-ranked cover varies by the map; use an unrated item to exercise a wire-row action.
+  const row = page.getByTestId('news-card-10000000-0000-4000-8000-000000000003');
   const actions = row.locator('xpath=ancestor::li[1]');
   await actions.getByRole('button', { name: 'Selecionar para redação', exact: true }).click();
   await expect(page.getByText('Notícia selecionada para redação', { exact: true })).toBeVisible();
@@ -170,7 +171,7 @@ test('decide na fila sem abrir a notícia e desfaz pela confirmação', async ({
   await decided.click();
   await expect(page.getByRole('heading', { level: 2, name: 'Descartadas', exact: true })).toBeVisible();
   await expect(row).toContainText('Fora do mapa editorial');
-  await page.getByTestId('news-card-10000000-0000-4000-8000-000000000011').locator('xpath=ancestor::li[1]')
+  await page.getByTestId('news-card-10000000-0000-4000-8000-000000000003').locator('xpath=ancestor::li[1]')
     .getByRole('button', { name: 'Voltar para a fila', exact: true }).click();
   await expect(page.getByText('De volta à fila', { exact: true })).toBeVisible();
   expect(decisions.map(({ revision, action, reason }) => ({ revision, action, reason }))).toEqual([
