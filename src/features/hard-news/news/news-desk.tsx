@@ -481,7 +481,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const inbox = onServer && newsFailed ? (
     <EmptyState icon={AlertTriangle} title="Não foi possível carregar as notícias" description="Tente novamente para atualizar o radar."
       actions={<Button variant="primary" loading={refreshing} onClick={() => void refresh()}>Tentar novamente</Button>} />
-  ) : live && !triage && state.feeds.length === 0 && state.news.length === 0 ? (
+  ) : live && state.feeds.length === 0 && state.news.length === 0 ? (
     <EmptyState icon={Rss} title="Nenhuma fonte cadastrada"
       description={canEdit ? 'Encontre fontes para o seu veículo ou setor e receba as primeiras notícias.' : undefined}
       actions={canEdit ? <>

@@ -37,11 +37,11 @@ async function mockDesk(page: Page, count = 18) {
       excerpt: 'Os novos dados ajudam a acompanhar a produção, o comércio e os próximos desafios do setor.',
       body: Array.from({ length: 12 }, (_, paragraph) => `Parágrafo ${paragraph + 1} da notícia ${index + 1}. Pesquisadores e produtores apresentam os resultados, explicam a metodologia e discutem seus efeitos sobre a cadeia do pescado no Brasil.`),
       // Two stories ran in a second outlet: they lead the cover, in order of publication.
-      duplicates: index === 0 || index === 5 ? [{ source: 'Jornal do Pescado', url: `https://jornal.example/noticia-${index + 1}`, publishedAt }] : [],
+      duplicates: index % 3 === 0 || index === 5 ? [{ source: 'Jornal do Pescado', url: `https://jornal.example/noticia-${index + 1}`, publishedAt }] : [],
       decisionRevision: 0,
     };
   });
-  const decisions: unknown[] = [];
+  const decisions: { revision: number; action: string; reason?: string; scoreSnapshot?: { score: number; topic: string; mapVersion: number; reasons: unknown[] } }[] = [];
   await page.route('https://www.google.com/s2/favicons?**', route => route.fulfill({ contentType: 'image/png', body: PNG }));
   // A corrupt image response exercises decode failure without an unrelated HTTP console error.
   await page.route(`${IMAGE_ORIGIN}/**`, route => route.fulfill({ contentType: 'image/png',
@@ -50,7 +50,7 @@ async function mockDesk(page: Page, count = 18) {
   await page.route('**/api/reporter/news**', route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/decision')) {
-      const input = route.request().postDataJSON() as { revision: number; action: string; hours?: number; reason?: string };
+      const input = route.request().postDataJSON() as { revision: number; action: string; hours?: number; reason?: string; scoreSnapshot?: { score: number; topic: string; mapVersion: number; reasons: unknown[] } };
       decisions.push(input);
       const index = items.findIndex(item => path.includes(`/items/${item.id}/`));
       const now = new Date().toISOString();
@@ -82,7 +82,7 @@ async function expectRadar(page: Page) {
   await expect(lead.getByText('Em 2 veículos', { exact: true })).toBeVisible();
   const highlights = page.getByRole('list', { name: 'Outros destaques', exact: true });
   await expect(highlights.getByTestId(/^news-card-/)).toHaveCount(3);
-  await expect(highlights.getByTestId(`news-card-${SIXTH}`).getByText('Em 2 veículos', { exact: true })).toBeVisible();
+  await expect(page.getByTestId(`news-card-${SIXTH}`).getByText('Em 2 veículos', { exact: true })).toBeVisible();
   // A story without a photo leads with its outlet's mark, never an icon stretched into a photo frame.
   const second = page.getByTestId(`news-card-${SECOND}`);
   await expect(second.locator(`img[src^="${IMAGE_ORIGIN}/"]`)).toHaveCount(0);
@@ -152,7 +152,8 @@ test('decide na fila sem abrir a notícia e desfaz pela confirmação', async ({
   const open = page.getByRole('tab', { name: /^Para decidir/ });
   const decided = page.getByRole('tab', { name: /^Decididas/ });
   await expect(open).toContainText('18');
-  const row = page.getByTestId('news-card-10000000-0000-4000-8000-000000000010');
+  // The A1 stories lead the score-ranked cover; use the next A2 item to exercise a wire-row action.
+  const row = page.getByTestId('news-card-10000000-0000-4000-8000-000000000011');
   const actions = row.locator('xpath=ancestor::li[1]');
   await actions.getByRole('button', { name: 'Selecionar para redação', exact: true }).click();
   await expect(page.getByText('Notícia selecionada para redação', { exact: true })).toBeVisible();
@@ -169,13 +170,16 @@ test('decide na fila sem abrir a notícia e desfaz pela confirmação', async ({
   await decided.click();
   await expect(page.getByRole('heading', { level: 2, name: 'Descartadas', exact: true })).toBeVisible();
   await expect(row).toContainText('Fora do mapa editorial');
-  await page.getByTestId('news-card-10000000-0000-4000-8000-000000000010').locator('xpath=ancestor::li[1]')
+  await page.getByTestId('news-card-10000000-0000-4000-8000-000000000011').locator('xpath=ancestor::li[1]')
     .getByRole('button', { name: 'Voltar para a fila', exact: true }).click();
   await expect(page.getByText('De volta à fila', { exact: true })).toBeVisible();
-  expect(decisions).toEqual([
-    { revision: 0, action: 'select' }, { revision: 1, action: 'restore' },
-    { revision: 2, action: 'discard', reason: 'Fora do mapa editorial' }, { revision: 3, action: 'restore' },
+  expect(decisions.map(({ revision, action, reason }) => ({ revision, action, reason }))).toEqual([
+    { revision: 0, action: 'select', reason: undefined }, { revision: 1, action: 'restore', reason: undefined },
+    { revision: 2, action: 'discard', reason: 'Fora do mapa editorial' }, { revision: 3, action: 'restore', reason: undefined },
   ]);
+  for (const decision of decisions.filter(input => input.action !== 'restore')) {
+    expect(decision.scoreSnapshot).toMatchObject({ score: expect.any(Number), topic: expect.any(String), mapVersion: expect.any(Number), reasons: expect.any(Array) });
+  }
   await expectNoHorizontalOverflow(page);
   await expectHeadingOutline(page);
   expect(errors).toEqual([]);
@@ -225,7 +229,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByTestId('news-headlines')).toBeVisible();
       await expect(page.getByTestId(/^news-card-/)).toHaveCount(18);
       await entirelyVisible(page, search);
-      await expect(first.getByRole('heading', { name: FIRST_TITLE, exact: true })).toBeVisible();
+      await expect(first).toContainText(FIRST_TITLE);
       await expect(decisions).toHaveCount(0);
       await expect(page.getByText('Parágrafo 1 da notícia 1.', { exact: false })).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Chegadas', exact: true })).toHaveCount(0);

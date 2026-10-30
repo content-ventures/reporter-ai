@@ -324,7 +324,10 @@ test('notícia fora da janela do radar abre pelo link e a seleção permanece ao
   await expect(page.locator('[data-ws-stop="footer"]').getByText('Selecionada para redação', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Voltar para a fila', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Selecionar para redação', exact: true })).toHaveCount(0);
-  expect(writes).toEqual([{ revision: 0, action: 'select' }]);
+  expect(writes).toHaveLength(1);
+  expect(writes[0]).toMatchObject({ revision: 0, action: 'select', scoreSnapshot: {
+    score: expect.any(Number), topic: expect.any(String), mapVersion: expect.any(Number), reasons: expect.any(Array),
+  } });
 });
 
 test('falha de leitura e busca indisponível não aparecem como uma lista vazia', async ({ page }) => {
