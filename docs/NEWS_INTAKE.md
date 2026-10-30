@@ -120,12 +120,13 @@ tenant scope, lease fencing and retry behavior are covered by `news-translations
 Sources can carry an explicit newsroom assessment: A1 (reference), A2 (specialized), B
 (complementary) or C (monitoring), alongside independent high/medium/low relevance to the
 publication. Each assessment requires a rationale and has a server timestamp. These are
-editorial judgments, not audience measurements, article verification or automatic score boosts.
-Unassessed sources remain unassessed; feed activity never assigns a tier.
+editorial judgments, not audience measurements or article verification. The radar uses the stored
+tier and relevance as explicit, explainable inputs to its first-pass score.
+Unassessed sources remain unassessed and neutral in scoring; feed activity never assigns a tier.
 
 Editors save or clear assessments in Sources. Readers can inspect the rationale. The radar
-shows the publisher's tier and can filter stories by it without changing article priority or
-decision state. Pasted links and aggregator results match a separately rated publisher by its
+shows the publisher's tier and uses its tier and relevance in the first-pass score. Filtering by
+tier narrows the visible list without changing decision state. Pasted links and aggregator results match a separately rated publisher by its
 exact hostname (ignoring `www`), never by its displayed name. Google Alerts and keyword
 feeds cannot themselves receive a publisher rating.
 
@@ -143,14 +144,36 @@ entry. Conflicting decisions return HTTP 409. Due postponements return once duri
 with a system audit event; selected stories stay available beyond the import window. Tests:
 `database/tests/news-decisions.integration.sql` and `tests/news-decisions.test.ts`.
 
+`087-news-production-link.sql` binds a selected item to its article production in the same database
+transaction. The persisted link prevents two editors or browsers from creating duplicate articles
+from the same radar item. Once linked, the item's status is `covered`, and its production remains
+openable from the radar. This flow has no daily production cap.
+
 ## Screens
 
 In the connected build the radar, Fontes and the Google Alertas and RSS.app pages read the server
-and carry no "Demo". The radar shows arrivals, grouped coverage and source health. The story's
-decision bar offers **Selecionar para redação**, **Adiar** and **Descartar**, with restore available
-under Decididas. Selection keeps the article's source material ready for the writing workflow;
-it does not create a production or generate a Hard News article. The AI's editorial classification
-(F2.4) is still outside this delivery. The fixtures build keeps the simulated desk.
+and carry no "Demo". The radar shows arrivals, grouped coverage and source health. Its explainable
+first-pass score considers the active editorial map (topic and audience), publisher tier and
+relevance, trusted or blocked sources, exclusions, duplicate coverage and publication age. It is a
+deterministic triage score, not an AI judgment or a fact check. Editors can inspect each reason and
+remain responsible for every decision.
+
+The story's decision bar offers **Selecionar para redação**, **Adiar** and **Descartar**, with
+restore available under Decididas. A selected story can be opened as a real article production: the
+original title, source URL and received text are attached to the production and the configured
+article pipeline starts. Hard News generation requires an enabled Tavily research step configured
+to stop on research failure, so an original-only draft is not presented as researched. The generated
+500–800-word draft goes to the existing human review workflow. The news item remains available in
+the radar and retains its original source attribution. The “Em produção hoje” number is an
+informational count; it does not stop additional productions.
+
+When an editor selects, postpones or discards a scored story, `086-news-score-feedback.sql` stores
+the score, map version, topic and reasons observed at that decision, alongside the existing
+revision-checked decision. This is an audit and calibration dataset; it does not automatically
+retrain or alter the scoring rules. Restoring a story remains a separate undo action. Discarded
+items and their received source text remain available as reference material, but quote and
+statistics extraction into a dedicated bank is not automated. The fixtures build keeps the
+simulated desk.
 
 Source suggestions, source lists and the radar display publisher favicons through the public
 Design System `BrandMark`, using the same image service as the integration catalogue. Only the

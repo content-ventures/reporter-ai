@@ -1,4 +1,4 @@
-import type { DeskGoal, EditorialMap, NewsFeed, NewsItem, WritingGuide } from '@/domain/hard-news';
+import type { EditorialMap, NewsFeed, NewsItem, WritingGuide } from '@/domain/hard-news';
 import { ARRIVAL_READINGS, baseArrivalId } from './arrivals.ts';
 
 /**
@@ -495,8 +495,6 @@ export function seedNews(clock: Clock): NewsItem[] {
     },
   ];
 }
-
-export const DESK_GOAL: DeskGoal = { perDay: 8 };
 
 export function seedEditorialMap(clock: Clock): EditorialMap {
   return {

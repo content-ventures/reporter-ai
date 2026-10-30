@@ -16,7 +16,7 @@ export function editionOutlets(item: NewsItem): number {
   return Math.max(1, publishers.size);
 }
 
-/** A cover suggestion, never a fabricated editorial score or a source-tier ranking. */
+/** Orders the editorial score first among recent stories; the human still chooses what to cover. */
 export function editionOrder(items: readonly NewsItem[], now: number, triage: boolean): NewsItem[] {
   const recent = (item: NewsItem) => published(item, now) > now - DAY;
   const priority = (item: NewsItem) => triage ? ({ high: 3, medium: 2, low: 1 }[priorityOf(item) ?? 'low']) : 0;

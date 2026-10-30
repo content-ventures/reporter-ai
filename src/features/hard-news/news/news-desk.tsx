@@ -36,7 +36,6 @@ import {
   Newspaper,
   Plus,
   Rss,
-  Target,
   Telescope,
 } from '@content-ventures/design-system/v3/icons';
 import type { NewsItem } from '@/domain/hard-news';
@@ -48,10 +47,10 @@ import { useBreadcrumb } from '@/ui/shell';
 import { usePhone } from '@/ui/use-phone';
 import { useNow } from '@/ui/time';
 import { NEWS_HREF, NEWS_SOURCES_HREF, researchHref } from '../routes';
+import { pieceHref } from '@/ui/routes';
 import { useHardNews, useNewsWatch } from '../state/hard-news-provider';
 import { DiscoverSourcesDialog } from '../sources/discover-sources-dialog';
 import { coveredToday } from '../state/hard-news-state';
-import { DeskGoalDialog } from './desk-goal-dialog';
 import { ImportLinkDialog } from './import-link-dialog';
 import { DecisionBar, NewsFicha } from './news-ficha';
 import { matchesQuery, nextAfter } from './news-model';
@@ -99,15 +98,14 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const workspaceHrefFor = useWorkspaceHref();
   const { state, ready, actions, demo, live: onServer, newsFailed, search: webSearch } = useHardNews();
   useNewsWatch();
-  // The connected desk supports editorial decisions before AI classification is available.
-  const triage = !onServer;
+  const triage = true;
   const router = useRouter();
   const phone = usePhone();
   const clock = useNow();
   // The demonstration opens no production in the real workspace: "Cobrir" says why it waits.
   const canCreate = useCan('production.create');
   const canEdit = useCan('production.edit');
-  const canCover = onServer ? canEdit : canCreate && !demo;
+  const canCover = onServer ? canEdit && canCreate : canCreate && !demo;
   const [chosenTab, setTab] = useState<DeskTab>();
   const [query, setQuery] = useState('');
   const [sourceTier, setSourceTier] = useState<SourceTierFilter>('all');
@@ -129,7 +127,6 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const [failedItem, setFailedItem] = useState<string>();
   const [bodyAttempt, setBodyAttempt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const [goalOpen, setGoalOpen] = useState(false);
   // Stories with a decision on its way: one at a time per story, many stories at once.
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
   const deciding = useRef(new Set<string>());
@@ -265,7 +262,16 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
 
   /** A connected decision, with "Desfazer" in its confirmation. */
   async function decideLive(item: NewsItem, input: DecisionAction, done: { title: string; description?: string }, failure: string): Promise<boolean> {
-    const result: DecisionResult | undefined = await decide(item, () => actions.decideNews(item.id, { ...input, revision: item.decisionRevision ?? 0 }));
+    const result: DecisionResult | undefined = await decide(item, () => actions.decideNews(item.id, {
+      ...input,
+      revision: item.decisionRevision ?? 0,
+      ...(item.classification ? { scoreSnapshot: {
+        score: item.classification.score,
+        topic: item.classification.topic,
+        mapVersion: item.classification.mapVersion,
+        reasons: item.classification.reasons,
+      } } : {}),
+    }));
     if (!result) return false;
     if (!result.ok) { toast(failure, { tone: 'error', description: result.message }); return false; }
     toast(done.title, { description: done.description, action: { label: 'Desfazer', onClick: () => void undo(item.id) } });
@@ -275,8 +281,26 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   /** "Selecionar para redação" (connected) or "Cobrir" (simulation); from the ficha the story stays open. */
   async function cover(item: NewsItem, from: 'ficha' | 'row' = 'ficha') {
     if (onServer) {
-      const done = await decideLive(item, { action: 'select' }, { title: 'Notícia selecionada para redação' }, 'Não foi possível selecionar');
-      if (done && from === 'ficha') { setTab('decided'); setSelectedId(item.id); }
+      if (item.status === 'new') {
+        const done = await decideLive(item, { action: 'select' }, { title: 'Notícia selecionada para redação' }, 'Não foi possível selecionar');
+        if (done && from === 'ficha') { setTab('decided'); setSelectedId(item.id); }
+        return;
+      }
+      if (item.status === 'covered' && item.productionId) {
+        router.push(pieceHref(item.productionId, 'article'));
+        return;
+      }
+      if (item.status !== 'selected') return;
+      const productionId = await decide(item, () => actions.cover(item.id));
+      if (!productionId) {
+        toast('Não foi possível abrir a pauta', { tone: 'error' });
+        return;
+      }
+      toast('Hard news em produção', {
+        description: 'A geração começou com a fonte original. O rascunho segue para revisão humana.',
+        action: { label: 'Abrir artigo', onClick: () => router.push(pieceHref(productionId, 'article')) },
+      });
+      router.push(pieceHref(productionId, 'article'));
       return;
     }
     const opened = await decide(item, async () => ({ productionId: await actions.cover(item.id) }));
@@ -374,7 +398,6 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
           items: [
             { label: 'Ver atividade', icon: Activity, onSelect: () => setActivityOpen(true) },
             { label: 'Marcar como vistas', icon: CheckCheck, onSelect: () => actions.markSeen() },
-            ...(triage ? [{ label: 'Ajustar meta do dia', icon: Target, onSelect: () => setGoalOpen(true) }] : []),
           ],
         },
         ...(phone ? [{ items: [...intake, { label: 'Fontes', icon: Rss, onSelect: () => router.push(NEWS_SOURCES_HREF) }] }] : []),
@@ -437,7 +460,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const decides = onServer ? canEdit : canCreate;
   const radarProps: RadarBoardProps = {
     triage, tab, now, news: state.news, feeds: state.feeds, pulse: signals, seenSince,
-    goal: { covered: coveredToday(state.news, now), perDay: state.goal.perDay },
+    coveredToday: coveredToday(state.news, now),
     hero: board.hero, cover: board.cover, groups: board.groups, filtered,
     topics: query ? [] : board.topics, topic,
     onTopic: value => { setTopic({ key: value.key, label: value.label }); setHeadlineLimit(PAGE_SIZE); boardToTop(); },
@@ -447,7 +470,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       loadMoreFocus.current = board.ordered[headlineLimit]?.id;
       setHeadlineLimit(value => value + PAGE_SIZE);
     },
-    onEditGoal: () => { setActivityOpen(false); setGoalOpen(true); }, onClearFilters: clearFilters,
+    onClearFilters: clearFilters,
     compact: phone,
     decision: item => decides ? <RowDecision item={item} compact={phone} busy={pending.has(item.id)}
       primary={item.status === 'new' && (!triage || item.classification) ? primary : undefined}
@@ -480,7 +503,8 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       <WorkspaceLayout docked data-fixed-footer="" header={selectedId ? readerHeader : radarHeader}
         mainLabel={selectedId ? 'Notícia' : 'Manchetes'}
         mainHeader={!selectedId ? filters : undefined}
-        footer={live && shown ? <DecisionBar item={shown} covering={pending.has(shown.id)} canCover={canCover} demo={demo}
+        footer={live && shown ? <DecisionBar item={shown} covering={pending.has(shown.id)} canCover={canCover}
+          canOpenProduction demo={demo}
           onCover={item => void cover(item)} onPostpone={(item, hours, label) => void postpone(item, hours, label)}
           onDiscard={(item, reason) => void discard(item, reason)} onRestore={item => void restore(item)} /> : undefined}
       >
@@ -493,7 +517,6 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       <ImportLinkDialog open={importing} onClose={() => setImporting(false)} onImported={(id) => { setTab('open'); setQuery(''); select(id); }} />
       {searching ? <NewsSearchDialog onClose={() => setSearching(false)} /> : null}
       {discovering ? <DiscoverSourcesDialog open onClose={() => setDiscovering(false)} /> : null}
-      <DeskGoalDialog open={goalOpen} onClose={() => setGoalOpen(false)} />
     </>
   );
 }

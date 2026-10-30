@@ -40,13 +40,12 @@ export function NewsAgenda() {
   const shown = [...hero, ...queue.filter((item) => !hero.includes(item))].slice(0, SHOWN);
   const high = queue.filter((item) => priorityOf(item) === 'high').length;
   const covered = coveredToday(desk.state.news, now);
-  const goal = desk.state.goal.perDay;
 
   return (
     <Panel label="Pauta do dia">
       <Section
         title="Pauta do dia"
-        meta={[queue.length ? `${queue.length} para decidir · ${high} com prioridade alta` : undefined, `${covered} de ${goal} pautas hoje`].filter(Boolean).join(' · ')}
+        meta={[queue.length ? `${queue.length} para decidir · ${high} com prioridade alta` : undefined, `${covered} em produção hoje`].filter(Boolean).join(' · ')}
         action={<><DemoBadge /><ButtonLink href={workspaceHrefFor(NEWS_HREF)} variant="ghost" size="sm">Abrir radar</ButtonLink></>}
       >
         {shown.length ? (
