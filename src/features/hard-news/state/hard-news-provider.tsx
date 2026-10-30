@@ -35,6 +35,7 @@ import type { Arrival } from '../preview/arrivals';
 import { ARTICLE_NEWS_ID, classificationFor, clockAt, RESEARCH_NEWS_ID } from '../preview/news';
 import { outlineFor, researchFor, writeDraft } from '../preview/research';
 import { previewScore } from '../settings/map-preview';
+import { classifyRadarItem } from '../news/radar-classification';
 import { answerFrom } from './archive-search';
 import {useWorkspaceStorageKey} from '@/state/workspace-storage';
 import { createDeskStore } from './desk-store';
@@ -71,7 +72,6 @@ export type HardNewsActions = {
   correct(newsId: string, priority: NewsPriority, note?: string): void;
   /** "Colar link": the story's id, also when it was already in the queue (`outcome: 'repeat'`). */
   importUrl(url: string): Promise<{ ok: true; id: string; outcome: 'inserted' | 'grouped' | 'repeat' } | { ok: false; message: string }>;
-  setGoal(perDay: number): void;
   addFeed(input: NewSource): Promise<{ ok: true; feed: NewsFeed; inserted: number; grouped?: number } | { ok: false; message: string }>;
   updateFeed(id: string, patch: SourcePatch): Promise<{ ok: true } | { ok: false; message: string }>;
   /** "Tentar de novo": the source as the new read left it. */
@@ -383,8 +383,48 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
       }
     },
     async cover(newsId) {
-      // Connected stories are selected as material; the prototype cannot create productions.
-      if (demo || newsPort) return undefined;
+      if (demo) return undefined;
+      if (newsPort && liveStore) {
+        const existing = Object.values(latest.current.dossiers).find((dossier) => dossier.newsId === newsId);
+        if (existing) return existing.productionId;
+        let item = liveStore.get().news.find((candidate) => candidate.id === newsId);
+        if (!item) return undefined;
+        if (item.paragraphs !== undefined && item.body.length === 0) {
+          await liveStore.loadBody(newsId);
+          item = liveStore.get().news.find((candidate) => candidate.id === newsId) ?? item;
+        }
+        const materialText = [item.title, item.excerpt, ...item.body].filter(Boolean)
+          .filter((value, index, values) => values.indexOf(value) === index).join('\n\n').trim();
+        if (!materialText) return undefined;
+        const created = await commands.production.createFromSource({
+          newsItemId: newsId,
+          title: item.title,
+          material: { text: materialText, title: item.title, origin: 'other', sourceUrl: item.url, authorized: true },
+          brief: { size: 'standard', sections: 3, angle: `Hard news: apure a notícia “${item.title}” a partir da fonte original e de evidências verificáveis.` },
+          plan: ['article'],
+        });
+        if (!created.ok) {
+          toast('Não foi possível abrir a pauta', { tone: 'error', description: created.refusal.message });
+          return undefined;
+        }
+        if (created.value.reusedNewsLink) {
+          await liveStore.refresh();
+          return created.value.productionId;
+        }
+        const article = created.value.pieces.find((piece) => piece.kind === 'article');
+        if (!article) return created.value.productionId;
+        const dossier: HardNewsDossier = {
+          productionId: created.value.productionId, newsId, angle: '', research: 'idle', sources: [],
+          quoteIds: [], archiveIds: [], stage: 'research',
+        };
+        update((current) => ({ ...current, dossiers: { ...current.dossiers, [created.value.productionId]: dossier } }));
+        const generated = await commands.generation.start('article.draft', {
+          productionId: created.value.productionId, pieceId: article.pieceId,
+        });
+        await liveStore.refresh();
+        if (!generated.ok) toast('A pauta foi aberta', { tone: 'info', description: 'A geração não iniciou automaticamente. Abra o artigo para tentar de novo.' });
+        return created.value.productionId;
+      }
       const news = latest.current.news.find((item) => item.id === newsId);
       if (!news) return undefined;
       if (news.productionId) return news.productionId;
@@ -393,7 +433,7 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
       const now = new Date().toISOString();
       update((current) => ({
         ...current,
-        news: current.news.map((item) => (item.id === newsId ? { ...item, status: 'covered', decidedBy: actorRef.current, decidedAt: now, productionId: opened.productionId } : item)),
+        news: current.news.map((item) => (item.id === newsId ? { ...item, status: 'covered', decidedBy: actorRef.current, decidedAt: now, coveredAt: now, productionId: opened.productionId } : item)),
         dossiers: {
           ...current.dossiers,
           [opened.productionId]: { productionId: opened.productionId, newsId, angle: '', research: 'idle', sources: [], quoteIds: [], archiveIds: [], stage: 'research' },
@@ -449,9 +489,6 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
       };
       update((current) => ({ ...current, news: [item, ...current.news] }));
       return { ok: true, id, outcome: 'inserted' };
-    },
-    setGoal(perDay) {
-      update((current) => ({ ...current, goal: { perDay: Math.max(1, Math.min(50, Math.round(perDay))) } }));
     },
     async addFeed(input) {
       const address = 'url' in input ? input.url : 'site' in input ? input.site : undefined;
@@ -776,7 +813,9 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
 
   // The connected build reads sources and news from the server; everything else stays the desk's.
   const live = Boolean(liveStore);
-  const shown = useMemo(() => (live ? { ...state, feeds: liveNews.feeds, news: liveNews.news } : state), [live, liveNews.feeds, liveNews.news, state]);
+  const shown = useMemo(() => live
+    ? { ...state, feeds: liveNews.feeds, news: liveNews.news.map((item) => classifyRadarItem(item, liveNews.feeds, state.map)) }
+    : state, [live, liveNews.feeds, liveNews.news, state]);
   const watch = useMemo(() => (liveStore ? () => liveStore.watch() : noWatch), [liveStore]);
   const value = useMemo<HardNewsContextValue>(() => ({
     state: shown,

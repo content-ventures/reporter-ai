@@ -73,6 +73,8 @@ export type NewProductionInput = {
   /** Article is mandatory; carousel optional. */
   plan: PieceKind[];
   ownerId?: PersonId;
+  /** Radar item linked atomically to a connected Hard News production. */
+  newsItemId?: string;
 };
 
 export type CreateProductionRefusal =
@@ -91,6 +93,8 @@ export type CreatedProduction = {
   productionId: ProductionId;
   sourceId: SourceId;
   pieces: { kind: PieceKind; pieceId: PieceId }[];
+  /** The same radar item already had a production; do not queue another first draft. */
+  reusedNewsLink?: true;
 };
 
 /** Opens an owned, empty article in the existing studio; no material or AI run is created. */

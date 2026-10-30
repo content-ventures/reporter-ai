@@ -51,6 +51,7 @@ import {workspaceTemplateHash} from '../domain/workspace-templates.ts';
 import {memberViewImageSource} from '../domain/member-view.ts';
 import {readWorkspaceTemplates,referencedTemplateHashes} from './template-settings.ts';
 import {workspaceTemplateLibrary} from '../runtime/editorial-engine.ts';
+import { tavilyConfigured } from './tavily.ts';
 
 const ids = { next: () => randomUUID() };
 const identifier = z.string().min(1).max(128);
@@ -350,8 +351,14 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
 
 export async function editorialRpc(payload: unknown) {
   const { method,args,requestId } = rpcSchema.parse(payload);
+  const newsItemId = method === 'createFromSource'
+    ? z.object({ newsItemId: z.string().uuid().optional() }).passthrough().parse(args[0]).newsItemId
+    : undefined;
   if (['generation.start', 'generation.retry'].includes(method) && !await workerAvailable()) {
     return refuse('provider_unavailable', 'Inicie o worker do Reporter IA antes de gerar.');
+  }
+  if (newsItemId && !await workerAvailable()) {
+    return refuse('provider_unavailable', 'Inicie o worker do Reporter IA antes de gerar Hard News.');
   }
   const hash = contentHash({ method,args });
   let replayed = false;
@@ -364,6 +371,32 @@ export async function editorialRpc(payload: unknown) {
     const execute = async () => {
     const capability = COMMAND_CAPABILITY[method];
     if (capability && !can(sessionMember(checkpoint), capability)) return forbidden(capability);
+    if (newsItemId) {
+      const { rows } = await client.query('SELECT * FROM public.reporter_news_cover_begin($1)', [newsItemId]);
+      const coverage = rows[0] as { production_id: string | null; can_create: boolean } | undefined;
+      if (!coverage) throw new FlowError('NEWS_ITEM_NOT_FOUND', 404);
+      if (coverage.production_id) {
+        const existing = await client.query(`SELECT p.production_id AS "productionId",p.source_ids[1] AS "sourceId",
+            p.archived,part.part_id AS "pieceId"
+          FROM public.reporter_ed_productions p JOIN public.reporter_ed_parts part
+            ON part.portal_id=p.portal_id AND part.production_id=p.production_id
+          WHERE p.portal_id=$1 AND p.production_id=$2 AND part.kind='piece' AND NOT part.deleted
+            AND part.doc->>'kind'='article' ORDER BY part.ordinal LIMIT 1`, [checkpoint.state.workspace.id,coverage.production_id]);
+        const existingProduction = existing.rows[0] as { productionId: string; sourceId: string; pieceId: string; archived: boolean } | undefined;
+        if (!existingProduction || !existingProduction.sourceId) throw new FlowError('NEWS_COVER_PRODUCTION_INCOMPLETE', 409);
+        if (existingProduction.archived) throw new FlowError('NEWS_COVER_ALREADY_ARCHIVED', 409);
+        return ok({ productionId: existingProduction.productionId, sourceId: existingProduction.sourceId,
+          pieces: [{ kind: 'article' as const, pieceId: existingProduction.pieceId }], reusedNewsLink: true as const });
+      }
+      if (!coverage.can_create) throw new FlowError('NEWS_ITEM_NOT_SELECTED', 409);
+      const writing = activePipeline(checkpoint).definition.writing;
+      if (!writing?.enabled || !writing.research?.enabled || writing.research.failureMode !== 'stop' || !tavilyConfigured()) {
+        return refuse('hard_news_research_not_ready', 'Ative Pesquisa de contexto na web no pipeline de Redação e conecte o Tavily antes de gerar Hard News.');
+      }
+      if (!isPreservedPilot(checkpoint.state.workspace.id) && !checkpoint.templateConfiguration?.readiness.ready) {
+        return refuse('workspace_not_ready', 'Configure o mapa editorial, o guia de escrita, os modelos, o editor e o aprovador antes de gerar Hard News.');
+      }
+    }
     if (method === 'session.selectLocalRole') {
       if (reporterDeploymentMode() !== 'local') return refuse('not_local_operator','Testar perfis só está disponível no ambiente local.');
       assertLocalMode();
@@ -478,10 +511,16 @@ export async function editorialRpc(payload: unknown) {
       if(brief?.event?.name&&!brief.event.boxTitle?.trim())brief.event.boxTitle=`${checkpoint.state.workspace.name} na ${brief.event.name}`;
     }
     const command = engine.commands[method as keyof typeof engine.commands] as (...args: unknown[]) => Promise<unknown>;
-    return command(...args);
+    const result = await command(...args) as { ok?: boolean; value?: { productionId?: string } };
+    if (newsItemId && result.ok && result.value?.productionId) {
+      await client.query('SELECT public.reporter_news_cover_finish($1,$2)', [newsItemId,result.value.productionId]);
+    }
+    return result;
     };
     return await execute();
-  },true,method === 'decide' ? 'reporter.review' : 'reporter.edit',{ ...scopeForRpc(method,args),receipt: requestId },{
+  },true,method === 'decide' ? 'reporter.review' : 'reporter.edit',{
+    ...scopeForRpc(method,args),...(newsItemId ? { templates: true } : {}),receipt: requestId,
+  },{
     // Receipts make an ambiguous commit safe to retry; they expire with compaction.
     receipt: (result,checkpoint) => replayed ? undefined : { requestId,value: editorialReceipt(method,hash,result,activePipeline(checkpoint).revision) as StoredReceipt },
   })).value;

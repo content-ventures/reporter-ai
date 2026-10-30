@@ -5,7 +5,6 @@ import type {
   BankQuote,
   CmsConnection,
   CmsDelivery,
-  DeskGoal,
   EditorialMap,
   EnrichmentSuggestion,
   EvidenceFlag,
@@ -15,7 +14,7 @@ import type {
   WritingGuide,
 } from '../../../domain/hard-news.ts';
 import { seedArchive, seedCms, seedImages, seedQuotes } from '../preview/library.ts';
-import { clockAt, DESK_GOAL, seedEditorialMap, seedFeeds, seedNews, seedWritingGuide } from '../preview/news.ts';
+import { clockAt, seedEditorialMap, seedFeeds, seedNews, seedWritingGuide } from '../preview/news.ts';
 import { defaultEditorialPolicy } from '../../../domain/editorial-policy.ts';
 import { answerFrom } from './archive-search.ts';
 
@@ -27,7 +26,6 @@ export type HardNewsState = {
   version: 2;
   feeds: NewsFeed[];
   news: NewsItem[];
-  goal: DeskGoal;
   map: EditorialMap;
   guide: WritingGuide;
   /** By production id. */
@@ -123,7 +121,6 @@ export function initialState(now = Date.now()): HardNewsState {
     version: 2,
     feeds: seedFeeds(clock),
     news: seedNews(clock),
-    goal: DESK_GOAL,
     map: seedEditorialMap(clock),
     guide: seedWritingGuide(clock),
     dossiers: {},
@@ -144,7 +141,7 @@ export function initialState(now = Date.now()): HardNewsState {
 
 /** Connected clients begin with their own server policy and no demonstration records. */
 export function emptyDeskState():HardNewsState{
-  return {version:2,feeds:[],news:[],goal:{perDay:0},...defaultEditorialPolicy(),dossiers:{},flags:{},suggestions:{},deliveries:{},quotes:[],archive:[],images:[],
+  return {version:2,feeds:[],news:[],...defaultEditorialPolicy(),dossiers:{},flags:{},suggestions:{},deliveries:{},quotes:[],archive:[],images:[],
     cms:{platform:'WordPress',siteUrl:'',account:'',status:'disconnected',mode:'draft',categories:[],authors:[],authorMap:{},requires:{category:false,image:false,excerpt:false}},seeded:true};
 }
 
@@ -298,5 +295,6 @@ export function clearStored(key=STORAGE_KEY): void {
 export function coveredToday(news: readonly NewsItem[], now = Date.now()): number {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
-  return news.filter((item) => item.status === 'covered' && item.decidedAt && new Date(item.decidedAt) >= start).length;
+  return news.filter((item) => item.status === 'covered' && (item.coveredAt ?? item.decidedAt)
+    && new Date(item.coveredAt ?? item.decidedAt!) >= start).length;
 }
