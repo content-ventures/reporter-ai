@@ -28,7 +28,7 @@ import { photoOf } from './news-photo';
 import { NewsRow } from './news-row';
 import { whenLabel } from './radar-model';
 
-const HOW_TRIAGE = 'Notícias das últimas 24 horas primeiro; depois, prioridade editorial, nota, presença em outros veículos e data. A força da fonte e a foto não definem a ordem.';
+const HOW_TRIAGE = 'Notícias recentes primeiro; o score considera tema e público do mapa, avaliação do veículo, novidade e atualidade. O editor decide o que vira pauta.';
 const HOW_LIVE = 'Sugestão de leitura: notícias das últimas 24 horas, presença em outros veículos e data de publicação. A prioridade editorial ainda não foi avaliada. A força da fonte e a foto não definem a ordem.';
 
 /** "Em destaque": the lead story, then the next highlights as rows, before the wire. */

@@ -182,15 +182,16 @@ function ResearchTrace({ dossier }: { dossier: HardNewsDossier }) {
 
 /** The AI's reading: a score dial, the one-line why, each criterion that moved it, the person's call. */
 function AiReading({ item }: { item: NewsItem }) {
-  const { actions, state } = useHardNews();
+  const { actions, state, live } = useHardNews();
   const classification = item.classification;
   const priority = priorityOf(item);
+  const heading = live ? 'Score do radar' : 'Leitura da IA';
 
   if (!classification || !priority) {
     return (
-      <Panel label="Leitura da IA">
-        <Section title="Leitura da IA" titleAs="h3" meta={`Mapa editorial v${state.map.version}`}>
-          <CardHeader titleAs="h4" leading={<Spinner size={24} tone="muted" label="A IA está lendo" />} title="A IA está lendo" />
+      <Panel label={heading}>
+        <Section title={heading} titleAs="h3" meta={`Mapa editorial v${state.map.version}`}>
+          <CardHeader titleAs="h4" leading={<Spinner size={24} tone="muted" label={live ? 'Calculando score do radar' : 'A IA está lendo'} />} title={live ? 'Calculando prioridade' : 'A IA está lendo'} />
         </Section>
       </Panel>
     );
@@ -198,12 +199,12 @@ function AiReading({ item }: { item: NewsItem }) {
 
   const automatic = priorityOf({ classification: { ...classification, correction: undefined } }) ?? 'low';
   return (
-    <Panel label="Leitura da IA">
-      <Section title="Leitura da IA" titleAs="h3" meta={`Mapa editorial v${classification.mapVersion}`}>
+    <Panel label={heading}>
+      <Section title={heading} titleAs="h3" meta={`Mapa editorial v${classification.mapVersion}`}>
         <CardHeader
           titleAs="h4"
           size="md"
-          leading={<DonutMeter value={classification.score} label="Nota da IA" size={56} thickness={6} color={PRIORITY_COLOR[priority]} />}
+          leading={<DonutMeter value={classification.score} label={live ? 'Score do radar' : 'Nota da IA'} size={56} thickness={6} color={PRIORITY_COLOR[priority]} />}
           title={`${classification.score} · Prioridade ${PRIORITY_LABELS[priority].toLowerCase()}`}
           badge={classification.correction ? <Badge variant="text" tone="gray" size="sm">Corrigida</Badge> : undefined}
           description={classification.summary}
@@ -218,7 +219,7 @@ function AiReading({ item }: { item: NewsItem }) {
             description: reason.detail,
           }))}
         />
-        <List label="Sua avaliação" framed={false} dividers={false} bleed>
+        {!live ? <List label="Sua avaliação" framed={false} dividers={false} bleed>
           <ListItem
             density="sm"
             title="Sua avaliação"
@@ -237,7 +238,7 @@ function AiReading({ item }: { item: NewsItem }) {
               />
             )}
           />
-        </List>
+        </List> : null}
       </Section>
     </Panel>
   );
@@ -292,6 +293,7 @@ export type DecisionProps = {
   item: NewsItem;
   covering: boolean;
   canCover: boolean;
+  canOpenProduction?: boolean;
   /** The R1 build's demonstration: "Cobrir" waits, with the reason in view. */
   demo?: boolean;
   onCover: (item: NewsItem) => void;
@@ -323,11 +325,11 @@ function LaterAndDiscard({ item, disabled = false, onPostpone, onDiscard }: Pick
 }
 
 /** The one decision under the story: Descartar, Adiar, Cobrir (the only blue button of the desk). */
-export function DecisionBar({ item, covering, canCover, demo = false, onCover, onPostpone, onDiscard, onRestore }: DecisionProps) {
+export function DecisionBar({ item, covering, canCover, canOpenProduction = false, demo = false, onCover, onPostpone, onDiscard, onRestore }: DecisionProps) {
   const workspaceHrefFor = useWorkspaceHref();
   const { live } = useHardNews();
   const dossier = useDossier(item.productionId);
-  if (live) return <LiveDecisionBar item={item} covering={covering} canCover={canCover} onCover={onCover} onPostpone={onPostpone} onDiscard={onDiscard} onRestore={onRestore} />;
+  if (live) return <LiveDecisionBar item={item} covering={covering} canCover={canCover} canOpenProduction={canOpenProduction} onCover={onCover} onPostpone={onPostpone} onDiscard={onDiscard} onRestore={onRestore} />;
   if (item.status === 'covered' && item.productionId) {
     const written = dossier?.stage === 'article';
     return (
@@ -380,11 +382,13 @@ export function DecisionBar({ item, covering, canCover, demo = false, onCover, o
 }
 
 /** A durable selection keeps the source material ready for the writing workflow. */
-function LiveDecisionBar({ item, covering, canCover, onCover, onPostpone, onDiscard, onRestore }: DecisionProps) {
+function LiveDecisionBar({ item, covering, canCover, canOpenProduction = false, onCover, onPostpone, onDiscard, onRestore }: DecisionProps) {
   const phone = usePhone();
   if (item.status !== 'new') return (
-    <ActionBar position="static" detail={item.status === 'selected' ? 'Selecionada para redação' : item.status === 'later' ? 'Notícia adiada' : 'Notícia descartada'}>
-      {canCover ? <Button variant="secondary" loading={covering} onClick={() => onRestore(item)}>Voltar para a fila</Button> : null}
+    <ActionBar position="static" detail={item.status === 'selected' ? 'Selecionada para redação' : item.status === 'covered' ? 'Hard news em produção' : item.status === 'later' ? 'Notícia adiada' : 'Notícia descartada'}>
+      {item.status === 'covered' && item.productionId && canOpenProduction ? <Button variant="primary" loading={covering} onClick={() => onCover(item)}>Abrir artigo</Button> : null}
+      {item.status === 'selected' && canCover ? <Button variant="primary" loading={covering} onClick={() => onCover(item)}>Gerar hard news</Button> : null}
+      {item.status !== 'covered' && canCover ? <Button variant="secondary" loading={covering} onClick={() => onRestore(item)}>Voltar para a fila</Button> : null}
     </ActionBar>
   );
   const reasonId = `decision-${item.id}`;

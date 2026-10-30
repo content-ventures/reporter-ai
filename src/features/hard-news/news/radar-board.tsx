@@ -29,7 +29,7 @@ import { TopicRadar } from './topic-radar';
 import type { NewsTopic } from './topic-model';
 
 export type RadarBoardProps = {
-  /** The AI's triage exists (the simulation): "Cobrir agora", priorities and the day's goal. */
+  /** Editorial triage is available: "Cobrir agora" and source-aware priorities. */
   triage: boolean;
   tab: 'open' | 'decided';
   now: number;
@@ -37,7 +37,7 @@ export type RadarBoardProps = {
   feeds: readonly NewsFeed[];
   pulse: Pulse;
   seenSince: string;
-  goal: { covered: number; perDay: number };
+  coveredToday: number;
   /** The simulation's best high-priority story, counted on the activity strip. */
   hero: NewsItem[];
   /** The cover's lead and highlights (the open queue with no search, filter or topic). */
@@ -53,7 +53,6 @@ export type RadarBoardProps = {
   onSelect: (id: string) => void;
   visibleCount: number;
   onLoadMore: () => void;
-  onEditGoal: () => void;
   onClearFilters: () => void;
   /** The decisions a row offers (none for a person who cannot decide). */
   decision: (item: NewsItem) => ReactNode;
@@ -122,7 +121,7 @@ export function RadarActivity(props: RadarBoardProps) {
   return <RadarSide triage={props.triage} news={props.news} feeds={props.feeds} now={props.now} />;
 }
 
-function RadarStrip({ now, hero, pulse, seenSince, goal, onSelect, onEditGoal }: RadarBoardProps) {
+function RadarStrip({ now, hero, pulse, seenSince, coveredToday, onSelect }: RadarBoardProps) {
   const workspaceHref=useWorkspaceHref();
   const { fresh, high, feeds } = pulse;
   const freshOnTop = hero.filter((item) => Date.parse(arrivedAt(item)) > Date.parse(seenSince)).length;
@@ -145,11 +144,9 @@ function RadarStrip({ now, hero, pulse, seenSince, goal, onSelect, onEditGoal }:
       onClick: high.oldestId ? () => onSelect(high.oldestId as string) : undefined,
     },
     {
-      label: 'Pautas de hoje',
-      value: `${goal.covered} de ${goal.perDay}`,
-      meter: { value: Math.min(goal.covered, goal.perDay), max: goal.perDay, label: 'Pautas abertas hoje', tone: goal.covered >= goal.perDay ? 'green' : undefined },
-      tooltip: 'Ajustar meta',
-      onClick: onEditGoal,
+      label: 'Em produção hoje',
+      value: coveredToday,
+      hint: 'Pautas abertas a partir do radar',
     },
     {
       label: 'Fontes',
