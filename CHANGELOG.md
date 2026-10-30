@@ -4,6 +4,22 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-30
+
+### Added
+
+- Connect radar decisions to production.
+- Remove daily goal and polish radar.
+
+### Fixed
+
+- Keep radar triage smoke reliable.
+
+### Maintenance
+
+- Stabilize score-ranked radar fixtures.
+- Follow ranked story navigation.
+
 ## [1.2.0] - 2026-10-29
 
 ### Maintenance

@@ -1,7 +1,37 @@
 {
-  "currentVersion": "1.2.0",
+  "currentVersion": "1.3.0",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.3.0",
+      "roadmapRelease": "R1",
+      "date": "2026-10-30",
+      "title": "R1 feature release",
+      "summary": "Automatic feature release with 5 validated changes: follow ranked story navigation; stabilize score-ranked radar fixtures; keep radar triage smoke reliable.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Connect radar decisions to production"
+        },
+        {
+          "type": "Added",
+          "description": "Remove daily goal and polish radar"
+        },
+        {
+          "type": "Fixed",
+          "description": "Keep radar triage smoke reliable"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Stabilize score-ranked radar fixtures"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Follow ranked story navigation"
+        }
+      ]
+    },
     {
       "version": "1.2.0",
       "roadmapRelease": "R1",
