@@ -1,7 +1,21 @@
 {
-  "currentVersion": "1.4.0",
+  "currentVersion": "1.5.0",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.5.0",
+      "roadmapRelease": "R1",
+      "date": "2026-11-04",
+      "title": "R1 feature release",
+      "summary": "Automatic feature release with 1 validated change: accept quicktime and common video containers.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Accept QuickTime and common video containers"
+        }
+      ]
+    },
     {
       "version": "1.4.0",
       "roadmapRelease": "R1",

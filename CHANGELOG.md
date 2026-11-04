@@ -4,6 +4,12 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-04
+
+### Added
+
+- Accept QuickTime and common video containers.
+
 ## [1.4.0] - 2026-11-04
 
 ### Added
