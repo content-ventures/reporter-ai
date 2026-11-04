@@ -211,7 +211,8 @@ async function uploadParts(file: Blob,session: Record<string,unknown>,onProgress
   const partSize = Number(session.partSize);
   const parts = Array.isArray(session.parts) ? session.parts.map(part => part as { number: number;url: string }) : [];
   if (!Number.isSafeInteger(partSize) || partSize<5*1024**2 || !parts.length) throw new ReporterHttpError('A sessão de upload retornou dados inválidos.','UPLOAD_SESSION_INVALID',502);
-  let cursor = 0,uploaded = 0;
+  const complete = new Set(Array.isArray(session.uploaded) ? session.uploaded.filter((part): part is number => Number.isSafeInteger(part) && part>=1 && part<=parts.length) : []);
+  let cursor = 0,uploaded = [...complete].reduce((total,number) => total + Math.min(partSize,file.size-(number-1)*partSize),0);
   const controller = new AbortController(),combined = signal ? AbortSignal.any([signal,controller.signal]) : controller.signal;
   const worker = async () => {
     for (;;) {
@@ -219,6 +220,7 @@ async function uploadParts(file: Blob,session: Record<string,unknown>,onProgress
       if (index>=parts.length) return;
       const part = parts[index],start = (part.number-1)*partSize,end = Math.min(file.size,start+partSize);
       if (part.number!==index+1 || typeof part.url!=='string' || end<=start) throw new ReporterHttpError('A sessão de upload retornou partes inválidas.','UPLOAD_SESSION_INVALID',502);
+      if (complete.has(part.number)) continue;
       let response: Response | undefined;
       for (let attempt=0;attempt<3;attempt++) {
         combined.throwIfAborted();
@@ -367,7 +369,7 @@ export function createHttpIngest(local: SourceIngest, http: ReporterTransport = 
       const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
       const textFile = local.limits.extensions.includes(extension);
       if (!textFile && !MEDIA_EXTENSIONS.includes(extension)) return refuse('unsupported_type','Formato de arquivo não suportado.');
-      if (file.size>(textFile ? MAX_TEXT_BYTES : MAX_UPLOAD_BYTES)) return refuse('too_large',textFile ? 'A transcrição deve ter até 1 MB.' : 'O arquivo deve ter até 2 GB.');
+      if (file.size>(textFile ? MAX_TEXT_BYTES : MAX_UPLOAD_BYTES)) return refuse('too_large',textFile ? 'A transcrição deve ter até 1 MB.' : 'O arquivo deve ter até 80 GB.');
       if (!(file instanceof Blob)) return refuse('read_failed','Escolha um arquivo deste computador.');
       const upload = uploads.get(file) ?? { key: crypto.randomUUID() };
       uploads.set(file,upload);
