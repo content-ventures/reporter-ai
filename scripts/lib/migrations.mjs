@@ -257,6 +257,7 @@ export const CLOUD = Object.freeze([
   'database/migrations/085-editorial-memory-market-cell-context.sql',
   'database/migrations/086-news-score-feedback.sql',
   'database/migrations/087-news-production-link.sql',
+  'database/migrations/088-large-media-uploads.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 
