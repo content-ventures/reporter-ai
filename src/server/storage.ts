@@ -7,7 +7,7 @@ import { join, basename, extname } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import busboy from "busboy";
-import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES, MEDIA_EXTENSIONS } from "../domain/reporter";
+import { MAX_LOCAL_UPLOAD_BYTES, MAX_TEXT_BYTES, MEDIA_EXTENSIONS } from "../domain/reporter";
 import { UUID } from "./reporter-schema";
 import { FlowError } from "./errors";
 import { inspectMedia } from "./media";
@@ -81,7 +81,7 @@ export async function receiveFile(request: Request) {
   const type = request.headers.get("content-type") ?? "";
   if (!type.startsWith("multipart/form-data;")) throw new FlowError("MULTIPART_REQUIRED", 415);
   const length = Number(request.headers.get("content-length") ?? 0);
-  if (length > MAX_UPLOAD_BYTES + 65536) throw new FlowError("FILE_TOO_LARGE", 413);
+  if (length > MAX_LOCAL_UPLOAD_BYTES + 65536) throw new FlowError("FILE_TOO_LARGE", 413);
   if (!request.body) throw new FlowError("FILE_REQUIRED", 400);
   const root = await storageRoot(), id = randomUUID(), temporary = join(root, id + ".pending");
   let name = "", size = 0, received = false, failure: FlowError | null = null;
@@ -89,7 +89,7 @@ export async function receiveFile(request: Request) {
   let parser: ReturnType<typeof busboy>;
   // Browser multipart filenames are UTF-8. Latin-1 decoding corrupts accents,
   // and decomposed macOS accents can become control characters rejected by SQL.
-  try { parser = busboy({ headers: { "content-type": type }, defParamCharset: "utf8", limits: { files: 1, fields: 0, parts: 2, fileSize: MAX_UPLOAD_BYTES } }); }
+  try { parser = busboy({ headers: { "content-type": type }, defParamCharset: "utf8", limits: { files: 1, fields: 0, parts: 2, fileSize: MAX_LOCAL_UPLOAD_BYTES } }); }
   catch { throw new FlowError("INVALID_MULTIPART", 400); }
   let writing: Promise<void> = Promise.resolve();
   parser.on("file", (field, file, info) => {
@@ -115,7 +115,7 @@ export async function receiveFile(request: Request) {
     let wireBytes = 0;
     const wireLimit = new Transform({ transform(chunk, _encoding, callback) {
       wireBytes += chunk.length;
-      callback(wireBytes > MAX_UPLOAD_BYTES + 65536 ? new FlowError("FILE_TOO_LARGE", 413) : null, chunk);
+      callback(wireBytes > MAX_LOCAL_UPLOAD_BYTES + 65536 ? new FlowError("FILE_TOO_LARGE", 413) : null, chunk);
     } });
     await pipeline(Readable.fromWeb(request.body as never), wireLimit, parser, { signal: AbortSignal.any([request.signal, timeout]) });
     await writing;
@@ -182,10 +182,10 @@ export async function receiveRemoteFile(source: string, name: string, requestSig
   try {
     const response = await remoteResponse(source,signal);
     const length = Number(response.headers.get('content-length') ?? 0);
-    if (length>MAX_UPLOAD_BYTES) throw new FlowError('FILE_TOO_LARGE',413);
+    if (length>MAX_LOCAL_UPLOAD_BYTES) throw new FlowError('FILE_TOO_LARGE',413);
     const counter = new Transform({ transform(chunk,_encoding,callback) {
       size += chunk.length;
-      if (size>MAX_UPLOAD_BYTES) { callback(new FlowError('FILE_TOO_LARGE',413));return; }
+      if (size>MAX_LOCAL_UPLOAD_BYTES) { callback(new FlowError('FILE_TOO_LARGE',413));return; }
       hash.update(chunk);callback(null,chunk);
     } });
     await pipeline(Readable.fromWeb(response.body as never),counter,createWriteStream(temporary,{ flags: 'wx',mode: 0o600 }),{ signal });

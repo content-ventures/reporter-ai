@@ -79,7 +79,7 @@ export function partLine({ status }: Pick<PartView, 'status'>): string {
 function specOf(intake: SourceIntake): string {
   const formats = intake.extensions.map((extension) => extension.replace('.', '').toUpperCase());
   const last = formats.pop();
-  const limit = intake.extensions.includes('.mp3') ? 'áudio/vídeo até 2 GB e 3 h; texto até 1 MB' : `até ${Math.round(intake.maxBytes / (1024 * 1024))} MB`;
+  const limit = intake.extensions.includes('.mp3') ? 'áudio/vídeo até 80 GB e 3 h; texto até 1 MB' : `até ${Math.round(intake.maxBytes / (1024 * 1024))} MB`;
   return `${formats.join(', ')} ou ${last} · ${limit}`;
 }
 

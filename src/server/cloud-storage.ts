@@ -12,7 +12,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { z } from 'zod';
-import { MAX_DRIVE_BYTES } from '../domain/reporter.ts';
+import { MAX_DRIVE_BYTES, MAX_UPLOAD_BYTES } from '../domain/reporter.ts';
 import { transaction } from './database.ts';
 import { FlowError } from './errors.ts';
 import { appOrigins } from './worker-config.ts';
@@ -22,16 +22,16 @@ import { withRegisteredWorkerContext } from './worker-job-context.ts';
 
 export const SOURCE_BUCKET = 'reporter-source-media';
 export const MULTIPART_PART_BYTES = 16 * 1024 ** 2;
-const UPLOAD_URL_TTL_SECONDS = 6 * 60 * 60;
+const UPLOAD_URL_TTL_SECONDS = 24 * 60 * 60;
 const SOURCE_URL_TTL_SECONDS = 60 * 60;
-// Storage takes the largest source, a Drive file; the browser's 2 GB is checked where its upload is prepared.
-const MAX_PARTS = Math.ceil(MAX_DRIVE_BYTES / MULTIPART_PART_BYTES);
+const MAX_SOURCE_BYTES = Math.max(MAX_DRIVE_BYTES,MAX_UPLOAD_BYTES);
+const MAX_PARTS = Math.ceil(MAX_SOURCE_BYTES / MULTIPART_PART_BYTES);
 
 const uploadInputSchema = z.object({
   source_id: z.string().uuid(),
   bucket: z.literal(SOURCE_BUCKET),
   key: z.string().regex(/^incoming\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:mp3|mp4|m4a|wav|ogg|flac|webm)$/i),
-  size: z.union([z.string(),z.number()]).transform(Number).pipe(z.number().int().min(1).max(MAX_DRIVE_BYTES)),
+  size: z.union([z.string(),z.number()]).transform(Number).pipe(z.number().int().min(1).max(MAX_SOURCE_BYTES)),
   content_type: z.enum(['audio/mpeg','audio/mp4','audio/wav','audio/ogg','audio/flac','audio/webm','video/mp4','video/webm']),
   file_name: z.string().min(1).max(255),
   upload_id: z.string().min(8).max(1024).nullable().optional(),
