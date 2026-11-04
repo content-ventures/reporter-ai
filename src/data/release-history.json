@@ -1,7 +1,25 @@
 {
-  "currentVersion": "1.3.0",
+  "currentVersion": "1.4.0",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.4.0",
+      "roadmapRelease": "R1",
+      "date": "2026-11-04",
+      "title": "R1 feature release",
+      "summary": "Automatic feature release with 2 validated changes: register large media migration for cloud deployment; allow media files up to 80 gb.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Allow media files up to 80 GB"
+        },
+        {
+          "type": "Fixed",
+          "description": "Register large media migration for cloud deployment"
+        }
+      ]
+    },
     {
       "version": "1.3.0",
       "roadmapRelease": "R1",

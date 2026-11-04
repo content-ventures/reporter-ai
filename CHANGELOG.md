@@ -4,6 +4,16 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-04
+
+### Added
+
+- Allow media files up to 80 GB.
+
+### Fixed
+
+- Register large media migration for cloud deployment.
+
 ## [1.3.0] - 2026-10-30
 
 ### Added
