@@ -235,6 +235,8 @@ export async function verifyFreshBootstrap(source, baseline) {
     console.log("PASS standalone forward migration replay (no data deletion)");
     const flow = await readFile(resolve(root, "database/migrations/003-local-flow.sql"), "utf8");
     run(flow); run(flow);
+    const mediaFormats = await readFile(resolve(root, "database/local/89-media-formats.sql"), "utf8");
+    run(mediaFormats); run(mediaFormats);
     console.log("PASS local-flow migration replay (no data deletion)");
     run(source);
     run(await readFile(resolve(root, "database/tests/local-flow.integration.sql"), "utf8"));

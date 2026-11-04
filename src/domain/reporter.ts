@@ -14,6 +14,8 @@ const MEDIA_TYPES: Readonly<Record<string, { contentType: string; stored: string
   mp4: { contentType: 'video/mp4', stored: 'mp4' }, wav: { contentType: 'audio/wav', stored: 'wav' },
   ogg: { contentType: 'audio/ogg', stored: 'ogg' }, opus: { contentType: 'audio/ogg', stored: 'ogg' },
   flac: { contentType: 'audio/flac', stored: 'flac' }, webm: { contentType: 'video/webm', stored: 'webm' },
+  mov: { contentType: 'video/quicktime', stored: 'mov' }, m4v: { contentType: 'video/mp4', stored: 'm4v' },
+  mkv: { contentType: 'video/x-matroska', stored: 'mkv' }, avi: { contentType: 'video/x-msvideo', stored: 'avi' },
 };
 /** `.mp3`, `.m4a`…: what a file picker accepts as audio or video. */
 export const MEDIA_EXTENSIONS: readonly string[] = Object.keys(MEDIA_TYPES).map(extension => `.${extension}`);

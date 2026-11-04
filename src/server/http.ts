@@ -221,7 +221,7 @@ const messages: Record<string, string> = {
   REMOTE_MEDIA_UNAVAILABLE: 'O áudio público deste episódio não pôde ser importado. Envie o arquivo.',
   PIPELINE_STAGE_MISSING: 'A configuração precisa incluir a etapa Material antes de analisar.',
   FILE_TOO_LARGE: "O limite local é de 2 GB por arquivo.", TEXT_TOO_LARGE: "A transcrição TXT deve ter até 1 MB.",
-  UNSUPPORTED_MEDIA: "Envie MP3, MP4, M4A, WAV, OGG, OPUS, FLAC, WEBM ou TXT.",
+  UNSUPPORTED_MEDIA: "Envie MP3, MP4, M4A, WAV, OGG, OPUS, FLAC, WEBM, MOV, M4V, MKV, AVI ou TXT.",
   INVALID_MEDIA: "Não foi possível ler o áudio deste arquivo.", NO_AUDIO_TRACK: "O arquivo não tem uma faixa de áudio.",
   MEDIA_DURATION: "O arquivo deve ter áudio com duração de até 3 horas.",
   INVALID_TEXT_ENCODING: "Salve a transcrição TXT em UTF-8.", INVALID_TRANSCRIPT: "A transcrição está vazia ou inválida.",

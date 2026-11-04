@@ -6,7 +6,7 @@ import { FlowError } from "./errors";
 import { mediaCommand, withMediaExecutable } from './worker-media.ts';
 
 function inputProtocols(source: string, remote: boolean) {
-  const formats = ['-format_whitelist', 'mov,mp3,wav,flac,ogg,matroska,webm'];
+  const formats = ['-format_whitelist', 'mov,mp3,wav,flac,ogg,matroska,webm,avi'];
   if (!remote) return [...formats, '-protocol_whitelist', 'file,pipe'];
   const url = new URL(source);
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.username || url.password) throw new FlowError('SOURCE_UNAVAILABLE', 422);
@@ -46,7 +46,7 @@ export async function inspectMedia(path: string, signal?: AbortSignal, remote = 
   const output = await withMediaExecutable('ffprobe',executable=>runMedia(executable,
     ["-v", "error", ...inputProtocols(path, remote), "-show_format", "-show_streams", "-of", "json", path], signal));
   const parsed = z.object({
-    format: z.object({ format_name: z.string(), duration: z.string() }),
+    format: z.object({ format_name: z.string(), duration: z.string(), tags: z.object({ major_brand: z.string().optional() }).optional() }),
     streams: z.array(z.object({ codec_type: z.string() })),
   }).safeParse(JSON.parse(output));
   if (!parsed.success || !parsed.data.streams.some(stream => stream.codec_type === "audio")) throw new FlowError("NO_AUDIO_TRACK", 415);
@@ -54,10 +54,12 @@ export async function inspectMedia(path: string, signal?: AbortSignal, remote = 
   if (!Number.isFinite(duration) || duration <= 0 || duration > MAX_DURATION_SECONDS) throw new FlowError("MEDIA_DURATION", 422);
   const format = parsed.data.format.format_name;
   const video = parsed.data.streams.some(stream => stream.codec_type === "video");
+  // FFprobe reports the shared "matroska,webm" demuxer for both containers.
   const contentType = format.includes("mp3") ? "audio/mpeg" : format.includes("wav") ? "audio/wav" :
     format.includes("flac") ? "audio/flac" : format.includes("ogg") ? "audio/ogg" :
-    format.includes("mp4") ? (video ? "video/mp4" : "audio/mp4") :
-    format.includes("webm") ? (video ? "video/webm" : "audio/webm") : null;
+    format.includes("mov") ? (video ? (parsed.data.format.tags?.major_brand?.trim().toLowerCase() === 'qt' ? 'video/quicktime' : 'video/mp4') : 'audio/mp4') :
+    format.includes("webm") ? (video ? "video/webm" : "audio/webm") :
+    format.includes("avi") ? 'video/x-msvideo' : null;
   if (!contentType) throw new FlowError("UNSUPPORTED_MEDIA", 415);
   return { duration, contentType };
 }
