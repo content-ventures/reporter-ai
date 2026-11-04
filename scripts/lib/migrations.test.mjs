@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import { CLOUD, CLOUD_BASE_FILES, CLOUD_REPLAY, LOCAL_CATALOG, LOCAL_FLOW, LOCAL_INIT } from "./migrations.mjs";
 
@@ -18,6 +18,13 @@ test("compose mounts exactly the shared local bootstrap list, in order", async (
 test("every listed migration exists", async () => {
   const files = new Set([...LOCAL_INIT.map(([file]) => file), ...LOCAL_FLOW, ...CLOUD, ...LOCAL_CATALOG]);
   for (const file of files) await access(new URL(file, root));
+});
+
+test("every deployment migration is registered", async () => {
+  const registered = new Set([...LOCAL_INIT.map(([file]) => file), ...LOCAL_FLOW, ...CLOUD]);
+  const files = (await readdir(new URL("database/migrations/", root)))
+    .filter(file => file.endsWith(".sql")).map(file => `database/migrations/${file}`).sort();
+  assert.deepEqual(files.filter(file => !registered.has(file)), ["database/migrations/002-standalone.sql"]);
 });
 
 test("local replays and the cloud tail keep shared migrations in the same order", () => {
