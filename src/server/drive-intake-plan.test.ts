@@ -19,8 +19,11 @@ test('only the audio and video the transcription accepts are taken', () => {
   assert.deepEqual(driveMedia('Painel abertura.MP3'), { extension: 'mp3', contentType: 'audio/mpeg' });
   assert.deepEqual(driveMedia('estande.m4a'), { extension: 'm4a', contentType: 'audio/mp4' });
   assert.deepEqual(driveMedia('WhatsApp Audio 2026-10-20 at 09.37.11.opus'), { extension: 'ogg', contentType: 'audio/ogg' }, 'WhatsApp audio is the Ogg file it is');
+  assert.deepEqual(driveMedia('DSCF2016.MOV'), { extension: 'mov', contentType: 'video/quicktime' });
+  assert.deepEqual(driveMedia('film.m4v'), { extension: 'm4v', contentType: 'video/mp4' });
+  assert.deepEqual(driveMedia('recording.mkv'), { extension: 'mkv', contentType: 'video/x-matroska' });
+  assert.deepEqual(driveMedia('archive.avi'), { extension: 'avi', contentType: 'video/x-msvideo' });
   assert.equal(driveMedia('slides.pdf'), undefined);
-  assert.equal(driveMedia('video.mov'), undefined);
   assert.equal(driveMedia('sem-extensao'), undefined);
 });
 

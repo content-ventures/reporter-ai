@@ -27,11 +27,21 @@ SELECT pg_temp.expect_error($q$SELECT public.reporter_register_upload(gen_random
 SELECT pg_temp.expect_error($q$SELECT public.reporter_register_upload(gen_random_uuid(),'bad.txt',20,'text/html',repeat('a',64))$q$,'22023');
 SELECT public.reporter_register_upload('00000000-0000-0000-0000-000000000405',
   'Podcast-Gestão-espécies-não.mp4',1254772880,'video/mp4',repeat('c',64));
+SELECT public.reporter_register_upload('00000000-0000-0000-0000-000000000406',
+  'DSCF2016.MOV',100,'video/quicktime',repeat('d',64));
+SELECT public.reporter_register_upload('00000000-0000-0000-0000-000000000407',
+  'recording.mkv',100,'video/x-matroska',repeat('e',64));
+SELECT public.reporter_register_upload('00000000-0000-0000-0000-000000000408',
+  'archive.avi',100,'video/x-msvideo',repeat('f',64));
 SELECT pg_temp.expect_error($q$SELECT public.reporter_register_upload(gen_random_uuid(),'too-large.mp4',2147483649,'video/mp4',repeat('c',64))$q$,'22023');
 RESET SESSION AUTHORIZATION;
 SELECT pg_temp.assert_true((SELECT size=1254772880 AND file_name='Podcast-Gestão-espécies-não.mp4'
   FROM core.storage_objects WHERE id='00000000-0000-0000-0000-000000000405'),
   'large video metadata accepts intact UTF-8 filename without changing the 2 GiB ceiling');
+SELECT pg_temp.assert_true((SELECT count(*)=3 FROM core.storage_objects WHERE id IN
+  ('00000000-0000-0000-0000-000000000406','00000000-0000-0000-0000-000000000407','00000000-0000-0000-0000-000000000408')
+  AND content_type IN ('video/quicktime','video/x-matroska','video/x-msvideo')),
+  'local recording formats are registered for transcription');
 SET SESSION AUTHORIZATION reporter_runtime;
 SELECT public.reporter_intake('00000000-0000-0000-0000-000000000401','synthetic.txt',27,'text/plain',
   encode(sha256(convert_to('Synthetic editorial source.','UTF8')),'hex'),'Synthetic editorial source.','local.test.txt') AS intake \gset

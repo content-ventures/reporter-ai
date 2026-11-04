@@ -171,7 +171,7 @@ export async function remoteResponse(source: string, signal: AbortSignal): Promi
 /** Downloads a public podcast enclosure into the same sealed local storage used by uploads. */
 export async function receiveRemoteFile(source: string, name: string, requestSignal?: AbortSignal) {
   const extension = extname(name).toLowerCase();
-  if (!['.mp3','.mp4','.m4a','.wav','.ogg','.flac','.webm'].includes(extension) || !name || name.length>255 || /[\x00-\x1f\x7f-\x9f]/.test(name)) {
+  if (!MEDIA_EXTENSIONS.includes(extension) || !name || name.length>255 || /[\x00-\x1f\x7f-\x9f]/.test(name)) {
     throw new FlowError('UNSUPPORTED_MEDIA',415);
   }
   const root = await storageRoot(),id = randomUUID(),temporary = join(root,id+'.pending');

@@ -31,6 +31,36 @@ SELECT public.reporter_complete_cloud_upload('reporter-source-media',
   16777216,'audio/mpeg','"integration-etag"');
 RESET SESSION AUTHORIZATION;
 
+SET SESSION AUTHORIZATION reporter_runtime;
+SELECT set_config('app.access_mode','user',true),set_config('app.module_key','reporter_ai',true),
+  set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',true),
+  set_config('app.portal_id','00000000-0000-0000-0000-000000000101',true),
+  set_config('app.user_id','00000000-0000-0000-0000-000000000011',true);
+SELECT public.reporter_prepare_cloud_upload(
+  '550e8400-e29b-41d4-a716-446655440002','DSCF2016.MOV',16777216,'video/quicktime',
+  'incoming/00000000-0000-0000-0000-000000000101/550e8400-e29b-41d4-a716-446655440002.mov',
+  encode(sha256(convert_to(repeat('m',32),'UTF8')),'hex'),'cloud-mov-test');
+SELECT public.reporter_prepare_cloud_upload(
+  '550e8400-e29b-41d4-a716-446655440003','recording.mkv',16777216,'video/x-matroska',
+  'incoming/00000000-0000-0000-0000-000000000101/550e8400-e29b-41d4-a716-446655440003.mkv',
+  encode(sha256(convert_to(repeat('k',32),'UTF8')),'hex'),'cloud-mkv-test');
+RESET SESSION AUTHORIZATION;
+
+SET SESSION AUTHORIZATION reporter_worker;
+SELECT set_config('app.access_mode','job',true),set_config('app.job_key','reporter-ai-processing',true),
+  set_config('app.portal_id','00000000-0000-0000-0000-000000000101',true);
+SELECT public.reporter_worker_upload_context('550e8400-e29b-41d4-a716-446655440002',repeat('m',32));
+SELECT public.reporter_cloud_upload_input('550e8400-e29b-41d4-a716-446655440003',repeat('k',32));
+SELECT public.reporter_complete_cloud_upload('reporter-source-media',
+  'incoming/00000000-0000-0000-0000-000000000101/550e8400-e29b-41d4-a716-446655440002.mov',
+  16777216,'video/quicktime','"mov-etag"');
+SELECT public.reporter_complete_cloud_upload('reporter-source-media',
+  'incoming/00000000-0000-0000-0000-000000000101/550e8400-e29b-41d4-a716-446655440003.mkv',
+  16777216,'video/x-matroska','"mkv-etag"');
+SELECT public.reporter_worker_object_context('reporter-source-media',
+  'incoming/00000000-0000-0000-0000-000000000101/550e8400-e29b-41d4-a716-446655440002.mov');
+RESET SESSION AUTHORIZATION;
+
 DO $$ BEGIN
   IF NOT EXISTS(SELECT FROM core.storage_objects WHERE id='550e8400-e29b-41d4-a716-446655440001'
       AND provider='s3' AND visibility='private' AND store_id='reporter-source-media'
@@ -44,6 +74,11 @@ DO $$ BEGIN
       WHERE t.source_object_id='550e8400-e29b-41d4-a716-446655440001'
         AND o.event_type='reporter.transcription.requested' AND o.processed_at IS NULL)<>1 THEN
     RAISE EXCEPTION 'cloud transcription was not enqueued exactly once';
+  END IF;
+  IF (SELECT count(*) FROM core.storage_objects WHERE id IN
+      ('550e8400-e29b-41d4-a716-446655440002','550e8400-e29b-41d4-a716-446655440003')
+      AND status='completed' AND content_type IN ('video/quicktime','video/x-matroska'))<>2 THEN
+    RAISE EXCEPTION 'new video containers were not registered and sealed';
   END IF;
 END $$;
 

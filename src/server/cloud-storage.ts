@@ -30,9 +30,9 @@ const MAX_PARTS = Math.ceil(MAX_SOURCE_BYTES / MULTIPART_PART_BYTES);
 const uploadInputSchema = z.object({
   source_id: z.string().uuid(),
   bucket: z.literal(SOURCE_BUCKET),
-  key: z.string().regex(/^incoming\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:mp3|mp4|m4a|wav|ogg|flac|webm)$/i),
+  key: z.string().regex(/^incoming\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:mp3|mp4|m4a|wav|ogg|flac|webm|mov|m4v|mkv|avi)$/i),
   size: z.union([z.string(),z.number()]).transform(Number).pipe(z.number().int().min(1).max(MAX_SOURCE_BYTES)),
-  content_type: z.enum(['audio/mpeg','audio/mp4','audio/wav','audio/ogg','audio/flac','audio/webm','video/mp4','video/webm']),
+  content_type: z.enum(['audio/mpeg','audio/mp4','audio/wav','audio/ogg','audio/flac','audio/webm','video/mp4','video/webm','video/quicktime','video/x-matroska','video/x-msvideo']),
   file_name: z.string().min(1).max(255),
   upload_id: z.string().min(8).max(1024).nullable().optional(),
 });

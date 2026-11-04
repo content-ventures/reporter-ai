@@ -157,6 +157,33 @@ test('a large upload goes straight to storage and is transcribed on demand, resu
   transcriptText = ready.body.transcript.content;
 });
 
+test('a QuickTime recording reaches transcription through the browser upload path', { timeout: 120_000 }, async () => {
+  const file = join(workDir, 'DSCF2016.MOV');
+  execFileSync('ffmpeg', ['-nostdin', '-hide_banner', '-loglevel', 'error',
+    '-f', 'lavfi', '-i', 'color=c=black:s=16x16:r=1:d=1',
+    '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1',
+    '-shortest', '-c:v', 'mpeg4', '-c:a', 'aac', '-y', file]);
+  const bytes = await readFile(file);
+  const sourceId = randomUUID(), token = randomUUID() + randomUUID();
+  const prepared = await api<{ id: string; upload_endpoint: string }>('uploads',
+    { sourceId, token, name: 'DSCF2016.MOV', size: bytes.length }, { 'idempotency-key': 'rehearsal-mov-upload' });
+  assert.equal(prepared.status, 202);
+  const [source] = await owner<{ key: string; content_type: string }>(
+    'SELECT key,content_type FROM core.storage_objects WHERE id=$1', [sourceId]);
+  assert.equal(source.key, `incoming/${PORTAL}/${sourceId}.mov`);
+  assert.equal(source.content_type, 'video/quicktime');
+  const worker = (path: string) => fetch(host.url + path, { method: 'POST',
+    headers: { origin: APP, 'content-type': 'application/json' }, body: JSON.stringify({ sourceId, token }) });
+  const session = await (await worker('/uploads/start')).json() as { parts: { url: string }[] };
+  assert.equal(session.parts.length, 1);
+  assert.equal((await fetch(session.parts[0].url, { method: 'PUT', body: bytes })).status, 200);
+  assert.equal((await worker('/uploads/complete')).status, 200);
+  await settle();
+  const ready = await api<{ transcript: { status: string; content: string } }>(`transcripts/${prepared.body.id}`);
+  assert.equal(ready.body.transcript.status, 'ready');
+  assert.ok(ready.body.transcript.content);
+});
+
 test('starting a generation wakes the worker, which completes it without any schedule', { timeout: 120_000 }, async () => {
   assert.ok(transcriptText, 'the transcription rehearsal ran first');
   const created = await api<{ ok: boolean; value: { productionId: string } }>('workspace', { method: 'createFromSource', requestId: randomUUID(),
