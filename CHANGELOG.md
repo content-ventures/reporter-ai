@@ -4,6 +4,12 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-11-05
+
+### Fixed
+
+- Honor 80 GB limit in cloud intake.
+
 ## [1.5.0] - 2026-11-04
 
 ### Added

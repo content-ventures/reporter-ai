@@ -1,7 +1,21 @@
 {
-  "currentVersion": "1.5.0",
+  "currentVersion": "1.5.1",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.5.1",
+      "roadmapRelease": "R1",
+      "date": "2026-11-05",
+      "title": "R1 maintenance release",
+      "summary": "Automatic maintenance release with 1 validated change: honor 80 gb limit in cloud intake.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Fixed",
+          "description": "Honor 80 GB limit in cloud intake"
+        }
+      ]
+    },
     {
       "version": "1.5.0",
       "roadmapRelease": "R1",
