@@ -10,7 +10,7 @@ import { effectiveWorkspaceRollout } from './workspace-activation.ts';
 import {workspaceRollout} from './workspace-rollout.ts';
 import { workspaceDirectory } from './workspace-access.ts';
 import { FlowError, logEvent, safeCode } from "./errors";
-import { mediaOf } from '../domain/reporter.ts';
+import { MAX_UPLOAD_BYTES, mediaOf } from '../domain/reporter.ts';
 import { receiveFile, workerAvailable } from "./storage";
 import { IDLE_QUEUE, queueStatus } from "./queue-status.ts";
 import { workerUrl } from "./worker-config.ts";
@@ -347,7 +347,7 @@ export async function handleReporter(request: Request, path: string[], deps: { d
       if (reporterDeploymentMode()!=='cloud') return reply({ mode: 'local' });
       const key = idempotencyKey(request);
       const input = z.object({ sourceId: UUID,token: z.string().min(32).max(128),name: z.string().trim().min(1).max(255),
-        size: z.number().int().min(1).max(2*1024**3) }).strict().parse(await jsonBody(request));
+        size: z.number().int().min(1).max(MAX_UPLOAD_BYTES) }).strict().parse(await jsonBody(request));
       if (/[\x00-\x1f\x7f-\x9f\\/]/.test(input.name)) throw new FlowError('UNSUPPORTED_MEDIA',415);
       // The stored extension: an Opus file (WhatsApp audio) is stored as the Ogg file it is.
       const media = mediaOf(input.name);

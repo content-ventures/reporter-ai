@@ -10,6 +10,7 @@ import { installFakeProviders } from '../support/fake-providers.ts';
 import { startFakeS3 } from '../support/fake-s3.ts';
 import { startRehearsalDatabase } from '../support/rehearsal-db.ts';
 import { startWorkerHost } from '../support/worker-host.ts';
+import { MAX_UPLOAD_BYTES } from '../../src/domain/reporter.ts';
 
 /**
  * The cloud path, rehearsed locally: the production SQL in PostgreSQL, the Neon worker
@@ -182,6 +183,29 @@ test('a QuickTime recording reaches transcription through the browser upload pat
   const ready = await api<{ transcript: { status: string; content: string } }>(`transcripts/${prepared.body.id}`);
   assert.equal(ready.body.transcript.status, 'ready');
   assert.ok(ready.body.transcript.content);
+});
+
+test('cloud upload preparation accepts the full advertised size range without reading media bytes', { timeout: 60_000 }, async () => {
+  for (const [index, size] of [6, 16, 22, 80].map(gib => gib * 1024 ** 3).entries()) {
+    const sourceId = randomUUID(), token = randomUUID() + randomUUID();
+    const prepared = await api<{ source_id: string }>('uploads',
+      { sourceId, token, name: `large-${index}.MOV`, size }, { 'idempotency-key': `rehearsal-large-upload-${index}` });
+    assert.equal(prepared.status, 202, `${size} bytes must pass the API validation`);
+    assert.equal(prepared.body.source_id, sourceId);
+    const [stored] = await owner<{ size: string }>('SELECT size FROM core.storage_objects WHERE id=$1', [sourceId]);
+    assert.equal(Number(stored.size), size, 'PostgreSQL must retain the exact media size');
+    if (size === 22 * 1024 ** 3) {
+      const response = await fetch(host.url + '/uploads/start', { method: 'POST',
+        headers: { origin: APP, 'content-type': 'application/json' }, body: JSON.stringify({ sourceId, token }) });
+      assert.equal(response.status, 200, 'the worker must create the 22 GB multipart session');
+      const session = await response.json() as { partSize: number; parts: { number: number; url: string }[] };
+      assert.equal(session.parts.length, Math.ceil(size / session.partSize));
+      assert.equal(session.parts.at(-1)?.number, session.parts.length);
+    }
+  }
+  const overLimit = await api('uploads', { sourceId: randomUUID(), token: randomUUID() + randomUUID(),
+    name: 'too-large.MOV', size: MAX_UPLOAD_BYTES + 1 }, { 'idempotency-key': 'rehearsal-large-upload-over-limit' });
+  assert.equal(overLimit.status, 422);
 });
 
 test('starting a generation wakes the worker, which completes it without any schedule', { timeout: 120_000 }, async () => {
