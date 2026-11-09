@@ -351,13 +351,18 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
 
 export async function editorialRpc(payload: unknown) {
   const { method,args,requestId } = rpcSchema.parse(payload);
-  const newsItemId = method === 'createFromSource'
-    ? z.object({ newsItemId: z.string().uuid().optional() }).passthrough().parse(args[0]).newsItemId
-    : undefined;
+  const sourceNews = method === 'createFromSource' ? z.object({
+    newsItemId: z.string().uuid().optional(),
+    newsItemIds: z.array(z.string().uuid()).min(2)
+      .refine(ids => new Set(ids).size === ids.length).optional(),
+  }).passthrough().parse(args[0]) : undefined;
+  if (sourceNews?.newsItemId && sourceNews.newsItemIds) throw new FlowError('NEWS_BUNDLE_INVALID',422);
+  const newsItemIds = sourceNews?.newsItemIds ?? (sourceNews?.newsItemId ? [sourceNews.newsItemId] : []);
+  const newsItemId = sourceNews?.newsItemId;
   if (['generation.start', 'generation.retry'].includes(method) && !await workerAvailable()) {
     return refuse('provider_unavailable', 'Inicie o worker do Reporter IA antes de gerar.');
   }
-  if (newsItemId && !await workerAvailable()) {
+  if (newsItemIds.length && !await workerAvailable()) {
     return refuse('provider_unavailable', 'Inicie o worker do Reporter IA antes de gerar Hard News.');
   }
   const hash = contentHash({ method,args });
@@ -371,11 +376,18 @@ export async function editorialRpc(payload: unknown) {
     const execute = async () => {
     const capability = COMMAND_CAPABILITY[method];
     if (capability && !can(sessionMember(checkpoint), capability)) return forbidden(capability);
-    if (newsItemId) {
-      const { rows } = await client.query('SELECT * FROM public.reporter_news_cover_begin($1)', [newsItemId]);
-      const coverage = rows[0] as { production_id: string | null; can_create: boolean } | undefined;
-      if (!coverage) throw new FlowError('NEWS_ITEM_NOT_FOUND', 404);
-      if (coverage.production_id) {
+    if (newsItemIds.length) {
+      const coverages: { id: string; production_id: string | null; can_create: boolean }[] = [];
+      // A stable lock order prevents overlapping bundles from deadlocking when users select the
+      // same stories in a different order. Source order still follows the submitted materials.
+      for (const id of [...newsItemIds].sort()) {
+        const { rows } = await client.query('SELECT * FROM public.reporter_news_cover_begin($1)', [id]);
+        const coverage = rows[0] as { production_id: string | null; can_create: boolean } | undefined;
+        if (!coverage) throw new FlowError('NEWS_ITEM_NOT_FOUND', 404);
+        coverages.push({ id, ...coverage });
+      }
+      if (newsItemId && coverages[0]?.production_id) {
+        const coverage = coverages[0];
         const existing = await client.query(`SELECT p.production_id AS "productionId",p.source_ids[1] AS "sourceId",
             p.archived,part.part_id AS "pieceId"
           FROM public.reporter_ed_productions p JOIN public.reporter_ed_parts part
@@ -388,7 +400,7 @@ export async function editorialRpc(payload: unknown) {
         return ok({ productionId: existingProduction.productionId, sourceId: existingProduction.sourceId,
           pieces: [{ kind: 'article' as const, pieceId: existingProduction.pieceId }], reusedNewsLink: true as const });
       }
-      if (!coverage.can_create) throw new FlowError('NEWS_ITEM_NOT_SELECTED', 409);
+      if (coverages.some(coverage => coverage.production_id || !coverage.can_create)) throw new FlowError('NEWS_ITEM_NOT_SELECTED', 409);
       const writing = activePipeline(checkpoint).definition.writing;
       if (!writing?.enabled || !writing.research?.enabled || writing.research.failureMode !== 'stop' || !tavilyConfigured()) {
         return refuse('hard_news_research_not_ready', 'Ative Pesquisa de contexto na web no pipeline de Redação e conecte o Tavily antes de gerar Hard News.');
@@ -487,19 +499,27 @@ export async function editorialRpc(payload: unknown) {
       if (record) { const memory = await guardMemoryCommand(client, record, method, args); if (!memory.ok) return refuse('memory_not_ready', memory.refusal.message); }
     }
     if (method === 'createFromSource') {
-      const input = z.object({ title: z.string().trim().min(1).max(120), material: z.object({
+      const materialSchema = z.object({
         text: z.string().min(1).max(1048576),authorized: z.boolean(),origin: z.enum(['interview','podcast','event','talk','other']),
         transcriptId: z.string().uuid().optional(),parts: materialPartsSchema.optional(),
+        kind: z.enum(['transcript','news']).optional(),
         programName: z.string().trim().max(160).optional(),sourceUrl: z.string().trim().max(2000).optional(),
         location: z.string().trim().max(160).optional(),recordedOn: z.string().max(10).optional(),
-      }).passthrough(), brief: z.object({ sections: z.number().int().min(1).max(8),size: z.enum(['short','standard']),angle: z.string().max(600).optional(),
+      }).passthrough();
+      const input = z.object({ title: z.string().trim().min(1).max(120), material: materialSchema,
+      additionalMaterials: z.array(materialSchema).optional(), brief: z.object({ sections: z.number().int().min(1).max(8),size: z.enum(['short','standard']),angle: z.string().max(600).optional(),
         format: z.enum(EDITORIAL_FORMATS).optional(),formatSize: z.string().max(40).optional(),
         event: z.object(Object.fromEntries(EVENT_FIELDS.map(key => [key,z.string().max(EVENT_FIELD_MAX).optional()]))).strict().optional() }),
       plan: z.array(z.enum(['article','carousel'])).max(2),speakers: z.array(z.object({ label: z.string().max(500) }).passthrough()).max(100).optional() }).passthrough().parse(args[0]);
-      if (!citationDay(input.material.recordedOn) || input.material.sourceUrl && !podcastLink(input.material.sourceUrl))
+      const materials = [input.material, ...(input.additionalMaterials ?? [])];
+      if (newsItemIds.length && (materials.length !== newsItemIds.length
+        || newsItemIds.length > 1 && materials.some(material => material.kind !== 'news'))) {
+        throw new FlowError('NEWS_BUNDLE_INVALID',422);
+      }
+      if (materials.some(material => !citationDay(material.recordedOn) || material.sourceUrl && !podcastLink(material.sourceUrl)))
         throw new FlowError('CITATION_METADATA_INVALID',422);
       // Every recording of the material must be a ready transcript of this workspace.
-      const ids = materialTranscriptIds(input.material);
+      const ids = materials.flatMap(materialTranscriptIds);
       if (ids.length) {
         const { rows } = await client.query('SELECT status FROM public.reporter_transcripts WHERE portal_id=$2 AND id = ANY($1::uuid[])',[ids,checkpoint.state.workspace.id]);
         if (rows.length !== ids.length || rows.some(row => row.status !== 'ready')) throw new FlowError('TRANSCRIPT_NOT_READY',422);
@@ -512,14 +532,14 @@ export async function editorialRpc(payload: unknown) {
     }
     const command = engine.commands[method as keyof typeof engine.commands] as (...args: unknown[]) => Promise<unknown>;
     const result = await command(...args) as { ok?: boolean; value?: { productionId?: string } };
-    if (newsItemId && result.ok && result.value?.productionId) {
-      await client.query('SELECT public.reporter_news_cover_finish($1,$2)', [newsItemId,result.value.productionId]);
+    if (newsItemIds.length && result.ok && result.value?.productionId) {
+      for (const id of [...newsItemIds].sort()) await client.query('SELECT public.reporter_news_cover_finish($1,$2)', [id,result.value.productionId]);
     }
     return result;
     };
     return await execute();
   },true,method === 'decide' ? 'reporter.review' : 'reporter.edit',{
-    ...scopeForRpc(method,args),...(newsItemId ? { templates: true } : {}),receipt: requestId,
+    ...scopeForRpc(method,args),...(newsItemIds.length ? { templates: true } : {}),receipt: requestId,
   },{
     // Receipts make an ambiguous commit safe to retry; they expire with compaction.
     receipt: (result,checkpoint) => replayed ? undefined : { requestId,value: editorialReceipt(method,hash,result,activePipeline(checkpoint).revision) as StoredReceipt },

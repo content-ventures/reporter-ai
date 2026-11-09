@@ -11,7 +11,7 @@ import type { Result } from '../domain/result.ts';
 import type { DecideRefusal } from '../domain/rules/decide.ts';
 import type { DeriveRefusal } from '../domain/rules/derive.ts';
 import type { ExportRefusal } from '../domain/rules/export.ts';
-import type { SourceOrigin, SpeakerPresentation } from '../domain/source.ts';
+import type { SourceKind, SourceOrigin, SpeakerPresentation } from '../domain/source.ts';
 import type { SuggestionState } from '../domain/suggestion.ts';
 import type { TranscriptFormat } from '../domain/text/transcript-parse.ts';
 import type { VersionView } from '../domain/views.ts';
@@ -44,28 +44,33 @@ export type SpeakerAssignment = {
 /** One recording of a material sent in several files. */
 export type MaterialPartInput = { fileName: string; transcriptId?: string };
 
+export type ProductionMaterialInput = {
+  text: string;
+  /** Uploaded transcript already persisted by the server. */
+  transcriptId?: string;
+  fileName?: string;
+  format?: TranscriptFormat | 'auto';
+  /** Material title; defaults to the production title. */
+  title?: string;
+  kind?: SourceKind;
+  origin: SourceOrigin;
+  /** YYYY-MM-DD. */
+  recordedOn?: string;
+  programName?: string;
+  sourceUrl?: string;
+  location?: string;
+  /** "Material autorizado": generation stays blocked while false (REQ-T.1). */
+  authorized: boolean;
+  /** 2+ recordings, in the order of a `joinTranscriptParts` text. */
+  parts?: readonly MaterialPartInput[];
+};
+
 export type NewProductionInput = {
   /** "Título interno". */
   title: string;
-  material: {
-    text: string;
-    /** Uploaded transcript already persisted by the server. */
-    transcriptId?: string;
-    fileName?: string;
-    format?: TranscriptFormat | 'auto';
-    /** Material title; defaults to the production title. */
-    title?: string;
-    origin: SourceOrigin;
-    /** YYYY-MM-DD. */
-    recordedOn?: string;
-    programName?: string;
-    sourceUrl?: string;
-    location?: string;
-    /** "Material autorizado": generation stays blocked while false (REQ-T.1). */
-    authorized: boolean;
-    /** 2+ recordings, in the order of a `joinTranscriptParts` text. */
-    parts?: readonly MaterialPartInput[];
-  };
+  material: ProductionMaterialInput;
+  /** Independent sources attached to the same article (up to five total). */
+  additionalMaterials?: readonly ProductionMaterialInput[];
   /** Reuse a saved source instead of creating one (duplicate material, REQ-2.1 prep). */
   reuseSourceId?: SourceId;
   speakers?: SpeakerAssignment[];
@@ -75,6 +80,8 @@ export type NewProductionInput = {
   ownerId?: PersonId;
   /** Radar item linked atomically to a connected Hard News production. */
   newsItemId?: string;
+  /** Selected radar items linked atomically to one multi-source article. */
+  newsItemIds?: readonly string[];
 };
 
 export type CreateProductionRefusal =
@@ -87,6 +94,7 @@ export type CreateProductionRefusal =
   | 'unknown_person'
   | 'unknown_source'
   | 'invalid_parts'
+  | 'invalid_materials'
   | ForbiddenRefusal;
 
 export type CreatedProduction = {

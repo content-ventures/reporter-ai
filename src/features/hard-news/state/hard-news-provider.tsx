@@ -66,6 +66,7 @@ export type HardNewsActions = {
   decideNews(id: string, input: NewsDecisionInput): Promise<{ ok: true } | { ok: false; message: string }>;
   retryTranslation(id: string): Promise<{ ok: true } | { ok: false; message: string }>;
   cover(newsId: string): Promise<string | undefined>;
+  coverMany(newsIds: readonly string[], title: string, angle: string): Promise<string | undefined>;
   postpone(newsId: string, hours: number): void;
   discard(newsId: string, reason: string): void;
   restore(newsId: string): void;
@@ -441,6 +442,79 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
       }));
       research(opened.productionId);
       return opened.productionId;
+    },
+    async coverMany(newsIds, title, angle) {
+      const ids = [...new Set(newsIds)];
+      if (demo || !newsPort || !liveStore || ids.length < 2 || !title.trim() || !angle.trim()) return undefined;
+      let selected = ids.map(id => liveStore.get().news.find(item => item.id === id));
+      if (selected.some(item => !item || item.status !== 'selected')) {
+        toast('Atualize a seleção', { tone: 'error', description: 'Só é possível reunir notícias selecionadas para redação.' });
+        return undefined;
+      }
+      for (const item of selected) {
+        if (item?.paragraphs !== undefined && item.body.length === 0) {
+          try { await liveStore.loadBody(item.id); }
+          catch {
+            toast('Não foi possível ler uma das notícias', { tone: 'error' });
+            return undefined;
+          }
+        }
+      }
+      selected = ids.map(id => liveStore.get().news.find(item => item.id === id));
+      const items = selected.filter((item): item is NewsItem => Boolean(item));
+      if (items.length !== ids.length || items.some(item => item.status !== 'selected')) {
+        toast('Atualize a seleção', { tone: 'error', description: 'Uma das notícias mudou enquanto o artigo era preparado.' });
+        return undefined;
+      }
+      const materials = items.map(item => {
+        const text = [item.title, item.excerpt, ...item.body].filter(Boolean)
+          .filter((value, index, values) => values.indexOf(value) === index).join('\n\n').trim();
+        return { text, title: `${item.source}: ${item.title}`, kind: 'news' as const, format: 'plain' as const,
+          origin: 'other' as const, sourceUrl: item.url, authorized: true };
+      });
+      if (materials.some(material => !material.text)) {
+        toast('Uma das notícias não tem texto para apurar', { tone: 'error' });
+        return undefined;
+      }
+      const briefAngle = `Síntese de ${items.length} notícias distintas. Preserve atribuições, datas e números por fonte e explicite divergências. Ângulo editorial: ${angle.trim()}`;
+      const created = await commands.production.createFromSource({
+        newsItemIds: ids,
+        title: title.trim(),
+        material: materials[0],
+        additionalMaterials: materials.slice(1),
+        brief: { size: 'standard', sections: 3, angle: briefAngle },
+        plan: ['article'],
+      });
+      if (!created.ok) {
+        toast('Não foi possível abrir o artigo', { tone: 'error', description: created.refusal.message });
+        return undefined;
+      }
+      if (created.value.reusedNewsLink) {
+        await liveStore.refresh();
+        return created.value.productionId;
+      }
+      const article = created.value.pieces.find(piece => piece.kind === 'article');
+      if (!article) {
+        await liveStore.refresh();
+        return created.value.productionId;
+      }
+      const now = new Date().toISOString();
+      const sources: ResearchSource[] = items.flatMap(item => [{
+        id: `s-bundle-${item.id}`, title: item.title, url: item.url, outlet: item.source, kind: 'press' as const,
+        publishedAt: item.publishedAt, consultedAt: now, excerpt: item.excerpt, state: 'accepted' as const,
+      }, ...item.duplicates.map((duplicate, duplicateIndex) => ({
+        id: `s-bundle-${item.id}-duplicate-${duplicateIndex}`, title: item.title, url: duplicate.url, outlet: duplicate.source,
+        kind: 'press' as const, publishedAt: duplicate.publishedAt, consultedAt: now, excerpt: item.excerpt, state: 'accepted' as const,
+      }))]);
+      const dossier: HardNewsDossier = {
+        productionId: created.value.productionId, newsId: ids[0], newsIds: ids, angle: angle.trim(), research: 'idle', sources,
+        quoteIds: [], archiveIds: [], stage: 'research',
+      };
+      update(current => ({ ...current, dossiers: { ...current.dossiers, [created.value.productionId]: dossier } }));
+      const generated = await commands.generation.start('article.draft', { productionId: created.value.productionId, pieceId: article.pieceId });
+      await liveStore.refresh();
+      if (!generated.ok) toast('O artigo foi aberto', { tone: 'info', description: 'A geração não iniciou automaticamente. Abra o artigo para tentar de novo.' });
+      return created.value.productionId;
     },
     postpone(newsId, hours) {
       patchNews(newsId, { status: 'later', decidedBy: actorRef.current, decidedAt: new Date().toISOString(), laterUntil: new Date(Date.now() + hours * 3_600_000).toISOString() });

@@ -23,6 +23,7 @@ import type {
   CreateBlankRefusal,
   CreateProductionRefusal,
   PersonDetails,
+  ProductionMaterialInput,
   PersonRefusal,
   ProductionCommands,
   SpeakerAssignment,
@@ -46,6 +47,7 @@ type ProductionLevelCommands = Pick<
 const PRODUCTION_NOT_FOUND = refuse('not_found', 'Não encontramos esta produção.');
 const SOURCE_NOT_FOUND = refuse('not_found', 'Não encontramos este material.');
 const INVALID_PARTS = refuse('invalid_parts', 'As partes do material não conferem. Envie os arquivos de novo.');
+const INVALID_MATERIALS = refuse('invalid_materials', 'Não é possível reutilizar uma fonte e incluir outros materiais ao mesmo tempo.');
 
 type PeopleResolution = { people: Person[]; mapping: Record<string, PersonId>; unattributed: string[] };
 
@@ -59,6 +61,33 @@ function newPerson(details: PersonDetails, ctx: CommandContext): Person | undefi
   const organization = details.organization?.trim();
   if (organization) person.organization = organization;
   return person;
+}
+
+function sourceFromMaterial(input: ProductionMaterialInput, title: string, workspaceId: string, speakers: PeopleResolution, speakerInputs: readonly SpeakerAssignment[], ctx: CommandContext): Result<Source, CreateProductionRefusal> {
+  if (!input.text.trim()) return refuse('empty_material', 'Cole ou envie o material antes de continuar.');
+  const parsed = parseTranscript(input.text, {
+    ...(input.format ? { format: input.format } : {}),
+    ...(input.fileName ? { fileName: input.fileName } : {}),
+  });
+  const sent = input.parts;
+  const count = parsed.parts?.length ?? 0;
+  if ((sent?.length ?? 0) !== count || (sent && sent.length > MAX_MATERIAL_PARTS) || (!count && input.text.includes(PART_BREAK))) return INVALID_PARTS;
+  const empty = parsed.parts?.findIndex((part) => part.segments === 0) ?? -1;
+  if (empty >= 0) return refuse('empty_material', `A parte ${empty + 1} não tem falas.`, { part: empty + 1 });
+  if (parsed.segments.length === 0) return refuse('empty_material', 'Cole ou envie o material antes de continuar.');
+  const hashes = sent ? materialPartHashes(input.text) : undefined;
+  const source = createTranscriptSource({
+    workspaceId, title: input.title?.trim() || title, kind: input.kind ?? 'transcript', origin: input.origin, parsed,
+    authorized: input.authorized, speakerPeople: speakers.mapping, unattributed: speakers.unattributed,
+    presentations: Object.fromEntries(speakerInputs.filter(speaker => speaker.presentation).map(speaker => [speaker.label, speaker.presentation!])),
+    ...(input.recordedOn ? { recordedOn: input.recordedOn } : {}),
+    ...(input.programName ? { programName: input.programName } : {}),
+    ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}),
+    ...(input.location ? { location: input.location } : {}),
+    ...(input.fileName ? { fileName: input.fileName } : {}),
+    ...(sent && hashes ? { parts: sent.map((part, index) => ({ ...part, hash: hashes[index] })) } : {}),
+  }, ctx);
+  return ok(input.transcriptId ? { ...source, transcriptId: input.transcriptId } : source);
 }
 
 /** Resolves "Falantes": existing people by id, new people created with the production. */
@@ -144,58 +173,38 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
         const speakers = resolveSpeakers(state, input.speakers ?? [], ctx);
         if (!speakers.ok) return speakers;
 
-        let source: Source;
+        const additionalMaterials = input.additionalMaterials ?? [];
+        if (input.reuseSourceId !== undefined && additionalMaterials.length) return INVALID_MATERIALS;
+        let sources: Source[];
         const isNewSource = input.reuseSourceId === undefined;
-        let newlyAuthorized = input.material.authorized;
-        if (input.material.parts && input.reuseSourceId !== undefined) return INVALID_PARTS;
+        let newlyAuthorized = false;
         if (input.reuseSourceId !== undefined) {
+          if (input.material.parts) return INVALID_PARTS;
           const existing = state.sources.find((candidate) => candidate.id === input.reuseSourceId);
           if (!existing) return refuse('unknown_source', 'Material não encontrado.');
-          source = Object.entries(speakers.value.mapping).reduce((current, [label, personId]) => mapSpeaker(current, label, personId), existing);
+          let source = Object.entries(speakers.value.mapping).reduce((current, [label, personId]) => mapSpeaker(current, label, personId), existing);
           source = speakers.value.unattributed.reduce((current, label) => mapSpeaker(current, label, 'none'), source);
+          if (input.material.transcriptId) source = { ...source, transcriptId: input.material.transcriptId };
           newlyAuthorized = input.material.authorized && !existing.rights.authorized;
           if (newlyAuthorized) source = authorize(source, true, ctx);
+          sources = [source];
         } else {
-          const parsed = parseTranscript(input.material.text, {
-            ...(input.material.format ? { format: input.material.format } : {}),
-            ...(input.material.fileName ? { fileName: input.material.fileName } : {}),
-          });
-          // Parts and the joined text must name the same recordings; a single text never carries the marker.
-          const sent = input.material.parts;
-          const count = parsed.parts?.length ?? 0;
-          if ((sent?.length ?? 0) !== count || (sent && sent.length > MAX_MATERIAL_PARTS) || (!count && input.material.text.includes(PART_BREAK))) return INVALID_PARTS;
-          const empty = parsed.parts?.findIndex((part) => part.segments === 0) ?? -1;
-          if (empty >= 0) return refuse('empty_material', `A parte ${empty + 1} não tem falas.`, { part: empty + 1 });
-          if (parsed.segments.length === 0) return refuse('empty_material', 'Cole ou envie o material antes de continuar.');
-          const hashes = sent ? materialPartHashes(input.material.text) : undefined;
-          source = createTranscriptSource(
-            {
-              workspaceId: state.workspace.id,
-              title: input.material.title?.trim() || title,
-              origin: input.material.origin,
-              parsed,
-              authorized: input.material.authorized,
-              speakerPeople: speakers.value.mapping,
-              unattributed: speakers.value.unattributed,
-              presentations: Object.fromEntries((input.speakers ?? []).filter(speaker => speaker.presentation).map(speaker => [speaker.label, speaker.presentation!])),
-              ...(input.material.recordedOn ? { recordedOn: input.material.recordedOn } : {}),
-              ...(input.material.programName ? { programName: input.material.programName } : {}),
-              ...(input.material.sourceUrl ? { sourceUrl: input.material.sourceUrl } : {}),
-              ...(input.material.location ? { location: input.material.location } : {}),
-              ...(input.material.fileName ? { fileName: input.material.fileName } : {}),
-              ...(sent && hashes ? { parts: sent.map((part, index) => ({ ...part, hash: hashes[index] })) } : {}),
-            },
-            ctx,
-          );
+          const materials = [input.material, ...additionalMaterials];
+          sources = [];
+          for (const [index, material] of materials.entries()) {
+            const created = sourceFromMaterial(material, title, state.workspace.id, index === 0 ? speakers.value : { people: [], mapping: {}, unattributed: [] }, index === 0 ? input.speakers ?? [] : [], ctx);
+            if (!created.ok) return created;
+            sources.push(created.value);
+          }
+          newlyAuthorized = sources.some(source => source.rights.authorized);
         }
-
-        if (input.material.transcriptId) source = { ...source,transcriptId: input.material.transcriptId };
+        const source = sources[0];
         const production: Production = {
           id: ctx.newId('prod'),
           workspaceId: state.workspace.id,
           flowId: flow.id,
           title,
-          sourceIds: [source.id],
+          sourceIds: sources.map(source => source.id),
           brief: brief.value,
           plan: plan.value,
           relations: [],
@@ -209,7 +218,7 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
           productionId: production.id,
           kind: 'article',
           slug: 'article',
-          draft: { body: emptyArticle(), revision: 0, inputs: [], sources: [toSourceVersionRef(source)], updatedAt: ctx.now, updatedBy: ctx.actorId },
+          draft: { body: emptyArticle(), revision: 0, inputs: [], sources: sources.map(entry => toSourceVersionRef(entry)), updatedAt: ctx.now, updatedBy: ctx.actorId },
           createdAt: ctx.now,
           createdBy: ctx.actorId,
         };
@@ -223,16 +232,19 @@ export function createProductionCommands(store: LocalStore, read: () => ReadCont
           suggestions: [],
           deliveries: [],
         };
-        const sources = isNewSource ? [...state.sources, source] : state.sources.map((candidate) => (candidate.id === source.id ? source : candidate));
+        const storedSources = isNewSource ? [...state.sources, ...sources] : state.sources.map((candidate) => (candidate.id === source.id ? source : candidate));
         const activity: ActivityDraft[] = [{ type: 'production.created', productionId: production.id, data: { title } }];
         if (isNewSource) {
-          activity.push({ type: 'source.added', productionId: production.id, subject: toSourceVersionRef(source), data: { title: source.title } });
+          for (const added of sources) {
+            activity.push({ type: 'source.added', productionId: production.id, subject: toSourceVersionRef(added), data: { title: added.title } });
+            if (added.rights.authorized) activity.push({ type: 'source.authorized', productionId: production.id, subject: toSourceVersionRef(added) });
+          }
         }
-        if (newlyAuthorized) {
+        if (newlyAuthorized && !isNewSource) {
           activity.push({ type: 'source.authorized', productionId: production.id, subject: toSourceVersionRef(source) });
         }
         return ok({
-          state: { ...state, people: [...state.people, ...speakers.value.people], sources, productions: [...state.productions, entry] },
+          state: { ...state, people: [...state.people, ...speakers.value.people], sources: storedSources, productions: [...state.productions, entry] },
           value: { productionId: production.id, sourceId: source.id, pieces: [{ kind: 'article' as const, pieceId: article.id }] },
           productionIds: [production.id],
           activity,
