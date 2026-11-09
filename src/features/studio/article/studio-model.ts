@@ -389,7 +389,7 @@ export function closestExcerpt(quote: Pick<QuoteCheck, 'text' | 'sourceRefs'>, s
   if (quote.sourceRefs.length && !own.size) return undefined;
   let best: (ClosestExcerpt & { score: number }) | undefined;
   for (const source of sources) {
-    if (source.kind !== 'transcript' && !source.memory || !own.size && !source.rights.authorized) continue;
+    if (source.kind !== 'transcript' && source.kind !== 'news' && !source.memory || !own.size && !source.rights.authorized) continue;
     for (const version of own.size > 0 ? source.versions : [currentSourceVersion(source)]) {
       for (const segment of version.content.segments) {
         const ref = segmentRef(source.id, version.number, segment.id);

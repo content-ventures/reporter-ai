@@ -224,6 +224,8 @@ export type DossierStage = 'research' | 'writing' | 'article';
 export type HardNewsDossier = {
   productionId: string;
   newsId: string;
+  /** Other distinct radar stories that contributed to this article; `newsId` remains the lead. */
+  newsIds?: string[];
   /** The desk's angle for this story. */
   angle: string;
   research: ResearchState;

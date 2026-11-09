@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   Button,
   CardHeader,
+  Checkbox,
   EmptyState,
   Grid,
   GridItem,
@@ -56,6 +57,10 @@ export type RadarBoardProps = {
   onClearFilters: () => void;
   /** The decisions a row offers (none for a person who cannot decide). */
   decision: (item: NewsItem) => ReactNode;
+  /** Optional selection for joining selected stories into one article. */
+  bundleMode?: boolean;
+  bundleSelection?: ReadonlyMap<string, number>;
+  onToggleBundle?: (id: string, revision: number, selected: boolean) => void;
   /** Phone: rows carry their time in the facts line. */
   compact: boolean;
 };
@@ -67,6 +72,8 @@ export type RadarBoardProps = {
  */
 export function RadarBoard(props: RadarBoardProps) {
   const { tab, now, feeds, cover, groups, topic, visibleCount, onSelect, decision, compact } = props;
+  const bundleCount = props.bundleMode ? props.news.filter(item => item.status === 'selected'
+    && props.bundleSelection?.get(item.id) === (item.decisionRevision ?? 0)).length : 0;
   const total = cover.length + groups.reduce((sum, group) => sum + group.items.length, 0);
   const page = pageOf(groups, visibleCount - cover.length);
   const sizes = new Map(groups.map(group => [group.id, group.items.length]));
@@ -74,12 +81,23 @@ export function RadarBoard(props: RadarBoardProps) {
     ? <TopicRadar topics={props.topics.slice(0, 5)} active={topic?.key} now={now} onSelect={props.onTopic} onClear={props.onClearTopic} />
     : null;
   const wire = <>
+    {props.bundleMode ? <CardHeader size="md" titleAs="h2" title="Selecione as notícias do artigo"
+      description="Escolha duas ou mais; as fontes de cada notícia serão mantidas."
+      meta={`${bundleCount} selecionadas`} /> : null}
     {total === 0 ? <EmptyQueue filtered={props.filtered} decided={tab === 'decided'} onClearFilters={props.onClearFilters} /> : null}
     {page.map(group => <Grid key={group.id} columns="1:1" gap="sm">
       <GridItem span="full"><CardHeader size="md" titleAs="h2" title={group.label} meta={String(sizes.get(group.id) ?? group.items.length)} /></GridItem>
       <GridItem span="full"><List label={group.label}>
         {group.items.map(item => <NewsRow key={item.id} item={item} rating={sourceForNews(item, feeds)?.rating} now={now}
-          compact={compact} onSelect={onSelect} actions={decision(item)} />)}
+          compact={compact} onSelect={onSelect} actions={<>
+            {decision(item)}
+            {props.bundleMode && item.status === 'selected' && props.onToggleBundle ? <Checkbox
+              aria-label={`Incluir “${item.title}” no artigo`}
+              checked={props.bundleSelection?.get(item.id) === (item.decisionRevision ?? 0)}
+              onClick={event => event.stopPropagation()}
+              onChange={event => props.onToggleBundle?.(item.id, item.decisionRevision ?? 0, event.target.checked)}
+            /> : null}
+          </>} />)}
       </List></GridItem>
     </Grid>)}
     {total > visibleCount ? <Button variant="secondary" onClick={props.onLoadMore}>Carregar mais manchetes</Button> : null}

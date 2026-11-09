@@ -61,6 +61,7 @@ import type { BoardGroup } from './radar-model';
 import { RadarActivity, RadarBoard, RadarSkeleton, type RadarBoardProps } from './radar-board';
 import { editionOrder } from './edition-model';
 import { NewsFilters } from './news-filters';
+import { NewsBundleDialog } from './news-bundle-dialog';
 import { useRadar } from './use-radar';
 import { matchesTopic, newsTopics } from './topic-model';
 import type { NewsTopic } from './topic-model';
@@ -129,6 +130,10 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const [refreshing, setRefreshing] = useState(false);
   // Stories with a decision on its way: one at a time per story, many stories at once.
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
+  const [bundleMode, setBundleMode] = useState(false);
+  const [bundleSelection, setBundleSelection] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const [bundleDialog, setBundleDialog] = useState(false);
+  const [bundleBusy, setBundleBusy] = useState(false);
   const deciding = useRef(new Set<string>());
   const newsNow = useRef(state.news);
   useEffect(() => { newsNow.current = state.news; });
@@ -145,6 +150,41 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const tab: DeskTab = chosenTab ?? 'open';
   const seenSince = state.radar?.seenSince ?? new Date(now - FIRST_LOOK_MS).toISOString();
   const filtered = Boolean(query || topic || sourceTier !== 'all' || sourceId !== 'all');
+  const bundleItems = state.news.filter(item => item.status === 'selected'
+    && bundleSelection.get(item.id) === (item.decisionRevision ?? 0));
+
+  function stopBundleSelection() {
+    setBundleMode(false);
+    setBundleDialog(false);
+    setBundleSelection(new Map());
+  }
+
+  function toggleBundle(id: string, revision: number, selected: boolean) {
+    const eligible = new Map(state.news.filter(item => item.status === 'selected').map(item => [item.id, item.decisionRevision ?? 0]));
+    setBundleSelection(existing => {
+      const next = new Map([...existing].filter(([itemId, itemRevision]) => eligible.get(itemId) === itemRevision));
+      if (selected) next.set(id, revision);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  async function createBundle(input: { title: string; angle: string }) {
+    if (bundleBusy || bundleItems.length < 2) return;
+    setBundleBusy(true);
+    try {
+      const productionId = await actions.coverMany(bundleItems.map(item => item.id), input.title, input.angle);
+      if (!productionId) return;
+      setBundleDialog(false);
+      stopBundleSelection();
+      toast('Artigo criado com várias notícias', { description: 'As fontes e suas atribuições foram anexadas ao artigo.' });
+      router.push(pieceHref(productionId, 'article'));
+    } catch (error) {
+      toast('Não foi possível abrir o artigo', { tone: 'error', description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setBundleBusy(false);
+    }
+  }
 
   const board = useMemo(() => {
     const scoped = state.news.filter(item => matchesSourceTier(item, state.feeds, sourceTier)
@@ -223,6 +263,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
 
   /** Opens a story from anywhere (board, strip, toast): its tab, its place on the board, the ficha. */
   function select(id: string) {
+    if (bundleMode) stopBundleSelection();
     if (!selectedId) {
       overviewScroll.current = document.querySelector<HTMLElement>('[data-ws-stop="main"] [role="region"]')?.scrollTop ?? 0;
       returnFocus.current = id;
@@ -389,6 +430,12 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       { label: 'Descobrir fontes', icon: Rss, onSelect: () => setDiscovering(true) },
     ] : []),
   ];
+  const canBundle = tab === 'decided' && onServer && canCover && !selectedId;
+  const startBundle = () => { setBundleSelection(new Map()); setBundleMode(true); };
+  const bundleMenuItems = !phone ? [] : bundleMode ? [
+    { label: `Criar artigo${bundleItems.length ? ` · ${bundleItems.length}` : ''}`, onSelect: () => setBundleDialog(true), disabled: bundleItems.length < 2 },
+    { label: 'Cancelar seleção', onSelect: stopBundleSelection },
+  ] : canBundle ? [{ label: 'Selecionar notícias para artigo', onSelect: startBundle }] : [];
   const menu = (
     <Menu
       label="Mais ações"
@@ -398,6 +445,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
           items: [
             { label: 'Ver atividade', icon: Activity, onSelect: () => setActivityOpen(true) },
             { label: 'Marcar como vistas', icon: CheckCheck, onSelect: () => actions.markSeen() },
+            ...bundleMenuItems,
           ],
         },
         ...(phone ? [{ items: [...intake, { label: 'Fontes', icon: Rss, onSelect: () => router.push(NEWS_SOURCES_HREF) }] }] : []),
@@ -414,6 +462,12 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       meta={live && read ? [`Lido ${waitLabel(read, now)}`] : undefined}
       actions={phone ? undefined : (
         <>
+          {bundleMode ? <>
+            <Button variant="secondary" onClick={stopBundleSelection}>Cancelar</Button>
+            <Button variant="primary" disabled={bundleItems.length < 2} onClick={() => setBundleDialog(true)}>
+              Criar artigo{bundleItems.length ? ` · ${bundleItems.length}` : ''}
+            </Button>
+          </> : canBundle ? <Button variant="secondary" onClick={startBundle}>Selecionar notícias</Button> : null}
           {intake.length ? <Menu label="Adicionar notícias" align="end" sections={[{ items: intake }]}
             trigger={props => <Button {...props} variant="secondary" icon={Plus} trailingIcon={ChevronDown}>Adicionar</Button>} /> : null}
           <ButtonLink href={workspaceHrefFor(NEWS_SOURCES_HREF)} variant="secondary" icon={Rss}>Fontes</ButtonLink>
@@ -446,7 +500,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   );
 
   const clearFilters = () => { setQuery(''); setTopic(undefined); setSourceTier('all'); setSourceId('all'); setSelectedId(undefined); };
-  const filters = <NewsFilters tab={tab} onTab={value => { setTab(value); setTopic(undefined); setSelectedId(undefined); boardToTop(); }}
+  const filters = <NewsFilters tab={tab} onTab={value => { if (value !== tab) stopBundleSelection(); setTab(value); setTopic(undefined); setSelectedId(undefined); boardToTop(); }}
     counts={live ? { open: board.open, decided: board.decided } : undefined}
     query={query} onQuery={value => { setQuery(value); setTopic(undefined); setSelectedId(undefined); }}
     open={filtersOpen} onOpen={setFiltersOpen}
@@ -477,6 +531,9 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       onPostpone={(story, hours, label) => void postpone(story, hours, label, 'row')}
       onDiscard={(story, reason) => void discard(story, reason, 'row')}
       onRestore={story => void restore(story)} /> : null,
+    bundleMode: bundleMode && tab === 'decided',
+    bundleSelection,
+    onToggleBundle: toggleBundle,
   };
   const inbox = onServer && newsFailed ? (
     <EmptyState icon={AlertTriangle} title="Não foi possível carregar as notícias" description="Tente novamente para atualizar o radar."
@@ -517,6 +574,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
       <ImportLinkDialog open={importing} onClose={() => setImporting(false)} onImported={(id) => { setTab('open'); setQuery(''); select(id); }} />
       {searching ? <NewsSearchDialog onClose={() => setSearching(false)} /> : null}
       {discovering ? <DiscoverSourcesDialog open onClose={() => setDiscovering(false)} /> : null}
+      {bundleDialog ? <NewsBundleDialog items={bundleItems} busy={bundleBusy} onClose={() => setBundleDialog(false)} onCreate={input => void createBundle(input)} /> : null}
     </>
   );
 }

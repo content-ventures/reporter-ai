@@ -79,7 +79,7 @@ export function readMaterial(sources: readonly Source[]): Material {
   const lines: MaterialLine[] = [];
   let unavailableMemory = false;
   for (const source of writingSources(sources).filter(source => !source.research)) {
-    if (!source.memory && source.kind !== 'transcript') continue;
+    if (!source.memory && source.kind !== 'transcript' && source.kind !== 'news') continue;
     const version = currentSourceVersion(source);
     if (source.memory) {
       const receipt = source.memory.find(receipt => receipt.version.number === version.number && receipt.version.hash === version.hash);

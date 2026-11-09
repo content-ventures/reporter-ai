@@ -196,6 +196,8 @@ export function resolveSourceRef(sources: readonly Source[], ref: SourceRef): Re
 export type NewTranscriptSource = {
   workspaceId: WorkspaceId;
   title: string;
+  /** News articles use the same segment representation while retaining their own source kind. */
+  kind?: SourceKind;
   origin: SourceOrigin;
   recordedOn?: string;
   programName?: string;
@@ -228,7 +230,7 @@ export function createTranscriptSource(input: NewTranscriptSource, ctx: CommandC
   const source: Source = {
     id: ctx.newId('src'),
     workspaceId: input.workspaceId,
-    kind: 'transcript',
+    kind: input.kind ?? 'transcript',
     title: input.title.trim(),
     origin: input.origin,
     speakers: [...new Set([...input.parsed.speakers, ...Object.keys(presentations)])].map((label): Speaker => {
