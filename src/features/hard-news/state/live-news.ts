@@ -1,4 +1,5 @@
 import type { NewsSearchView } from '../../../domain/news-search.ts';
+import type { ClippingWindow } from '../../../domain/news-clipping.ts';
 import type { NewsFeed, NewsItem } from '../../../domain/hard-news.ts';
 import type { NewsIntake, NewsPageCursor, NewsSnapshot } from '../../../ports/news-intake.ts';
 
@@ -23,7 +24,7 @@ export type LiveNews = {
 export type LiveNewsStore = {
   get(): LiveNews;
   subscribe(listener: () => void): () => void;
-  refresh(): Promise<void>;
+  refresh(historyHours?: ClippingWindow): Promise<void>;
   /** Merges one source (an action's answer) without waiting for the next poll. */
   putFeed(feed: NewsFeed): void;
   dropFeed(id: string): void;
@@ -62,6 +63,8 @@ export function mergeItems(current: readonly NewsItem[], incoming: readonly News
 export function createLiveNewsStore(port: NewsIntake, now: () => number = Date.now): LiveNewsStore {
   let snapshot = EMPTY;
   let cursor: string | undefined;
+  let historyHours: ClippingWindow | undefined;
+  let loadedHours: ClippingWindow | undefined;
   let inflight: Promise<void> | undefined;
   let refreshQueued = false;
   let sourceVersion = 0;
@@ -94,7 +97,8 @@ export function createLiveNewsStore(port: NewsIntake, now: () => number = Date.n
       news: mergeItems(snapshot.news, answer.items),
     });
   };
-  const refresh = () => {
+  const refresh = (requestedHours?: ClippingWindow) => {
+    if (requestedHours && requestedHours > (historyHours ?? 168)) historyHours = requestedHours;
     if (inflight) {
       // Coalesce callers into one pending poll, started after their mutations completed.
       refreshQueued = true;
@@ -104,11 +108,13 @@ export function createLiveNewsStore(port: NewsIntake, now: () => number = Date.n
       do {
         refreshQueued = false;
         let page: NewsPageCursor | undefined;
+        const window = historyHours;
+        const since = window === loadedHours ? cursor : undefined;
         const seen = new Set<string>();
         try {
           do {
             const readVersion = sourceVersion;
-            const answer = await port.read(cursor, page);
+            const answer = await port.read(since, page, window);
             accept(answer, readVersion);
             page = answer.next;
             if (page) {
@@ -118,6 +124,7 @@ export function createLiveNewsStore(port: NewsIntake, now: () => number = Date.n
             } else {
               // Advance only after every page arrived. Failed reads retry the same window.
               cursor = new Date(Date.parse(answer.at) - OVERLAP_MS).toISOString();
+              loadedHours = window;
             }
           } while (page);
         } catch {

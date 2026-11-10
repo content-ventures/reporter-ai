@@ -236,6 +236,13 @@ describe('feeds', () => {
 });
 
 describe('pasted link', () => {
+  test('accepts structured keyword arrays so editorial noise can be identified', () => {
+    const html = '<script type="application/ld+json">{"@type":"NewsArticle","headline":"Produção de tilápia cresce",' +
+      '"keywords":["Produção","Publieditorial"],"articleSection":["Economia"],"description":"Trecho."}</script>';
+    const entry = parseArticlePage(html, 'https://revista.exemplo/article');
+    assert.deepEqual(entry?.tags, ['Economia', 'Produção', 'Publieditorial']);
+  });
+
   test('a news page: JSON-LD headline and date, the article paragraphs, the canonical address', () => {
     const entry = parseArticlePage(ARTICLE, 'https://revista.exemplo/mercado/preco-camarao?utm_source=whatsapp');
     assert.equal(entry?.title, 'Preço do camarão sobe 12% em setembro');

@@ -193,7 +193,9 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
 
   const board = useMemo(() => {
     const scoped = state.news.filter(item => !clippingBlocked(item.url)
-      && (!clipping || clippingDateMatches(item.publishedAt, now, period) && (segment === 'all' || item.clippingSegment === segment))
+      && (!clipping || (segment === 'all' || item.clippingSegment === segment)
+        && (clippingDateMatches(item.publishedAt, now, period)
+          || item.duplicates.some(duplicate => clippingDateMatches(duplicate.publishedAt, now, period))))
       && matchesSourceTier(item, state.feeds, sourceTier)
       && (sourceId === 'all' || (item.feedId ?? sourceForNews(item, state.feeds)?.id) === sourceId));
     const topics = newsTopics(scoped, now);
@@ -263,9 +265,9 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     return [...found.values()].slice(0, 4);
   }, [now, shown, state.news]);
 
-  async function refresh() {
+  async function refresh(historyHours?: ClippingWindow) {
     setRefreshing(true);
-    try { await actions.refreshNews(); } finally { setRefreshing(false); }
+    try { await actions.refreshNews(historyHours); } finally { setRefreshing(false); }
   }
 
   /** Opens a story from anywhere (board, strip, toast): its tab, its place on the board, the ficha. */
@@ -511,7 +513,10 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     counts={live ? { open: board.open, decided: board.decided } : undefined}
     query={query} onQuery={value => { setQuery(value); setTopic(undefined); setSelectedId(undefined); }}
     open={filtersOpen} onOpen={setFiltersOpen}
-    clipping={clipping ? { period, segment, onPeriod: value => { setPeriod(value); setTopic(undefined); setSelectedId(undefined); },
+    clipping={clipping ? { period, segment, onPeriod: value => {
+      setPeriod(value); setTopic(undefined); setSelectedId(undefined);
+      if (value > 168) void refresh(value);
+    },
       onSegment: value => { setSegment(value); setTopic(undefined); setSelectedId(undefined); } } : undefined}
     tier={sourceTier} onTier={value => { setSourceTier(value); setTopic(undefined); setSelectedId(undefined); }}
     source={sourceId} onSource={value => { setSourceId(value); setTopic(undefined); setSelectedId(undefined); }} feeds={state.feeds} />;

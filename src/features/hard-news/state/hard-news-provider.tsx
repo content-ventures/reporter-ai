@@ -26,6 +26,7 @@ import type {
   WritingGuide,
 } from '@/domain/hard-news';
 import type { NewsSearchView, NewsSearchWrite } from '@/domain/news-search';
+import type { ClippingWindow } from '@/domain/news-clipping';
 import type { NewSource, SourcePatch } from '@/ports/news-intake';
 import type { NewsDiscoveryInput, NewsDiscoveryResult } from '@/domain/news-discovery';
 import type { NewsDecisionInput } from '@/domain/news-decisions';
@@ -62,7 +63,7 @@ export type HardNewsActions = {
   saveNewsSearch(input: NewsSearchWrite): Promise<NewsSearchView>;
   collectNewsSearch(): Promise<NewsSearchView>;
   discoverSources(input: NewsDiscoveryInput): Promise<NewsDiscoveryResult>;
-  refreshNews(): Promise<void>;
+  refreshNews(historyHours?: ClippingWindow): Promise<void>;
   decideNews(id: string, input: NewsDecisionInput): Promise<{ ok: true } | { ok: false; message: string }>;
   retryTranslation(id: string): Promise<{ ok: true } | { ok: false; message: string }>;
   cover(newsId: string): Promise<string | undefined>;
@@ -365,7 +366,7 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
       if (!newsPort) throw new Error('A descoberta de fontes está disponível no ambiente conectado.');
       return newsPort.discover(input);
     },
-    async refreshNews() { await liveStore?.refresh(); },
+    async refreshNews(historyHours) { await liveStore?.refresh(historyHours); },
     async retryTranslation(id) {
       if (!newsPort || !liveStore) return { ok: false, message: 'A tradução está disponível no ambiente conectado.' };
       try {

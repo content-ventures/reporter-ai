@@ -3,7 +3,8 @@ import { readNewsSearch, requireExternalNews } from './news-search.ts';
 import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { z } from 'zod';
-import { clippingBlocked } from '../domain/news-clipping.ts';
+import { CLIPPING_WINDOWS, clippingBlocked } from '../domain/news-clipping.ts';
+import type { ClippingWindow } from '../domain/news-clipping.ts';
 import { FEED_INTERVALS } from '../domain/hard-news.ts';
 import type { NewsFeed, NewsItem, NewsTranslation } from '../domain/hard-news.ts';
 import { canonicalUrl, feedStateOf, isNewsAddress, NEWS_LIMITS, newsMessage, normalizeEntry, sourceKindOf } from '../domain/news-intake.ts';
@@ -313,10 +314,11 @@ export async function updateSource(id: string, value: unknown, deps: Pick<NewsSe
   return feedView(source);
 }
 
-export async function newsSnapshot(since: string | undefined, page?: NewsPageCursor, deps: Pick<NewsServices, 'rssApp'> = services): Promise<NewsSnapshot & { due: boolean }> {
+export async function newsSnapshot(since: string | undefined, page?: NewsPageCursor,
+  deps: Pick<NewsServices, 'rssApp'> = services, historyHours?: ClippingWindow): Promise<NewsSnapshot & { due: boolean }> {
   const value = await sql<{ at: string; sources: StoredSource[] | null; items: StoredItem[]; next?: NewsPageCursor; due: boolean }>(
-    'SELECT public.reporter_news_page($1,$2,$3,$4,$5) AS value',
-    [since ?? null, page?.updatedAt ?? null, page?.id ?? null, page?.until ?? null, 400]);
+    'SELECT public.reporter_news_page($1,$2,$3,$4,$5,$6) AS value',
+    [since ?? null, page?.updatedAt ?? null, page?.id ?? null, page?.until ?? null, 400, historyHours ?? null]);
   const search = await readNewsSearch();
   return {
     search,
@@ -347,7 +349,10 @@ async function route(request: Request, path: string[], deps: { readJson: (reques
     const params = new URL(request.url).searchParams;
     const since = params.has('since') ? parsed(TIMESTAMP, params.get('since')) : undefined;
     const page = parseNewsPageCursor(params.get('after') ?? undefined);
-    const { due, ...snapshot } = await newsSnapshot(since, page);
+    const hours = params.get('historyHours');
+    const history = CLIPPING_WINDOWS.find(window => String(window.value) === hours);
+    if (hours !== null && !history) throw new FlowError('INVALID_INPUT', 422);
+    const { due, ...snapshot } = await newsSnapshot(since, page, undefined, history?.value);
     if (due) deps.wake();
     return reply(snapshot);
   }

@@ -309,8 +309,8 @@ export function parseArticlePage(html: string, finalUrl: string): RawNewsEntry |
     title: withoutSiteName(htmlText(title) ?? title, outlet ?? final.hostname),
     paragraphs: [...lead, ...paragraphs],
     ...(paywalled || !paragraphs.length ? { contentKind: 'search' as const } : {}),
-    tags: [str(article?.articleSection), str(article?.keywords), meta('keywords'), meta('article:section')]
-      .filter((tag): tag is string => Boolean(tag)),
+    tags: [article?.articleSection, article?.keywords, meta('keywords'), meta('article:section')]
+      .flat().flatMap(tag => str(tag) ?? []),
     publishedAt: str(article?.datePublished) ?? meta('article:published_time') ?? meta('og:article:published_time') ?? meta('date'),
     outlet,
     image: ldImage(article?.image) ?? meta('og:image'),
