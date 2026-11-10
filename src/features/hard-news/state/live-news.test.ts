@@ -219,6 +219,24 @@ test('drains every page before advancing the poll and retries a failed page with
   assert.equal((calls[4] as unknown as { since: string }).since, '2026-10-19T11:59:00.654Z');
 });
 
+test('widening the Radar reloads the requested history before resuming incremental polling', async () => {
+  const at = '2026-10-19T12:00:00.000Z';
+  const next = { updatedAt: '2026-10-19T11:59:02.123456Z', id: 'recent', until: at };
+  const calls: unknown[] = [];
+  const port = { read: async (since?: string, page?: typeof next, hours?: number): Promise<NewsSnapshot> => {
+    calls.push({ since, page, hours });
+    return { at, items: [item(page ? 'archived' : 'recent')], rssApp: false, ...(hours && !since && !page ? { next } : {}) };
+  } } as unknown as NewsIntake;
+  const store = createLiveNewsStore(port);
+  await store.refresh();
+  await store.refresh(720);
+  await store.refresh();
+  assert.deepEqual(store.get().news.map(value => value.id), ['recent', 'archived']);
+  assert.deepEqual(calls, [{ since: undefined, page: undefined, hours: undefined },
+    { since: undefined, page: undefined, hours: 720 }, { since: undefined, page: next, hours: 720 },
+    { since: '2026-10-19T11:59:00.000Z', page: undefined, hours: 720 }]);
+});
+
 
 test('enriched content invalidates a loaded body even when the language has not changed', () => {
   const old = item('one', { body: ['Old RSS summary'], paragraphs: undefined, contentRevision: 0, updatedAt: '2026-10-21T10:00:00Z' });

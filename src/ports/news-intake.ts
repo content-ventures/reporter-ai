@@ -1,4 +1,5 @@
 import type { NewsSearchView, NewsSearchWrite } from '../domain/news-search.ts';
+import type { ClippingWindow } from '../domain/news-clipping.ts';
 import type { NewsFeed, NewsItem } from '../domain/hard-news.ts';
 import type { NewsDiscoveryInput, NewsDiscoveryResult } from '../domain/news-discovery.ts';
 import type { NewsDecisionInput } from '../domain/news-decisions.ts';
@@ -46,7 +47,7 @@ export interface NewsIntake {
   discover(input: NewsDiscoveryInput): Promise<NewsDiscoveryResult>;
   decide(id: string, input: NewsDecisionInput): Promise<NewsItem>;
   retryTranslation(id: string): Promise<NewsItem>;
-  read(since?: string, page?: NewsPageCursor): Promise<NewsSnapshot>;
+  read(since?: string, page?: NewsPageCursor, historyHours?: ClippingWindow): Promise<NewsSnapshot>;
   /** One item with its text. */
   item(id: string): Promise<NewsItem | undefined>;
   addSource(input: NewSource): Promise<SourceRead>;

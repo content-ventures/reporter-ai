@@ -77,6 +77,7 @@ END $$;
 CREATE OR REPLACE FUNCTION public.reporter_news_search_save(p_revision integer,p_config jsonb,p_domains text[]) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
 DECLARE portal uuid := core.reporter_require('reporter.edit'); current public.reporter_news_search; total integer;
+  refresh_feeds boolean;
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended('news-search:'||portal::text,0));
   SELECT * INTO current FROM public.reporter_news_search WHERE portal_id=portal FOR UPDATE;
@@ -102,10 +103,18 @@ BEGIN
     OR EXISTS(SELECT FROM unnest(p_domains) d WHERE d !~ '^[a-z0-9][a-z0-9.-]*\.[a-z0-9.-]+$')
     THEN RAISE EXCEPTION 'NEWS_SEARCH_INVALID' USING ERRCODE='22023'; END IF;
   total := core.reporter_news_rotation(portal,p_config);
+  refresh_feeds := core.reporter_news_clipping(portal,p_config)
+    AND (NOT core.reporter_news_clipping(portal,current.config)
+      OR coalesce((p_config->>'windowHours')::int,24)>coalesce((current.config->>'windowHours')::int,24));
   INSERT INTO public.reporter_news_search(portal_id,config,domains,remaining) VALUES(portal,p_config,p_domains,CASE WHEN (p_config->>'enabled')::boolean THEN total ELSE 0 END)
     ON CONFLICT(portal_id) DO UPDATE SET config=p_config,domains=p_domains,revision=reporter_news_search.revision+1,
       remaining=CASE WHEN (p_config->>'enabled')::boolean THEN total ELSE 0 END,cursor=0,next_at=clock_timestamp(),
       failures=0,last_error=NULL,lease_owner=NULL,lease_until=NULL,fence=NULL,updated_at=clock_timestamp();
+  IF refresh_feeds THEN
+    -- A 304 would reuse a read made with the narrower window. Fence in-flight reads too.
+    UPDATE public.reporter_news_sources SET etag=NULL,last_modified=NULL,lease_owner=NULL,lease_until=NULL,
+      next_read_at=least(next_read_at,clock_timestamp()),updated_at=clock_timestamp() WHERE portal_id=portal;
+  END IF;
   PERFORM core.reporter_audit(portal,'reporter.news_search.saved','portal',portal,jsonb_build_object('revision',coalesce(current.revision,0)+1));
   RETURN public.reporter_news_search_view();
 END $$;
@@ -232,21 +241,26 @@ BEGIN
   -- Feeds and pasted links may arrive together. Serialize the identity/story decision so two
   -- new outlets cannot both create the first row, or lose a duplicate added by the other read.
   PERFORM pg_advisory_xact_lock(hashtextextended('reporter_news_items:'||p_portal::text,0));
-  SELECT * INTO existing FROM public.reporter_news_items WHERE portal_id=p_portal
+  SELECT * INTO existing FROM public.reporter_news_items WHERE portal_id=p_portal AND NOT core.reporter_news_clipping_blocked(url)
     AND (canonical_url=p_entry->>'canonicalUrl' OR (p_source IS NOT NULL AND source_id=p_source AND guid=p_entry->>'guid')
       OR duplicates @> jsonb_build_array(jsonb_build_object('key',p_entry->>'canonicalUrl')))
     LIMIT 1;
-  IF FOUND THEN RETURN QUERY SELECT existing.id,'repeat'::text; RETURN; END IF;
+  IF FOUND THEN
+    IF segment IS NOT NULL AND existing.clipping_segment IS NULL AND existing.canonical_url=p_entry->>'canonicalUrl' THEN
+      UPDATE public.reporter_news_items SET clipping_segment=segment,updated_at=clock_timestamp() WHERE id=existing.id;
+    END IF;
+    RETURN QUERY SELECT existing.id,'repeat'::text; RETURN;
+  END IF;
   IF p_entry->>'storyKey' IS NOT NULL THEN
     SELECT * INTO existing FROM public.reporter_news_items WHERE portal_id=p_portal AND (story_key=p_entry->>'storyKey' OR
       clipping AND clipping_segment=segment AND core.reporter_news_story_similar(story_key,p_entry->>'storyKey'))
       AND published_at BETWEEN published-interval '72 hours' AND published+interval '72 hours'
-      AND lower(outlet)<>lower(p_entry->>'outlet')
+      AND NOT core.reporter_news_clipping_blocked(url) AND lower(outlet)<>lower(p_entry->>'outlet')
       ORDER BY (story_key=p_entry->>'storyKey') DESC NULLS LAST,published_at,id LIMIT 1 FOR UPDATE;
     IF FOUND THEN
       IF jsonb_array_length(existing.duplicates)<100
         AND NOT EXISTS(SELECT FROM jsonb_array_elements(existing.duplicates) d WHERE lower(d->>'source')=lower(p_entry->>'outlet')) THEN
-        UPDATE public.reporter_news_items SET updated_at=clock_timestamp(),
+        UPDATE public.reporter_news_items SET updated_at=clock_timestamp(),clipping_segment=coalesce(existing.clipping_segment,segment),
           duplicates=(SELECT jsonb_agg(d ORDER BY d->>'publishedAt') FROM jsonb_array_elements(existing.duplicates||jsonb_build_array(
             jsonb_build_object('source',p_entry->>'outlet','url',p_entry->>'url','key',p_entry->>'canonicalUrl','publishedAt',published,
               'quality',CASE WHEN clipping THEN core.reporter_news_reference_quality(p_entry->>'url',
@@ -286,6 +300,73 @@ LANGUAGE sql STABLE SET search_path=pg_catalog,core,public,pg_temp AS $$
     'sourceQuality',CASE WHEN i.clipping_segment IS NOT NULL THEN core.reporter_news_reference_quality(i.url,
       length(array_to_string(i.body,' ')),coalesce(i.search_content_kind,CASE WHEN i.via='url' THEN 'article' END),i.clipping_segment) END,
     'productionId',i.production_id,'coveredAt',i.covered_at))
+$$;
+
+-- Wider Radar windows are loaded on demand. Keep the normal polling contract during rollout.
+CREATE OR REPLACE FUNCTION public.reporter_news_page(p_since timestamptz,p_after_at timestamptz,p_after_id uuid,
+  p_until timestamptz,p_limit integer,p_history_hours integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+DECLARE portal uuid := core.reporter_require('reporter.read'); read_at timestamptz; history_from timestamptz;
+  page_size integer := least(greatest(coalesce(p_limit,400),1),500); items jsonb; next_page jsonb;
+BEGIN
+  IF (p_after_at IS NULL)<>(p_after_id IS NULL) OR (p_after_at IS NULL)<>(p_until IS NULL)
+    OR p_after_at>p_until OR NOT isfinite(p_after_at) OR NOT isfinite(p_until) THEN
+    RAISE EXCEPTION 'NEWS_PAGE_CURSOR_INVALID' USING ERRCODE='22023'; END IF;
+  IF p_history_hours IS NOT NULL AND p_history_hours NOT IN (24,48,72,168,720,8760) THEN
+    RAISE EXCEPTION 'NEWS_PAGE_CURSOR_INVALID' USING ERRCODE='22023'; END IF;
+  IF p_until IS NULL THEN PERFORM core.reporter_news_return_due(portal); END IF;
+  read_at := coalesce(p_until,clock_timestamp());
+  IF p_history_hours IS NOT NULL AND core.reporter_news_clipping(portal) THEN
+    -- Other coverage can be up to 72 hours newer than the first story in a group.
+    history_from := read_at-make_interval(hours=>p_history_hours+72);
+  END IF;
+  WITH candidates AS MATERIALIZED (
+    SELECT i AS stored,i.updated_at,i.id FROM public.reporter_news_items i WHERE i.portal_id=portal
+      AND NOT core.reporter_news_clipping_blocked(i.url)
+      AND (i.imported_at>read_at-interval '7 days' OR i.status='selected' OR i.status='later' AND i.later_until>read_at
+        OR i.returned_at>read_at-interval '7 days' OR i.decided_at>read_at-interval '7 days'
+        OR i.translation_requested_at>read_at-interval '7 days' OR i.published_at>=history_from)
+      AND (p_since IS NULL OR i.updated_at>p_since) AND i.updated_at<=read_at
+      AND (p_after_at IS NULL OR (i.updated_at,i.id)<(p_after_at,p_after_id))
+      ORDER BY i.updated_at DESC,i.id DESC LIMIT page_size+1
+  ), page AS (SELECT * FROM candidates ORDER BY updated_at DESC,id DESC LIMIT page_size)
+  SELECT coalesce(jsonb_agg(core.reporter_news_item_json(p.stored,false) ORDER BY p.updated_at DESC,p.id DESC),'[]'::jsonb),
+    CASE WHEN (SELECT count(*) FROM candidates)>page_size THEN (SELECT jsonb_build_object('updatedAt',updated_at,'id',id,'until',read_at)
+      FROM page ORDER BY updated_at,id LIMIT 1) END INTO items,next_page FROM page p;
+  RETURN jsonb_strip_nulls(jsonb_build_object('at',read_at,
+    'sources',coalesce((SELECT jsonb_agg(core.reporter_news_source_json(s) ORDER BY s.created_at,s.id)
+      FROM public.reporter_news_sources s WHERE s.portal_id=portal),'[]'::jsonb),'items',items,'next',next_page,
+    'due',core.reporter_news_translation_pending(portal) OR EXISTS(SELECT FROM public.reporter_news_sources
+      WHERE portal_id=portal AND NOT paused AND next_read_at<=read_at AND coalesce(lease_until,'-infinity'::timestamptz)<read_at)));
+END $$;
+ALTER FUNCTION public.reporter_news_page(timestamptz,timestamptz,uuid,timestamptz,integer,integer) OWNER TO reporter_executor;
+REVOKE ALL ON FUNCTION public.reporter_news_page(timestamptz,timestamptz,uuid,timestamptz,integer,integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.reporter_news_page(timestamptz,timestamptz,uuid,timestamptz,integer,integer) TO reporter_runtime;
+
+CREATE OR REPLACE FUNCTION public.reporter_news_page(p_since timestamptz,p_after_at timestamptz,p_after_id uuid,p_until timestamptz,p_limit integer) RETURNS jsonb
+LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+  SELECT public.reporter_news_page(p_since,p_after_at,p_after_id,p_until,p_limit,NULL)
+$$;
+
+CREATE OR REPLACE FUNCTION public.reporter_news_item(p_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+DECLARE portal uuid := core.reporter_require('reporter.read'); item public.reporter_news_items;
+BEGIN
+  SELECT * INTO item FROM public.reporter_news_items WHERE id=p_id AND portal_id=portal;
+  IF NOT FOUND OR core.reporter_news_clipping_blocked(item.url) THEN RETURN NULL; END IF;
+  PERFORM core.reporter_news_return_due(portal,p_id);
+  UPDATE public.reporter_news_items i SET translation_requested_at=clock_timestamp(),updated_at=clock_timestamp()
+    WHERE i.id=p_id AND i.portal_id=portal AND i.translation_status='pending'
+      AND core.reporter_news_translation_active(i) IS NOT TRUE;
+  SELECT * INTO item FROM public.reporter_news_items WHERE id=p_id AND portal_id=portal;
+  RETURN CASE WHEN FOUND THEN core.reporter_news_item_json(item,true) END;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.reporter_news_lookup(p_canonical text) RETURNS uuid
+LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,core,public,pg_temp AS $$
+  SELECT id FROM public.reporter_news_items WHERE portal_id=core.reporter_require('reporter.read')
+    AND NOT core.reporter_news_clipping_blocked(url)
+    AND (canonical_url=p_canonical OR duplicates @> jsonb_build_array(jsonb_build_object('key',p_canonical))) LIMIT 1
 $$;
 
 COMMIT;

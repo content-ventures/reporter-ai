@@ -27,7 +27,8 @@ async function mockDesk(page: Page, count = 18, clipping = false) {
   }));
   const items: NewsItem[] = Array.from({ length: count }, (_, index) => {
     const feed = feeds[index % feeds.length];
-    const publishedAt = new Date(Date.now() - (clipping && index === 0 ? 30 * 3_600_000 : index * 60_000)).toISOString();
+    const age = clipping && index === 0 ? 30 * 3_600_000 : clipping && index === 2 ? 20 * 86_400_000 : index * 60_000;
+    const publishedAt = new Date(Date.now() - age).toISOString();
     return {
       id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
       title: index === 0 ? FIRST_TITLE : index === 1 ? SECOND_TITLE : `Cadeia do pescado acompanha pesquisa e mercado ${index + 1}`,
@@ -47,6 +48,7 @@ async function mockDesk(page: Page, count = 18, clipping = false) {
     const preferred = { source: 'MPA', url: 'https://www.gov.br/mpa/noticia', publishedAt: items[0].publishedAt };
     items[0] = { ...items[0], clippingSegment: 'aquaculture', preferredSource: preferred, duplicates: [preferred] };
     items[1] = { ...items[1], clippingSegment: 'fishing' };
+    if (items[2]) items[2] = { ...items[2], clippingSegment: 'aquaculture' };
   }
   const decisions: { revision: number; action: string; reason?: string; scoreSnapshot?: { score: number; topic: string; mapVersion: number; reasons: unknown[] } }[] = [];
   await page.route('https://www.google.com/s2/favicons?**', route => route.fulfill({ contentType: 'image/png', body: PNG }));
@@ -58,7 +60,7 @@ async function mockDesk(page: Page, count = 18, clipping = false) {
   }));
   await page.route('**/api/reporter/workspace', route => route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } }));
   await page.route('**/api/reporter/news**', route => {
-    const path = new URL(route.request().url()).pathname;
+    const { pathname: path, searchParams } = new URL(route.request().url());
     if (path.endsWith('/decision')) {
       const input = route.request().postDataJSON() as { revision: number; action: string; hours?: number; reason?: string; scoreSnapshot?: { score: number; topic: string; mapVersion: number; reasons: unknown[] } };
       decisions.push(input);
@@ -71,7 +73,8 @@ async function mockDesk(page: Page, count = 18, clipping = false) {
       return route.fulfill({ json: items[index] });
     }
     if (path.startsWith('/api/reporter/news/items/')) return route.fulfill({ json: { item: items.find(item => path.endsWith(item.id)) } });
-    return route.fulfill({ json: { at: new Date().toISOString(), sources: feeds, items, rssApp: false,
+    const visible = clipping && searchParams.get('historyHours') !== '720' ? items.slice(0, 2) : items;
+    return route.fulfill({ json: { at: new Date().toISOString(), sources: feeds, items: visible, rssApp: false,
       ...(clipping ? { search: { clipping, configured: true, revision: 0, state: 'idle', usedToday: 0, lastAdded: 0 } } : {}) } });
   });
   return { decisions };
@@ -437,7 +440,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 
 test('clipping abre com 24 horas e permite ampliar o período e filtrar por segmento', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await mockDesk(page, 2, true);
+  await mockDesk(page, 3, true);
   await page.goto('/news');
   await expect(page.getByTestId(`news-card-${SECOND}`)).toBeVisible();
   await expect(page.getByTestId(`news-card-${FIRST}`)).toHaveCount(0);
@@ -447,6 +450,10 @@ test('clipping abre com 24 horas e permite ampliar o período e filtrar por segm
   await expect(page.getByTestId(`news-card-${FIRST}`)).toBeVisible();
   await choose(page, 'Segmento', 'Aquicultura');
   await expect(page.getByTestId(`news-card-${SECOND}`)).toHaveCount(0);
+  const archived = page.getByTestId('news-card-10000000-0000-4000-8000-000000000003');
+  await expect(archived).toHaveCount(0);
+  await choose(page, 'Período', '30 dias');
+  await expect(archived).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   await page.getByTestId(`news-card-${FIRST}`).click();

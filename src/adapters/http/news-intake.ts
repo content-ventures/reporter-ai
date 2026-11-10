@@ -10,10 +10,11 @@ export function createHttpNewsIntake(http: ReporterTransport = defaultReporterTr
     discover: (input) => http.request('/news/discover', input, AbortSignal.timeout(45_000)),
     decide: (itemId, input) => http.request(`/news/items/${id(itemId)}/decision`, input),
     retryTranslation: (itemId) => http.request(`/news/items/${id(itemId)}/translation/retry`, {}),
-    read: (since, page) => {
+    read: (since, page, historyHours) => {
       const query = new URLSearchParams();
       if (since) query.set('since', since);
       if (page) query.set('after', JSON.stringify(page));
+      if (historyHours) query.set('historyHours', String(historyHours));
       return http.request(`/news${query.size ? `?${query}` : ''}`);
     },
     item: async (itemId) => (await http.request<{ item?: Awaited<ReturnType<NewsIntake['item']>> }>(`/news/items/${id(itemId)}`)).item,
