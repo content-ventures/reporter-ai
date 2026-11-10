@@ -40,6 +40,7 @@ import {
   VisuallyHidden,
   formatRelative,
 } from '@content-ventures/design-system/v3';
+import { CLIPPING_SEGMENTS } from '@/domain/news-clipping';
 import type { AgentTraceStep } from '@content-ventures/design-system/v3';
 import { ArrowDown, ArrowUp, ChevronDown, Clock, Ellipsis, Telescope } from '@content-ventures/design-system/v3/icons';
 import { paragraphBlock } from '@/domain';
@@ -95,6 +96,8 @@ export function NewsFicha({ item, now, related = [], onOpen }: {
   }, [actions, item.id, pending, attempt]);
   const photo = photoOf(item);
   const facts = [at(item.publishedAt, now)];
+  const segment = CLIPPING_SEGMENTS.find(segment => segment.id === item.clippingSegment);
+  if (segment) facts.push(segment.label);
   if (item.via === 'tavily') facts.push('Encontrada na web · data estimada');
   if (item.via === 'url') facts.push('Link colado');
   if (item.status === 'later' && item.laterUntil) facts.push(returnLabel(item.laterUntil, now));
@@ -121,6 +124,7 @@ export function NewsFicha({ item, now, related = [], onOpen }: {
         ...facts,
         // A text link sits on the line of the facts; a button would stand taller than them.
         <TextLink key="original" href={workspaceHrefFor(item.url)} external tone="text">Ver original</TextLink>,
+        ...(item.preferredSource ? [<TextLink key="preferred" href={workspaceHrefFor(item.preferredSource.url)} external tone="text">Ver fonte preferida</TextLink>] : []),
       ]} />
       <EditableTitle value={item.title} label="Título da notícia" readOnly as="h2" size="document" onCommit={() => undefined} />
       <MetaList size="sm" label="Avaliação e tradução" items={[
@@ -250,7 +254,8 @@ function WhoPublished({ item, now }: { item: NewsItem; now: number }) {
   const outlets = [
     { source: item.source, url: item.url, publishedAt: item.publishedAt },
     ...item.duplicates,
-  ].sort((a, b) => a.publishedAt.localeCompare(b.publishedAt));
+  ].sort((a, b) => Number(b.url === item.preferredSource?.url) - Number(a.url === item.preferredSource?.url)
+    || a.publishedAt.localeCompare(b.publishedAt));
   return (
     <Panel label="Quem publicou">
       <Section title="Quem publicou" titleAs="h3" meta={`${outlets.length} veículos`}>
@@ -260,7 +265,7 @@ function WhoPublished({ item, now }: { item: NewsItem; now: number }) {
           items={outlets.map((outlet) => ({
             id: outlet.url,
             marker: <BrandMark name={outlet.source} src={newsLogoUrl(outlet.url)} size="xs" variant="soft" decorative />,
-            title: <TextLink href={workspaceHrefFor(outlet.url)} external tone="text">{outlet.source}</TextLink>,
+            title: <TextLink href={workspaceHrefFor(outlet.url)} external tone="text">{outlet.source}{outlet.url === item.preferredSource?.url ? ' · Fonte preferida' : ''}</TextLink>,
             date: at(outlet.publishedAt, now),
             dateTime: outlet.publishedAt,
           }))}
@@ -278,7 +283,8 @@ function NewsText({ item }: { item: NewsItem }) {
   }), [item]);
   const editor = useArticleReader({ body });
   const translated = item.translation?.status === 'translated';
-  const summary = item.contentKind === 'search' ? (translated ? 'Trecho da busca · traduzido' : 'Trecho da busca') : translated ? item.contentKind === 'feed' ? 'Texto recebido do feed · traduzido' : 'Notícia traduzida'
+  const snippetLabel = item.via === 'tavily' ? 'Trecho da busca' : 'Trecho disponível';
+  const summary = item.contentKind === 'search' ? (translated ? `${snippetLabel} · traduzido` : snippetLabel) : translated ? item.contentKind === 'feed' ? 'Texto recebido do feed · traduzido' : 'Notícia traduzida'
     : item.contentKind === 'feed' ? 'Texto recebido do feed' : item.contentKind === 'article' ? 'Texto extraído da página' : 'Texto original';
   return (
     <Disclosure summary={summary} meta={`${item.body.length} ${item.body.length === 1 ? 'parágrafo' : 'parágrafos'}`} headingLevel="h3" defaultOpen>

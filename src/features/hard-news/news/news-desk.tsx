@@ -40,6 +40,8 @@ import {
 } from '@content-ventures/design-system/v3/icons';
 import type { NewsItem } from '@/domain/hard-news';
 import { matchesSourceTier, sourceForNews } from '@/domain/news-source-match';
+import { clippingBlocked, clippingDateMatches } from '@/domain/news-clipping';
+import type { ClippingSegment, ClippingWindow } from '@/domain/news-clipping';
 import type { SourceTierFilter } from '@/domain/news-source-match';
 import { useCan } from '@/state';
 import { useDocumentTitle } from '@/ui/use-document-title';
@@ -111,6 +113,9 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   const [query, setQuery] = useState('');
   const [sourceTier, setSourceTier] = useState<SourceTierFilter>('all');
   const [sourceId, setSourceId] = useState('all');
+  const [segment, setSegment] = useState<ClippingSegment | 'all'>('all');
+  const [period, setPeriod] = useState<ClippingWindow>(24);
+  const clipping = webSearch?.clipping === true;
   const [topic, setTopic] = useState<Pick<NewsTopic, 'key' | 'label'>>();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
@@ -149,7 +154,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   }
   const tab: DeskTab = chosenTab ?? 'open';
   const seenSince = state.radar?.seenSince ?? new Date(now - FIRST_LOOK_MS).toISOString();
-  const filtered = Boolean(query || topic || sourceTier !== 'all' || sourceId !== 'all');
+  const filtered = Boolean(query || topic || sourceTier !== 'all' || sourceId !== 'all' || clipping && (segment !== 'all' || period !== 24));
   const bundleItems = state.news.filter(item => item.status === 'selected'
     && bundleSelection.get(item.id) === (item.decisionRevision ?? 0));
 
@@ -187,7 +192,9 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
   }
 
   const board = useMemo(() => {
-    const scoped = state.news.filter(item => matchesSourceTier(item, state.feeds, sourceTier)
+    const scoped = state.news.filter(item => !clippingBlocked(item.url)
+      && (!clipping || clippingDateMatches(item.publishedAt, now, period) && (segment === 'all' || item.clippingSegment === segment))
+      && matchesSourceTier(item, state.feeds, sourceTier)
       && (sourceId === 'all' || (item.feedId ?? sourceForNews(item, state.feeds)?.id) === sourceId));
     const topics = newsTopics(scoped, now);
     const queue = queueOf(topic ? scoped.filter(item => matchesTopic(item, topic.key, now)) : scoped, query);
@@ -208,7 +215,7 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     }
     const ordered = [...cover, ...groups.flatMap(group => group.items)];
     return { cover, groups, ordered, open: queue.length, decided: decided.length, topics, hero: triage ? heroOf(queue, 1).hero : [] };
-  }, [filtered, now, query, seenSince, sourceId, sourceTier, state.feeds, state.news, tab, topic, triage]);
+  }, [clipping, filtered, now, period, query, seenSince, segment, sourceId, sourceTier, state.feeds, state.news, tab, topic, triage]);
 
   useEffect(() => {
     if (!loadMoreFocus.current) return;
@@ -499,11 +506,13 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
     />
   );
 
-  const clearFilters = () => { setQuery(''); setTopic(undefined); setSourceTier('all'); setSourceId('all'); setSelectedId(undefined); };
+  const clearFilters = () => { setQuery(''); setTopic(undefined); setSourceTier('all'); setSourceId('all'); setSegment('all'); setPeriod(24); setSelectedId(undefined); };
   const filters = <NewsFilters tab={tab} onTab={value => { if (value !== tab) stopBundleSelection(); setTab(value); setTopic(undefined); setSelectedId(undefined); boardToTop(); }}
     counts={live ? { open: board.open, decided: board.decided } : undefined}
     query={query} onQuery={value => { setQuery(value); setTopic(undefined); setSelectedId(undefined); }}
     open={filtersOpen} onOpen={setFiltersOpen}
+    clipping={clipping ? { period, segment, onPeriod: value => { setPeriod(value); setTopic(undefined); setSelectedId(undefined); },
+      onSegment: value => { setSegment(value); setTopic(undefined); setSelectedId(undefined); } } : undefined}
     tier={sourceTier} onTier={value => { setSourceTier(value); setTopic(undefined); setSelectedId(undefined); }}
     source={sourceId} onSource={value => { setSourceId(value); setTopic(undefined); setSelectedId(undefined); }} feeds={state.feeds} />;
   // The row's decisions: the same ones the ficha offers, for a person who can decide.

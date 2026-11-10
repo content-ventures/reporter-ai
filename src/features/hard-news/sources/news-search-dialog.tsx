@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Alert, Button, DescriptionList, Field, Input, Prose, ResponsiveDialog, Section, Select, Textarea, toast } from '@content-ventures/design-system/v3';
+import { CLIPPING_SEGMENTS, CLIPPING_WINDOWS, clippingBlocked } from '@/domain/news-clipping';
+import type { ClippingWindow } from '@/domain/news-clipping';
 import type { NewsSearchConfig, NewsSearchView } from '@/domain/news-search';
 import { useCan } from '@/state';
 import { useHardNews } from '../state/hard-news-provider';
@@ -27,16 +29,19 @@ export function NewsSearchDialog({ onClose }: { onClose(): void }) {
     let active = true;
     void actions.readNewsSearch().then(value => {
       if (!active) return;
-      setView(value); const saved = value.config ?? INITIAL;
+      setView(value); const saved = value.config ?? (value.clipping ? { ...INITIAL, dailyLimit: 36 } : INITIAL);
       setConfig(saved); setTopics(saved.topics.join('\n')); setExclusions(saved.excludedDomains.join('\n')); setError(undefined);
     }).catch(() => { if (active) setError('Não foi possível carregar a configuração. Tente novamente.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [actions, attempt]);
   const current = search && search.revision === view?.revision ? search : view;
-  const draft = { ...config, topics: lines(topics), excludedDomains: lines(exclusions) };
-  const dirty = JSON.stringify(draft) !== JSON.stringify(view?.config ?? INITIAL);
-  const valid = config.portalUrl.trim() && config.sector.trim() && draft.topics.length > 0 && draft.topics.length <= 6
+  const clipping = current?.clipping || clippingBlocked(config.portalUrl);
+  const entered = { ...config, topics: lines(topics), excludedDomains: lines(exclusions) };
+  const draft: NewsSearchConfig = clipping ? { ...entered, sector: 'Pesca e aquicultura',
+    topics: CLIPPING_SEGMENTS.map(segment => segment.label), languages: ['pt', 'en', 'es'] } : entered;
+  const dirty = JSON.stringify(entered) !== JSON.stringify(view?.config ?? (view?.clipping ? { ...INITIAL, dailyLimit: 36 } : INITIAL));
+  const valid = draft.portalUrl.trim() && draft.sector.trim() && draft.topics.length > 0 && draft.topics.length <= 6
     && draft.excludedDomains.length <= 20 && Number.isInteger(config.dailyLimit) && config.dailyLimit >= 1 && config.dailyLimit <= 48;
   const disabled = loading || busy || !canEdit;
   const message = (error: unknown) => error instanceof Error ? error.message : 'Tente novamente.';
@@ -81,6 +86,7 @@ export function NewsSearchDialog({ onClose }: { onClose(): void }) {
         {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={config.portalUrl} disabled={disabled} placeholder="https://seuportal.com.br"
           onChange={event => setConfig({ ...config, portalUrl: event.target.value })} />}
       </Field>
+      {!clipping ? <>
       <Field label="Setor">{({ id }) => <Input id={id} value={config.sector} disabled={disabled} placeholder="Pesca e aquicultura" onChange={event => setConfig({ ...config, sector: event.target.value })} />}</Field>
       <Field label="Temas para acompanhar" hint="Um por linha, até 6 temas.">{({ id, describedBy }) => <Textarea id={id} aria-describedby={describedBy} rows={3} value={topics} disabled={disabled}
         placeholder={'Lançamentos do setor\nInovação e mercado'} onChange={event => setTopics(event.target.value)} />}</Field>
@@ -88,9 +94,13 @@ export function NewsSearchDialog({ onClose }: { onClose(): void }) {
       <Field label="Idiomas de busca">{({ id }) => <Select id={id} value={config.languages.join(',')} disabled={disabled}
         options={[['pt', 'Português'], ['en', 'Inglês'], ['es', 'Espanhol'], ['pt,en', 'Português e inglês'], ['pt,es', 'Português e espanhol'], ['en,es', 'Inglês e espanhol'], ['pt,en,es', 'Português, inglês e espanhol']].map(([value, label]) => ({ value, label }))}
         onChange={value => setConfig({ ...config, languages: value.split(',') as NewsSearchConfig['languages'] })} />}</Field>
+      </> : null}
+      <Field label="Período da coleta">{({ id }) => <Select id={id} value={String(config.windowHours ?? (clipping ? 24 : 168))}
+        disabled={disabled} options={CLIPPING_WINDOWS.map(window => ({ value: String(window.value), label: window.label }))}
+        onChange={value => setConfig({ ...config, windowHours: Number(value) as ClippingWindow })} />}</Field>
       <Field label="Frequência">{({ id }) => <Select id={id} value={String(config.everyMinutes)} disabled={disabled} options={[{ value: '60', label: 'A cada hora' }, { value: '120', label: 'A cada 2 horas' }, { value: '360', label: 'A cada 6 horas' }]}
         onChange={value => setConfig({ ...config, everyMinutes: Number(value) as NewsSearchConfig['everyMinutes'] })} />}</Field>
-      <Field label="Limite de buscas por dia" hint="Inclui buscas automáticas, manuais e novas tentativas. Reinicia à meia-noite UTC.">{({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="number" min={1} max={48} value={config.dailyLimit} disabled={disabled}
+      <Field label="Limite de buscas por dia" hint={clipping ? "Uma rodada nos seis segmentos e três idiomas usa 36 buscas. O limite reinicia à meia-noite UTC." : "Inclui buscas automáticas, manuais e novas tentativas. Reinicia à meia-noite UTC."}>{({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} type="number" min={1} max={48} value={config.dailyLimit} disabled={disabled}
         onChange={event => setConfig({ ...config, dailyLimit: Number(event.target.value) })} />}</Field>
       <Field label="Outros domínios excluídos" hint="Opcional. Um domínio por linha.">{({ id, describedBy }) => <Textarea id={id} aria-describedby={describedBy} rows={2} value={exclusions} disabled={disabled} onChange={event => setExclusions(event.target.value)} />}</Field>
       <Field label="Coleta automática">{({ id }) => <Select id={id} value={String(config.enabled)} disabled={disabled} options={[{ value: 'true', label: 'Ativada' }, { value: 'false', label: 'Pausada' }]}
