@@ -4,6 +4,16 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-11-10
+
+### Fixed
+
+- Expand Seafood clipping source coverage.
+
+### Maintenance
+
+- Verify live clipping on staging.
+
 ## [1.7.0] - 2026-11-10
 
 ### Added

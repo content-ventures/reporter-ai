@@ -1,7 +1,25 @@
 {
-  "currentVersion": "1.7.0",
+  "currentVersion": "1.7.1",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.7.1",
+      "roadmapRelease": "R1",
+      "date": "2026-11-10",
+      "title": "R1 maintenance release",
+      "summary": "Automatic maintenance release with 2 validated changes: verify live clipping on staging; expand seafood clipping source coverage.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Fixed",
+          "description": "Expand Seafood clipping source coverage"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify live clipping on staging"
+        }
+      ]
+    },
     {
       "version": "1.7.0",
       "roadmapRelease": "R1",
