@@ -1,4 +1,4 @@
-import type { ClippingSegment } from './news-clipping.ts';
+import type { ClippingLanguage, ClippingSegment } from './news-clipping.ts';
 
 /** Publisher domains from the newsroom matrix. These are search preferences, not feed URLs. */
 const sourceMatrix = {
@@ -12,8 +12,13 @@ const sourceMatrix = {
 export const CLIPPING_PRIORITY_DOMAINS = [...new Set([...Object.values(sourceMatrix).flatMap(group => group.split(' ')),
   'g1.globo.com', 'cnnbrasil.com.br', 'in.gov.br', 'fao.org', 'anvisa.gov.br', 'ibama.gov.br'])];
 
-const newsSources: Record<ClippingSegment, string> = {
-  aquaculture: 'aquaculturebrasil.com.br panoramadaaquicultura.com.br br.thefishsite.com peixebr.com.br abccam.com.br feedfood.com.br aqua.cl mundoacuicola.cl salmonexpert.cl mispeces.com ipacuicultura.com fishfocus.co.uk aquafeed.com aquaculturemag.com weareaquaculture.com',
+const aquacultureSources: Record<ClippingLanguage, string> = {
+  pt: 'panoramadaaquicultura.com.br aquaculturebrasil.com.br peixebr.com.br feedfood.com.br',
+  en: 'fishfocus.co.uk aquafeed.com salmonbusiness.com weareaquaculture.com seafoodsource.com',
+  es: 'aqua.cl mundoacuicola.cl salmonexpert.cl',
+};
+
+const newsSources: Record<Exclude<ClippingSegment, 'aquaculture'>, string> = {
   fishing: 'seafoodsource.com fiskerforum.com undercurrentnews.com seafoodnews.com fishfocus.co.uk fao.org',
   industry: sourceMatrix.specialized,
   retail: sourceMatrix.retail,
@@ -21,6 +26,6 @@ const newsSources: Record<ClippingSegment, string> = {
   institutional: `${sourceMatrix.associations} gov.br fao.org europa.eu woah.org`,
 };
 
-export function clippingNewsDomains(segment: ClippingSegment): string[] {
-  return newsSources[segment].split(' ');
+export function clippingNewsDomains(segment: ClippingSegment, language: ClippingLanguage): string[] {
+  return (segment === 'aquaculture' ? aquacultureSources[language] : newsSources[segment]).split(' ');
 }

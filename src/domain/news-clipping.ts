@@ -55,37 +55,37 @@ const AXES: Record<ClippingLanguage, string[]> = {
     'trazabilidad|certificación|pesca ilegal|IUU|licencia|ESG|bienestar animal'],
 };
 
-// Editorial queries favor natural language. Boolean term groups suppress useful news matches.
+// Short queries let the source list do the targeting. Open searches add the business axes below.
 const EDITORIAL_QUERIES: Record<ClippingSegment, Record<ClippingLanguage, string>> = {
   aquaculture: {
-    pt: 'Notícias do setor de aquicultura e piscicultura, produção e investimentos em tilápia e camarão',
-    en: 'Recent aquaculture news about salmon farming, shrimp farming, fish production and investment',
-    es: 'Noticias de acuicultura sobre producción e inversiones en salmonicultura y camarón',
+    pt: 'notícias aquicultura piscicultura tilápia',
+    en: 'aquaculture salmon farming news',
+    es: 'noticias acuicultura salmonicultura',
   },
   fishing: {
-    pt: 'Notícias de pesca comercial, captura de pescado e cotas de pesca',
-    en: 'Recent commercial fishing news about catch volumes, fishing quotas and seafood trade',
-    es: 'Noticias de pesca comercial, capturas de pescado y cuotas pesqueras',
+    pt: 'notícias pesca comercial cotas de pesca',
+    en: 'commercial fishing quotas news',
+    es: 'noticias pesca comercial cuotas pesqueras',
   },
   industry: {
-    pt: 'Notícias sobre indústria de pescado, novas plantas de processamento e investimentos',
-    en: 'Recent seafood industry news about fish processing, seafood prices and investment',
-    es: 'Noticias de la industria pesquera sobre plantas procesadoras, precios e inversiones',
+    pt: 'notícias indústria processamento de pescado',
+    en: 'seafood industry fish processing news',
+    es: 'noticias industria procesamiento de pescado',
   },
   retail: {
-    pt: 'Notícias de varejo de pescado sobre vendas, consumo e preços em supermercados e peixarias',
-    en: 'Recent seafood retail news about supermarket fish sales, consumption and pricing',
-    es: 'Noticias de venta minorista de pescado sobre precios y consumo en supermercados y pescaderías',
+    pt: 'notícias varejo de pescado supermercados',
+    en: 'seafood retail supermarket sales news',
+    es: 'noticias venta de pescado supermercados',
   },
   'food-service': {
-    pt: 'Notícias sobre redes de restaurantes de pescado, compras de frutos do mar e distribuição',
-    en: 'Recent seafood foodservice news about restaurant chains, sourcing and distribution',
-    es: 'Noticias de restaurantes de mariscos sobre cadenas, abastecimiento y distribución',
+    pt: 'notícias food service pescado restaurantes',
+    en: 'seafood restaurant foodservice news',
+    es: 'noticias restaurantes mariscos distribución',
   },
   institutional: {
-    pt: 'Notícias sobre regulação de pesca e aquicultura, licenças e inspeção sanitária do pescado',
-    en: 'Recent fisheries and aquaculture policy news about permits, seafood safety and trade rules',
-    es: 'Noticias de normativa pesquera y acuícola sobre licencias, sanidad y comercio de pescado',
+    pt: 'notícias regulação pesca aquicultura licenças',
+    en: 'fisheries aquaculture policy regulation news',
+    es: 'noticias normativa pesquera acuícola',
   },
 };
 
