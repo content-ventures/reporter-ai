@@ -98,6 +98,7 @@ services:
       - ./database/migrations/087-news-production-link.sql:/docker-entrypoint-initdb.d/99-zzzz-news-production-link.sql:ro
       - ./database/migrations/090-news-clipping.sql:/docker-entrypoint-initdb.d/99-zzzzz-clipping.sql:ro
       - ./database/local/89-media-formats.sql:/docker-entrypoint-initdb.d/99-zzzzz-local-media-formats.sql:ro
+      - ./database/migrations/091-clipping-source-capacity.sql:/docker-entrypoint-initdb.d/99-zzzzzz-clipping-source-capacity.sql:ro
     networks:
       - reporter
     healthcheck:

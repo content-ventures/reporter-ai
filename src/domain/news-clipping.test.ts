@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { clippingDateMatches, clippingSegment, seafoodClippingQuery } from './news-clipping.ts';
+import { CLIPPING_PRIORITY_DOMAINS, clippingNewsDomains } from './news-clipping-sources.ts';
 import { normalizeEntry } from './news-intake.ts';
 
 const now = Date.parse('2026-11-10T12:00:00Z');
@@ -14,6 +15,15 @@ test('the collection cycle covers all segment and language pairs with business t
   assert.match(cycle[0].query, /aquicultura/);
   assert.match(cycle[3].query, /aquaculture.*salmon farming/);
   assert.match(cycle[4].query, /acuicultura/);
+});
+
+test('a clipping sweep targets every priority domain, including general press and IntraFish', () => {
+  const targeted = new Set(Array.from({ length: 36 }, (_, index) => seafoodClippingQuery(index))
+    .flatMap(plan => plan.mode === 'news' ? clippingNewsDomains(plan.segment, plan.language) : []));
+  assert.deepEqual(CLIPPING_PRIORITY_DOMAINS.filter(domain => !targeted.has(domain)), []);
+  assert.ok(targeted.has('intrafish.com'));
+  assert.ok(targeted.has('agenciabrasil.ebc.com.br'));
+  assert.ok(!targeted.has('seafoodbrasil.com.br'));
 });
 
 test('source wording yields a single primary segment; vague or incidental terms do not', () => {
