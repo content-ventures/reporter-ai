@@ -1,5 +1,6 @@
 import 'server-only';
 import { lookup as dnsLookup } from 'node:dns/promises';
+import { clippingBlocked } from '../domain/news-clipping.ts';
 import { NEWS_LIMITS } from '../domain/news-intake.ts';
 import { FlowError } from './errors.ts';
 import { privateAddress } from './public-address.ts';
@@ -15,6 +16,7 @@ export type FetchOptions = {
   etag?: string;
   lastModified?: string;
   signal?: AbortSignal;
+  clippingIntake?: boolean;
 };
 
 export type FetchServices = {
@@ -84,14 +86,18 @@ export async function fetchText(source: string, options: FetchOptions, deps: Fet
   if (options.etag) headers['if-none-match'] = options.etag;
   if (options.lastModified) headers['if-modified-since'] = options.lastModified;
   try {
-    let url = await publicUrl(source, deps.lookup);
+    async function checked(value: string) {
+      if (options.clippingIntake && clippingBlocked(value)) throw new FlowError('NEWS_SEARCH_EXCLUDED', 422);
+      return publicUrl(value, deps.lookup);
+    }
+    let url = await checked(source);
     for (let hop = 0; hop <= 5; hop++) {
       const response = await deps.fetch(url, { redirect: 'manual', signal, headers });
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers.get('location');
         await response.body?.cancel().catch(() => {});
         if (!location || hop === 5) throw new FlowError('NEWS_UNREACHABLE', 422);
-        url = await publicUrl(new URL(location, url).toString(), deps.lookup);
+        url = await checked(new URL(location, url).toString());
         continue;
       }
       if (response.status === 304) { await response.body?.cancel().catch(() => {}); return { status: 304, url: url.toString() }; }

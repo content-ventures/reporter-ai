@@ -4,6 +4,7 @@
  * index) without changing the screens. Pure TypeScript: no framework, no I/O.
  */
 
+import type { ClippingSegment } from './news-clipping.ts';
 import type { FactCheck } from './fact-check.ts';
 import type { NewsSourceKind } from './news-intake.ts';
 import type { SourceRating } from './news-source-rating.ts';
@@ -96,6 +97,8 @@ export type NewsItem = {
   /** Paragraphs the server keeps when `body` was not sent with the queue (read on demand). */
   paragraphs?: number;
   duplicates: NewsDuplicate[];
+  clippingSegment?: ClippingSegment;
+  preferredSource?: NewsDuplicate;
   /** Absent while the AI is still reading it. */
   classification?: NewsClassification;
   status: NewsStatus;

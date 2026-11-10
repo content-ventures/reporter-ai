@@ -3,6 +3,7 @@ import { readNewsSearch, requireExternalNews } from './news-search.ts';
 import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { z } from 'zod';
+import { clippingBlocked } from '../domain/news-clipping.ts';
 import { FEED_INTERVALS } from '../domain/hard-news.ts';
 import type { NewsFeed, NewsItem, NewsTranslation } from '../domain/hard-news.ts';
 import { canonicalUrl, feedStateOf, isNewsAddress, NEWS_LIMITS, newsMessage, normalizeEntry, sourceKindOf } from '../domain/news-intake.ts';
@@ -30,7 +31,8 @@ type StoredSource = {
 };
 export type StoredItem = {
   id: string; sourceId?: string; via: 'rss' | 'url' | 'tavily'; contentKind?: 'feed' | 'article' | 'search'; contentRevision?: number; discoveredAt?: string; url: string; title: string; outlet: string; excerpt: string;
-  publishedAt: string; importedAt: string; updatedAt?: string; duplicates: { source: string; url: string; publishedAt: string }[];
+  publishedAt: string; importedAt: string; updatedAt?: string; duplicates: { source: string; url: string; publishedAt: string; quality?: number }[];
+  clippingSegment?: NewsItem['clippingSegment']; sourceQuality?: number;
   paragraphs: number; body?: string[]; imageUrl?: string;
   status?: 'new' | 'selected' | 'covered' | 'later' | 'discarded'; decisionRevision?: number;
   decidedBy?: string; decidedAt?: string; laterUntil?: string; discardReason?: string; returnedAt?: string;
@@ -43,7 +45,7 @@ const iso = (value: string | undefined) => (value ? new Date(value).toISOString(
 /** Image display validates the supplied address without an extra fetch or DNS lookup. */
 function newsImageUrl(value: string | undefined): string | undefined {
   const image = value?.trim();
-  if (!image || !isNewsAddress(image)) return undefined;
+  if (!image || !isNewsAddress(image) || clippingBlocked(image)) return undefined;
   const hostname = new URL(image).hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
   if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === 'local' || hostname.endsWith('.local')
     || isIP(hostname) && privateAddress(hostname)) return undefined;
@@ -75,6 +77,9 @@ export function itemView(item: StoredItem): NewsItem {
   const body = translated ? translated.body ?? (excerpt ? [excerpt] : []) : item.body ?? (excerpt ? [excerpt] : []);
   const translation = item.translation;
   const imageUrl = newsImageUrl(item.imageUrl);
+  const duplicates = item.duplicates.filter(duplicate => !clippingBlocked(duplicate.url));
+  const preferred = [...duplicates].filter(duplicate => (duplicate.quality ?? 0) > (item.sourceQuality ?? 0))
+    .sort((a, b) => (b.quality ?? 0) - (a.quality ?? 0) || a.publishedAt.localeCompare(b.publishedAt))[0];
   return {
     id: item.id,
     title: translated?.title ?? item.title,
@@ -95,7 +100,9 @@ export function itemView(item: StoredItem): NewsItem {
       ...(translation.sourceLanguage ? { sourceLanguage: translation.sourceLanguage } : {}),
       ...(translation.error ? { error: translation.error } : {}) } } : {}),
     ...(item.body ? {} : { paragraphs: item.paragraphs }),
-    duplicates: item.duplicates.map((duplicate) => ({ source: duplicate.source, url: duplicate.url, publishedAt: iso(duplicate.publishedAt)! })),
+    ...(item.clippingSegment ? { clippingSegment: item.clippingSegment } : {}),
+    ...(preferred ? { preferredSource: { source: preferred.source, url: preferred.url, publishedAt: iso(preferred.publishedAt)! } } : {}),
+    duplicates: duplicates.map((duplicate) => ({ source: duplicate.source, url: duplicate.url, publishedAt: iso(duplicate.publishedAt)! })),
     status: item.status ?? 'new',
     decisionRevision: item.decisionRevision ?? 0,
     ...(item.decidedBy ? { decidedBy: item.decidedBy } : {}),
@@ -175,12 +182,12 @@ const services: NewsServices = { requireEdit: requireNewsEdit, fetch: fetchText,
  * announces (`<link rel="alternate">`), so "the site's address" works for most outlets.
  */
 export async function resolveFeed(address: string, deps: Pick<NewsServices, 'fetch'> = services): Promise<{ url: string; feed: ParsedFeed; etag?: string; lastModified?: string }> {
-  const first = await deps.fetch(address, { maxBytes: NEWS_LIMITS.feedBytes, accept: FEED_ACCEPT });
+  const first = await deps.fetch(address, { maxBytes: NEWS_LIMITS.feedBytes, accept: FEED_ACCEPT, clippingIntake: true });
   if (first.status !== 200) throw new FlowError('NEWS_FEED_INVALID', 422);
   const direct = parseFeed(first.text);
   if (direct) return { url: first.url, feed: direct, etag: first.etag, lastModified: first.lastModified };
   for (const candidate of discoverFeeds(first.text, first.url).slice(0, 2)) {
-    const fetched = await deps.fetch(candidate, { maxBytes: NEWS_LIMITS.feedBytes, accept: FEED_ACCEPT }).catch(() => undefined);
+    const fetched = await deps.fetch(candidate, { maxBytes: NEWS_LIMITS.feedBytes, accept: FEED_ACCEPT, clippingIntake: true }).catch(() => undefined);
     const feed = fetched?.status === 200 ? parseFeed(fetched.text) : undefined;
     if (fetched?.status === 200 && feed) return { url: fetched.url, feed, etag: fetched.etag, lastModified: fetched.lastModified };
   }
@@ -278,7 +285,7 @@ export async function importLink(value: unknown, deps: NewsServices = services):
   const canonical = canonicalUrl(url);
   const known = canonical ? await sql<string | null>('SELECT public.reporter_news_lookup($1) AS value', [canonical]) : null;
   if (known) return { id: known, outcome: 'repeat' };
-  const page = await deps.fetch(url, { maxBytes: NEWS_LIMITS.pageBytes, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5' });
+  const page = await deps.fetch(url, { maxBytes: NEWS_LIMITS.pageBytes, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5', clippingIntake: true });
   if (page.status !== 200) throw new FlowError('NEWS_PAGE_INVALID', 422);
   await deps.external?.(page.url);
   const entry = parseArticlePage(page.text, page.url);

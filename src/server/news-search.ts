@@ -1,6 +1,8 @@
 import 'server-only';
 import { z } from 'zod';
-import { isNewsAddress } from '../domain/news-intake.ts';
+import { CLIPPING_WINDOWS, clippingBlocked } from '../domain/news-clipping.ts';
+import type { ClippingWindow } from '../domain/news-clipping.ts';
+import { isNewsAddress, unwrapLink } from '../domain/news-intake.ts';
 import { searchDomain, searchExcluded } from '../domain/news-search.ts';
 import type { NewsSearchConfig, NewsSearchView } from '../domain/news-search.ts';
 import { transaction } from './database.ts';
@@ -16,6 +18,7 @@ const configSchema = z.object({
   excludedDomains: z.array(z.string().trim().max(253).refine(value => Boolean(searchDomain(value)))).max(20),
   everyMinutes: z.union([z.literal(60), z.literal(120), z.literal(360)]),
   dailyLimit: z.number().int().min(1).max(48), enabled: z.boolean(),
+  windowHours: z.custom<ClippingWindow>(value => CLIPPING_WINDOWS.some(window => window.value === value)).optional(),
 }).strict();
 export const searchWriteSchema = z.object({ revision: z.number().int().min(0), config: configSchema }).strict();
 
@@ -29,8 +32,8 @@ export async function newsSearchSql<T>(role: 'runtime' | 'worker', query: string
 }
 type StoredView = Omit<NewsSearchView, 'configured'> & { domains?: string[] };
 function publicView(stored: StoredView, configured: boolean): NewsSearchView {
-  const { revision, config, state, usedToday, lastRunAt, nextRunAt, lastAdded, lastError } = stored;
-  return { configured, revision, config, state, usedToday, lastRunAt, nextRunAt, lastAdded, lastError };
+  const { revision, config, state, usedToday, lastRunAt, nextRunAt, lastAdded, lastError, clipping } = stored;
+  return { configured, clipping, revision, config, state, usedToday, lastRunAt, nextRunAt, lastAdded, lastError };
 }
 export async function readNewsSearch(): Promise<NewsSearchView> {
   return publicView(await newsSearchSql<StoredView>('runtime', 'SELECT public.reporter_news_search_view() AS value'), tavilyConfigured());
@@ -39,7 +42,8 @@ export async function newsExcludedDomains(): Promise<string[]> {
   return (await newsSearchSql<StoredView>('runtime', 'SELECT public.reporter_news_search_view() AS value')).domains ?? [];
 }
 export async function requireExternalNews(url: string): Promise<void> {
-  if (searchExcluded(url, await newsExcludedDomains())) throw new FlowError('NEWS_SEARCH_EXCLUDED', 422);
+  const target = unwrapLink(url);
+  if (clippingBlocked(target) || searchExcluded(target, await newsExcludedDomains())) throw new FlowError('NEWS_SEARCH_EXCLUDED', 422);
 }
 
 export type SearchSettingsServices = {

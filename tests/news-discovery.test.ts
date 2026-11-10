@@ -256,8 +256,8 @@ test('candidate count and concurrent verifications stay bounded; duplicates are 
 test('queries seek specialized publishers and RSS; candidate rules exclude academic catalogues and PDFs', () => {
   const queries = discoveryQueries({ sector: 'pescados, aquicultura e pesca', region: 'Brasil' });
   assert.deepEqual(queries, [
-    'pescados, aquicultura e pesca Brasil portal revista especializada notícias',
-    'pescados, aquicultura e pesca Brasil notícias RSS',
+    'pescados, aquicultura e pesca Brasil portal revista especializada notícias -site:seafoodbrasil.com.br',
+    'pescados, aquicultura e pesca Brasil notícias RSS -site:seafoodbrasil.com.br',
   ]);
   const portalQueries = discoveryQueries({ portal: { url: 'https://portal.example', title: 'Marca do portal', description: 'Pescados e aquicultura' } });
   assert.ok(portalQueries.every(query => query.startsWith('Pescados e aquicultura') && !query.includes('Marca do portal')));

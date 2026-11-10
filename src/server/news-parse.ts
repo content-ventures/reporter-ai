@@ -124,6 +124,7 @@ function rssEntry(item: Element): RawNewsEntry {
     paragraphs: htmlParagraphs(html),
     publishedAt: text(child(item, 'pubdate')) ?? text(child(item, 'date', 'dc:date')) ?? text(child(item, 'published')) ?? text(child(item, 'updated')),
     outlet: text(child(item, 'source')),
+    tags: children(item).filter(element => local(element.name) === 'category').flatMap(element => text(element) ?? []),
     image: mediaImage(item) ?? firstImage(html),
   };
 }
@@ -146,12 +147,13 @@ function atomEntry(entry: Element): RawNewsEntry {
     paragraphs: htmlParagraphs(html),
     publishedAt: text(child(entry, 'published')) ?? text(child(entry, 'updated')),
     outlet: source ? text(child(source, 'title')) : undefined,
+    tags: children(entry).filter(element => local(element.name) === 'category').flatMap(element => DomUtils.getAttributeValue(element, 'term') ?? []),
     image: mediaImage(entry) ?? firstImage(html),
   };
 }
 
 type JsonFeedItem = { id?: unknown; url?: unknown; external_url?: unknown; title?: unknown; content_html?: unknown; content_text?: unknown;
-  summary?: unknown; date_published?: unknown; date_modified?: unknown; image?: unknown; banner_image?: unknown };
+  summary?: unknown; date_published?: unknown; date_modified?: unknown; image?: unknown; banner_image?: unknown; tags?: unknown };
 
 const str = (value: unknown) => (typeof value === 'string' && value.trim() ? value : undefined);
 
@@ -171,6 +173,7 @@ function jsonFeed(raw: string): ParsedFeed | undefined {
       title: htmlText(str(item.title)),
       paragraphs: str(item.content_html) ? htmlParagraphs(str(item.content_html)) : htmlParagraphs(str(item.content_text) ?? str(item.summary)),
       publishedAt: str(item.date_published) ?? str(item.date_modified),
+      tags: Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === 'string') : undefined,
       image: str(item.image) ?? str(item.banner_image),
     })),
   };
@@ -282,8 +285,12 @@ export function parseArticlePage(html: string, finalUrl: string): RawNewsEntry |
   const titleTag = DomUtils.findOne((item) => nameOf(item) === 'title', document.children);
   const title = str(article?.headline) ?? meta('og:title') ?? meta('twitter:title') ?? (titleTag ? str(DomUtils.textContent(titleTag)) : undefined);
   if (!title) return undefined;
+  const parts = Array.isArray(article?.hasPart) ? article.hasPart : [article?.hasPart];
+  const paywalled = [article?.isAccessibleForFree, meta('isaccessibleforfree'),
+    ...parts.map((part: unknown) => part && typeof part === 'object' ? (part as JsonLd).isAccessibleForFree : undefined)]
+    .some(value => value === false || typeof value === 'string' && /^(false|0)$/i.test(value.trim()));
   const body = str(article?.articleBody);
-  const paragraphs = body ? body.split(/\n+/).map((part) => part.trim()).filter(Boolean) : pageParagraphs(document);
+  const paragraphs = paywalled ? [] : body ? body.split(/\n+/).map((part) => part.trim()).filter(Boolean) : pageParagraphs(document);
   const description = str(article?.description) ?? meta('og:description') ?? meta('description');
   const isArticle = Boolean(article) || meta('og:type') === 'article' || paragraphs.length >= 2;
   if (!isArticle && !description) return undefined;
@@ -301,6 +308,9 @@ export function parseArticlePage(html: string, finalUrl: string): RawNewsEntry |
     url,
     title: withoutSiteName(htmlText(title) ?? title, outlet ?? final.hostname),
     paragraphs: [...lead, ...paragraphs],
+    ...(paywalled || !paragraphs.length ? { contentKind: 'search' as const } : {}),
+    tags: [str(article?.articleSection), str(article?.keywords), meta('keywords'), meta('article:section')]
+      .filter((tag): tag is string => Boolean(tag)),
     publishedAt: str(article?.datePublished) ?? meta('article:published_time') ?? meta('og:article:published_time') ?? meta('date'),
     outlet,
     image: ldImage(article?.image) ?? meta('og:image'),
