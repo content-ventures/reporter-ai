@@ -1,7 +1,45 @@
 {
-  "currentVersion": "1.6.0",
+  "currentVersion": "1.7.0",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.7.0",
+      "roadmapRelease": "R1",
+      "date": "2026-11-10",
+      "title": "R1 feature release",
+      "summary": "Automatic feature release with 7 validated changes: align clipping bootstrap and rehearsal; recover recent articles from the tavily index; separate priority source searches from open discovery.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Apply Seafood clipping policy at intake"
+        },
+        {
+          "type": "Added",
+          "description": "Collect Seafood coverage from relevant sources"
+        },
+        {
+          "type": "Added",
+          "description": "Show Seafood segments and references in Radar"
+        },
+        {
+          "type": "Fixed",
+          "description": "Preserve clipping history and refresh wider feeds"
+        },
+        {
+          "type": "Fixed",
+          "description": "Separate priority source searches from open discovery"
+        },
+        {
+          "type": "Fixed",
+          "description": "Recover recent articles from the Tavily index"
+        },
+        {
+          "type": "Fixed",
+          "description": "Align clipping bootstrap and rehearsal"
+        }
+      ]
+    },
     {
       "version": "1.6.0",
       "roadmapRelease": "R1",

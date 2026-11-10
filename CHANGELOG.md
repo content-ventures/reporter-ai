@@ -4,6 +4,21 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-10
+
+### Added
+
+- Apply Seafood clipping policy at intake.
+- Collect Seafood coverage from relevant sources.
+- Show Seafood segments and references in Radar.
+
+### Fixed
+
+- Preserve clipping history and refresh wider feeds.
+- Separate priority source searches from open discovery.
+- Recover recent articles from the Tavily index.
+- Align clipping bootstrap and rehearsal.
+
 ## [1.6.0] - 2026-11-10
 
 ### Added
