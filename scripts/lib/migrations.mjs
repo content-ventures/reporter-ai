@@ -86,6 +86,7 @@ export const LOCAL_INIT = Object.freeze([
   ['database/migrations/087-news-production-link.sql', '99-zzzz-news-production-link.sql'],
   ['database/migrations/090-news-clipping.sql', '99-zzzzz-clipping.sql'],
   ['database/local/89-media-formats.sql', '99-zzzzz-local-media-formats.sql'],
+  ['database/migrations/091-clipping-source-capacity.sql', '99-zzzzzz-clipping-source-capacity.sql'],
 ].map(entry => Object.freeze(entry)));
 
 // Replayed onto an existing local database by `pnpm db:flow`; every file is idempotent.
@@ -167,6 +168,7 @@ export const LOCAL_FLOW = Object.freeze([
   'database/migrations/086-news-score-feedback.sql',
   'database/migrations/087-news-production-link.sql',
   'database/migrations/090-news-clipping.sql',
+  'database/migrations/091-clipping-source-capacity.sql',
   'database/local/89-media-formats.sql',
 ]);
 
@@ -264,6 +266,7 @@ export const CLOUD = Object.freeze([
   'database/migrations/088-large-media-uploads.sql',
   'database/migrations/089-cloud-media-formats.sql',
   'database/migrations/090-news-clipping.sql',
+  'database/migrations/091-clipping-source-capacity.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 

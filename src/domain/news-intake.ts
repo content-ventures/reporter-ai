@@ -23,6 +23,8 @@ export const NEWS_SOURCE_KIND_LABELS: Record<NewsSourceKind, string> = {
 export const NEWS_LIMITS = {
   /** Sources per workspace. */
   sources: 30,
+  /** The editorial clipping workspace has a larger publisher matrix. */
+  clippingSources: 50,
   /** Newest entries kept per read; the rest of a long feed is old news. */
   itemsPerRead: 50,
   /** A source's first read keeps only the last week, not the outlet's whole archive. */
@@ -271,6 +273,7 @@ export const NEWS_MESSAGES: Record<string, string> = {
   NEWS_KEYWORD_REQUIRED: 'Digite a palavra-chave.',
   NEWS_SOURCE_DUPLICATE: 'Essa fonte já está cadastrada.',
   NEWS_SOURCE_LIMIT: `Limite de ${NEWS_LIMITS.sources} fontes. Remova uma antes de adicionar.`,
+  NEWS_CLIPPING_SOURCE_LIMIT: `Limite de ${NEWS_LIMITS.clippingSources} fontes. Remova uma antes de adicionar.`,
   NEWS_SOURCE_NOT_FOUND: 'Essa fonte não existe mais.',
   NEWS_SOURCE_RATING_INVALID: 'Revise o grau, a relevância e a justificativa da fonte.',
   NEWS_SOURCE_RATING_UNSUPPORTED: 'Avalie o veículo original. Este feed reúne notícias de várias fontes.',

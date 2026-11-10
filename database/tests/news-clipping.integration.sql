@@ -103,6 +103,36 @@ BEGIN
   IF result->>'outcome' IS DISTINCT FROM 'inserted' OR (result->>'id')::uuid IS NOT DISTINCT FROM id
     THEN RAISE EXCEPTION 'The similarity check grouped separate farm openings'; END IF;
 END $$;
+
+DO $$
+DECLARE slot integer; address text;
+BEGIN
+  FOR slot IN (jsonb_array_length(public.reporter_news_view(NULL,1)->'sources')+1)..50 LOOP
+    address := 'https://capacity.example/seafood/'||slot;
+    PERFORM public.reporter_news_source_add('rss','Fixture source',address,address,60,NULL,NULL,NULL);
+  END LOOP;
+  BEGIN
+    PERFORM public.reporter_news_source_add('rss','Extra source','https://capacity.example/extra','https://capacity.example/extra',60,NULL,NULL,NULL);
+    RAISE EXCEPTION 'The clipping workspace exceeded its 50-source limit';
+  EXCEPTION WHEN program_limit_exceeded THEN
+    IF SQLERRM <> 'NEWS_CLIPPING_SOURCE_LIMIT' THEN RAISE; END IF;
+  END;
+
+  PERFORM set_config('app.tenant_id','00000000-0000-0000-0000-000000000002',true);
+  PERFORM set_config('app.portal_id','00000000-0000-0000-0000-000000000102',true);
+  PERFORM set_config('app.user_id','00000000-0000-0000-0000-000000000021',true);
+  FOR slot IN (jsonb_array_length(public.reporter_news_view(NULL,1)->'sources')+1)..30 LOOP
+    address := 'https://capacity.example/other/'||slot;
+    PERFORM public.reporter_news_source_add('rss','Fixture source',address,address,60,NULL,NULL,NULL);
+  END LOOP;
+  BEGIN
+    PERFORM public.reporter_news_source_add('rss','Extra source','https://capacity.example/extra','https://capacity.example/extra',60,NULL,NULL,NULL);
+    RAISE EXCEPTION 'The standard workspace exceeded its 30-source limit';
+  EXCEPTION WHEN program_limit_exceeded THEN
+    IF SQLERRM <> 'NEWS_SOURCE_LIMIT' THEN RAISE; END IF;
+  END;
+END $$;
 RESET SESSION AUTHORIZATION;
 SELECT 'PASS Seafood clipping segment, global exclusion, window, similarity and official source';
+SELECT 'PASS Seafood clipping supports 50 feeds while standard workspaces retain 30';
 ROLLBACK;
