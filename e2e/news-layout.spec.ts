@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { emptyEditorialCheckpoint } from '../src/runtime/editorial-engine.ts';
+import { defaultPipelineDefinition, pipelineRevision } from '../src/domain/pipeline.ts';
 import type { NewsSearchView, NewsSearchWrite } from '../src/domain/news-search.ts';
 import type { NewsFeed, NewsItem } from '../src/domain/hard-news.ts';
 import { expectHeadingOutline, expectNoHorizontalOverflow, watchErrors } from './support';
@@ -13,7 +14,7 @@ const SECOND_TITLE = 'Tilápia ganha novo estudo sobre alimentação e qualidade
 const IMAGE_ORIGIN = 'https://images.example';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAKAAAABaCAMAAAAIGK1gAAAAA1BMVEUpWoLTBBdnAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAJUlEQVRo3u3BgQAAAADDoPlTX+EAVQEAAAAAAAAAAAAAAAAAvAY4mgABuJr0lwAAAABJRU5ErkJggg==', 'base64');
 
-async function mockDesk(page: Page, count = 18) {
+async function mockDesk(page: Page, count = 18, clipping = false) {
   const checkpoint = emptyEditorialCheckpoint();
   const at = new Date().toISOString();
   const feeds: NewsFeed[] = ['Instituto do Pescado', 'Revista Aquicultura', 'Alerta pescado'].map((name, index) => ({
@@ -26,7 +27,7 @@ async function mockDesk(page: Page, count = 18) {
   }));
   const items: NewsItem[] = Array.from({ length: count }, (_, index) => {
     const feed = feeds[index % feeds.length];
-    const publishedAt = new Date(Date.now() - index * 60_000).toISOString();
+    const publishedAt = new Date(Date.now() - (clipping && index === 0 ? 30 * 3_600_000 : index * 60_000)).toISOString();
     return {
       id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
       title: index === 0 ? FIRST_TITLE : index === 1 ? SECOND_TITLE : `Cadeia do pescado acompanha pesquisa e mercado ${index + 1}`,
@@ -42,11 +43,19 @@ async function mockDesk(page: Page, count = 18) {
       decisionRevision: 0,
     };
   });
+  if (clipping) {
+    const preferred = { source: 'MPA', url: 'https://www.gov.br/mpa/noticia', publishedAt: items[0].publishedAt };
+    items[0] = { ...items[0], clippingSegment: 'aquaculture', preferredSource: preferred, duplicates: [preferred] };
+    items[1] = { ...items[1], clippingSegment: 'fishing' };
+  }
   const decisions: { revision: number; action: string; reason?: string; scoreSnapshot?: { score: number; topic: string; mapVersion: number; reasons: unknown[] } }[] = [];
   await page.route('https://www.google.com/s2/favicons?**', route => route.fulfill({ contentType: 'image/png', body: PNG }));
   // A corrupt image response exercises decode failure without an unrelated HTTP console error.
   await page.route(`${IMAGE_ORIGIN}/**`, route => route.fulfill({ contentType: 'image/png',
     body: route.request().url().endsWith('/broken.png') ? Buffer.from('invalid PNG') : PNG }));
+  await page.route('**/api/reporter/pipeline', route => route.fulfill({
+    json: { active: pipelineRevision(defaultPipelineDefinition(), 1), history: [], runs: [] },
+  }));
   await page.route('**/api/reporter/workspace', route => route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } }));
   await page.route('**/api/reporter/news**', route => {
     const path = new URL(route.request().url()).pathname;
@@ -62,7 +71,8 @@ async function mockDesk(page: Page, count = 18) {
       return route.fulfill({ json: items[index] });
     }
     if (path.startsWith('/api/reporter/news/items/')) return route.fulfill({ json: { item: items.find(item => path.endsWith(item.id)) } });
-    return route.fulfill({ json: { at: new Date().toISOString(), sources: feeds, items, rssApp: false } });
+    return route.fulfill({ json: { at: new Date().toISOString(), sources: feeds, items, rssApp: false,
+      ...(clipping ? { search: { clipping, configured: true, revision: 0, state: 'idle', usedToday: 0, lastAdded: 0 } } : {}) } });
   });
   return { decisions };
 }
@@ -393,8 +403,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         const input = route.request().postDataJSON() as NewsSearchWrite;
         expect(input.revision).toBe(view.revision);
         expect(input.config.portalUrl).toBe('https://seafoodbrasil.com.br');
-        expect(input.config.topics).toEqual(['Exportação de pescado', 'Sanidade']);
-        view = { ...view, revision: view.revision + 1, config: input.config, state: 'queued' };
+        expect(input.config.topics).toEqual(['Aquicultura', 'Pesca', 'Indústria', 'Varejo', 'Food Service', 'Institucional e Regulatório']);
+        expect(input.config.languages).toEqual(['pt', 'en', 'es']);
+        expect(input.config.windowHours).toBe(48);
+        view = { ...view, clipping: true, revision: view.revision + 1, config: input.config, state: 'queued' };
       }
       await route.fulfill({ json: view });
     });
@@ -406,8 +418,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await page.getByRole('button', { name: 'Busca complementar', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Busca complementar', exact: true });
     await dialog.getByRole('textbox', { name: 'Portal cliente', exact: true }).fill('https://seafoodbrasil.com.br');
-    await dialog.getByRole('textbox', { name: 'Setor', exact: true }).fill('Pesca e aquicultura');
-    await dialog.getByRole('textbox', { name: 'Temas para acompanhar', exact: true }).fill('Exportação de pescado\nSanidade');
+    await choose(page, 'Período da coleta', '48 horas');
     await dialog.getByRole('button', { name: 'Salvar e buscar', exact: true }).click();
     await expect(dialog.getByText('Na fila', { exact: true })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Buscar agora', exact: true })).toBeDisabled();
@@ -423,3 +434,21 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     expect(errors).toEqual([]);
   });
 }
+
+test('clipping abre com 24 horas e permite ampliar o período e filtrar por segmento', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockDesk(page, 2, true);
+  await page.goto('/news');
+  await expect(page.getByTestId(`news-card-${SECOND}`)).toBeVisible();
+  await expect(page.getByTestId(`news-card-${FIRST}`)).toHaveCount(0);
+
+  await page.getByRole('button', { name: /^Filtros/ }).click();
+  await choose(page, 'Período', '48 horas');
+  await expect(page.getByTestId(`news-card-${FIRST}`)).toBeVisible();
+  await choose(page, 'Segmento', 'Aquicultura');
+  await expect(page.getByTestId(`news-card-${SECOND}`)).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+
+  await page.getByTestId(`news-card-${FIRST}`).click();
+  await expect(page.getByRole('link', { name: /^Ver fonte preferida/ })).toHaveAttribute('href', 'https://www.gov.br/mpa/noticia');
+});
