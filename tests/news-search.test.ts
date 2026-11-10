@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { NewsSearchClaim, NewsSearchConfig } from '../src/domain/news-search.ts';
+import { FlowError } from '../src/server/errors.ts';
 import { collectSearchNews } from '../src/server/news-search-provider.ts';
 import { saveNewsSearch } from '../src/server/news-search.ts';
 import type { SearchSettingsServices } from '../src/server/news-search.ts';
@@ -169,4 +170,29 @@ test('Seafood prioritizes the matrix, rejects noise and blocked redirects, and k
   assert.equal(result.items[0].clippingSegment, 'aquaculture');
   assert.equal(result.items[0].contentKind, 'search');
   assert.deepEqual(result.items[0].body, ['Trecho público.']);
+});
+
+test('the Seafood news slot reads the priority matrix and confirms lower-ranked matches against the publisher', async () => {
+  const url = 'https://fishfocus.co.uk/rules-for-commercial-fishing';
+  const result = await collectSearchNews({ ...claim, clipping: true, queryIndex: 9 }, AbortSignal.timeout(1000), {
+    now: () => now, key: () => 'fixture', request: async (_url, init) => {
+      const body = JSON.parse(init?.body as string);
+      assert.equal(body.topic, 'news');
+      assert.equal(body.time_range, 'day');
+      assert.equal(body.include_domains_mode, 'restrict');
+      assert.ok(body.include_domains.includes('seafoodsource.com'));
+      assert.ok(!body.include_domains.includes('bbc.com'));
+      const candidate = { ...article(url), title: 'New rules for commercial fishing', score: 0.44 };
+      return Response.json({ results: [candidate, { ...candidate, url: 'https://seafoodsource.com/news/unavailable' },
+        { ...candidate, url: 'https://fishfocus.co.uk/undated' }] });
+    },
+    read: async url => {
+      if (url.endsWith('unavailable')) throw new FlowError('HTTP_403', 422);
+      const metadata = { '@type': 'NewsArticle', headline: 'New rules for commercial fishing',
+        datePublished: url.endsWith('undated') ? undefined : '2026-10-21T14:00:00Z',
+        articleBody: 'The regulator published new quotas for commercial fishing.' };
+      return { status: 200, url, contentType: 'text/html', text: `<script type="application/ld+json">${JSON.stringify(metadata)}</script>` };
+    },
+  });
+  assert.deepEqual(result.items.map(item => [item.url, item.contentKind]), [[url, 'article']]);
 });

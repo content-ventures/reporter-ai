@@ -1,3 +1,5 @@
+import type { ClippingSegment } from './news-clipping.ts';
+
 /** Publisher domains from the newsroom matrix. These are search preferences, not feed URLs. */
 const sourceMatrix = {
   specialized: 'seafoodsource.com europa-azul.es undercurrentnews.com br.thefishsite.com aquaculturebrasil.com.br panoramadaaquicultura.com.br revistapuerto.com.ar salmonbusiness.com salmonexpert.cl seafoodnews.com mundoacuicola.cl aquafeed.com iffo.com fiskerforum.com weareaquaculture.com mispeces.com pescaymedioambiente.com efeedlink.com minato-yamaguchi.co.jp agripesca.it aquaculturemag.com aqua.cl pesceinrete.com aquaasiapac.com suikei.co.jp ipacuicultura.com fishfocus.co.uk feap.info foodnavigator.com euromeatnews.com feedfood.com.br feedandadditive.com feedstrategy.com',
@@ -9,3 +11,16 @@ const sourceMatrix = {
 
 export const CLIPPING_PRIORITY_DOMAINS = [...new Set([...Object.values(sourceMatrix).flatMap(group => group.split(' ')),
   'g1.globo.com', 'cnnbrasil.com.br', 'in.gov.br', 'fao.org', 'anvisa.gov.br', 'ibama.gov.br'])];
+
+const newsSources: Record<ClippingSegment, string> = {
+  aquaculture: 'aquaculturebrasil.com.br panoramadaaquicultura.com.br br.thefishsite.com peixebr.com.br abccam.com.br feedfood.com.br aqua.cl mundoacuicola.cl salmonexpert.cl mispeces.com ipacuicultura.com fishfocus.co.uk aquafeed.com aquaculturemag.com weareaquaculture.com',
+  fishing: 'seafoodsource.com fiskerforum.com undercurrentnews.com seafoodnews.com fishfocus.co.uk fao.org',
+  industry: sourceMatrix.specialized,
+  retail: sourceMatrix.retail,
+  'food-service': sourceMatrix.foodService,
+  institutional: `${sourceMatrix.associations} gov.br fao.org europa.eu woah.org`,
+};
+
+export function clippingNewsDomains(segment: ClippingSegment): string[] {
+  return newsSources[segment].split(' ');
+}

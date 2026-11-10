@@ -2,7 +2,7 @@ import 'server-only';
 import { isIP } from 'node:net';
 import { z } from 'zod';
 import { CLIPPING_BLOCKED_DOMAIN, clippingBlocked, clippingDateMatches, clippingExcludedText, clippingSegment } from '../domain/news-clipping.ts';
-import { CLIPPING_PRIORITY_DOMAINS } from '../domain/news-clipping-sources.ts';
+import { CLIPPING_PRIORITY_DOMAINS, clippingNewsDomains } from '../domain/news-clipping-sources.ts';
 import { normalizeEntry, NEWS_LIMITS, unwrapLink } from '../domain/news-intake.ts';
 import type { NormalizedNews } from '../domain/news-intake.ts';
 import { newsSearchQuery, searchExcluded } from '../domain/news-search.ts';
@@ -71,16 +71,21 @@ async function call(path: 'search' | 'extract', body: object, signal: AbortSigna
 /** Only dated recent URLs enter the radar. The provider's date is explicitly an estimate. */
 export async function collectSearchNews(claim: NewsSearchClaim, signal: AbortSignal, deps: Services = services): Promise<{ items: SearchNewsEntry[]; query: string }> {
   const clipping = claim.clipping ?? clippingBlocked(claim.config.portalUrl);
-  const { query, language, mode } = newsSearchQuery(claim.config, claim.queryIndex, clipping);
+  const plan = newsSearchQuery(claim.config, claim.queryIndex, clipping);
+  const { query, language, mode } = plan;
   const hours = claim.config.windowHours ?? (clipping ? 24 : 168);
-  const timeRange = hours === 24 && !clipping ? 'day' : hours <= 168 ? 'week' : hours <= 720 ? 'month' : 'year';
+  // Pair open-web discovery with a focused pass through the newsroom's sources.
+  const priorityDomains = 'segment' in plan && plan.segment ? clippingNewsDomains(plan.segment) : undefined;
+  const priorityNews = priorityDomains !== undefined;
+  const timeRange = hours === 24 && (!clipping || priorityNews) ? 'day' : hours <= 168 ? 'week' : hours <= 720 ? 'month' : 'year';
   const excluded = [...new Set([...claim.domains, ...SOCIAL, CLIPPING_BLOCKED_DOMAIN])];
   const parsed = searchSchema.safeParse(await call('search', { query, language,
     topic: mode,
     search_depth: 'basic', time_range: timeRange, include_published_date: true, filter_by_published_date: !clipping,
     include_answer: false, include_raw_content: clipping ? false : 'text', include_images: true, max_results: 10,
     exclude_domains: excluded, include_usage: true,
-    ...(clipping ? { include_domains: CLIPPING_PRIORITY_DOMAINS, include_domains_mode: 'prefer', filter_by_language: true } : {}),
+    ...(clipping ? { include_domains: priorityDomains ?? CLIPPING_PRIORITY_DOMAINS,
+      include_domains_mode: priorityNews ? 'restrict' : 'prefer', filter_by_language: true } : {}),
   }, signal, deps));
   if (!parsed.success) throw new FlowError('TAVILY_INVALID_RESPONSE', 502);
   const seen = new Set<string>();
@@ -90,7 +95,9 @@ export async function collectSearchNews(claim: NewsSearchClaim, signal: AbortSig
     if ((!clipping || result.published_date) && !clippingDateMatches(result.published_date ?? '', now, hours)) return false;
     if (clipping) {
       const title = result.title ?? '', summary = result.content ?? '';
-      if (!discoveryAddress(result.url) || (result.score ?? 1) < 0.5 || !clippingSegment(title, summary) || clippingExcludedText(title, summary)) return false;
+      const score = result.score ?? 1;
+      if (!discoveryAddress(result.url) || score < (priorityNews ? 0.35 : 0.5)
+        || !clippingSegment(title, summary) || clippingExcludedText(title, summary)) return false;
     } else if (!isNewsSearchCandidate(claim.config, result)) return false;
     const host = new URL(result.url).hostname.replace(/^\[|\]$/g, '');
     if (!host.includes('.') || host.endsWith('.local') || host.endsWith('.localhost') || isIP(host) && privateAddress(host)) return false;
@@ -101,12 +108,15 @@ export async function collectSearchNews(claim: NewsSearchClaim, signal: AbortSig
   if (clipping) {
     // The provider's search range is broad. Enforce the exact window using the publisher's date when available.
     const items = await Promise.all(candidates.map(async (result, index): Promise<SearchNewsEntry | undefined> => {
+      // A lower-ranked result from the matrix must be confirmed by the publisher's public article.
+      const needsConfirmation = (result.score ?? 1) < 0.5;
       if (index < 5 && deps.read) {
         try {
           const page = await deps.read(result.url, { accept: 'text/html', maxBytes: NEWS_LIMITS.pageBytes, clippingIntake: true, signal });
           if (searchExcluded(page.url, excluded)) return undefined;
           const article = page.status === 200 ? parseArticlePage(page.text, page.url) : undefined;
           if (article) {
+            if (needsConfirmation && (!article.publishedAt || article.contentKind === 'search')) return undefined;
             const publishedAt = article.publishedAt ?? result.published_date ?? '';
             if (!clippingDateMatches(publishedAt, now, hours)) return undefined;
             const item = normalizeEntry({ ...article, publishedAt }, { now, clipping: true });
@@ -117,7 +127,7 @@ export async function collectSearchNews(claim: NewsSearchClaim, signal: AbortSig
           if (error instanceof FlowError && error.code === 'NEWS_SEARCH_EXCLUDED') return undefined;
         }
       }
-      if (!result.published_date) return undefined;
+      if (needsConfirmation || !result.published_date) return undefined;
       const item = normalizeEntry({ url: result.url, title: result.title ?? '',
         paragraphs: result.content ? [result.content] : [], publishedAt: result.published_date, contentKind: 'search' }, { now, clipping: true });
       return item && { ...item, contentKind: 'search' };
