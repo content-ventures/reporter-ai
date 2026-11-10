@@ -14,15 +14,16 @@ import {runWithReporterContext} from '../src/server/request-context.ts';
 import {resolveReporterContext,pool} from '../src/server/database.ts';
 import {handleReporter} from '../src/server/http.ts';
 import {acceptMemoryFlow} from './neon-memory-acceptance.mjs';
+import {acceptLiveClipping} from './neon-clipping-acceptance.mjs';
 
 const PILOT='10000000-0000-0000-0000-000000000101';
 const quotes=['A revisão humana faz parte de cada etapa.','A previsão depende de testes reais.','Ainda não temos um calendário definido.'];
 const passages=quotes.map(quote=>'A equipe avalia os dados da fonte e mantém o plano em teste. '.repeat(14)+' A fonte afirma: “'+quote+'”');
 const source=passages.join('\n\n');
 
-/** Real staging SQL, HTTP business handlers, storage and browser downloads; no AI requests.
+/** Real staging SQL, HTTP business handlers, storage and browser downloads.
  * Identities are synthetic at the verified-session boundary, as in the core acceptance.
- * The separately recorded single live-model QA remains separate from this release check.
+ * Only the opt-in clipping check requests provider work from the deployed staging worker.
  */
 export async function acceptWorkspaceFlow(environment=process.env,request=fetch){
   const branch=await assertStagingTarget(environment,request);
@@ -121,6 +122,7 @@ export async function acceptWorkspaceFlow(environment=process.env,request=fetch)
       assert.equal((await record(editor,client,created.productionId)).deliveries.length,1);
       const other=actors[(1-index)*2+1];assert.equal((await call(other,`w/${client.slug}/workspace`)).status,404);
       console.log(`PASS staging client ${label}: invitation, policy, brand, separate approvals, browser export and foreign-context refusal; zero provider calls.`);
+      if(index===0&&environment.REPORTER_ACCEPTANCE_LIVE_CLIPPING==='true')await acceptLiveClipping({ok,call,editor,client,environment});
     }
     assert.deepEqual(await pilotFingerprint(),before,'Staging acceptance changed the preserved pilot');
   }finally{
@@ -135,6 +137,6 @@ export async function acceptWorkspaceFlow(environment=process.env,request=fetch)
 }
 
 if(process.argv[1]?.endsWith('/neon-workspace-acceptance.mjs')||process.argv[1]==='scripts/neon-workspace-acceptance.mjs'){
-  try{await acceptWorkspaceFlow();console.log('PASS staging workspace acceptance; synthetic identity boundary, no paid generation.');}
+  try{await acceptWorkspaceFlow();console.log('PASS staging workspace acceptance; synthetic identity boundary.');}
   finally{await Promise.all(['runtime','worker'].map(role=>pool(role).end()));}
 }

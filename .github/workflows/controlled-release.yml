@@ -16,6 +16,11 @@ on:
         options: [workspaces, core, full]
         default: workspaces
 
+      live_clipping:
+        description: Run the workspace clipping acceptance with public feeds and Tavily
+        type: boolean
+        default: false
+
 permissions:
   contents: write
   pull-requests: read
@@ -48,6 +53,7 @@ jobs:
       NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
       NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
       REPORTER_ACCEPTANCE_SCOPE: ${{ inputs.acceptance_scope }}
+      REPORTER_ACCEPTANCE_LIVE_CLIPPING: ${{ inputs.live_clipping }}
       REPORTER_ACCEPTANCE_TARGET: ${{ vars.REPORTER_ACCEPTANCE_TARGET }}
       REPORTER_MEMORY_MODE: ${{ vars.REPORTER_MEMORY_MODE }}
       REPORTER_APP_ORIGINS: ${{ vars.REPORTER_APP_ORIGINS }}

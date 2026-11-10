@@ -9,8 +9,8 @@ import { writeStagingEnvironment } from './staging-env.mjs';
 
 /**
  * The release acceptance on the configured staging branch. Workspace scope preserves the
- * pilot and uses prepared text without provider calls. Explicit core/full scopes retain paid
- * ingestion/generation checks. No scope touches production or creates a branch.
+ * pilot and uses prepared text. Live clipping and core/full provider checks require explicit
+ * selection. No scope touches production or creates a branch.
  */
 if (!process.env.GITHUB_ACTIONS || !process.env.GITHUB_ACTOR) throw new Error('Staging acceptance runs only from the authenticated GitHub workflow.');
 const directory = await mkdtemp(join(tmpdir(), 'reporter-staging-acceptance-')), file = join(directory, 'staging.env');
@@ -18,10 +18,12 @@ try {
   await writeStagingEnvironment(file);
   const scope=process.env.REPORTER_ACCEPTANCE_SCOPE??'workspaces';
   if(!['workspaces','core','full'].includes(scope))throw new Error('Invalid staging acceptance scope');
+  const liveClipping=process.env.REPORTER_ACCEPTANCE_LIVE_CLIPPING==='true';
+  if(liveClipping&&scope!=='workspaces')throw new Error('Live clipping requires the workspace acceptance scope.');
   if(scope==='workspaces'){
     const flow=spawnSync(process.execPath,[`--env-file=${file}`,'--conditions=react-server','--import','tsx','scripts/neon-workspace-acceptance.mjs'],{stdio:'inherit',env:{...process.env,REPORTER_WORKSPACES_MODE:'all'}});
     if(flow.status!==0)throw new Error('Workspace staging acceptance failed.');
-    console.log(`PASS staging workspace acceptance for ${process.env.GITHUB_SHA}; zero provider calls.`);
+    console.log(`PASS staging workspace acceptance for ${process.env.GITHUB_SHA}; live clipping ${liveClipping?'enabled':'disabled'}.`);
   }else{
   // Staging holds only acceptance data; each run starts from an empty editorial workspace.
   const settings = parseEnv(await readFile(file, 'utf8'));
