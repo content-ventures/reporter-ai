@@ -143,7 +143,7 @@ export function seafoodClippingQuery(index: number) {
   const language = languages[pair % languages.length];
   const segmentIndex = Math.floor(pair / languages.length) % CLIPPING_SEGMENTS.length;
   const segment = CLIPPING_SEGMENTS[segmentIndex];
-  if (index % 2) return { query: EDITORIAL_QUERIES[segment.id][language], language, mode: 'news' } as const;
+  if (index % 2) return { query: EDITORIAL_QUERIES[segment.id][language], language, mode: 'news', segment: segment.id } as const;
   const subjects = segment.words[language].split('|').filter(word => !ambiguous.has(subjectText(word))).slice(0, 3);
   const business = AXES[language].map(axis => {
     const terms = axis.split('|');
