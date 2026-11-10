@@ -12,7 +12,7 @@ test('the collection cycle covers all segment and language pairs with business t
   assert.ok(cycle.filter(item => item.mode === 'general').every(item => item.query.split(': ')[1]?.split(', ').length === 4));
   assert.deepEqual(cycle.filter(item => item.mode === 'news').map(item => item.language), Array.from({ length: 6 }, () => ['pt', 'en', 'es']).flat());
   assert.match(cycle[0].query, /aquicultura/);
-  assert.match(cycle[3].query, /aquaculture.*salmon farming.*investment/);
+  assert.match(cycle[3].query, /aquaculture.*salmon farming/);
   assert.match(cycle[4].query, /acuicultura/);
 });
 

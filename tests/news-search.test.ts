@@ -174,19 +174,22 @@ test('Seafood prioritizes the matrix, rejects noise and blocked redirects, and k
 
 test('the Seafood news slot reads the priority matrix and confirms lower-ranked matches against the publisher', async () => {
   const url = 'https://fishfocus.co.uk/rules-for-commercial-fishing';
+  const reads: string[] = [];
   const result = await collectSearchNews({ ...claim, clipping: true, queryIndex: 9 }, AbortSignal.timeout(1000), {
     now: () => now, key: () => 'fixture', request: async (_url, init) => {
       const body = JSON.parse(init?.body as string);
-      assert.equal(body.topic, 'news');
-      assert.equal(body.time_range, 'day');
+      assert.equal(body.topic, 'general');
+      assert.equal(body.time_range, 'week');
+      assert.equal(body.filter_by_language, false);
       assert.equal(body.include_domains_mode, 'restrict');
       assert.ok(body.include_domains.includes('seafoodsource.com'));
       assert.ok(!body.include_domains.includes('bbc.com'));
-      const candidate = { ...article(url), title: 'New rules for commercial fishing', score: 0.44 };
+      const candidate = { ...article(url), title: 'New rules to support stocks', content: 'The rules take effect next year.', score: 0.08 };
       return Response.json({ results: [candidate, { ...candidate, url: 'https://seafoodsource.com/news/unavailable' },
-        { ...candidate, url: 'https://fishfocus.co.uk/undated' }] });
+        { ...candidate, url: 'https://fishfocus.co.uk/undated' }, { ...candidate, url: 'https://unrelated.example/news' }] });
     },
     read: async url => {
+      reads.push(url);
       if (url.endsWith('unavailable')) throw new FlowError('HTTP_403', 422);
       const metadata = { '@type': 'NewsArticle', headline: 'New rules for commercial fishing',
         datePublished: url.endsWith('undated') ? undefined : '2026-10-21T14:00:00Z',
@@ -194,5 +197,29 @@ test('the Seafood news slot reads the priority matrix and confirms lower-ranked 
       return { status: 200, url, contentType: 'text/html', text: `<script type="application/ld+json">${JSON.stringify(metadata)}</script>` };
     },
   });
+  assert.deepEqual(reads, [url, 'https://seafoodsource.com/news/unavailable', 'https://fishfocus.co.uk/undated']);
   assert.deepEqual(result.items.map(item => [item.url, item.contentKind]), [[url, 'article']]);
+});
+
+test('undated leads do not use all publisher reads before a dated story whose summary is misleading', async () => {
+  const dated = 'https://fishfocus.co.uk/new-fishing-rules-to-support-stocks';
+  const reads: string[] = [];
+  const result = await collectSearchNews({ ...claim, clipping: true, queryIndex: 3 }, AbortSignal.timeout(1000), {
+    now: () => now, key: () => 'fixture',
+    request: async () => Response.json({ results: [
+      ...Array.from({ length: 5 }, (_, index) => ({ ...article(`https://www.seafoodsource.com/news/${index}`, null),
+        title: 'Salmon farming investment expands', score: 0.9 })),
+      { ...article(dated), title: 'New Fishing Rules to Support Stocks', content: 'More on salmon farming.', score: 0.65 },
+    ] }),
+    read: async url => {
+      reads.push(url);
+      if (url !== dated) throw new FlowError('HTTP_403', 422);
+      return { status: 200, url, contentType: 'text/html', text: `<script type="application/ld+json">
+        {"@type":"NewsArticle","headline":"New Fishing Rules to Support Stocks",
+        "datePublished":"2026-10-21T14:00:00Z","articleBody":"The regulator announced quotas for commercial fishing."}
+        </script>` };
+    },
+  });
+  assert.equal(reads.length, 5);
+  assert.deepEqual(result.items.map(item => [item.url, item.clippingSegment, item.contentKind]), [[dated, 'fishing', 'article']]);
 });
