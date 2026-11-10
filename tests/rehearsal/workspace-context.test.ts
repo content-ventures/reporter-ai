@@ -324,15 +324,18 @@ test('automated feeds, complementary search and translation claims retain the co
   const seen=new Set<string>();
   for(let i=0;i<2;i++) assert.equal(await runNewsSource('feed-ownership-worker',new AbortController().signal,{now:Date.now,fetch:async(url)=>{
     const context=currentWorkerContext()!;assert.equal(context.actor,operatorId);seen.add(context.portal);
-    return {status:200,url,contentType:'application/rss+xml',text:`<rss version="2.0"><channel><title>Teste</title><item><guid>${context.portal}</guid><title>Teste de origem do material</title><link>https://source.example.test/${context.portal}</link><pubDate>${new Date().toUTCString()}</pubDate><description>Material recebido no cliente correto.</description></item></channel></rss>`};
+    return {status:200,url,contentType:'application/rss+xml',text:`<rss version="2.0"><channel><title>Teste</title><item><guid>${context.portal}</guid><title>Produção de tilápia cresce com novas técnicas</title><link>https://source.example.test/${context.portal}</link><pubDate>${new Date().toUTCString()}</pubDate><description>Produtores de tilápia relatam aumento de produção.</description></item></channel></rss>`};
   }}),true);
   assert.equal(seen.size,2);
   for(const context of contexts){
-    const [item]=await owner('SELECT id,imported_by FROM public.reporter_news_items WHERE portal_id=$1',[context.portal]);
+    const [item]=await owner('SELECT id,imported_by,clipping_segment FROM public.reporter_news_items WHERE portal_id=$1',[context.portal]);
+    assert.ok(item,`news is collected for ${context.workspaceSlug}`);
     assert.equal(item.imported_by,operatorId);
+    assert.equal(item.clipping_segment,context.portal===PILOT?'aquaculture':null);
     await runWithWorkerContext({tenant:context.tenant,portal:context.portal},()=>transaction('worker',async client=>{
       const search=(await client.query('SELECT public.reporter_news_search_claim($1) AS value',['source-context-worker'])).rows[0].value;
       assert.equal(search.actor,operatorId);assert.equal(search.config.sector,context.workspaceSlug);
+      assert.equal(search.clipping,context.portal===PILOT);
       const translation=(await client.query('SELECT public.reporter_news_translation_claim($1,$2) AS value',['translation-context-worker',120000])).rows[0].value;
       assert.equal(translation.actor,operatorId);assert.equal(translation.id,item.id);
     }));
