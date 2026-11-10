@@ -84,6 +84,7 @@ export const LOCAL_INIT = Object.freeze([
   ['database/migrations/085-editorial-memory-market-cell-context.sql', '99-zz-editorial-memory-market-cell-context.sql'],
   ['database/migrations/086-news-score-feedback.sql', '99-zzz-news-score-feedback.sql'],
   ['database/migrations/087-news-production-link.sql', '99-zzzz-news-production-link.sql'],
+  ['database/migrations/090-news-clipping.sql', '99-zzzza-news-clipping.sql'],
   ['database/local/89-media-formats.sql', '99-zzzzz-local-media-formats.sql'],
 ].map(entry => Object.freeze(entry)));
 
@@ -165,6 +166,7 @@ export const LOCAL_FLOW = Object.freeze([
   'database/migrations/085-editorial-memory-market-cell-context.sql',
   'database/migrations/086-news-score-feedback.sql',
   'database/migrations/087-news-production-link.sql',
+  'database/migrations/090-news-clipping.sql',
   'database/local/89-media-formats.sql',
 ]);
 
@@ -261,6 +263,7 @@ export const CLOUD = Object.freeze([
   'database/migrations/087-news-production-link.sql',
   'database/migrations/088-large-media-uploads.sql',
   'database/migrations/089-cloud-media-formats.sql',
+  'database/migrations/090-news-clipping.sql',
 ]);
 export const CLOUD_BASE_FILES = 3;
 

@@ -253,6 +253,7 @@ export async function verifyFreshBootstrap(source, baseline) {
     console.log(newsSourceRatingPasses(run(await readFile(resolve(root, "database/tests/news-source-ratings.integration.sql"), "utf8"))));
     console.log(newsImagePasses(run(await readFile(resolve(root, "database/tests/news-images.integration.sql"), "utf8"))));
     console.log(run(await readFile(resolve(root, "database/tests/news-search.integration.sql"), "utf8")).split("\n").filter(line => line.startsWith("PASS ")).join("\n"));
+    console.log(run(await readFile(resolve(root, "database/tests/news-clipping.integration.sql"), "utf8")).split("\n").filter(line => line.startsWith("PASS ")).join("\n"));
     await verifyCatalog(run, baseline);
     console.log("PASS fresh official-entrypoint bootstrap and PostgreSQL integration suite");
     await verifyConcurrency(id);
@@ -301,5 +302,6 @@ export async function runIntegration() {
   console.log(newsSourceRatingPasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/news-source-ratings.integration.sql"), "utf8"))));
   console.log(newsImagePasses(sql("reporter_admin", await readFile(resolve(root, "database/tests/news-images.integration.sql"), "utf8"))));
   console.log(sql("reporter_admin", await readFile(resolve(root, "database/tests/news-search.integration.sql"), "utf8")).split("\n").filter(line => line.startsWith("PASS ")).join("\n"));
+  console.log(sql("reporter_admin", await readFile(resolve(root, "database/tests/news-clipping.integration.sql"), "utf8")).split("\n").filter(line => line.startsWith("PASS ")).join("\n"));
   await verifyFreshBootstrap(source, baseline);
 }
