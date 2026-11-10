@@ -4,6 +4,12 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-10
+
+### Added
+
+- Combine stories into one article.
+
 ## [1.5.1] - 2026-11-05
 
 ### Fixed

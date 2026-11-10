@@ -1,7 +1,21 @@
 {
-  "currentVersion": "1.5.1",
+  "currentVersion": "1.6.0",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.6.0",
+      "roadmapRelease": "R1",
+      "date": "2026-11-10",
+      "title": "R1 feature release",
+      "summary": "Automatic feature release with 1 validated change: combine stories into one article.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Added",
+          "description": "Combine stories into one article"
+        }
+      ]
+    },
     {
       "version": "1.5.1",
       "roadmapRelease": "R1",
