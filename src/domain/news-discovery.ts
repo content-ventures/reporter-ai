@@ -1,3 +1,4 @@
+import { CLIPPING_BLOCKED_DOMAIN, clippingBlocked } from './news-clipping.ts';
 import type { FactSource } from './fact-check.ts';
 import { canonicalUrl, cleanText, isNewsAddress } from './news-intake.ts';
 
@@ -49,7 +50,7 @@ export function isPortalAddress(url: string, portalUrls: readonly string[]): boo
 export function discoveryQueries(context: NewsDiscoveryContext, portalUrls: readonly string[] = context.portal ? [context.portal.url] : []): string[] {
   const topic = cleanText(context.sector || context.portal?.description || context.portal?.title).slice(0, 160);
   const region = cleanText(context.region).slice(0, 70);
-  const exclusions = portalDomains(portalUrls).map(domain => `-site:${domain}`).join(' ');
+  const exclusions = [...new Set([...portalDomains(portalUrls), CLIPPING_BLOCKED_DOMAIN])].map(domain => `-site:${domain}`).join(' ');
   return [
     `${topic} ${region} portal revista especializada notícias ${exclusions}`.replace(/\s+/g, ' ').trim(),
     `${topic} ${region} notícias RSS ${exclusions}`.replace(/\s+/g, ' ').trim(),
@@ -58,7 +59,7 @@ export function discoveryQueries(context: NewsDiscoveryContext, portalUrls: read
 
 /** News publishers and institutional news are useful; academic catalogues and PDFs are not feeds. */
 export function discoveryAddress(value: string): boolean {
-  if (!isNewsAddress(value)) return false;
+  if (!isNewsAddress(value) || clippingBlocked(value)) return false;
   const url = new URL(value);
   return !/\.(pdf|docx?|xlsx?|pptx?|zip)$/i.test(url.pathname)
     && !/(^|\.)(repositorio|repository|periodicos|dspace|ojs)\./i.test(url.hostname)

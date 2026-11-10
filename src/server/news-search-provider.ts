@@ -1,12 +1,17 @@
 import 'server-only';
 import { isIP } from 'node:net';
 import { z } from 'zod';
-import { normalizeEntry, NEWS_LIMITS } from '../domain/news-intake.ts';
+import { CLIPPING_BLOCKED_DOMAIN, clippingBlocked, clippingDateMatches, clippingExcludedText, clippingSegment } from '../domain/news-clipping.ts';
+import { CLIPPING_PRIORITY_DOMAINS } from '../domain/news-clipping-sources.ts';
+import { normalizeEntry, NEWS_LIMITS, unwrapLink } from '../domain/news-intake.ts';
 import type { NormalizedNews } from '../domain/news-intake.ts';
 import { newsSearchQuery, searchExcluded } from '../domain/news-search.ts';
+import { discoveryAddress } from '../domain/news-discovery.ts';
 import { isNewsSearchCandidate } from '../domain/news-search-candidate.ts';
 import type { NewsSearchClaim } from '../domain/news-search.ts';
 import { FlowError } from './errors.ts';
+import { fetchText } from './news-fetch.ts';
+import { parseArticlePage } from './news-parse.ts';
 import { privateAddress } from './public-address.ts';
 
 export type SearchNewsEntry = NormalizedNews & { contentKind: 'article' | 'search' };
@@ -18,8 +23,8 @@ const searchSchema = z.object({ results: z.array(resultSchema).max(100) }).passt
 const extractSchema = z.object({ results: z.array(z.object({ url: z.string(), raw_content: z.string(),
   images: z.array(z.string()).optional() }).passthrough()), failed_results: z.array(z.unknown()).optional() }).passthrough();
 const SOCIAL = ['instagram.com', 'facebook.com', 'tiktok.com', 'youtube.com', 'x.com', 'twitter.com', 'linkedin.com'];
-type Services = { request: typeof fetch; key(): string | undefined; now(): number; known?(urls: string[]): Promise<string[]> };
-const services: Services = { request: fetch, key: () => process.env.TAVILY_API_KEY?.trim(), now: Date.now };
+type Services = { request: typeof fetch; key(): string | undefined; now(): number; known?(urls: string[]): Promise<string[]>; read?: typeof fetchText };
+const services: Services = { request: fetch, key: () => process.env.TAVILY_API_KEY?.trim(), now: Date.now, read: fetchText };
 
 /** Keep the article when extraction also includes the publisher's menus and related links. */
 function articleParagraphs(text: string, title: string) {
@@ -65,25 +70,60 @@ async function call(path: 'search' | 'extract', body: object, signal: AbortSigna
 
 /** Only dated recent URLs enter the radar. The provider's date is explicitly an estimate. */
 export async function collectSearchNews(claim: NewsSearchClaim, signal: AbortSignal, deps: Services = services): Promise<{ items: SearchNewsEntry[]; query: string }> {
-  const { query, language, mode } = newsSearchQuery(claim.config, claim.queryIndex);
+  const clipping = claim.clipping ?? clippingBlocked(claim.config.portalUrl);
+  const { query, language, mode } = newsSearchQuery(claim.config, claim.queryIndex, clipping);
+  const hours = claim.config.windowHours ?? (clipping ? 24 : 168);
+  const timeRange = hours === 24 && !clipping ? 'day' : hours <= 168 ? 'week' : hours <= 720 ? 'month' : 'year';
+  const excluded = [...new Set([...claim.domains, ...SOCIAL, CLIPPING_BLOCKED_DOMAIN])];
   const parsed = searchSchema.safeParse(await call('search', { query, language,
     topic: mode,
-    search_depth: 'basic', time_range: 'week', include_published_date: true, filter_by_published_date: true,
-    include_answer: false, include_raw_content: 'text', include_images: true, max_results: 10,
-    exclude_domains: [...new Set([...claim.domains, ...SOCIAL])], include_usage: true,
+    search_depth: 'basic', time_range: timeRange, include_published_date: true, filter_by_published_date: !clipping,
+    include_answer: false, include_raw_content: clipping ? false : 'text', include_images: true, max_results: 10,
+    exclude_domains: excluded, include_usage: true,
+    ...(clipping ? { include_domains: CLIPPING_PRIORITY_DOMAINS, include_domains_mode: 'prefer', filter_by_language: true } : {}),
   }, signal, deps));
   if (!parsed.success) throw new FlowError('TAVILY_INVALID_RESPONSE', 502);
   const seen = new Set<string>();
-  const external = parsed.data.results.filter(result => {
-    const at = Date.parse(result.published_date ?? '');
-    if (searchExcluded(result.url, [...claim.domains, ...SOCIAL]) || !Number.isFinite(at) || at > deps.now() || at < deps.now() - 7 * 86_400_000 || seen.has(result.url)
-      || !isNewsSearchCandidate(claim.config, result)) return false;
+  const now = deps.now();
+  const external = parsed.data.results.map(result => ({ ...result, url: unwrapLink(result.url) })).filter(result => {
+    if (searchExcluded(result.url, excluded) || seen.has(result.url)) return false;
+    if ((!clipping || result.published_date) && !clippingDateMatches(result.published_date ?? '', now, hours)) return false;
+    if (clipping) {
+      const title = result.title ?? '', summary = result.content ?? '';
+      if (!discoveryAddress(result.url) || (result.score ?? 1) < 0.5 || !clippingSegment(title, summary) || clippingExcludedText(title, summary)) return false;
+    } else if (!isNewsSearchCandidate(claim.config, result)) return false;
     const host = new URL(result.url).hostname.replace(/^\[|\]$/g, '');
     if (!host.includes('.') || host.endsWith('.local') || host.endsWith('.localhost') || isIP(host) && privateAddress(host)) return false;
     seen.add(result.url); return true;
   }).slice(0, 10);
   const known = new Set(await deps.known?.(external.map(item => item.url)) ?? []);
   const candidates = external.filter(item => !known.has(item.url));
+  if (clipping) {
+    // The provider's search range is broad. Enforce the exact window using the publisher's date when available.
+    const items = await Promise.all(candidates.map(async (result, index): Promise<SearchNewsEntry | undefined> => {
+      if (index < 5 && deps.read) {
+        try {
+          const page = await deps.read(result.url, { accept: 'text/html', maxBytes: NEWS_LIMITS.pageBytes, clippingIntake: true, signal });
+          if (searchExcluded(page.url, excluded)) return undefined;
+          const article = page.status === 200 ? parseArticlePage(page.text, page.url) : undefined;
+          if (article) {
+            const publishedAt = article.publishedAt ?? result.published_date ?? '';
+            if (!clippingDateMatches(publishedAt, now, hours)) return undefined;
+            const item = normalizeEntry({ ...article, publishedAt }, { now, clipping: true });
+            return item ? { ...item, contentKind: article.contentKind ?? 'article' } : undefined;
+          }
+        } catch (error) {
+          signal.throwIfAborted();
+          if (error instanceof FlowError && error.code === 'NEWS_SEARCH_EXCLUDED') return undefined;
+        }
+      }
+      if (!result.published_date) return undefined;
+      const item = normalizeEntry({ url: result.url, title: result.title ?? '',
+        paragraphs: result.content ? [result.content] : [], publishedAt: result.published_date, contentKind: 'search' }, { now, clipping: true });
+      return item && { ...item, contentKind: 'search' };
+    }));
+    return { items: items.filter((item): item is SearchNewsEntry => Boolean(item)), query };
+  }
   const full = (text?: string | null) => Boolean(text && text.trim().length >= 300);
   const missing = candidates.filter(item => !full(item.raw_content) || !item.images?.length).slice(0, 5);
   let extracted: z.infer<typeof extractSchema>['results'] = [];

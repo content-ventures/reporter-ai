@@ -8,6 +8,7 @@ import { FlowError, safeCode } from './errors.ts';
 import { newsSearchSql } from './news-search.ts';
 import { collectSearchNews } from './news-search-provider.ts';
 import type { SearchNewsEntry } from './news-search-provider.ts';
+import { fetchText } from './news-fetch.ts';
 import { tavilyConfigured } from './tavily.ts';
 
 export type NewsSearchWorkerServices = {
@@ -21,7 +22,7 @@ const services: NewsSearchWorkerServices = {
   configured: tavilyConfigured,
   claim: owner => newsSearchSql('worker', 'SELECT public.reporter_news_search_claim($1) AS value', [owner]),
   collect: (claim, signal) => collectSearchNews(claim, signal, {
-    request: fetch, key: () => process.env.TAVILY_API_KEY?.trim(), now: Date.now,
+    request: fetch, read: fetchText, key: () => process.env.TAVILY_API_KEY?.trim(), now: Date.now,
     known: urls => newsSearchSql('worker', 'SELECT public.reporter_news_search_known($1) AS value', [urls]),
   }),
   finish: (owner, fence, items, query, error) => newsSearchSql('worker', 'SELECT public.reporter_news_search_finish($1,$2,$3,$4,$5) AS value',
@@ -49,7 +50,7 @@ async function runScoped(owner: string, signal: AbortSignal, deadline?: number, 
     await deps.finish(owner, claim.fence, result.items, result.query);
   } catch (error) {
     const code = bounded.aborted ? 'NEWS_SEARCH_INTERRUPTED' : safeCode(error);
-    await deps.finish(owner, claim.fence, [], newsSearchQuery(claim.config, claim.queryIndex).query, code);
+    await deps.finish(owner, claim.fence, [], newsSearchQuery(claim.config, claim.queryIndex, claim.clipping).query, code);
     logEvent('worker', 'news_search_failed', { error_code: code });
   }
   return true;

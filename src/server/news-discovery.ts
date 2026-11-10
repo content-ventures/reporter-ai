@@ -101,7 +101,7 @@ async function verifyCandidate(evidence: FactSource, deps: NewsDiscoveryServices
   let origin = base.site;
   const read = async (url: string, feed = false) => {
     const readSignal = AbortSignal.any([signal, AbortSignal.timeout(NEWS_DISCOVERY_LIMITS.readTimeoutMs)]);
-    return bounded(readSignal, () => deps.fetch(url, { maxBytes: feed ? NEWS_LIMITS.feedBytes : NEWS_LIMITS.pageBytes,
+    return bounded(readSignal, () => deps.fetch(url, { maxBytes: feed ? NEWS_LIMITS.feedBytes : NEWS_LIMITS.pageBytes, clippingIntake: true,
       accept: feed ? FEED_ACCEPT : PAGE_ACCEPT, signal: readSignal }));
   };
   const tryFeed = async (url: string) => {

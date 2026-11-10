@@ -3,6 +3,7 @@ import { logWorkerEvent as logEvent } from './worker-context.ts';
 import { withWorkspaceWork } from './worker-dispatch.ts';
 import { bindAutomatedJob } from './worker-job-context.ts';
 import type { PoolClient } from 'pg';
+import type { ClippingWindow } from '../domain/news-clipping.ts';
 import { NEWS_LIMITS, normalizeEntries } from '../domain/news-intake.ts';
 import type { NormalizedNews, RawNewsEntry } from '../domain/news-intake.ts';
 import { transaction } from './database.ts';
@@ -16,6 +17,8 @@ export const FEED_ACCEPT = 'application/rss+xml, application/atom+xml, applicati
 /** A source leased for one read (`reporter_news_claim`). */
 export type NewsClaim = {
   actor?: string|null;
+  clipping?: boolean;
+  windowHours?: ClippingWindow;
   id: string;
   kind: 'rss' | 'google-alerts' | 'rss-app';
   name: string;
@@ -39,12 +42,16 @@ export function claimSource(role: Role, owner: string, sourceId?: string): Promi
 }
 
 /** Feeds of one outlet carry its name; alerts and keyword feeds gather many outlets. */
-export function entriesFor(claim: Pick<NewsClaim, 'kind' | 'name' | 'keyword' | 'firstRead'>, entries: readonly RawNewsEntry[], now = Date.now()): NormalizedNews[] {
+export function entriesFor(claim: Pick<NewsClaim, 'kind' | 'name' | 'keyword' | 'firstRead' | 'clipping' | 'windowHours'>, entries: readonly RawNewsEntry[], now = Date.now()): NormalizedNews[] {
   const aggregator = claim.kind === 'google-alerts' || Boolean(claim.keyword);
-  return normalizeEntries(entries, {
+  return normalizeEntries(claim.clipping ? entries.filter(entry => {
+    const date = Date.parse(entry.publishedAt ?? '');
+    return date <= now;
+  }) : entries, {
     now,
+    clipping: claim.clipping,
     outlet: aggregator ? undefined : claim.name,
-    since: claim.firstRead ? now - NEWS_LIMITS.firstReadDays * 86_400_000 : undefined,
+    since: claim.clipping ? now - (claim.windowHours ?? 24) * 3_600_000 : claim.firstRead ? now - NEWS_LIMITS.firstReadDays * 86_400_000 : undefined,
   });
 }
 
@@ -66,7 +73,7 @@ const services: ReadServices = { fetch: (url, options) => fetchText(url, options
  */
 export async function readSource(role: Role, claim: NewsClaim, owner: string, deps: ReadServices = services): Promise<ReadResult> {
   try {
-    const fetched = await deps.fetch(claim.url, { maxBytes: NEWS_LIMITS.feedBytes, accept: FEED_ACCEPT, etag: claim.etag, lastModified: claim.lastModified });
+    const fetched = await deps.fetch(claim.url, { maxBytes: NEWS_LIMITS.feedBytes, accept: FEED_ACCEPT, clippingIntake: true, etag: claim.etag, lastModified: claim.lastModified });
     if (fetched.status === 304) return await ingest(role, claim, owner, [], { etag: claim.etag, lastModified: claim.lastModified });
     const feed = parseFeed(fetched.text);
     if (!feed) throw new FlowError('NEWS_FEED_INVALID', 422);

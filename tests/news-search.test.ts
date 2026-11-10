@@ -123,3 +123,50 @@ test('worker reserves before spending, fences completion and yields before its d
   await runNewsSearchJob('test-worker', new AbortController().signal, undefined, { ...deps, configured: () => false });
   assert.deepEqual(calls, ['claim', 'TAVILY_KEY_MISSING']);
 });
+
+test('Seafood prioritizes the matrix, rejects noise and blocked redirects, and keeps only a paywall preview', async () => {
+  const base = (url: string, patch: object = {}) => ({
+    ...article(url), title: 'Exportação de tilápia cresce', content: 'Exportadores relatam alta.', ...patch,
+  });
+  const read: string[] = [];
+  const result = await collectSearchNews({ ...claim, clipping: true }, new AbortController().signal, {
+    now: () => now, key: () => 'fixture',
+    request: async (url, init) => {
+      assert.equal(url, 'https://api.tavily.com/search');
+      const body = JSON.parse(init?.body as string);
+      assert.equal(body.time_range, 'week');
+      assert.equal(body.filter_by_published_date, false);
+      assert.equal(body.include_domains_mode, 'prefer');
+      assert.ok(body.include_domains.includes('seafoodsource.com'));
+      assert.ok(body.exclude_domains.includes('seafoodbrasil.com.br'));
+      assert.equal(body.include_raw_content, false);
+      return Response.json({ results: [
+        base('https://publisher.example/tilapia'),
+        base('https://another.example/redirect'),
+        base('https://sub.seafoodbrasil.com.br/blocked'),
+        base('https://publisher.example/recipe', { title: 'Receita de tilápia para o fim de semana' }),
+        base('https://publisher.example/old', { published_date: '2026-10-20T15:59:59Z' }),
+        base('https://publisher.example/publisher-date', { published_date: null }),
+        base('https://publisher.example/undated', { published_date: null }),
+        base('https://publisher.example/stale', { published_date: null }),
+      ] });
+    },
+    read: async (url, options) => {
+      read.push(url);
+      assert.equal(options.clippingIntake, true);
+      if (url.endsWith('redirect')) return { status: 200, url: 'https://seafoodbrasil.com.br/blocked', text: '', contentType: 'text/html' };
+      const datePublished = url.endsWith('publisher-date') ? '2026-10-21T14:00:00Z'
+        : url.endsWith('stale') ? '2026-10-20T15:59:59Z' : undefined;
+      return { status: 200, url, contentType: 'text/html', text: `<script type="application/ld+json">
+        ${JSON.stringify({ '@type': 'NewsArticle', headline: 'Exportação de tilápia cresce', description: 'Trecho público.',
+          datePublished, isAccessibleForFree: false, articleBody: 'Texto restrito que não deve entrar na coleta.' })}
+        </script>` };
+    },
+  });
+  assert.deepEqual(read, ['https://publisher.example/tilapia', 'https://another.example/redirect',
+    'https://publisher.example/publisher-date', 'https://publisher.example/undated', 'https://publisher.example/stale']);
+  assert.deepEqual(result.items.map(item => item.url), ['https://publisher.example/tilapia', 'https://publisher.example/publisher-date']);
+  assert.equal(result.items[0].clippingSegment, 'aquaculture');
+  assert.equal(result.items[0].contentKind, 'search');
+  assert.deepEqual(result.items[0].body, ['Trecho público.']);
+});

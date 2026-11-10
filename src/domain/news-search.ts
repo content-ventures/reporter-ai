@@ -1,3 +1,5 @@
+import { clippingBlocked, seafoodClippingQuery } from './news-clipping.ts';
+import type { ClippingWindow } from './news-clipping.ts';
 import { isPortalAddress } from './news-discovery.ts';
 import { isNewsAddress } from './news-intake.ts';
 
@@ -12,9 +14,11 @@ export type NewsSearchConfig = {
   everyMinutes: 60 | 120 | 360;
   dailyLimit: number;
   enabled: boolean;
+  windowHours?: ClippingWindow;
 };
 export type NewsSearchView = {
   configured: boolean;
+  clipping?: boolean;
   revision: number;
   config?: NewsSearchConfig;
   state: 'idle' | 'queued' | 'running' | 'paused' | 'limited' | 'failed';
@@ -27,6 +31,7 @@ export type NewsSearchView = {
 export type NewsSearchWrite = { revision: number; config: NewsSearchConfig };
 export type NewsSearchClaim = {
   actor?:string|null;
+  clipping?: boolean;
   fence: string; config: NewsSearchConfig; domains: string[]; queryIndex: number;
 };
 
@@ -39,10 +44,11 @@ export function searchDomain(value: string): string | undefined {
 }
 
 export function searchExcluded(url: string, domains: readonly string[]): boolean {
-  return !isNewsAddress(url) || isPortalAddress(url, domains.map(domain => `https://${domain}`));
+  return !isNewsAddress(url) || clippingBlocked(url) || isPortalAddress(url, domains.map(domain => `https://${domain}`));
 }
 
-export function newsSearchQuery(config: NewsSearchConfig, index: number) {
+export function newsSearchQuery(config: NewsSearchConfig, index: number, clipping = clippingBlocked(config.portalUrl)) {
+  if (clipping) return seafoodClippingQuery(index);
   const combination = Math.floor(index / 2);
   const language = config.languages[combination % config.languages.length];
   const topic = config.topics[Math.floor(combination / config.languages.length) % config.topics.length];

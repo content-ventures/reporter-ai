@@ -6,6 +6,8 @@
  * `RawNewsEntry` and applies these rules.
  */
 
+import { clippingBlocked, clippingExcludedText, clippingSegment } from './news-clipping.ts';
+import type { ClippingSegment } from './news-clipping.ts';
 import type { FeedState } from './hard-news.ts';
 
 /** Where a source's entries come from. Every kind is read as a feed; they differ in how it is made. */
@@ -50,6 +52,8 @@ export type RawNewsEntry = {
   /** The outlet the entry names (an aggregator's `<source>`, a page's site name). */
   outlet?: string;
   image?: string;
+  tags?: string[];
+  contentKind?: 'search';
 };
 
 /** A news item ready for the queue, before it has an id. */
@@ -67,6 +71,9 @@ export type NormalizedNews = {
   image?: string;
   /** Present when the title is specific enough to group the same story from another outlet. */
   storyKey?: string;
+  clippingSegment?: ClippingSegment;
+  clippingExcluded?: true;
+  contentKind?: 'article' | 'search';
 };
 
 const TRACKING = /^(utm_[a-z0-9_]+|fbclid|gclid|dclid|gbraid|wbraid|msclkid|mc_cid|mc_eid|igshid|_ga|_gl|ref_src|cmpid|xtor|ocid|at_[a-z_]+)$/i;
@@ -192,6 +199,7 @@ export type NormalizeOptions = {
   /** Entries published before this moment are left out (a source's first read). */
   since?: number;
   limit?: number;
+  clipping?: boolean;
 };
 
 /** One entry, normalized; `undefined` when it has no usable link or title. */
@@ -199,9 +207,14 @@ export function normalizeEntry(entry: RawNewsEntry, options: NormalizeOptions): 
   const url = entry.url ? cleanLink(entry.url) : undefined;
   const canonical = url ? canonicalUrl(url) : undefined;
   const title = clip(cleanText(entry.title), NEWS_LIMITS.titleChars);
-  if (!url || !canonical || !title) return undefined;
+  if (!url || !canonical || !title || clippingBlocked(url)) return undefined;
   const body = bodyOf(entry.paragraphs, title);
-  const image = entry.image ? cleanLink(entry.image) : undefined;
+  const excerpt = clip(body[0] ?? '', NEWS_LIMITS.excerptChars);
+  const tags = (entry.tags ?? []).slice(0, 30).join(' ').slice(0, 1500);
+  const segment = clippingSegment(title, excerpt, [...body, tags]);
+  const excluded = clippingExcludedText(title, `${excerpt} ${tags}`);
+  if (options.clipping && (!segment || excluded)) return undefined;
+  const image = entry.image && !clippingBlocked(entry.image) ? cleanLink(entry.image) : undefined;
   const key = storyKey(title);
   return {
     guid: cleanText(entry.id).slice(0, 500) || canonical,
@@ -210,7 +223,10 @@ export function normalizeEntry(entry: RawNewsEntry, options: NormalizeOptions): 
     title,
     outlet: clip(cleanText(options.outlet) || cleanText(entry.outlet) || outletOf(url), 120),
     publishedAt: isoOf(entry.publishedAt, options.now),
-    excerpt: clip(body[0] ?? '', NEWS_LIMITS.excerptChars),
+    excerpt,
+    ...(segment ? { clippingSegment: segment } : {}),
+    ...(excluded ? { clippingExcluded: true } : {}),
+    ...(entry.contentKind ? { contentKind: entry.contentKind } : {}),
     body,
     ...(image ? { image } : {}),
     ...(key ? { storyKey: key } : {}),
@@ -264,6 +280,7 @@ export const NEWS_MESSAGES: Record<string, string> = {
   NEWS_TIMEOUT: 'O endereço não respondeu em 15 segundos.',
   NEWS_TOO_LARGE: 'A resposta passa do limite de tamanho.',
   NEWS_ADDRESS_BLOCKED: 'Esse endereço não é público.',
+  NEWS_SEARCH_EXCLUDED: 'Este domínio está excluído da coleta.',
   NEWS_PAGE_INVALID: 'Não encontramos uma notícia nesse endereço.',
   NEWS_ITEM_NOT_FOUND: 'Essa notícia não existe mais.',
   NEWS_TRANSLATION_UNCONFIGURED: 'A tradução não está configurada. Peça a um administrador para conectar a API de texto.',
