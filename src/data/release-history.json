@@ -1,7 +1,37 @@
 {
-  "currentVersion": "1.7.1",
+  "currentVersion": "1.7.2",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.7.2",
+      "roadmapRelease": "R1",
+      "date": "2026-11-11",
+      "title": "R1 maintenance release",
+      "summary": "Automatic maintenance release with 5 validated changes: restore connected hard news creation; cleanup; restore.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Maintenance",
+          "description": "Add ci helper"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Add ci helper"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Restore"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cleanup"
+        },
+        {
+          "type": "Fixed",
+          "description": "Restore connected hard news creation"
+        }
+      ]
+    },
     {
       "version": "1.7.1",
       "roadmapRelease": "R1",

@@ -4,6 +4,19 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-11-11
+
+### Maintenance
+
+- Add ci helper.
+- Add ci helper.
+- Restore.
+- Cleanup.
+
+### Fixed
+
+- Restore connected hard news creation.
+
 ## [1.7.1] - 2026-11-10
 
 ### Fixed
