@@ -341,11 +341,15 @@ export function NewsDesk({ initialItem }: { initialItem?: string } = {}) {
         return;
       }
       if (item.status !== 'selected') return;
-      const productionId = await decide(item, () => actions.cover(item.id));
-      if (!productionId) {
-        toast('Não foi possível abrir a pauta', { tone: 'error' });
+      let productionId: string | undefined;
+      try {
+        productionId = await decide(item, () => actions.cover(item.id));
+      } catch (error) {
+        toast('Não foi possível abrir a pauta', { tone: 'error', description: error instanceof Error ? error.message : undefined });
         return;
       }
+      // The action reports refusals with their reason; a second toast would hide that answer.
+      if (!productionId) return;
       toast('Hard news em produção', {
         description: 'A geração começou com a fonte original. O rascunho segue para revisão humana.',
         action: { label: 'Abrir artigo', onClick: () => router.push(pieceHref(productionId, 'article')) },

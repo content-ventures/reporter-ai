@@ -14,8 +14,8 @@ function feedbackScope(target: unknown): EditorialScope {
 /**
  * The rows each named command needs. Single-production commands load that production; the
  * autosave loads only what its lock check reads. Anything unrecognised loads everything,
- * which is always correct, never fast. Only generation and the pipeline editor read the
- * pipeline snapshots.
+ * which is always correct, never fast. Generation, pipeline settings and news creation's
+ * research-readiness check read the pipeline snapshots.
  */
 export function scopeForRpc(method: string, args: readonly unknown[]): EditorialScope {
   const scope = rpcScope(method,args);
@@ -27,6 +27,8 @@ function rpcScope(method: string,args:readonly unknown[]):EditorialScope {
     case 'pipeline.save': return { history: true, recentRuns: 20, workspaceLock: true };
     case 'generation.start': return { productions: text(field(args[1], 'productionId')) };
     case 'generation.retry': return { entities: text(args[0]) };
+    case 'createFromSource': return { ...commandScope(method, args),
+      ...(field(args[0], 'newsItemId') || field(args[0], 'newsItemIds') ? {} : { pipelines: false as const }) };
     default: { const scope = commandScope(method, args); return scope === FULL_SCOPE ? scope : { ...scope, pipelines: false }; }
   }
 }

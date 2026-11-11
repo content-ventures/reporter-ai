@@ -165,8 +165,8 @@ function sameUrl(a: string, b: string): boolean {
 /**
  * R2 · Hard News desk. It keeps the desk's records in this browser and uses the workspace's own
  * commands where R2 meets R1: "Cobrir" opens a production in Produções and the written draft lands
- * in the same article studio. As the R1 build's demonstration (`demo`) it writes nothing to the
- * workspace: no example productions and no "Cobrir"; the R1 screens do not see the desk.
+ * in the same article studio. Connected news can open productions in R1. The simulated R2
+ * demonstration (`demo` without a news port) writes no example productions to the workspace.
  */
 export function HardNewsProvider({children,demo=false}:{children:ReactNode;demo?:boolean}){
   const key=useWorkspaceStorageKey(STORAGE_KEY),{runtime}=useRuntime();
@@ -385,19 +385,24 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
       }
     },
     async cover(newsId) {
-      if (demo) return undefined;
       if (newsPort && liveStore) {
         const existing = Object.values(latest.current.dossiers).find((dossier) => dossier.newsId === newsId);
         if (existing) return existing.productionId;
         let item = liveStore.get().news.find((candidate) => candidate.id === newsId);
-        if (!item) return undefined;
+        if (!item) {
+          toast('Não foi possível abrir a pauta', { tone: 'error', description: 'Atualize o radar para carregar esta notícia novamente.' });
+          return undefined;
+        }
         if (item.paragraphs !== undefined && item.body.length === 0) {
           await liveStore.loadBody(newsId);
           item = liveStore.get().news.find((candidate) => candidate.id === newsId) ?? item;
         }
         const materialText = [item.title, item.excerpt, ...item.body].filter(Boolean)
           .filter((value, index, values) => values.indexOf(value) === index).join('\n\n').trim();
-        if (!materialText) return undefined;
+        if (!materialText) {
+          toast('Não foi possível abrir a pauta', { tone: 'error', description: 'A notícia não tem texto para apurar.' });
+          return undefined;
+        }
         const created = await commands.production.createFromSource({
           newsItemId: newsId,
           title: item.title,
@@ -427,6 +432,7 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
         if (!generated.ok) toast('A pauta foi aberta', { tone: 'info', description: 'A geração não iniciou automaticamente. Abra o artigo para tentar de novo.' });
         return created.value.productionId;
       }
+      if (demo) return undefined;
       const news = latest.current.news.find((item) => item.id === newsId);
       if (!news) return undefined;
       if (news.productionId) return news.productionId;
@@ -446,7 +452,7 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
     },
     async coverMany(newsIds, title, angle) {
       const ids = [...new Set(newsIds)];
-      if (demo || !newsPort || !liveStore || ids.length < 2 || !title.trim() || !angle.trim()) return undefined;
+      if (!newsPort || !liveStore || ids.length < 2 || !title.trim() || !angle.trim()) return undefined;
       let selected = ids.map(id => liveStore.get().news.find(item => item.id === id));
       if (selected.some(item => !item || item.status !== 'selected')) {
         toast('Atualize a seleção', { tone: 'error', description: 'Só é possível reunir notícias selecionadas para redação.' });
