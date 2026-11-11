@@ -388,17 +388,17 @@ export async function editorialRpc(payload: unknown) {
       }
       if (newsItemId && coverages[0]?.production_id) {
         const coverage = coverages[0];
-        const existing = await client.query(`SELECT p.production_id AS "productionId",p.source_ids[1] AS "sourceId",
-            p.archived,part.part_id AS "pieceId"
-          FROM public.reporter_ed_productions p JOIN public.reporter_ed_parts part
-            ON part.portal_id=p.portal_id AND part.production_id=p.production_id
-          WHERE p.portal_id=$1 AND p.production_id=$2 AND part.kind='piece' AND NOT part.deleted
-            AND part.doc->>'kind'='article' ORDER BY part.ordinal LIMIT 1`, [checkpoint.state.workspace.id,coverage.production_id]);
-        const existingProduction = existing.rows[0] as { productionId: string; sourceId: string; pieceId: string; archived: boolean } | undefined;
-        if (!existingProduction || !existingProduction.sourceId) throw new FlowError('NEWS_COVER_PRODUCTION_INCOMPLETE', 409);
+        // Runtime reads go through the scoped function; editorial tables have no direct grants.
+        const { rows } = await loadEditorialRows(client, { productions: [coverage.production_id!], parts: ['piece'],
+          sources: 'none', runs: 'none', pipelines: false }, false);
+        const existingProduction = rows.productions.find(production => production.id === coverage.production_id);
+        const article = rows.parts.find(part => part.productionId === coverage.production_id && part.kind === 'piece'
+          && !part.deleted && (part.doc as { kind?: string }).kind === 'article');
+        const sourceId = existingProduction?.sourceIds[0];
+        if (!existingProduction || !sourceId || !article) throw new FlowError('NEWS_COVER_PRODUCTION_INCOMPLETE', 409);
         if (existingProduction.archived) throw new FlowError('NEWS_COVER_ALREADY_ARCHIVED', 409);
-        return ok({ productionId: existingProduction.productionId, sourceId: existingProduction.sourceId,
-          pieces: [{ kind: 'article' as const, pieceId: existingProduction.pieceId }], reusedNewsLink: true as const });
+        return ok({ productionId: existingProduction.id, sourceId,
+          pieces: [{ kind: 'article' as const, pieceId: article.id }], reusedNewsLink: true as const });
       }
       if (coverages.some(coverage => coverage.production_id || !coverage.can_create)) throw new FlowError('NEWS_ITEM_NOT_SELECTED', 409);
       const writing = activePipeline(checkpoint).definition.writing;

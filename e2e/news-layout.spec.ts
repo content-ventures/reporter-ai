@@ -77,7 +77,7 @@ async function mockDesk(page: Page, count = 18, clipping = false) {
     return route.fulfill({ json: { at: new Date().toISOString(), sources: feeds, items: visible, rssApp: false,
       ...(clipping ? { search: { clipping, configured: true, revision: 0, state: 'idle', usedToday: 0, lastAdded: 0 } } : {}) } });
   });
-  return { decisions };
+  return { decisions, items };
 }
 
 async function loadedNewsImage(card: Locator, index: number) {
@@ -458,4 +458,61 @@ test('clipping abre com 24 horas e permite ampliar o período e filtrar por segm
 
   await page.getByTestId(`news-card-${FIRST}`).click();
   await expect(page.getByRole('link', { name: /^Ver fonte preferida/ })).toHaveAttribute('href', 'https://www.gov.br/mpa/noticia');
+});
+
+test('Hard News preserves the server refusal reason in a single notice', async ({ page }) => {
+  await mockDesk(page, 1);
+  const checkpoint = emptyEditorialCheckpoint();
+  const message = 'Ative Pesquisa de contexto na web no pipeline de Redação e conecte o Tavily antes de gerar Hard News.';
+  let attempts = 0;
+  await page.route('**/api/reporter/workspace', route => {
+    if (route.request().method() === 'POST') {
+      const command = route.request().postDataJSON();
+      expect(command.method).toBe('createFromSource');
+      expect(command.args[0].newsItemId).toBe(FIRST);
+      attempts++;
+      return route.fulfill({ json: { ok: false, refusal: { code: 'hard_news_research_not_ready', message } } });
+    }
+    return route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } });
+  });
+  const errors = watchErrors(page);
+  await page.goto(`/news?item=${FIRST}`);
+  await page.getByRole('button', { name: 'Selecionar para redação', exact: true }).click();
+  await expect(page.getByText('Notícia selecionada para redação', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Gerar hard news', exact: true }).click();
+  await expect.poll(() => attempts).toBe(1);
+  await expect(page.getByText('Não foi possível abrir a pauta', { exact: true })).toHaveCount(1);
+  await expect(page.getByText(message, { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Gerar hard news', exact: true })).toBeEnabled();
+  expect(attempts).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test('connected news bundles reach the server in an R1 build', async ({ page }) => {
+  const { items } = await mockDesk(page, 2);
+  for (const item of items) item.status = 'selected';
+  const checkpoint = emptyEditorialCheckpoint();
+  let attempts = 0;
+  await page.route('**/api/reporter/workspace', route => {
+    if (route.request().method() === 'POST') {
+      const command = route.request().postDataJSON();
+      expect(command.method).toBe('createFromSource');
+      expect(command.args[0].newsItemIds).toEqual([FIRST, SECOND]);
+      attempts++;
+      return route.fulfill({ json: { ok: false, refusal: { code: 'unavailable', message: 'Recusa de teste do servidor.' } } });
+    }
+    return route.fulfill({ json: { state: checkpoint.state, jobs: {}, revision: 0, model: 'openai/gpt-4.1', workerOnline: true } });
+  });
+  const errors = watchErrors(page);
+  await page.goto('/news');
+  await page.getByRole('tab', { name: /^Decididas/ }).click();
+  await page.getByRole('button', { name: 'Selecionar notícias', exact: true }).click();
+  for (const item of items) await page.getByRole('checkbox', { name: `Incluir “${item.title}” no artigo`, exact: true }).check();
+  await page.getByRole('button', { name: 'Criar artigo · 2', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Reunir notícias em um artigo', exact: true });
+  await dialog.getByRole('textbox', { name: 'Ângulo editorial', exact: true }).fill('Comparar os dados das duas fontes.');
+  await dialog.getByRole('button', { name: 'Criar artigo', exact: true }).click();
+  await expect.poll(() => attempts).toBe(1);
+  await expect(page.getByText('Recusa de teste do servidor.', { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
 });
