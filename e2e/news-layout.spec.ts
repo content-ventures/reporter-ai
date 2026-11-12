@@ -520,7 +520,7 @@ test('connected news selection preserves a refused creation for retry', async ({
   expect(errors).toEqual([]);
 });
 
-for (const [width, count, format, refuseStart] of [[1440, 2, 'note', false], [390, 1, 'note', false], [1440, 1, 'carousel', false], [390, 1, 'article', true]] as const) test(`selected news creates ${format} at ${width}px${refuseStart ? ' and preserves a refused start' : ''}`, async ({ page }) => {
+for (const [width, count, format, refuseStart] of [[1440, 2, 'note', false], [390, 1, 'note', false], [1440, 1, 'carousel', false], [390, 1, 'article', true]] as const) test(`selected news creates ${format} at ${width}px${refuseStart ? ' and preserves a refused start' : ''}`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });
   const { items } = await mockDesk(page, 2);
   for (const item of items) item.status = 'selected';
@@ -580,7 +580,7 @@ for (const [width, count, format, refuseStart] of [[1440, 2, 'note', false], [39
   await page.getByRole('navigation', { name: 'Trilha de navegação', exact: true }).getByRole('link', { name: 'Notícias', exact: true }).click();
   await expect(first).toBeChecked();
   await expect(create).toHaveText(`Criar conteúdo · ${count}`);
-  await page.screenshot({ path: `/private/tmp/reporter-news-content-${width}-${format}.png`, fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: testInfo.outputPath(`news-content-${width}-${format}.png`), fullPage: true, animations: 'disabled' });
   await create.click();
   const dialog = page.getByRole('dialog', { name: 'Criar conteúdo com notícias', exact: true });
   await expect(dialog.getByRole('radio', { name: /^Hard news/ })).toBeChecked();
@@ -588,7 +588,7 @@ for (const [width, count, format, refuseStart] of [[1440, 2, 'note', false], [39
     await dialog.getByRole('radio', { name: format === 'note' ? /Nota curta/ : /^Carrossel/ }).check();
     await expect(dialog.getByRole('radio', { name: /^Hard news/ })).not.toBeChecked();
   }
-  await page.screenshot({ path: `/private/tmp/reporter-news-content-dialog-${width}-${format}.png`, fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: testInfo.outputPath(`news-content-dialog-${width}-${format}.png`), fullPage: true, animations: 'disabled' });
   await expectNoHorizontalOverflow(page);
   await dialog.getByRole('button', { name: 'Gerar conteúdo', exact: true }).click();
   await page.waitForURL(/\/productions\/[^/]+\/article$/);
