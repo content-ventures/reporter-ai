@@ -54,6 +54,7 @@ import type { WritingTrace } from '../domain/writing-orchestration.ts';
 import { effectiveWritingMinimumQuotes } from '../domain/writing-orchestration.ts';
 import { writingSourceCandidates, type WritingSourceCandidate } from '../domain/writing-source.ts';
 import { writingExecutionDate, writingTemporalContext } from '../domain/writing-context.ts';
+import { prepareNewsPublications } from './news-publications.ts';
 import {contentHash} from '../domain/text/hash.ts';
 import { writingArticleChecks, writingArticleLimits } from '../domain/writing-checks.ts';
 import { interruptWritingTraces, nextWritingExecutionAttempt, writingTraceForExecution, writingTraceUsage } from '../domain/writing-execution.ts';
@@ -75,11 +76,12 @@ export function editorialWorkerScopes(runId: string, productionId: string) {
 }
 
 /** Claim and renew under a DB transaction; a stale worker cannot commit a result. */
-export async function runEditorialJob(owner: string, signal: AbortSignal): Promise<boolean> {
-  return withWorkspaceWork('editorial',owner,signal, scoped => runScoped(owner, scoped));
+export async function runEditorialJob(owner: string, signal: AbortSignal,
+  services: { preparePublications?: typeof prepareNewsPublications } = {}): Promise<boolean> {
+  return withWorkspaceWork('editorial',owner,signal, scoped => runScoped(owner, scoped, services));
 }
 
-async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
+async function runScoped(owner: string, signal: AbortSignal, services: { preparePublications?: typeof prepareNewsPublications }): Promise<boolean> {
   // The claim leases one run in SQL (SKIP LOCKED); afterwards only its production is loaded.
   const claim = await transaction('worker', async client => (await client.query('SELECT public.reporter_ed_claim($1,$2) AS claim',
     [owner,60000])).rows[0].claim as { runId: string; productionId: string; attempts: number; lease: { fence: string } } | null);
@@ -215,8 +217,14 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       logEvent('worker','editorial_completed',{ generation_id: job.meta.runId });
       return true;
     }
+    const directory = await workDirectory(job.meta.runId);
+    const evidenceContext = { runId: job.meta.runId, workspaceId: input.record.production.workspaceId, actorId: input.record.production.createdBy };
+    const publications = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
+      ? await (services.preparePublications ?? prepareNewsPublications)(input.record.sources, evidenceContext, { signal: combined, directory,
+        legacyNews: input.record.production.brief.angle?.startsWith('Hard news: apure a notícia ') })
+      : { sources: [], candidates: [], dates: new Map<string, string>() };
     const candidates: WritingSourceCandidate[] = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
-      ? writingSourceCandidates(input.record.sources) : editorialCandidates(input.record);
+      ? [...writingSourceCandidates(input.record.sources), ...publications.candidates] : editorialCandidates(input.record);
     // Curated citations and quotable lines reach a step only when its prompt explains them.
     const curated = curatedEvidence(input.citations,input.record.sources,candidates);
     const hints = explainedHints(pipeline.definition);
@@ -228,7 +236,6 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
       const candidate = byKey.get(key); if (!candidate) throw new FlowError('UNKNOWN_EVIDENCE',502);
       return candidate.ref;
     });
-    const directory = await workDirectory(job.meta.runId);
     const previousDirectory = job.cacheSourceRunId ? await workDirectory(job.cacheSourceRunId) : undefined;
     const factsDirectory = await sourcePreparationDirectory();
     const minimumQuotes = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
@@ -248,8 +255,8 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
     if (job.kind === 'article.draft' && pipeline.definition.writing?.enabled) {
       await guarded([{ type: 'step.completed', stepId: 'source', meta: `${candidates.length} trechos originais disponíveis` }]);
       const completed = new Set<string>();
-      const originalSources = input.record.sources.filter(source => !source.research);
-      const evidenceContext = { runId: job.meta.runId, workspaceId: input.record.production.workspaceId, actorId: input.record.production.createdBy };
+      const originalSources = [...input.record.sources.filter(source => !source.research).map(source => publications.dates.has(source.id)
+        ? { ...source, publishedOn: publications.dates.get(source.id)! } : source), ...publications.sources];
       const written = await runWritingOrchestration({
         configuration: pipeline.definition.writing, policy: pipeline.definition.editorial,
         source: candidates.map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}),
@@ -301,7 +308,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
         if (!completed.has(stepId)) events.push({ type: 'step.skipped', stepId });
       }
       events.push({ type: 'run.completed' });
-      await guarded(events, undefined, { assets: [], queueImages: false, researchSources: external.sources,
+      await guarded(events, undefined, { assets: [], queueImages: false, researchSources: [...publications.sources, ...external.sources],
         citations: citationsFromArticle(body, finalSources, job.meta.productionId, new Date().toISOString()) });
       logEvent('worker', 'editorial_completed', { generation_id: job.meta.runId });
       return true;
@@ -546,7 +553,7 @@ async function runScoped(owner: string, signal: AbortSignal): Promise<boolean> {
             : code === 'UNGROUNDED_FACT' ? 'O texto usaria um número ou nome que não está no material. Gere de novo ou complete o material e os falantes.'
             : code in ARTICLE_POLICY_MESSAGES ? articlePolicyMessage(code as ArticlePolicyIssue,articleContractFor(engine.records.record(job.meta.productionId)?.production.brief ?? {}))
             : code === 'ARTICLE_PART_SIZE_EXCEEDED' ? 'Uma parte do artigo excedeu seu orçamento. Ajuste a distribuição de evidências ou o prompt, sem cortar frases.'
-            : 'O provedor não concluiu um resultado válido. Código: '+code),retryable: true };
+            : 'O provedor não concluiu um resultado válido. Código: '+code),retryable: code !== 'WRITING_NEEDS_REPORTING' };
           appendEditorialEvent(engine,current,{ type: 'step.failed',stepId: lastStepId,error });
           appendEditorialEvent(engine,current,{ type: 'run.failed',error });
         }

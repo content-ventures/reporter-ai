@@ -72,10 +72,12 @@ export type Source = {
   memory?: MemorySourceBinding[];
   /** Calendar date of the interview/event (YYYY-MM-DD), when informed. */
   recordedOn?: string;
+  /** Verified publication calendar day of a news source; never the date of its events. */
+  publishedOn?: string;
   programName?: string;
   sourceUrl?: string;
   /** Immutable web context collected for a writing run; never an original interview. */
-  research?: { provider: 'tavily'; runId: string; query: string; retrievedAt: IsoDateTime; publishedOn: string | null };
+  research?: { provider: 'tavily' | 'publisher'; runId: string; query: string; retrievedAt: IsoDateTime; publishedOn: string | null; originalSourceId?: string };
   location?: string;
   fileName?: string;
   /** Uploaded original and provider transcript in the local database. */

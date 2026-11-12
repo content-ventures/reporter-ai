@@ -67,6 +67,7 @@ function temporalContextItem(trace: WritingTrace): AccordionItem {
     {context && (context.sources.length ? context.sources.map(source => <DescriptionList key={source.sourceId} items={[
       { label: 'Conteúdo de origem', value: source.title || source.sourceId },
       { label: 'Identificador da fonte', value: source.sourceId },
+      ...(source.publishedOn ? [{ label: 'Data de publicação na fonte', value: calendarDate(source.publishedOn) }] : []),
       { label: 'Data informada no conteúdo', value: source.recordedOn ? calendarDate(source.recordedOn) : 'Não informada.' },
     ]} />) : <Prose variant="compact" measure="wide">Nenhuma fonte foi registrada no contexto temporal.</Prose>)}
   </PageStack> };

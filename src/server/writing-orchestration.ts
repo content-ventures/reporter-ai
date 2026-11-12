@@ -298,7 +298,8 @@ export async function runWritingOrchestration(input: WritingRunInput): Promise<{
     }
   }
   const plan = await call('plan', 1, {}) as WritingPlan;
-  if (plan.decision === 'needs_reporting') fail('WRITING_NEEDS_REPORTING', 'O planejamento identificou falta de apuração. Confira os problemas registrados antes de gerar novamente.');
+  if (plan.decision === 'needs_reporting') fail('WRITING_NEEDS_REPORTING',
+    `O planejamento precisa de apuração: ${plan.issues.slice(0, 2).join(' ').slice(0, 1800)}`);
   if (researchSettings.enabled) {
     research = await runWritingResearch({ settings: researchSettings, plan: plan.research!, policy: input.policy,
       directory: input.directory, signal, trace: input.trace, search: input.search });

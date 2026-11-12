@@ -32,3 +32,10 @@ test('execution date follows the newsroom calendar across UTC midnight', () => {
   assert.equal(writingExecutionDate(new Date('2026-10-21T01:30:00Z')), '2026-10-20');
   assert.equal(writingExecutionDate(new Date('2026-10-21T03:00:00Z')), '2026-10-21');
 });
+
+test('a publisher date is retained independently of an unknown interview or event date', () => {
+  const context = writingTemporalContext([{ id: 'news', title: 'Notícia', publishedOn: '2026-11-11', sourceUrl: 'https://publisher.example/news' }], '2026-11-12');
+  assert.equal(context.sources[0].recordedOn, null);
+  assert.equal(context.sources[0].publishedOn, '2026-11-11');
+  assert.deepEqual(readWritingTemporalContext({ temporalContext: context }), context);
+});

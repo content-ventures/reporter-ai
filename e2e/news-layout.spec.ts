@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { emptyEditorialCheckpoint } from '../src/runtime/editorial-engine.ts';
+import { randomUUID } from 'node:crypto';
+import { createEditorialEngine, emptyEditorialCheckpoint, appendEditorialEvent } from '../src/runtime/editorial-engine.ts';
+import type { EditorialJob } from '../src/ports/connected-workspace.ts';
 import { defaultPipelineDefinition, pipelineRevision } from '../src/domain/pipeline.ts';
 import type { NewsSearchView, NewsSearchWrite } from '../src/domain/news-search.ts';
 import type { NewsFeed, NewsItem } from '../src/domain/hard-news.ts';
@@ -488,7 +490,7 @@ test('Hard News preserves the server refusal reason in a single notice', async (
   expect(errors).toEqual([]);
 });
 
-test('connected news bundles reach the server in an R1 build', async ({ page }) => {
+test('connected news selection preserves a refused creation for retry', async ({ page }) => {
   const { items } = await mockDesk(page, 2);
   for (const item of items) item.status = 'selected';
   const checkpoint = emptyEditorialCheckpoint();
@@ -506,13 +508,96 @@ test('connected news bundles reach the server in an R1 build', async ({ page }) 
   const errors = watchErrors(page);
   await page.goto('/news');
   await page.getByRole('tab', { name: /^Decididas/ }).click();
-  await page.getByRole('button', { name: 'Selecionar notícias', exact: true }).click();
-  for (const item of items) await page.getByRole('checkbox', { name: `Incluir “${item.title}” no artigo`, exact: true }).check();
-  await page.getByRole('button', { name: 'Criar artigo · 2', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Reunir notícias em um artigo', exact: true });
-  await dialog.getByRole('textbox', { name: 'Ângulo editorial', exact: true }).fill('Comparar os dados das duas fontes.');
-  await dialog.getByRole('button', { name: 'Criar artigo', exact: true }).click();
+  for (const item of items) await page.getByTestId(`news-card-${item.id}`).click();
+  await page.getByRole('button', { name: 'Criar conteúdo · 2', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Criar conteúdo com notícias', exact: true });
+  await dialog.getByRole('textbox', { name: 'Recorte editorial', exact: true }).fill('Comparar os dados das duas fontes.');
+  await dialog.getByRole('button', { name: 'Gerar conteúdo', exact: true }).click();
   await expect.poll(() => attempts).toBe(1);
   await expect(page.getByText('Recusa de teste do servidor.', { exact: true })).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Gerar conteúdo', exact: true })).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+for (const [width, count, format, refuseStart] of [[1440, 2, 'note', false], [390, 1, 'note', false], [1440, 1, 'carousel', false], [390, 1, 'article', true]] as const) test(`selected news creates ${format} at ${width}px${refuseStart ? ' and preserves a refused start' : ''}`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const { items } = await mockDesk(page, 2);
+  for (const item of items) item.status = 'selected';
+  const checkpoint = emptyEditorialCheckpoint();
+  const engine = createEditorialEngine(checkpoint, { next: () => randomUUID() });
+  let revision = 0, creates = 0, starts = 0;
+  await page.route('**/api/reporter/citations?**', route => route.fulfill({ json: { items: [], sources: [] } }));
+  await page.route('**/api/reporter/workspace', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { state: engine.store.state, jobs: checkpoint.jobs, revision, model: 'openai/gpt-4.1', workerOnline: true } });
+    const { method, args } = route.request().postDataJSON();
+    if (method === 'createFromSource') {
+      creates++;
+      if (format === 'note') expect(args[0].brief).toMatchObject({ format: 'note', formatSize: 'standard', sections: 1 });
+      else { expect(args[0].brief.format).toBeUndefined(); expect(args[0].plan).toEqual(format === 'carousel' ? ['article', 'carousel'] : ['article']); }
+      expect(count === 1 ? args[0].newsItemId : args[0].newsItemIds).toEqual(count === 1 ? FIRST : [FIRST, SECOND]);
+      const result = await engine.commands.createFromSource(args[0]);
+      revision++;
+      return route.fulfill({ json: result });
+    }
+    expect(method).toBe('generation.start'); starts++;
+    expect(args[0]).toBe('article.draft');
+    if (refuseStart) return route.fulfill({ json: { ok: false, refusal: { code: 'provider_unavailable', message: 'Worker indisponível no ensaio.' } } });
+    const model = { alias: 'openai/gpt-4.1', label: 'Provedor de teste', engine: 'provider' as const };
+    const prompt = { key: 'test', version: '1', hash: 'test' };
+    const started = engine.runs.begin({ productionId: args[1].productionId, kind: 'article.generate', model, prompt, steps: [] });
+    expect(started.ok).toBe(true); if (!started.ok) return;
+    const run = started.value.run;
+    const job: EditorialJob = { meta: { runId: run.id, productionId: args[1].productionId, pieceId: args[1].pieceId, label: 'Gerar nota', request: { kind: 'article.draft', input: args[1] } },
+      kind: 'article.draft', input: args[1], events: [], attempts: 0, availableAt: Date.now() };
+    checkpoint.jobs[run.id] = job;
+    appendEditorialEvent(engine, job, { type: 'run.started', productionId: job.meta.productionId, pieceId: job.meta.pieceId, kind: run.kind, prompt, model, inputs: run.inputs, steps: [], createdBy: engine.store.state.sessionPersonId });
+    appendEditorialEvent(engine, job, { type: 'outline', title: 'Nota das notícias selecionadas', sections: [] });
+    appendEditorialEvent(engine, job, { type: 'block.started', block: { id: 'note', type: 'paragraph' } });
+    appendEditorialEvent(engine, job, { type: 'block.completed', block: { id: 'note', type: 'paragraph', inlines: [{ text: 'Conteúdo gerado a partir das notícias selecionadas.' }], ai: 'unreviewed' } });
+    appendEditorialEvent(engine, job, { type: 'run.completed' });
+    revision++;
+    return route.fulfill({ json: { ok: true, value: { runId: run.id } } });
+  });
+  const errors = watchErrors(page);
+  await page.goto('/news');
+  await page.getByRole('tab', { name: /^Decididas/ }).click();
+  const create = page.getByRole('button', { name: /^Criar conteúdo/ });
+  await expect(create).toHaveAttribute('data-variant', 'secondary');
+  await expect(create).toBeDisabled();
+  const first = page.getByTestId(`news-card-${FIRST}`);
+  await expect(first).toHaveAttribute('role', 'checkbox');
+  await first.focus(); await page.keyboard.press('Space');
+  await expect(first).toBeChecked();
+  await expect(create).toHaveAttribute('data-variant', 'primary');
+  await page.keyboard.press('Space');
+  await expect(create).toBeDisabled();
+  await first.click();
+  if (count === 2) await page.getByTestId(`news-card-${SECOND}`).click();
+  await expect(create).toHaveText(`Criar conteúdo · ${count}`);
+  await page.getByRole('button', { name: `Abrir notícia: ${FIRST_TITLE}`, exact: true }).click();
+  await expect(page.getByRole('heading', { level: 2, name: FIRST_TITLE, exact: true })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Trilha de navegação', exact: true }).getByRole('link', { name: 'Notícias', exact: true }).click();
+  await expect(first).toBeChecked();
+  await expect(create).toHaveText(`Criar conteúdo · ${count}`);
+  await page.screenshot({ path: `/private/tmp/reporter-news-content-${width}-${format}.png`, fullPage: true, animations: 'disabled' });
+  await create.click();
+  const dialog = page.getByRole('dialog', { name: 'Criar conteúdo com notícias', exact: true });
+  await expect(dialog.getByRole('radio', { name: /^Hard news/ })).toBeChecked();
+  if (format !== 'article') {
+    await dialog.getByRole('radio', { name: format === 'note' ? /Nota curta/ : /^Carrossel/ }).check();
+    await expect(dialog.getByRole('radio', { name: /^Hard news/ })).not.toBeChecked();
+  }
+  await page.screenshot({ path: `/private/tmp/reporter-news-content-dialog-${width}-${format}.png`, fullPage: true, animations: 'disabled' });
+  await expectNoHorizontalOverflow(page);
+  await dialog.getByRole('button', { name: 'Gerar conteúdo', exact: true }).click();
+  await page.waitForURL(/\/productions\/[^/]+\/article$/);
+  if (refuseStart) {
+    await expect(page.getByText('Conteúdo criado, mas a geração não iniciou', { exact: true })).toBeVisible();
+    await expect(page.getByText('Worker indisponível no ensaio.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Conteúdo em produção', { exact: true })).toHaveCount(0);
+  } else await expect(page.getByText('Conteúdo gerado a partir das notícias selecionadas.', { exact: true })).toBeVisible();
+  expect({ creates, starts }).toEqual({ creates: 1, starts: 1 });
+  await expectNoHorizontalOverflow(page);
   expect(errors).toEqual([]);
 });
