@@ -3,6 +3,26 @@ import { test } from 'node:test';
 import { defaultEditorialPolicy } from './editorial-policy.ts';
 import { composeWritingPrompt, defaultWritingOrchestration, defaultWritingReviewCriteria, effectiveWritingMinimumQuotes, effectiveWritingReviewCriteria, writingOutputSchema, WRITING_COMPILER_VERSION, WRITING_EDITORIAL_CHECK_KEYS, WRITING_INVARIANTS, WRITING_SCHEMAS, WRITING_STAGES } from './writing-orchestration.ts';
 import { defaultWritingResearch, effectiveWritingResearch } from './writing-research.ts';
+import type { WritingArticle } from './writing-orchestration.ts';
+
+test('reviews receive canonical body counts without title, dek or source identifiers', () => {
+  const article: WritingArticle = { title: 'Um título que não entra na contagem', dek: 'Nem esta linha fina.', titleEvidenceIds: ['a'], dekEvidenceIds: [], blocks: [
+    { id: 'h', type: 'heading', level: 2, text: 'Apuração', items: [], evidenceIds: ['a'] },
+    { id: 'p', type: 'paragraph', level: 2, text: 'Cafe\u0301 d’água, em 7,5 milhões.', items: [], evidenceIds: ['long-source-identifier'] },
+    { id: 'q', type: 'quote', level: 2, text: 'A ressalva foi preservada.', items: [], evidenceIds: ['a'] },
+    { id: 'l', type: 'list', level: 2, text: '', items: ['Primeiro item.', 'Segundo item.'], evidenceIds: ['a'] },
+  ] };
+  const input = { source: [], brief: { limits: { minChars: 50, maxChars: 4000 } }, article };
+  const before = structuredClone(input), configuration = defaultWritingOrchestration();
+  const prompt = composeWritingPrompt(configuration, undefined, 'review', input);
+  const data = JSON.parse(prompt.user.slice(prompt.user.indexOf('\n') + 1));
+  assert.deepEqual(data.bodyMetrics, { characters: 89, words: 15 });
+  assert.deepEqual(data.article, article);
+  assert.match(prompt.system, /não estime nem refaça a contagem/);
+  assert.deepEqual(input, before);
+  const planning = composeWritingPrompt(configuration, undefined, 'plan', { source: [], brief: {} });
+  assert.equal('bodyMetrics' in JSON.parse(planning.user.slice(planning.user.indexOf('\n') + 1)), false);
+});
 
 test('editorial orchestration starts opt-in and each stage has an independent editable configuration', () => {
   const configuration = defaultWritingOrchestration();
