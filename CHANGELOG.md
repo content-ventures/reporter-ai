@@ -4,6 +4,24 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-12
+
+### Maintenance
+
+- Add ci helper.
+- Add ci helper.
+- Restore.
+- Cleanup.
+- Keep screenshots in portable test artifacts.
+
+### Added
+
+- Streamline content creation from selected stories.
+
+### Fixed
+
+- Provide canonical body counts to reviewers.
+
 ## [1.7.2] - 2026-11-11
 
 ### Maintenance

@@ -1,7 +1,45 @@
 {
-  "currentVersion": "1.7.2",
+  "currentVersion": "1.8.0",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.8.0",
+      "roadmapRelease": "R1",
+      "date": "2026-11-12",
+      "title": "R1 feature release",
+      "summary": "Automatic feature release with 7 validated changes: keep screenshots in portable test artifacts; provide canonical body counts to reviewers; streamline content creation from selected stories.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Maintenance",
+          "description": "Add ci helper"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Add ci helper"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Restore"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cleanup"
+        },
+        {
+          "type": "Added",
+          "description": "Streamline content creation from selected stories"
+        },
+        {
+          "type": "Fixed",
+          "description": "Provide canonical body counts to reviewers"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Keep screenshots in portable test artifacts"
+        }
+      ]
+    },
     {
       "version": "1.7.2",
       "roadmapRelease": "R1",
