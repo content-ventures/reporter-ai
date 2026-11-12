@@ -3,13 +3,15 @@ import type { Source } from './source.ts';
 export type WritingTemporalContext = {
   /** Execution calendar day in the newsroom timezone; not a publication or interview date. */
   executionDate: string;
-  sources: { sourceId: string; title: string; recordedOn: string | null }[];
+  sources: { sourceId: string; title: string; recordedOn: string | null; publishedOn?: string; sourceUrl?: string }[];
 };
 
 /** Capture only supplied source dates. Upload/version timestamps do not date a declaration. */
-export function writingTemporalContext(sources: readonly Pick<Source, 'id' | 'title' | 'recordedOn'>[], executionDate: string): WritingTemporalContext {
+export function writingTemporalContext(sources: readonly Pick<Source, 'id' | 'title' | 'recordedOn' | 'publishedOn' | 'sourceUrl'>[], executionDate: string): WritingTemporalContext {
   return { executionDate, sources: sources.map(source => ({
     sourceId: source.id, title: source.title, recordedOn: source.recordedOn?.trim() ? source.recordedOn : null,
+    ...(source.publishedOn ? { publishedOn: source.publishedOn } : {}),
+    ...(source.sourceUrl ? { sourceUrl: source.sourceUrl } : {}),
   })) };
 }
 
@@ -32,7 +34,11 @@ export function readWritingTemporalContext(brief: unknown): WritingTemporalConte
   for (const source of context.sources) {
     if (!record(source) || typeof source.sourceId !== 'string' || !source.sourceId.trim() || typeof source.title !== 'string'
       || (source.recordedOn !== null && typeof source.recordedOn !== 'string')) return undefined;
-    sources.push({ sourceId: source.sourceId, title: source.title, recordedOn: source.recordedOn?.trim() ? source.recordedOn : null });
+    if (source.publishedOn !== undefined && typeof source.publishedOn !== 'string'
+      || source.sourceUrl !== undefined && typeof source.sourceUrl !== 'string') return undefined;
+    sources.push({ sourceId: source.sourceId, title: source.title, recordedOn: source.recordedOn?.trim() ? source.recordedOn : null,
+      ...(typeof source.publishedOn === 'string' ? { publishedOn: source.publishedOn } : {}),
+      ...(typeof source.sourceUrl === 'string' ? { sourceUrl: source.sourceUrl } : {}) });
   }
   return { executionDate: context.executionDate, sources };
 }

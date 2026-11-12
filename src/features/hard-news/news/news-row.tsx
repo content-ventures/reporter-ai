@@ -3,7 +3,7 @@
 import { Fragment, type ReactNode } from 'react';
 import { Badge, BrandMark, IconButton, ListItem, Menu } from '@content-ventures/design-system/v3';
 import type { MenuSection } from '@content-ventures/design-system/v3';
-import { Clock, Ellipsis, Undo2, X } from '@content-ventures/design-system/v3/icons';
+import { Clock, Ellipsis, Eye, Undo2, X } from '@content-ventures/design-system/v3/icons';
 import type { LucideIcon } from '@content-ventures/design-system/v3/icons';
 import { DISCARD_REASONS, priorityOf } from '@/domain/hard-news';
 import type { NewsItem } from '@/domain/hard-news';
@@ -32,12 +32,13 @@ export function spreadBadge(item: NewsItem): ReactNode {
  * own at the end of the row.
  * Every row leads with the same mark, so the headlines start on one line and read as a column.
  */
-export function NewsRow({ item, rating, now, onSelect, actions, compact = false, fresh = false }: {
+export function NewsRow({ item, rating, now, onSelect, actions, selection, compact = false, fresh = false }: {
   item: NewsItem;
   rating?: SourceRating;
   now: number;
   onSelect: (id: string) => void;
   actions?: ReactNode;
+  selection?: { checked: boolean; onChange: (checked: boolean) => void };
   /** Phone: the time joins the facts line, so a row keeps two lines of text under the headline. */
   compact?: boolean;
   /** Arrived since the last look, outside the "Novas" group that already says so. */
@@ -63,8 +64,13 @@ export function NewsRow({ item, rating, now, onSelect, actions, compact = false,
         decision,
       ])}
       meta={compact ? undefined : when}
-      onClick={() => onSelect(item.id)}
-      actions={actions}
+      checkbox={Boolean(selection)}
+      selected={selection?.checked}
+      onClick={() => selection ? selection.onChange(!selection.checked) : onSelect(item.id)}
+      actions={<>
+        {selection ? <IconButton icon={Eye} label={`Abrir notícia: ${item.title}`} variant="ghost" size="sm" onClick={() => onSelect(item.id)} /> : null}
+        {actions}
+      </>}
     />
   );
 }

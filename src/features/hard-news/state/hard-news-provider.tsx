@@ -44,6 +44,8 @@ import {STORAGE_KEY} from './hard-news-state';
 import type { HardNewsState } from './hard-news-state';
 import { createLiveNewsStore } from './live-news';
 import type { LiveNews } from './live-news';
+import { newsContentBrief } from '../news/news-content';
+import type { NewsContentSettings } from '../news/news-content';
 
 /** One step of "Escrever artigo", as the writing trace shows it. */
 export type WritingStep = { id: string; label: string; detail?: string };
@@ -67,7 +69,7 @@ export type HardNewsActions = {
   decideNews(id: string, input: NewsDecisionInput): Promise<{ ok: true } | { ok: false; message: string }>;
   retryTranslation(id: string): Promise<{ ok: true } | { ok: false; message: string }>;
   cover(newsId: string): Promise<string | undefined>;
-  coverMany(newsIds: readonly string[], title: string, angle: string): Promise<string | undefined>;
+  coverMany(newsIds: readonly string[], title: string, angle: string, settings?: NewsContentSettings): Promise<{ productionId: string; generationStarted: boolean } | undefined>;
   postpone(newsId: string, hours: number): void;
   discard(newsId: string, reason: string): void;
   restore(newsId: string): void;
@@ -406,7 +408,7 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
         const created = await commands.production.createFromSource({
           newsItemId: newsId,
           title: item.title,
-          material: { text: materialText, title: item.title, origin: 'other', sourceUrl: item.url, authorized: true },
+          material: { text: materialText, title: item.title, kind: 'news', format: 'plain', origin: 'other', sourceUrl: item.url, authorized: true },
           brief: { size: 'standard', sections: 3, angle: `Hard news: apure a notícia “${item.title}” a partir da fonte original e de evidências verificáveis.` },
           plan: ['article'],
         });
@@ -450,9 +452,9 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
       research(opened.productionId);
       return opened.productionId;
     },
-    async coverMany(newsIds, title, angle) {
+    async coverMany(newsIds, title, angle, settings = {}) {
       const ids = [...new Set(newsIds)];
-      if (!newsPort || !liveStore || ids.length < 2 || !title.trim() || !angle.trim()) return undefined;
+      if (!newsPort || !liveStore || !ids.length || !title.trim()) return undefined;
       let selected = ids.map(id => liveStore.get().news.find(item => item.id === id));
       if (selected.some(item => !item || item.status !== 'selected')) {
         toast('Atualize a seleção', { tone: 'error', description: 'Só é possível reunir notícias selecionadas para redação.' });
@@ -483,14 +485,13 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
         toast('Uma das notícias não tem texto para apurar', { tone: 'error' });
         return undefined;
       }
-      const briefAngle = `Síntese de ${items.length} notícias distintas. Preserve atribuições, datas e números por fonte e explicite divergências. Ângulo editorial: ${angle.trim()}`;
       const created = await commands.production.createFromSource({
-        newsItemIds: ids,
+        ...(ids.length === 1 ? { newsItemId: ids[0] } : { newsItemIds: ids }),
         title: title.trim(),
         material: materials[0],
         additionalMaterials: materials.slice(1),
-        brief: { size: 'standard', sections: 3, angle: briefAngle },
-        plan: ['article'],
+        brief: newsContentBrief(settings, angle, items.length),
+        plan: settings.format === 'carousel' ? ['article', 'carousel'] : ['article'],
       });
       if (!created.ok) {
         toast('Não foi possível abrir o artigo', { tone: 'error', description: created.refusal.message });
@@ -498,12 +499,12 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
       }
       if (created.value.reusedNewsLink) {
         await liveStore.refresh();
-        return created.value.productionId;
+        return { productionId: created.value.productionId, generationStarted: false };
       }
       const article = created.value.pieces.find(piece => piece.kind === 'article');
       if (!article) {
         await liveStore.refresh();
-        return created.value.productionId;
+        return { productionId: created.value.productionId, generationStarted: false };
       }
       const now = new Date().toISOString();
       const sources: ResearchSource[] = items.flatMap(item => [{
@@ -520,8 +521,8 @@ function BoundHardNewsProvider({children,demo,storageKey,example}:{children:Reac
       update(current => ({ ...current, dossiers: { ...current.dossiers, [created.value.productionId]: dossier } }));
       const generated = await commands.generation.start('article.draft', { productionId: created.value.productionId, pieceId: article.pieceId });
       await liveStore.refresh();
-      if (!generated.ok) toast('O artigo foi aberto', { tone: 'info', description: 'A geração não iniciou automaticamente. Abra o artigo para tentar de novo.' });
-      return created.value.productionId;
+      if (!generated.ok) toast('Conteúdo criado, mas a geração não iniciou', { tone: 'error', description: generated.refusal.message });
+      return { productionId: created.value.productionId, generationStarted: generated.ok };
     },
     postpone(newsId, hours) {
       patchNews(newsId, { status: 'later', decidedBy: actorRef.current, decidedAt: new Date().toISOString(), laterUntil: new Date(Date.now() + hours * 3_600_000).toISOString() });
