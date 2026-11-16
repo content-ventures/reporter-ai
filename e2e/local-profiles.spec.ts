@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { createEditorialEngine, emptyEditorialCheckpoint, selectEditorialLocalRole } from '../src/runtime/editorial-engine.ts';
+import { defaultPipelineDefinition, pipelineRevision } from '../src/domain/pipeline.ts';
 import { VIEWPORTS, expectNoHorizontalOverflow, watchErrors } from './support';
 
 async function replay(page: Page, options: { ordinary?: boolean; refuse?: boolean } = {}) {
@@ -10,6 +11,9 @@ async function replay(page: Page, options: { ordinary?: boolean; refuse?: boolea
   let revision = 0;
   const selected: string[] = [], authRequests: string[] = [];
   page.on('request', request => { if (/\/api\/auth\//.test(request.url())) authRequests.push(request.url()); });
+  await page.route('**/api/reporter/pipeline', route => route.fulfill({ json: {
+    active: pipelineRevision(defaultPipelineDefinition()), history: [], runs: [],
+  } }));
   await page.route('**/api/reporter/material/analysis', route => route.fulfill({ json: { title: 'Material sintético', participants: [], pipelineRevision: 1 } }));
   await page.route('**/api/reporter/workspace', async route => {
     if (route.request().method() === 'GET') {
@@ -55,7 +59,8 @@ for (const viewport of VIEWPORTS) {
         await material.fill('Material sintético mantido durante a troca de perfil.');
         await openMenu(page, mobile);
         await accountMenu(page);
-        const choices = page.getByRole('menuitemradio');
+        const choices = page.getByRole('menuitemradio', { name: /^(Editor|Aprovador|Admin)$/ });
+        await expect(page.getByRole('menuitemradio', { name: /^Usar tema / })).toHaveText(['Usar tema claro', 'Usar tema escuro', 'Usar tema do sistema']);
         await expect(choices).toHaveText(['Editor', 'Aprovador', 'Admin']);
         await expect(page.getByRole('menuitemradio', { name: 'Admin', exact: true })).toHaveAttribute('aria-checked', 'true');
         await page.getByRole('menuitemradio', { name: 'Editor', exact: true }).focus();
@@ -98,7 +103,8 @@ for (const viewport of VIEWPORTS) {
         await openMenu(page, viewport.width < 768);
         await expect(page.getByRole('button', { name: /Operador local.*Menu da conta/ })).toBeVisible();
         await accountMenu(page);
-        await expect(page.getByRole('menuitemradio')).toHaveCount(0);
+        await expect(page.getByRole('menuitemradio', { name: /^(Editor|Aprovador|Admin)$/ })).toHaveCount(0);
+        await expect(page.getByRole('menuitemradio', { name: /^Usar tema / })).toHaveCount(3);
         await page.keyboard.press('Escape');
         await expectNoHorizontalOverflow(page);
       } finally { ordinary.engine.store.dispose(); }
