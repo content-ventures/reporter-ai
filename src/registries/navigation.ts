@@ -14,7 +14,7 @@ import type { ReleaseId } from './release.ts';
  * the trail use only released items (`navigationFor`, `activeNavItem`). Role filtering comes
  * first: nobody sees an item they will not have access to, not even as "Em breve".
  * `NAV_GROUPS` stays the product map (where an item belongs once its release ships; ⌘K keywords).
- * "Nova produção" is a primary action and a ⌘K command, never a menu item.
+ * "Nova produção" stays visible in the menu and as a primary action for editors.
  */
 
 export type NavGroupId = 'production' | 'intake' | 'library' | 'distribution' | 'settings' | 'administration' | 'utility';
@@ -103,6 +103,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     match: 'exact',
     features: ['F1.1', 'F1.3', 'F1.6'],
   },
+  { id: 'new-production', label: 'Nova produção', icon: 'Plus', href: '/productions/new',
+    group: 'production', since: 'R1', match: 'exact', features: ['F1.1'], roles: CAPABILITY_ROLES['production.create'] },
   {
     id: 'productions',
     label: 'Produções',
@@ -352,7 +354,7 @@ export const NAV_REDIRECTS: readonly NavRedirect[] = [{ from: '/versions', to: '
 /** `capability`: only a member who holds it sees the action (an approver never sees "Nova produção"). */
 export type PrimaryAction = { id: string; label: string; icon: IconKey; href: string; since: ReleaseId; capability: Capability };
 
-/** Primary actions live in PageHeader and ⌘K, not in the menu. */
+/** Primary actions also remain available in PageHeader and ⌘K. */
 export const PRIMARY_ACTIONS: readonly PrimaryAction[] = [
   { id: 'new-production', label: 'Nova produção', icon: 'Plus', href: '/productions/new', since: 'R1', capability: 'production.create' },
 ];

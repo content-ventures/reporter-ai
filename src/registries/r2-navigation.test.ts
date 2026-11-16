@@ -9,7 +9,7 @@ const preview = R2_NAVIGATION;
 test('the R1 build shows the Hard News demonstration in the R2 menu without releasing R2', () => {
   const sections = menuFor(undefined, { roles: ['admin'] }, preview);
   const of = (id: string) => sections.find((section) => section.group.id === id)?.items.map((item) => item.id);
-  assert.deepEqual(of('main'), ['overview', 'news', 'productions']);
+  assert.deepEqual(of('main'), ['overview', 'news', 'new-production', 'productions']);
   assert.deepEqual(of('library'), ['templates', 'images', 'quotes', 'archive']);
   assert.deepEqual(of('settings'), ['editorial-map', 'writing-guide', 'integrations']);
   assert.ok(sections.flatMap((section) => section.items).filter((item) => ['news', 'images', 'quotes', 'archive'].includes(item.id)).every((item) => !item.soon));

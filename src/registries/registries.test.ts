@@ -107,12 +107,12 @@ const EVERYONE = ['editor', 'approver', 'creative_reviewer', 'admin'] as const;
 
 // The menu's shape (released items, "Em breve", utilities; roles) is tested in `navigation.test.ts`.
 describe('navigation registry', () => {
-  test('R1 menu: 20 scoped items for an admin, including local prompts and planned later destinations', () => {
+  test('R1 menu: 21 scoped items for an admin, including local prompts and planned later destinations', () => {
     const items = menuFor(R1, { roles: ['editor', 'admin'] }).flatMap((section) => section.items);
-    assert.equal(items.length, 20);
+    assert.equal(items.length, 21);
     assert.deepEqual(
       items.filter((item) => !item.soon).map((item) => item.id),
-      ['overview', 'productions', 'templates', 'audit', 'prompts', 'whats-new'],
+      ['overview', 'new-production', 'productions', 'templates', 'audit', 'prompts', 'whats-new'],
     );
     assert.equal(menuFor(R1).at(-1)?.group.placement, 'utility');
     assert.equal(items.find((item) => item.id === 'whats-new')?.icon, 'Megaphone');
@@ -137,7 +137,7 @@ describe('navigation registry', () => {
 
   test('⌘K, the active item and the trail use only released items', () => {
     const released = navigationFor(R1, { roles: EVERYONE }).flatMap((section) => section.items.map((item) => item.id));
-    assert.deepEqual(released, ['overview', 'productions', 'templates', 'audit', 'prompts', 'whats-new']);
+    assert.deepEqual(released, ['overview', 'new-production', 'productions', 'templates', 'audit', 'prompts', 'whats-new']);
     for (const item of NAV_ITEMS.filter((entry) => !isReleased(entry.since, R1))) {
       assert.equal(activeNavItem(item.href), undefined, `${item.href} is not highlighted before ${item.since}`);
     }
@@ -156,8 +156,9 @@ describe('navigation registry', () => {
     }
   });
 
-  test('"Nova produção" is a primary action, never a menu item', () => {
-    assert.ok(!NAV_ITEMS.some((item) => item.label === 'Nova produção' || item.href === '/productions/new'));
+  test('"Nova produção" remains visible to editors in navigation and primary actions', () => {
+    assert.ok(menuFor(R1, { roles: ['editor'] }).some(section => section.items.some(item => item.id === 'new-production')));
+    assert.ok(!menuFor(R1, { roles: ['approver'] }).some(section => section.items.some(item => item.id === 'new-production')));
     assert.deepEqual(
       PRIMARY_ACTIONS.map((action) => [action.label, action.href]),
       [['Nova produção', '/productions/new']],

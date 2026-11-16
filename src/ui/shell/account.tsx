@@ -1,5 +1,6 @@
 'use client';
 
+import { useAppearance } from '../appearance';
 import { SidebarAccount, ThemeV3, useShell, type MenuSection } from '@content-ventures/design-system/v3';
 import {Building2,Settings, UserRound } from '@content-ventures/design-system/v3/icons';
 import { ACCOUNT_HREF } from '../routes';
@@ -16,6 +17,7 @@ import {useMemberView} from './member-view';
  * Neon Auth session here; the local profiles stay isolated from that flow.
  */
 export function ShellAccount() {
+  const appearance = useAppearance();
   const router = useRouter();
   const { closeNav } = useShell();
   const {view,busy,exit}=useMemberView();
@@ -57,6 +59,6 @@ export function ShellAccount() {
       detail={profile ? `Perfil de teste: ${profile.label}` : memberDetail(current)}
       sections={[{ items: [{ label: 'Meu perfil', icon: UserRound, onSelect: () => {
         if (requestLeave(ACCOUNT_HREF)) { closeNav(); router.push(ACCOUNT_HREF); }
-      } },...(current.roles.includes('admin')?[{label:'Administrar workspace',icon:Settings,onSelect:()=>{if(requestLeave('/admin/workspace')){closeNav();router.push('/admin/workspace');}}}]:[]),...(navigation?.administrative?[{label:'Plataforma',icon:Building2,onSelect:()=>{if(requestLeave('/platform')){closeNav();router.push('/platform');}}}]:[])] }, ...sections, ...localRoleMenu(session), ...cloudSections]} />
+      } },...(current.roles.includes('admin')?[{label:'Administrar workspace',icon:Settings,onSelect:()=>{if(requestLeave('/admin/workspace')){closeNav();router.push('/admin/workspace');}}}]:[]),...(navigation?.administrative?[{label:'Plataforma',icon:Building2,onSelect:()=>{if(requestLeave('/platform')){closeNav();router.push('/platform');}}}]:[])] }, ...sections, { label: 'Aparência', items: (['light','dark','system'] as const).map((mode, index) => ({ label: ['Usar tema claro','Usar tema escuro','Usar tema do sistema'][index], checked: appearance.mode === mode, onSelect: () => appearance.setMode(mode) })) }, ...localRoleMenu(session), ...cloudSections]} />
   </ThemeV3>;
 }
