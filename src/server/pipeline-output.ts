@@ -43,11 +43,11 @@ const outputs = {
   // Event formats plan the linha fina with the title (`dek`); the article's outline has none.
   outline: z.object({ title: z.string().min(1).max(500), dek: z.string().min(1).max(240).optional(), introIds: ids.max(4), sections: z.array(z.object({
     title: z.string().min(1).max(120), evidenceIds: ids.min(1).max(20),
-  }).strict()).min(1).max(8) }).strict(),
-  quotes: z.object({ introIds: ids.max(4), sectionIds: z.array(ids.min(1).max(20)).min(1).max(8) }).strict(),
+  }).strict()).min(1).max(20) }).strict(),
+  quotes: z.object({ introIds: ids.max(4), sectionIds: z.array(ids.min(1).max(20)).min(1).max(20) }).strict(),
   intro: z.object({ paragraphs: z.array(paragraph).min(1).max(3) }).strict(),
   section,
-  article: z.object({ title: z.string().min(1).max(500), intro: z.array(paragraph).min(1).max(3), sections: z.array(section).min(1).max(8) }).strict(),
+  article: z.object({ title: z.string().min(1).max(500), intro: z.array(paragraph).min(1).max(3), sections: z.array(section).min(1).max(20) }).strict(),
   carousel: z.object({ slides: z.record(z.string(), z.object({ slots: z.record(z.string(), z.string().max(2000)), sourceBlockIds: ids.min(1).max(20) }).strict()) }).strict(),
 };
 /** Enforce production-specific length contracts locally as well as in vendor grammars. */

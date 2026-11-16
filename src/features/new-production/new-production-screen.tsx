@@ -487,18 +487,22 @@ function NewProductionForm({ received, draftKey }: { received?: string; draftKey
       const saved = await commands.production.saveDraft(article.pieceId, importedArticle(draft.title, current, created.value.sourceId, draft.editorial), 0);
       if (!saved.ok) { setBusy(null); notifyRefusal('Texto não importado', saved.refusal); return; }
     } else {
-      let count = 1;
+      const productions = [created.value];
       for (const input of inputs.slice(1)) {
         const extra = await commands.production.createFromSource({ ...input, speakers: [], reuseSourceId: created.value.sourceId });
         if (!extra.ok) { notifyRefusal('Um desdobramento não foi criado', extra.refusal); break; }
-        count++;
+        productions.push(extra.value);
       }
-      if (inputs.length > 1) toast(`${count} de ${inputs.length} produções salvas`, { description: 'Abra cada pauta em Produções para revisar e redigir.' });
-      if (article) {
+      let startedCount = 0;
+      for (const production of productions) {
+        const piece = production.pieces.find(piece => piece.kind === 'article');
+        if (!piece) continue;
         const simulation = takeArmedSimulation('article.draft');
-        const started = await commands.generation.start('article.draft', { productionId: created.value.productionId, pieceId: article.pieceId }, simulation ? { simulation } : undefined);
+        const started = await commands.generation.start('article.draft', { productionId: production.productionId, pieceId: piece.pieceId }, simulation ? { simulation } : undefined);
         if (!started.ok) notifyRefusal('Produção salva; geração não iniciada', started.refusal);
+        else startedCount++;
       }
+      if (inputs.length > 1) toast(`${productions.length} de ${inputs.length} produções salvas`, { description: `${startedCount} gerações iniciadas. Acompanhe e revise cada texto em Produções.` });
     }
     try { sessionStorage.removeItem(draftKey); } catch {}
     departing.current = true;

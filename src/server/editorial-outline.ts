@@ -7,7 +7,7 @@ import { FlowError } from './errors';
 import { editorialResponseValid, outlineResponseSchema } from './editorial-validation';
 
 const proposalSchema = z.object({ title: z.string().min(1).max(500), dek: z.string().max(240).optional(), introIds: z.array(z.string()).max(4),
-  sections: z.array(z.object({ title: z.string().min(1).max(120), evidenceIds: z.array(z.string()).min(1).max(20) }).strict()).min(1).max(8) }).strict();
+  sections: z.array(z.object({ title: z.string().min(1).max(120), evidenceIds: z.array(z.string()).min(1).max(20) }).strict()).min(1).max(20) }).strict();
 
 /** Automatic planning uses the same prompts and literal-evidence guards as a reviewed outline. */
 export async function planEditorialOutline({ sections: count, candidates, variables, curateQuotes, call, normalize, dek = false }: {
