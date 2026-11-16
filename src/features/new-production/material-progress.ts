@@ -39,11 +39,12 @@ export function materialProgress(draft: NewProductionDraft, analysis: MaterialAn
   const fileRead = file ?? draft.parts.map((part) => reads[part.id]).find(Boolean) ?? null;
   const read = draft.mode === 'file' ? fileRead : draft.mode === 'link' ? link : null;
   if (!read && analysis.status === 'idle') return null;
+  const linkProvider = draft.mode === 'link' ? parseSourceLink(draft.sourceUrl ?? '')?.provider : undefined;
   const name = draft.mode === 'file' ? fileRead?.name ?? draft.parts[0]?.name ?? 'Arquivo'
-    : draft.mode === 'link' ? (parseSourceLink(draft.sourceUrl ?? '')?.provider === 'youtube' ? 'Vídeo do YouTube' : 'Episódio do Spotify') : 'Texto colado';
+    : draft.mode === 'link' ? (linkProvider === 'youtube' ? 'Vídeo do YouTube' : linkProvider === 'spotify' ? 'Episódio do Spotify' : 'Página da web') : 'Texto colado';
   const size = draft.mode === 'file' ? fileRead?.size ?? draft.parts[0]?.size : undefined;
   const audio = draft.mode === 'file' ? mediaOf(name) !== undefined
-    : draft.mode === 'link' && parseSourceLink(draft.sourceUrl ?? '')?.provider === 'spotify';
+    : linkProvider === 'spotify';
   const phase = read ? (read.phase === 'ready' ? 'analysis' : read.phase) : 'analysis';
   const failed = read?.status === 'error' || !read && analysis.status === 'error';
   const error = read?.status === 'error' ? read.message : !read && analysis.status === 'error' ? analysis.message ?? 'Tente analisar o material novamente.' : undefined;

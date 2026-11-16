@@ -31,7 +31,7 @@ export function useLinkReader(onLoaded: (value: ImportedLink) => void) {
     last.current = url;
     controller.current?.abort();
     controller.current = new AbortController();
-    setState({ status: 'reading',name: url,phase: 'locating',message: 'Localizando episódio' });
+    setState({ status: 'reading',name: url,phase: 'locating',message: 'Importando link' });
     void commands.ingest.readLink(url,{ signal: controller.current.signal,onStatus(progress) {
       if (token===run.current) setState({ status: 'reading',name: url,...progress });
     } }).then(result => {
