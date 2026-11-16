@@ -4,6 +4,13 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-11-16
+
+### Fixed
+
+- Preserve theme on reload and keep logos legible.
+- Save tables and clarify web intake feedback.
+
 ## [1.9.0] - 2026-11-16
 
 ### Maintenance

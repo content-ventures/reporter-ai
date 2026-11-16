@@ -1,7 +1,25 @@
 {
-  "currentVersion": "1.9.0",
+  "currentVersion": "1.9.1",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.9.1",
+      "roadmapRelease": "R1",
+      "date": "2026-11-16",
+      "title": "R1 maintenance release",
+      "summary": "Automatic maintenance release with 2 validated changes: save tables and clarify web intake feedback; preserve theme on reload and keep logos legible.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Fixed",
+          "description": "Preserve theme on reload and keep logos legible"
+        },
+        {
+          "type": "Fixed",
+          "description": "Save tables and clarify web intake feedback"
+        }
+      ]
+    },
     {
       "version": "1.9.0",
       "roadmapRelease": "R1",
