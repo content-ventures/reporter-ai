@@ -91,6 +91,29 @@ async function confirmPauta(page: Page) {
 for (const viewport of VIEWPORTS) {
   test.describe(`pauta direto ao editor em ${viewport.name}`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
+    test('keeps blocked creation guidance and the full action inside the viewport', async ({ page }) => {
+      const replay = await workspace(page);
+      try {
+        await page.goto('/productions/new');
+        await page.getByRole('button', { name: 'Usar exemplo', exact: true }).click();
+        await expect(page.getByRole('dialog')).toBeHidden();
+        const action = page.getByRole('button', { name: 'Continuar', exact: true });
+        await expect(action).toHaveAttribute('aria-disabled', 'true');
+        const reason = page.getByText('Marque a autorização dos falantes para continuar.', { exact: true }).filter({ visible: true });
+        await expect(reason).toBeVisible();
+        for (const control of [reason, action]) {
+          const box = await control.boundingBox();
+          expect(box).not.toBeNull();
+          expect(box!.x).toBeGreaterThanOrEqual(0);
+          expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+        }
+        if (viewport.width === 390) await expect(action).toHaveAccessibleDescription('Marque a autorização dos falantes para continuar.');
+        await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
+        await action.click();
+        await expect(page.getByRole('textbox', { name: 'Título interno', exact: true })).toBeVisible();
+        await expectNoHorizontalOverflow(page);
+      } finally { replay.engine.store.dispose(); }
+    });
     test('mostra a prévia, preserva a revisão e libera o artigo final para edição', async ({ page }) => {
       test.setTimeout(120_000);
       const errors = watchErrors(page), replay = await workspace(page);
