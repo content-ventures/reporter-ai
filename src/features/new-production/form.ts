@@ -1,3 +1,4 @@
+import { EDITORIAL_FORMATS as REPORTER_FORMATS, coverageFormat, type EditorialPlan } from '../../domain/editorial-plan.ts';
 import { DEFAULT_ARTICLE_SIZE, EVENT_FIELDS, FORMAT_SPECS, expectedDraftChars, fitSections, foldForMatch, formatLabel, formatSizeOf, formatLaudas, normalizeEvent, sizeLabel, sizeOf } from '../../domain/index.ts';
 import { MAX_MATERIAL_CHARS, MAX_MATERIAL_PARTS, PART_BREAK, joinTranscriptParts, normalizeNewlines, splitTranscriptParts } from '../../domain/index.ts';
 import type { ArticleSize, EditorialFormat, EventContext, PieceKind, SourceOrigin } from '../../domain/index.ts';
@@ -42,6 +43,10 @@ export const RECEIVED_PART = 'received';
 export type MaterialPart = { id: string; name: string; size: number; lastModified?: number; text?: string; transcriptId?: string; received?: true };
 
 export type NewProductionDraft = {
+  editorial?: EditorialPlan;
+  supplements?: MaterialFile[];
+  separateTopics?: boolean;
+  importReviewed?: boolean;
   mode: MaterialMode;
   pasted: string;
   /** "Arquivo": the recordings of the material, in order. */
@@ -111,7 +116,7 @@ export const MAX_ANGLE_LENGTH = 600;
  * The material the active mode points at (switching modes keeps both). Several parts travel as
  * one joined text named after the first; `pending` while any part is still being read.
  */
-export function draftMaterial(draft: NewProductionDraft): { text: string; fileName?: string; pending?: true } {
+function primaryMaterial(draft: NewProductionDraft): { text: string; fileName?: string; pending?: true } {
   if (draft.mode === 'file') {
     const { parts } = draft;
     if (parts.length === 0) return { text: '' };
@@ -120,6 +125,13 @@ export function draftMaterial(draft: NewProductionDraft): { text: string; fileNa
   }
   if (draft.mode === 'link') return draft.linkFile ? { text: draft.linkFile.text.replaceAll(PART_BREAK, ''), fileName: draft.linkFile.name } : { text: '' };
   return { text: draft.pasted.replaceAll(PART_BREAK, '') };
+}
+
+/** All supplied evidence remains labelled and belongs to the authorized source. */
+export function draftMaterial(draft: NewProductionDraft): { text: string; fileName?: string; pending?: true } {
+  const primary = primaryMaterial(draft);
+  if (primary.pending) return primary;
+  return { ...primary, text: primary.text + (draft.supplements ?? []).map(file => `\n\nFonte complementar: ${file.name}\n${file.text}`).join('') };
 }
 
 /** A read finished: the part with that id gets its file (a part removed meanwhile stays removed). */
@@ -371,10 +383,10 @@ export function shortfallSentence(size: ArticleSize, charsAvailable: number | un
 }
 
 /** Footer summary of the Pauta: "Padrão · 2 laudas · 3 seções · 2 falantes"; a format names itself ("Nota curta · 1 parte"). */
-export function briefSummary(size: ArticleSize, sections: number, speakers: number, format?: Pick<NewProductionDraft, 'format' | 'formatSize'>): string {
+export function briefSummary(size: ArticleSize, sections: number, speakers: number, format?: Pick<NewProductionDraft, 'format' | 'formatSize' | 'editorial'>): string {
   const rule = format?.format ? formatRule(format) : undefined;
   return [
-    rule ? formatLabel(format!) : sizeLabel(size),
+    format?.editorial ? `Até ${format.editorial.maxChars.toLocaleString('pt-BR')} caracteres` : rule ? formatLabel(format!) : sizeLabel(size),
     rule ? partsLabel(rule.headings, sections) : sectionsLabel(size, sections),
     speakers > 0 ? `${speakers} ${speakers === 1 ? 'falante' : 'falantes'}` : null,
   ]
@@ -451,8 +463,12 @@ export function materialBlocker(draft: NewProductionDraft, failed = 0): string |
 }
 
 /** Why "Montar estrutura" cannot run from Pauta (COPY §6.1). */
-export function briefBlocker(draft: Pick<NewProductionDraft, 'title' | 'size' | 'sections'> & Partial<Pick<NewProductionDraft, 'format' | 'formatSize'>>): string | undefined {
+export function briefBlocker(draft: Pick<NewProductionDraft, 'title' | 'size' | 'sections'> & Partial<Pick<NewProductionDraft, 'format' | 'formatSize' | 'editorial'>>): string | undefined {
   if (!draft.title.trim()) return 'Dê um título interno.';
+  if (draft.editorial) {
+    if (!Number.isInteger(draft.editorial.maxChars) || draft.editorial.maxChars < 300 || draft.editorial.maxChars > 30000) return 'Escolha um limite de 300 a 30.000 caracteres.';
+    return Number.isInteger(draft.sections) && draft.sections >= 1 && draft.sections <= 20 ? undefined : 'Escolha de 1 a 20 subtítulos.';
+  }
   const rule = formatRule(draft);
   if (rule) {
     const { min, max } = rule.sections;
@@ -492,6 +508,11 @@ export function validateMaterial(draft: NewProductionDraft, analysis: SourceAnal
       issues.push({ field: `speaker:${speaker.label}`, label: speaker.label, message: SPEAKER_UNSET_MESSAGE, unattributed: true });
     }
   }
+  for (const [label, choice] of Object.entries(draft.speakers)) {
+    if (!analysis?.speakers.some(speaker => speaker.label === label) && choice.kind === 'new' && !choice.name.trim()) {
+      issues.push({ field: `speaker:${label}`, label, message: 'Informe o nome da pessoa ou remova o participante.' });
+    }
+  }
   return issues;
 }
 
@@ -511,12 +532,17 @@ export function toCreateInput(draft: NewProductionDraft, analysis: SourceAnalysi
       speakers.push({ label: speaker.label, ...presentation, newPerson: { name: choice.name.trim(), ...(title ? { title } : {}), ...(organization ? { organization } : {}) } });
     }
   }
+  for (const [label, choice] of Object.entries(draft.speakers)) {
+    if (analysis?.speakers.some(s => s.label === label)) continue;
+    if (choice.kind === 'new' && choice.name.trim()) speakers.push({ label, newPerson: { name: choice.name.trim(), ...(choice.title?.trim() ? { title: choice.title.trim() } : {}), ...(choice.organization?.trim() ? { organization: choice.organization.trim() } : {}) } });
+    if (choice.kind === 'person') speakers.push({ label, personId: choice.personId });
+  }
   const angle = draft.angle.trim();
   const input: NewProductionInput = {
     title: draft.title.trim(),
     material: { text: material.text, format: 'auto', origin: draft.origin, authorized: draft.authorized },
     speakers,
-    brief: { sections: draft.sections, size: draft.size },
+    brief: { sections: draft.sections, size: draft.size, ...(draft.editorial ? { editorial: draft.editorial } : {}) },
     plan: planKinds(draft.plan),
   };
   if (material.fileName) input.material.fileName = material.fileName;
@@ -532,11 +558,24 @@ export function toCreateInput(draft: NewProductionDraft, analysis: SourceAnalysi
   if (draft.location?.trim()) input.material.location = draft.location.trim();
   if (draft.sourceUrl?.trim()) input.material.sourceUrl = podcastLink(draft.sourceUrl) ?? draft.sourceUrl.trim();
   if (angle) input.brief.angle = angle;
-  if (draft.format) {
-    input.brief.format = draft.format;
-    input.brief.formatSize = formatSizeOf(draft.format, draft.formatSize).id;
-    const event = normalizeEvent(draft.event);
+  const legacy = draft.editorial?.formats[0];
+  const format = draft.format ?? (legacy ? coverageFormat(legacy) : undefined);
+  if (format) {
+    input.brief.format = format;
+    input.brief.formatSize = formatSizeOf(format, draft.formatSize).id;
+    const event = normalizeEvent({ ...draft.event, name: draft.editorial?.eventName || draft.event.name });
     if (event) input.brief.event = event;
   }
   return input;
+}
+/** Independent, reviewable texts sharing the original material. */
+export function toCreateInputs(draft: NewProductionDraft, analysis: SourceAnalysis | undefined, people: readonly PersonOption[]): NewProductionInput[] {
+  const base = toCreateInput(draft, analysis, people), plan = draft.editorial;
+  if (!plan) return [base];
+  const topics = [plan.mainTopic.trim(), ...(draft.separateTopics ? plan.secondaryTopics.map(t => t.trim()).filter(Boolean) : [])];
+  return plan.formats.flatMap(format => topics.map(topic => ({ ...base,
+    title: (topics.length > 1 || plan.formats.length > 1 ? `${topic || base.title} · ${REPORTER_FORMATS.find(f => f.id === format)!.label}` : base.title).slice(0, 120),
+    brief: { ...base.brief, format: coverageFormat(format), editorial: { ...plan, formats: [format], mainTopic: topic, secondaryTopics: draft.separateTopics ? [] : plan.secondaryTopics } },
+    plan: format === 'carousel' ? ['article', 'carousel'] : base.plan,
+  })));
 }

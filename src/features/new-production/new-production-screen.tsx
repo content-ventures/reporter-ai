@@ -1,4 +1,9 @@
 'use client';
+import { TermFix } from './term-fix';
+import { defaultEditorialPlan } from '@/domain/editorial-plan';
+import { EditorialSection } from './editorial-section';
+import { AdditionalMaterials } from './additional-materials';
+import { importedArticle } from './import-reviewed';
 import {useWorkspaceStorageKey} from '@/state/workspace-storage';
 import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
@@ -64,7 +69,7 @@ import {
   materialBlocker,
   materialTooLong,
   movePart,
-  toCreateInput,
+  toCreateInputs,
   validateMaterial,
   withFormat,
   withMaterialText,
@@ -129,7 +134,8 @@ export function NewProductionScreen({ received }: { received?: string } = {}) {
   const workspaceHrefFor = useWorkspaceHref();
   const session = useSession();
   const creates = useCan('production.create');
-  if (!session.data) return null;
+  const draftKey = useWorkspaceStorageKey('reporter:new-production');
+  if (!session.data || !draftKey) return null;
   if (!creates) {
     return (
       <AccessState
@@ -141,11 +147,19 @@ export function NewProductionScreen({ received }: { received?: string } = {}) {
       />
     );
   }
-  return <NewProductionForm received={received} />;
+  return <NewProductionForm key={`${draftKey}:${received ?? 'new'}`} received={received} draftKey={draftKey} />;
+}
+
+function storedDraft(key: string): NewProductionDraft {
+  try {
+    const stored = sessionStorage.getItem(key);
+    if (stored) { const value = JSON.parse(stored); if (value && typeof value.pasted === 'string' && typeof value.authorized === 'boolean') return { ...EMPTY_DRAFT, ...value, parts: (value.parts ?? []).filter((part: MaterialPart) => part.text !== undefined) }; }
+    return { ...EMPTY_DRAFT, editorial: { ...defaultEditorialPlan(), instructions: localStorage.getItem(key + ':preferences') ?? '' } };
+  } catch { return { ...EMPTY_DRAFT, editorial: defaultEditorialPlan() }; }
 }
 
 /** `received`: a file the Drive folder brought in, opened as if it had just been uploaded here. */
-function NewProductionForm({ received }: { received?: string }) {
+function NewProductionForm({ received, draftKey }: { received?: string; draftKey: string }) {
   const eventStorageKey=useWorkspaceStorageKey(LAST_EVENT_KEY);
   const router = useRouter();
   const commands = useCommands();
@@ -159,7 +173,8 @@ function NewProductionForm({ received }: { received?: string }) {
   // A Drive file opens on "Arquivo" as its one part, its progress on screen, as an upload just started would.
   const [draft, setDraft] = useState<NewProductionDraft>(() => (received
     ? { ...EMPTY_DRAFT, mode: 'file', parts: [{ id: RECEIVED_PART, name: 'Arquivo do Drive', size: 0, received: true }] }
-    : EMPTY_DRAFT));
+    : storedDraft(draftKey)));
+  useEffect(() => { try { sessionStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* The in-memory leave guard remains active. */ } }, [draft, draftKey]);
   // A coverage offers the event typed for the previous one on this device, never fills it by itself:
   // a material from another fair would otherwise go out with the wrong box. Undefined: not read yet.
   const [eventSuggestion, setEventSuggestion] = useState<EventDraft | null>();
@@ -169,6 +184,7 @@ function NewProductionForm({ received }: { received?: string }) {
   }, [eventStorageKey]);
 
   const [step, setView] = useState<NewProductionStep>('material');
+  useEffect(() => { const frame = requestAnimationFrame(() => { window.scrollTo({ top: 0 }); for (const region of document.querySelectorAll('main, [role="main"], [aria-label="Nova produção"]')) region.scrollTo({ top: 0 }); }); return () => cancelAnimationFrame(frame); }, [step]);
 
   // ── Material ──
   const material = draftMaterial(draft);
@@ -457,7 +473,9 @@ function NewProductionForm({ received }: { received?: string }) {
     setBusy('create');
     const current = await freshAnalysis();
     if (!current) { setBusy(null); return; }
-    const created = await commands.production.createFromSource(toCreateInput(draft, current, people));
+    const inputs = toCreateInputs(draft, current, people);
+    if (inputs.length > 30 || draft.importReviewed && inputs.length > 1) { setBusy(null); toast('Escolha até 30 desdobramentos; importe um texto pronto por vez', { tone: 'error' }); return; }
+    const created = await commands.production.createFromSource(inputs[0]);
     if (created.ok && draft.format && draft.event.name.trim()) rememberEvent(draft.event,eventStorageKey);
     if (!created.ok) {
       setBusy(null);
@@ -465,12 +483,24 @@ function NewProductionForm({ received }: { received?: string }) {
       return;
     }
     const article = created.value.pieces.find((piece) => piece.kind === 'article');
-    if (article) {
-      const simulation = takeArmedSimulation('article.draft');
-      const started = await commands.generation.start('article.draft',
-        { productionId: created.value.productionId, pieceId: article.pieceId }, simulation ? { simulation } : undefined);
-      if (!started.ok) notifyRefusal('Produção salva; geração não iniciada', started.refusal);
+    if (draft.importReviewed && article) {
+      const saved = await commands.production.saveDraft(article.pieceId, importedArticle(draft.title, current, created.value.sourceId, draft.editorial), 0);
+      if (!saved.ok) { setBusy(null); notifyRefusal('Texto não importado', saved.refusal); return; }
+    } else {
+      let count = 1;
+      for (const input of inputs.slice(1)) {
+        const extra = await commands.production.createFromSource({ ...input, speakers: [], reuseSourceId: created.value.sourceId });
+        if (!extra.ok) { notifyRefusal('Um desdobramento não foi criado', extra.refusal); break; }
+        count++;
+      }
+      if (inputs.length > 1) toast(`${count} de ${inputs.length} produções salvas`, { description: 'Abra cada pauta em Produções para revisar e redigir.' });
+      if (article) {
+        const simulation = takeArmedSimulation('article.draft');
+        const started = await commands.generation.start('article.draft', { productionId: created.value.productionId, pieceId: article.pieceId }, simulation ? { simulation } : undefined);
+        if (!started.ok) notifyRefusal('Produção salva; geração não iniciada', started.refusal);
+      }
     }
+    try { sessionStorage.removeItem(draftKey); } catch {}
     departing.current = true;
     router.replace(pieceHref(created.value.productionId, 'article'));
   };
@@ -489,7 +519,7 @@ function NewProductionForm({ received }: { received?: string }) {
   const canSelectStep = (_index: number, state: StepState) => state === 'done' && !busy;
   const primary = {
     material: { label: 'Continuar', icon: undefined, run: continueFromMaterial, loading: false },
-    brief: { label: draft.format ? 'Gerar texto' : 'Gerar artigo', icon: Sparkles, run: createArticle, loading: busy === 'create' },
+    brief: { label: draft.importReviewed ? 'Abrir texto para revisão' : draft.format ? 'Gerar texto' : 'Gerar artigo', icon: Sparkles, run: createArticle, loading: busy === 'create' },
   }[step];
   const back = step === 'material'
     ? { label: 'Cancelar', onClick: cancel, hideNarrow: true }
@@ -526,8 +556,10 @@ function NewProductionForm({ received }: { received?: string }) {
           <PageHeader
             variant="frame"
             title="Nova produção"
+            meta={narrow ? [`${NEW_PRODUCTION_STEPS.indexOf(step) + 1} de 2 · ${STEP_LABELS[step]}`] : undefined}
+            actions={narrow ? undefined : <Button variant="ghost" disabled={busy !== null} onClick={cancel}>Voltar para Produções</Button>}
             toolbar={
-              <Stepper
+              narrow ? undefined : <Stepper
                 label="Passos da nova produção"
                 steps={STEP_ITEMS}
                 current={NEW_PRODUCTION_STEPS.indexOf(step)}
@@ -571,6 +603,7 @@ function NewProductionForm({ received }: { received?: string }) {
         {step === 'material' ? (
           <PageStack>
             {attempt ? <ErrorSummary errors={summaryErrors} focusKey={attempt.key} /> : null}
+            <EditorialSection draft={draft} update={update} />
             <MaterialSection
               draft={draft}
               material={analysisState}
@@ -598,7 +631,9 @@ function NewProductionForm({ received }: { received?: string }) {
               onRemoveLink={() => { linkReader.reset();update({ linkFile: null,sourceUrl: '',speakers: {} }); }}
               onUseSample={fillSample}
               onReplaceTerm={replaceMaterialTerm}
+              showTermCorrection={false}
             />
+            <AdditionalMaterials draft={draft} update={update} intake={intake} />
             <SpeakersSection
               draft={draft}
               analysis={analysis}
@@ -607,6 +642,7 @@ function NewProductionForm({ received }: { received?: string }) {
               state={speakersState}
               errors={speakerErrors}
               onChange={setSpeaker}
+              onRemove={label => setDraft(current => { const speakers = { ...current.speakers }; delete speakers[label]; return { ...current, speakers }; })}
               nameRef={nameRef}
               registerPicker={registerPicker}
             />
@@ -623,6 +659,7 @@ function NewProductionForm({ received }: { received?: string }) {
           </PageStack>
         ) : (
           <PageStack>
+            <EditorialSection draft={draft} update={update} compact />
             <BriefStep
               draft={draft}
               update={update}
@@ -634,10 +671,11 @@ function NewProductionForm({ received }: { received?: string }) {
               today={today}
               eventSuggestion={eventSuggestion && !draft.event.name.trim() ? eventSuggestion : undefined}
               onEventSuggestion={(use) => {
-                if (use && eventSuggestion) update({ event: eventSuggestion });
+                if (use && eventSuggestion) update({ event: eventSuggestion, ...(draft.editorial ? { editorial: { ...draft.editorial, eventName: eventSuggestion.name } } : {}) });
                 setEventSuggestion(null);
               }}
             />
+            <FormSection title="Correções da transcrição" titleAs="h2" open state="active"><FormRow label="Corrigir termo" optional><TermFix text={material.text} onReplace={replaceMaterialTerm} /></FormRow></FormSection>
           </PageStack>
         )}
       </FixedFrame>
@@ -647,15 +685,15 @@ function NewProductionForm({ received }: { received?: string }) {
       <ConfirmDialog
         open={confirmExit}
         onClose={() => setConfirmExit(false)}
-        title="Descartar a nova produção?"
-        description="O que você colou não fica salvo."
-        confirmLabel="Descartar"
+        title="Sair da nova produção?"
+        description="O rascunho fica salvo nesta aba para você continuar depois."
+        confirmLabel="Sair"
         cancelLabel="Continuar aqui"
         tone="danger"
         onConfirm={() => {
           departing.current = true;
           setConfirmExit(false);
-          setDraft(EMPTY_DRAFT);
+
           router.push(exitTo);
         }}
       />

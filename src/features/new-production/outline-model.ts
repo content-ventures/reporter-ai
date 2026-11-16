@@ -22,6 +22,7 @@ export type OutlineSectionDraft = {
 };
 
 export type OutlineDraft = {
+  flexible?: boolean;
   /** The outline run the proposal came from (provenance of the draft). */
   runId?: RunId;
   size: ArticleSize;
@@ -40,7 +41,7 @@ export type OutlineDraft = {
   added: number;
 };
 
-export function outlineFromProposal(proposal: OutlineProposal, size: ArticleSize, runId?: RunId): OutlineDraft {
+export function outlineFromProposal(proposal: OutlineProposal, size: ArticleSize, runId?: RunId, flexible = false): OutlineDraft {
   const sections = proposal.sections.map((section, index) => ({
     key: section.blockId ?? `proposed-${index + 1}`,
     ...(section.blockId ? { blockId: section.blockId } : {}),
@@ -63,6 +64,7 @@ export function outlineFromProposal(proposal: OutlineProposal, size: ArticleSize
     pool.push(ref);
   }
   return {
+    ...(flexible ? { flexible: true } : {}),
     ...(runId ? { runId } : {}),
     size,
     title: proposal.title,
@@ -175,8 +177,8 @@ function countReasons(size: ArticleSize): { above: string; below: string } {
 }
 
 /** "+ Seção" and "Tirar seção" stay where the size allows, with the visible reason (COPY §6.4). */
-export function sectionLimits(draft: Pick<OutlineDraft, 'size' | 'sections'>): SectionLimits {
-  const { min, max } = sizeOf(draft.size).sections;
+export function sectionLimits(draft: Pick<OutlineDraft, 'size' | 'sections' | 'flexible'>): SectionLimits {
+  const { min, max } = draft.flexible ? { min: 1, max: 20 } : sizeOf(draft.size).sections;
   const count = draft.sections.length;
   const reasons = countReasons(draft.size);
   const limits: SectionLimits = { canAdd: count < max, canRemove: count > min };
@@ -188,7 +190,7 @@ export function sectionLimits(draft: Pick<OutlineDraft, 'size' | 'sections'>): S
 /** Why "Redigir artigo" cannot run yet (the visible reason), in screen order; `undefined` when it can. */
 export function outlineBlocker(draft: OutlineDraft): string | undefined {
   const spec = sizeOf(draft.size);
-  const { min, max } = spec.sections;
+  const { min, max } = draft.flexible ? { min: 1, max: 20 } : spec.sections;
   if (draft.sections.length > max) return countReasons(draft.size).above;
   if (draft.sections.length < min) return countReasons(draft.size).below;
   if (spec.headings && draft.sections.some((section) => !section.title.trim())) return 'Escreva o intertítulo.';

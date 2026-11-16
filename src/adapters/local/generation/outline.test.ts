@@ -112,7 +112,7 @@ describe('"Montar estrutura": the outline-only run', () => {
     assert.ok(proposal.shortfall.expectedChars <= ARTICLE_SIZES.standard.maxChars);
     const budgets = proposal.intro.budget + proposal.sections.reduce((sum, section) => sum + (section.budget ?? 0), 0);
     assert.ok(Math.abs(budgets - proposal.shortfall.expectedChars) <= proposal.sections.length + 1, `${budgets} vs ${proposal.shortfall.expectedChars}`);
-    assert.match(fold.run.steps[1].meta ?? '', /^3 seções · o material rende ≈ \d+(,\d)? laudas?$/);
+    assert.match(fold.run.steps[1].meta ?? '', /^3 seções · o material rende ≈ [\d.]+ caracteres$/);
   });
 
   it('runs again on demand (a new run), and a run of an earlier session still attaches after a reload', async () => {
@@ -142,7 +142,7 @@ describe('"Montar estrutura": the outline-only run', () => {
     const { fold, proposal } = await propose(harness);
     assert.equal(proposal.sections.length, 2);
     assert.equal(proposal.size?.maxChars, 2000);
-    assert.match(fold.run.steps[1].meta ?? '', /^2 partes · (alvo 1 lauda|o material rende ≈ \d+(,\d)? laudas?)$/);
+    assert.match(fold.run.steps[1].meta ?? '', /^2 partes · (alvo 2.000 caracteres|o material rende ≈ [\d.]+ caracteres)$/);
   });
 });
 

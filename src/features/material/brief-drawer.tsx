@@ -1,4 +1,5 @@
 'use client';
+import { defaultEditorialPlan, type EditorialPlan } from '@/domain/editorial-plan';
 
 import { useState } from 'react';
 import {
@@ -7,6 +8,7 @@ import {
   ConfirmDialog,
   Drawer,
   Field,
+  Input,
   LinkButton,
   PageStack,
   Segmented,
@@ -14,7 +16,7 @@ import {
   toast,
   type SegmentOption,
 } from '@content-ventures/design-system/v3';
-import { briefSizeName, expectedDraftChars, fitSections, formatSizeOf, sizeOf, type ArticleSize, type Brief, type ProductionId } from '@/domain';
+import { briefMaxChars, briefSizeName, expectedDraftChars, fitSections, formatSizeOf, sizeOf, type ArticleSize, type Brief, type ProductionId } from '@/domain';
 import { useBrief } from '@/state';
 import { formatCharacters, formatLaudas, formatSize, SIZE_OPTIONS } from '@/ui/format';
 
@@ -38,11 +40,14 @@ function sectionOptions(size: ArticleSize): SegmentOption<string>[] {
 
 const SIZES: SegmentOption<ArticleSize>[] = SIZE_OPTIONS.map((option) => ({ value: option.value, label: option.label, disabled: option.value === 'short' }));
 
-type Form = { angle: string; sections: number; size: ArticleSize; base: number };
+type Form = { editorial?: EditorialPlan; angle: string; sections: number; size: ArticleSize; base: number };
 
-const formOf = (brief: Brief): Form => ({ angle: brief.angle ?? '', sections: brief.sections, size: brief.size, base: brief.revision });
+const formOf = (brief: Brief): Form => ({ editorial: brief.editorial ?? {
+  ...defaultEditorialPlan(), maxChars: briefMaxChars(brief),
+  ...(brief.format ? { category: brief.format === 'note' ? 'site' : 'fair', formats: [brief.format === 'stand' ? 'booth' : brief.format === 'awards' ? 'award' : brief.format === 'note' ? 'hard-news' : brief.format], eventName: brief.event?.name ?? '' } : {}),
+}, angle: brief.angle ?? '', sections: brief.sections, size: brief.size, base: brief.revision });
 
-const changed = (form: Form, brief: Brief) => form.angle.trim() !== (brief.angle ?? '').trim() || form.sections !== brief.sections || form.size !== brief.size;
+const changed = (form: Form, brief: Brief) => form.angle.trim() !== (brief.angle ?? '').trim() || form.sections !== brief.sections || form.size !== brief.size || JSON.stringify(form.editorial) !== JSON.stringify(formOf(brief).editorial);
 
 export function BriefDrawer({ productionId, open, onClose }: { productionId: ProductionId; open: boolean; onClose: () => void }) {
   const editor = useBrief(productionId);
@@ -71,7 +76,7 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
   async function save() {
     if (!current) return;
     const angle = current.angle.trim();
-    const result = await editor.save({ sections: current.sections, size: current.size, ...(angle ? { angle } : {}) }, current.base);
+    const result = await editor.save({ ...(current.editorial ? { editorial: current.editorial } : {}), sections: current.sections, size: current.size, ...(angle ? { angle } : {}) }, current.base);
     if (result.ok) {
       onClose();
       toast('Pauta salva');
@@ -130,7 +135,7 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
               />
             )}
           </Field>
-          {brief.format ? null : <Field label="Tamanho do artigo" hint={sizeHint}>
+          {current.editorial ? <Field label="Limite de caracteres">{({ id }) => <Input id={id} type="number" min={300} max={30000} value={current.editorial!.maxChars} onChange={event => update({ editorial: { ...current.editorial!, maxChars: Number(event.target.value) } })} />}</Field> : brief.format ? null : <Field label="Tamanho do artigo" hint={sizeHint}>
             {() => (
               <Segmented
                 label="Tamanho do artigo"
@@ -141,7 +146,7 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
               />
             )}
           </Field>}
-          <Field label="Seções" hint={brief.format ? `${briefSizeName(brief)} · abertura + ${current.sections} ${current.sections === 1 ? 'parte' : 'partes'}` : `Introdução + ${current.sections} seções`}>
+          {current.editorial ? <Field label="Quantidade de subtítulos">{({ id }) => <Input id={id} type="number" min={1} max={20} value={current.sections} onChange={event => update({ sections: Number(event.target.value) })} />}</Field> : <Field label="Seções" hint={brief.format ? `${briefSizeName(brief)} · abertura + ${current.sections} ${current.sections === 1 ? 'parte' : 'partes'}` : `Introdução + ${current.sections} seções`}>
             {() => (
               <Segmented
                 label="Seções depois da introdução"
@@ -151,7 +156,7 @@ export function BriefDrawer({ productionId, open, onClose }: { productionId: Pro
                 size="sm"
               />
             )}
-          </Field>
+          </Field>}
         </PageStack>
       </Drawer>
       <ConfirmDialog

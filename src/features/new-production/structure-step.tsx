@@ -20,7 +20,7 @@ import {
 } from '@content-ventures/design-system/v3';
 import { Trash2 } from '@content-ventures/design-system/v3/icons';
 import { refKey, type SourceRef } from '@/domain';
-import { formatLaudas } from '@/ui/format';
+import { formatCharacters } from '@/ui/format';
 import { MAX_TITLE_LENGTH } from './form';
 import {
   addQuote,
@@ -145,7 +145,7 @@ export function StructureStep({ run, onRetry, onStop, retrying, outline, onChang
   const available = availableQuotes(outline);
   const place = (target: OutlinePlace, ref: SourceRef) => onChange(addQuote(outline, target, ref));
   const reason = [limits.canAdd ? undefined : limits.addReason, limits.canRemove ? undefined : limits.removeReason].filter(Boolean) as string[];
-  const note = headings ? undefined : 'Notícia de 1 lauda não leva intertítulos.';
+  const note = headings ? undefined : 'Este formato usa texto corrido, sem intertítulos.';
 
   return (
     <PageStack>
@@ -172,7 +172,7 @@ export function StructureStep({ run, onRetry, onStop, retrying, outline, onChang
               empty="Sem citações."
               onRemove={(ref) => onChange(removeQuote(outline, 'intro', ref))}
             /><Toolbar label="Ações da introdução" overflow="wrap">
-              <MetaList size="sm" items={[`≈ ${formatLaudas(outline.introBudget)}`]} />
+              <MetaList size="sm" items={[`≈ ${formatCharacters(outline.introBudget)}`]} />
               <AddQuote place="intro" available={available} material={material} onAdd={place} />
             </Toolbar></>
           }
@@ -205,7 +205,7 @@ export function StructureStep({ run, onRetry, onStop, retrying, outline, onChang
                   empty={missingQuote ? 'Cada seção precisa de pelo menos uma citação.' : 'Sem citações ainda.'}
                   onRemove={(ref) => onChange(removeQuote(outline, section.key, ref))}
                 /><Toolbar label={`Ações da seção ${index + 1}`} overflow="wrap">
-                  <MetaList size="sm" items={[`≈ ${formatLaudas(sectionBudgetAt(outline, index))}`]} />
+                  <MetaList size="sm" items={[`≈ ${formatCharacters(sectionBudgetAt(outline, index))}`]} />
                   <AddQuote place={section.key} available={available} material={material} onAdd={place} />
                   <IconButton
                     label="Tirar seção"

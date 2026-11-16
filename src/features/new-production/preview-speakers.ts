@@ -27,7 +27,7 @@ export function usePreviewSpeakers(
 ): PreviewSpeaker[] {
   return useMemo(
     () =>
-      (analysis?.speakers ?? []).map((speaker) => {
+      [...(analysis?.speakers ?? []), ...Object.keys(choices).filter(label => !analysis?.speakers.some(speaker => speaker.label === label)).map(label => ({ label, segments: 0, words: 0, presentation: undefined }))].map((speaker) => {
         const choice = speakerChoice({ speakers: choices }, speaker.label, people, speaker.presentation);
         const person = choice.kind === 'person' ? people.find((candidate) => candidate.id === choice.personId) : undefined;
         const entry: PreviewSpeaker = {
