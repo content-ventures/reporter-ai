@@ -170,7 +170,7 @@ describe('local audit: live entries', () => {
     assert.ok(saved.ok, saved.ok ? '' : saved.refusal.message);
     const { items } = await page(runtime, { from: NOW, types: ['production'] });
     const update = items.find((entry) => entry.action === 'production.updated' && entry.id.startsWith('aud-l-'));
-    assert.deepEqual(update?.changes, [{ field: 'Tamanho do artigo', before: 'Padrão · 2 laudas', after: 'Curto · 1 lauda' }]);
+    assert.deepEqual(update?.changes, [{ field: 'Tamanho do artigo', before: 'Padrão · até 4.000 caracteres', after: 'Curto · até 2.000 caracteres' }]);
   });
 
   it('⌘K › Simulação: the next read fails as "Log indisponível", then the trail answers again', async () => {

@@ -72,7 +72,7 @@ test("caminho principal: da transcrição ao pacote exportado", async ({ page })
     await page.getByRole("textbox", { name: "Título interno" }).fill(TITLE);
     // The R1 policy intentionally disables the short preset: its 2,000-character ceiling
     // cannot satisfy the mandatory 2,500-character minimum. Keep the selected standard size.
-    await expect(page.getByRole("radio", { name: /^Padrão/ })).toBeChecked();
+    await expect(page.getByRole("spinbutton", { name: "Limite de caracteres" })).toHaveValue("8000");
     await page.getByRole("button", { name: "Gerar artigo", exact: true }).click();
     await page.waitForURL(/\/productions\/[^/]+\/article$/);
   });

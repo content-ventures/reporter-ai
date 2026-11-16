@@ -86,7 +86,7 @@ export const ARTICLE_SIZES: Readonly<Record<ArticleSize, ArticleSizeSpec>> = {
 };
 
 /** The size field's rule, in the writer's words. */
-export const SIZE_RULE = `R1: 2.500–4.000 caracteres com espaços, 500–800 palavras e ao menos 2 citações literais. 1 lauda = ${groupDigits(CHARS_PER_LAUDA)} caracteres. Sem repetição ou invenção para preencher.`;
+export const SIZE_RULE = 'Formato legado: 2.500–4.000 caracteres com espaços, 500–800 palavras e ao menos 2 citações literais. Sem repetição ou invenção para preencher.';
 
 export function isArticleSize(value: unknown): value is ArticleSize {
   return typeof value === 'string' && (ARTICLE_SIZE_IDS as readonly string[]).includes(value);
@@ -119,14 +119,13 @@ export function laudaNumber(value: number): string {
  * "1,4 lauda", "2 laudas", "2,3 laudas".
  */
 export function formatLaudas(chars: number): string {
-  const value = laudas(chars);
-  return `${laudaNumber(value)} ${laudaUnit(value)}`;
+  return formatCharacters(chars);
 }
 
 /** A text against its size: "1,4 de 2 laudas", "0,8 de 1 lauda" (the unit follows the size). */
 export function formatLaudasOf(chars: number, size: ArticleSize): string {
-  const spec = sizeOf(size);
-  return `${laudaNumber(laudas(chars))} de ${spec.laudas} ${laudaUnit(spec.laudas)}`;
+  void size;
+  return formatCharacters(chars);
 }
 
 /** "2.764 caracteres", "1 caractere": the lauda count of a text (characters with spaces). */
@@ -142,19 +141,19 @@ export function charactersAbove(chars: number, size: ArticleSize): number {
 /** "Curto · 1 lauda", "Padrão · 2 laudas". */
 export function sizeLabel(size: ArticleSize): string {
   const spec = sizeOf(size);
-  return `${spec.label} · ${spec.laudas} ${laudaUnit(spec.laudas)}`;
+  return `${spec.label} · até ${formatCharacters(spec.maxChars)}`;
 }
 
 /** "Encurtar para 2 laudas": the action when a text passes its size. */
 export function shortenToSizeLabel(size: ArticleSize): string {
   const spec = sizeOf(size);
-  return `Encurtar para ${spec.laudas} ${laudaUnit(spec.laudas)}`;
+  return `Encurtar para ${formatCharacters(spec.maxChars)}`;
 }
 
 /** "1,4/2 laudas", "0,8/1 lauda": the check's short value. */
 export function sizeMeta(chars: number, size: ArticleSize): string {
   const spec = sizeOf(size);
-  return `${laudaNumber(laudas(chars))}/${spec.laudas} ${laudaUnit(spec.laudas)}`;
+  return `${groupDigits(chars)}/${groupDigits(spec.maxChars)} caracteres`;
 }
 
 export type SizeFit = 'below' | 'inside' | 'above';

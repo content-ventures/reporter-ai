@@ -67,11 +67,11 @@ describe('local generation · article draft', () => {
     );
     assert.match(run.fold.run.steps[0].meta ?? '', /^\d+ falas · 3 falantes$/);
     // The structure announces the size; this interview gives less than 2 laudas, and says so.
-    assert.match(run.fold.run.steps[1].meta ?? '', /^3 seções · (alvo 2 laudas|o material rende ≈ \d+(,\d)? laudas?)$/);
+    assert.match(run.fold.run.steps[1].meta ?? '', /^3 seções · (alvo 4.000 caracteres|o material rende ≈ [\d.]+ caracteres)$/);
     for (const step of run.fold.run.steps.filter((entry) => entry.id === 'intro' || entry.id.startsWith('section-'))) {
       assert.match(step.meta ?? '', /^\d{1,3}(\.\d{3})* caracteres$/, `${step.id} meta in characters, never words`);
     }
-    assert.match(run.fold.run.steps[7].meta ?? '', /^(\d+) de \1 conferidas · \d+(,\d)? laudas?$/);
+    assert.match(run.fold.run.steps[7].meta ?? '', /^(\d+) de \1 conferidas · [\d.]+ caracteres$/);
     assert.ok(run.fold.size && run.fold.outline.every((section) => (section.budget ?? 0) > 0 && (section.quotes?.length ?? 0) > 0));
     assert.equal(run.fold.outline.length, 3);
     assert.ok(run.fold.sourcesUsed.length >= 3, 'key quotes are announced as SourceChips');
@@ -369,7 +369,7 @@ describe('local generation · Curto (1 lauda, no intertítulos)', () => {
         if (slot.required) assert.ok(slide.slots[slot.id]?.trim(), `${slide.layout}.${slot.id} is filled`);
       }
     }
-    assert.match(carousel.fold.run.steps[0].meta ?? '', /^Artigo aprovado · \d+(,\d)? laudas?$/);
+    assert.match(carousel.fold.run.steps[0].meta ?? '', /^Artigo aprovado · [\d.]+ caracteres$/);
   });
 });
 

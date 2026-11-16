@@ -39,15 +39,15 @@ describe('article size by lauda (1 lauda = 2.000 characters)', () => {
     assert.equal(short.description, 'Notícia direta: um fato, pouco contexto. Até 2.000 caracteres.');
     assert.equal(standard.description, 'Notícia com contexto: histórico, citações, fontes e links. Até 4.000 caracteres.');
     assert.match(SIZE_RULE, /2.500–4.000.*500–800.*2 citações literais/);
-    assert.deepEqual([sizeLabel('short'), sizeLabel('standard')], ['Curto · 1 lauda', 'Padrão · 2 laudas']);
-    assert.deepEqual([shortenToSizeLabel('short'), shortenToSizeLabel('standard')], ['Encurtar para 1 lauda', 'Encurtar para 2 laudas']);
+    assert.deepEqual([sizeLabel('short'), sizeLabel('standard')], ['Curto · até 2.000 caracteres', 'Padrão · até 4.000 caracteres']);
+    assert.deepEqual([shortenToSizeLabel('short'), shortenToSizeLabel('standard')], ['Encurtar para 2.000 caracteres', 'Encurtar para 4.000 caracteres']);
   });
 
   test('laudas round up to one decimal (a started line counts)', () => {
     assert.deepEqual([0, 1, 800, 2000, 2001, 2764, 4000, 4001].map(laudas), [0, 0.1, 0.4, 1, 1.1, 1.4, 2, 2.1]);
     assert.deepEqual([0.4, 1, 1.4, 2, 2.3].map(laudaNumber), ['0,4', '1', '1,4', '2', '2,3']);
-    assert.equal(sizeMeta(2764, 'standard'), '1,4/2 laudas');
-    assert.equal(sizeMeta(1600, 'short'), '0,8/1 lauda');
+    assert.equal(sizeMeta(2764, 'standard'), '2.764/4.000 caracteres');
+    assert.equal(sizeMeta(1600, 'short'), '1.600/2.000 caracteres');
   });
 
   test('fit, sections and budgets', () => {
@@ -108,9 +108,9 @@ describe('the brief (pauta) by size', () => {
   });
 
   test('pt-BR lauda formats: alone, against the size, characters and the excess', () => {
-    assert.deepEqual([800, 2000, 2764, 4000, 4600].map(formatLaudas), ['0,4 lauda', '1 lauda', '1,4 lauda', '2 laudas', '2,3 laudas']);
-    assert.equal(formatLaudasOf(2764, 'standard'), '1,4 de 2 laudas');
-    assert.equal(formatLaudasOf(1540, 'short'), '0,8 de 1 lauda');
+    assert.deepEqual([800, 2000, 2764, 4000, 4600].map(formatLaudas), ['800 caracteres', '2.000 caracteres', '2.764 caracteres', '4.000 caracteres', '4.600 caracteres']);
+    assert.equal(formatLaudasOf(2764, 'standard'), '2.764 caracteres');
+    assert.equal(formatLaudasOf(1540, 'short'), '1.540 caracteres');
     assert.equal(formatCharacters(2764), '2.764 caracteres');
     assert.equal(formatCharacters(1), '1 caractere');
     assert.equal(charactersAbove(4640, 'standard'), 640);

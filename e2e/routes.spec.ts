@@ -196,7 +196,7 @@ for (const viewport of VIEWPORTS) {
       const opening = "A praça ganhou um espaço de leitura criado pelos moradores do bairro.";
       await editor.fill(opening);
       // The body counter changes after the editor's debounce, before autosave settles.
-      await expect(page.getByText(/0,1 de 2 laudas/)).toHaveCount(1);
+      await expect(page.getByText(`${opening.length} caracteres`, { exact: true })).toHaveCount(1);
       await expect(page.getByRole("status").filter({ hasText: /^Salvo$/ })).toBeVisible();
       await page.reload();
       await expect(page.getByRole("heading", { name: "Uma praça para o bairro", exact: true })).toBeVisible();

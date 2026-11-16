@@ -341,8 +341,8 @@ describe('studio model · suggestions, tools and quotes', () => {
     assert.deepEqual(documentTools({ empty: false, characters: 4000, size: 'standard', headings: 0 }).map((tool) => tool.id), ['titles'], 'up to the maximum: nothing to shorten');
     const long = documentTools({ empty: false, characters: 4001, size: 'standard', headings: 2 });
     assert.deepEqual(long.map((tool) => tool.id), ['titles', 'suggest-subheadings', 'shorten-to-brief']);
-    assert.equal(long[2]?.label, 'Encurtar para 2 laudas');
-    assert.equal(documentTools({ empty: false, characters: 2100, size: 'short', headings: 0 })[1]?.label, 'Encurtar para 1 lauda');
+    assert.equal(long[2]?.label, 'Encurtar para 4.000 caracteres');
+    assert.equal(documentTools({ empty: false, characters: 2100, size: 'short', headings: 0 })[1]?.label, 'Encurtar para 2.000 caracteres');
   });
 
   it('finds the transcript clause behind a misquote', () => {
