@@ -35,7 +35,7 @@ export type SessionTurn = {
  * assistant, what is missing before sending, and the reviewer's comments (only after
  * "Ajustes solicitados").
  */
-export type PanelTab = 'material' | 'assistant' | 'checks' | 'comments';
+export type PanelTab = 'material' | 'assistant' | 'checks' | 'comments' | 'publication';
 
 /** What opens over the studio from the header ⋯ and the primary (one at a time). */
 export type StudioDialog = 'send' | 'history' | 'structure' | 'trace' | 'rewrite' | 'brief';

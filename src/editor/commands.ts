@@ -30,6 +30,15 @@ import { BLOCK_ATTR, DOC_ATTR, MARK, NODE } from './schema.ts';
 export type BlockKind = 'paragraph' | 'heading2' | 'heading3' | 'quote' | 'bulletList' | 'orderedList';
 export type MarkKind = 'bold' | 'italic' | 'underline' | 'strike';
 
+/** A small editable table; pasted HTML may supply additional rows and columns. */
+export function insertTable(editor: Editor): boolean {
+  if (!editor.isEditable) return false;
+  return editor.chain().focus().insertContent({ type: NODE.table, content: Array.from({ length: 3 }, (_, row) => ({
+    type: NODE.tableRow, content: Array.from({ length: 2 }, (_, column) => ({ type: NODE.tableCell, attrs: { header: row === 0 },
+      content: [{ type: NODE.paragraph, ...(row === 0 ? { content: [{ type: NODE.text, text: `Coluna ${column + 1}` }] } : {}) }] })),
+  })) }).run();
+}
+
 /** Block style at the selection head; `divider`/`figure` for a selected rule or image; `null` before content. */
 export function blockKindAt(state: EditorState): BlockKind | 'divider' | 'figure' | null {
   const { $from } = state.selection;
@@ -201,10 +210,11 @@ export function setTextReview(editor: Editor, review: 'reviewed' | 'unreviewed')
  * Replaces the whole document, cover included (restore a version, reload after a save conflict).
  * Outside the undo history by default, and without an `update` (the store already holds this body).
  */
-export function setArticleBody(editor: Editor, body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>, options: { history?: boolean; emitUpdate?: boolean } = {}): void {
+export function setArticleBody(editor: Editor, body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot' | 'seo'>, options: { history?: boolean; emitUpdate?: boolean } = {}): void {
   const { state } = editor;
   const doc = articleDocNode(state.schema, body);
   const tr = state.tr.replaceWith(0, state.doc.content.size, doc.content);
+  if (DOC_ATTR.seo in state.doc.attrs) tr.setDocAttribute(DOC_ATTR.seo, doc.attrs[DOC_ATTR.seo] ?? null);
   const cover = readImageRef(body.cover);
   if (DOC_ATTR.cover in state.doc.attrs && !sameImageRef(readImageRef(state.doc.attrs[DOC_ATTR.cover]), cover)) tr.setDocAttribute(DOC_ATTR.cover, cover);
   const coverSlot = cover ? null : readImageSlot(body.coverSlot);

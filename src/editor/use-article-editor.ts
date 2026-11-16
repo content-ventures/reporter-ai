@@ -216,7 +216,7 @@ export function useArticleEditor(options: UseArticleEditorOptions): ArticleEdito
 }
 
 export type UseArticleReaderOptions = {
-  body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>;
+  body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot' | 'seo'>;
   /** Accessible name of the keyboard-readable, immutable text. */
   label?: string;
   /** What the figures show per asset (keep it memoised). */
@@ -250,7 +250,7 @@ function useImageSlotSelect(editor: Editor | null, onSelect: ((slot: ImageSlotIn
 }
 
 /** The body without open slots or the cover suggestion (what `hideImageSlots` shows). */
-function publishableView(body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>): Pick<ArticleBody, 'blocks' | 'cover'> {
+function publishableView(body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot' | 'seo'>): Pick<ArticleBody, 'blocks' | 'cover'> {
   const view: Pick<ArticleBody, 'blocks' | 'cover'> = { blocks: body.blocks.filter((block) => !isImageSlot(block)) };
   if (body.cover) view.cover = body.cover;
   return view;

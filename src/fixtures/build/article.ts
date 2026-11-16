@@ -121,6 +121,8 @@ function withText(block: ArticleBlock, text: string): ArticleBlock {
       return reviewed({ ...block, inlines: text ? [{ text }] : [] });
     case 'list':
       return reviewed({ ...block, items: text.split('\n').map((item) => [{ text: item }]) });
+    case 'table':
+      return reviewed({ ...block, rows: text.split('\n').map(row => row.split('\t').map(cell => [{ text: cell }])) });
     case 'divider':
     case 'figure':
       return block;

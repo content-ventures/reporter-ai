@@ -24,7 +24,7 @@ const planSchema = z.object({ decision: z.enum(['ready', 'needs_reporting']), an
   research: z.object({ queries: z.array(z.object({ query: z.string().trim().min(1).max(380), purpose: z.string().trim().min(1).max(500), evidenceIds: ids.min(1) }).strict()).max(3),
     reason: z.string().trim().min(1).max(1000) }).strict().optional() }).strict();
 const articleSchema = z.object({ title: z.string().trim().min(1).max(500), dek: z.string().max(1000), titleEvidenceIds: ids.min(1), dekEvidenceIds: ids,
-  blocks: z.array(z.object({ id, type: z.enum(['paragraph', 'heading', 'quote', 'list']), level: z.union([z.literal(2), z.literal(3)]),
+  blocks: z.array(z.object({ id, type: z.enum(['paragraph', 'heading', 'quote', 'list', 'table']), level: z.union([z.literal(2), z.literal(3)]),
     text: z.string().max(5000), items: z.array(z.string().trim().min(1).max(2000)).max(30), evidenceIds: ids.min(1) }).strict()).min(1).max(100) }).strict();
 const articlePassages = z.array(z.object({ blockId: id, text: z.string().trim().min(1).max(3000) }).strict()).max(20);
 const reviewAuditSchema = z.object({
@@ -77,7 +77,7 @@ function validateReviewAudit(audit: WritingReviewAudit, article: WritingArticle,
   const locations = new Map([
     ['title', { texts: [article.title], evidenceIds: article.titleEvidenceIds }],
     ['dek', { texts: [article.dek], evidenceIds: article.dekEvidenceIds }],
-    ...article.blocks.map(block => [block.id, { texts: block.type === 'list' ? block.items : [block.text], evidenceIds: block.evidenceIds }] as const),
+    ...article.blocks.map(block => [block.id, { texts: (block.type === 'list' || block.type === 'table') ? block.items : [block.text], evidenceIds: block.evidenceIds }] as const),
   ]);
   const passagesExist = (passages: WritingArticlePassage[]) => {
     const keys = passages.map(passage => stableStringify(passage));
@@ -190,10 +190,15 @@ export function validateWritingOutput(stage: WritingStage, value: unknown, evide
   const quoted = [{ text: result.title, evidenceIds: result.titleEvidenceIds }, { text: result.dek, evidenceIds: result.dekEvidenceIds }];
   for (const block of result.blocks) {
     checkIds(block.evidenceIds, evidence);
-    if (block.type === 'list' ? !block.items.length || Boolean(block.text.trim()) : !block.text.trim() || block.items.length > 0)
+    if ((block.type === 'list' || block.type === 'table') ? !block.items.length || Boolean(block.text.trim()) : !block.text.trim() || block.items.length > 0)
       fail('WRITING_INVALID_OUTPUT', 'O conteúdo de um bloco não corresponde ao seu tipo.');
     if (block.type !== 'heading' && block.level !== 2) fail('WRITING_INVALID_OUTPUT', 'O nível do bloco não corresponde ao contrato.');
-    if (block.type === 'list') quoted.push(...block.items.map(text => ({ text, evidenceIds: block.evidenceIds })));
+    if (block.type === 'table') {
+      const cells = block.items.map(row => row.split('\t'));
+      if (cells.length < 2 || cells[0].length < 2 || cells[0].length > 6 || cells.some(row => row.length !== cells[0].length || row.some(cell => !cell.trim())))
+        fail('WRITING_INVALID_OUTPUT', 'A tabela precisa de cabeçalhos e linhas com as mesmas colunas.');
+    }
+    if (block.type === 'list' || block.type === 'table') quoted.push(...block.items.map(text => ({ text, evidenceIds: block.evidenceIds })));
     else quoted.push({ text: block.type === 'quote' ? `“${block.text}”` : block.text, evidenceIds: block.evidenceIds });
   }
   if (result.blocks.every(block => block.type === 'heading')) fail('WRITING_INVALID_OUTPUT', 'O artigo não contém corpo de texto.');

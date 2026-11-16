@@ -14,6 +14,9 @@ export const NODE = {
   bulletList: 'bulletList',
   orderedList: 'orderedList',
   listItem: 'listItem',
+  table: 'table',
+  tableRow: 'tableRow',
+  tableCell: 'tableCell',
   divider: 'horizontalRule',
   figure: 'figure',
   hardBreak: 'hardBreak',
@@ -57,6 +60,7 @@ export const FIGURE_DISPLAY_ATTRS = [FIGURE_ATTR.credit, FIGURE_ATTR.creditUrl, 
 
 /** Document attributes (body metadata kept with the text, outside any node). */
 export const DOC_ATTR = {
+  seo: 'seo',
   cover: 'cover',
   /** The generation's suggestion for the cover (`ArticleBody.coverSlot`), while there is no cover. */
   coverSlot: 'coverSlot',
@@ -64,6 +68,7 @@ export const DOC_ATTR = {
 
 /** Top-level block node types; each one carries the `BLOCK_ATTR` attributes. */
 export const TOP_BLOCK_TYPES: readonly string[] = [
+  NODE.table,
   NODE.paragraph,
   NODE.heading,
   NODE.quote,

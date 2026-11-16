@@ -7,8 +7,18 @@ import { articleDocNode, docBody } from './nodes.ts';
 import { articleToDoc, blockToJSON, docToArticle, inlinesToJSON, jsonToBlock, jsonToInlines } from './pm-json.ts';
 import type { PmNodeJSON } from './pm-json.ts';
 import { FIGURE_BODY, REF_A, RICH_BODY } from './test-support.ts';
+import { publicationMetadata } from '../domain/publication.ts';
 
 describe('domain ⇄ ProseMirror JSON', () => {
+  test('publication metadata survives editing, schema serialization and reload without changing the text', () => {
+    const body = { ...RICH_BODY, seo: publicationMetadata(RICH_BODY) };
+    const node = articleDocNode(articleSchema(), body);
+    const updated = node.type.create({ ...node.attrs, seo: { ...body.seo, description: 'Descrição editada pelo repórter.' } }, node.content);
+    const result = docBody(updated, { title: body.title });
+    assert.equal(result.seo?.description, 'Descrição editada pelo repórter.');
+    assert.deepEqual(result.blocks, body.blocks);
+    assert.deepEqual(docToArticle(updated.toJSON() as PmNodeJSON, { title: body.title }), result);
+  });
   test('round-trips every block type, mark, link, hard break, sourceRefs and ai state', () => {
     const json = articleToDoc(RICH_BODY);
     assert.deepEqual(docToArticle(json, { title: RICH_BODY.title }), RICH_BODY);

@@ -67,6 +67,11 @@ export function blockLines(node: PMNode, pos: number): BlockLine[] {
 
 /** Plain text of a top-level block, identical to the domain `blockText` of its converted block. */
 export function blockTextOf(node: PMNode): string {
+  if (node.type.name === NODE.table) {
+    const rows: string[] = [];
+    node.forEach(row => { const cells: string[] = []; row.forEach(cell => cells.push(cell.textBetween(0, cell.content.size, '\n', '\n'))); rows.push(cells.join('\t')); });
+    return rows.join('\n');
+  }
   return blockLines(node, 0)
     .map((line) => line.text)
     .join('\n');
