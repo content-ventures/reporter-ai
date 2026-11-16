@@ -161,7 +161,9 @@ test.describe('real multi-client editorial delivery',()=>{
       const page=await context.newPage();
       for(const[index,production]of journey.productions.slice(0,2).entries()){
         await page.goto(`/w/${production.slug}/productions`);await expect(page.getByRole('heading',{level:1,name:'Produções',exact:true})).toBeVisible();
-        await expect(page.getByRole('button',{name:'Nova produção',exact:true}).or(page.getByRole('link',{name:'Nova produção',exact:true}))).toHaveCount(index===0?1:0);
+        const main=page.getByRole('main');
+        await expect(main.getByRole('button',{name:'Nova produção',exact:true}).or(main.getByRole('link',{name:'Nova produção',exact:true}))).toHaveCount(index===0?1:0);
+        await expect(page.getByRole('navigation',{name:'Menu principal',exact:true}).getByRole('link',{name:'Nova produção',exact:true})).toHaveCount(index===0?1:0);
         const bytes=await page.evaluate(async path=>Array.from(new Uint8Array(await(await fetch(path)).arrayBuffer())),`/api/reporter/w/${production.slug}/visuals/assets/${production.assetId}/file`);
         expect(createHash('sha256').update(Buffer.from(bytes)).digest('hex')).toBe(production.photoHash);
       }
