@@ -129,7 +129,7 @@ export type RestoreRefusal = NotFoundRefusal | ForbiddenRefusal | 'unknown_versi
 export type SavedVersion = { version: VersionView; revision: number };
 
 /** The pauta a person sets: an event format (formats.ts) is optional; without it, the article of R1. */
-export type BriefInput = { angle?: string; sections: number; size: ArticleSize; format?: EditorialFormat; formatSize?: string; event?: EventContext };
+export type BriefInput = { editorial?: import('../domain/editorial-plan.ts').EditorialPlan; angle?: string; sections: number; size: ArticleSize; format?: EditorialFormat; formatSize?: string; event?: EventContext };
 export type BriefRefusal = NotFoundRefusal | ForbiddenRefusal | 'conflict' | 'sections_out_of_range' | 'unknown_size' | 'unknown_format';
 
 /** `personId: null` with `unattributed` is "Sem atribuição"; without it, the label is left undecided. */

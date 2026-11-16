@@ -92,6 +92,8 @@ function signature(block: ArticleBlock, assets?: AssetLookup): string {
       return JSON.stringify([block.type, runs(block.inlines)]);
     case 'list':
       return JSON.stringify([block.type, block.ordered, block.items.map(runs)]);
+    case 'table':
+      return JSON.stringify([block.type, block.rows.map(row => row.map(runs))]);
     case 'divider':
       return block.type;
   }

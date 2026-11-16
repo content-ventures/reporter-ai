@@ -8,12 +8,14 @@ import type { ArticleSize } from './sizing.ts';
 import { contentHash } from './text/hash.ts';
 import { FORMAT_SPECS, formatSizeOf, isEditorialFormat, normalizeEvent } from './formats.ts';
 import type { EditorialFormat, EventContext } from './formats.ts';
+import { validEditorialPlan, type EditorialPlan } from './editorial-plan.ts';
 
 /** Sections after the introduction of a new production (the default size's default). */
 export const DEFAULT_SECTIONS = ARTICLE_SIZES[DEFAULT_ARTICLE_SIZE].sections.default;
 
 /** The editorial brief (pauta): seed of the R2 writing guide (F2.5). */
 export type Brief = {
+  editorial?: EditorialPlan;
   /** "Orientação editorial", optional. */
   angle?: string;
   /** Sections after the introduction, inside the size's range (Curto 1–3, Padrão 2–5). */
@@ -78,7 +80,7 @@ export function briefHash(brief: Brief): string {
   // Format fields join the hash only when present, so every brief written before them keeps its hash.
   return contentHash({ angle: brief.angle?.trim() || undefined, sections: brief.sections, size: brief.size,
     ...(brief.format ? { format: brief.format, formatSize: formatSizeOf(brief.format, brief.formatSize).id } : {}),
-    ...(brief.event ? { event: brief.event } : {}) });
+    ...(brief.event ? { event: brief.event } : {}), ...(brief.editorial ? { editorial: brief.editorial } : {}) });
 }
 
 export function toBriefRef(production: Production): BriefRef {
@@ -95,7 +97,9 @@ export type BriefRefusal = 'sections_out_of_range' | 'unknown_size' | 'unknown_f
 export function validateBrief(brief: Brief): Result<Brief, BriefRefusal> {
   if (!isArticleSize(brief.size)) return refuse('unknown_size', 'Tamanho desconhecido.');
   if (brief.format !== undefined && !isEditorialFormat(brief.format)) return refuse('unknown_format', 'Formato desconhecido.');
-  const { label, sections } = brief.format
+  if (brief.editorial && !validEditorialPlan(brief.editorial)) return refuse('unknown_format', 'Revise o formato e o limite em caracteres.');
+  const { label, sections } = brief.editorial
+    ? { label: 'Formato escolhido', sections: { min: 1, max: 20 } } : brief.format
     ? { label: FORMAT_SPECS[brief.format].label, sections: formatSizeOf(brief.format, brief.formatSize).sections }
     : ARTICLE_SIZES[brief.size];
   if (!Number.isInteger(brief.sections) || brief.sections < sections.min || brief.sections > sections.max) {
@@ -109,6 +113,7 @@ export function validateBrief(brief: Brief): Result<Brief, BriefRefusal> {
     size: brief.size,
     ...(brief.format ? { format: brief.format, formatSize: formatSizeOf(brief.format, brief.formatSize).id } : {}),
     ...(event ? { event } : {}),
+    ...(brief.editorial ? { editorial: brief.editorial } : {}),
     revision: brief.revision,
   });
 }

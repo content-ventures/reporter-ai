@@ -22,7 +22,7 @@ describe('article readiness checks', () => {
     assert.equal(results['article.length'].label, 'Tamanho');
     assert.equal(results['article.length'].status, 'info', 'a short text is information, never a warning');
     assert.deepEqual(results['article.length'].progress, { current: 192, total: 4000 });
-    assert.equal(results['article.length'].meta, '0,1/2 laudas');
+    assert.equal(results['article.length'].meta, '192/4.000 caracteres');
     assert.equal(results['article.quotes'].status, 'pass');
     assert.equal(results['article.quotes'].detail, '2 de 2 conferidas');
     assert.equal(results['article.ai-reviewed'].status, 'warn');
@@ -73,16 +73,16 @@ describe('"Tamanho": the lauda rule (1 lauda = 2.000 characters, body only)', ()
   const check = (chars: number, size: 'short' | 'standard', materialChars?: number) => sizeCheck(bodyOf(chars), { size }, idle, materialChars);
 
   test('inside the range passes: Curto 1.000–2.000, Padrão 2.001–4.000', () => {
-    assert.deepEqual(check(2764, 'standard'), { status: 'pass', meta: '1,4/2 laudas', detail: '2.764 de até 4.000 caracteres', progress: { current: 2764, total: 4000 } });
+    assert.deepEqual(check(2764, 'standard'), { status: 'pass', meta: '2.764/4.000 caracteres', detail: '2.764 de até 4.000 caracteres', progress: { current: 2764, total: 4000 } });
     assert.equal(check(4000, 'standard').status, 'pass');
     assert.equal(check(2500, 'standard').status, 'pass');
     assert.equal(check(1000, 'short').status, 'pass');
-    assert.equal(check(2000, 'short').meta, '1/1 lauda');
+    assert.equal(check(2000, 'short').meta, '2.000/2.000 caracteres');
   });
 
   test('above the maximum warns, never blocks', () => {
-    assert.deepEqual(check(4640, 'standard'), { status: 'warn', meta: '2,4/2 laudas', detail: 'Passa 640 caracteres de 2 laudas', progress: { current: 4640, total: 4000 } });
-    assert.equal(check(2001, 'short').detail, 'Passa 1 caracteres de 1 lauda');
+    assert.deepEqual(check(4640, 'standard'), { status: 'warn', meta: '4.640/4.000 caracteres', detail: 'Passa 640 caracteres do limite de 4.000', progress: { current: 4640, total: 4000 } });
+    assert.equal(check(2001, 'short').detail, 'Passa 1 caracteres do limite de 2.000');
     const results = runChecks(ARTICLE_CHECKS, { body: bodyOf(6000), brief: { sections: 3, size: 'standard', revision: 1 }, sources: [], generation: idle });
     assert.equal(results.find((result) => result.id === 'article.length')?.blocking, false);
   });
@@ -90,16 +90,16 @@ describe('"Tamanho": the lauda rule (1 lauda = 2.000 characters, body only)', ()
   test('below the minimum only informs: the AI never pads a text', () => {
     assert.deepEqual(check(900, 'short', 900), {
       status: 'info',
-      meta: '0,5/1 lauda',
+      meta: '900/2.000 caracteres',
       detail: 'O material não rende mais. A IA não completa o texto.',
       progress: { current: 900, total: 2000 },
     });
     assert.equal(check(800, 'short', 5000).detail, 'Abaixo de 1.000 caracteres: confira se a notícia se sustenta');
-    assert.equal(check(800, 'short', 5000).meta, '0,4/1 lauda');
-    assert.equal(check(2000, 'standard', 5000).detail, 'Cabe em 1 lauda: considere Curto na pauta');
-    assert.equal(check(2000, 'standard', 5000).meta, '1/2 laudas');
+    assert.equal(check(800, 'short', 5000).meta, '800/2.000 caracteres');
+    assert.equal(check(2000, 'standard', 5000).detail, 'Cabe em 2.000 caracteres: considere Curto na pauta');
+    assert.equal(check(2000, 'standard', 5000).meta, '2.000/4.000 caracteres');
     assert.equal(check(1500, 'standard', 1800).detail, 'O material não rende mais. A IA não completa o texto.');
-    assert.equal(check(1500, 'standard').detail, 'Cabe em 1 lauda: considere Curto na pauta', 'unknown material: the size advice');
+    assert.equal(check(1500, 'standard').detail, 'Cabe em 2.000 caracteres: considere Curto na pauta', 'unknown material: the size advice');
   });
 
   test('no text, a running generation or the partial text of an interrupted one is not applicable', () => {
@@ -119,7 +119,7 @@ describe('"Tamanho": the lauda rule (1 lauda = 2.000 characters, body only)', ()
         paragraphBlock('p2', 'x'.repeat(1000)),
       ],
     };
-    assert.equal(sizeCheck(body, { size: 'short' }, idle).meta, '1/1 lauda');
+    assert.equal(sizeCheck(body, { size: 'short' }, idle).meta, '2.000/2.000 caracteres');
     assert.equal(sizeCheck(body, { size: 'short' }, idle).status, 'pass');
   });
 

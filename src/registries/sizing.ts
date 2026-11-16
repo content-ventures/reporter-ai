@@ -1,3 +1,4 @@
+import { editorialGuidance } from '../domain/editorial-plan.ts';
 import { CHARS_PER_LAUDA, DEFAULT_ARTICLE_SIZE, FORMAT_SPECS, formatSizeOf, groupDigits, sectionBudget, sizeOf, SIZE_TOLERANCE } from '../domain/index.ts';
 import type { ArticleSize, Brief, FlowId } from '../domain/index.ts';
 import type { DraftSizeInstructions } from '../ports/index.ts';
@@ -84,8 +85,14 @@ export function sizingPolicyFor(flowId: FlowId): SizingPolicy {
 }
 
 /** The size contract of a brief (Hard News): numbers, budgets per section and the model's sentence. */
-export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'format' | 'formatSize'>,
+export function draftSizeInstructions(brief: Pick<Brief, 'size' | 'sections' | 'format' | 'formatSize' | 'editorial'>,
   options?: { minimumQuotes: number }): DraftSizeInstructions {
+  if (brief.editorial) {
+    const max = brief.editorial.maxChars, target = Math.floor(max * 0.85), intro = Math.floor(target * 0.18);
+    return { size: brief.size, laudas: max / CHARS_PER_LAUDA, charsPerLauda: CHARS_PER_LAUDA, minChars: 0, maxChars: max, targetChars: target, minQuotes: 0, tolerance: SIZE_TOLERANCE, headings: true, neverPad: true, introChars: intro,
+      sections: Array.from({ length: brief.sections }, (_, i) => ({ stepId: sectionStepId(i + 1), budgetChars: Math.floor((target - intro) / brief.sections) })),
+      instruction: `Até ${max} caracteres com espaços. ` + editorialGuidance(brief.editorial) };
+  }
   if (brief.format) return formatSizeInstructions(brief as Pick<Brief, 'size' | 'sections' | 'formatSize'> & { format: NonNullable<Brief['format']> }, options);
   const spec = sizeOf(brief.size);
   const budget = sectionBudget(spec.id, brief.sections);

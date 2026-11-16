@@ -143,7 +143,7 @@ export function r1ArticleIssue(body: ArticleBody, sources: readonly Source[], li
 }
 export function r1ArticleQuotationIssue(body: ArticleBody, sources: readonly Source[], minQuotes: number = R1_ARTICLE_LIMITS.minQuotes): ArticlePolicyIssue | undefined {
   const evidence = new Map<string, string>(),references=new Map<string,SourceRef>();
-  const paragraphs = body.blocks.filter(block => block.type === 'paragraph' || block.type === 'quote' || block.type === 'heading' || block.type === 'list').map(block => {
+  const paragraphs = body.blocks.filter(block => block.type === 'paragraph' || block.type === 'quote' || block.type === 'heading' || block.type === 'list' || block.type === 'table').map(block => {
     const evidenceIds = (block.sourceRefs ?? []).flatMap(ref => {
       const resolved = resolveSourceRef(sources, ref);
       if (!resolved) return [];

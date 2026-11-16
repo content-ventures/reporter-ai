@@ -9,6 +9,7 @@
  * that closes a coverage text is built from it, never written by the AI.
  */
 import { R1_ARTICLE_LIMITS } from './article-policy.ts';
+import type { EditorialPlan } from './editorial-plan.ts';
 import { countWords } from './text/stats.ts';
 import { charactersAbove, formatLaudasOf, groupDigits, sizeLabel, sizeOf } from './sizing.ts';
 import type { ArticleSize } from './sizing.ts';
@@ -152,7 +153,7 @@ export function eventBoxLines(event: EventContext | undefined): EventBoxLine[] {
 }
 
 /** The fields of a brief this module reads (structural, so `production.ts` can import it). */
-export type FormatBrief = { format?: EditorialFormat; formatSize?: string; event?: EventContext };
+export type FormatBrief = { editorial?: EditorialPlan; format?: EditorialFormat; formatSize?: string; event?: EventContext };
 
 /** Length and quote rules a body must meet: R1's for the article, the format's otherwise. */
 export type ArticleContract = {
@@ -166,6 +167,7 @@ export type ArticleContract = {
 };
 
 export function articleContractFor(brief: FormatBrief): ArticleContract {
+  if (brief.editorial) return { minChars: 0, maxChars: brief.editorial.maxChars, targetChars: Math.floor(brief.editorial.maxChars * 0.85), minQuotes: 0 };
   if (!brief.format) return { ...R1_ARTICLE_LIMITS };
   const spec = FORMAT_SPECS[brief.format], option = formatSizeOf(brief.format, brief.formatSize);
   return { minChars: option.minChars, maxChars: option.maxChars, targetChars: option.targetChars, minQuotes: spec.minQuotes };
@@ -173,6 +175,7 @@ export function articleContractFor(brief: FormatBrief): ArticleContract {
 
 /** Where a text wants quotations: R1's article in its sections, a format as its spec says. */
 export function quoteRuleFor(brief: FormatBrief): QuoteRule {
+  if (brief.editorial) return { minQuotes: 0, openingQuote: false, sectionQuotes: false };
   if (!brief.format) return { minQuotes: R1_ARTICLE_LIMITS.minQuotes, openingQuote: false, sectionQuotes: true };
   const spec = FORMAT_SPECS[brief.format];
   return { minQuotes: spec.minQuotes, openingQuote: spec.openingQuote, sectionQuotes: spec.sectionQuotes };
@@ -225,22 +228,22 @@ export type SizedBrief = FormatBrief & { size: ArticleSize };
 
 /** The most characters the brief's text should have: the format option's, or the lauda size's. */
 export function briefMaxChars(brief: SizedBrief): number {
-  return brief.format ? formatSizeOf(brief.format, brief.formatSize).maxChars : sizeOf(brief.size).maxChars;
+  return brief.editorial?.maxChars ?? (brief.format ? formatSizeOf(brief.format, brief.formatSize).maxChars : sizeOf(brief.size).maxChars);
 }
 
 /** Characters past that maximum; 0 inside it. */
 export function briefCharactersAbove(chars: number, brief: SizedBrief): number {
-  return brief.format ? Math.max(0, Math.round(chars) - briefMaxChars(brief)) : charactersAbove(chars, brief.size);
+  return brief.format || brief.editorial ? Math.max(0, Math.round(chars) - briefMaxChars(brief)) : charactersAbove(chars, brief.size);
 }
 
 /** "1,4 de 2 laudas" for the article; "2.140 de 2.300 caracteres" for a format, sized in characters. */
 export function briefSizeProgress(chars: number, brief: SizedBrief): string {
-  return brief.format ? `${groupDigits(chars)} de ${groupDigits(briefMaxChars(brief))} caracteres` : formatLaudasOf(chars, brief.size);
+  return brief.format || brief.editorial ? `${groupDigits(chars)} de ${groupDigits(briefMaxChars(brief))} caracteres` : formatLaudasOf(chars, brief.size);
 }
 
 /** "Padrão · 2 laudas", or the format's name: "Cobertura de estande · Completo". */
 export function briefSizeName(brief: SizedBrief): string {
-  return formatLabel(brief) ?? sizeLabel(brief.size);
+  return brief.editorial ? `Até ${groupDigits(brief.editorial.maxChars)} caracteres` : formatLabel(brief) ?? sizeLabel(brief.size);
 }
 
 /**

@@ -7,6 +7,8 @@ import type { Result } from './result.ts';
 import { contentHash } from './text/hash.ts';
 import { countCharacters, textStats } from './text/stats.ts';
 import type { TextStats } from './text/stats.ts';
+import { readPublicationMetadata } from './publication.ts';
+import type { PublicationMetadata } from './publication.ts';
 
 /**
  * Article body as DOMAIN BLOCKS (not TipTap JSON): portable to a CMS, diffable per block,
@@ -35,6 +37,8 @@ export type ParagraphBlock = BlockBase & { type: 'paragraph'; inlines: Inline[] 
 export type HeadingBlock = BlockBase & { type: 'heading'; level: 2 | 3; inlines: Inline[] };
 export type QuoteBlock = BlockBase & { type: 'quote'; inlines: Inline[] };
 export type ListBlock = BlockBase & { type: 'list'; ordered: boolean; items: Inline[][] };
+/** Rectangular data table; the first row contains column headers. */
+export type TableBlock = BlockBase & { type: 'table'; rows: Inline[][][] };
 export type DividerBlock = BlockBase & { type: 'divider' };
 /** How an image slot is framed: column-wide (the default), standing or square. */
 export type ImageOrientation = 'landscape' | 'portrait' | 'square';
@@ -66,11 +70,12 @@ export type ImageFigureBlock = BlockBase & { type: 'figure'; image: ImageRef; sl
 export type ImageSlotBlock = BlockBase & { type: 'figure'; slot: ImageSlot; image?: undefined };
 export type FigureBlock = ImageFigureBlock | ImageSlotBlock;
 
-export type ArticleBlock = ParagraphBlock | HeadingBlock | QuoteBlock | ListBlock | DividerBlock | FigureBlock;
+export type ArticleBlock = ParagraphBlock | HeadingBlock | QuoteBlock | ListBlock | TableBlock | DividerBlock | FigureBlock;
 export type ArticleBlockType = ArticleBlock['type'];
 export type InlineBlock = ParagraphBlock | HeadingBlock | QuoteBlock;
 
 export type ArticleBody = {
+  seo?: PublicationMetadata;
   type: 'article';
   title: string;
   /** "Linha fina": the line under the title that completes it. Absent on articles without one. */
@@ -103,6 +108,7 @@ export function inlinesText(inlines: readonly Inline[]): string {
 export function blockText(block: ArticleBlock): string {
   if (hasInlines(block)) return inlinesText(block.inlines);
   if (block.type === 'list') return block.items.map(inlinesText).join(LIST_ITEM_SEPARATOR);
+  if (block.type === 'table') return block.rows.map(row => row.map(inlinesText).join('\t')).join('\n');
   return '';
 }
 
@@ -178,6 +184,7 @@ export function normalizeImageSlot(slot: ImageSlot): ImageSlot {
 function normalizeBlock(block: ArticleBlock): ArticleBlock {
   if (hasInlines(block)) return { ...block, inlines: normalizeInlines(block.inlines) };
   if (block.type === 'list') return { ...block, items: block.items.map(normalizeInlines) };
+  if (block.type === 'table') return { ...block, rows: block.rows.map(row => row.map(normalizeInlines)) };
   if (block.type === 'figure') return block.image ? { ...block, image: normalizeImageRef(block.image) } : { ...block, slot: normalizeImageSlot(block.slot) };
   return block;
 }
@@ -187,6 +194,7 @@ export function normalizeArticle(body: ArticleBody): ArticleBody {
   const out: ArticleBody = { type: 'article', title: body.title.trim(), blocks: body.blocks.map(normalizeBlock) };
   const dek = body.dek?.trim();
   if (dek) out.dek = dek;
+  const seo = readPublicationMetadata(body.seo); if (seo) out.seo = seo;
   if (body.cover) out.cover = normalizeImageRef(body.cover);
   else if (body.coverSlot) out.coverSlot = normalizeImageSlot(body.coverSlot);
   return out;
@@ -214,6 +222,7 @@ export function articleHash(body: ArticleBody): string {
   return contentHash({
     title: normalized.title,
     dek: normalized.dek,
+    ...(normalized.seo ? { seo: normalized.seo } : {}),
     cover: normalized.cover ? imageKey(normalized.cover) : undefined,
     coverSlot: normalized.coverSlot ? slotKey(normalized.coverSlot) : undefined,
     blocks: normalized.blocks.map((block) => {
@@ -225,6 +234,8 @@ export function articleHash(body: ArticleBody): string {
           return { type: block.type, inlines: inlinesKey(block.inlines) };
         case 'list':
           return { type: block.type, ordered: block.ordered, items: block.items.map(inlinesKey) };
+        case 'table':
+          return { type: block.type, rows: block.rows.map(row => row.map(inlinesKey)) };
         case 'divider':
           return { type: block.type };
         case 'figure':
@@ -304,19 +315,21 @@ export function replaceTextRange(body: ArticleBody, range: TextRange, text: stri
   if (!validRange(current, range)) return refuse('out_of_bounds', 'O trecho selecionado mudou.');
 
   let next: ArticleBlock;
-  if (block.type === 'list') {
+  if (block.type === 'list' || block.type === 'table') {
+    const cells = block.type === 'list' ? block.items : block.rows.flat();
     let start = 0;
-    const itemIndex = block.items.findIndex((item) => {
+    const itemIndex = cells.findIndex((item) => {
       const end = start + inlinesText(item).length;
       if (range.from >= start && range.to <= end) return true;
       start = end + LIST_ITEM_SEPARATOR.length;
       return false;
     });
     if (itemIndex < 0) return refuse('spans_list_items', 'Selecione um item da lista por vez.');
-    const items = block.items.map((item, position) =>
+    const items = cells.map((item, position) =>
       position === itemIndex ? spliceInlines(item, range.from - start, range.to - start, text) : item,
     );
-    next = { ...block, items };
+    let cell = 0;
+    next = block.type === 'list' ? { ...block, items } : { ...block, rows: block.rows.map(row => row.map(() => items[cell++])) };
   } else {
     next = { ...block, inlines: spliceInlines(block.inlines, range.from, range.to, text) };
   }
@@ -392,7 +405,7 @@ export function reviewFlips(before: ArticleBody, after: ArticleBody): { marked: 
 export function articleLinks(body: ArticleBody): { blockId: BlockId; href: string; text: string }[] {
   const links: { blockId: BlockId; href: string; text: string }[] = [];
   for (const block of body.blocks) {
-    const runs = hasInlines(block) ? block.inlines : block.type === 'list' ? block.items.flat() : [];
+    const runs = hasInlines(block) ? block.inlines : block.type === 'list' ? block.items.flat() : block.type === 'table' ? block.rows.flat(2) : [];
     for (const inline of runs) {
       if (inline.marks?.includes('link')) links.push({ blockId: block.id, href: inline.href ?? '', text: inline.text });
     }
