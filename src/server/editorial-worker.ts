@@ -25,6 +25,8 @@ import { executePipelineStep, writeSequentialArticle, writeCompleteArticle, edit
 import { workDirectory, sourcePreparationDirectory } from './storage';
 import { mapEditorialPassages } from './editorial-passages';
 import { FlowError, safeCode, editorialRetryPolicy } from './errors';
+import { editorialGuidance } from '../domain/editorial-plan.ts';
+import { publicationMetadata } from '../domain/publication.ts';
 import { articlePreview } from './article-preview';
 import { contiguousSourcePassages, r1ArticleIssue, unquoteUnsupported, ARTICLE_POLICY_MESSAGES, articlePolicyMessage } from '../domain/article-policy.ts';
 import { articleContractFor, articleGateFor, outletPunctuation, quoteRuleFor, tidyQuoteOpenings } from '../domain/formats.ts';
@@ -217,13 +219,14 @@ async function runScoped(owner: string, signal: AbortSignal, services: { prepare
       logEvent('worker','editorial_completed',{ generation_id: job.meta.runId });
       return true;
     }
+    const editorial = input.record.production.brief.editorial;
     const directory = await workDirectory(job.meta.runId);
     const evidenceContext = { runId: job.meta.runId, workspaceId: input.record.production.workspaceId, actorId: input.record.production.createdBy };
-    const publications = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
+    const publications = job.kind === 'article.draft' && pipeline.definition.writing?.enabled && !editorial?.fastDraft
       ? await (services.preparePublications ?? prepareNewsPublications)(input.record.sources, evidenceContext, { signal: combined, directory,
         legacyNews: input.record.production.brief.angle?.startsWith('Hard news: apure a notícia ') })
       : { sources: [], candidates: [], dates: new Map<string, string>() };
-    const candidates: WritingSourceCandidate[] = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
+    const candidates: WritingSourceCandidate[] = job.kind === 'article.draft' && pipeline.definition.writing?.enabled && !editorial?.fastDraft
       ? [...writingSourceCandidates(input.record.sources), ...publications.candidates] : editorialCandidates(input.record);
     // Curated citations and quotable lines reach a step only when its prompt explains them.
     const curated = curatedEvidence(input.citations,input.record.sources,candidates);
@@ -238,12 +241,13 @@ async function runScoped(owner: string, signal: AbortSignal, services: { prepare
     });
     const previousDirectory = job.cacheSourceRunId ? await workDirectory(job.cacheSourceRunId) : undefined;
     const factsDirectory = await sourcePreparationDirectory();
-    const minimumQuotes = job.kind === 'article.draft' && pipeline.definition.writing?.enabled
+    const minimumQuotes = job.kind === 'article.draft' && pipeline.definition.writing?.enabled && !editorial?.fastDraft
       ? effectiveWritingMinimumQuotes(pipeline.definition.writing, articleGateFor(input.record.production.brief).minQuotes) : undefined;
     const sizing = draftSizeInstructions(input.record.production.brief, minimumQuotes === undefined ? undefined : { minimumQuotes });
     const source = candidates.map(c => '['+c.key+'] '+(c.speaker ? c.speaker+': ' : '')+c.text).join('\n');
     if (!source.trim()) throw new FlowError('EMPTY_EDITORIAL_SOURCE',422);
-    const brief = JSON.stringify(input.record.production.brief);
+    const editorialContext = { ...input.record.production.brief, ...(editorial ? { editorialGuidance: editorialGuidance(editorial) } : {}), sources: input.record.sources.map(source => ({ id: source.id, programName: source.programName, sourceUrl: source.sourceUrl, recordedOn: source.recordedOn })) };
+    const brief = JSON.stringify(editorialContext);
     const format = input.record.production.brief.format;
     const people = confirmedPeople(input.record,input.people);
     // A line is quotable when a linked speaker said it, or, in a stand interview without speaker labels and one
@@ -252,7 +256,7 @@ async function runScoped(owner: string, signal: AbortSignal, services: { prepare
     const identified = quotableSpeaker({ linked,people,unlabeledAnswers: format === 'stand' });
     const executionTime = new Date();
     const today = new Intl.DateTimeFormat('pt-BR',{ timeZone: 'America/Sao_Paulo',weekday: 'long',day: 'numeric',month: 'long',year: 'numeric' }).format(executionTime);
-    if (job.kind === 'article.draft' && pipeline.definition.writing?.enabled) {
+    if (job.kind === 'article.draft' && pipeline.definition.writing?.enabled && !editorial?.fastDraft) {
       await guarded([{ type: 'step.completed', stepId: 'source', meta: `${candidates.length} trechos originais disponíveis` }]);
       const completed = new Set<string>();
       const originalSources = [...input.record.sources.filter(source => !source.research).map(source => publications.dates.has(source.id)
@@ -261,7 +265,7 @@ async function runScoped(owner: string, signal: AbortSignal, services: { prepare
         configuration: pipeline.definition.writing, policy: pipeline.definition.editorial,
         source: candidates.map(candidate => ({ id: candidate.key, text: candidate.text, ...(candidate.speaker ? { speaker: candidate.speaker } : {}),
           ...(candidate.memory ? { memory: candidate.memory } : {}) })),
-        brief: { ...input.record.production.brief, people, today, limits: sizing, requestedOutline: requestedOutline ?? null,
+        brief: { ...editorialContext, people, today, limits: sizing, requestedOutline: requestedOutline ?? null,
           temporalContext: writingTemporalContext(originalSources, writingExecutionDate(executionTime)),
           sourceReferences: candidates.map(candidate => ({ id: candidate.key, reference: candidate.ref })) },
         directory, signal: combined,
@@ -307,6 +311,7 @@ async function runScoped(owner: string, signal: AbortSignal, services: { prepare
       if (pipeline.definition.writing.maxCorrections) for (const stepId of ['writing-correct-1', 'writing-review-2']) {
         if (!completed.has(stepId)) events.push({ type: 'step.skipped', stepId });
       }
+      if (editorial) events.push({ type: 'article.metadata', seo: publicationMetadata(body, editorial) });
       events.push({ type: 'run.completed' });
       await guarded(events, undefined, { assets: [], queueImages: false, researchSources: [...publications.sources, ...external.sources],
         citations: citationsFromArticle(body, finalSources, job.meta.productionId, new Date().toISOString()) });
@@ -391,7 +396,7 @@ async function runScoped(owner: string, signal: AbortSignal, services: { prepare
     let layouts: ReturnType<typeof editorialCarouselLayouts> = [];
     if (job.kind === 'article.outline' || job.kind === 'article.draft' && !requestedOutline) {
       requestedOutline = await planEditorialOutline({ sections: input.record.production.brief.sections,candidates,variables,
-        curateQuotes: pipeline.definition.curateQuotes,call,dek: Boolean(format),normalize: outline => {
+        curateQuotes: pipeline.definition.curateQuotes && !editorial?.fastDraft,call,dek: Boolean(format),normalize: outline => {
           const valid = validateEditorialOutline(input.record,outline);
           if (!valid.ok) throw new FlowError('INVALID_OUTLINE',502);
           return { title: valid.value.title,intro: { quotes: valid.value.intro },sections: valid.value.sections };
@@ -417,7 +422,7 @@ async function runScoped(owner: string, signal: AbortSignal, services: { prepare
       // The planning hints stay out: the writing steps read curated lines as marks on literalEvidence.
       variables.source = writingSource(context,candidates,selected,hints.writing ? curated.byKey : new Map());
       variables.outline = JSON.stringify(outline);
-      if (pipeline.definition.articleMode === 'single') value = await writeCompleteArticle(outline, variables, sizing, call, memoryContract);
+      if ((pipeline.definition.articleMode === 'single' || editorial?.fastDraft)) value = await writeCompleteArticle(outline, variables, sizing, call, memoryContract);
       else {
         // A part asked for the quotation its evidence allows, only when both writing prompts explain it.
         const soft = explainedRevisionCodes(pipeline.definition).includes('SECTION_QUOTE_REQUIRED') ? { rule: quoteRuleFor(input.record.production.brief),
@@ -454,7 +459,7 @@ async function runScoped(owner: string, signal: AbortSignal, services: { prepare
         sections: reviewed.sections.map((section,i) => ({ ...section,budget: sizing.sections[i]?.budgetChars })),
         candidates: candidates.map(c => c.ref),size: { laudas: sizing.laudas,minChars: sizing.minChars,maxChars: sizing.maxChars,targetChars: sizing.targetChars } });
     } else if (job.kind === 'article.draft') {
-      const article = z.object({ title: z.string().min(1).max(500),intro: z.array(paragraph).min(1).max(3),sections: z.array(z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict()).min(1).max(8) }).strict().parse(value);
+      const article = z.object({ title: z.string().min(1).max(500),intro: z.array(paragraph).min(1).max(3),sections: z.array(z.object({ title: z.string().min(1).max(120),paragraphs: z.array(paragraph).min(1).max(10) }).strict()).min(1).max(20) }).strict().parse(value);
       if (reviewed && (article.title !== reviewed.title || article.sections.length !== reviewed.sections.length || article.sections.some((s,i) => s.title !== reviewed.sections[i].title))) throw new FlowError('OUTLINE_NOT_FOLLOWED',502);
       const blocks: ArticleBlock[] = [];
       const add = (p: z.infer<typeof paragraph>) => {
@@ -475,6 +480,7 @@ async function runScoped(owner: string, signal: AbortSignal, services: { prepare
         new Map(candidates.map(candidate => [candidate.key,candidate.text])))[0].text : undefined;
       const body = emphasizeArticleQuotes({ type: 'article' as const,title: article.title,...(dek ? { dek } : {}),blocks });
       if (memoryArticleContentIssues(body, input.record.sources).length) throw new FlowError('MEMORY_LITERAL_CHANGED',502);
+      if (editorial) events.push({ type: 'article.metadata', seo: publicationMetadata(body, editorial) });
       const issue = r1ArticleIssue(body, input.record.sources, articleGateFor(input.record.production.brief));
       // No block/version is committed until the WHOLE sequential or single output passes.
       if (issue) throw new FlowError(issue, 502);

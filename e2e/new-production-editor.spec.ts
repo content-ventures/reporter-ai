@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { createEditorialEngine, emptyEditorialCheckpoint, appendEditorialEvent } from '../src/runtime/editorial-engine.ts';
 import type { EditorialJob } from '../src/ports/connected-workspace.ts';
 import type { NewProductionInput } from '../src/ports/production-commands.ts';
+import { defaultPipelineDefinition, pipelineRevision } from '../src/domain/pipeline.ts';
 import { VIEWPORTS, expectNoHorizontalOverflow, watchErrors } from './support';
 
 /** Isolated same-origin replay: no provider calls or shared database writes. */
@@ -11,7 +12,10 @@ async function workspace(page: Page, refuseStart = false) {
   const engine = createEditorialEngine(checkpoint, { next: () => randomUUID() });
   let revision = 0, creates = 0, starts = 0;
   let created: NewProductionInput | undefined;
+  const inputs: NewProductionInput[] = [];
   let job: EditorialJob | undefined;
+  await page.route('**/api/reporter/pipeline', route => route.fulfill({ json: { active: pipelineRevision(defaultPipelineDefinition()), history: [], runs: [] } }));
+  await page.route('**/api/reporter/citations?**', route => route.fulfill({ json: { items: [], sources: [] } }));
   await page.route('**/api/reporter/material/analysis', route => route.fulfill({ json: { title: 'Pauta sintética', participants: [], pipelineRevision: 1 } }));
   await page.route(url => url.pathname === '/api/reporter/workspace', async route => {
     if (route.request().method() === 'GET') {
@@ -22,6 +26,7 @@ async function workspace(page: Page, refuseStart = false) {
     if (method === 'createFromSource') {
       creates++;
       created = args[0] as NewProductionInput;
+      inputs.push(created);
       const result = await engine.commands.createFromSource(created);
       revision++;
       await route.fulfill({ json: result });
@@ -49,7 +54,7 @@ async function workspace(page: Page, refuseStart = false) {
       await route.fulfill({ json: { ok: true, value: { runId: run.id } } });
     } else throw new Error('Unexpected test command: ' + method);
   });
-  return { engine, counts: () => ({ creates, starts }), created: () => created, preview(text = 'Primeiro parágrafo chegando em tempo real.') {
+  return { engine, inputs, counts: () => ({ creates, starts }), created: () => created, preview(text = 'Primeiro parágrafo chegando em tempo real.') {
     expect(job).toBeDefined();
     appendEditorialEvent(engine, job!, { type: 'step.completed', stepId: 'source' });
     appendEditorialEvent(engine, job!, { type: 'step.started', stepId: 'article' });
@@ -146,6 +151,10 @@ test.describe('formato de evento na pauta', () => {
       await page.goto('/productions/new', { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Usar exemplo', exact: true }).click();
       await expect(page.getByRole('dialog')).toBeHidden();
+      await page.getByRole('combobox', { name: 'Categoria', exact: true }).click();
+      await page.getByRole('option', { name: 'Cobertura de feiras', exact: true }).click();
+      await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
       // "Corrigir termo": a misheard word is fixed in the material before the production exists.
       await page.getByRole('textbox', { name: 'Trocar', exact: true }).fill('estúdio');
       await expect(page.getByText('1 ocorrência', { exact: true })).toBeVisible();
@@ -157,10 +166,8 @@ test.describe('formato de evento na pauta', () => {
       await page.getByRole('textbox', { name: 'Por', exact: true }).fill('Ferrari');
       await page.getByRole('textbox', { name: 'Por', exact: true }).press('Enter');
       await expect(page.getByText(/trocas?: Ferraz → Ferrari/)).toBeVisible();
-      await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
-      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
-      await page.getByRole('radio', { name: /Cobertura de estande/ }).check();
-      await page.getByRole('radio', { name: /Enxuto/ }).check();
+      await page.getByRole('spinbutton', { name: 'Limite de caracteres' }).fill('2300');
+      await page.getByRole('spinbutton', { name: 'Quantidade de subtítulos' }).fill('1');
       const eventName = page.getByRole('textbox', { name: /^Evento/ });
       await expect(eventName).toHaveValue('');
       await expect(page.getByText(/Unowned legacy coverage/)).toHaveCount(0);
@@ -172,7 +179,7 @@ test.describe('formato de evento na pauta', () => {
       await page.getByRole('textbox', { name: 'Título interno', exact: true }).fill('Estande no SSLA');
       await page.getByRole('button', { name: 'Gerar texto', exact: true }).click();
       await page.waitForURL(/\/productions\/[^/]+\/article$/);
-      expect(replay.created()?.brief).toMatchObject({ sections: 1, size: 'standard', format: 'stand', formatSize: 'compact',
+      expect(replay.created()?.brief).toMatchObject({ sections: 1, size: 'standard', format: 'stand', formatSize: 'full', editorial: { maxChars: 2300 },
         event: { name: 'Seafood Show Latin America 2026', dates: 'De 20 a 22 de outubro de 2026' } });
       expect(replay.counts()).toEqual({ creates: 1, starts: 1 });
       expect(replay.created()?.material.text).toContain('auditório');
@@ -181,6 +188,34 @@ test.describe('formato de evento na pauta', () => {
       await expect(page.getByText('Gerando linha fina…', { exact: true })).toBeVisible();
       await expectNoHorizontalOverflow(page);
       expect(errors).toEqual([]);
+    } finally { replay.engine.store.dispose(); }
+  });
+
+  test('dois eventos e dois formatos viram quatro pautas independentes com uma fonte compartilhada', async ({ page }) => {
+    const replay = await workspace(page);
+    try {
+      await page.goto('/productions/new');
+      await page.getByRole('combobox', { name: 'Categoria', exact: true }).click();
+      await page.getByRole('option', { name: 'Cobertura de feiras', exact: true }).click();
+      await page.getByRole('checkbox', { name: 'Painel ou palestra', exact: true }).check();
+      await page.getByRole('textbox', { name: 'Nome da feira ou evento', exact: true }).fill('Fenacam 2026');
+      await page.getByRole('textbox', { name: /^Tema principal/ }).fill('Evento de manejo');
+      await page.getByRole('button', { name: 'Usar exemplo', exact: true }).click();
+      await expect(page.getByRole('dialog')).toBeHidden();
+      await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+      await page.getByRole('textbox', { name: /^Temas secundários/ }).fill('Evento de nutrição');
+      await page.getByRole('checkbox', { name: 'Criar um artigo separado para cada tema secundário', exact: true }).check();
+      await page.getByRole('textbox', { name: /^Instruções para esta produção/ }).fill('Separe os dois eventos da gravação; não misture as declarações.');
+      await page.getByRole('spinbutton', { name: 'Limite de caracteres' }).fill('5300');
+      await page.getByRole('button', { name: 'Gerar texto', exact: true }).click();
+      await page.waitForURL(/\/productions\/[^/]+\/article$/);
+      expect(replay.counts()).toEqual({ creates: 4, starts: 4 });
+      expect(replay.inputs.map(input => input.brief.format)).toEqual(['stand', 'stand', 'panel', 'panel']);
+      expect(replay.inputs.map(input => input.brief.editorial?.mainTopic)).toEqual(['Evento de manejo', 'Evento de nutrição', 'Evento de manejo', 'Evento de nutrição']);
+      expect(replay.inputs.every(input => input.brief.editorial?.maxChars === 5300 && input.brief.event?.name === 'Fenacam 2026')).toBe(true);
+      expect(replay.engine.store.state.sources).toHaveLength(1);
+      expect(replay.engine.store.state.productions).toHaveLength(4);
     } finally { replay.engine.store.dispose(); }
   });
 });

@@ -1,5 +1,6 @@
 import 'server-only';
 import { syncMemoryWriting } from './editorial-memory-usage.ts';
+import { editorialDraftingDefinition } from '../domain/editorial-plan.ts';
 import { guardMemoryCommand, guardMemorySources } from './editorial-memory-operation.ts';
 // Worker helpers share this server composition boundary with the transactional engine.
 export { appendEditorialEvent, editorialContextHash } from '../runtime/editorial-engine.ts';
@@ -289,7 +290,7 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   const piece = record.pieces.find(p => p.id === pieceId);
   if (!piece || piece.kind !== (kind.startsWith('carousel') ? 'carousel' : 'article')) return refuse('unknown_piece', 'Peça não encontrada.');
   if (pendingReview(record,pieceId)) return refuse('locked','Retire o envio para editar antes de gerar.');
-  if (['article.outline', 'article.draft'].includes(kind) && !record.production.brief.format && record.production.brief.size !== 'standard')
+  if (['article.outline', 'article.draft'].includes(kind) && !record.production.brief.format && !record.production.brief.editorial && record.production.brief.size !== 'standard')
     return refuse('unsupported_size', 'A R1 exige Padrão: 2.500–4.000 caracteres e 500–800 palavras. Altere o tamanho na pauta antes de gerar.');
   if (kind === 'article.draft' && input.outline) {
     const valid = validateEditorialOutline(record,input.outline as OutlineInput);
@@ -308,7 +309,9 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
   const active = structuredClone(activePipeline(checkpoint));
   // An event format writes with its own funnel prompts; the workspace keeps its saved revision.
   const format = ['article.outline', 'article.draft'].includes(kind) ? record.production.brief.format : undefined;
-  const pipeline = format ? pipelineRevision(formatPipelineDefinition(active.definition,format),active.revision,active.savedAt) : active;
+  const definition = editorialDraftingDefinition(format ? formatPipelineDefinition(active.definition,format) : active.definition,
+    kind === 'article.draft' ? record.production.brief.editorial : undefined);
+  const pipeline = definition === active.definition ? active : pipelineRevision(definition,active.revision,active.savedAt);
   if (ARTICLE_ASSIST_KINDS.has(kind) && !pipeline.definition.steps.assist)
     return refuse('provider_unavailable', 'Ative a etapa Assistente em Prompts antes de pedir ajustes.');
   const automaticOutline = kind === 'article.draft' && !input.outline;
@@ -342,7 +345,7 @@ async function startJob(checkpoint: EditorialCheckpoint, engine: ReturnType<type
     configuration:{workspaceId:context.portal,pipeline:{hash:pipeline.hash,revision:pipeline.revision},
       editorial:{mapVersion:pipeline.definition.editorial?.map.version??0,guideVersion:pipeline.definition.editorial?.guide.version??0},
       ...(piece.draft.body.type==='carousel'?{template:{id:piece.draft.body.templateId,...(template?{hash:template.hash,revision:template.revision}:{})}}:{})},
-    ...(kind === 'article.draft' && pipeline.definition.writing?.enabled
+    ...(kind === 'article.draft' && pipeline.definition.writing?.enabled && !record.production.brief.editorial?.fastDraft
       ? { articlePolicy: { minimumQuotes: effectiveWritingMinimumQuotes(pipeline.definition.writing, articleGateFor(record.production.brief).minQuotes) } } : {}),
     inputs: run.inputs,steps: run.steps.map(s => ({ id: s.id,label: s.label })),createdBy: engine.store.state.sessionPersonId,
     ...(retryOfRunId ? { retryOfRunId } : {}) });
@@ -507,7 +510,7 @@ export async function editorialRpc(payload: unknown) {
         location: z.string().trim().max(160).optional(),recordedOn: z.string().max(10).optional(),
       }).passthrough();
       const input = z.object({ title: z.string().trim().min(1).max(120), material: materialSchema,
-      additionalMaterials: z.array(materialSchema).optional(), brief: z.object({ sections: z.number().int().min(1).max(8),size: z.enum(['short','standard']),angle: z.string().max(600).optional(),
+      additionalMaterials: z.array(materialSchema).optional(), brief: z.object({ sections: z.number().int().min(1).max(20),editorial: z.unknown().optional(),size: z.enum(['short','standard']),angle: z.string().max(600).optional(),
         format: z.enum(EDITORIAL_FORMATS).optional(),formatSize: z.string().max(40).optional(),
         event: z.object(Object.fromEntries(EVENT_FIELDS.map(key => [key,z.string().max(EVENT_FIELD_MAX).optional()]))).strict().optional() }),
       plan: z.array(z.enum(['article','carousel'])).max(2),speakers: z.array(z.object({ label: z.string().max(500) }).passthrough()).max(100).optional() }).passthrough().parse(args[0]);

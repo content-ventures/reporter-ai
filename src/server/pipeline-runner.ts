@@ -1,3 +1,4 @@
+import { editorialPromptGuidance } from '../domain/editorial-plan.ts';
 import 'server-only';
 import { z } from 'zod';
 import { contentHash } from '../domain/text/hash.ts';
@@ -103,7 +104,7 @@ export async function writeCompleteArticle(outline: Outline, variables: Pipeline
   const shape = first as Parameters<typeof writtenArticleText>[0];
   const stats = textStats(writtenArticleText(shape, sizing.headings ?? true));
   const issue = memoryWritingIssue([...shape.intro, ...shape.sections.flatMap(section => section.paragraphs)], memory) ?? articleLengthIssue(stats,sizing);
-  if (!issue && (!sizing.targetChars || stats.characters >= sizing.targetChars * 0.93)) return first;
+  if (!issue && (sizing.minChars === 0 || !sizing.targetChars || stats.characters >= sizing.targetChars * 0.93)) return first;
   // This is data interpolation, not an additional hidden editorial prompt. The
   // active article template explains how to use it; the same hard rules still hold.
   try {
@@ -382,7 +383,10 @@ export async function executePipelineStep(input: {
 }) {
   const step = input.pipeline.definition.steps[input.key];
   if (!step) throw new FlowError('PIPELINE_STAGE_MISSING',503);
-  const systemPrompt = editorialSystemPrompt(input.pipeline.definition.systemPrompt, input.pipeline.definition.editorial, input.key);
+  let requestedBrief: unknown;
+  try { requestedBrief = JSON.parse(input.variables.brief || '{}'); } catch { requestedBrief = undefined; }
+  const guide = editorialPromptGuidance(requestedBrief);
+  const systemPrompt = [editorialSystemPrompt(input.pipeline.definition.systemPrompt, input.pipeline.definition.editorial, input.key), ...(guide ? ['ORIENTAÇÕES CONFIRMADAS DESTA PRODUÇÃO\n' + guide] : [])].join('\n\n');
   const userPrompt = renderPipelinePrompt(step.prompt,input.variables);
   // Unrelated prompt edits must not force the same podcast facts through the
   // provider again. Identity is the exact request, not the whole revision.
