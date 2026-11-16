@@ -1,5 +1,6 @@
+import { AppearanceProvider } from '@/ui/appearance';
 import type { Metadata, Viewport } from "next";
-import { interV3, ThemeV3, Toaster } from "@content-ventures/design-system/v3";
+import { interV3, Toaster } from "@content-ventures/design-system/v3";
 import { PRODUCT_DESCRIPTION, PRODUCT_NAME, PRODUCT_TITLE } from '@/lib/brand';
 import { BRAND_OPEN_GRAPH, BRAND_SHARE_IMAGE, SITE_URL } from '@/lib/site';
 import {AccountBoundary} from '@/state/account-boundary';
@@ -27,10 +28,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="pt-BR" className={interV3.variable}>
       <body>
-        <ThemeV3>
+        <AppearanceProvider>
           <AccountBoundary>{children}</AccountBoundary>
           <Toaster />
-        </ThemeV3>
+        </AppearanceProvider>
       </body>
     </html>
   );

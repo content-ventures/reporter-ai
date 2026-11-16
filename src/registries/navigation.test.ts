@@ -21,7 +21,7 @@ describe('menu (D9): what works today on top, "Em breve" as one collapsed group'
   test('R1 navigation keeps the unified production and approval board; 14 planned later items stay under "Em breve"', () => {
     const menu = menuFor(R1, { roles: ['editor', 'admin'] });
     assert.deepEqual(outline(menu), [
-      ['main', ['Início /', 'Produções /productions', 'Modelos /library/templates']],
+      ['main', ['Início /', 'Nova produção /productions/new', 'Produções /productions', 'Modelos /library/templates']],
       [
         'soon',
         [
@@ -75,10 +75,10 @@ describe('menu (D9): what works today on top, "Em breve" as one collapsed group'
     assert.equal(approvals?.hidden, true);
     assert.ok(!NAV_ITEMS.some((item) => item.id !== 'approvals' && item.badge), 'no other item carries a count ("Produções 2" is gone)');
     const main = (roles: readonly Role[]) => menuFor(R1, { roles })[0]?.items.map((item) => item.label);
-    assert.deepEqual(main(['editor']), ['Início', 'Produções', 'Modelos']);
+    assert.deepEqual(main(['editor']), ['Início', 'Nova produção', 'Produções', 'Modelos']);
     assert.deepEqual(main(['approver']), ['Início', 'Produções', 'Modelos']);
-    assert.deepEqual(main(['editor', 'creative_reviewer']), ['Início', 'Produções', 'Modelos']);
-    assert.deepEqual(main(['editor', 'admin']), ['Início', 'Produções', 'Modelos']);
+    assert.deepEqual(main(['editor', 'creative_reviewer']), ['Início', 'Nova produção', 'Produções', 'Modelos']);
+    assert.deepEqual(main(['editor', 'admin']), ['Início', 'Nova produção', 'Produções', 'Modelos']);
     assert.deepEqual(menuFor(R1)[0]?.items.map((item) => item.label), ['Início', 'Produções', 'Modelos'], 'unknown viewer: role items stay hidden');
   });
 
@@ -90,14 +90,14 @@ describe('menu (D9): what works today on top, "Em breve" as one collapsed group'
 
   test('⌘K "Ir para" lists released items including Prompts', () => {
     const labels = (roles: readonly Role[]) => navigationFor(R1, { roles }).flatMap((section) => section.items.map((item) => item.label));
-    assert.deepEqual(labels(['editor', 'admin']), ['Início', 'Produções', 'Modelos', 'Logs', 'Prompts', 'Versões']);
-    assert.deepEqual(labels(['editor']), ['Início', 'Produções', 'Modelos', 'Versões']);
+    assert.deepEqual(labels(['editor', 'admin']), ['Início', 'Nova produção', 'Produções', 'Modelos', 'Logs', 'Prompts', 'Versões']);
+    assert.deepEqual(labels(['editor']), ['Início', 'Nova produção', 'Produções', 'Modelos', 'Versões']);
   });
 
   test('shipping R2 splits the menu into the day\'s work, "Biblioteca" and "Configurações"', () => {
     const r2 = menuFor('R2', { roles: EVERYONE });
     const section = (id: string) => r2.find((entry) => entry.group.id === id)?.items.map((item) => item.id);
-    assert.deepEqual(section('main'), ['overview', 'news', 'productions']);
+    assert.deepEqual(section('main'), ['overview', 'news', 'new-production', 'productions']);
     assert.deepEqual(section('library'), ['templates', 'images', 'quotes', 'archive']);
     assert.deepEqual(section('settings'), ['editorial-map', 'writing-guide', 'integrations']);
     assert.deepEqual(r2.map((entry) => entry.group.label ?? ''), ['', 'Biblioteca', 'Configurações', 'Em breve', '']);
