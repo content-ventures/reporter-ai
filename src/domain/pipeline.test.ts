@@ -87,7 +87,7 @@ test('provider contracts require the same nonempty editorial parts as the worker
   assert.deepEqual([intro.minItems,intro.maxItems],[1,3]);
   assert.deepEqual([section.minItems,section.maxItems],[1,10]);
   assert.deepEqual(article.intro,intro);
-  assert.deepEqual([article.sections.minItems,article.sections.maxItems],[1,8]);
+  assert.deepEqual([article.sections.minItems,article.sections.maxItems],[1,20]);
   assert.deepEqual(article.sections.items.properties.paragraphs,section);
 });
 test('the opening selects up to four passages in planning and in curation', () => {

@@ -9,6 +9,7 @@ export function writingMemoryChecks(article: WritingArticle, sources: readonly W
   const issues: WritingReview['issues'] = [];
   for (const value of article.blocks) {
     const block = value.type === 'quote' ? quoteBlock(value.id, value.text) : value.type === 'heading' ? headingBlock(value.id, value.text, value.level)
+      : value.type === 'table' ? { id: value.id, type: 'table' as const, rows: value.items.map(row => row.split('\t').map(text => [{ text }] )) }
       : value.type === 'list' ? listBlock(value.id, value.items) : paragraphBlock(value.id, value.text);
     for (const source of sources) {
       if (source.memory?.kind !== 'statistic' || !value.evidenceIds.includes(source.id)) continue;

@@ -45,5 +45,7 @@ export function textBlockHtml(block: TextBlock): string {
     }
     case 'divider':
       return '<hr>';
+    case 'table':
+      return `<table>\n<tbody>\n${block.rows.map((row, index) => `<tr>${row.map(cell => `<${index ? 'td' : 'th'}>${inlinesHtml(cell)}</${index ? 'td' : 'th'}>`).join('')}</tr>`).join('\n')}\n</tbody>\n</table>`;
   }
 }

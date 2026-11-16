@@ -9,6 +9,7 @@ import { memoryArticleReferences } from './editorial-memory-article.ts';
 export function writingArticleBody(article: WritingArticle, runId: string, references: (ids: string[]) => SourceRef[], sources: readonly Source[] = []): ArticleBody {
   const blocks = article.blocks.map((block): ArticleBlock => {
     const common = { id: `writing-${contentHash({ runId, blockId: block.id })}`, sourceRefs: references(block.evidenceIds), ai: 'unreviewed' as const };
+    if (block.type === 'table') return { ...common, type: 'table', rows: block.items.map(row => row.split('\t').map(text => [{ text }])) };
     if (block.type === 'list') return { ...common, type: 'list', ordered: false, items: block.items.map(text => [{ text }]) };
     const inlines = [{ text: block.text }];
     if (block.type === 'heading') return { ...common, type: 'heading', level: block.level, inlines };

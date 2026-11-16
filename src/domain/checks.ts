@@ -11,7 +11,7 @@ import type { Brief } from './production.ts';
 import { formatSizeOf } from './formats.ts';
 import { checkQuotes } from './quotes.ts';
 import type { TextRange, VersionRef } from './refs.ts';
-import { ARTICLE_SIZE_IDS, groupDigits, laudaUnit, sizeFit, sizeMeta, sizeOf } from './sizing.ts';
+import { ARTICLE_SIZE_IDS, groupDigits, sizeFit, sizeMeta, sizeOf } from './sizing.ts';
 import type { Source } from './source.ts';
 import { normalizeLink } from './text/links.ts';
 
@@ -112,11 +112,12 @@ const ISSUE_DETAIL: Record<ImageIssue, (count: number) => string> = {
  * person could still grow (Curto: does the news stand? Padrão: it fits the smaller size). The
  * partial text of an interrupted generation is not measured: it is short because the run stopped.
  */
-export function sizeCheck(body: ArticleBody, brief: Pick<Brief, 'size' | 'format' | 'formatSize'>, generation: GenerationState, materialChars?: number): CheckOutcome {
+export function sizeCheck(body: ArticleBody, brief: Pick<Brief, 'size' | 'format' | 'formatSize' | 'editorial'>, generation: GenerationState, materialChars?: number): CheckOutcome {
   if (generation.running) return { status: 'na', meta: '—', detail: 'Gerando' };
   if (generation.interrupted) return { status: 'na', meta: '—', detail: 'Geração interrompida' };
   const chars = articleCharacters(body);
   if (chars === 0) return { status: 'na', meta: '—', detail: 'Sem texto' };
+  if (brief.editorial) return { status: chars > brief.editorial.maxChars ? 'warn' : 'pass', meta: `${groupDigits(chars)}/${groupDigits(brief.editorial.maxChars)} caracteres`, detail: 'Confira o limite escolhido na pauta', progress: { current: chars, total: brief.editorial.maxChars } };
   if (brief.format) {
     // An event format is sized in characters, by the range of its option (formats.ts).
     const option = formatSizeOf(brief.format, brief.formatSize);
@@ -132,7 +133,7 @@ export function sizeCheck(body: ArticleBody, brief: Pick<Brief, 'size' | 'format
   const fit = sizeFit(spec.id, chars);
   if (fit === 'inside') return { status: 'pass', meta, detail: `${groupDigits(chars)} de até ${groupDigits(spec.maxChars)} caracteres`, progress };
   if (fit === 'above') {
-    return { status: 'warn', meta, detail: `Passa ${groupDigits(chars - spec.maxChars)} caracteres de ${spec.laudas} ${laudaUnit(spec.laudas)}`, progress };
+    return { status: 'warn', meta, detail: `Passa ${groupDigits(chars - spec.maxChars)} caracteres do limite de ${groupDigits(spec.maxChars)}`, progress };
   }
   if (materialChars !== undefined && materialChars < spec.minChars) {
     return { status: 'info', meta, detail: 'O material não rende mais. A IA não completa o texto.', progress };
@@ -140,7 +141,7 @@ export function sizeCheck(body: ArticleBody, brief: Pick<Brief, 'size' | 'format
   // The next smaller size this text fits in, if any ("Cabe em 1 lauda: considere Curto na pauta").
   const smaller = ARTICLE_SIZE_IDS.map(sizeOf).filter((candidate) => candidate.maxChars < spec.maxChars && chars <= candidate.maxChars).pop();
   if (smaller) {
-    return { status: 'info', meta, detail: `Cabe em ${smaller.laudas} ${laudaUnit(smaller.laudas)}: considere ${smaller.label} na pauta`, progress };
+    return { status: 'info', meta, detail: `Cabe em ${groupDigits(smaller.maxChars)} caracteres: considere ${smaller.label} na pauta`, progress };
   }
   return { status: 'info', meta, detail: `Abaixo de ${groupDigits(spec.minChars)} caracteres: confira se a notícia se sustenta`, progress };
 }

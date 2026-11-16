@@ -1,4 +1,4 @@
-import { inlinesText } from '../article.ts';
+import { blockText, inlinesText } from '../article.ts';
 import type { ArticleBody } from '../article.ts';
 import type { EventBoxLine } from '../formats.ts';
 import { escapeHtml, textBlockHtml } from './article-html.ts';
@@ -32,6 +32,8 @@ function plainBlock(block: TextBlock): string {
         .join('\n');
     case 'divider':
       return '';
+    case 'table':
+      return blockText(block);
   }
 }
 
