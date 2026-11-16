@@ -1,9 +1,11 @@
 import { AppearanceProvider } from '@/ui/appearance';
 import type { Metadata, Viewport } from "next";
+import { cookies } from 'next/headers';
 import { interV3, Toaster } from "@content-ventures/design-system/v3";
 import { PRODUCT_DESCRIPTION, PRODUCT_NAME, PRODUCT_TITLE } from '@/lib/brand';
 import { BRAND_OPEN_GRAPH, BRAND_SHARE_IMAGE, SITE_URL } from '@/lib/site';
 import {AccountBoundary} from '@/state/account-boundary';
+import { APPEARANCE_COOKIE, appearanceMode } from '@/ui/appearance-preference';
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,13 +24,14 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
 };
 
-export const viewport: Viewport = { themeColor: '#0875DB', colorScheme: 'light' };
+export const viewport: Viewport = { themeColor: '#0875DB', colorScheme: 'light dark' };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const initialMode = appearanceMode((await cookies()).get(APPEARANCE_COOKIE)?.value) ?? 'system';
   return (
     <html lang="pt-BR" className={interV3.variable}>
       <body>
-        <AppearanceProvider>
+        <AppearanceProvider initialMode={initialMode}>
           <AccountBoundary>{children}</AccountBoundary>
           <Toaster />
         </AppearanceProvider>
