@@ -4,6 +4,16 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+### Added
+
+- Support reporter-selected categories, independent topics/formats, flexible character budgets, public web sources and reviewed-text intake for fair coverage.
+- Preserve editable publication metadata and semantic article tables through editing and export, with persistent appearance preferences.
+
+### Fixed
+
+- Carry production-specific guidance through current writing orchestration and align fast writing with its actual models and progress steps.
+- Keep source intake, defaults and draft recovery within the initiating account and workspace while preserving current media-upload and approval flows.
+
 ## [1.8.0] - 2026-11-12
 
 ### Maintenance

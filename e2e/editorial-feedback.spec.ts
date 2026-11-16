@@ -1,0 +1,82 @@
+import { expect, test } from '@playwright/test';
+import { expectNoHorizontalOverflow, watchErrors } from './support';
+
+test('reviewed text keeps its wording and publication metadata across reloads', async ({ page }) => {
+  const errors = watchErrors(page);
+  const text = 'Este é um texto fictício sobre manejo de camarão. O material serve apenas para testar a importação editorial, sem números ou declarações reais.\n\nA revisão humana continua necessária antes da publicação.';
+  await page.goto('/productions/new');
+  await page.getByRole('textbox', { name: 'Transcrição', exact: true }).fill(text);
+  await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Título interno' }).fill('Importação de artigo revisado');
+  await page.getByRole('spinbutton', { name: 'Limite de caracteres' }).fill('12000');
+  await page.getByRole('checkbox', { name: 'Abrir o texto enviado para revisão, sem reescrever com IA' }).check();
+  await page.getByRole('button', { name: 'Abrir texto para revisão', exact: true }).click();
+  await page.waitForURL(/\/productions\/[^/]+\/article$/);
+  const editor = page.getByRole('textbox', { name: 'Texto do artigo', exact: true });
+  await expect(editor).toHaveText(text.replace('\n\n', ''));
+  await page.getByRole('button', { name: 'Assistente', exact: true }).click();
+  await page.getByRole('tab', { name: 'Publicação', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Meta description', exact: true }).fill('Descrição humana para busca.');
+  await page.getByRole('textbox', { name: 'Palavra-chave principal', exact: true }).fill('manejo de camarão');
+  await page.getByRole('textbox', { name: 'Linha fina', exact: true }).fill('Contexto editorial confirmado para esta matéria.');
+  await page.getByRole('button', { name: 'Salvar metadados', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Meta description', exact: true })).toHaveValue('Descrição humana para busca.');
+  await expect(page.getByText('Salvo', { exact: true })).toBeVisible();
+  // Wait for the autosave rather than merely the field's local value.
+  await expect.poll(async () => page.evaluate(() => JSON.stringify(localStorage))).toContain('Descrição humana para busca.');
+  await page.reload();
+  await expect(editor).toHaveText(text.replace('\n\n', ''));
+  await page.getByRole('button', { name: 'Assistente', exact: true }).click();
+  await page.getByRole('tab', { name: 'Publicação', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Meta description', exact: true })).toHaveValue('Descrição humana para busca.');
+  await expect(page.getByRole('textbox', { name: 'Palavra-chave principal', exact: true })).toHaveValue('manejo de camarão');
+  await expect(page.getByRole('textbox', { name: 'Linha fina', exact: true })).toHaveValue('Contexto editorial confirmado para esta matéria.');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  expect(errors).toEqual([]);
+});
+
+test('dark theme and creation draft survive navigation and reload', async ({ page }) => {
+  await page.goto('/productions/new');
+  await page.getByRole('textbox', { name: /^Tema principal/ }).fill('Manejo na Fenacam');
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: /^Tema principal/ })).toHaveValue('Manejo na Fenacam');
+  await page.getByRole('button', { name: 'Voltar para Produções', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Sair', exact: true }).click();
+  await page.waitForURL(/\/productions$/);
+  await page.getByRole('button', { name: /João/ }).last().click();
+  await page.getByRole('menuitemradio', { name: 'Usar tema escuro' }).click();
+  await expect(page.locator('[data-color-scheme="dark"]').first()).toBeVisible();
+  await page.reload();
+  await expect(page.locator('[data-color-scheme="dark"]').first()).toBeVisible();
+  await page.goto('/productions/new');
+  await expect(page.getByRole('textbox', { name: /^Tema principal/ })).toHaveValue('Manejo na Fenacam');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+});
+
+test('tables remain editable and survive saving and reloading', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/productions/new');
+  await page.getByRole('textbox', { name: 'Transcrição', exact: true }).fill('Texto sintético para conferir a tabela de uma matéria.');
+  await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Título interno' }).fill('Tabela editorial');
+  await page.getByRole('checkbox', { name: 'Abrir o texto enviado para revisão, sem reescrever com IA' }).check();
+  await page.getByRole('button', { name: 'Abrir texto para revisão', exact: true }).click();
+  await page.waitForURL(/\/productions\/[^/]+\/article$/);
+  await page.getByRole('button', { name: 'Tabela', exact: true }).click();
+  const table = page.getByRole('textbox', { name: 'Texto do artigo', exact: true }).getByRole('table');
+  await expect(table.getByRole('row')).toHaveCount(3);
+  await table.getByRole('cell').first().click();
+  await page.keyboard.insertText('Manejo confirmado.');
+  await expect(table).toContainText('Manejo confirmado.');
+  await expect(page.getByText('Salvo', { exact: true })).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => JSON.stringify(localStorage))).toContain('Manejo confirmado.');
+  await page.reload();
+  await expect(table).toContainText('Manejo confirmado.');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+});
