@@ -1,3 +1,5 @@
+import { researchWeb } from './web-material';
+import { planEditorialMaterial } from './editorial-planning';
 import "server-only";
 import { createHash,randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
@@ -214,11 +216,11 @@ const messages: Record<string, string> = {
   GROQ_KEY_MISSING: "Configure GROQ_API_KEY no .env.local.", DATABASE_CONFIGURATION: "Configure o banco local do Reporter IA.",
   GROQ_RATE_LIMIT: 'A Groq atingiu o limite temporário de uso. Aguarde e tente novamente.',
   MATERIAL_ANALYSIS_INVALID: 'A análise do tema e participantes não retornou um resultado válido. Tente novamente.',
-  SOURCE_LINK_INVALID: 'Cole o link de um vídeo do YouTube ou de um episódio do Spotify.',
+  SOURCE_LINK_INVALID: 'Não foi possível ler esta fonte pública. Confira o link HTTPS ou envie o texto.',
   YOUTUBE_VIDEO_UNAVAILABLE: 'Este vídeo do YouTube não está público ou não pôde ser lido.',
   YOUTUBE_CAPTIONS_UNAVAILABLE: 'Este vídeo não oferece legendas públicas. Baixe o áudio ou vídeo e envie o arquivo.',
   SPOTIFY_EPISODE_NOT_FOUND: 'Não encontramos este episódio no feed público do podcast. Envie o arquivo de áudio.',
-  REMOTE_MEDIA_UNAVAILABLE: 'O áudio público deste episódio não pôde ser importado. Envie o arquivo.',
+  REMOTE_MEDIA_UNAVAILABLE: 'Não foi possível acessar esta fonte pública. Envie o arquivo ou cole o texto.',
   PIPELINE_STAGE_MISSING: 'A configuração precisa incluir a etapa Material antes de analisar.',
   FILE_TOO_LARGE: "O limite local é de 2 GB por arquivo.", TEXT_TOO_LARGE: "A transcrição TXT deve ter até 1 MB.",
   UNSUPPORTED_MEDIA: "Envie MP3, MP4, M4A, WAV, OGG, OPUS, FLAC, WEBM, MOV, M4V, MKV, AVI ou TXT.",
@@ -379,6 +381,16 @@ export async function handleReporter(request: Request, path: string[], deps: { d
         logEvent("api", "source_accepted", { request_id: requestId });
         return reply(value, 202);
       } finally { if (removeDuplicate) await rm(file.destination, { force: true }).catch(() => {}); }
+    }
+    if (path.join('/') === 'material/planning') {
+      await requireCapability('production.create');
+      const input = z.object({ text: z.string().trim().min(1).max(1048576), question: z.string().max(6000).default('Identifique temas e recortes úteis para o público da Seafood Brasil.') }).strict().parse(await jsonBody(request));
+      return reply(await planEditorialMaterial(input.text, input.question, AbortSignal.any([request.signal, AbortSignal.timeout(180000)])));
+    }
+    if (path.length === 1 && path[0] === 'research') {
+      await requireCapability('production.create');
+      const input = z.object({ query: z.string().trim().min(3).max(300) }).strict().parse(await jsonBody(request));
+      return reply(await researchWeb(input.query, AbortSignal.any([request.signal, AbortSignal.timeout(45000)])));
     }
     if (path.length === 1 && path[0] === 'links') {
       const key = idempotencyKey(request);

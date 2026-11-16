@@ -239,7 +239,7 @@ async function uploadParts(file: Blob,session: Record<string,unknown>,onProgress
 
 export function createHttpIngest(local: SourceIngest, http: ReporterTransport = defaultReporterTransport): SourceIngest {
   const uploads = new WeakMap<object,{ key: string;id?: string;sourceId?: string;token?: string;uploaded?: boolean }>();
-  const links = new Map<string,{ key: string; id?: string; provider?: 'youtube' | 'spotify'; title?: string; programName?: string; fileName?: string; bytes?: number; sourceUrl?: string }>();
+  const links = new Map<string,{ key: string; id?: string; provider?: 'youtube' | 'spotify' | 'web'; title?: string; programName?: string; fileName?: string; bytes?: number; sourceUrl?: string }>();
   return {
     limits: { ...local.limits,extensions: [...local.limits.extensions,...MEDIA_EXTENSIONS],maxBytes: MAX_UPLOAD_BYTES },
     async readLink(url,options = {}) {
@@ -260,7 +260,7 @@ export function createHttpIngest(local: SourceIngest, http: ReporterTransport = 
             options.onProgress?.(100,'Legendas importadas');
             options.onStatus?.({ phase: 'ready',message: 'Legendas importadas' });
             return ok({ text: result.text as string,fileName: result.fileName as string,format: detectTranscriptFormat(result.text as string,result.fileName as string),bytes: result.bytes as number,
-              sourceUrl: result.sourceUrl as string,provider: result.provider as 'youtube' | 'spotify',title: result.title as string,programName: result.programName as string });
+              sourceUrl: result.sourceUrl as string,provider: result.provider as 'youtube' | 'spotify' | 'web',title: result.title as string,programName: result.programName as string });
           }
           known.id = result.id as string;
         }
@@ -345,6 +345,14 @@ export function createHttpIngest(local: SourceIngest, http: ReporterTransport = 
         if (isForbidden(error)) return refuse('forbidden',error.message);
         return refuse('read_failed',error instanceof Error ? error.message : 'Não foi possível abrir o arquivo do Drive.');
       }
+    },
+    plan: async (text, question, signal) => {
+      try { return ok(await http.request<{ title: string; topics: string[] }>('/material/planning', { text, question }, signal ?? AbortSignal.timeout(180000))); }
+      catch (error) { return refuse('read_failed', error instanceof Error ? error.message : 'Não foi possível mapear os temas.'); }
+    },
+    research: async (query, signal) => {
+      try { return ok(await http.request<{ sources: { url: string; text: string }[] }>('/research', { query }, signal ?? AbortSignal.timeout(45000))); }
+      catch (error) { return refuse('read_failed', error instanceof Error ? error.message : 'Não foi possível pesquisar as fontes.'); }
     },
     analyze: async (text,options) => {
       const result = await local.analyze(text,options);

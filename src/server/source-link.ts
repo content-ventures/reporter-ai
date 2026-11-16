@@ -1,3 +1,4 @@
+import { readWebsite } from './web-material';
 import 'server-only';
 import { getVideoDetails } from 'youtube-caption-extractor';
 import { z } from 'zod';
@@ -83,5 +84,5 @@ export async function ingestSourceLink(value: string, signal: AbortSignal) {
   const parsed = parseSourceLink(value);
   if (!parsed) throw new FlowError('SOURCE_LINK_INVALID',422);
   const bounded = AbortSignal.any([signal,AbortSignal.timeout(10*60*1000)]);
-  return parsed.provider==='youtube' ? youtubeVideo(parsed.url,bounded) : spotifyEpisode(parsed.url,bounded);
+  return parsed.provider==='youtube' ? youtubeVideo(parsed.url,bounded) : parsed.provider === 'web' ? readWebsite(parsed.url, bounded) : spotifyEpisode(parsed.url,bounded);
 }

@@ -26,7 +26,7 @@ export type Commands = {
   generation: Pick<GenerationService, 'start' | 'cancel' | 'resume' | 'retry'>;
   export: Pick<ExportService, 'plan' | 'build' | 'buildFile'>;
   /** `received` and `readReceived` exist only with a connected backend; elsewhere they refuse. */
-  ingest: Required<Pick<SourceIngest, 'read' | 'readLink' | 'analyze' | 'received' | 'readReceived'>>;
+  ingest: Required<Pick<SourceIngest, 'read' | 'readLink' | 'analyze' | 'received' | 'readReceived' | 'plan' | 'research'>>;
   /** "Retorno do piloto" (`record`) and 👍/👎 on AI output (`vote`, one per person and target). */
   feedback: Pick<FeedbackPort, 'record' | 'vote'>;
   /** Slides as PNG (`render`) and the template library's images: card covers (`thumbnail`) and every layout (`preview`). */
@@ -80,7 +80,7 @@ const PRODUCTION_METHODS: Methods<ProductionCommands> = {
 
 const GENERATION_METHODS: Methods<Commands['generation']> = { start: true, cancel: true, resume: true, retry: true };
 const EXPORT_METHODS: Methods<Commands['export']> = { plan: true, build: true, buildFile: true };
-const INGEST_METHODS: Methods<Commands['ingest']> = { read: true, readLink: true, analyze: true, received: true, readReceived: true };
+const INGEST_METHODS: Methods<Commands['ingest']> = { read: true, readLink: true, analyze: true, received: true, readReceived: true, plan: true, research: true };
 
 type AnyMethod = (...args: unknown[]) => unknown;
 
@@ -127,7 +127,7 @@ export function createCommands(whenReady: () => Promise<Runtime>): Commands {
       { start: 'piece.edit', retry: 'piece.edit', resume: 'piece.edit', cancel: 'piece.edit' }),
     export: deferred<Commands['export']>(whenReady, (runtime) => runtime.export, EXPORT_METHODS),
     ingest: deferred<Commands['ingest']>(whenReady, (runtime) => runtime.ingest as Commands['ingest'], INGEST_METHODS, new Set(),
-      { read: 'production.create', readLink: 'production.create', analyze: 'production.create', received: 'production.create', readReceived: 'production.create' }),
+      { read: 'production.create', readLink: 'production.create', analyze: 'production.create', received: 'production.create', readReceived: 'production.create', plan: 'production.create', research: 'production.create' }),
     feedback: deferred<Commands['feedback']>(whenReady, (runtime) => runtime.feedback, { record: true, vote: true }, 'all'),
     render: deferred<Commands['render']>(whenReady, (runtime) => runtime.render, { render: true, thumbnail: true, preview: true }),
     assets: {

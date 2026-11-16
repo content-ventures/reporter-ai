@@ -58,7 +58,7 @@ export type ReceivedMaterial = {
 /** `editorialFormat`: the format the Drive subfolder named (`format` is the transcript's). */
 export type ReceivedFile = ReadFile & { editorialFormat?: EditorialFormat; recordedOn?: string };
 export type ReceivedReadOptions = FileReadOptions & { onFound?: (file: { name: string; size: number }) => void };
-export type ReadLink = ReadFile & { sourceUrl: string; provider: 'youtube' | 'spotify'; title?: string; programName?: string };
+export type ReadLink = ReadFile & { sourceUrl: string; provider: 'youtube' | 'spotify' | 'web'; title?: string; programName?: string };
 export type LinkReadOptions = FileReadOptions;
 
 export type AnalyzeOptions = {
@@ -124,6 +124,8 @@ export type MaterialOutlook = {
 export type AnalyzeRefusal = 'empty' | 'analysis_failed' | 'forbidden';
 
 export interface SourceIngest {
+  plan?(text: string, question: string, signal?: AbortSignal): Promise<Result<{ title: string; topics: string[] }, ReadRefusal>>;
+  research?(query: string, signal?: AbortSignal): Promise<Result<{ sources: { url: string; text: string }[] }, ReadRefusal>>;
   readonly limits: IngestLimits;
   read(file: IngestFile, options?: FileReadOptions): Promise<Result<ReadFile, ReadRefusal>>;
   readLink(url: string, options?: LinkReadOptions): Promise<Result<ReadLink, ReadRefusal>>;
