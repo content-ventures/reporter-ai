@@ -126,7 +126,7 @@ describe('sendBlocker', () => {
       { id: 'images', level: 'warning', text: '2 imagens sugeridas sem arquivo' },
       { id: 'suggestions', level: 'missing', text: '1 sugestão da IA sem decisão' },
       { id: 'title', level: 'missing', text: 'Falta o título' },
-      { id: 'summary', level: 'ok', text: '1,6 de 2 laudas' },
+      { id: 'summary', level: 'ok', text: '3.200 caracteres' },
     ];
     assert.equal(sendBlocker(items)?.id, 'suggestions');
     assert.equal(sendBlocker(items.filter((item) => item.level !== 'missing')), undefined);
@@ -145,7 +145,7 @@ describe('sendChecklist (R1: "Falta" blocks, and so does the AI text not reviewe
   const rows = (items: SendItem[]) => items.map((item) => [item.level, item.text, item.action?.label ?? null, item.short ?? null]);
 
   it('a clean text has only the summary: quotes and laudas', () => {
-    assert.deepEqual(rows(sendChecklist(base)), [['ok', '3 de 3 citações conferidas · 1,6 de 2 laudas', null, null]]);
+    assert.deepEqual(rows(sendChecklist(base)), [['ok', '3 de 3 citações conferidas · 3.200 caracteres', null, null]]);
   });
 
   it('reports one mandatory quotation issue instead of duplicate quote rows', () => {
@@ -180,11 +180,11 @@ describe('sendChecklist (R1: "Falta" blocks, and so does the AI text not reviewe
       ['missing', 'Falta o título', 'Ir ao título', 'o título'],
       ['missing', 'Texto não revisado', 'Marcar como revisado', null],
       ['warning', '2 imagens sugeridas sem arquivo', 'Ver', null],
-      ['warning', '2,4 de 2 laudas · passa 640 caracteres', 'Ver', null],
+      ['warning', '4.640 caracteres · passa 640 caracteres', 'Ver', null],
       ['warning', '1 imagem sem crédito · 2 imagens sem uso autorizado', 'Ver', null],
       ['warning', '1 imagem sem texto alternativo', 'Ver', null],
       ['warning', '2 links inválidos', 'Ir ao trecho', null],
-      ['ok', '2 de 3 citações conferidas · 2,4 de 2 laudas', null, null],
+      ['ok', '2 de 3 citações conferidas · 4.640 caracteres', null, null],
     ]);
     assert.deepEqual(items[0].action?.target, { kind: 'suggestion', suggestionId: 'sug-1' });
     assert.deepEqual(items[1].action?.target, { kind: 'ranges', ranges: [range('b-q1')] });
@@ -209,7 +209,7 @@ describe('sendChecklist (R1: "Falta" blocks, and so does the AI text not reviewe
     assert.equal(sendBlocker(items), undefined);
     assert.deepEqual(rows(items).map(([level, text]) => [level, text]), [
       ['ok', 'Texto revisado'],
-      ['ok', '3 de 3 citações conferidas · 1,6 de 2 laudas'],
+      ['ok', '3 de 3 citações conferidas · 3.200 caracteres'],
     ]);
   });
 

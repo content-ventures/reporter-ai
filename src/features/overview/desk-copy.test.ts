@@ -115,20 +115,20 @@ describe('Início rows', () => {
   });
 
   test('Em andamento: situation, laudas while on the article, how long ago', () => {
-    assert.equal(inProgressLine(progress(), NOW), 'Artigo · Rascunho · 1,6 de 2 laudas · há 20 min');
+    assert.equal(inProgressLine(progress(), NOW), 'Artigo · Rascunho · 3.160 caracteres · há 20 min');
     const writing = progress({
       situation: { stage: 'article', pieceKind: 'article', status: 'generating', text: 'A IA está escrevendo (2 de 4)', line: 'Artigo · A IA está escrevendo (2 de 4)' },
       characters: undefined,
       size: undefined,
     });
     assert.equal(inProgressLine(writing, NOW), 'Artigo · A IA está escrevendo (2 de 4) · há 20 min');
-    assert.equal(inProgressSize(progress({ characters: 1_540, size: 'short' })), '0,8 de 1 lauda');
+    assert.equal(inProgressSize(progress({ characters: 1_540, size: 'short' })), '1.540 caracteres');
     assert.equal(inProgressSize(progress({ characters: 0 })), undefined);
   });
 
   test('Equipe row and the empty-queue card', () => {
     assert.equal(teamLine(progress()), 'Artigo · Rascunho · João');
     assert.equal(continueTitle(progress()), 'Continuar: Estúdio Norte: impressão 3D no protótipo');
-    assert.equal(continueLine(progress()), 'Artigo · Rascunho · 1,6 de 2 laudas');
+    assert.equal(continueLine(progress()), 'Artigo · Rascunho · 3.160 caracteres');
   });
 });

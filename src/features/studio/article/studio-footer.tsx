@@ -124,7 +124,7 @@ export function StudioFooter({ narrow = false }: { narrow?: boolean }) {
       </LinkButton>
     ) : (
       <Tooltip key="size" content={reading}>
-        {narrow || brief.format ? briefSizeProgress(chars, brief) : `${briefSizeProgress(chars, brief)} · ${formatCharacters(chars)}`}
+        {briefSizeProgress(chars, brief)}
       </Tooltip>
     );
 

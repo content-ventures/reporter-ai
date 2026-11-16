@@ -1,8 +1,12 @@
-import { ARTICLE_SIZE_IDS, sizeLabel, sizeOf } from '../domain/sizing.ts';
+import { ARTICLE_SIZE_IDS, formatCharacters as characterLabel, sizeOf } from '../domain/sizing.ts';
 import type { ArticleSize } from '../domain/sizing.ts';
 
 /** Lauda formats live with the lauda rule (`src/domain/sizing.ts`); screens import them from here. */
-export { charactersAbove, formatCharacters, formatLaudas, formatLaudasOf } from '../domain/sizing.ts';
+export { charactersAbove, formatCharacters } from '../domain/sizing.ts';
+
+/** Historical call signatures, displayed in the newsroom's character unit. */
+export function formatLaudas(chars: number): string { return characterLabel(chars); }
+export function formatLaudasOf(chars: number, size: ArticleSize): string { void size; return characterLabel(chars); }
 
 /**
  * pt-BR formats of the DS contract (§11) that the DS `format.ts` does not cover. Pure functions:
@@ -71,12 +75,12 @@ export function plural(count: number, one: string, many: string): string {
 
 /** "Curto · 1 lauda", "Padrão · 2 laudas" (the option and the pauta summary). */
 export function formatSize(size: ArticleSize): string {
-  return sizeLabel(size);
+  return `${sizeOf(size).label} · até ${characterLabel(sizeOf(size).maxChars)}`;
 }
 
 /** Size options in display order, with the option text: "Curto · 1 lauda" — "Notícia direta: … Até 2.000 caracteres." */
 export const SIZE_OPTIONS: readonly { value: ArticleSize; label: string; description: string }[] = ARTICLE_SIZE_IDS.map((size) => ({
   value: size,
-  label: sizeLabel(size),
+  label: formatSize(size),
   description: sizeOf(size).description,
 }));
