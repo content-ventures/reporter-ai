@@ -1,10 +1,10 @@
 # Amanda and Léo feedback: implementation and acceptance
 
-Audit date: November 16, 2026. The integration starts from current `main`,
-`b9498ad200343c89aa683e8f2d7eef7cdffbbf78` (v1.8.0). The previous implementation on
-`reporter-feedback` started from an older upload branch; its checks alone did not establish
-compatibility with the current product. This delivery preserves current workspace/account
+Audit date: November 16, 2026. PR #65 was merged and released as v1.9.0 at
+`c7f554bbd44b6d74cfc360da9f892bb79fe983eb`. This delivery preserves workspace/account
 routing, permissions, editorial memory, writing orchestration and multipart media uploads.
+The subsequent [live acceptance record](LIVE_ACCEPTANCE_2026-11-16.md) separates actual
+production observations from local regression coverage and corrections awaiting release.
 
 ## Source coverage
 
@@ -20,8 +20,9 @@ of that agent is not an established acceptance claim.
 
 ## Requirement checklist
 
-“Implemented” below means local code and the indicated automated checks, not a production
-release or Amanda/Léo's acceptance of generated prose.
+“Implemented” below describes the delivered behavior and its automated checks; it does not
+mean Amanda/Léo accepted the generated prose. See the live acceptance record for observed
+results, open acceptance and corrections that have not reached production.
 
 | Request and meeting reference | Implemented behavior | Verification |
 | --- | --- | --- |
@@ -98,6 +99,9 @@ profile-menu assertions that also counted the new appearance controls; those che
 profile names explicitly and separately retain all three theme options for ordinary accounts.
 The next connected run passed all 102 cases. Workspace acceptance also checks the creation
 entry separately in the page header and sidebar, with neither available to an approver.
-Remote delivery does not release production. Merge and production deployment remain subject to
-the exact-action approval requirement in `DEVELOPMENT_HARNESS.md`. Version 1.8.0 is unchanged;
-release numbering is handled by the controlled deployment workflow after approval.
+The subsequent merge and controlled deployment were explicitly approved. v1.9.0 reached
+production through controlled release run 43936689155 (attempt 2); both production domains
+reported the exact release commit and readiness. The first attempt stopped on an Anthropic
+401. After the separately approved reactivation of the existing ORANJ ReporterAI credential,
+provider validation and the release succeeded. No credential values belong in this record.
+Further corrections still follow `DEVELOPMENT_HARNESS.md`; a local test result is not a release.

@@ -228,10 +228,12 @@ function validateDraft(value: unknown) {
   const body = z.object({ type: z.enum(['article', 'carousel']) }).passthrough().parse(value);
   if (body.type === 'article') {
     z.object({ title: z.string().max(500), blocks: z.array(z.object({ id: identifier,
-      type: z.enum(['paragraph','heading','quote','list','divider','figure']) }).passthrough()).max(1000) }).passthrough().parse(value);
+      type: z.enum(['paragraph','heading','quote','list','table','divider','figure']) }).passthrough()).max(1000) }).passthrough().parse(value);
     for (const block of (value as { blocks: Record<string, unknown>[] }).blocks) {
       if (['paragraph','heading','quote'].includes(String(block.type))) z.array(z.object({ text: z.string().max(200000) }).passthrough()).max(1000).parse(block.inlines);
       if (block.type === 'list') z.array(z.array(z.object({ text: z.string().max(200000) }).passthrough()).max(1000)).max(1000).parse(block.items);
+      if (block.type === 'table') z.array(z.array(z.array(z.object({ text: z.string().max(200000) }).passthrough()).max(1000)).min(1).max(1000))
+        .min(1).max(1000).refine(rows => rows.every(row => row.length === rows[0].length), 'Table rows must have the same number of cells').parse(block.rows);
       if (block.type === 'figure' && !block.image && !block.slot) throw new FlowError('INVALID_INPUT', 422);
       if (block.type === 'heading') z.union([z.literal(2), z.literal(3)]).parse(block.level);
     }

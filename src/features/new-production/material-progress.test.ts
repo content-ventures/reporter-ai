@@ -51,6 +51,16 @@ test('failures retain the failed phase and the appropriate retry; readiness comp
   assert.equal(materialProgress(EMPTY_DRAFT,idle,null,null),null);
 });
 
+test('web pages retain their source kind during import, analysis and failure', () => {
+  const draft = { ...EMPTY_DRAFT, mode: 'link' as const, sourceUrl: 'https://example.com/article' };
+  for (const link of [null, { status: 'reading' as const, name: draft.sourceUrl, phase: 'locating' as const, message: 'Importando link' },
+    { status: 'error' as const, name: draft.sourceUrl, phase: 'locating' as const, message: 'Não foi possível ler esta fonte pública.' }]) {
+    const progress = materialProgress(draft, analyzing, null, link)!;
+    assert.equal(progress.name, 'Página da web');
+    assert.deepEqual(progress.steps.map(step => step.label), ['Importar link', 'Analisar material']);
+  }
+});
+
 const srt = (text: string) => `1\n00:00:00,000 --> 00:00:05,000\nAna: ${text}\n`;
 const parted = (...parts: { id: string; text?: string; size?: number }[]) => ({ ...EMPTY_DRAFT,mode: 'file' as const,
   parts: parts.map(({ id,text,size }) => ({ id,name: `${id}.srt`,size: size ?? 100,...(text !== undefined ? { text } : {}) })) });

@@ -31,7 +31,7 @@ export async function readWebsite(url: string, requestedSignal: AbortSignal) {
   const type = response.type;
   if (!/text\/(html|plain)|application\/xhtml\+xml/i.test(type)) { throw new FlowError('SOURCE_LINK_INVALID', 422); }
   const raw = response.text, extracted = type.includes('plain') ? { title: new URL(url).hostname, text: raw.trim() } : websiteText(raw);
-  if (extracted.text.length < 100) throw new FlowError('INVALID_TRANSCRIPT', 422);
+  if (extracted.text.length < 100) throw new FlowError('SOURCE_LINK_INVALID', 422);
   const text = `Fonte original: ${response.url || url}\n${extracted.title}\n\n${extracted.text}`;
   if (Buffer.byteLength(text) > MAX_TEXT_BYTES) throw new FlowError('TEXT_TOO_LARGE', 422);
   return { kind: 'ready' as const, provider: 'web' as const, sourceUrl: response.url || url, title: extracted.title, fileName: extracted.title.replace(/[\x00-\x1f/\\]/g, ' ').slice(0, 160) + '.txt', text, bytes: Buffer.byteLength(text) };
