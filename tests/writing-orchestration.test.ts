@@ -773,3 +773,12 @@ test('effective reasoning effort is recorded and invalidates only the affected r
     assert.deepEqual(latest.parameters, { maxTokens: 8192, effort: 'high' });
   } finally { await f.cleanup(); }
 });
+
+
+test('source-backed tables retain their cells and refuse malformed rows and unsupported quotations', () => {
+  const table: WritingArticle = { ...article, blocks: [{ id: 'data', type: 'table', level: 2, text: '',
+    items: ['Aspecto\tInformação', 'Distribuição\tSão Paulo'], evidenceIds: ['s2'] }] };
+  assert.deepEqual(validateWritingOutput('write', table, evidence), table);
+  assert.throws(() => validateWritingOutput('write', { ...table, blocks: [{ ...table.blocks[0], items: ['A\tB', 'Só uma célula'] }] }, evidence), /WRITING_INVALID_OUTPUT/);
+  assert.throws(() => validateWritingOutput('write', { ...table, blocks: [{ ...table.blocks[0], items: ['A\tB', 'Declaração\t“Fala inventada.”'] }] }, evidence), /UNSUPPORTED_ARTICLE_QUOTE/);
+});

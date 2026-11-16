@@ -89,6 +89,15 @@ export const ListItemNode = Node.create({
   },
 });
 
+// Semantic document nodes only; the public Prose component owns document presentation.
+const TableNode = Node.create({ name: NODE.table, group: 'block', content: 'tableRow+', isolating: true,
+  parseHTML: () => [{ tag: 'table' }], renderHTML: ({ HTMLAttributes }) => ['table', HTMLAttributes, ['tbody', 0]] });
+const TableRowNode = Node.create({ name: NODE.tableRow, content: 'tableCell+',
+  parseHTML: () => [{ tag: 'tr' }], renderHTML: () => ['tr', 0] });
+const TableCellNode = Node.create({ name: NODE.tableCell, content: 'paragraph', isolating: true,
+  addAttributes: () => ({ header: { default: false, parseHTML: element => element.tagName === 'TH', rendered: false } }),
+  parseHTML: () => [{ tag: 'th' }, { tag: 'td' }], renderHTML: ({ node }) => [node.attrs.header ? 'th' : 'td', 0] });
+
 /**
  * An image block (domain `FigureBlock`): an atom, selected and changed as a whole (alt, caption
  * and credit are edited outside the text). Plain HTML for `Prose`: `figure > img + figcaption`;
@@ -154,6 +163,7 @@ export const ArticleBlocks = Extension.create<ArticleBlocksOptions, ArticleBlock
         // the text, so they save and undo with it.
         types: [NODE.doc],
         attributes: {
+          [DOC_ATTR.seo]: { default: null, rendered: false, parseHTML: () => null },
           [DOC_ATTR.cover]: { default: null, rendered: false, parseHTML: () => null },
           [DOC_ATTR.coverSlot]: { default: null, rendered: false, parseHTML: () => null },
         },
@@ -239,6 +249,7 @@ export function articleExtensions(options: ArticleExtensionsOptions = {}): AnyEx
     ArticleKeymap,
     QuoteNode,
     ListItemNode,
+    TableNode, TableRowNode, TableCellNode,
     FigureNode,
     ArticleBlocks.configure({
       newBlockId: options.newBlockId ?? createBlockIdFactory(),

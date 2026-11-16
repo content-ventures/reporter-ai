@@ -70,6 +70,7 @@ export type RunEvent =
   | (EventBase & { type: 'text.delta'; blockId: BlockId; delta: string })
   /** Unvalidated provider writing is a read-only preview, never a draft/version or evidence. */
   | (EventBase & { type: 'article.preview'; body: ArticleBody | null })
+  | (EventBase & { type: 'article.metadata'; seo: NonNullable<ArticleBody['seo']> })
   /** Unvalidated assistant output: display only, never a persisted suggestion or document. */
   | (EventBase & { type: 'assist.preview'; reply: string; proposals: { id: string; text: string }[] })
   | (EventBase & { type: 'block.completed'; block: ArticleBlock })
@@ -124,6 +125,7 @@ export type StreamSuggestion = { id: SuggestionId; target: TextRange[]; proposal
 
 /** Interpretation of a run's event stream. Also the SNAPSHOT `attach(runId)` returns. */
 export type RunFold = {
+  seo?: ArticleBody['seo'];
   run: GenerationRun;
   /** Highest `seq` applied; later deltas with a lower or equal seq are ignored (idempotent replay). */
   seq: number;
@@ -259,6 +261,9 @@ export function applyRunEvent(fold: RunFold, event: RunEvent): RunFold {
         : [...fold.blocks, { id: event.blockId, type: 'paragraph', text: event.delta, complete: false }];
       break;
     }
+    case 'article.metadata':
+      next.seo = event.seo;
+      break;
     case 'article.preview':
       if (event.body) next.preview = event.body; else delete next.preview;
       break;
@@ -441,6 +446,7 @@ export function articleBodyFromRun(fold: RunFold, options: { title?: string; inc
   }
   const body: ArticleBody = { type: 'article', title: (options.title ?? fold.title ?? '').trim(), blocks };
   if (fold.dek?.trim()) body.dek = fold.dek.trim();
+  if (fold.seo) body.seo = fold.seo;
   if (fold.coverImage) body.cover = fold.coverImage;
   else if (fold.coverSlot) body.coverSlot = fold.coverSlot;
   return body;

@@ -1,3 +1,4 @@
+import { readPublicationMetadata } from '../domain/publication.ts';
 import { IMAGE_ORIENTATIONS, normalizeImageRef, normalizeImageSlot, normalizeInlines, normalizeLink } from '../domain/index.ts';
 import type { AiReviewState, ArticleBlock, ArticleBody, AssetId, BlockId, ImageOrientation, ImageRef, ImageSlot, Inline, InlineMark, SourceRef } from '../domain/index.ts';
 import { BLOCK_ATTR, DOC_ATTR, FIGURE_ATTR, MARK, NODE } from './schema.ts';
@@ -191,6 +192,9 @@ export function blockToJSON(block: ArticleBlock, options: BlockToJSONOptions = {
     }
     case 'divider':
       return { type: NODE.divider, attrs };
+    case 'table':
+      return { type: NODE.table, attrs, content: block.rows.map((row, index) => ({ type: NODE.tableRow,
+        content: row.map(cell => ({ type: NODE.tableCell, attrs: { header: index === 0 }, content: [textblockJSON(NODE.paragraph, { ...EMPTY_BLOCK_ATTRS }, cell)] })) })) };
     case 'figure':
       if (!block.image) return { type: NODE.figure, attrs: { ...attrs, ...figureAttrs({}, {}, block.slot) } };
       return { type: NODE.figure, attrs: { ...attrs, ...figureAttrs(block.image, options.figureSources?.get(block.image.assetId)) } };
@@ -207,13 +211,15 @@ export type ArticleToDocOptions = BlockToJSONOptions & {
  * travels as the document's `cover` attribute, its suggestion as `coverSlot` (each present only
  * when there is one; the suggestion only without a cover).
  */
-export function articleToDoc(body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot'>, options: ArticleToDocOptions = {}): PmNodeJSON {
+export function articleToDoc(body: Pick<ArticleBody, 'blocks' | 'cover' | 'coverSlot' | 'seo'>, options: ArticleToDocOptions = {}): PmNodeJSON {
   const content =
     body.blocks.length > 0
       ? body.blocks.map((block) => blockToJSON(block, options))
       : [{ type: NODE.paragraph, attrs: { ...EMPTY_BLOCK_ATTRS, blockId: options.emptyBlockId ?? null } }];
   const cover = readImageRef(body.cover);
   const coverSlot = cover ? null : readImageSlot(body.coverSlot);
+  const seo = readPublicationMetadata(body.seo);
+  if (seo) return { type: NODE.doc, attrs: { [DOC_ATTR.seo]: seo, ...(cover ? { [DOC_ATTR.cover]: cover } : coverSlot ? { [DOC_ATTR.coverSlot]: coverSlot } : {}) }, content };
   if (cover) return { type: NODE.doc, attrs: { [DOC_ATTR.cover]: cover }, content };
   if (coverSlot) return { type: NODE.doc, attrs: { [DOC_ATTR.coverSlot]: coverSlot }, content };
   return { type: NODE.doc, content };
@@ -333,6 +339,10 @@ export function jsonToBlock(node: PmNodeJSON, index: number, options: DocToArtic
     }
     case NODE.divider:
       return { ...base, type: 'divider' };
+    case NODE.table: {
+      const rows = (node.content ?? []).map(row => (row.content ?? []).map(cell => joinedInlines(textblocksIn(cell))));
+      return rows.length ? { ...base, type: 'table', rows } : null;
+    }
     case NODE.figure: {
       const image = readImageRef(node.attrs);
       if (image) return { ...base, type: 'figure', image };
@@ -358,6 +368,7 @@ export function docToArticle(doc: PmNodeJSON, options: DocToArticleOptions = {})
   const body: ArticleBody = { type: 'article', title: options.title ?? '', blocks };
   const dek = options.dek?.trim();
   if (dek) body.dek = dek;
+  const seo = readPublicationMetadata(doc.attrs?.[DOC_ATTR.seo]); if (seo) body.seo = seo;
   const cover = readImageRef(doc.attrs?.[DOC_ATTR.cover]);
   if (cover) body.cover = cover;
   else {

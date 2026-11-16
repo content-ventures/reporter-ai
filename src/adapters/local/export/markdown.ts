@@ -86,6 +86,11 @@ function blockMarkdown(block: ArticleBlock, sources: ImageSources): string {
       return block.items.map((item, index) => `${block.ordered ? `${index + 1}.` : '-'} ${inlinesMarkdown(item)}`).join('\n');
     case 'divider':
       return '---';
+    case 'table': {
+      const rows = block.rows.map(row => `| ${row.map(cell => inlinesMarkdown(cell).replaceAll('\n', ' ')).join(' | ')} |`);
+      if (rows.length) rows.splice(1, 0, `| ${block.rows[0].map(() => '---').join(' | ')} |`);
+      return rows.join('\n');
+    }
     case 'figure':
       // An image slot ("Sugestão de imagem") is not publishable: the manifest lists it.
       return block.image ? imageMarkdown(block.image, sources) : '';
@@ -95,6 +100,7 @@ function blockMarkdown(block: ArticleBlock, sources: ImageSources): string {
 /** The cover follows the title (featured image), then the body in order; open image slots are left out. */
 export function articleToMarkdown(body: ArticleBody, sources: ImageSources = NO_IMAGES, box: readonly EventBoxLine[] = []): string {
   const parts = [
+    ...(body.seo ? ['---\n' + Object.entries(body.seo).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n') + '\n---'] : []),
     `# ${escapeLineStart(escapeMarkdown(body.title.trim()))}`,
     // Linha fina: the line under the title, as the outlet publishes it.
     body.dek ? `*${escapeMarkdown(body.dek.trim())}*` : '',

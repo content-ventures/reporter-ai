@@ -74,6 +74,9 @@ describe('article schema', () => {
       'listItem',
       'orderedList',
       'paragraph',
+      'table',
+      'tableCell',
+      'tableRow',
       'text',
     ]);
     assert.deepEqual(Object.keys(schema.marks).sort(), ['bold', 'italic', 'link', 'strike', 'underline']);

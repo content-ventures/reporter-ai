@@ -24,11 +24,12 @@ import {
   Redo2,
   Sparkles,
   TextQuote,
+  LayoutGrid,
   Underline,
   Undo2,
   type LucideIcon,
 } from '@content-ventures/design-system/v3/icons';
-import { redo, setBlockKind, toggleMark, undo, useArticleToolbarState, type BlockKind } from '@/editor';
+import { insertTable, redo, setBlockKind, toggleMark, undo, useArticleToolbarState, type BlockKind } from '@/editor';
 import { copilotTool } from '@/registries';
 import { useStudio } from './studio-context';
 import { StudioSaveState } from './studio-footer';
@@ -185,6 +186,7 @@ export function EditorToolbar({ onLink }: { onLink: () => void }) {
         onClick={onLink}
       />
       <ToolbarButton label="Imagem" icon={ImageIcon} keep disabled={disabled} disabledReason={reason} onClick={() => studio.images.insertImage()} />
+      <ToolbarButton label="Tabela" icon={LayoutGrid} disabled={disabled} disabledReason={reason} onClick={() => editor && insertTable(editor)} />
       <ToolbarSeparator />
       <ToolbarMenu
         label="IA"

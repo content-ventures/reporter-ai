@@ -26,6 +26,7 @@ import { issueLine, type ImageToCheck } from './image-model';
 import { checagemGroups, clip, closestExcerpt } from './studio-model';
 import { useStudio } from './studio-context';
 import { MaterialTab } from './source-pane';
+import { PublicationPane } from './publication-pane';
 import { ContextChips, GenerationTurn, RequestTurn, ReviewNoteTurn } from './copilot-turns';
 import type { PanelTab } from './use-article-studio';
 import { DossierTab } from '@/features/hard-news/studio/dossier-tab';
@@ -59,6 +60,7 @@ export function PanelTabs() {
     { value: 'material', label: studio.desk ? 'Fontes' : 'Material' },
     { value: 'assistant', label: 'Assistente' },
     { value: 'checks', label: 'Checagem', ...(pending > 0 ? { count: pending } : {}) },
+    { value: 'publication', label: 'Publicação' },
     ...(studio.reviewNote ? [{ value: 'comments' as const, label: 'Comentários', count: 1 }] : []),
   ];
   return <Tabs label="Painel" size="sm" items={items} value={tab} onChange={studio.panes.setPanelTab} />;
@@ -67,6 +69,8 @@ export function PanelTabs() {
 export function PanelPane() {
   const { desk } = useStudio();
   switch (usePanelTab()) {
+    case 'publication':
+      return <PublicationPane />;
     case 'material':
       return desk ? <DossierTab desk={desk} /> : <MaterialTab />;
     case 'assistant':
