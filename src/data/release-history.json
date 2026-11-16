@@ -1,7 +1,73 @@
 {
-  "currentVersion": "1.8.0",
+  "currentVersion": "1.9.0",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.9.0",
+      "roadmapRelease": "R1",
+      "date": "2026-11-16",
+      "title": "R1 feature release",
+      "summary": "Automatic feature release with 14 validated changes: verify creation access in each workspace surface; distinguish themes from local role controls; document and verify reporter acceptance workflows.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Maintenance",
+          "description": "Add ci helper"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Add ci helper"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Restore"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Cleanup"
+        },
+        {
+          "type": "Added",
+          "description": "Support reporter briefs and source-backed tables"
+        },
+        {
+          "type": "Added",
+          "description": "Add public links and scoped editorial planning"
+        },
+        {
+          "type": "Added",
+          "description": "Preserve editable metadata and article tables"
+        },
+        {
+          "type": "Added",
+          "description": "Adapt reporter intake to the current workspace flow"
+        },
+        {
+          "type": "Fixed",
+          "description": "Show character budgets across reporter workflows"
+        },
+        {
+          "type": "Added",
+          "description": "Expose creation and persist appearance preferences"
+        },
+        {
+          "type": "Fixed",
+          "description": "Honor reporter guidance and queue selected drafts"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Document and verify reporter acceptance workflows"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Distinguish themes from local role controls"
+        },
+        {
+          "type": "Maintenance",
+          "description": "Verify creation access in each workspace surface"
+        }
+      ]
+    },
     {
       "version": "1.8.0",
       "roadmapRelease": "R1",

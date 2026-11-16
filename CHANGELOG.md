@@ -4,15 +4,30 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-16
+
+### Maintenance
+
+- Add ci helper.
+- Add ci helper.
+- Restore.
+- Cleanup.
+- Document and verify reporter acceptance workflows.
+- Distinguish themes from local role controls.
+- Verify creation access in each workspace surface.
+
 ### Added
 
-- Support reporter-selected categories, independent topics/formats, flexible character budgets, public web sources and reviewed-text intake for fair coverage.
-- Preserve editable publication metadata and semantic article tables through editing and export, with persistent appearance preferences.
+- Support reporter briefs and source-backed tables.
+- Add public links and scoped editorial planning.
+- Preserve editable metadata and article tables.
+- Adapt reporter intake to the current workspace flow.
+- Expose creation and persist appearance preferences.
 
 ### Fixed
 
-- Carry production-specific guidance through current writing orchestration and align fast writing with its actual models and progress steps.
-- Keep source intake, defaults and draft recovery within the initiating account and workspace while preserving current media-upload and approval flows.
+- Show character budgets across reporter workflows.
+- Honor reporter guidance and queue selected drafts.
 
 ## [1.8.0] - 2026-11-12
 
