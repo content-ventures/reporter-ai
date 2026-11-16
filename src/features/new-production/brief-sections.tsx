@@ -5,6 +5,7 @@ import {
   Alert,
   Button,
   ChoiceCard,
+  Checkbox,
   DatePicker,
   Disclosure,
   Field,
@@ -89,7 +90,7 @@ export function BriefStep({ draft, update, charsAvailable, materialMinutes, exis
   const formatSpec = draft.format ? FORMAT_SPECS[draft.format] : undefined;
   const sizeSuggestion = suggestedFormatSize(draft.format, draft.formatSize, materialMinutes);
   const chooseFormat = (value: string) => update(withFormat(value === ARTICLE ? undefined : (value as EditorialFormat)));
-  const setEvent = (key: keyof EventContext, value: string) => update({ event: { ...draft.event, [key]: value } });
+  const setEvent = (key: keyof EventContext, value: string) => update({ event: { ...draft.event, [key]: value }, ...(key === 'name' && draft.editorial ? { editorial: { ...draft.editorial, eventName: value } } : {}) });
 
   const chooseSize = (size: ArticleSize) => {
     const next = withSize(draft, size);
@@ -107,6 +108,12 @@ export function BriefStep({ draft, update, charsAvailable, materialMinutes, exis
 
   return (
     <FormSection title="Pauta" titleAs="h2" state="active" open>
+      {draft.editorial ? <>
+        <FormRow label="Limite de caracteres" hint="Com espaços. Ajuste ao que a informação precisa; o texto pode sair menor.">{({ id }) => <Input id={id} type="number" min={300} max={30000} step={100} value={draft.editorial!.maxChars} onChange={e => update({ editorial: { ...draft.editorial!, maxChars: Number(e.target.value) } })} />}</FormRow>
+        <FormRow label="Quantidade de subtítulos">{({ id }) => <Input id={id} type="number" min={1} max={20} value={draft.sections} onChange={e => update({ sections: Number(e.target.value), sectionsCustom: true })} />}</FormRow>
+        <FormRow label="Texto já produzido"><Checkbox label="Abrir o texto enviado para revisão, sem reescrever com IA" checked={draft.importReviewed ?? false} onChange={e => update({ importReviewed: e.target.checked, ...(e.target.checked ? { separateTopics: false } : {}) })} /></FormRow>
+        {!!draft.editorial.secondaryTopics.filter(t => t.trim()).length && <FormRow label="Desdobramentos"><Checkbox label="Criar um artigo separado para cada tema secundário" checked={draft.separateTopics ?? false} onChange={e => update({ separateTopics: e.target.checked })} /></FormRow>}
+      </> : <>
       {existing ? null : (
         <FormRow label="Formato">
           <Grid columns="1:1:1" gap="sm" collapseBelow={760}>
@@ -193,6 +200,7 @@ export function BriefStep({ draft, update, charsAvailable, materialMinutes, exis
           </>
         )}
       </FormRow>
+      </>}
       {formatSpec && !existing ? (
         <>
           <FormRow label="Evento" optional>
@@ -242,7 +250,7 @@ export function BriefStep({ draft, update, charsAvailable, materialMinutes, exis
           ) : null}
         </>
       ) : null}
-      <FormRow label="Ângulo" optional>
+      <FormRow label="Recorte do conteúdo" optional>
         {({ id, describedBy }) => (
           <Textarea
             id={id}

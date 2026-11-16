@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from 'react';
 import {
   Avatar,
+  Button,
   Field,
   FormRow,
   FormSection,
@@ -43,6 +44,7 @@ export type SpeakersSectionProps = {
   /** Validation messages after a save attempt, by speaker label. */
   errors: Readonly<Record<string, string>>;
   onChange: (label: string, choice: SpeakerChoice) => void;
+  onRemove: (label: string) => void;
   /** Registers the name field of a new person (ErrorSummary focus). */
   nameRef: (label: string) => (node: HTMLInputElement | null) => void;
   /** Registers the id of a speaker's person picker (ErrorSummary focus for "sem pessoa"). */
@@ -110,8 +112,9 @@ function NewPersonFields({ label, choice, invalid, describedBy, onChange, nameRe
   );
 }
 
-export function SpeakersSection({ draft, analysis, people, peopleLoading, state, errors, onChange, nameRef, registerPicker }: SpeakersSectionProps) {
-  const speakers = analysis?.speakers ?? [];
+export function SpeakersSection({ draft, analysis, people, peopleLoading, state, errors, onChange, onRemove, nameRef, registerPicker }: SpeakersSectionProps) {
+  const detected = analysis?.speakers ?? [];
+  const speakers = [...detected, ...Object.keys(draft.speakers).filter(label => !detected.some(s => s.label === label)).map(label => ({ label, segments: 0, words: 0, presentation: undefined }))];
   const peopleOptions = useMemo<SelectOption[]>(
     () =>
       people.map((person) => {
@@ -127,13 +130,18 @@ export function SpeakersSection({ draft, analysis, people, peopleLoading, state,
     [people],
   );
 
-  const open = speakers.length > 0;
+  const open = true;
   const summary = !analysis ? 'Detectados no material' : 'Sem identificação no texto; o áudio não separa vozes';
   const undecided = speakersWithoutPerson(draft, analysis, people).length;
   const meta = open ? [plural(speakers.length, 'falante', 'falantes'), undecided > 0 ? withoutPersonLabel(undecided) : null].filter(Boolean).join(' · ') : undefined;
 
   return (
-    <FormSection title="Falantes" titleAs="h2" state={state} open={open} summary={open ? undefined : summary} meta={meta}>
+    <FormSection title="Participantes" titleAs="h2" state={state} open={open} summary={open ? undefined : summary} meta={meta}>
+      <Button size="sm" onClick={() => {
+        let index = 1;
+        while (speakers.some(speaker => speaker.label === `Participante ${index}`)) index++;
+        onChange(`Participante ${index}`, { kind: 'new', name: '' });
+      }}>Adicionar participante</Button>
       {speakers.map((speaker) => {
         const choice = speakerChoice(draft, speaker.label, people, speaker.presentation);
         const options: SelectOption[] = [
@@ -177,6 +185,7 @@ export function SpeakersSection({ draft, analysis, people, peopleLoading, state,
                     nameRef={nameRef(speaker.label)}
                   />
                 ) : null}
+                {!detected.some(item => item.label === speaker.label) && <Button size="sm" variant="ghost" onClick={() => onRemove(speaker.label)}>Remover participante</Button>}
               </>
             )}
           </FormRow>

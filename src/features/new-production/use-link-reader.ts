@@ -9,7 +9,7 @@ import type { MaterialFile } from './form';
 export type ImportedLink = {
   file: MaterialFile;
   sourceUrl: string;
-  provider: 'youtube' | 'spotify';
+  provider: 'youtube' | 'spotify' | 'web';
   title?: string;
   programName?: string;
 };

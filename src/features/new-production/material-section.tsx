@@ -53,8 +53,7 @@ import { partSlots, partViews, type PartView } from './material-parts';
 const MODES: SegmentOption<MaterialMode>[] = [
   { value: 'paste', label: 'Texto', icon: ClipboardList },
   { value: 'file', label: 'Arquivo', icon: FileUp },
-  // Link import (YouTube/Spotify) is off until it works end to end in every runtime.
-  { value: 'link', label: 'Link', icon: Link2, disabled: true, disabledReason: 'Em breve' },
+  { value: 'link', label: 'Link', icon: Link2 },
 ];
 
 const PLACEHOLDER = 'Cole aqui a transcrição da entrevista';
@@ -121,6 +120,7 @@ export type MaterialSectionProps = {
   onRemoveLink: () => void;
   onUseSample: () => void;
   /** "Corrigir termo": replaces a misheard name across the material, unless it would change how it is read. */
+  showTermCorrection?: boolean;
   onReplaceTerm: (from: string, to: string) => TermCorrection;
 };
 
@@ -151,6 +151,7 @@ export function MaterialSection({
   onRemoveLink,
   onUseSample,
   onReplaceTerm,
+  showTermCorrection = true,
 }: MaterialSectionProps) {
   const workspaceHrefFor = useWorkspaceHref();
   const analysis = material.analysis;
@@ -166,7 +167,7 @@ export function MaterialSection({
   const failedParts = views.flatMap((view) => (view.status.kind === 'error' ? [`Parte ${view.number}: ${view.status.message}`] : []));
   // "Acompanhar envio" only while a part is on its way; beside a failed part nothing is analysed either.
   const sending = views.some((view) => view.status.kind === 'reading');
-  const hint = draft.mode === 'link' && blank ? 'YouTube com legendas ou Spotify com feed público' : blank ? (
+  const hint = draft.mode === 'link' && blank ? 'Página pública HTTPS, YouTube com legendas ou Spotify com feed público' : blank ? (
     <LinkButton onClick={onUseSample}>Usar exemplo</LinkButton>
   ) : sending ? (
     <LinkButton onClick={onShowProgress}>Acompanhar envio</LinkButton>
@@ -197,7 +198,7 @@ export function MaterialSection({
 
   return (
     <FormSection title="Material" titleAs="h2" state={state} open>
-      <FormRow label="Transcrição" required hint={hint} error={rowError}>
+      <FormRow label={draft.mode === 'link' ? 'Link' : 'Transcrição'} required hint={hint} error={rowError}>
         {({ id, describedBy, invalid }) => (
           <>
             <Segmented label="Como trazer o material" options={MODES} value={draft.mode} onChange={onModeChange} size="sm" />
@@ -228,7 +229,7 @@ export function MaterialSection({
                   autoCorrect="off"
                   spellCheck={false}
                   value={draft.sourceUrl ?? ''}
-                  placeholder="https://youtube.com/… ou https://open.spotify.com/episode/…"
+                  placeholder="https://…"
                   onChange={(event) => onLinkChange(event.target.value)}
                   onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault();onImportLink(); } }}
                   trailing={linkRead?.status === 'reading' || draft.linkFile ? undefined : (
@@ -236,13 +237,16 @@ export function MaterialSection({
                   )}
                 />
                 {linkRead?.status === 'reading' ? (
-                  <AgentTrace label={linkProvider === 'spotify' ? 'Episódio do Spotify' : 'Vídeo do YouTube'}
+                  <AgentTrace label={linkProvider === 'spotify' ? 'Episódio do Spotify' : linkProvider === 'web' ? 'Página da web' : 'Vídeo do YouTube'}
                     steps={[{ id: 'read',label: linkRead.message,state: 'current' }]} variant="compact" announce={false}
                     action={<LinkButton onClick={onShowProgress}>Acompanhar</LinkButton>} />
                 ) : linkRead?.status === 'error' ? (
-                  <FileRow name={linkProvider === 'spotify' ? 'Episódio do Spotify' : 'Vídeo do YouTube'} size={0} status="error" message={linkRead.message} onRetry={onRetryLink} retryLabel="Tentar de novo" onRemove={onCancelLink} />
+                  <FileRow name={linkProvider === 'spotify' ? 'Episódio do Spotify' : linkProvider === 'web' ? 'Página da web' : 'Vídeo do YouTube'} size={0} status="error" message={linkRead.message} onRetry={onRetryLink} retryLabel="Tentar de novo" onRemove={onCancelLink} />
                 ) : draft.linkFile ? (
-                  <FileRow name={draft.linkFile.name} size={draft.linkFile.size} status="done" message={ready ? readLine(ready) : undefined} onRemove={onRemoveLink} />
+                  <>
+                    <FileRow name={draft.linkFile.name} size={draft.linkFile.size} status="done" message={ready ? readLine(ready) : undefined} onRemove={onRemoveLink} />
+                    {parseSourceLink(draft.sourceUrl ?? '') && <TextLink href={draft.sourceUrl ?? ''} target="_blank" rel="noopener noreferrer">Abrir fonte original</TextLink>}
+                  </>
                 ) : null}
               </>
             ) : views.length > 0 ? (
@@ -313,14 +317,14 @@ export function MaterialSection({
             ) : null}
             {ready?.short ? (
               <Alert tone="warning" compact title="Material curto">
-                {`${formatCount(ready.stats.words)} palavras: o texto deve sair com menos de 1 lauda.`}
+                {`${formatCount(ready.stats.words)} palavras: o texto pode sair abaixo do limite escolhido.`}
               </Alert>
             ) : null}
           </>
         )}
       </FormRow>
       {/* Stays on screen while the corrected material is analyzed again: the last analysis is kept meanwhile. */}
-      {!blank && !draftMaterial(draft).pending && analysis?.segments.length ? (
+      {showTermCorrection && !blank && !draftMaterial(draft).pending && analysis?.segments.length ? (
         <FormRow label="Corrigir termo" optional>
           <TermFix text={draftMaterial(draft).text} onReplace={onReplaceTerm} />
         </FormRow>

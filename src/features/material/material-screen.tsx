@@ -19,6 +19,7 @@ import {
   Section,
   Skeleton,
   SplitLayout,
+  TextLink,
   TranscriptViewer,
   formatTimestamp,
   toast,
@@ -27,10 +28,11 @@ import {
 } from '@content-ventures/design-system/v3';
 import { ArrowRight, Copy, Pencil, ScrollText, Sparkles } from '@content-ventures/design-system/v3/icons';
 import { briefSizeName, shortHash, type Brief, type ProductionId, type SourcePart } from '@/domain';
+import { podcastLink } from '@/domain/citation-library';
 import type { Participant, SourceDetail } from '@/ports';
 import { SOURCE_ORIGIN_LABELS } from '@/registries';
 import { useCan, useCommands, usePiece, useSource } from '@/state';
-import { formatDate, formatDateTime, formatDuration, formatSize, plural } from '@/ui/format';
+import { formatDate, formatDateTime, formatDuration, plural } from '@/ui/format';
 import { PersonAvatar, usePerson } from '@/ui/person-avatar';
 import { materialHref, pieceHref } from '@/ui/routes';
 import { useCommandGroup } from '@/ui/shell';
@@ -65,6 +67,7 @@ function materialFacts(detail: SourceDetail): DescriptionItem[] {
   const { source, version, summary } = detail;
   const items: DescriptionItem[] = [
     { label: 'Origem', value: SOURCE_ORIGIN_LABELS[source.origin] },
+    { label: 'Fonte original', value: podcastLink(source.sourceUrl) ? <TextLink href={podcastLink(source.sourceUrl)!} target="_blank" rel="noopener noreferrer">Abrir fonte original</TextLink> : undefined },
     { label: 'Data', value: source.recordedOn ? formatDate(source.recordedOn) : undefined, numeric: true },
     { label: 'Arquivo', value: source.parts ? plural(source.parts.length, 'parte', 'partes') : (source.fileName ?? 'Texto colado') },
     {
@@ -113,7 +116,7 @@ function withoutPerson(detail: SourceDetail): number {
 function briefFacts(brief: Brief): DescriptionItem[] {
   return [
     { label: 'Orientação', value: brief.angle || undefined },
-    { label: brief.format ? 'Formato' : 'Tamanho', value: brief.format ? briefSizeName(brief) : formatSize(brief.size) },
+    { label: brief.format ? 'Formato' : 'Tamanho', value: briefSizeName(brief) },
     { label: 'Estrutura', value: `Introdução + ${plural(brief.sections, 'seção', 'seções')}` },
   ];
 }

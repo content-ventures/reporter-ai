@@ -189,13 +189,13 @@ describe('Nova produção form', () => {
   test('a material that cannot fill the size says so, never padded', () => {
     assert.equal(shortfallSentence('standard', undefined), undefined);
     assert.equal(shortfallSentence('standard', 6000), undefined);
-    assert.match(shortfallSentence('standard', 800) ?? '', /^O material rende ≈ .* lauda\. Acrescente fonte para cumprir o mínimo/);
+    assert.match(shortfallSentence('standard', 800) ?? '', /^O material rende ≈ .* caracteres\. Acrescente fonte para cumprir o mínimo/);
   });
 
-  test('the summaries read "Padrão · 2 laudas · 3 seções · 2 falantes"', () => {
-    assert.equal(briefSummary('standard', 3, 2), 'Padrão · 2 laudas · 3 seções · 2 falantes');
-    assert.equal(briefSummary('short', 2, 1), 'Curto · 1 lauda · 2 partes · 1 falante');
-    assert.equal(briefSummary('standard', 3, 0), 'Padrão · 2 laudas · 3 seções');
+  test('the summaries read "Padrão · até 4.000 caracteres · 3 seções · 2 falantes"', () => {
+    assert.equal(briefSummary('standard', 3, 2), 'Padrão · até 4.000 caracteres · 3 seções · 2 falantes');
+    assert.equal(briefSummary('short', 2, 1), 'Curto · até 2.000 caracteres · 2 partes · 1 falante');
+    assert.equal(briefSummary('standard', 3, 0), 'Padrão · até 4.000 caracteres · 3 seções');
     assert.equal(analysisLine({ speakers: [{ label: 'A' }, { label: 'B' }] as SourceAnalysis['speakers'], stats: { segments: 36 } as SourceAnalysis['stats'] }, '16:48'), '36 falas · 2 falantes · 16:48');
   });
 

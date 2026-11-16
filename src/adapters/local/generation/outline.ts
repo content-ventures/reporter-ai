@@ -4,7 +4,7 @@ import type { SourceRef } from '../../../domain/refs.ts';
 import { ok, refuse } from '../../../domain/result.ts';
 import type { Result } from '../../../domain/result.ts';
 import type { OutlineEdited, OutlineIntro, OutlineSection, OutlineShortfall, OutlineSize, RunEventPayload, RunFold } from '../../../domain/run-events.ts';
-import { formatLaudas, laudaUnit, sizeOf } from '../../../domain/sizing.ts';
+import { formatLaudas, formatCharacters, sizeOf } from '../../../domain/sizing.ts';
 import type { ArticleSize } from '../../../domain/sizing.ts';
 import { contentHash } from '../../../domain/text/hash.ts';
 import type { OutlineInput } from '../../../ports/generation.ts';
@@ -82,8 +82,8 @@ export function outlineEvent(plan: DraftPlan, context: OutlineContext): OutlineP
 export function outlineMeta(payload: OutlinePayload, size: ArticleSize): string {
   const count = sectionWord(size, payload.sections.length);
   if (payload.shortfall) return `${count} · o material rende ≈ ${formatLaudas(payload.shortfall.expectedChars)}`;
-  const laudas = payload.size?.laudas ?? sizeOf(size).laudas;
-  return `${count} · alvo ${laudas} ${laudaUnit(laudas)}`;
+  const maxChars = payload.size?.maxChars ?? sizeOf(size).maxChars;
+  return `${count} · alvo ${formatCharacters(maxChars)}`;
 }
 
 // ——— A structure a person edited ———
@@ -111,6 +111,7 @@ export const OUTLINE_MESSAGES = {
 } as const;
 
 export type NormalizeContext = {
+  flexible?: boolean;
   size: ArticleSize;
   /** An event format's own section range and intertítulos rule, in place of the size's. */
   rule?: { label: string; headings: boolean; sections: { min: number; max: number } };
@@ -129,7 +130,7 @@ export type NormalizeContext = {
 export function normalizeOutline(outline: OutlineInput, context: NormalizeContext): Result<PlannedOutline, 'invalid_outline'> {
   const invalid = (message: string) => refuse('invalid_outline' as const, message);
   const sections = Array.isArray(outline.sections) ? outline.sections : [];
-  const counted = countRefusal(context.size, sections.length, context.rule);
+  const counted = context.flexible ? (sections.length < 1 || sections.length > 20 ? 'Escolha de 1 a 20 subtítulos.' : undefined) : countRefusal(context.size, sections.length, context.rule);
   if (counted) return invalid(counted);
   const headings = context.rule?.headings ?? sizeOf(context.size).headings;
   const seen = new Set<string>();

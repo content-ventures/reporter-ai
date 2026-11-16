@@ -97,8 +97,8 @@ export function editorialCandidates(record: ProductionRecord) {
 export function validateEditorialOutline(record: ProductionRecord, outline: OutlineInput) {
   const { format,formatSize } = record.production.brief;
   // An event format plans its own number of parts (a note has one, an awards text one per category).
-  const rule = format ? { label: FORMAT_SPECS[format].label,headings: FORMAT_SPECS[format].headings,sections: formatSizeOf(format,formatSize).sections } : undefined;
-  return normalizeOutline(outline,{ size: record.production.brief.size,...(rule ? { rule } : {}),material: readMaterial(writingSources(record.sources).filter(source => !source.research)),defaultTitle: () => record.production.title });
+  const rule = record.production.brief.editorial ? { label: 'Subtítulos', headings: true, sections: { min: 1, max: 20 } } : format ? { label: FORMAT_SPECS[format].label,headings: FORMAT_SPECS[format].headings,sections: formatSizeOf(format,formatSize).sections } : undefined;
+  return normalizeOutline(outline,{ size: record.production.brief.size,...(record.production.brief.editorial ? { flexible: true, rule: { label: 'Formato escolhido', headings: true, sections: { min: 1, max: 20 } } } : rule ? { rule } : {}),material: readMaterial(writingSources(record.sources).filter(source => !source.research)),defaultTitle: () => record.production.title });
 }
 export type EditorialIdentity = { workspaceId: string;workspaceName: string;workspaceSlug: string;personId: string;name: string;title?: string | null;email?: string;avatarUrl?: string;roles: Role[];localOperator?: boolean };
 const LOCAL_IDENTITY: EditorialIdentity = { workspaceId: LOCAL_WORKSPACE,workspaceName: 'Reporter IA',workspaceSlug: 'reporter-ai-local',personId: LOCAL_OPERATOR,
