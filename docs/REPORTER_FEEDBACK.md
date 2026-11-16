@@ -92,6 +92,10 @@ Semrush volume/difficulty validation and WordPress/Yoast publishing remain manua
 automatic integrations were future work. Public pages must expose readable HTML/text; blocked,
 paywalled or JavaScript-only pages can fail visibly and may be supplied by paste/file instead.
 
-This integration is local. Push/PR update, merge, Preview and production deployment each follow
+The branch push and PR #65 update onto `main` were explicitly approved. The first remote gate,
+backend/PostgreSQL contracts and cloud rehearsal passed. Connected smoke exposed four outdated
+profile-menu assertions that also counted the new appearance controls; those checks now target
+profile names explicitly and separately retain all three theme options for ordinary accounts.
+Remote delivery does not release production. Merge and production deployment remain subject to
 the exact-action approval requirement in `DEVELOPMENT_HARNESS.md`. Version 1.8.0 is unchanged;
 release numbering is handled by the controlled deployment workflow after approval.
