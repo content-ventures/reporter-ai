@@ -3,6 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { VIEWPORTS, expectNoHorizontalOverflow } from './support';
+import { emptyEditorialCheckpoint } from '../src/runtime/editorial-engine.ts';
+
+// Exercise the connected HTTP client without a shared database or paid provider.
+test.beforeEach(async ({ page }) => {
+  const checkpoint = emptyEditorialCheckpoint();
+  await page.route(url => url.pathname === '/api/reporter/workspace', route => route.fulfill({ json: {
+    state: checkpoint.state, jobs: checkpoint.jobs, revision: 0, workerOnline: true,
+  } }));
+});
 
 const text = 'Material sintético para testar oficinas gratuitas de leitura na biblioteca.';
 const insights = { title: 'Oficinas de leitura',participants: [],pipelineRevision: 1 };
@@ -43,7 +52,7 @@ for (const viewport of VIEWPORTS) {
       });
       await page.goto('/productions/new');
       await page.getByRole('radio', { name: 'Arquivo',exact: true }).click();
-      await page.locator('input[type="file"]').setInputFiles({ name: 'transcricao.txt',mimeType: 'text/plain',buffer: Buffer.from(text) });
+      await page.locator('input[type="file"][multiple]').setInputFiles({ name: 'transcricao.txt',mimeType: 'text/plain',buffer: Buffer.from(text) });
       const dialog = page.getByRole('dialog', { name: 'Preparando material' });
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText('Identificando o tema e os participantes.', { exact: true })).toBeVisible();
@@ -86,16 +95,22 @@ for (const viewport of VIEWPORTS) {
       expect(calls).toBe(2);
     });
 
-    test('link fica indisponível, com o motivo, e não troca o modo', async ({ page }) => {
+    test('link está disponível na nova produção e permite consultar uma fonte', async ({ page }) => {
+      const sourceUrl = 'https://publisher.example/fenacam';
+      await page.route('**/api/reporter/links', route => route.fulfill({ json: {
+        kind: 'ready', provider: 'web', sourceUrl, title: 'Cobertura da Fenacam', fileName: 'fenacam.txt', text, bytes: Buffer.byteLength(text),
+      } }));
+      await page.route('**/api/reporter/material/analysis', route => route.fulfill({ json: insights }));
       await page.goto('/productions/new');
-      const link = page.getByRole('radio', { name: 'Link',exact: true });
-      await expect(link).toHaveAttribute('aria-disabled', 'true');
-      await expect(link).toHaveAccessibleDescription('Em breve');
-      // aria-disabled keeps it focusable for the reason, so Playwright would wait forever: force the press.
-      await link.click({ force: true });
-      await expect(link).toHaveAttribute('aria-checked', 'false');
-      await expect(page.getByRole('radio', { name: 'Texto',exact: true })).toHaveAttribute('aria-checked', 'true');
-      await expect(page.getByRole('textbox', { name: 'Transcrição',exact: true })).toBeVisible();
+      const link = page.getByRole('radio', { name: 'Link', exact: true });
+      await expect(link).not.toHaveAttribute('aria-disabled', 'true');
+      await link.click();
+      await expect(link).toHaveAttribute('aria-checked', 'true');
+      await expect(page.getByRole('textbox', { name: 'Link', exact: true })).toBeVisible();
+      await page.getByRole('textbox', { name: 'Link', exact: true }).fill(sourceUrl);
+      await page.getByRole('button', { name: 'Importar link', exact: true }).click();
+      await expect(page.getByRole('link', { name: 'Abrir fonte original', exact: true })).toHaveAttribute('href', sourceUrl);
+      await expect(page.getByRole('heading', { name: 'Material (preenchida)', exact: true })).toBeVisible();
       await expectNoHorizontalOverflow(page);
     });
 
@@ -113,7 +128,7 @@ for (const viewport of VIEWPORTS) {
         });
         await page.goto('/productions/new');
         await page.getByRole('radio', { name: 'Arquivo', exact: true }).click();
-        await page.locator('input[type="file"]').setInputFiles(path);
+        await page.locator('input[type="file"][multiple]').setInputFiles(path);
         const dialog = page.getByRole('dialog', { name: 'Preparando material' });
         await expect(dialog).toBeVisible();
         await expect(dialog.getByText(name, { exact: false })).toBeVisible();
@@ -144,7 +159,7 @@ for (const viewport of VIEWPORTS) {
         `1\n00:00:00,000 --> 00:00:05,000\n${speaker}: ${words}, fala 1.\n\n2\n00:00:05,000 --> 00:00:10,000\n${speaker}: ${words}, fala 2.`;
       await page.goto('/productions/new');
       await page.getByRole('radio', { name: 'Arquivo',exact: true }).click();
-      await page.locator('input[type="file"]').setInputFiles([
+      await page.locator('input[type="file"][multiple]').setInputFiles([
         { name: 'parte-2.srt',mimeType: 'text/plain',buffer: Buffer.from(cues('Bia','parte dois')) },
         { name: 'parte-1.srt',mimeType: 'text/plain',buffer: Buffer.from(cues('Ana','parte um')) },
       ]);
@@ -156,7 +171,7 @@ for (const viewport of VIEWPORTS) {
       expect(bodies.at(-1)?.text.startsWith('\u001c\n')).toBe(true);
       expect(bodies.at(-1)?.fileName).toBe('parte-1.srt');
       await expect(page.getByText(/· 00:20$/)).toBeVisible();
-      await expect(page.locator('input[type="file"]')).toHaveCount(1);
+      await expect(page.locator('input[type="file"][multiple]')).toHaveCount(1);
       const sent = bodies.length;
       await page.getByRole('button', { name: 'Reordenar parte-2.srt' }).press('Alt+ArrowUp');
       await expect(parts.first()).toContainText('parte-2.srt');
@@ -185,7 +200,7 @@ for (const viewport of VIEWPORTS) {
       await page.route('**/api/reporter/material/analysis', async route => { await analysis.promise;await route.fulfill({ json: insights }); });
       await page.goto('/productions/new');
       await page.getByRole('radio', { name: 'Arquivo',exact: true }).click();
-      await page.locator('input[type="file"]').setInputFiles({ name: 'entrevista.mp3',mimeType: 'audio/mpeg',buffer: Buffer.alloc(6 * 1024 ** 2) });
+      await page.locator('input[type="file"][multiple]').setInputFiles({ name: 'entrevista.mp3',mimeType: 'audio/mpeg',buffer: Buffer.alloc(6 * 1024 ** 2) });
       const dialog = page.getByRole('dialog', { name: 'Preparando material' });
       await expect(dialog.getByRole('progressbar', { name: 'Envio do arquivo' })).toHaveAttribute('aria-valuenow','83');
       await expect(dialog.getByText(/5,0 MB de 6,0 MB.*83%/)).toBeVisible();

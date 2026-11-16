@@ -80,7 +80,7 @@ for (const viewport of VIEWPORTS) {
       await page.goto('/productions/new');
       await expectShell(page, 'Nova produção');
       await page.getByRole('radio', { name: 'Arquivo',exact: true }).click();
-      await page.locator('input[type="file"]').setInputFiles({ name: 'Entrevista-Gestão.txt',mimeType: 'text/plain',
+      await page.locator('input[type="file"][multiple]').setInputFiles({ name: 'Entrevista-Gestão.txt',mimeType: 'text/plain',
         buffer: Buffer.from('Material sintético de teste sobre oficinas gratuitas de leitura.') });
       await expect(page.getByRole('heading', { name: 'Material (preenchida)',exact: true })).toBeVisible();
       await page.getByRole('checkbox', { name: 'Os falantes autorizaram o uso' }).check();
