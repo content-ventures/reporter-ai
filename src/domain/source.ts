@@ -235,7 +235,7 @@ export function createTranscriptSource(input: NewTranscriptSource, ctx: CommandC
     kind: input.kind ?? 'transcript',
     title: input.title.trim(),
     origin: input.origin,
-    speakers: [...new Set([...input.parsed.speakers, ...Object.keys(presentations)])].map((label): Speaker => {
+    speakers: [...new Set([...input.parsed.speakers, ...Object.keys(presentations), ...Object.keys(input.speakerPeople ?? {})])].map((label): Speaker => {
       const personId = input.speakerPeople?.[label];
       const speaker: Speaker = personId ? { label, personId } : input.unattributed?.includes(label) ? { label, unattributed: true } : { label };
       if (presentations[label]) speaker.presentation = { ...presentations[label] };

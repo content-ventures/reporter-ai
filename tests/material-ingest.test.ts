@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { File } from 'node:buffer';
 import { test } from 'node:test';
-import { createHttpIngest } from '../src/adapters/http/reporter-client.ts';
+import { createHttpIngest, createReporterTransport } from '../src/adapters/http/reporter-client.ts';
 import { parseTranscript, analyzeTranscript, sourceContentHash } from '../src/domain/index.ts';
 import { ok, refuse } from '../src/domain/result.ts';
 import type { SourceIngest, SourceAnalysis, MaterialReadProgress } from '../src/ports/source-ingest.ts';
@@ -14,6 +14,24 @@ const analysis: SourceAnalysis = { format: parsed.format, hash: sourceContentHas
 const local: SourceIngest = { limits: { extensions: ['.txt'], maxBytes: 1048576, shortWords: 300 },
   read: async () => refuse('read_failed', 'Arquivo ausente'), readLink: async () => refuse('read_failed','Link ausente'),
   analyze: async () => ok(structuredClone(analysis)) };
+
+test('planning and research retain the initiating workspace and account through the bound transport', async () => {
+  const original = globalThis.fetch, seen: { path: string; account: string | null }[] = [];
+  globalThis.fetch = async (input, init) => {
+    seen.push({ path: String(input), account: new Headers(init?.headers).get('x-reporter-account') });
+    return Response.json(String(input).endsWith('/research') ? { sources: [] } : { title: 'Manejo', topics: ['Custos'] });
+  };
+  const transport = createReporterTransport('fair-client', { requireAccount: true }); transport.bindAccount('reporter-account');
+  try {
+    const ingest = createHttpIngest(local, transport);
+    assert.equal((await ingest.plan!(text, 'Mapeie os eventos')).ok, true);
+    assert.equal((await ingest.research!('Fenacam')).ok, true);
+    assert.deepEqual(seen, [
+      { path: '/api/reporter/w/fair-client/material/planning', account: 'reporter-account' },
+      { path: '/api/reporter/w/fair-client/research', account: 'reporter-account' },
+    ]);
+  } finally { transport.dispose(); globalThis.fetch = original; }
+});
 
 test('connected analysis shows presented people without attributing or changing transcript segments', async () => {
   const original = globalThis.fetch;

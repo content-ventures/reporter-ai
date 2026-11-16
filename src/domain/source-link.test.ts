@@ -18,11 +18,13 @@ describe('source links', () => {
     assert.equal(parseSourceLink('https://open.spotify.com/show/7makk4oTQel546B0PZlDM5'), undefined);
   });
 
-  test('rejects other hosts and explains the accepted sources', () => {
+  test('accepts public website links and rejects unsafe schemes and credentials', () => {
     assert.equal(parseSourceLink('http://youtube.com/watch?v=7GeFt8suV8E'), undefined);
-    assert.equal(parseSourceLink('https://example.com/watch?v=7GeFt8suV8E'), undefined);
-    assert.equal(sourceLinkMessage(''), 'Cole o link do vídeo ou episódio.');
-    assert.equal(sourceLinkMessage('https://example.com'), 'Use um vídeo do YouTube ou um episódio do Spotify.');
+    assert.equal(parseSourceLink('https://example.com/watch?v=7GeFt8suV8E')?.provider, 'web');
+    assert.equal(parseSourceLink('https://localhost/private'), undefined);
+    assert.equal(parseSourceLink('https://user:password@example.com'), undefined);
+    assert.equal(sourceLinkMessage(''), 'Cole o link da notícia, vídeo ou episódio.');
+    assert.equal(sourceLinkMessage('https://example.com'), undefined);
   });
 
   test('formats captions and matches an episode title without accents or punctuation', () => {

@@ -1,4 +1,4 @@
-export type SourceLinkProvider = 'youtube' | 'spotify';
+export type SourceLinkProvider = 'youtube' | 'spotify' | 'web';
 
 export type ParsedSourceLink = {
   provider: SourceLinkProvider;
@@ -40,12 +40,13 @@ export function parseSourceLink(value: string): ParsedSourceLink | undefined {
     const id = episode[0] === 'episode' ? episode[1] : undefined;
     return id && SPOTIFY_ID.test(id) ? { provider: 'spotify', id, url: `https://open.spotify.com/episode/${id}` } : undefined;
   }
-  return undefined;
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || url.port && url.port !== '443') return undefined;
+  return { provider: 'web', url: url.toString() };
 }
 
 export function sourceLinkMessage(value: string): string | undefined {
-  if (!value.trim()) return 'Cole o link do vídeo ou episódio.';
-  return parseSourceLink(value) ? undefined : 'Use um vídeo do YouTube ou um episódio do Spotify.';
+  if (!value.trim()) return 'Cole o link da notícia, vídeo ou episódio.';
+  return parseSourceLink(value) ? undefined : 'Use um link HTTPS público de notícia, YouTube ou Spotify.';
 }
 
 export type TimedCaption = { start: string; dur: string; text: string };
