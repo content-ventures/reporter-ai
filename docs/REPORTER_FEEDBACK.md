@@ -4,7 +4,7 @@ Audit date: November 16, 2026. PR #65 was merged and released as v1.9.0 at
 `c7f554bbd44b6d74cfc360da9f892bb79fe983eb`. This delivery preserves workspace/account
 routing, permissions, editorial memory, writing orchestration and multipart media uploads.
 The subsequent [live acceptance record](LIVE_ACCEPTANCE_2026-11-16.md) separates actual
-production observations from local regression coverage and corrections awaiting release.
+production observations, released corrections, local regression coverage and remaining acceptance.
 
 ## Source coverage
 
@@ -22,7 +22,7 @@ of that agent is not an established acceptance claim.
 
 “Implemented” below describes the delivered behavior and its automated checks; it does not
 mean Amanda/Léo accepted the generated prose. See the live acceptance record for observed
-results, open acceptance and corrections that have not reached production.
+results, release-specific corrections and open acceptance.
 
 | Request and meeting reference | Implemented behavior | Verification |
 | --- | --- | --- |

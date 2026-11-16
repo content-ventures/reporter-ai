@@ -1,7 +1,9 @@
 # Live acceptance: Amanda and Léo feedback
 
-Date: November 16, 2026. Production: v1.9.0, commit
-`c7f554bbd44b6d74cfc360da9f892bb79fe983eb`.
+Date: November 16, 2026. Initial acceptance used v1.9.0, commit
+`c7f554bbd44b6d74cfc360da9f892bb79fe983eb`. The corrections were subsequently
+released as **v1.9.1**, commit `80fe865716d87dda4a3aa48ea4821e1053cef8fa`, and
+the authenticated production observations below were repeated on that release.
 
 ## Scope and identity
 
@@ -47,7 +49,7 @@ All article titles begin with “QA —”. Counts are the editor's body measure
 title, linha fina and image suggestions. The exact elapsed generation time was not captured;
 all four were complete at inspection. No numeric latency target or benchmark is claimed.
 
-## Reproduced defects and local corrections awaiting release
+## Defects reproduced on v1.9.0 and corrected in v1.9.1
 
 1. **Dark logo contrast:** the production wordmark remains graphite on the dark sidebar and
    is barely visible. Both existing SVG wordmarks now adapt their lettering to the parent's
@@ -84,17 +86,57 @@ all four were complete at inspection. No numeric latency target or benchmark is 
   comment containing `<img>`, a hash mistaken for a color and the existing approval-dialog
   autofocus warning. The first two are false positives, not new product defects.
 
-These local checks do not establish that the corrections are deployed.
+Those local checks alone did not establish deployment. PR #66 was then merged with rebase;
+controlled production run 43966907639, attempt 2, passed every stage. Both production domains
+reported v1.9.1 and the exact release commit. The first attempt stopped safely on a staging
+worker source mismatch; retry preserved the readiness guard and passed.
+
+## Authenticated acceptance on v1.9.1
+
+Testing continued in the same Chrome Work @oranj session and existing Seafood Brasil workspace.
+All 13 writing-guide values matched their pre-release values. No workspace was created, no
+team production was changed, and all approval requests below were assigned to Admin Teste itself.
+
+| Check | Observed result |
+| --- | --- |
+| Appearance | Dark wordmark visibly white/blue; light wordmark graphite/blue. Light, system and dark preferences each survived reload. Restored the original dark preference. |
+| Formats/context | Selected all four categories and every delivered format; material remained available while switching. Fair/company/session context controls were present. |
+| Public link | Reimported the real Seafood article, completed analysis and opened its actual original page. Progress identified a web page. One legacy HTTP status still briefly says “Localizando episódio”; this does not prove every progress label is corrected. |
+| Reviewed-text import | Uploaded the supplied EP08 excerpt. Normalized text length 6,150 and FNV-1a hash 1,474,485,007 matched the imported article before manual edits. It opened as an unapproved draft, without an AI rewrite. |
+| Manual participant | Added Pedro Carnevalli with role and organization; it retained zero attributed speech. Removed this temporary row before creation. |
+| Table | Inserted and edited a 3×2 table with participant/organization headers and the two source-backed guest/company rows. Save completed; every cell remained after reload. |
+| Publication | Edited search title, description, linha fina, slug, primary/secondary keywords and intent. Saved and verified all seven fields after reload. |
+| Character limit | Changed the article brief to 12,000 characters and four subtitles; the editor retained the 12,000-character ceiling after reload. This edited brief does not rewrite the already imported source. |
+| Human approval/carousel | Sent the reviewed QA article to Admin Teste, approved through the actual dialog, generated five Seafood Explica V2 slides, inspected all text/source references, edited the final CTA, reloaded, and approved the actual carousel through the normal self-review flow. |
+| Download | Downloaded all nine package files. Both article exports retain the semantic table and its factual cells; Markdown carries all seven SEO fields. All five PNGs decode at 1080×1350. Manifest identifies the QA production and actual article/carousel decisions. |
+| Multipart audio | Uploaded two consecutive halves of the supplied EP07 clip. Both completed transcription/analysis, yielding 10 segments and 136 words. Reversed the order and restored it through the visible menus; the combined transcript retained the chronological boundary at 00:26. |
+| Real audio-based writing | Fast writing completed a new, saved QA draft with 640/1,000 characters and one subtitle. The source's unknown voice remained unnamed; no fair attendance, organization, date or investment announcement was invented. Reload retained the draft and QA title. |
+| Observed timings | The actual run panels recorded 14 seconds for this short audio-based article and 13 seconds for this five-slide carousel. These measurements exclude transcription and are not a general latency guarantee. |
+| Phone | Inspected Material → Pauta and the generated article at 390×844. Found a clipped disabled Continue button when the authorization reason shares its footer row; after authorization it fits and advances normally. The correction uses public DS ActionBar's wrapping reason and associated accessible description. |
+
+New production evidence:
+
+- Reviewed EP08 import → article approval → carousel approval → download:
+  `22b87e02-47f5-40ce-9383-620cfc39f00a` (“QA — Importação revisada EP08”).
+- Actual two-part EP07 audio → generated draft:
+  `fa625c75-1da4-45fc-b234-770790057b8e` (“QA — Áudio em duas partes EP07”).
+- Audio reference: the supplied Brusinox Drive clip
+  `1eGUBZZxfVhrVU4Nqq8mCyh2RPuwZ3Tq_`, “Seafood Podcast Indústria - Ep.07 - Mauro Nakata - Corte03.mp4”.
+  Its filename was not treated as proof of the voice's identity. The original media is 52.052
+  seconds; the transcript's final speech ends around 00:44. Splitting the file does not create
+  two distinct events, so this is not acceptance of a real two-event recording.
+
+The new footer regression reproduces the old phone overflow (the action's right edge reaches
+405.36 px in a 390 px viewport) while the desktop case passes. Against the correction, all eight
+new-production browser cases pass, including both widths, source recovery and two topics × two
+formats. The complete gate passes 1,910 tests and a production build; the deterministic 21st
+review reports no findings. Production verification of this final footer correction follows release.
 
 ## Remaining live acceptance
 
-- Release the correction and repeat dark appearance/logo/reload plus table edit/save/reload
-  against the new production commit.
-- Run actual multipart audio ingestion/transcription and a real two-event recording. The
-  automated connected tests cover ordering/failure/retry, but this session used supplied text.
-- Verify every metadata field and table export against the corrected live server.
-- Exercise reviewed external text → human approval → real carousel → download in production.
-  The full fixture path passed; no teammate was notified and no approval gate was bypassed.
+- Release and recheck the newly found phone footer correction.
+- Test a real recording containing two distinct events. The multi-topic/multi-format batching
+  and multipart ordering checks do not establish this editorial acceptance.
 - Amanda/Léo must judge the writing against the real fair workflow and accept its variety,
   useful structure, attribution and actual generation time. Four successful text-based drafts
   do not prove every event format or carousel has passed editorial acceptance.

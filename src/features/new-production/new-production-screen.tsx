@@ -11,6 +11,7 @@ import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useStat
 import { useWorkspaceRouter as useRouter } from '@/ui/workspace-navigation';
 import {
   AccessState,
+  ActionBar,
   Button,
   ButtonLink,
   Checkbox,
@@ -245,6 +246,7 @@ function NewProductionForm({ received, draftKey }: { received?: string; draftKey
   // ── Field ids for ErrorSummary (read in handlers only) ──
   const dropzoneId = useId();
   const authorizationId = useId();
+  const footerDetailId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const linkRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -545,10 +547,22 @@ function NewProductionForm({ received, draftKey }: { received?: string; draftKey
   const summary = step === 'brief' ? briefSummary(draft.size, draft.sections, speakerCount, draft) : '';
   const footerMeta = (narrow: boolean) => statusText || blocker || (narrow ? '' : summary) || undefined;
 
-  const primaryButton = (
-    <Button variant="primary" icon={primary.icon} aria-disabled={blocker ? true : undefined} loading={primary.loading} onClick={() => void primary.run()}>
+  const primaryButton = (narrow: boolean) => (
+    <Button variant="primary" icon={primary.icon} aria-disabled={blocker ? true : undefined}
+      aria-describedby={narrow && blocker ? footerDetailId : undefined}
+      loading={primary.loading} onClick={() => void primary.run()}>
       {primary.label}
     </Button>
+  );
+  const footerActions = (narrow: boolean) => (
+    <>
+      {narrow && back.hideNarrow ? null : (
+        <Button variant="ghost" disabled={busy !== null} onClick={back.onClick}>
+          {back.label}
+        </Button>
+      )}
+      {blocker ? <Tooltip content={blocker} describe={!narrow}>{primaryButton(narrow)}</Tooltip> : primaryButton(narrow)}
+    </>
   );
 
   return (
@@ -582,24 +596,19 @@ function NewProductionForm({ received, draftKey }: { received?: string; draftKey
           />
         )}
         footer={(narrow) => (
-          // DS gap: the docked footer band already draws the rule and padding and does not stretch its
-          // child, so an ActionBar would double both; Section's head (meta left, actions right) fills it.
+          // The grid stretches the docked footer. On phones, ActionBar gives a blocking reason
+          // its own wrapping line so it cannot push the action outside the viewport.
           <Grid columns="1:1" collapseBelow={false}>
             <GridItem span="full">
-              <Section
+              {narrow ? (
+                <ActionBar position="static" detail={footerMeta(narrow)} detailId={footerDetailId}>
+                  {footerActions(narrow)}
+                </ActionBar>
+              ) : <Section
                 meta={footerMeta(narrow)}
                 metaTone={errorCount > 0 && !busy ? 'missing' : 'muted'}
-                action={
-                  <>
-                    {narrow && back.hideNarrow ? null : (
-                      <Button variant="ghost" disabled={busy !== null} onClick={back.onClick}>
-                        {back.label}
-                      </Button>
-                    )}
-                    {blocker ? <Tooltip content={blocker}>{primaryButton}</Tooltip> : primaryButton}
-                  </>
-                }
-              />
+                action={footerActions(narrow)}
+              />}
             </GridItem>
           </Grid>
         )}
