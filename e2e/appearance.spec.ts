@@ -1,6 +1,61 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import sharp from 'sharp';
 import { expectNoHorizontalOverflow, watchErrors } from './support';
+
+/** Measure the label against its actual composited surface, including translucent ancestors. */
+async function groupLabelContrast(group: Locator) {
+  return group.evaluate(element => {
+    const label = document.getElementById(element.getAttribute('aria-labelledby')!);
+    if (!label) throw new Error('The group has no accessible label');
+    const rgba = (value: string) => {
+      const channels = value.match(/[\d.]+/g)!.map(Number);
+      return [...channels.slice(0, 3), channels[3] ?? 1];
+    };
+    const ancestors: Element[] = [];
+    for (let node: Element | null = label; node; node = node.parentElement) ancestors.unshift(node);
+    let background = [255, 255, 255];
+    for (const node of ancestors) {
+      const color = rgba(getComputedStyle(node).backgroundColor);
+      background = background.map((channel, index) => color[index] * color[3] + channel * (1 - color[3]));
+    }
+    const luminance = (color: number[]) => color.slice(0, 3).map(channel => {
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    }).reduce((total, channel, index) => total + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const foreground = luminance(rgba(getComputedStyle(label).color));
+    const surface = luminance(background);
+    return { contrast: (Math.max(foreground, surface) + 0.05) / (Math.min(foreground, surface) + 0.05), surface };
+  });
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  for (const width of [1440, 390]) {
+    test(`grouped pending actions and delivery remain legible in ${theme} at ${width}px`, async ({ page, context, baseURL }, testInfo) => {
+      const errors = watchErrors(page);
+      await context.addCookies([{ name: 'reporter-appearance', value: theme, url: baseURL! }]);
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      for (const route of ['/', '/productions/prod-bella-passo/delivery']) {
+        await page.goto(route);
+        await expect(page.locator('[data-ds-v3]').first()).toHaveAttribute('data-color-scheme', theme);
+        const section = page.getByRole('region', { name: route === '/' ? 'Precisa de você' : 'Arquivos do pacote', exact: true });
+        const group = section.getByRole('group', { name: route === '/' ? 'Devolvidos para ajuste' : 'Artigo', exact: true });
+        await expect(group).toBeVisible();
+        await expect(group.getByRole('list')).toBeVisible();
+        if (route === '/') await expect(group).toContainText('Casa Forma');
+        else await expect(group.getByRole('link', { name: /^Baixar artigo-v\d+\.md$/ })).toBeVisible();
+        for (const item of await section.getByRole('group').all()) {
+          const measured = await groupLabelContrast(item);
+          expect(measured.contrast, 'normal-size group labels meet AA contrast').toBeGreaterThanOrEqual(4.5);
+          if (theme === 'dark') expect(measured.surface, 'group headings use a dark surface').toBeLessThan(0.15);
+        }
+        await expectNoHorizontalOverflow(page);
+        await group.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath(`${route === '/' ? 'pending' : 'delivery'}-${theme}-${width}.png`), fullPage: true });
+      }
+      expect(errors).toEqual([]);
+    });
+  }
+}
 
 for (const theme of ['light', 'dark'] as const) {
   for (const system of ['light', 'dark'] as const) {

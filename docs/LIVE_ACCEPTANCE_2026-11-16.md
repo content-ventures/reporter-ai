@@ -130,11 +130,33 @@ The new footer regression reproduces the old phone overflow (the action's right 
 405.36 px in a 390 px viewport) while the desktop case passes. Against the correction, all eight
 new-production browser cases pass, including both widths, source recovery and two topics × two
 formats. The complete gate passes 1,910 tests and a production build; the deterministic 21st
-review reports no findings. Production verification of this final footer correction follows release.
+review reports no findings. Production verification of this final footer correction completed on
+v1.9.2 (`bf3cf69e9a7c7ecf35ad1fc207f44703484c8f51`): both domains reported the exact release,
+and the real Work @oranj session showed the full disabled Continue button and wrapping reason at
+390×844. The temporary input was cleared without creating another production.
+
+## App-only dark appearance correction
+
+The real QA delivery exposed white group-header bands in dark mode. Reporter used the current
+public `ListGroup`, which supplies a fixed translucent white header surface. At João's explicit
+request, the Design System and Reporter's dependency pin stay unchanged. An isolated local DS
+experiment was stopped without a remote push, publication, or application to Reporter.
+
+The app composes the existing public `FieldGroup` and labelled `List` in package files, pending
+actions and archive uses. File contents, download/retry handlers, pending-action counts and
+source navigation remain on their existing paths. There are no app CSS, new tokens or local
+visual primitives. Empty/loading states retain the public list components.
+
+Local production-fixture verification passed 79 browser cases: all R1 routes at 1440 and 390,
+the full approval/export path, theme/logo persistence, and four added light/dark × desktop/phone
+checks. The latter measure actual composited label contrast (at least 4.5:1), reject light group
+surfaces in dark mode, retain the Casa Forma pending item and the article download, and check
+overflow. Screenshots were inspected. The deterministic 21st review found no issues in the three
+changed product components. This correction still requires its controlled release and live check.
 
 ## Remaining live acceptance
 
-- Release and recheck the newly found phone footer correction.
+- Release and recheck the app-only group-header correction in the existing Seafood Brasil workspace.
 - Test a real recording containing two distinct events. The multi-topic/multi-format batching
   and multipart ordering checks do not establish this editorial acceptance.
 - Amanda/Léo must judge the writing against the real fair workflow and accept its variety,

@@ -3,8 +3,8 @@ import { useWorkspaceHref } from '@/ui/workspace-navigation';
 
 import {
   EmptyState,
+  FieldGroup,
   List,
-  ListGroup,
   ListItem,
   ListItemSkeleton,
   NextAction,
@@ -64,15 +64,17 @@ function DeskRow({ group, item, now }: { group: DeskGroupId; item: DeskItem; now
 
 function QueueList({ groups, now }: { groups: readonly DeskGroup[]; now: Date | undefined }) {
   return (
-    <List label="Precisa de você" framed={false} bleed>
+    <>
       {groups.map((group) => (
-        <ListGroup key={group.id} label={DESK_GROUP_LABELS[group.id]} meta={formatCount(group.items.length)}>
-          {group.items.map((item) => (
-            <DeskRow key={`${item.productionId}-${item.pieceId ?? 'source'}`} group={group.id} item={item} now={now} />
-          ))}
-        </ListGroup>
+        <FieldGroup key={group.id} label={DESK_GROUP_LABELS[group.id]} meta={formatCount(group.items.length)}>
+          <List label={DESK_GROUP_LABELS[group.id]} framed={false} bleed>
+            {group.items.map((item) => (
+              <DeskRow key={`${item.productionId}-${item.pieceId ?? 'source'}`} group={group.id} item={item} now={now} />
+            ))}
+          </List>
+        </FieldGroup>
       ))}
-    </List>
+    </>
   );
 }
 
