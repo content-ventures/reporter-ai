@@ -4,6 +4,12 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-11-17
+
+### Fixed
+
+- Preserve dark surfaces in grouped app lists.
+
 ## [1.9.2] - 2026-11-17
 
 ### Fixed

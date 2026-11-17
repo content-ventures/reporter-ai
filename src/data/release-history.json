@@ -1,7 +1,21 @@
 {
-  "currentVersion": "1.9.2",
+  "currentVersion": "1.9.3",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.9.3",
+      "roadmapRelease": "R1",
+      "date": "2026-11-17",
+      "title": "R1 maintenance release",
+      "summary": "Automatic maintenance release with 1 validated change: preserve dark surfaces in grouped app lists.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Fixed",
+          "description": "Preserve dark surfaces in grouped app lists"
+        }
+      ]
+    },
     {
       "version": "1.9.2",
       "roadmapRelease": "R1",
