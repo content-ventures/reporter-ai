@@ -1,7 +1,21 @@
 {
-  "currentVersion": "1.9.1",
+  "currentVersion": "1.9.2",
   "currentRoadmapRelease": "R1",
   "releases": [
+    {
+      "version": "1.9.2",
+      "roadmapRelease": "R1",
+      "date": "2026-11-17",
+      "title": "R1 maintenance release",
+      "summary": "Automatic maintenance release with 1 validated change: keep mobile blocker guidance above actions.",
+      "commit": null,
+      "changes": [
+        {
+          "type": "Fixed",
+          "description": "Keep mobile blocker guidance above actions"
+        }
+      ]
+    },
     {
       "version": "1.9.1",
       "roadmapRelease": "R1",

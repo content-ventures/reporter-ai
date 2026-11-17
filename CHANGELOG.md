@@ -4,6 +4,12 @@ All notable changes to Reporter IA are documented in this file. Release entries 
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-11-17
+
+### Fixed
+
+- Keep mobile blocker guidance above actions.
+
 ## [1.9.1] - 2026-11-16
 
 ### Fixed
