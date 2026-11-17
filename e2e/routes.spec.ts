@@ -145,7 +145,7 @@ for (const viewport of VIEWPORTS) {
       const recent = page.getByRole("region", { name: "Produções recentes", exact: true });
       await expect(recent.getByRole("link", { name: "Estúdio Norte: impressão 3D no protótipo", exact: true })).toBeVisible();
       await expect(recent.getByRole("link", { name: "Ver todas", exact: true })).toHaveAttribute("href", "/productions");
-      await expect(page.getByRole("list", { name: "Precisa de você", exact: true })).toContainText("Casa Forma");
+      await expect(page.getByRole("list", { name: "Devolvidos para ajuste", exact: true })).toContainText("Casa Forma");
       await expect(page.getByRole("list", { name: "Últimas movimentações", exact: true })).toBeVisible();
       await expectLoaded(page);
       await expectHeadingOutline(page);

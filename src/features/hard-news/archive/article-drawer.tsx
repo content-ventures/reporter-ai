@@ -7,8 +7,8 @@ import {
   ButtonLink,
   DescriptionList,
   Drawer,
+  FieldGroup,
   List,
-  ListGroup,
   ListItem,
   MediaFrame,
   PageStack,
@@ -80,21 +80,27 @@ export function ArticleDrawer({ article, uses, open, onClose, onResend }: {
         />
         <StepPipeline variant="journey" label="Caminho da matéria na IA" stages={stages} />
         <Section title="Pautas que usaram" titleAs="h3" meta={stories ? String(stories) : undefined}>
-          <List label="Pautas que usaram" framed={false} bleed empty="Nenhuma pauta usou esta matéria.">
-            {byStory.map((story) => (
-              <ListGroup key={story[0].productionId} label={story[0].story}>
-                {story.map((use) => (
-                  <ListItem
-                    key={`${use.productionId}-${use.kind}`}
-                    density="sm"
-                    icon={use.kind === 'context' ? Search : Link2}
-                    title={USE_LABEL[use.kind === 'context' ? 'context' : use.state ?? 'suggested']}
-                    onClick={() => go(use.kind === 'context' ? researchHref(use.productionId) : pieceHref(use.productionId, 'article'))}
-                  />
-                ))}
-              </ListGroup>
-            ))}
-          </List>
+          {byStory.length === 0 ? (
+            <List label="Pautas que usaram" framed={false} empty="Nenhuma pauta usou esta matéria." />
+          ) : (
+            <>
+              {byStory.map((story) => (
+                <FieldGroup key={story[0].productionId} label={story[0].story}>
+                  <List label={story[0].story} framed={false} bleed>
+                    {story.map((use) => (
+                      <ListItem
+                        key={`${use.productionId}-${use.kind}`}
+                        density="sm"
+                        icon={use.kind === 'context' ? Search : Link2}
+                        title={USE_LABEL[use.kind === 'context' ? 'context' : use.state ?? 'suggested']}
+                        onClick={() => go(use.kind === 'context' ? researchHref(use.productionId) : pieceHref(use.productionId, 'article'))}
+                      />
+                    ))}
+                  </List>
+                </FieldGroup>
+              ))}
+            </>
+          )}
         </Section>
       </PageStack>
     </Drawer>

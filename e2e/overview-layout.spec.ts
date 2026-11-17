@@ -33,7 +33,7 @@ for (const viewport of VIEWPORTS) {
           const resume = page.getByRole('article', { name: /^Continuar:/ }).first();
           await expect(resume.getByRole('link', { name: /^Continuar:/ })).toHaveAttribute('href', /\/productions\/.+\/article$/);
           await expect(page.getByRole('region', { name: 'Produções por etapa', exact: true }).getByRole('link')).toHaveCount(5);
-          await expect(page.getByRole('list', { name: 'Precisa de você', exact: true })).toContainText('Casa Forma');
+          await expect(page.getByRole('list', { name: 'Devolvidos para ajuste', exact: true })).toContainText('Casa Forma');
           await page.getByRole('radio', { name: '30 dias' }).click();
           await expect(page).toHaveURL(/range=30d/);
         }

@@ -7,8 +7,8 @@ import {
   Button,
   ButtonLink,
   FormatFrame,
+  FieldGroup,
   List,
-  ListGroup,
   ListItem,
   ListItemSkeleton,
   MiddleEllipsis,
@@ -168,23 +168,25 @@ export function PackagePanel({ pkg, onRetry }: PackagePanelProps) {
     <Panel padding="lg">
       <Section title="Arquivos do pacote" meta={pkg.failed > 0 ? plural(pkg.failed, 'arquivo falhou', 'arquivos falharam') : meta} metaTone={pkg.failed > 0 ? 'missing' : 'muted'}>
         {pkg.plan ? (
-          <List label="Arquivos do pacote" framed={false}>
+          <>
             {groups.map((group) => (
-              <ListGroup key={group.id} label={group.label}>
-                {group.files.map((file) => (
-                  <FileItem
-                    key={file.fileName}
-                    file={file}
-                    progress={progressOf(file, pkg.progress)}
-                    retrying={retrying === file.fileName}
-                    anchorRef={pkg.anchorRef}
-                    onDownloadClick={pkg.onDownloadClick}
-                    onRetry={retry}
-                  />
-                ))}
-              </ListGroup>
+              <FieldGroup key={group.id} label={group.label}>
+                <List label={group.label} framed={false}>
+                  {group.files.map((file) => (
+                    <FileItem
+                      key={file.fileName}
+                      file={file}
+                      progress={progressOf(file, pkg.progress)}
+                      retrying={retrying === file.fileName}
+                      anchorRef={pkg.anchorRef}
+                      onDownloadClick={pkg.onDownloadClick}
+                      onRetry={retry}
+                    />
+                  ))}
+                </List>
+              </FieldGroup>
             ))}
-          </List>
+          </>
         ) : (
           <List label="Arquivos do pacote" framed={false}>
             <ListItemSkeleton />
